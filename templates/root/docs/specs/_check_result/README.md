@@ -38,3 +38,4 @@ Rules:
 14. This README is also constrained by `specflow/framework/docs/agent_guidelines/candidate_handoff_contract.md`.
 15. `_check_result/{module}.md` carries only the current pass-gate snapshot. It does not carry failed fallback records.
 16. When commands explain why this pass gate cannot be consumed or why the module must fall back, they must use the standardized `fallback_reason_code` taxonomy first and then add natural-language explanation.
+17. The semantics of `prompt_adequacy_review_required`, `prompt_adequacy_decision`, and `prompt_adequacy_summary` are additionally constrained by `specflow/framework/docs/agent_guidelines/prompt_gate_contract.md`.

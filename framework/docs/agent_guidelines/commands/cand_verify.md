@@ -39,7 +39,7 @@ By default it handles:
 8. classify deviations with the shared `P1 / P2 / P3` semantics
 9. conclude:
    - if `fail` exists, do not enter `cand_promote`
-   - if `partial` or `not_checked` exists, promotion is allowed only if the downgrade rules are satisfied
+   - if `partial` or `not_checked` exists, promotion is allowed only if `specflow/framework/docs/agent_guidelines/downgrade_policy.md` allows downgrade for the current evidence state
    - if key deviations are cleared and evidence is complete, promotion may proceed
 10. write or update `docs/specs/_verify_result/{module}.md`
 11. update `_status.md`:
@@ -61,14 +61,15 @@ By default it handles:
 1. verification conclusion
 2. structured verification evidence matrix
 3. `Coverage Summary`
-4. verify-result write-back result
-5. `checkpoint result` when a checkpoint stop was raised
-6. `fallback_reason_code` for fallback or checkpoint stops
-7. deviation list
-8. fallback reason if pass gate or plan was invalid
-9. next-step suggestion
-10. git close-out result
-11. `_status.md` update result
+4. downgrade decision when `partial` or `not_checked` exists
+5. verify-result write-back result
+6. `checkpoint result` when a checkpoint stop was raised
+7. `fallback_reason_code` for fallback or checkpoint stops
+8. deviation list
+9. fallback reason if pass gate or plan was invalid
+10. next-step suggestion
+11. git close-out result
+12. `_status.md` update result
 
 Allowed checkpoint types:
 

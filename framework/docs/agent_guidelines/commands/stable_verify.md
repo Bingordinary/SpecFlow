@@ -59,7 +59,7 @@ It does not:
 8. classify deviations with the shared `P1 / P2 / P3` semantics from `spec_policy.md`
 9. conclude:
    - if any `fail` exists, the result can only be "drift exists; return to stable or enter spec_fork"
-   - `partial` and `not_checked` are non-blocking only when they satisfy the downgrade rules
+   - `partial` and `not_checked` are non-blocking only when `specflow/framework/docs/agent_guidelines/downgrade_policy.md` allows downgrade for the current evidence state
    - if key deviations are cleared and evidence is complete, the result is "still aligned with stable"
 10. if code has drifted from `stable`, the next action can only be:
    - return code to `stable` semantics
@@ -80,10 +80,18 @@ It does not:
 1. verification conclusion
 2. structured verification evidence matrix
 3. `Coverage Summary`
-4. deviation list
-5. next-step recommendation
-6. git close-out result
-7. `_status.md` update result
+4. downgrade decision when `partial` or `not_checked` exists
+5. deviation list
+6. `fallback_reason_code` when stable alignment cannot be claimed safely
+7. next-step recommendation
+8. git close-out result
+9. `_status.md` update result
+
+Allowed `fallback_reason_code` values:
+
+1. `implementation_deviation`
+2. `evidence_incomplete`
+3. `shared_appendix_drift`
 
 ## 7. Non-Goals
 

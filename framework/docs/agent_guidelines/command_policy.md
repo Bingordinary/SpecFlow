@@ -128,7 +128,7 @@ Candidate commands move a candidate from design to implementation and then to pr
 1. `cand_check`
    - checks whether the candidate is sufficiently closed to stably constrain implementation
    - checks whether `system_constraints_stable_ref` aligns with the current formal global baseline
-   - runs Prompt Adequacy Review for modules that hit Prompt triggers
+   - runs Prompt Adequacy Review for modules that hit Prompt triggers according to `specflow/framework/docs/agent_guidelines/prompt_gate_contract.md`
    - if it passes, writes `_check_result/{module}.md` as the pass gate for the candidate chain
 2. `cand_plan`
    - reads `_check_result/{module}.md`
@@ -190,6 +190,7 @@ The rules below are shared gates. Every command follows them by default:
 24. A blocking checkpoint is not a pass result and must not be treated as permission to continue to the next command.
 25. When a command resumes after a checkpoint, it must re-judge the required bindings and gate conditions instead of assuming the checkpoint answer already fixed them.
 26. Candidate-side fallback, blocking, and resume outputs must report the standardized `fallback_reason_code` defined by `specflow/framework/docs/agent_guidelines/candidate_handoff_contract.md` before any free-form explanation.
+27. When `cand_verify` or `stable_verify` needs to judge whether `partial` or `not_checked` items may still support a narrower safe conclusion, it must use `specflow/framework/docs/agent_guidelines/downgrade_policy.md` instead of executor invention.
 
 ---
 
@@ -220,7 +221,8 @@ Additional requirements:
    - review dimensions
    - blocking standards
    - the priority between KV-cache-friendly ordering and semantic clarity
-9. If the command file writes back Prompt review results, it must define the minimum snapshot contract instead of leaving field meanings to executor invention.
+   - either directly in the command file or through one explicitly referenced centralized contract
+9. If the command file writes back Prompt review results, it must define the minimum snapshot contract, either directly or through one explicitly referenced centralized contract, instead of leaving field meanings to executor invention.
 10. If the command requires mandatory close-out work such as a git-history decision, it must explicitly reference the relevant governance rule instead of leaving that step to executor memory.
 11. If the command may raise a checkpoint, it must define the allowed checkpoint types, trigger conditions, and resume rules.
 12. If the command may fall back or block, it must define which standardized `fallback_reason_code` values it may emit instead of leaving fallback wording to executor invention.

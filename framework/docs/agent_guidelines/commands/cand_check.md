@@ -42,7 +42,7 @@ By default this command reviews:
 2. `_status.md` says `Next Command=cand_check`
 3. the module has `candidate`
 4. read explicitly referenced candidate appendix files and bound Shared Appendix files
-5. if the module involves Prompt design, Prompt assembly, or context injection, read `docs/prompt_guidelines.md`
+5. if the module may be Prompt-triggered, read `specflow/framework/docs/agent_guidelines/prompt_gate_contract.md` and `docs/prompt_guidelines.md`
 6. if `_check_result/{module}.md`, `_status.md`, candidate truth, or other commit-triggering governance files may change, read the git policy first
 7. if referenced appendix files have directory drift, fix that first and rerun the pre-check
 
@@ -61,11 +61,10 @@ By default this command reviews:
    - `Behavior Basis Completeness`
    - `Decision Surface Completeness`
    - `Acceptance Basis Completeness`
-8. determine whether Prompt Adequacy Review is triggered
-9. if triggered, review:
-   - foundational adequacy
-   - structured output adequacy when applicable
-   - ordering adequacy
+8. determine whether Prompt Adequacy Review is triggered according to `specflow/framework/docs/agent_guidelines/prompt_gate_contract.md`
+9. if triggered, run the fixed review objects and blocking rules defined by:
+   - `specflow/framework/docs/agent_guidelines/prompt_gate_contract.md`
+   - `docs/prompt_guidelines.md`
 10. process `system_constraints_stable_ref`:
    - if the formal global baseline exists and the candidate is still compatible, a mechanical update to the current version is allowed
    - if incompatible, the result can only be `blocked` or `fix_required`
