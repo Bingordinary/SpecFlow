@@ -30,7 +30,8 @@ Candidate-side fallback, blocking, and resume explanations must use these standa
 8. `governance_drift`
 9. `implementation_deviation`
 10. `evidence_incomplete`
-11. `promotion_recovery`
+11. `implementation_unknown`
+12. `promotion_recovery`
 
 Meaning rules:
 
@@ -54,7 +55,9 @@ Meaning rules:
    - implementation no longer satisfies the current candidate even though candidate truth still stands
 10. `evidence_incomplete`
    - current verification evidence is still insufficient to close the next gate safely
-11. `promotion_recovery`
+11. `implementation_unknown`
+   - candidate truth still stands, but bounded implementation-critical unknowns, external conditions, or missing implementation facts still prevent a stable plan from being written
+12. `promotion_recovery`
    - `cand_promote` had already started mutating repository state and had to restore the module back to candidate semantics before the chain could continue
 
 Executors may add natural-language explanation, but the standardized code must appear first when a fallback or blocking reason is reported.
@@ -97,6 +100,7 @@ Use only:
 4. `binding_drift`
 5. `baseline_drift`
 6. `shared_appendix_drift`
+7. `implementation_unknown`
 
 ---
 
