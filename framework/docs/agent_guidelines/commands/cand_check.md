@@ -36,6 +36,17 @@ By default this command reviews:
 1. the current candidate may enter `cand_plan`
 2. the current candidate already contains the key constraints needed as the truth input for implementation in this round
 
+Result semantics for non-pass conclusions are fixed:
+
+1. `blocked`
+   - use when the smallest correct next step cannot be completed by executor-side repair alone in the current round
+   - the blocker is waiting on user clarification, user decision, or shared-truth closure outside the active command's direct repair surface
+   - if the blocker changes behavior truth, the answer must be written back before `cand_check` may pass
+2. `fix_required`
+   - use when the executor can already identify a concrete truth-side repair inside the current candidate, appendix, or explicit binding surface
+   - no extra user choice is needed before that repair work starts
+   - after the repair, the module reruns `cand_check` instead of skipping forward
+
 ## 3. Preconditions
 
 1. complete required pre-checks
@@ -80,7 +91,7 @@ By default this command reviews:
    - if bindings exist but the body does not explain which behavior chain reuses them, the result can only be `blocked` or `fix_required`
 13. process shared-candidate signals:
    - by default, shared-candidate hints only trigger a suggestion to run `shared_extract_review`
-   - if the current required reading range already confirms a dual source of truth, report it directly as a blocking issue
+   - if the current required reading range already confirms a dual source of truth, report it directly as a blocking issue with `fallback_reason_code=shared_truth_conflict`
 14. determine whether a blocking checkpoint is the correct stop form:
    - use `clarification` when user intent, boundary meaning, or acceptance meaning is still missing from truth
    - use `decision` when multiple materially different directions remain and the user must choose one
@@ -160,6 +171,7 @@ Allowed `fallback_reason_code` values:
 2. `prompt_inadequate`
 3. `baseline_drift`
 4. `shared_appendix_drift`
+5. `shared_truth_conflict`
 
 ## 8. Non-Goals
 
