@@ -113,25 +113,7 @@ Result semantics for non-pass conclusions are fixed:
 3. if the round does not pass, no invalid old pass gate remains
 4. `_status.md` is updated
 
-## 6. Finding Contract
-
-When the result is `blocked` or `fix_required`, findings must be structured and must not be reduced to vague summaries.
-
-Severity must use the shared meanings defined in:
-
-1. `specflow/framework/docs/agent_guidelines/severity_policy.md`
-
-Each finding must explain:
-
-1. background
-2. what happened
-3. impact
-4. best recommendation
-5. why that recommendation is best
-6. whether it is blocking
-7. which constraint layer it belongs to
-
-## 7. Output Contract
+## 6. Output Contract
 
 The output should include:
 
@@ -151,6 +133,22 @@ The output should include:
 10. git close-out result
 11. `_status.md` update result
 
+When the result is `blocked` or `fix_required`, findings must be structured and must not be reduced to vague summaries.
+
+Severity must use the shared meanings defined in:
+
+1. `specflow/framework/docs/agent_guidelines/severity_policy.md`
+
+Each finding must explain:
+
+1. background
+2. what happened
+3. impact
+4. best recommendation
+5. why that recommendation is best
+6. whether it is blocking
+7. which constraint layer it belongs to
+
 Allowed checkpoint types:
 
 1. `clarification`
@@ -164,13 +162,13 @@ Allowed `fallback_reason_code` values:
 4. `shared_truth_conflict`
 5. `governance_drift`
 
-## 8. Non-Goals
+## 7. Non-Goals
 
 1. directly generating a plan
 2. directly entering code implementation
 3. creating, updating, or deleting an independent `system_constraints` candidate file
 
-## 9. Examples
+## 8. Examples
 
 ```md
 cand_check:module_ai

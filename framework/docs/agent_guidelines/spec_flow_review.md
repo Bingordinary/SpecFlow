@@ -18,6 +18,7 @@ Here, "Spec Flow" means the governance mechanism formed by these objects togethe
 4. template entry-index files under `specflow/templates/root/` that define the framework-owned managed block content for supported hosts
 5. `specflow/framework/docs/agent_guidelines/entry_index_registry.md` only where its rules affect project-side entry-file ownership or sync boundaries
 6. `specflow/framework/docs/agent_guidelines/project_standards_policy.md` where project-local standards affect governance closure
+7. the current project's registered project-local standards under `docs/project_standards/` because those rules may tighten or clarify governance decisions used by the executor
 
 This flow is not a module command and is not part of the module lifecycle managed by `docs/specs/_status.md`.
 
@@ -49,6 +50,8 @@ The default scope is the repository's formal Spec Flow governance baseline:
    - `specflow/templates/root/CLAUDE.md`
 8. `specflow/framework/docs/agent_guidelines/entry_index_registry.md` only where project-side entry ownership or sync rules affect governance closure
 9. `specflow/templates/root/docs/project_standards/_registry.md` only where its template-side governance role affects interpretation
+10. the installed project-side `docs/project_standards/_registry.md`
+11. only the project-local standard files currently registered there for governance-relevant consumption
 
 Additional rules:
 
@@ -60,7 +63,10 @@ Additional rules:
 6. `entry_index_registry.md` may still be read in this flow, but only to check whether project-side entry ownership and sync rules remain coherent with the template-side design.
 7. Content truth files consumed by governance rules may be read only to confirm how governance binds, reads, or constrains them. Their own business or engineering content is not reviewed by default here.
 8. If `shared_flow_reconcile` exists, this flow only reviews whether it closes the Shared Appendix lifecycle. It does not replace its actual reconciliation work.
-9. If project-local standards are part of the framework baseline extension surface, this flow reviews only whether their registration and consumption rules remain closed. It does not review project-specific local standard content by default.
+9. If project-local standards are part of the framework baseline extension surface, this flow reviews both:
+   - whether their registration and consumption rules remain closed
+   - whether the current project's registered project-local standard content introduces governance conflict, ambiguity, or gate-semantic drift against the framework baseline
+10. Unregistered files under `docs/project_standards/` are not in the default review scope because they are not formal governance inputs.
 
 Do not automatically reinterpret `spec_flow_review` as "review current git diff", "review files touched in this session", or "review recently changed governance files" unless the user explicitly narrows scope that way.
 
@@ -115,19 +121,25 @@ Before execution:
 5. if the scope is not narrowed, also read the three template process-rule READMEs under `specflow/templates/root/docs/specs/`
 6. if the task is governance review or may modify governance rules, entry files, or process-rule READMEs, read `specflow/framework/docs/agent_guidelines/git_policy.md`
 7. if the scope is not narrowed, read `specflow/framework/docs/agent_guidelines/entry_index_registry.md` and the three template entry-index files under `specflow/templates/root/`
-8. if the scope is not narrowed and project-local standards affect the reviewed rules, also read `specflow/framework/docs/agent_guidelines/project_standards_policy.md` and `specflow/templates/root/docs/project_standards/_registry.md`
+8. if the scope is not narrowed and project-local standards affect the reviewed rules, also read:
+   - `specflow/framework/docs/agent_guidelines/project_standards_policy.md`
+   - `specflow/templates/root/docs/project_standards/_registry.md`
+   - `docs/project_standards/_registry.md`
+9. after reading `docs/project_standards/_registry.md`, read only the project-local standard files actively registered there and relevant to governance consumption
+10. if the repository claims the project-local standards extension surface but `docs/project_standards/_registry.md` is missing or invalid, report governance drift instead of silently treating that case as "no project-local standards"
 
 If you cannot determine exactly which governance files are being reviewed, do not issue a `pass`.
 
 ## 5. Procedure
 
 1. locate the governance files inside the current review scope
-2. map each rule point to the rule objects it affects
-3. run closure review first
-4. run side-effect review second
-5. grade every real problem by severity and blocking status
-6. add background, trigger mechanism, impact scope, and repair suggestion to each finding
-7. give an overall conclusion and the next action for the current review scope
+2. if project-local standards are claimed, resolve the active project-local review set from `docs/project_standards/_registry.md` instead of scanning `docs/project_standards/` blindly
+3. map each rule point to the rule objects it affects
+4. run closure review first
+5. run side-effect review second
+6. grade every real problem by severity and blocking status
+7. add background, trigger mechanism, impact scope, and repair suggestion to each finding
+8. give an overall conclusion and the next action for the current review scope
 
 Severity must use the shared meanings defined in:
 
@@ -185,3 +197,4 @@ This flow does not:
 2. verify implementation alignment for a concrete module
 3. replace `cand_check`, `cand_verify`, or `stable_verify`
 4. execute reconciliation work in place of `shared_flow_reconcile`
+5. treat unregistered files under `docs/project_standards/` as active governance inputs

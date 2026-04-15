@@ -181,6 +181,9 @@ Each command or internal flow that consumes project-local standards must explici
 2. which entry shapes it may consume
 3. which part of its decision surface those project-local standards may tighten or clarify
 
+`spec_flow_review` is one such governance flow.
+When it runs in the current project instance, it should read the active project-local standards resolved from `docs/project_standards/_registry.md` and review them as governance inputs rather than ignoring their content.
+
 ---
 
 ## 10. Non-Goals
