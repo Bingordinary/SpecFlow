@@ -8,7 +8,7 @@ This command advances code implementation according to the current `candidate` a
 
 By default it handles:
 
-1. implementing according to plan
+1. implementing according to plan slices
 2. adding necessary tests or verification actions
 3. writing progress back into `_plans/{module}.md`
 4. consuming the `cand_plan -> cand_impl` handoff only when gate and plan bindings both still hold
@@ -33,18 +33,20 @@ By default it handles:
 6. if any binding is invalid, stop immediately and fall back `_status.md` to `cand_check`
 7. if `system_constraints_stable_ref` no longer matches the current formal global baseline state, stop immediately and fall back to `cand_check`
 8. only when both pass gate and plan are still valid may implementation continue
-9. implement in the order defined by the plan
-10. run necessary verification, or record clearly what could not be run
-11. write completion status, blockers, and verification results back into `_plans/{module}.md`
-12. update `_status.md`:
+9. implement slice by slice in the order defined by the current plan unless the plan itself declares a dependency-safe different order
+10. for each slice, use the recorded objective, file scope, dependencies, verification action, and done condition as the execution boundary
+11. do not collapse a blocked slice into a vague whole-module status; record clearly which slice is complete, blocked, or still pending
+12. run necessary verification for the slices advanced in this round, or record clearly what could not be run
+13. write slice completion status, blockers, and verification results back into `_plans/{module}.md`
+14. update `_status.md`:
    - if implementation is ready for verification -> `Next Command=cand_verify`
    - if implementation is still blocked -> keep `Next Command=cand_impl`
    - if candidate truth or formal global baseline drift means closure must restart -> `Next Command=cand_check`
-13. perform git close-out if required
+15. perform git close-out if required
 
 ## 5. Stop Conditions
 
-1. the plan has advanced as far as feasible in this round
+1. the current plan slices have advanced as far as feasible in this round
 2. the plan file has been written back
 3. `_status.md` points to the real next executable step
 4. if the pass gate or plan became invalid, implementation was stopped and `_status.md` was fallen back to `cand_check`
@@ -52,13 +54,15 @@ By default it handles:
 ## 6. Output Contract
 
 1. implementation progress result
-2. tests or verification run, or explicit gaps
-3. plan write-back result
-4. `handoff validation result`
-5. `fallback_reason_code` when the pass gate or plan was invalid
-6. fallback reason if the pass gate or plan was invalid
-7. git close-out result
-8. `_status.md` update result
+2. slice progress result
+3. tests or verification run, or explicit gaps
+4. plan write-back result
+5. blocked-slice result when implementation could not finish the current plan round
+6. `handoff validation result`
+7. `fallback_reason_code` when the pass gate or plan was invalid
+8. fallback reason if the pass gate or plan was invalid
+9. git close-out result
+10. `_status.md` update result
 
 Allowed checkpoint types:
 

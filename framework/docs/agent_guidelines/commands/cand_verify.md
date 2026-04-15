@@ -9,10 +9,11 @@ This command verifies whether current implementation aligns with the current `ca
 By default it handles:
 
 1. candidate-versus-implementation alignment verification
-2. structured verification evidence generation
-3. writing `_verify_result/{module}.md`
-4. deciding whether the module may enter `cand_promote`
-5. stopping at a `human_verify` checkpoint only when automation is still insufficient to close confidence
+2. goal-backward verification from acceptance claims into implementation evidence
+3. structured verification evidence generation
+4. writing `_verify_result/{module}.md`
+5. deciding whether the module may enter `cand_promote`
+6. stopping at a `human_verify` checkpoint only when automation is still insufficient to close confidence
 
 ## 3. Preconditions
 
@@ -31,24 +32,31 @@ By default it handles:
 2. validate all required bindings
 3. if the pass gate or plan is invalid, stop immediately and fall back `_status.md` to `cand_check`
 4. verify current code against key protocols, main flow, error handling, and acceptance criteria
-5. produce a structured verification evidence matrix
-6. output `Coverage Summary`
-7. determine whether a `human_verify` checkpoint is required:
+5. perform goal-backward verification for each key acceptance claim instead of stopping at artifact existence
+6. for each key claim, judge at minimum:
+   - `existence`: the required artifact, path, handler, test, or integration point exists
+   - `substance`: the artifact contains meaningful implementation rather than hollow placeholder structure
+   - `wiring`: the artifact is actually connected to the main execution path, user path, or protocol path required by the current candidate
+7. if a required outcome depends on cross-file integration, name that integration path directly in the evidence matrix
+8. if implementation pieces exist but are not wired into the claimed path, treat that as `implementation_deviation` rather than as successful existence evidence
+9. produce a structured verification evidence matrix
+10. output `Coverage Summary`
+11. determine whether a `human_verify` checkpoint is required:
    - use it only when automated verification is insufficient but a small amount of human effect judgment can close the remaining uncertainty
    - if human verification confirms implementation deviation while candidate truth still stands, fall back to `cand_impl`
    - if human verification shows acceptance truth itself is still incomplete, fall back to `cand_check`
-8. classify deviations with the shared severity meanings defined by `specflow/framework/docs/agent_guidelines/severity_policy.md`
-9. conclude:
+12. classify deviations with the shared severity meanings defined by `specflow/framework/docs/agent_guidelines/severity_policy.md`
+13. conclude:
    - if `fail` exists, do not enter `cand_promote`
    - if `partial` or `not_checked` exists, promotion is allowed only if `specflow/framework/docs/agent_guidelines/downgrade_policy.md` allows downgrade for the current evidence state
    - if key deviations are cleared and evidence is complete, promotion may proceed
-10. write or update `docs/specs/_verify_result/{module}.md`
-11. update `_status.md`:
+14. write or update `docs/specs/_verify_result/{module}.md`
+15. update `_status.md`:
    - if ready to promote -> `Next Command=cand_promote`
    - if implementation has deviations but candidate truth still stands -> `Next Command=cand_impl`
    - if candidate truth or formal global baseline must be re-closed -> `Next Command=cand_check`
    - if verification evidence is still incomplete but no upstream truth drift exists -> `Next Command=cand_verify`
-12. perform git close-out if required
+16. perform git close-out if required
 
 ## 5. Stop Conditions
 
@@ -62,16 +70,17 @@ By default it handles:
 1. verification conclusion
 2. structured verification evidence matrix
 3. `Coverage Summary`
-4. downgrade decision when `partial` or `not_checked` exists
-5. verify-result write-back result
-6. `checkpoint result` when a checkpoint stop was raised
+4. goal-backward evidence result
+5. downgrade decision when `partial` or `not_checked` exists
+6. verify-result write-back result
+7. `checkpoint result` when a checkpoint stop was raised
    - when present, it must satisfy the fixed checkpoint fields defined by `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
-7. `fallback_reason_code` for fallback or checkpoint stops
-8. deviation list
-9. fallback reason if pass gate or plan was invalid
-10. next-step suggestion
-11. git close-out result
-12. `_status.md` update result
+8. `fallback_reason_code` for fallback or checkpoint stops
+9. deviation list
+10. fallback reason if pass gate or plan was invalid
+11. next-step suggestion
+12. git close-out result
+13. `_status.md` update result
 
 Allowed checkpoint types:
 
