@@ -43,7 +43,8 @@ By default it handles:
 8. re-check `shared_appendix_refs`:
    - judge Shared Appendix bindings independently from whether `s_system_constraints.md` exists
    - if the stable layer depended on stable shared files and the candidate still depends on the same shared truth, create corresponding candidate shared files first and bind to those candidate-layer versions
-   - if the current round no longer reuses shared appendix truth, or candidate-layer shared truth is not ready yet, write `shared_appendix_refs=none`
+   - write `shared_appendix_refs=none` only when the current round no longer reuses shared appendix truth
+   - do not write `shared_appendix_refs=none` merely because candidate-layer shared truth is not ready yet
 9. update Shared Appendix `bound_modules` if bindings changed
 10. delete old `_check_result/{module}.md`, `_verify_result/{module}.md`, `_plans/{module}.md`, and previous-round candidate appendix files
 11. if other modules were affected by Shared Appendix changes but not directly closed here, run `shared_flow_reconcile`

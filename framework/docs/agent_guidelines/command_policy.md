@@ -181,20 +181,21 @@ The rules below are shared gates. Every command follows them by default:
 13. If `s_system_constraints.md` does not exist and the module candidate's `system_constraints_stable_ref` is not `none`, the module's candidate-side process files become invalid and fall back to `cand_check`.
 14. If the Shared Appendix versions, bodies, or bindings referenced by `shared_appendix_refs` change, the module's candidate-side process files become invalid and fall back to `cand_check`.
 15. If a stable-layer module's bound stable Shared Appendix changed, the module may no longer claim it still aligns with `stable` and falls back to `stable_verify`.
-16. `cand_verify` does not manage an independent `system_constraints` state machine. It only verifies implementation against the current candidate system.
-17. `cand_promote` must absorb closed global-constraint proposals into `docs/specs/system/stable/s_system_constraints.md` when promotion confirms those proposals are ready.
-18. When `cand_plan`, `cand_impl`, or `cand_verify` reads `_check_result/{module}.md`, it must confirm both the required bindings and `decision=pass` plus `allow_next=true`.
-19. When `cand_promote` reads `_verify_result/{module}.md`, it must confirm both the required bindings and `decision=pass`, `allow_next=true`, and `next_command=cand_promote`.
-20. If the current project has an active registered Prompt review standard for the current target and the candidate fails Prompt Adequacy Review, it must not enter `cand_plan` and must not keep using an old pass gate.
-21. `Prompt Adequacy Review` may return `n/a` when Prompt triggers were not hit, or when the current project has no active registered Prompt review standard for the current target.
-22. When `cand_check` does not pass, it must not write a failed `_check_result/{module}.md`. If an old pass gate is no longer valid, delete it and keep or fall back `Next Command` to `cand_check`.
-23. `cand_check` does not directly rewrite candidate truth by default. The only allowed automatic correction is a mechanical update of `system_constraints_stable_ref` when the candidate is still compatible with the current formal global baseline, or correction to `none` when no formal global baseline exists yet.
-24. A blocking checkpoint is not a pass result and must not be treated as permission to continue to the next command.
-25. When a command resumes after a checkpoint, it must re-judge the required bindings and gate conditions instead of assuming the checkpoint answer already fixed them.
-26. Candidate-side fallback, blocking, and resume outputs must report the standardized `fallback_reason_code` defined by `specflow/framework/docs/agent_guidelines/candidate_handoff_contract.md` before any free-form explanation.
-27. When `cand_verify` or `stable_verify` needs to judge whether `partial` or `not_checked` items may still support a narrower safe conclusion, it must use `specflow/framework/docs/agent_guidelines/downgrade_policy.md` instead of executor invention.
-28. Commands must not consume project-local standards unless those standards are registered in `docs/project_standards/_registry.md` and the command explicitly supports that consumption surface.
-29. Project-local standards may tighten or clarify framework baseline rules, but must not weaken them.
+16. If a stable-layer module's current stable truth explicitly records `system_constraints_stable_ref` and that recorded reference no longer matches the current formal global baseline state, the module may no longer claim it still aligns with `stable` and falls back to `stable_verify`.
+17. `cand_verify` does not manage an independent `system_constraints` state machine. It only verifies implementation against the current candidate system.
+18. `cand_promote` must absorb closed global-constraint proposals into `docs/specs/system/stable/s_system_constraints.md` when promotion confirms those proposals are ready.
+19. When `cand_plan`, `cand_impl`, or `cand_verify` reads `_check_result/{module}.md`, it must confirm both the required bindings and `decision=pass` plus `allow_next=true`.
+20. When `cand_promote` reads `_verify_result/{module}.md`, it must confirm both the required bindings and `decision=pass`, `allow_next=true`, and `next_command=cand_promote`.
+21. If the current project has an active registered Prompt review standard for the current target and the candidate fails Prompt Adequacy Review, it must not enter `cand_plan` and must not keep using an old pass gate.
+22. `Prompt Adequacy Review` may return `n/a` when Prompt triggers were not hit, or when the current project has no active registered Prompt review standard for the current target.
+23. When `cand_check` does not pass, it must not write a failed `_check_result/{module}.md`. If an old pass gate is no longer valid, delete it and keep or fall back `Next Command` to `cand_check`.
+24. `cand_check` does not directly rewrite candidate truth by default. The only allowed automatic correction is a mechanical update of `system_constraints_stable_ref` when the candidate is still compatible with the current formal global baseline, or correction to `none` when no formal global baseline exists yet.
+25. A blocking checkpoint is not a pass result and must not be treated as permission to continue to the next command.
+26. When a command resumes after a checkpoint, it must re-judge the required bindings and gate conditions instead of assuming the checkpoint answer already fixed them.
+27. Candidate-side fallback, blocking, and resume outputs must report the standardized `fallback_reason_code` defined by `specflow/framework/docs/agent_guidelines/candidate_handoff_contract.md` before any free-form explanation.
+28. When `cand_verify` or `stable_verify` needs to judge whether `partial` or `not_checked` items may still support a narrower safe conclusion, it must use `specflow/framework/docs/agent_guidelines/downgrade_policy.md` instead of executor invention.
+29. Commands must not consume project-local standards unless those standards are registered in `docs/project_standards/_registry.md` and the command explicitly supports that consumption surface.
+30. Project-local standards may tighten or clarify framework baseline rules, but must not weaken them.
 
 ---
 

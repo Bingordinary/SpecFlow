@@ -30,6 +30,7 @@ When a request hits any of the following, handle it with `specFlow` rules:
    - `shared_extract_review`
 3. Requests involving module Specs, state progression, candidate closure, formal promotion, Shared Appendix, or system constraints.
 4. Requests involving registered project-local standards under `docs/project_standards/`.
+5. Requests to create, register, or tighten a project-local standard for the current project.
 
 If none of the above is hit, continue following the host agent's other rules.
 

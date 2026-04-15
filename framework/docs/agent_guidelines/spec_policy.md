@@ -277,6 +277,7 @@ Rules:
 2. if no formal global baseline exists yet, it must be `none`
 3. if the module behavior depends on Shared Appendix truth, `shared_appendix_refs` must bind it explicitly
 4. if the module deviates from global constraints or Shared Appendix truth, that deviation must be written explicitly instead of implied
+5. if a stable-layer Spec explicitly records `system_constraints_stable_ref` and that recorded reference no longer matches the current formal global baseline state, the module may no longer claim it still aligns with `stable` and must fall back to `stable_verify`
 
 ---
 
