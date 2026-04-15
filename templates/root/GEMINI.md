@@ -124,8 +124,8 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
 3. Behavior changes must not start from code. Follow `specflow/framework/docs/agent_guidelines/spec_policy.md` first.
 4. A brand-new module may start with `candidate`; its first `stable` is created later by `cand_promote`.
 5. A historical module entering governance for the first time must begin with `spec_init:{module}` to create its first `stable`.
-6. Under `docs/specs/`, every Spec file except `candidate` main files and their supporting appendix files is a behavior source of truth and should normally enter git history.
-7. `candidate` main files and their appendix files are draft-layer artifacts. If a task modifies only those files, do not `git commit` by default unless the user asks for it or the active command flow requires it.
+6. Under `docs/specs/`, every Spec file except `candidate` main files, candidate appendix files, and `docs/specs/shared/candidate/*.md` is a behavior source of truth and should normally enter git history.
+7. `candidate` main files, candidate appendix files, and `docs/specs/shared/candidate/*.md` are draft-layer artifacts. If a task modifies only those files, do not `git commit` by default unless the user asks for it or the active command flow requires it.
 8. Changes to `specflow/framework/docs/agent_guidelines/*.md` should normally be committed in the current task.
 9. When Spec, command, and git-flow rules conflict, do not guess. Go back to the relevant policy or command file.
 

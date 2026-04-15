@@ -50,7 +50,11 @@ By default it handles:
    - absorb the content into `docs/specs/stable/s_{module}.md`
    - delete candidate appendix files no longer needed
 12. do not delete `docs/specs/candidate/c_{module}.md` until `_status.md` has already been updated to `Candidate=no`
-13. update `_status.md` to the promoted stable state
+13. update `_status.md` to the promoted stable state:
+   - `Stable=yes`
+   - `Candidate=no`
+   - `Active Layer=stable`
+   - `Next Command=spec_fork`
 14. only after that update may physical deletion happen:
    - `docs/specs/candidate/c_{module}.md`
    - current-round candidate appendix files
@@ -64,7 +68,11 @@ By default it handles:
 ## 5. Stop Conditions
 
 1. promotion succeeded or a blocking reason is explicit
-2. `_status.md` is updated
+2. `_status.md` is updated to:
+   - `Stable=yes`
+   - `Candidate=no`
+   - `Active Layer=stable`
+   - `Next Command=spec_fork`
 3. this round's candidate cleanup is complete
 4. if verification became invalid, the command stopped and `_status.md` fell back appropriately
 5. if the command entered incomplete-promotion recovery state, candidate semantics were restored and the module can restart from `cand_check`
@@ -83,6 +91,11 @@ By default it handles:
 10. recovery-state explanation if incomplete promotion occurred
 11. git close-out result
 12. follow-up state explanation
+   - when promotion succeeds, the follow-up state must explicitly confirm:
+     - `Stable=yes`
+     - `Candidate=no`
+     - `Active Layer=stable`
+     - `Next Command=spec_fork`
 
 Allowed checkpoint types:
 
