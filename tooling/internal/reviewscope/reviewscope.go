@@ -1,0 +1,151 @@
+package reviewscope
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/projectstandards"
+)
+
+type SpecFlowScope struct {
+	Scenario                   string
+	FrameworkGuidelineFiles    []string
+	CommandFiles               []string
+	SharedGovernanceFiles      []string
+	TemplateGovernanceFiles    []string
+	TemplateEntryFiles         []string
+	ProjectRegistryFiles       []string
+	ActiveProjectStandardFiles []string
+	MatchedOverlayFiles        []string
+}
+
+func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
+	scope := SpecFlowScope{
+		Scenario: "default_governance_baseline",
+	}
+
+	frameworkFiles, err := globRelative(repoRoot, "specflow/framework/docs/agent_guidelines/*.md")
+	if err != nil {
+		return scope, err
+	}
+	commandFiles, err := globRelative(repoRoot, "specflow/framework/docs/agent_guidelines/commands/*.md")
+	if err != nil {
+		return scope, err
+	}
+	if len(frameworkFiles) == 0 || len(commandFiles) == 0 {
+		return scope, fmt.Errorf("default governance files are incomplete")
+	}
+
+	sharedFiles := []string{
+		"specflow/framework/docs/agent_guidelines/shared_ops.md",
+		"specflow/framework/docs/agent_guidelines/shared_new.md",
+		"specflow/framework/docs/agent_guidelines/shared_extract.md",
+		"specflow/framework/docs/agent_guidelines/shared_bind.md",
+		"specflow/framework/docs/agent_guidelines/shared_sync.md",
+		"specflow/framework/docs/agent_guidelines/shared_escape.md",
+	}
+	templateGovernanceFiles := []string{
+		"specflow/templates/root/docs/specs/_status.md",
+		"specflow/templates/root/docs/specs/_check_result/README.md",
+		"specflow/templates/root/docs/specs/_plans/README.md",
+		"specflow/templates/root/docs/specs/_verify_result/README.md",
+		"specflow/templates/root/docs/project_standards/_registry.md",
+	}
+	templateEntryFiles := []string{
+		"specflow/templates/root/AGENTS.md",
+		"specflow/templates/root/GEMINI.md",
+		"specflow/templates/root/CLAUDE.md",
+	}
+	projectRegistryFiles := []string{
+		"docs/project_standards/_registry.md",
+	}
+
+	required := append([]string{}, sharedFiles...)
+	required = append(required, templateGovernanceFiles...)
+	required = append(required, templateEntryFiles...)
+	required = append(required, projectRegistryFiles...)
+	if err := ensureRelativeFiles(repoRoot, required); err != nil {
+		return scope, err
+	}
+
+	validation, err := projectstandards.ValidateRegistry(repoRoot)
+	if err != nil {
+		return scope, err
+	}
+	if len(validation.Diagnostics) > 0 {
+		return scope, fmt.Errorf(strings.Join(validation.Diagnostics, "; "))
+	}
+
+	activeStandardFiles := make([]string, 0, len(validation.Entries))
+	overlayFiles := []string{}
+	overlaySet := map[string]bool{}
+	for _, entry := range validation.Entries {
+		activeStandardFiles = append(activeStandardFiles, entry.File)
+
+		if entry.ConsumedBy != "spec_flow_review" || entry.Surface != "governance_baseline_review" {
+			continue
+		}
+		selector, err := projectstandards.ParseAppliesTo(entry.AppliesTo)
+		if err != nil {
+			return scope, err
+		}
+		matched := selector.Kind == "all_targets_on_surface" ||
+			(selector.Kind == "review_scenario" && len(selector.Values) == 1 && selector.Values[0] == scope.Scenario)
+		if matched && !overlaySet[entry.File] {
+			overlaySet[entry.File] = true
+			overlayFiles = append(overlayFiles, entry.File)
+		}
+	}
+
+	scope.FrameworkGuidelineFiles = frameworkFiles
+	scope.CommandFiles = commandFiles
+	scope.SharedGovernanceFiles = sharedFiles
+	scope.TemplateGovernanceFiles = templateGovernanceFiles
+	scope.TemplateEntryFiles = templateEntryFiles
+	scope.ProjectRegistryFiles = projectRegistryFiles
+	scope.ActiveProjectStandardFiles = sortAndDedupe(activeStandardFiles)
+	scope.MatchedOverlayFiles = sortAndDedupe(overlayFiles)
+	return scope, nil
+}
+
+func globRelative(repoRoot, pattern string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(pattern)))
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(matches))
+	for _, match := range matches {
+		rel, err := filepath.Rel(repoRoot, match)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, filepath.ToSlash(rel))
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func ensureRelativeFiles(repoRoot string, relPaths []string) error {
+	for _, relPath := range relPaths {
+		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relPath))); err != nil {
+			return fmt.Errorf("required scope file missing: %s", relPath)
+		}
+	}
+	return nil
+}
+
+func sortAndDedupe(items []string) []string {
+	set := map[string]bool{}
+	for _, item := range items {
+		set[item] = true
+	}
+	result := make([]string, 0, len(set))
+	for item := range set {
+		result = append(result, item)
+	}
+	sort.Strings(result)
+	return result
+}
