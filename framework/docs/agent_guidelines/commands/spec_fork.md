@@ -43,9 +43,10 @@ By default it handles:
    - if the new round proposes a global baseline change, record it in `system_constraints_change_proposal` inside the module candidate
 8. re-check `shared_contract_refs`:
    - judge Shared Contract bindings independently from whether `s_system_constraints.md` exists
-   - if the stable layer depended on stable shared files and the candidate still depends on the same shared truth, create corresponding candidate shared files first and bind to those candidate-layer versions
+   - if the stable layer depended on shared files and the candidate still depends on the same unchanged shared truth, keep binding those existing shared files in the candidate
+   - create or bind candidate-layer shared files only when the current round changes the shared truth itself
    - write `shared_contract_refs=none` only when the current round no longer reuses shared contract truth
-   - do not write `shared_contract_refs=none` merely because candidate-layer shared truth is not ready yet
+   - do not write `shared_contract_refs=none` merely because a shared-truth change for this round has not yet been formalized
 9. update Shared Contract `bound_modules` if the round changed shared bindings or shared files
 10. delete old `_check_result/{module}.md`, `_verify_result/{module}.md`, `_plans/{module}.md`, and previous-round candidate appendix files
    - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --module {module} --mode spec_fork`
