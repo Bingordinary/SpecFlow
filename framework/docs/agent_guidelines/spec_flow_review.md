@@ -150,38 +150,118 @@ At minimum:
 4. a minimal executable fix suggestion is given
 5. the next step is explicit: repair rules first and re-review, or record and continue
 
+### 3.4 Mandatory Review Planning And Fixed Review Blocks
+
+This flow must not jump directly from file collection to final conclusions.
+It must first create one execution-local `review_plan`.
+
+`review_plan` means a temporary review plan that exists only for the current `spec_flow_review` execution.
+It is not durable repository truth and it must not be written back as a new governance file.
+
+The minimum `review_plan` content is:
+
+1. the current review scope
+2. the review blocks that will be used
+3. the exact files assigned to each block
+4. the required cross-block convergence checks before any final `pass | blocked` conclusion
+
+For the default governance baseline scope, the `review_plan` must use exactly these fixed review blocks:
+
+1. `review_and_command_core`
+   - `specflow/framework/docs/agent_guidelines/spec_flow_review.md`
+   - `specflow/framework/docs/agent_guidelines/spec_policy.md`
+   - `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - `specflow/framework/docs/agent_guidelines/implementation_change_policy.md`
+   - `specflow/framework/docs/agent_guidelines/git_policy.md`
+   - `specflow/framework/docs/agent_guidelines/severity_policy.md`
+   - `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
+   - `specflow/framework/docs/agent_guidelines/commands/*.md`
+2. `shared_governance`
+   - `specflow/framework/docs/agent_guidelines/shared_ops.md`
+   - `specflow/framework/docs/agent_guidelines/shared_new.md`
+   - `specflow/framework/docs/agent_guidelines/shared_extract.md`
+   - `specflow/framework/docs/agent_guidelines/shared_bind.md`
+   - `specflow/framework/docs/agent_guidelines/shared_topology.md`
+   - `specflow/framework/docs/agent_guidelines/shared_sync.md`
+   - `specflow/framework/docs/agent_guidelines/shared_escape.md`
+3. `process_and_state_contracts`
+   - `specflow/framework/docs/agent_guidelines/candidate_handoff_contract.md`
+   - `specflow/framework/docs/agent_guidelines/process_snapshot_contract.md`
+   - `specflow/framework/docs/agent_guidelines/downgrade_policy.md`
+   - `specflow/framework/docs/agent_guidelines/recovery_policy.md`
+   - `specflow/templates/root/docs/specs/_status.md`
+   - `specflow/templates/root/docs/specs/_check_result/README.md`
+   - `specflow/templates/root/docs/specs/_plans/README.md`
+   - `specflow/templates/root/docs/specs/_verify_result/README.md`
+4. `entry_and_project_local_extension`
+   - `specflow/framework/docs/agent_guidelines/entry_index_registry.md`
+   - `specflow/framework/docs/agent_guidelines/project_standards_policy.md`
+   - `specflow/framework/docs/agent_guidelines/project_standard_create.md`
+   - `specflow/templates/root/AGENTS.md`
+   - `specflow/templates/root/GEMINI.md`
+   - `specflow/templates/root/CLAUDE.md`
+   - `specflow/templates/root/docs/project_standards/_registry.md`
+   - `docs/project_standards/_registry.md`
+   - the active registered project-local standard files in the current review scope
+
+For a user-explicitly narrowed governance review:
+
+1. still create a `review_plan`
+2. use the smallest block set that fully covers the narrowed scope
+3. if the narrowed scope touches a boundary whose interface owner lives in another block, include that owner block or stop without `pass`
+4. do not invent ad hoc default-scope block names; either reuse the fixed block names above or explicitly state why a smaller subset is sufficient
+
+Fixed block-completion rule:
+
+1. a block is not complete until its own closure review, side-effect review, and post-review handling review have all been finished
+2. a completed block result is still local only and must not be treated as the final result of `spec_flow_review`
+
+Fixed convergence rule:
+
+1. the final result must be decided only after block review and cross-block convergence review are both complete
+2. for the default governance baseline scope, the minimum required cross-block convergence checks are:
+   - `review_and_command_core` <-> `shared_governance`
+   - `review_and_command_core` <-> `process_and_state_contracts`
+   - `review_and_command_core` <-> `entry_and_project_local_extension`
+   - `shared_governance` <-> `process_and_state_contracts`
+3. if a user-narrowed scope still crosses an uncovered block boundary, do not issue a `pass`
+
 ## 4. Preconditions
 
 Before execution:
 
 1. the scope must be explicit; if the user did not narrow it, use the full governance baseline from Section 3
-2. read every governance file inside the current review scope
-3. read any upstream governance files directly referenced by those files
-4. if the scope affects command progression or gate interpretation, also read `specflow/templates/root/docs/specs/_status.md`, but treat it only as a template-side state-index file unless the user explicitly asks for more
-5. if the scope is not narrowed, also read the three template process-rule READMEs under `specflow/templates/root/docs/specs/`
-6. if the task is governance review or may modify governance rules, entry files, or process-rule READMEs, read `specflow/framework/docs/agent_guidelines/git_policy.md`
-7. if the scope is not narrowed, read `specflow/framework/docs/agent_guidelines/entry_index_registry.md` and the three template entry-index files under `specflow/templates/root/`
-8. if project-local standards affect the reviewed rules, also read:
+2. build one execution-local `review_plan` before detailed findings begin
+3. read every governance file inside the current review scope
+4. read any upstream governance files directly referenced by those files
+5. if the scope affects command progression or gate interpretation, also read `specflow/templates/root/docs/specs/_status.md`, but treat it only as a template-side state-index file unless the user explicitly asks for more
+6. if the scope is not narrowed, also read the three template process-rule READMEs under `specflow/templates/root/docs/specs/`
+7. if the task is governance review or may modify governance rules, entry files, or process-rule READMEs, read `specflow/framework/docs/agent_guidelines/git_policy.md`
+8. if the scope is not narrowed, read `specflow/framework/docs/agent_guidelines/entry_index_registry.md` and the three template entry-index files under `specflow/templates/root/`
+9. if project-local standards affect the reviewed rules, also read:
    - `specflow/framework/docs/agent_guidelines/project_standards_policy.md`
    - `specflow/templates/root/docs/project_standards/_registry.md`
    - `docs/project_standards/_registry.md`
-9. determine the current project-local review scenario:
+10. determine the current project-local review scenario:
    - `default_governance_baseline` for plain `spec_flow_review`
    - `narrowed_governance_scope` when the user explicitly narrowed the governance review scope
-10. after reading `docs/project_standards/_registry.md`, resolve the active registered project-local standard files for governance-input review in the current project instance
-11. read the files from that governance-input review set
-12. from that already-resolved governance-input review set, resolve only the active entries that match:
+11. after reading `docs/project_standards/_registry.md`, resolve the active registered project-local standard files for governance-input review in the current project instance
+12. read the files from that governance-input review set
+13. from that already-resolved governance-input review set, resolve only the active entries that match:
    - `type=review_standard`
    - `surface=governance_baseline_review`
    - `consumed_by=spec_flow_review`
    - the current `applies_to` selector
-13. if the repository claims the project-local standards extension surface but `docs/project_standards/_registry.md` is missing or invalid, report governance drift instead of silently treating that case as "no project-local standards"
-14. if the scope is the default governance baseline, explicitly confirm that the shared-governance rule set has been read, at minimum `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`
-15. do not treat reading only `command_policy.md`, `commands/*.md`, or other main command-chain files as sufficient for a default-scope review when shared-governance rules were not also covered
+14. if the repository claims the project-local standards extension surface but `docs/project_standards/_registry.md` is missing or invalid, report governance drift instead of silently treating that case as "no project-local standards"
+15. if the scope is the default governance baseline, the `review_plan` must use the fixed review blocks from Section 3.4
+16. if the scope is the default governance baseline, explicitly confirm that the shared-governance rule set has been read, at minimum `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`
+17. do not treat reading only `command_policy.md`, `commands/*.md`, or other main command-chain files as sufficient for a default-scope review when shared-governance rules were not also covered
+18. if any in-scope file cannot be assigned to a review block, or any required cross-block convergence check cannot be named explicitly, do not issue a `pass`
 
 If you cannot determine exactly which governance files are being reviewed, do not issue a `pass`.
 If a default-scope review did not cover the shared-governance rule set, do not issue a `pass`.
 If the review output does not explicitly report the shared-governance coverage and result, do not issue a `pass`.
+If the review output does not explicitly report the `review_plan`, block coverage, and required cross-block convergence result, do not issue a `pass`.
 
 ## 5. Procedure
 
@@ -190,18 +270,27 @@ If the review output does not explicitly report the shared-governance coverage a
 3. determine the current project-local review scenario:
    - `default_governance_baseline` for plain `spec_flow_review`
    - `narrowed_governance_scope` for a user-explicitly narrowed governance review
-4. review the active project-local governance-input review set for governance conflict, ambiguity, or gate-semantic drift against the framework baseline
-5. resolve which already-read governance-input entries also match the current `governance_baseline_review` overlay scenario
-6. map each rule point to the rule objects it affects
-7. enumerate the shared-governance rule files actually covered by the current review
-8. explicitly review whether shared-governance routing, closure, boundary, and stop/checkpoint rules remain coherent with the main command system
-9. run the framework-baseline closure review first
-10. run the framework-baseline side-effect review second
-11. run the framework-baseline post-review handling review third
-12. after the framework-baseline review is complete, merge any matching project-local `review_standard` entries only as `tighten` or `clarify` input into structured findings and the final `pass | blocked` conclusion
+4. build the execution-local `review_plan`:
+   - map the in-scope files into review blocks
+   - for the default governance baseline scope, use exactly the fixed review blocks from Section 3.4
+   - for a user-narrowed scope, use the smallest sufficient block set and explicitly list the required cross-block convergence checks
+5. review the active project-local governance-input review set for governance conflict, ambiguity, or gate-semantic drift against the framework baseline
+6. resolve which already-read governance-input entries also match the current `governance_baseline_review` overlay scenario
+7. review each block from the `review_plan`
+8. for each block:
+   - map each rule point to the rule objects it affects
+   - run the block-local closure review
+   - run the block-local side-effect review
+   - run the block-local post-review handling review
+   - mark the block complete only after all three block-local review classes are finished
+9. enumerate the shared-governance rule files actually covered by the current review
+10. explicitly review whether shared-governance routing, closure, boundary, and stop/checkpoint rules remain coherent with the main command system
+11. run the required cross-block convergence checks from the `review_plan`
+12. after both block review and cross-block convergence review are complete, merge any matching project-local `review_standard` entries only as `tighten` or `clarify` input into structured findings and the final `pass | blocked` conclusion
 13. grade every real problem by severity and blocking status
 14. add background, trigger mechanism, impact scope, and repair suggestion to each finding
 15. give an overall conclusion and the next action for the current review scope
+16. do not issue a final `pass` unless every planned block and every planned cross-block convergence check has completed
 
 Severity must use the shared meanings defined in:
 
@@ -225,6 +314,8 @@ Findings are allowed only if they hit at least one of these:
 4. high ambiguity
 5. gate-semantic drift
 6. missing default-scope coverage of required shared-governance rule files
+7. missing coverage of a required review block
+8. missing or incomplete required cross-block convergence review
 
 ### 6.2 Findings That Should Not Be Reported By Default
 
@@ -242,27 +333,39 @@ Do not report the following by default:
 The output should include:
 
 1. review scope
-2. the exact governance files reviewed, or a stable grouped list that still makes file coverage auditable
-3. an explicit shared-governance coverage section that states:
+2. the execution-local `review_plan`, including:
+   - the review blocks used
+   - the files assigned to each block
+   - the required cross-block convergence checks
+3. the exact governance files reviewed, or a stable grouped list that still makes file coverage auditable
+4. an explicit block-coverage section that states:
+   - which planned review blocks were completed
+   - which planned review blocks were blocked or incomplete
+   - whether each completed block finished closure review, side-effect review, and post-review handling review
+5. an explicit shared-governance coverage section that states:
    - whether `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md` were reviewed
    - whether the shared-governance review result is pass, blocked, or has findings
    - whether the review stayed at governance-rule level rather than executing a concrete shared request instance
-4. an explicit project-local governance-input coverage section that states:
+6. an explicit project-local governance-input coverage section that states:
    - which active registered project-local standard files were reviewed as governance inputs
    - whether any of them introduced governance conflict, ambiguity, or gate-semantic drift against the framework baseline
-5. overall conclusion
-6. findings ordered by severity and blocking priority
-7. for each finding:
+7. an explicit cross-block convergence section that states:
+   - which required block-to-block interfaces were reviewed
+   - whether each required interface review passed, was blocked, or has findings
+   - whether any uncovered block boundary prevented a final `pass`
+8. overall conclusion
+9. findings ordered by severity and blocking priority
+10. for each finding:
    - what the problem is
    - why it happens
    - what it impacts
    - the minimal recommended fix
-8. whether the current review passes or is blocked
-9. when a project-local review surface was consumed:
+11. whether the current review passes or is blocked
+12. when a project-local review surface was consumed:
    - which `surface` matched
    - which registered project-local standard files were used
    - how they tightened or clarified findings or the final conclusion
-10. the next action
+13. the next action
 
 ## 8. Non-Goals
 
@@ -273,3 +376,4 @@ This flow does not:
 3. replace `cand_check`, `cand_verify`, or `stable_verify`
 4. execute reconciliation work in place of `shared_sync`
 5. treat unregistered files under `docs/project_standards/` as active governance inputs
+6. allow ad hoc default-scope review blocks
