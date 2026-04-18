@@ -6,7 +6,7 @@
 2. Changes to `candidate` represent candidate progression and do not mean the behavior is formally active yet.
 3. Therefore, candidate-progress commits and promotion commits must be defined separately.
 4. Under `docs/specs/`, every Spec file except `candidate` main files and their appendix files is a behavior source of truth and should normally enter git history in the current task.
-5. `candidate` main files and their appendix files are draft-layer artifacts. If a task modifies only those files, do not `git commit` by default unless the user explicitly asks for it or the active command flow requires it.
+5. `candidate` main files and their appendix files are draft-layer artifacts, but draft-layer status does not forbid commits. When a round reaches a reviewable checkpoint, the current `candidate` should normally enter git history together with any linked process or code changes for that checkpoint.
 6. `specflow/framework/docs/agent_guidelines/*.md` and `specflow/framework/docs/agent_guidelines/commands/*.md` are part of repository governance and should normally be committed in the current task.
 7. Changes to registered entry index files are also governance changes and should normally be committed in the current task after entry-file sync is complete.
 8. When `Active Layer=stable` and code changes introduce new formal-layer implementation drift, the module's `Next Command` should normally fall back to `stable_verify`.
@@ -29,6 +29,10 @@ Rules:
 3. But the target behavior of the commit must be traceable back to the `candidate`.
 4. If the change only brings code back to the currently aligned layer, `fix:` may be used.
 5. If the change is only structural and does not alter the behavior defined by the current aligned layer, `refactor:` may be used.
+6. Candidate-progress commits should be created at reviewable checkpoints rather than for every incomplete draft save.
+7. Default reviewable checkpoints include a candidate state ready for `cand_check`, a completed `cand_plan`, a coherent `cand_impl` slice that aligns code to the current candidate, and a passed `cand_verify`.
+8. A candidate-progress commit may contain only draft-layer files when that checkpoint itself is the thing being reviewed.
+9. A candidate-progress commit must stay separate in meaning from the later promotion commit that makes behavior formally active through `stable`.
 
 ---
 
@@ -94,10 +98,10 @@ Rules:
 
 If the task changes only `docs/specs/*.md`:
 
-1. If it changes `docs/specs/candidate/c_{module}.md`, candidate appendix files under `docs/specs/candidate/appendix/` or an equivalent dedicated subdirectory, or `docs/specs/shared_contracts/candidate/*.md`, do not commit by default unless the user explicitly asks for it or the active command flow requires it.
+1. If it changes `docs/specs/candidate/c_{module}.md`, candidate appendix files under `docs/specs/candidate/appendix/` or an equivalent dedicated subdirectory, or `docs/specs/shared_contracts/candidate/*.md`, commit when the round has reached a reviewable checkpoint. Purely temporary incomplete draft saves do not require their own commit.
 2. If it changes `docs/specs/stable/*.md`, stable appendix files under `docs/specs/stable/appendix/*.md` or an equivalent dedicated subdirectory, `docs/specs/shared_contracts/stable/*.md`, `docs/specs/system/stable/*.md`, `docs/specs/_status.md`, `docs/specs/_check_result/*.md`, `docs/specs/_verify_result/*.md`, or `docs/specs/_plans/*.md`, it should normally be committed in the current task.
 3. If `stable` changes, treat it as a formal contract change. If the task hits `cand_promote`, follow the promotion-commit rules.
-4. If a `candidate` change belongs to the same command flow as the corresponding code implementation, plan file, or promotion commit, it may be committed together with that flow.
+4. If a `candidate` change belongs to the same command flow as the corresponding code implementation, plan file, check result, verify result, or promotion commit, commit the checkpoint as one traceable unit instead of leaving candidate-only drift in the worktree.
 
 ### 6.2 `specflow/framework/docs/agent_guidelines/*.md` And `specflow/framework/docs/agent_guidelines/commands/*.md`
 

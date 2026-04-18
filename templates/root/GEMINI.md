@@ -146,7 +146,7 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
 5. A brand-new module may start with `candidate`; its first `stable` is created later by `cand_promote`.
 6. A historical module entering governance for the first time must begin with `spec_init:{module}` to create its first `stable`.
 7. Under `docs/specs/`, every Spec file except `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` is a behavior source of truth and should normally enter git history.
-8. `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` are draft-layer artifacts. If a task modifies only those files, do not `git commit` by default unless the user asks for it or the active command flow requires it.
+8. `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` are draft-layer artifacts, but draft-layer status does not block commits. When a round reaches a reviewable checkpoint, those files should normally be committed together with the linked process or code changes of that checkpoint.
 9. Changes to `specflow/framework/docs/agent_guidelines/*.md` should normally be committed in the current task.
 10. When Spec, command, and git-flow rules conflict, do not guess. Go back to the relevant policy or command file.
 
@@ -154,7 +154,7 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
 
 Use these default git rules in `specFlow` tasks:
 
-1. If the task changes only candidate draft files, do not `git commit` by default unless the user explicitly asks for it or the active command flow requires it.
+1. If the task changes only candidate draft files, commit when the round has reached a reviewable checkpoint. Purely temporary incomplete draft saves do not require their own commit.
 2. If the task changes code files, formal source-of-truth files, governance files, or registered entry index files, `git commit` in the current task by default.
 3. If the task changes registered entry index files, ensure managed block consistency before commit.
 4. For exact file boundaries, exceptions, and promotion-specific rules, read `specflow/framework/docs/agent_guidelines/git_policy.md`.
