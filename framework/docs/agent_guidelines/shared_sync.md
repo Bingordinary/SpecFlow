@@ -53,6 +53,7 @@ Before execution:
 8. read each affected module's current-layer main file according to `_status.md`
 9. if the task may modify `_status.md`, process files, or other commit-triggering governance files, read the Git closure rules first
 10. if the current task changed which layer now carries a directly affected module's formal binding source, `_status.md` must already be updated before this flow builds the current-layer module set
+11. if this flow was entered from a still-closing `cand_promote` round, carry that promoted module as the current promotion owner for same-round stable-invalidation judgment
 
 ---
 
@@ -85,6 +86,7 @@ Before execution:
    - treat the binding as invalid if the referenced file is missing, the layer mismatches, the file target mismatches, the version reference mismatches, or the module-to-shared relation changed
    - for `candidate` modules, rebuild the snapshot from the exact currently bound Shared Contract files; treat the binding as invalid if any existing process file's `shared_contract_snapshot` differs from that rebuilt snapshot, except when the delta comes only from `bound_modules`
    - for `stable` modules, judge only against bound stable-layer Shared Contract files resolved through the binding contract; treat the binding as invalid if the resolved stable binding target changed in layer, file, or version, or if the current task changed that bound stable file in any way other than a `bound_modules`-only delta
+   - exception for the current promotion owner: if the affected module is the promoted module carried into this flow from a still-closing `cand_promote` round, and the changed stable Shared Contract file or stable binding is exactly the post-promotion target written by that same round, do not treat that promoted module as invalid on that basis alone
 6. for invalid `candidate` modules:
    - delete `_check_result/{module}.md`
    - delete `_plans/{module}.md`
@@ -126,8 +128,9 @@ The output must include at least:
 5. the list of deleted process files
 6. any mismatch between `bound_modules` and the real binding set
 7. the standardized `fallback_reason_code` for each affected module
-8. when repository truth was insufficient to continue safely, that `shared_sync` returned control to `shared_escape` and did not issue an independent local checkpoint
-9. the git close-out result
+8. any module kept valid under the current-round `cand_promote` owner exception
+9. when repository truth was insufficient to continue safely, that `shared_sync` returned control to `shared_escape` and did not issue an independent local checkpoint
+10. the git close-out result
 
 Allowed `fallback_reason_code` values:
 

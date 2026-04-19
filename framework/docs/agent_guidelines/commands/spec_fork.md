@@ -60,6 +60,7 @@ By default it handles:
      - `unbound_retention_reason: <why this unbound state is intentional now>`
      - `unbound_retention_owner: spec_fork`
    - reject closure if neither deletion nor explicit keep-writeback has happened for a touched now-unbound Shared Contract file
+   - if a touched Shared Contract file still has one or more formal bound modules after this round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
    - update `bound_modules` only as declarative metadata so each remaining touched Shared Contract file matches the real binding set implied by module `shared_contract_refs`
 12. delete old `_check_result/{module}.md`, `_verify_result/{module}.md`, `_plans/{module}.md`, and previous-round candidate appendix files
    - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --module {module} --mode spec_fork`

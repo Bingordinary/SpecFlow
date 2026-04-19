@@ -88,9 +88,10 @@ Before execution:
      - `unbound_retention_reason: <why this unbound state is intentional now>`
      - `unbound_retention_owner: shared_topology`
    - reject closure if neither deletion nor explicit keep-writeback has happened
-9. update `bound_modules` only as declarative metadata so every remaining touched shared file matches the real binding set implied by module-side `shared_contract_refs`
-10. after any write to `docs/specs/shared_contracts/**` or any module `shared_contract_refs`, execute `shared_sync` before claiming closure
-11. if `shared_sync` stops because repository truth is insufficient to continue safely, return control to `shared_escape` through `shared_ops` instead of inventing a flow-local checkpoint
+9. for each touched shared file that still has one or more formal bound modules after Step 7, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
+10. update `bound_modules` only as declarative metadata so every remaining touched shared file matches the real binding set implied by module-side `shared_contract_refs`
+11. after any write to `docs/specs/shared_contracts/**` or any module `shared_contract_refs`, execute `shared_sync` before claiming closure
+12. if `shared_sync` stops because repository truth is insufficient to continue safely, return control to `shared_escape` through `shared_ops` instead of inventing a flow-local checkpoint
 
 ---
 

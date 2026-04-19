@@ -69,9 +69,10 @@ Before execution:
 5. update module candidate body text so the relevant behavior chain explains which behavior consumes the shared truth
 6. update the target shared file's `bound_modules` only as declarative metadata so it matches the real binding set implied by module-side `shared_contract_refs`
 7. if Step 3 recorded a previous bound Shared Contract file and it is different from the new target file, update that previous shared file's `bound_modules` to remove the module from the old declarative binding set
-8. reject closure if the change is only a `shared_contract_refs` edit with no body-level consumption explanation
-9. after any change to module `shared_contract_refs` or to any shared file `bound_modules` touched in Steps 6 and 7, execute `shared_sync` before claiming closure
-10. if Step 3 recorded a previous bound Shared Contract file and `shared_sync` shows that no module still binds it after this round:
+8. for every touched shared file that still has one or more formal bound modules after Steps 6 and 7, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
+9. reject closure if the change is only a `shared_contract_refs` edit with no body-level consumption explanation
+10. after any change to module `shared_contract_refs` or to any shared file metadata touched in Steps 6, 7, and 8, execute `shared_sync` before claiming closure
+11. if Step 3 recorded a previous bound Shared Contract file and `shared_sync` shows that no module still binds it after this round:
    - if the current round can safely prove that the previous file has been replaced by the new target and cleanup is legal under `spec_policy.md`, delete that now-unbound previous shared file in the same round
    - otherwise, stop and return control to `shared_escape` through `shared_ops` so shared governance can decide whether stable decomposition exists or whether follow-up must route to `shared_topology`, checkpoint, or another legal next step
    - after a deletion in this step, rerun `shared_sync` before claiming closure
