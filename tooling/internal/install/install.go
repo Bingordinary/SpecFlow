@@ -10,6 +10,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/managedblock"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/manifest"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 )
 
 type InitResult struct {
@@ -252,8 +253,38 @@ func checkHookPath(repoRoot string, result *DoctorResult) {
 
 func checkBinary(repoRoot string, result *DoctorResult) {
 	relPath := filepath.ToSlash(filepath.Join("specflow/tooling/bin", buildrelease.CurrentBinaryName()))
-	if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relPath))); err != nil {
+	binaryPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
+	if _, err := os.Stat(binaryPath); err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("MISSING %s", relPath))
+		return
+	}
+
+	if !toolingfreshness.IsToolingRepo(repoRoot) {
+		return
+	}
+
+	liveFingerprint, _, err := toolingfreshness.LiveFingerprint(repoRoot)
+	if err != nil {
+		result.Failures = append(result.Failures, fmt.Sprintf("INVALID tooling live fingerprint: %v", err))
+		return
+	}
+
+	builtFingerprint, err := toolingfreshness.ReadBuildFingerprintFromBinary(binaryPath)
+	if err != nil {
+		result.Failures = append(result.Failures, fmt.Sprintf("INVALID %s freshness probe failed: %v", relPath, err))
+		return
+	}
+	if strings.TrimSpace(builtFingerprint) == "" {
+		result.Failures = append(result.Failures, fmt.Sprintf("INVALID %s missing embedded build fingerprint", relPath))
+		return
+	}
+	if strings.TrimSpace(builtFingerprint) != strings.TrimSpace(liveFingerprint) {
+		result.Failures = append(result.Failures, fmt.Sprintf(
+			"STALE %s built_fingerprint=%s live_fingerprint=%s",
+			relPath,
+			shortFingerprint(builtFingerprint),
+			shortFingerprint(liveFingerprint),
+		))
 	}
 }
 
@@ -267,4 +298,12 @@ func checkHook(repoRoot string, result *DoctorResult) {
 	if !strings.Contains(text, "specflow/tooling/bin/specflowctl-") || !strings.Contains(text, "entry sync --stage") {
 		result.Failures = append(result.Failures, "INVALID .githooks/pre-commit does not call specflow binary entry sync")
 	}
+}
+
+func shortFingerprint(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 12 {
+		return value
+	}
+	return value[:12]
 }

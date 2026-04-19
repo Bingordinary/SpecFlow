@@ -1,10 +1,8 @@
 package sharedsync
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,17 +13,21 @@ import (
 )
 
 type Options struct {
-	Modules    []string
-	SharedRefs []string
-	SharedIDs  []string
+	Modules                        []string
+	SharedRefs                     []string
+	SharedIDs                      []string
+	PromotionOwnerModule           string
+	BoundModulesOnlySharedFileRefs []string
 }
 
 type Result struct {
-	ScopedModules     []string
-	ScopedSharedRefs  []string
-	ScopedSharedIDs   []string
-	ModuleResults     []ModuleResult
-	BoundModuleDrifts []BoundModuleDrift
+	ScopedModules                  []string
+	ScopedSharedRefs               []string
+	ScopedSharedIDs                []string
+	PromotionOwnerModule           string
+	BoundModulesOnlySharedFileRefs []string
+	ModuleResults                  []ModuleResult
+	BoundModuleDrifts              []BoundModuleDrift
 }
 
 type ModuleResult struct {
@@ -62,11 +64,28 @@ type sharedFile struct {
 	BoundModules     []string
 }
 
+type ReconcileBoundModulesOptions struct {
+	Modules    []string
+	SharedRefs []string
+	SharedIDs  []string
+}
+
+type ReconcileBoundModulesResult struct {
+	ScopedModules    []string
+	ScopedSharedRefs []string
+	ScopedSharedIDs  []string
+	TouchedFiles     []string
+	UpdatedFiles     []string
+	UnchangedFiles   []string
+}
+
 func SyncImpact(repoRoot string, options Options) (Result, error) {
 	normalized := Options{
-		Modules:    normalizeStrings(options.Modules),
-		SharedRefs: normalizeStrings(options.SharedRefs),
-		SharedIDs:  normalizeStrings(options.SharedIDs),
+		Modules:                        normalizeStrings(options.Modules),
+		SharedRefs:                     normalizeStrings(options.SharedRefs),
+		SharedIDs:                      normalizeStrings(options.SharedIDs),
+		PromotionOwnerModule:           strings.TrimSpace(options.PromotionOwnerModule),
+		BoundModulesOnlySharedFileRefs: normalizeStrings(options.BoundModulesOnlySharedFileRefs),
 	}
 
 	sharedFilesByRef, err := loadSharedFiles(repoRoot)
@@ -74,6 +93,7 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 		return Result{}, err
 	}
 	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
+	sharedFilesByFileRef := buildSharedFilesByFileRef(sharedFilesByRef)
 
 	for _, ref := range normalized.SharedRefs {
 		if _, ok := sharedFilesByRef[ref]; !ok {
@@ -95,9 +115,22 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 			return Result{}, fmt.Errorf("module %q is not registered in docs/specs/_status.md", module)
 		}
 	}
+	if normalized.PromotionOwnerModule != "" {
+		if _, ok := moduleBindings[normalized.PromotionOwnerModule]; !ok {
+			return Result{}, fmt.Errorf("promotion owner module %q is not registered in docs/specs/_status.md", normalized.PromotionOwnerModule)
+		}
+	}
 
-	boundOnlyCache := map[string]bool{}
-	drifts, err := collectBoundModuleDrifts(repoRoot, sharedFilesByRef, actualModulesByRef, boundOnlyCache)
+	boundModulesOnlyFileRefs := map[string]bool{}
+	for _, fileRef := range normalized.BoundModulesOnlySharedFileRefs {
+		shared, ok := sharedFilesByFileRef[fileRef]
+		if !ok {
+			return Result{}, fmt.Errorf("bound_modules-only shared file ref %q is not present under docs/specs/shared_contracts/", fileRef)
+		}
+		boundModulesOnlyFileRefs[shared.FileRef] = true
+	}
+
+	drifts, err := collectBoundModuleDrifts(sharedFilesByRef, actualModulesByRef, boundModulesOnlyFileRefs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -106,7 +139,7 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 	results := make([]ModuleResult, 0, len(scopeModules))
 	for _, module := range scopeModules {
 		binding := moduleBindings[module]
-		moduleResult, err := reconcileModule(repoRoot, binding, normalized, sharedFilesByRef, boundOnlyCache)
+		moduleResult, err := reconcileModule(repoRoot, binding, normalized, sharedFilesByRef, boundModulesOnlyFileRefs)
 		if err != nil {
 			return Result{}, err
 		}
@@ -114,15 +147,77 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 	}
 
 	return Result{
-		ScopedModules:     scopeModules,
-		ScopedSharedRefs:  normalized.SharedRefs,
-		ScopedSharedIDs:   normalized.SharedIDs,
-		ModuleResults:     results,
-		BoundModuleDrifts: drifts,
+		ScopedModules:                  scopeModules,
+		ScopedSharedRefs:               normalized.SharedRefs,
+		ScopedSharedIDs:                normalized.SharedIDs,
+		PromotionOwnerModule:           normalized.PromotionOwnerModule,
+		BoundModulesOnlySharedFileRefs: normalized.BoundModulesOnlySharedFileRefs,
+		ModuleResults:                  results,
+		BoundModuleDrifts:              drifts,
 	}, nil
 }
 
-func reconcileModule(repoRoot string, binding moduleBinding, options Options, sharedFilesByRef map[string]sharedFile, boundOnlyCache map[string]bool) (ModuleResult, error) {
+func ReconcileBoundModules(repoRoot string, options ReconcileBoundModulesOptions) (ReconcileBoundModulesResult, error) {
+	normalized := ReconcileBoundModulesOptions{
+		Modules:    normalizeStrings(options.Modules),
+		SharedRefs: normalizeStrings(options.SharedRefs),
+		SharedIDs:  normalizeStrings(options.SharedIDs),
+	}
+	if len(normalized.Modules) == 0 && len(normalized.SharedRefs) == 0 && len(normalized.SharedIDs) == 0 {
+		return ReconcileBoundModulesResult{}, fmt.Errorf("at least one of modules, shared refs, or shared ids is required")
+	}
+
+	sharedFilesByRef, err := loadSharedFiles(repoRoot)
+	if err != nil {
+		return ReconcileBoundModulesResult{}, err
+	}
+	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
+	moduleBindings, actualModulesByRef, _, err := loadModuleBindings(repoRoot, sharedFilesByRef)
+	if err != nil {
+		return ReconcileBoundModulesResult{}, err
+	}
+	for _, module := range normalized.Modules {
+		if _, ok := moduleBindings[module]; !ok {
+			return ReconcileBoundModulesResult{}, fmt.Errorf("module %q is not registered in docs/specs/_status.md", module)
+		}
+	}
+	for _, ref := range normalized.SharedRefs {
+		if _, ok := sharedFilesByRef[ref]; !ok {
+			return ReconcileBoundModulesResult{}, fmt.Errorf("shared ref %q is not present under docs/specs/shared_contracts/", ref)
+		}
+	}
+	for _, sharedID := range normalized.SharedIDs {
+		if _, ok := sharedFilesByID[sharedID]; !ok {
+			return ReconcileBoundModulesResult{}, fmt.Errorf("shared id %q is not present under docs/specs/shared_contracts/", sharedID)
+		}
+	}
+
+	touchedFiles := buildScopeSharedFiles(moduleBindings, sharedFilesByRef, sharedFilesByID, normalized)
+	result := ReconcileBoundModulesResult{
+		ScopedModules:    normalized.Modules,
+		ScopedSharedRefs: normalized.SharedRefs,
+		ScopedSharedIDs:  normalized.SharedIDs,
+		TouchedFiles:     touchedFiles,
+	}
+	sharedFilesByFileRef := buildSharedFilesByFileRef(sharedFilesByRef)
+	for _, fileRef := range touchedFiles {
+		shared := sharedFilesByFileRef[fileRef]
+		actualModules := normalizeStrings(actualModulesByRef[shared.VersionRef])
+		if sameStringSlice(shared.BoundModules, actualModules) {
+			result.UnchangedFiles = append(result.UnchangedFiles, shared.FileRef)
+			continue
+		}
+		if err := rewriteSharedBoundModules(repoRoot, shared.FileRef, actualModules); err != nil {
+			return ReconcileBoundModulesResult{}, err
+		}
+		result.UpdatedFiles = append(result.UpdatedFiles, shared.FileRef)
+	}
+	result.UpdatedFiles = normalizeStrings(result.UpdatedFiles)
+	result.UnchangedFiles = normalizeStrings(result.UnchangedFiles)
+	return result, nil
+}
+
+func reconcileModule(repoRoot string, binding moduleBinding, options Options, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool) (ModuleResult, error) {
 	result := ModuleResult{
 		Module:      binding.Status.Module,
 		ActiveLayer: binding.Status.ActiveLayer,
@@ -155,15 +250,15 @@ func reconcileModule(repoRoot string, binding moduleBinding, options Options, sh
 
 	switch binding.Status.ActiveLayer {
 	case "candidate":
-		return reconcileCandidate(repoRoot, binding, result, relevantSelectedRefs, moduleExplicit, bindingIssue, sharedFilesByRef, boundOnlyCache)
+		return reconcileCandidate(repoRoot, binding, result, relevantSelectedRefs, moduleExplicit, bindingIssue, sharedFilesByRef, boundModulesOnlyFileRefs)
 	case "stable":
-		return reconcileStable(repoRoot, binding, result, relevantSelectedRefs, moduleExplicit, bindingIssue, sharedFilesByRef, boundOnlyCache)
+		return reconcileStable(repoRoot, binding, result, relevantSelectedRefs, moduleExplicit, bindingIssue, sharedFilesByRef, boundModulesOnlyFileRefs, options.PromotionOwnerModule)
 	default:
 		return ModuleResult{}, fmt.Errorf("unsupported active layer %q for module %s", binding.Status.ActiveLayer, binding.Status.Module)
 	}
 }
 
-func reconcileCandidate(repoRoot string, binding moduleBinding, result ModuleResult, relevantSelectedRefs []string, moduleExplicit, bindingIssue bool, sharedFilesByRef map[string]sharedFile, boundOnlyCache map[string]bool) (ModuleResult, error) {
+func reconcileCandidate(repoRoot string, binding moduleBinding, result ModuleResult, relevantSelectedRefs []string, moduleExplicit, bindingIssue bool, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool) (ModuleResult, error) {
 	fallbackReason := ""
 	if bindingIssue {
 		fallbackReason = "binding_drift"
@@ -213,7 +308,7 @@ func reconcileCandidate(repoRoot string, binding moduleBinding, result ModuleRes
 			continue
 		}
 
-		equivalent, err := sharedSnapshotsEquivalentIgnoringBoundModules(repoRoot, processSnapshot.SharedContractSnapshot, expectedSnapshot.SharedContractSnapshot, boundOnlyCache)
+		equivalent, err := sharedSnapshotsEquivalentIgnoringBoundModules(processSnapshot.SharedContractSnapshot, expectedSnapshot.SharedContractSnapshot, boundModulesOnlyFileRefs)
 		if err != nil {
 			return ModuleResult{}, err
 		}
@@ -231,7 +326,7 @@ func reconcileCandidate(repoRoot string, binding moduleBinding, result ModuleRes
 		fallbackReason = "truth_drift"
 	case sharedMismatch:
 		fallbackReason = "shared_contract_drift"
-	case !processFound && len(relevantSelectedRefs) > 0 && hasNonBoundModulesSelectedChange(repoRoot, relevantSelectedRefs, sharedFilesByRef, boundOnlyCache):
+	case !processFound && len(relevantSelectedRefs) > 0 && hasNonBoundModulesSelectedChange(relevantSelectedRefs, sharedFilesByRef, boundModulesOnlyFileRefs):
 		fallbackReason = "shared_contract_drift"
 	case !processFound && moduleExplicit && binding.Status.NextCommand != "cand_check":
 		fallbackReason = "binding_drift"
@@ -243,14 +338,15 @@ func reconcileCandidate(repoRoot string, binding moduleBinding, result ModuleRes
 	return applyCandidateFallback(repoRoot, result, fallbackReason)
 }
 
-func reconcileStable(repoRoot string, binding moduleBinding, result ModuleResult, relevantSelectedRefs []string, moduleExplicit, bindingIssue bool, sharedFilesByRef map[string]sharedFile, boundOnlyCache map[string]bool) (ModuleResult, error) {
+func reconcileStable(repoRoot string, binding moduleBinding, result ModuleResult, relevantSelectedRefs []string, moduleExplicit, bindingIssue bool, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool, promotionOwnerModule string) (ModuleResult, error) {
 	fallbackReason := ""
+	isPromotionOwner := promotionOwnerModule != "" && binding.Status.Module == promotionOwnerModule
 	switch {
 	case bindingIssue:
 		fallbackReason = "binding_drift"
-	case moduleExplicit:
+	case moduleExplicit && !isPromotionOwner:
 		fallbackReason = "binding_drift"
-	case len(relevantSelectedRefs) > 0 && hasNonBoundModulesSelectedChange(repoRoot, relevantSelectedRefs, sharedFilesByRef, boundOnlyCache):
+	case len(relevantSelectedRefs) > 0 && !isPromotionOwner && hasNonBoundModulesSelectedChange(relevantSelectedRefs, sharedFilesByRef, boundModulesOnlyFileRefs):
 		fallbackReason = "shared_contract_drift"
 	}
 
@@ -302,7 +398,7 @@ func applyCandidateFallback(repoRoot string, result ModuleResult, fallbackReason
 	return result, nil
 }
 
-func collectBoundModuleDrifts(repoRoot string, sharedFilesByRef map[string]sharedFile, actualModulesByRef map[string][]string, boundOnlyCache map[string]bool) ([]BoundModuleDrift, error) {
+func collectBoundModuleDrifts(sharedFilesByRef map[string]sharedFile, actualModulesByRef map[string][]string, boundModulesOnlyFileRefs map[string]bool) ([]BoundModuleDrift, error) {
 	refs := make([]string, 0, len(sharedFilesByRef))
 	for ref := range sharedFilesByRef {
 		refs = append(refs, ref)
@@ -317,17 +413,13 @@ func collectBoundModuleDrifts(repoRoot string, sharedFilesByRef map[string]share
 		if sameStringSlice(actual, declared) {
 			continue
 		}
-		boundOnly, err := isBoundModulesOnlyChange(repoRoot, shared.FileRef, boundOnlyCache)
-		if err != nil {
-			return nil, err
-		}
 		drifts = append(drifts, BoundModuleDrift{
 			SharedContractID:      shared.SharedContractID,
 			FileRef:               shared.FileRef,
 			VersionRef:            shared.VersionRef,
 			DeclaredModules:       declared,
 			ActualModules:         actual,
-			BoundModulesOnlyDelta: boundOnly,
+			BoundModulesOnlyDelta: boundModulesOnlyFileRefs[shared.FileRef],
 		})
 	}
 	return drifts, nil
@@ -382,6 +474,14 @@ func buildSharedFilesByID(sharedFilesByRef map[string]sharedFile) map[string][]s
 		sort.Slice(result[sharedID], func(i, j int) bool {
 			return result[sharedID][i].VersionRef < result[sharedID][j].VersionRef
 		})
+	}
+	return result
+}
+
+func buildSharedFilesByFileRef(sharedFilesByRef map[string]sharedFile) map[string]sharedFile {
+	result := make(map[string]sharedFile, len(sharedFilesByRef))
+	for _, shared := range sharedFilesByRef {
+		result[shared.FileRef] = shared
 	}
 	return result
 }
@@ -450,6 +550,33 @@ func buildScopeModules(moduleBindings map[string]moduleBinding, actualModulesByR
 	return result
 }
 
+func buildScopeSharedFiles(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, sharedFilesByID map[string][]sharedFile, options ReconcileBoundModulesOptions) []string {
+	scope := map[string]bool{}
+	for _, module := range options.Modules {
+		for _, ref := range moduleBindings[module].SharedRefs {
+			if shared, ok := sharedFilesByRef[ref]; ok {
+				scope[shared.FileRef] = true
+			}
+		}
+	}
+	for _, ref := range options.SharedRefs {
+		if shared, ok := sharedFilesByRef[ref]; ok {
+			scope[shared.FileRef] = true
+		}
+	}
+	for _, sharedID := range options.SharedIDs {
+		for _, shared := range sharedFilesByID[sharedID] {
+			scope[shared.FileRef] = true
+		}
+	}
+	result := make([]string, 0, len(scope))
+	for fileRef := range scope {
+		result = append(result, fileRef)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func selectedSharedRefsForModule(moduleRefs, scopedRefs, scopedIDs []string, sharedFilesByRef map[string]sharedFile) []string {
 	refSet := map[string]bool{}
 	for _, ref := range scopedRefs {
@@ -483,7 +610,7 @@ func hasNonSharedMismatch(mismatches []string) bool {
 	return false
 }
 
-func sharedSnapshotsEquivalentIgnoringBoundModules(repoRoot string, actual, expected []snapshot.SharedContractEntry, boundOnlyCache map[string]bool) (bool, error) {
+func sharedSnapshotsEquivalentIgnoringBoundModules(actual, expected []snapshot.SharedContractEntry, boundModulesOnlyFileRefs map[string]bool) (bool, error) {
 	actual = normalizeSharedEntries(actual)
 	expected = normalizeSharedEntries(expected)
 	if len(actual) != len(expected) {
@@ -499,112 +626,24 @@ func sharedSnapshotsEquivalentIgnoringBoundModules(repoRoot string, actual, expe
 		if actual[idx].Fingerprint == expected[idx].Fingerprint {
 			continue
 		}
-		boundOnly, err := isBoundModulesOnlyChange(repoRoot, expected[idx].FileRef, boundOnlyCache)
-		if err != nil {
-			return false, err
-		}
-		if !boundOnly {
+		if !boundModulesOnlyFileRefs[expected[idx].FileRef] {
 			return false, nil
 		}
 	}
 	return true, nil
 }
 
-func hasNonBoundModulesSelectedChange(repoRoot string, refs []string, sharedFilesByRef map[string]sharedFile, boundOnlyCache map[string]bool) bool {
+func hasNonBoundModulesSelectedChange(refs []string, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool) bool {
 	for _, ref := range refs {
 		shared, ok := sharedFilesByRef[ref]
 		if !ok {
 			return true
 		}
-		boundOnly, err := isBoundModulesOnlyChange(repoRoot, shared.FileRef, boundOnlyCache)
-		if err != nil {
-			return true
-		}
-		if !boundOnly {
+		if !boundModulesOnlyFileRefs[shared.FileRef] {
 			return true
 		}
 	}
 	return false
-}
-
-func isBoundModulesOnlyChange(repoRoot, fileRef string, cache map[string]bool) (bool, error) {
-	if value, ok := cache[fileRef]; ok {
-		return value, nil
-	}
-	currentAbs := filepath.Join(repoRoot, filepath.FromSlash(fileRef))
-	currentContent, err := os.ReadFile(currentAbs)
-	if err != nil {
-		return false, fmt.Errorf("read %s: %w", fileRef, err)
-	}
-	previousContent, exists, err := readHeadFile(repoRoot, fileRef)
-	if err != nil {
-		return false, err
-	}
-	if !exists || previousContent == string(currentContent) {
-		cache[fileRef] = false
-		return false, nil
-	}
-	currentNormalized, err := stripBoundModulesFrontmatter(string(currentContent))
-	if err != nil {
-		return false, fmt.Errorf("%s: %w", fileRef, err)
-	}
-	previousNormalized, err := stripBoundModulesFrontmatter(previousContent)
-	if err != nil {
-		return false, fmt.Errorf("HEAD:%s: %w", fileRef, err)
-	}
-	cache[fileRef] = currentNormalized == previousNormalized
-	return cache[fileRef], nil
-}
-
-func readHeadFile(repoRoot, fileRef string) (string, bool, error) {
-	cmd := exec.Command("git", "-C", repoRoot, "show", "HEAD:"+fileRef)
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		return strings.ReplaceAll(string(output), "\r\n", "\n"), true, nil
-	}
-	if bytes.Contains(output, []byte("exists on disk, but not in 'HEAD'")) ||
-		bytes.Contains(output, []byte("path '"+fileRef+"' does not exist in 'HEAD'")) ||
-		bytes.Contains(output, []byte("fatal: invalid object name 'HEAD'")) {
-		return "", false, nil
-	}
-	return "", false, fmt.Errorf("git show HEAD:%s failed: %s", fileRef, strings.TrimSpace(string(output)))
-}
-
-func stripBoundModulesFrontmatter(content string) (string, error) {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return "", fmt.Errorf("missing frontmatter start marker")
-	}
-	endIdx := -1
-	for idx := 1; idx < len(lines); idx++ {
-		if strings.TrimSpace(lines[idx]) == "---" {
-			endIdx = idx
-			break
-		}
-	}
-	if endIdx == -1 {
-		return "", fmt.Errorf("missing frontmatter end marker")
-	}
-
-	frontmatter := []string{"---"}
-	skippingBoundModules := false
-	for _, line := range lines[1:endIdx] {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "bound_modules:") {
-			skippingBoundModules = true
-			continue
-		}
-		if skippingBoundModules {
-			if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || trimmed == "" {
-				continue
-			}
-			skippingBoundModules = false
-		}
-		frontmatter = append(frontmatter, line)
-	}
-	frontmatter = append(frontmatter, "---")
-	body := lines[endIdx+1:]
-	return strings.Join(append(frontmatter, body...), "\n"), nil
 }
 
 func parseSharedFile(relPath, content string) (sharedFile, error) {
@@ -668,6 +707,70 @@ func parseSharedFile(relPath, content string) (sharedFile, error) {
 	}
 	shared.BoundModules = normalizeStrings(shared.BoundModules)
 	return shared, nil
+}
+
+func rewriteSharedBoundModules(repoRoot, fileRef string, modules []string) error {
+	path := filepath.Join(repoRoot, filepath.FromSlash(fileRef))
+	contentBytes, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", fileRef, err)
+	}
+	content := strings.ReplaceAll(string(contentBytes), "\r\n", "\n")
+	hadTrailingNewline := strings.HasSuffix(content, "\n")
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return fmt.Errorf("%s: missing frontmatter start marker", fileRef)
+	}
+	endIdx := -1
+	for idx := 1; idx < len(lines); idx++ {
+		if strings.TrimSpace(lines[idx]) == "---" {
+			endIdx = idx
+			break
+		}
+	}
+	if endIdx == -1 {
+		return fmt.Errorf("%s: missing frontmatter end marker", fileRef)
+	}
+
+	boundLines := []string{"bound_modules: none"}
+	if len(modules) > 0 {
+		boundLines = []string{"bound_modules:"}
+		for _, module := range modules {
+			boundLines = append(boundLines, fmt.Sprintf("  - %s", module))
+		}
+	}
+
+	frontmatter := []string{"---"}
+	inserted := false
+	skipping := false
+	for _, line := range lines[1:endIdx] {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "bound_modules:") {
+			frontmatter = append(frontmatter, boundLines...)
+			inserted = true
+			skipping = true
+			continue
+		}
+		if skipping {
+			if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || trimmed == "" {
+				continue
+			}
+			skipping = false
+		}
+		frontmatter = append(frontmatter, line)
+	}
+	if !inserted {
+		frontmatter = append(frontmatter, boundLines...)
+	}
+	frontmatter = append(frontmatter, "---")
+	rewritten := strings.Join(append(frontmatter, lines[endIdx+1:]...), "\n")
+	if hadTrailingNewline {
+		rewritten += "\n"
+	}
+	if err := os.WriteFile(path, []byte(rewritten), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", fileRef, err)
+	}
+	return nil
 }
 
 func readModuleSharedRefs(repoRoot string, status statusfile.ModuleStatus) ([]string, error) {

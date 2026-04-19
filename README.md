@@ -581,6 +581,7 @@ Two you should know exist are:
 - `shared_ops:{natural-language request}`
 
 Use `spec_flow_review` when you want to review the governance system itself rather than move one business module forward.
+Its default scope now covers both the governance baseline documents and the governance tooling implementation under `specflow/tooling/`.
 
 ### What To Read If You Want The Full Baseline
 

@@ -87,7 +87,8 @@ Additional rules:
 3. `project_standard_create` is not a standard user-facing command. It is an internal flow the agent may use when the user asks to create a project-local standard.
 4. plain `spec_flow_review` means the default governance-baseline review defined in `specflow/framework/docs/agent_guidelines/spec_flow_review.md` unless the user explicitly narrows the scope.
 5. that default `spec_flow_review` must cover the shared-governance rule set, at minimum `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`, even when the user did not mention shared governance explicitly.
-6. if the review output does not explicitly report shared-governance coverage and result, the `spec_flow_review` is not complete and must not be treated as a `pass`.
+6. that default `spec_flow_review` must also cover the tooling execution contract set, at minimum `tooling_execution_policy.md`, `specflow/tooling/README.md`, `docs/specflow_go_tooling.md`, and the in-scope tooling source files under `specflow/tooling/`.
+7. if the review output does not explicitly report shared-governance coverage, tooling coverage, and their results, the `spec_flow_review` is not complete and must not be treated as a `pass`.
 
 ### 3. How To Resolve Modules And Files
 
@@ -123,7 +124,7 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
    - read the governance file that defines that flow's scope, preconditions, and procedure first
    - follow that file's declared read scope instead of automatically starting from `docs/specs/_status.md`
    - if the flow is plain `spec_flow_review`, do not narrow it to main command-chain files, recent edits, or non-shared rules only unless the user explicitly narrows it that way
-   - before issuing any `pass` conclusion for plain `spec_flow_review`, confirm that the shared-governance rule set required by `spec_flow_review.md` has been read and is explicitly reported in the review output
+   - before issuing any `pass` conclusion for plain `spec_flow_review`, confirm that both the shared-governance rule set and the tooling execution contract set required by `spec_flow_review.md` have been read and are explicitly reported in the review output
 4. If it targets a module behavior object:
    - read `docs/specs/_status.md` to confirm the target module's current `Active Layer` and `Next Command`
 5. If the module task touches module behavior truth, read the main Spec for the current layer.

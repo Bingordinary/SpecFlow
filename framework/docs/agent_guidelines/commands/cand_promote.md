@@ -100,6 +100,7 @@ By default it handles:
    - `Next Command=spec_fork`
    - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command spec_fork --notes <status-note>`
 15. if the round touched any Shared Contract file, before `shared_sync`, update `bound_modules` for every remaining touched Shared Contract file only after Step 11 has written the promoted module stable truth and Step 14 has updated `_status.md`, so each surviving stable-layer or candidate-layer file matches the real post-promotion binding set implied by module `shared_contract_refs`
+   - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-modules --modules {module}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
    - if a remaining touched Shared Contract file now has one or more formal bound modules after this promotion round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
 16. only after that update may physical deletion happen:
    - `docs/specs/modules/candidate/c_{module}.md`

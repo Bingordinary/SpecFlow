@@ -92,6 +92,7 @@ Before execution:
 12. rewrite every additional writeback-required involved consumer module candidate-side reference and behavior explanation required by the extraction result
    - any written `shared_contract_refs` must use the Shared Contract binding contract from `specflow/framework/docs/agent_guidelines/spec_policy.md` Section 6.1
 13. update the target shared file's `bound_modules` only as declarative metadata so it matches the real binding set implied by module-side `shared_contract_refs`
+   - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-modules --shared-refs c_shared_x@0.1.0` and additional `--shared-ids` filters when the active flow has already identified them
 14. if the target shared file now has one or more formal bound modules after this round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
 15. if duplicate formal truth still remains after extraction, stop and report boundary closure failure
 16. if any involved module that should now consume the extracted truth was not fully reviewed and rewritten where required, stop and report consumer-coverage failure

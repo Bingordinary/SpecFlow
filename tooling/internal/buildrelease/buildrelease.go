@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 )
 
 type Target struct {
@@ -43,6 +45,11 @@ func BuildAll(repoRoot string, targets []Target) (BuildResult, error) {
 		targets = DefaultTargets
 	}
 
+	fingerprint, _, err := toolingfreshness.LiveFingerprint(repoRoot)
+	if err != nil {
+		return BuildResult{}, err
+	}
+
 	binDir := filepath.Join(repoRoot, "specflow/tooling/bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return BuildResult{}, fmt.Errorf("mkdir bin dir: %w", err)
@@ -52,7 +59,11 @@ func BuildAll(repoRoot string, targets []Target) (BuildResult, error) {
 	for _, target := range targets {
 		outputName := BinaryName(target.GOOS, target.GOARCH)
 		outputPath := filepath.Join(binDir, outputName)
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w", "-o", outputPath, "./cmd/specflowctl")
+		ldflags := fmt.Sprintf(
+			"-s -w -X github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness.BuildFingerprint=%s",
+			fingerprint,
+		)
+		cmd := exec.Command("go", "build", "-trimpath", "-ldflags="+ldflags, "-o", outputPath, "./cmd/specflowctl")
 		cmd.Dir = filepath.Join(repoRoot, "specflow/tooling")
 		cmd.Env = append(os.Environ(),
 			"GOOS="+target.GOOS,

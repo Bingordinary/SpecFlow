@@ -30,7 +30,10 @@ bound_modules:
 Body stays the same.
 `)
 
-	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	result, err := SyncImpact(repoRoot, Options{
+		SharedRefs:                     []string{sharedRef},
+		BoundModulesOnlySharedFileRefs: []string{"docs/specs/shared_contracts/candidate/c_shared_demo.md"},
+	})
 	if err != nil {
 		t.Fatalf("SyncImpact: %v", err)
 	}
@@ -53,6 +56,43 @@ Body stays the same.
 	checkPath := filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md")
 	if _, err := os.Stat(checkPath); err != nil {
 		t.Fatalf("expected process file to remain, stat err=%v", err)
+	}
+}
+
+func TestSyncImpactInvalidatesCandidateWhenBoundModulesChangedWithoutExplicitDeclaration(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateSharedRepo(t, repoRoot)
+
+	writeSharedFile(t, repoRoot, `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.1.0
+bound_modules:
+  - module_demo
+  - module_other
+---
+
+# Shared
+
+Body stays the same.
+`)
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ModuleResults) != 1 {
+		t.Fatalf("expected one module result, got %d", len(result.ModuleResults))
+	}
+	moduleResult := result.ModuleResults[0]
+	if moduleResult.Outcome != "invalidated" {
+		t.Fatalf("expected invalidated outcome, got %+v", moduleResult)
+	}
+	if moduleResult.FallbackReasonCode != "shared_contract_drift" {
+		t.Fatalf("expected shared_contract_drift, got %s", moduleResult.FallbackReasonCode)
+	}
+	if result.BoundModuleDrifts[0].BoundModulesOnlyDelta {
+		t.Fatalf("expected drift to remain unproven without explicit declaration, got %+v", result.BoundModuleDrifts[0])
 	}
 }
 
@@ -146,6 +186,79 @@ Body changed.
 	}
 	if !strings.Contains(string(statusData), "| `module_demo` | `yes` | `no` | `stable` | `stable_verify` | stable round |") {
 		t.Fatalf("status row not updated:\n%s", string(statusData))
+	}
+}
+
+func TestSyncImpactKeepsPromotionOwnerStableModule(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupStableSharedRepo(t, repoRoot)
+
+	writeStableSharedFile(t, repoRoot, `---
+shared_contract_id: shared_demo
+layer: stable
+shared_version: 1.0.0
+bound_modules:
+  - module_demo
+---
+
+# Shared
+
+Body changed.
+`)
+
+	result, err := SyncImpact(repoRoot, Options{
+		Modules:              []string{"module_demo"},
+		SharedRefs:           []string{sharedRef},
+		PromotionOwnerModule: "module_demo",
+	})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ModuleResults) != 1 {
+		t.Fatalf("expected one module result, got %d", len(result.ModuleResults))
+	}
+	moduleResult := result.ModuleResults[0]
+	if moduleResult.Outcome != "unchanged" {
+		t.Fatalf("expected unchanged outcome for promotion owner, got %+v", moduleResult)
+	}
+	if moduleResult.NextCommand != "spec_fork" {
+		t.Fatalf("expected next command spec_fork, got %s", moduleResult.NextCommand)
+	}
+}
+
+func TestReconcileBoundModulesUpdatesTouchedSharedFiles(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateSharedRepo(t, repoRoot)
+
+	writeSharedFile(t, repoRoot, `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.1.0
+bound_modules:
+  - module_other
+---
+
+# Shared
+
+Body stays the same.
+`)
+
+	result, err := ReconcileBoundModules(repoRoot, ReconcileBoundModulesOptions{
+		SharedRefs: []string{sharedRef},
+	})
+	if err != nil {
+		t.Fatalf("ReconcileBoundModules: %v", err)
+	}
+	if len(result.UpdatedFiles) != 1 {
+		t.Fatalf("expected one updated file, got %+v", result)
+	}
+
+	updatedContent, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate/c_shared_demo.md"))
+	if err != nil {
+		t.Fatalf("read updated shared file: %v", err)
+	}
+	if !strings.Contains(string(updatedContent), "bound_modules:\n  - module_demo\n") {
+		t.Fatalf("expected bound_modules to be rewritten, got:\n%s", string(updatedContent))
 	}
 }
 

@@ -64,6 +64,7 @@ Before execution:
    - derive the real repository-wide binding set of each touched Shared Contract from current-layer module `shared_contract_refs` plus this round's prepared target-module stable writeback
    - if current repository truth is insufficient to derive that touched real binding set safely, stop and reroute through `shared_ops:{natural-language request}` from current repository truth instead of guessing
    - update `bound_modules` only as declarative metadata so each touched Shared Contract file matches the real binding set implied by that repository-wide binding view plus this round's prepared target-module writeback
+   - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-modules --modules {module}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
    - if a touched Shared Contract file now has one or more formal bound modules after this round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
 9. update `docs/specs/_status.md`:
    - `Stable=yes`

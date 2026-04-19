@@ -132,3 +132,18 @@ If the task changes a registered entry index file listed in `specflow/framework/
 3. entry-file sync must be completed before commit; that sync aligns only the managed block defined in `specflow/framework/docs/agent_guidelines/entry_index_registry.md`
 4. if multiple registered entry files were modified and their managed blocks still differ, an explicit sync source must be chosen before continuing
    - use `specflow/tooling/bin/specflowctl-<os>-<arch> entry sync --source <registered-entry-file>` before retrying the commit
+
+### 6.4 Tooling Binary Freshness
+
+If the task changes current-binary tooling inputs under:
+
+1. `specflow/tooling/cmd/**/*.go`
+2. `specflow/tooling/internal/**/*.go`
+3. `specflow/tooling/go.mod`
+4. `specflow/tooling/go.sum`
+
+and the repository tracks compiled tooling binaries under `specflow/tooling/bin/`:
+
+1. run `go run ./specflow/tooling/cmd/specflowctl build-release --repo-root .` in the current task
+2. include the refreshed tracked binaries in the same checkpoint or commit rather than leaving source/binary drift in the worktree
+3. do not treat binary presence alone as proof that the binaries are current; the required state is that the binaries were rebuilt from the current tooling input set

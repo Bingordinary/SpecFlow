@@ -100,6 +100,7 @@ Before execution:
    - reject closure if neither deletion nor explicit keep-writeback has happened
 10. for each touched shared file that still has one or more formal bound modules after Step 8, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
 11. update `bound_modules` only as declarative metadata so every remaining touched shared file matches the real binding set implied by the repository-wide module-side `shared_contract_refs` plus this round's prepared module writeback
+   - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-modules --shared-ids shared_x,shared_y` and additional `--shared-refs` filters when the active flow has already identified exact touched files
 12. after any write to `docs/specs/shared_contracts/**` or any module `shared_contract_refs`, execute `shared_sync` before claiming closure
    - if any touched shared file changed only in `bound_modules` during this round, pass execution-local `bound_modules_only_shared_file_refs` with the exact file refs for those files
 13. if `shared_sync` stops because repository truth is insufficient to continue safely, return control to `shared_escape` through `shared_ops` instead of inventing a flow-local checkpoint

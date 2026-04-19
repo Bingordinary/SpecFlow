@@ -18,6 +18,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/sharedsync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/snapshot"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/statusfile"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 )
 
 func main() {
@@ -28,12 +29,23 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := toolingfreshness.CheckProcess(args, cwd); err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		writeRootUsage(stderr)
 		return errors.New("missing command")
 	}
 
 	switch args[0] {
+	case toolingfreshness.HiddenBuildFingerprintCommand:
+		fmt.Fprintln(stdout, toolingfreshness.PrintBuildFingerprint())
+		return nil
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "doctor":
@@ -285,6 +297,8 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 		writeList(stdout, "Template governance files", scope.TemplateGovernanceFiles)
 		writeList(stdout, "Template entry files", scope.TemplateEntryFiles)
 		writeList(stdout, "Project registry files", scope.ProjectRegistryFiles)
+		writeList(stdout, "Tooling contract files", scope.ToolingContractFiles)
+		writeList(stdout, "Tooling source files", scope.ToolingSourceFiles)
 		writeList(stdout, "Active project-local governance-input files", scope.ActiveProjectStandardFiles)
 		writeList(stdout, "Matched governance overlay files", scope.MatchedOverlayFiles)
 		return nil
@@ -378,14 +392,18 @@ func runShared(args []string, stdout, stderr io.Writer) error {
 		modules := fs.String("modules", "", "comma-separated formal modules")
 		sharedRefs := fs.String("shared-refs", "", "comma-separated shared version refs")
 		sharedIDs := fs.String("shared-ids", "", "comma-separated shared contract ids")
+		promotionOwnerModule := fs.String("promotion-owner-module", "", "formal promotion-owner module")
+		boundModulesOnlySharedFileRefs := fs.String("bound-modules-only-shared-file-refs", "", "comma-separated shared file refs proven to be bound_modules-only deltas")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 
 		result, err := sharedsync.SyncImpact(mustAbs(*repoRoot), sharedsync.Options{
-			Modules:    parseCSV(*modules),
-			SharedRefs: parseCSV(*sharedRefs),
-			SharedIDs:  parseCSV(*sharedIDs),
+			Modules:                        parseCSV(*modules),
+			SharedRefs:                     parseCSV(*sharedRefs),
+			SharedIDs:                      parseCSV(*sharedIDs),
+			PromotionOwnerModule:           strings.TrimSpace(*promotionOwnerModule),
+			BoundModulesOnlySharedFileRefs: parseCSV(*boundModulesOnlySharedFileRefs),
 		})
 		if err != nil {
 			return err
@@ -394,6 +412,8 @@ func runShared(args []string, stdout, stderr io.Writer) error {
 		writeList(stdout, "Scoped modules", result.ScopedModules)
 		writeList(stdout, "Scoped shared refs", result.ScopedSharedRefs)
 		writeList(stdout, "Scoped shared ids", result.ScopedSharedIDs)
+		fmt.Fprintf(stdout, "Promotion owner module: %s\n", noneIfEmpty(result.PromotionOwnerModule))
+		writeList(stdout, "Bound-modules-only shared file refs", result.BoundModulesOnlySharedFileRefs)
 		fmt.Fprintf(stdout, "Module results (%d):\n", len(result.ModuleResults))
 		if len(result.ModuleResults) == 0 {
 			fmt.Fprintln(stdout, "- none")
@@ -420,6 +440,33 @@ func runShared(args []string, stdout, stderr io.Writer) error {
 			fmt.Fprintf(stdout, "  declared=%s\n", strings.Join(defaultListValue(drift.DeclaredModules), ", "))
 			fmt.Fprintf(stdout, "  actual=%s\n", strings.Join(defaultListValue(drift.ActualModules), ", "))
 		}
+		return nil
+	case "reconcile-bound-modules":
+		fs := flag.NewFlagSet("shared reconcile-bound-modules", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		modules := fs.String("modules", "", "comma-separated formal modules")
+		sharedRefs := fs.String("shared-refs", "", "comma-separated shared version refs")
+		sharedIDs := fs.String("shared-ids", "", "comma-separated shared contract ids")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		result, err := sharedsync.ReconcileBoundModules(mustAbs(*repoRoot), sharedsync.ReconcileBoundModulesOptions{
+			Modules:    parseCSV(*modules),
+			SharedRefs: parseCSV(*sharedRefs),
+			SharedIDs:  parseCSV(*sharedIDs),
+		})
+		if err != nil {
+			return err
+		}
+
+		writeList(stdout, "Scoped modules", result.ScopedModules)
+		writeList(stdout, "Scoped shared refs", result.ScopedSharedRefs)
+		writeList(stdout, "Scoped shared ids", result.ScopedSharedIDs)
+		writeList(stdout, "Touched shared files", result.TouchedFiles)
+		writeList(stdout, "Updated shared files", result.UpdatedFiles)
+		writeList(stdout, "Unchanged shared files", result.UnchangedFiles)
 		return nil
 	case "-h", "--help", "help":
 		writeSharedUsage(stdout)
@@ -595,7 +642,8 @@ func writeProcessUsage(w io.Writer) {
 
 func writeSharedUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl shared sync-impact [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl shared sync-impact [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--promotion-owner-module module_a] [--bound-modules-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_x.md] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl shared reconcile-bound-modules [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--repo-root PATH]")
 }
 
 func writeSnapshotUsage(w io.Writer) {

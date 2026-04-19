@@ -577,6 +577,7 @@ tooling 层很有用，但它不是新手第一天最该学的东西。
 - `shared_ops:{natural-language request}`
 
 当你想审的是治理系统本身，而不是推进某个业务模块时，才会进入 `spec_flow_review`。
+它的默认范围现在同时覆盖治理基线文档，以及 `specflow/tooling/` 下的治理工具实现。
 
 ### 想吃透整套 baseline 时怎么读
 

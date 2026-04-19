@@ -2,6 +2,7 @@ package reviewscope
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,8 @@ type SpecFlowScope struct {
 	TemplateGovernanceFiles    []string
 	TemplateEntryFiles         []string
 	ProjectRegistryFiles       []string
+	ToolingContractFiles       []string
+	ToolingSourceFiles         []string
 	ActiveProjectStandardFiles []string
 	MatchedOverlayFiles        []string
 }
@@ -63,11 +66,31 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	projectRegistryFiles := []string{
 		"docs/project_standards/_registry.md",
 	}
+	toolingContractFiles := []string{
+		"specflow/framework/docs/agent_guidelines/tooling_execution_policy.md",
+		"specflow/tooling/README.md",
+		"docs/specflow_go_tooling.md",
+	}
+
+	toolingCmdFiles, err := walkRelativeFiles(repoRoot, "specflow/tooling/cmd", ".go")
+	if err != nil {
+		return scope, err
+	}
+	toolingInternalFiles, err := walkRelativeFiles(repoRoot, "specflow/tooling/internal", ".go")
+	if err != nil {
+		return scope, err
+	}
+	toolingSourceFiles := append([]string{}, toolingCmdFiles...)
+	toolingSourceFiles = append(toolingSourceFiles, toolingInternalFiles...)
+	if len(toolingSourceFiles) == 0 {
+		return scope, fmt.Errorf("default tooling source files are incomplete")
+	}
 
 	required := append([]string{}, sharedFiles...)
 	required = append(required, templateGovernanceFiles...)
 	required = append(required, templateEntryFiles...)
 	required = append(required, projectRegistryFiles...)
+	required = append(required, toolingContractFiles...)
 	if err := ensureRelativeFiles(repoRoot, required); err != nil {
 		return scope, err
 	}
@@ -107,6 +130,8 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	scope.TemplateGovernanceFiles = templateGovernanceFiles
 	scope.TemplateEntryFiles = templateEntryFiles
 	scope.ProjectRegistryFiles = projectRegistryFiles
+	scope.ToolingContractFiles = toolingContractFiles
+	scope.ToolingSourceFiles = sortAndDedupe(toolingSourceFiles)
 	scope.ActiveProjectStandardFiles = sortAndDedupe(activeStandardFiles)
 	scope.MatchedOverlayFiles = sortAndDedupe(overlayFiles)
 	return scope, nil
@@ -124,6 +149,37 @@ func globRelative(repoRoot, pattern string) ([]string, error) {
 			return nil, err
 		}
 		result = append(result, filepath.ToSlash(rel))
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func walkRelativeFiles(repoRoot, relDir, suffix string) ([]string, error) {
+	root := filepath.Join(repoRoot, filepath.FromSlash(relDir))
+	if _, err := os.Stat(root); err != nil {
+		return nil, fmt.Errorf("required scope directory missing: %s", relDir)
+	}
+
+	result := []string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), suffix) {
+			return nil
+		}
+		rel, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		result = append(result, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(result)
 	return result, nil
