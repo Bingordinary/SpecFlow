@@ -59,14 +59,13 @@ By default it handles:
 5. continue only when bindings, coverage, and gate fields all remain valid
 6. before the first file mutation, capture the recovery baseline required by `recovery_policy.md`
 7. confirm that candidate `frontmatter.version` is the new `stable` version for this round
-8. if the module candidate contains a closed `system_constraints_change_proposal` that this round has implemented and verified, absorb the promoted conclusion into `docs/specs/system/stable/s_system_constraints.md`
-9. if the round touches any Shared Contract file, Shared Contract layer/version target, or Shared Contract terminal state, build the repository-wide real binding view for every touched shared item before deciding post-promotion topology:
+8. if the round touches any Shared Contract file, Shared Contract layer/version target, or Shared Contract terminal state, build the repository-wide real binding view for every touched shared item before deciding post-promotion topology:
    - start from `docs/specs/_status.md`
    - read every affected module current-layer main file needed to derive which modules currently bind each touched Shared Contract file or sibling layer through `shared_contract_refs`
    - interpret every module-side `shared_contract_refs` through the Shared Contract binding contract from `specflow/framework/docs/agent_guidelines/spec_policy.md` Section 6.1 before deriving that real binding view
    - treat module `shared_contract_refs` as the formal source of the real binding set rather than `bound_modules`
    - if repository truth is insufficient to state the post-promotion topology safely, stop before file mutation and reroute through `shared_ops:{natural-language request}` from current repository truth
-10. if the round touches any Shared Contract file, Shared Contract layer/version target, or Shared Contract terminal state, decide for each touched shared item against that repository-wide binding view:
+9. if the round touches any Shared Contract file, Shared Contract layer/version target, or Shared Contract terminal state, decide for each touched shared item against that repository-wide binding view:
    - determine the post-promotion binding target for the promoted module stable truth; a promoted stable module must not keep binding a candidate-layer Shared Contract file
    - if it should remain an independent cross-module truth after promotion, promote it into `docs/specs/shared_contracts/stable/`
    - when this round writes or updates a stable-layer Shared Contract file, use the already-decided candidate `shared_version` for that file; do not invent or bump a Shared Contract version during module promotion itself
@@ -87,6 +86,7 @@ By default it handles:
      - `unbound_retention_reason: <why this unbound state is intentional now>`
      - `unbound_retention_owner: cand_promote`
    - if the required post-promotion truth shape is still unclear, or the round cannot safely judge whether an unbound touched file should be deleted or kept as independently authored shared truth, stop promotion and require rerouting through `shared_ops:{natural-language request}` from current repository truth instead of guessing a module-local-only continuation
+10. if the module candidate contains a closed `system_constraints_change_proposal` that this round has implemented and verified, absorb the promoted conclusion into `docs/specs/system/stable/s_system_constraints.md`
 11. generate or update `docs/specs/modules/stable/s_{module}.md`
 12. if current-round candidate appendix files exist, in the same promotion round either:
    - migrate retained content to `docs/specs/modules/stable/appendix/` or an equivalent dedicated subdirectory
