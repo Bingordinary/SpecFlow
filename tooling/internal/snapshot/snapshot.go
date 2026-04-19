@@ -57,6 +57,40 @@ type ProcessSnapshotData struct {
 
 var markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 
+var requiredProcessSnapshotFields = map[string][]string{
+	"check": {
+		"spec_file_ref",
+		"spec_version_ref",
+		"spec_fingerprint",
+		"module_appendix_snapshot",
+		"system_constraints_stable_file_ref",
+		"system_constraints_stable_version_ref",
+		"system_constraints_stable_fingerprint",
+		"shared_contract_snapshot",
+	},
+	"plan": {
+		"spec_file_ref",
+		"spec_version_ref",
+		"spec_fingerprint",
+		"module_appendix_snapshot",
+		"system_constraints_stable_file_ref",
+		"system_constraints_stable_version_ref",
+		"system_constraints_stable_fingerprint",
+		"shared_contract_snapshot",
+	},
+	"verify": {
+		"spec_file_ref",
+		"spec_version_ref",
+		"spec_fingerprint",
+		"module_appendix_snapshot",
+		"verification_scope_ref",
+		"system_constraints_stable_file_ref",
+		"system_constraints_stable_version_ref",
+		"system_constraints_stable_fingerprint",
+		"shared_contract_snapshot",
+	},
+}
+
 func RebuildCurrent(repoRoot, module string) (Snapshot, error) {
 	moduleStatus, err := statusfile.LookupModuleStatus(repoRoot, module)
 	if err != nil {
@@ -94,29 +128,13 @@ func RebuildCurrent(repoRoot, module string) (Snapshot, error) {
 	}
 	result.ModuleAppendixSnapshot = appendixEntries
 
-	systemFileRef := specpaths.SystemConstraintsStableFileRef
-	systemAbs := filepath.Join(repoRoot, filepath.FromSlash(systemFileRef))
-	if _, err := os.Stat(systemAbs); err == nil {
-		systemContent, err := os.ReadFile(systemAbs)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		systemFrontmatter, _, err := parseFrontmatter(string(systemContent))
-		if err != nil {
-			return Snapshot{}, err
-		}
-		systemVersion := strings.TrimSpace(systemFrontmatter["version"])
-		if systemVersion == "" {
-			return Snapshot{}, fmt.Errorf("%s: missing frontmatter.version", systemFileRef)
-		}
-		result.SystemConstraintsStableFileRef = systemFileRef
-		result.SystemConstraintsStableVersionRef = fmt.Sprintf("s_system_constraints@%s", systemVersion)
-		result.SystemConstraintsStableFingerprint = hashNormalizedText(string(systemContent))
-	} else {
-		result.SystemConstraintsStableFileRef = "none"
-		result.SystemConstraintsStableVersionRef = "none"
-		result.SystemConstraintsStableFingerprint = "none"
+	systemFileRef, systemVersionRef, systemFingerprint, err := buildSystemConstraintsSnapshot(repoRoot, body)
+	if err != nil {
+		return Snapshot{}, err
 	}
+	result.SystemConstraintsStableFileRef = systemFileRef
+	result.SystemConstraintsStableVersionRef = systemVersionRef
+	result.SystemConstraintsStableFingerprint = systemFingerprint
 
 	sharedEntries, err := buildSharedContractSnapshot(repoRoot, body)
 	if err != nil {
@@ -130,6 +148,10 @@ func ValidateProcessFile(repoRoot, module, processKind string) (ValidationResult
 	expected, err := RebuildCurrent(repoRoot, module)
 	if err != nil {
 		return ValidationResult{}, err
+	}
+	requiredFields, ok := requiredProcessSnapshotFields[processKind]
+	if !ok {
+		return ValidationResult{}, fmt.Errorf("unsupported process kind %q", processKind)
 	}
 
 	processFile, err := ProcessFilePath(module, processKind)
@@ -152,6 +174,13 @@ func ValidateProcessFile(repoRoot, module, processKind string) (ValidationResult
 		ProcessFile: processFile,
 		Expected:    expected,
 		Valid:       true,
+	}
+
+	for _, field := range requiredFields {
+		if !actual.presentFields[field] {
+			result.Valid = false
+			result.Mismatches = append(result.Mismatches, fmt.Sprintf("missing required field: %s", field))
+		}
 	}
 
 	compareScalar(&result, "spec_file_ref", actual.scalars["spec_file_ref"], expected.SpecFileRef)
@@ -278,6 +307,34 @@ func buildAppendixSnapshot(repoRoot, mainSpecRef, body string) ([]AppendixEntry,
 	return entries, nil
 }
 
+func buildSystemConstraintsSnapshot(repoRoot, body string) (string, string, string, error) {
+	ref, _, err := parseSystemConstraintsStableRef(body)
+	if err != nil {
+		return "", "", "", err
+	}
+	if ref == "" || ref == "none" {
+		return "none", "none", "none", nil
+	}
+	if !strings.HasPrefix(ref, "s_system_constraints@") {
+		return "", "", "", fmt.Errorf("unsupported system_constraints_stable_ref %q", ref)
+	}
+
+	systemFileRef := specpaths.SystemConstraintsStableFileRef
+	systemContent, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(systemFileRef)))
+	if err != nil {
+		return "", "", "", fmt.Errorf("read %s: %w", systemFileRef, err)
+	}
+	systemFrontmatter, _, err := parseFrontmatter(string(systemContent))
+	if err != nil {
+		return "", "", "", fmt.Errorf("%s: %w", systemFileRef, err)
+	}
+	systemVersion := strings.TrimSpace(systemFrontmatter["version"])
+	if systemVersion == "" {
+		return "", "", "", fmt.Errorf("%s: missing frontmatter.version", systemFileRef)
+	}
+	return systemFileRef, fmt.Sprintf("s_system_constraints@%s", systemVersion), hashNormalizedText(string(systemContent)), nil
+}
+
 func buildSharedContractSnapshot(repoRoot, body string) ([]SharedContractEntry, error) {
 	refs, hasField, err := parseSharedContractRefs(body)
 	if err != nil {
@@ -402,6 +459,26 @@ func parseSharedContractRefs(body string) ([]string, bool, error) {
 	return nil, false, nil
 }
 
+func parseSystemConstraintsStableRef(body string) (string, bool, error) {
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.Contains(trimmed, "`system_constraints_stable_ref`") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			return "", false, fmt.Errorf("system_constraints_stable_ref line is malformed")
+		}
+		value := strings.Trim(strings.TrimSpace(parts[1]), "`")
+		if value == "" {
+			return "", false, fmt.Errorf("system_constraints_stable_ref is empty")
+		}
+		return value, true, nil
+	}
+	return "", false, nil
+}
+
 func sharedFileRefFromVersionRef(ref string) (string, error) {
 	parts := strings.SplitN(ref, "@", 2)
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
@@ -419,6 +496,7 @@ func sharedFileRefFromVersionRef(ref string) (string, error) {
 }
 
 type processSnapshot struct {
+	presentFields   map[string]bool
 	scalars         map[string]string
 	appendixEntries []AppendixEntry
 	appendixPresent bool
@@ -432,7 +510,10 @@ func parseProcessSnapshot(content string) (processSnapshot, error) {
 		return processSnapshot{}, err
 	}
 
-	result := processSnapshot{scalars: map[string]string{}}
+	result := processSnapshot{
+		presentFields: map[string]bool{},
+		scalars:       map[string]string{},
+	}
 	lines := strings.Split(strings.ReplaceAll(block, "\r\n", "\n"), "\n")
 	currentList := ""
 	currentIndex := -1
@@ -449,6 +530,7 @@ func parseProcessSnapshot(content string) (processSnapshot, error) {
 			}
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
+			result.presentFields[key] = true
 			value = strings.Trim(value, "`")
 			if value == "" {
 				switch key {

@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -96,6 +97,133 @@ version: 1.1.0
 	if result.SharedContractSnapshot[0].VersionRef != "c_shared_demo@0.2.0" {
 		t.Fatalf("unexpected shared version ref: %s", result.SharedContractSnapshot[0].VersionRef)
 	}
+}
+
+func TestValidateProcessFileRejectsMissingRequiredSnapshotField(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupSnapshotValidationRepo(t, repoRoot)
+
+	writeCheckProcessFile(t, repoRoot, strings.Join([]string{
+		"spec_file_ref: docs/specs/modules/candidate/c_module_demo.md",
+		"spec_version_ref: c_module_demo@0.1.0",
+		"module_appendix_snapshot: none",
+		"system_constraints_stable_file_ref: none",
+		"system_constraints_stable_version_ref: none",
+		"system_constraints_stable_fingerprint: none",
+		"shared_contract_snapshot: none",
+	}, "\n"))
+
+	result, err := ValidateProcessFile(repoRoot, "module_demo", "check")
+	if err != nil {
+		t.Fatalf("ValidateProcessFile: %v", err)
+	}
+	if result.Valid {
+		t.Fatalf("expected invalid result, got valid")
+	}
+	if !containsMismatch(result.Mismatches, "missing required field: spec_fingerprint") {
+		t.Fatalf("expected missing spec_fingerprint mismatch, got %+v", result.Mismatches)
+	}
+}
+
+func TestValidateProcessFileAcceptsExplicitNoneSnapshots(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupSnapshotValidationRepo(t, repoRoot)
+
+	expected, err := RebuildCurrent(repoRoot, "module_demo")
+	if err != nil {
+		t.Fatalf("RebuildCurrent: %v", err)
+	}
+
+	writeCheckProcessFile(t, repoRoot, strings.Join([]string{
+		"spec_file_ref: " + expected.SpecFileRef,
+		"spec_version_ref: " + expected.SpecVersionRef,
+		"spec_fingerprint: " + expected.SpecFingerprint,
+		"module_appendix_snapshot: none",
+		"system_constraints_stable_file_ref: none",
+		"system_constraints_stable_version_ref: none",
+		"system_constraints_stable_fingerprint: none",
+		"shared_contract_snapshot: none",
+	}, "\n"))
+
+	result, err := ValidateProcessFile(repoRoot, "module_demo", "check")
+	if err != nil {
+		t.Fatalf("ValidateProcessFile: %v", err)
+	}
+	if !result.Valid {
+		t.Fatalf("expected valid result, got mismatches %+v", result.Mismatches)
+	}
+}
+
+func TestRebuildCurrentRespectsExplicitNoneSystemConstraintsBinding(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupSnapshotValidationRepo(t, repoRoot)
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/system/stable"))
+
+	system := `---
+version: 1.1.0
+---
+
+# System
+`
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/system/stable/s_system_constraints.md"), system)
+
+	result, err := RebuildCurrent(repoRoot, "module_demo")
+	if err != nil {
+		t.Fatalf("RebuildCurrent: %v", err)
+	}
+	if result.SystemConstraintsStableFileRef != "none" {
+		t.Fatalf("expected system file ref none, got %s", result.SystemConstraintsStableFileRef)
+	}
+	if result.SystemConstraintsStableVersionRef != "none" {
+		t.Fatalf("expected system version ref none, got %s", result.SystemConstraintsStableVersionRef)
+	}
+	if result.SystemConstraintsStableFingerprint != "none" {
+		t.Fatalf("expected system fingerprint none, got %s", result.SystemConstraintsStableFingerprint)
+	}
+}
+
+func setupSnapshotValidationRepo(t *testing.T, repoRoot string) {
+	t.Helper()
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
+	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
+
+	mainSpec := `---
+id: module_demo
+layer: candidate
+version: 0.1.0
+---
+
+# Demo
+
+## Global Constraint Alignment
+
+1. ` + "`system_constraints_stable_ref`: `none`" + `
+2. ` + "`shared_contract_refs`: `none`" + `
+`
+	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), mainSpec)
+}
+
+func writeCheckProcessFile(t *testing.T, repoRoot, yamlBody string) {
+	t.Helper()
+	content := "# check\n\n```yaml\n" + yamlBody + "\n```\n"
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md"), content)
+}
+
+func containsMismatch(mismatches []string, target string) bool {
+	for _, mismatch := range mismatches {
+		if mismatch == target {
+			return true
+		}
+	}
+	return false
 }
 
 func mustMkdirAll(t *testing.T, path string) {

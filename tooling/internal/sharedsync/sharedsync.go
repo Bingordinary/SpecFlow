@@ -95,20 +95,21 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
 	sharedFilesByFileRef := buildSharedFilesByFileRef(sharedFilesByRef)
 
-	for _, ref := range normalized.SharedRefs {
-		if _, ok := sharedFilesByRef[ref]; !ok {
-			return Result{}, fmt.Errorf("shared ref %q is not present under docs/specs/shared_contracts/", ref)
-		}
+	moduleBindings, actualModulesByRef, actualModulesByID, unresolvedSharedRefs, err := loadModuleBindings(repoRoot, sharedFilesByRef)
+	if err != nil {
+		return Result{}, err
 	}
 	for _, sharedID := range normalized.SharedIDs {
+		if len(unresolvedSharedRefs) > 0 {
+			return Result{}, fmt.Errorf(
+				"cannot determine affected modules safely for shared id %q because unresolved shared refs remain in module bindings: %s",
+				sharedID,
+				strings.Join(unresolvedSharedRefs, ", "),
+			)
+		}
 		if _, ok := sharedFilesByID[sharedID]; !ok {
 			return Result{}, fmt.Errorf("shared id %q is not present under docs/specs/shared_contracts/", sharedID)
 		}
-	}
-
-	moduleBindings, actualModulesByRef, actualModulesByID, err := loadModuleBindings(repoRoot, sharedFilesByRef)
-	if err != nil {
-		return Result{}, err
 	}
 	for _, module := range normalized.Modules {
 		if _, ok := moduleBindings[module]; !ok {
@@ -172,7 +173,7 @@ func ReconcileBoundModules(repoRoot string, options ReconcileBoundModulesOptions
 		return ReconcileBoundModulesResult{}, err
 	}
 	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
-	moduleBindings, actualModulesByRef, _, err := loadModuleBindings(repoRoot, sharedFilesByRef)
+	moduleBindings, actualModulesByRef, _, _, err := loadModuleBindings(repoRoot, sharedFilesByRef)
 	if err != nil {
 		return ReconcileBoundModulesResult{}, err
 	}
@@ -486,19 +487,20 @@ func buildSharedFilesByFileRef(sharedFilesByRef map[string]sharedFile) map[strin
 	return result
 }
 
-func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile) (map[string]moduleBinding, map[string][]string, map[string][]string, error) {
+func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile) (map[string]moduleBinding, map[string][]string, map[string][]string, []string, error) {
 	statuses, err := statusfile.LoadModuleStatuses(repoRoot)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	bindings := make(map[string]moduleBinding, len(statuses))
 	actualByRef := map[string][]string{}
 	actualByID := map[string][]string{}
+	unresolvedRefs := []string{}
 	for _, status := range statuses {
 		refs, err := readModuleSharedRefs(repoRoot, status)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		bindings[status.Module] = moduleBinding{
 			Status:     status,
@@ -508,7 +510,9 @@ func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile)
 			actualByRef[ref] = append(actualByRef[ref], status.Module)
 			if shared, ok := sharedFilesByRef[ref]; ok {
 				actualByID[shared.SharedContractID] = append(actualByID[shared.SharedContractID], status.Module)
+				continue
 			}
+			unresolvedRefs = append(unresolvedRefs, ref)
 		}
 	}
 	for ref := range actualByRef {
@@ -517,11 +521,12 @@ func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile)
 	for sharedID := range actualByID {
 		actualByID[sharedID] = normalizeStrings(actualByID[sharedID])
 	}
-	return bindings, actualByRef, actualByID, nil
+	return bindings, actualByRef, actualByID, normalizeStrings(unresolvedRefs), nil
 }
 
 func buildScopeModules(moduleBindings map[string]moduleBinding, actualModulesByRef map[string][]string, actualModulesByID map[string][]string, options Options) []string {
 	scope := map[string]bool{}
+	hasExplicitScope := len(options.Modules) > 0 || len(options.SharedRefs) > 0 || len(options.SharedIDs) > 0
 	for _, module := range options.Modules {
 		scope[module] = true
 	}
@@ -534,6 +539,9 @@ func buildScopeModules(moduleBindings map[string]moduleBinding, actualModulesByR
 		for _, module := range actualModulesByID[sharedID] {
 			scope[module] = true
 		}
+	}
+	if hasExplicitScope && len(scope) == 0 {
+		return nil
 	}
 	if len(scope) == 0 {
 		for module, binding := range moduleBindings {

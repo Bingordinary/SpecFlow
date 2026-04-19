@@ -146,6 +146,50 @@ Body changed.
 	}
 }
 
+func TestSyncImpactIncludesModulesStillBoundToDeletedSharedRef(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateSharedRepo(t, repoRoot)
+
+	if err := os.Remove(filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate/c_shared_demo.md")); err != nil {
+		t.Fatalf("remove shared file: %v", err)
+	}
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ModuleResults) != 1 {
+		t.Fatalf("expected one module result, got %d", len(result.ModuleResults))
+	}
+	moduleResult := result.ModuleResults[0]
+	if moduleResult.Module != "module_demo" {
+		t.Fatalf("expected module_demo, got %+v", moduleResult)
+	}
+	if moduleResult.Outcome != "invalidated" {
+		t.Fatalf("expected invalidated outcome, got %+v", moduleResult)
+	}
+	if moduleResult.FallbackReasonCode != "binding_drift" {
+		t.Fatalf("expected binding_drift, got %s", moduleResult.FallbackReasonCode)
+	}
+}
+
+func TestSyncImpactFailsClosedForSharedIDWhenBindingsPointToDeletedSharedRef(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupCandidateSharedRepo(t, repoRoot)
+
+	if err := os.Remove(filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate/c_shared_demo.md")); err != nil {
+		t.Fatalf("remove shared file: %v", err)
+	}
+
+	_, err := SyncImpact(repoRoot, Options{SharedIDs: []string{"shared_demo"}})
+	if err == nil {
+		t.Fatalf("expected shared-id sync to fail closed when shared ref is unresolved")
+	}
+	if !strings.Contains(err.Error(), "cannot determine affected modules safely") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSyncImpactReroutesStableModuleToStableVerify(t *testing.T) {
 	repoRoot := t.TempDir()
 	sharedRef := setupStableSharedRepo(t, repoRoot)

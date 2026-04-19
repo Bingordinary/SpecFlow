@@ -23,7 +23,7 @@ func (r Report) Fresh() bool {
 }
 
 func CheckProcess(args []string, cwd string) error {
-	if len(args) == 0 || ShouldBypass(args) || BuildFingerprint == "" {
+	if len(args) == 0 || ShouldBypass(args) {
 		return nil
 	}
 
@@ -33,6 +33,12 @@ func CheckProcess(args []string, cwd string) error {
 	}
 	if !IsToolingRepo(repoRoot) {
 		return nil
+	}
+	if strings.TrimSpace(BuildFingerprint) == "" {
+		return fmt.Errorf(
+			"specflow binary missing embedded build fingerprint; run `go run ./specflow/tooling/cmd/specflowctl build-release --repo-root %s`",
+			repoRoot,
+		)
 	}
 
 	report, err := Compare(repoRoot, BuildFingerprint)
