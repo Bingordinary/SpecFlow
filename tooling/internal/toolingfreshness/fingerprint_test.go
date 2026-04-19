@@ -38,7 +38,7 @@ func TestLiveFingerprintIgnoresNonToolingFiles(t *testing.T) {
 		t.Fatalf("LiveFingerprint returned error: %v", err)
 	}
 
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specflow_go_tooling.md"), "# changed doc\n")
+	mustWriteFile(t, filepath.Join(repoRoot, "specflow/tooling/README.md"), "# changed doc\n")
 
 	second, _, err := LiveFingerprint(repoRoot)
 	if err != nil {

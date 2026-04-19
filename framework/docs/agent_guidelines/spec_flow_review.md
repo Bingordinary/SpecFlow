@@ -64,7 +64,6 @@ The default scope is the repository's formal Spec Flow governance baseline:
 12. tooling contract and explanation documents:
    - `specflow/framework/docs/agent_guidelines/tooling_execution_policy.md`
    - `specflow/tooling/README.md`
-   - `docs/specflow_go_tooling.md`
 13. tooling source files that implement fixed governance actions:
    - `specflow/tooling/cmd/specflowctl/*.go`
    - `specflow/tooling/internal/**/*.go`
@@ -236,7 +235,6 @@ For the default governance baseline scope, the `review_plan` must use exactly th
 5. `tooling_execution_contract`
    - `specflow/framework/docs/agent_guidelines/tooling_execution_policy.md`
    - `specflow/tooling/README.md`
-   - `docs/specflow_go_tooling.md`
    - `specflow/tooling/cmd/specflowctl/*.go`
    - `specflow/tooling/internal/**/*.go`
 
@@ -295,7 +293,7 @@ Before execution:
 14. if the repository claims the project-local standards extension surface but `docs/project_standards/_registry.md` is missing or invalid, report governance drift instead of silently treating that case as "no project-local standards"
 15. if the scope is the default governance baseline, the `review_plan` must use the fixed review blocks from Section 3.5
 16. if the scope is the default governance baseline, explicitly confirm that the shared-governance rule set has been read, at minimum `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`
-17. if the scope is the default governance baseline, explicitly confirm that the tooling execution contract set has been read, at minimum `tooling_execution_policy.md`, `specflow/tooling/README.md`, `docs/specflow_go_tooling.md`, and the in-scope tooling source files
+17. if the scope is the default governance baseline, explicitly confirm that the tooling execution contract set has been read, at minimum `tooling_execution_policy.md`, `specflow/tooling/README.md`, and the in-scope tooling source files
 18. if the scope is the default governance baseline and compiled tooling binaries are part of normal execution in the repository, explicitly confirm that the freshness-gate contract is covered at rule, source, and execution-entry level
 19. do not treat reading only `command_policy.md`, `commands/*.md`, or other main command-chain files as sufficient for a default-scope review when shared-governance rules or tooling-contract files were not also covered
 20. if any in-scope file cannot be assigned to a review block, or any required cross-block convergence check cannot be named explicitly, do not issue a `pass`

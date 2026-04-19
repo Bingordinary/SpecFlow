@@ -87,7 +87,7 @@ Additional rules:
 3. `project_standard_create` is not a standard user-facing command. It is an internal flow the agent may use when the user asks to create a project-local standard.
 4. plain `spec_flow_review` means the default governance-baseline review defined in `specflow/framework/docs/agent_guidelines/spec_flow_review.md` unless the user explicitly narrows the scope.
 5. that default `spec_flow_review` must cover the shared-governance rule set, at minimum `shared_ops.md`, `shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`, even when the user did not mention shared governance explicitly.
-6. that default `spec_flow_review` must also cover the tooling execution contract set, at minimum `tooling_execution_policy.md`, `specflow/tooling/README.md`, `docs/specflow_go_tooling.md`, and the in-scope tooling source files under `specflow/tooling/`.
+6. that default `spec_flow_review` must also cover the tooling execution contract set, at minimum `tooling_execution_policy.md`, `specflow/tooling/README.md`, and the in-scope tooling source files under `specflow/tooling/`.
 7. if the review output does not explicitly report shared-governance coverage, tooling coverage, and their results, the `spec_flow_review` is not complete and must not be treated as a `pass`.
 
 ### 3. How To Resolve Modules And Files

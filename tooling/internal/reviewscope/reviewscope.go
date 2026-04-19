@@ -69,7 +69,6 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	toolingContractFiles := []string{
 		"specflow/framework/docs/agent_guidelines/tooling_execution_policy.md",
 		"specflow/tooling/README.md",
-		"docs/specflow_go_tooling.md",
 	}
 
 	toolingCmdFiles, err := walkRelativeFiles(repoRoot, "specflow/tooling/cmd", ".go")

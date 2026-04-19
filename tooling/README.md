@@ -19,6 +19,29 @@ To rebuild those binaries from source, run from the repository root:
 go run ./specflow/tooling/cmd/specflowctl build-release --repo-root .
 ```
 
+## Usage
+
+Run the compiled binary from the repository root. On Linux amd64, the command path is:
+
+```bash
+./specflow/tooling/bin/specflowctl-linux-amd64
+```
+
+Examples:
+
+```bash
+./specflow/tooling/bin/specflowctl-linux-amd64 init
+./specflow/tooling/bin/specflowctl-linux-amd64 doctor
+./specflow/tooling/bin/specflowctl-linux-amd64 registry validate
+./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope
+./specflow/tooling/bin/specflowctl-linux-amd64 snapshot rebuild --module module_ai
+./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --module module_ai --from-command cand_promote --reason evidence_incomplete
+./specflow/tooling/bin/specflowctl-linux-amd64 status set-module --module module_ai --stable yes --candidate no --active-layer stable --next-command spec_fork --notes "promoted"
+./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-success --module module_ai --mode cand_promote
+./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --modules module_ai --shared-refs c_shared_app_config_topology@0.2.0
+./specflow/tooling/bin/specflowctl-linux-amd64 shared reconcile-bound-modules --shared-ids shared_app_config_topology
+```
+
 ## Governance Boundary
 
 The tooling layer exists only for fixed execution work whose meaning is already constrained by governance rules.
@@ -47,6 +70,14 @@ The CLI is intentionally not responsible for:
 5. deciding whether one tooling function is justified in the first place
 
 Those remain in the governance documents and the agent runtime.
+
+The tooling contract is split across these locations:
+
+1. `specflow/framework/docs/agent_guidelines/tooling_execution_policy.md` defines the framework-level boundary rules.
+2. this README defines the concrete command surface, build flow, recovery flow, and usage examples.
+3. the Go source under `specflow/tooling/cmd/` and `specflow/tooling/internal/` implements the fixed execution actions.
+
+Project-root `docs/` files are not a separate tooling contract layer.
 
 ## Current Command Surface
 
@@ -140,3 +171,10 @@ go run ./specflow/tooling/cmd/specflowctl build-release --repo-root .
 ```
 
 `doctor` is also allowed to run in that stale state so it can report the binary mismatch explicitly.
+
+The minimal stale-binary recovery and inspection surface is:
+
+1. `build-release`
+2. `doctor`
+3. `help`
+4. the internal build-fingerprint query command

@@ -32,6 +32,9 @@ Default review-target rule:
 1. the default governance review target is source and rule-level material
 2. compiled binaries under `specflow/tooling/bin/` are build artifacts, not the default source-of-truth review target
 3. default `spec_flow_review` should review tooling source and tooling contract documents rather than platform binaries
+4. the framework policy owns the tooling boundary rules
+5. `specflow/tooling/README.md` owns the project-local tooling command surface and usage explanation
+6. project-root `docs/` files must not be required as an additional tooling contract layer
 
 ## 3. Tooling Necessity Contract
 
@@ -108,6 +111,12 @@ That review must cover at least:
 2. whether each current tooling function stays inside the allowed action surface from Section 4
 3. whether any tooling path performs forbidden semantic judgment from Section 5
 4. whether tooling rule documents, tooling explanation documents, and tooling source still describe the same contract
+
+The required tooling-contract document set is:
+
+1. this policy file for framework-level boundary rules
+2. `specflow/tooling/README.md` for the concrete command surface, build flow, recovery flow, and usage examples
+3. the in-scope tooling source files under `specflow/tooling/cmd/` and `specflow/tooling/internal/`
 
 Default `spec_flow_review` must not issue `pass` when any of the following is true:
 
