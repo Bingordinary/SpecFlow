@@ -18,6 +18,16 @@ type ModuleStatus struct {
 	Notes       string
 }
 
+var allowedNextCommands = map[string]bool{
+	"spec_fork":     true,
+	"stable_verify": true,
+	"cand_check":    true,
+	"cand_plan":     true,
+	"cand_impl":     true,
+	"cand_verify":   true,
+	"cand_promote":  true,
+}
+
 func LoadModules(repoRoot string) ([]string, error) {
 	statuses, err := LoadModuleStatuses(repoRoot)
 	if err != nil {
@@ -84,6 +94,10 @@ func UpdateNextCommand(repoRoot, module, nextCommand string) (bool, error) {
 }
 
 func UpsertModuleStatus(repoRoot string, status ModuleStatus, createIfMissing bool) (bool, error) {
+	if err := validateModuleStatus(status); err != nil {
+		return false, err
+	}
+
 	path := filepath.Join(repoRoot, relativeStatusPath)
 	lines, hadTrailingNewline, err := readLines(path)
 	if err != nil {
@@ -204,4 +218,11 @@ func stripCodeSpan(value string) string {
 		return value[1 : len(value)-1]
 	}
 	return value
+}
+
+func validateModuleStatus(status ModuleStatus) error {
+	if !allowedNextCommands[strings.TrimSpace(status.NextCommand)] {
+		return fmt.Errorf("next command %q is not a supported status value", status.NextCommand)
+	}
+	return nil
 }

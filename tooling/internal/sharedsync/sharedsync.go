@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/sharedbinding"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/snapshot"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/statusfile"
@@ -52,8 +53,9 @@ type BoundModuleDrift struct {
 }
 
 type moduleBinding struct {
-	Status     statusfile.ModuleStatus
-	SharedRefs []string
+	Status        statusfile.ModuleStatus
+	SharedRefs    []string
+	BindingIssues []string
 }
 
 type sharedFile struct {
@@ -95,7 +97,7 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
 	sharedFilesByFileRef := buildSharedFilesByFileRef(sharedFilesByRef)
 
-	moduleBindings, actualModulesByRef, actualModulesByID, unresolvedSharedRefs, err := loadModuleBindings(repoRoot, sharedFilesByRef)
+	moduleBindings, actualModulesByRef, _, unresolvedSharedRefs, err := loadModuleBindings(repoRoot)
 	if err != nil {
 		return Result{}, err
 	}
@@ -136,7 +138,7 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 		return Result{}, err
 	}
 
-	scopeModules := buildScopeModules(moduleBindings, actualModulesByRef, actualModulesByID, normalized)
+	scopeModules := buildScopeModules(moduleBindings, sharedFilesByRef, normalized)
 	results := make([]ModuleResult, 0, len(scopeModules))
 	for _, module := range scopeModules {
 		binding := moduleBindings[module]
@@ -173,7 +175,7 @@ func ReconcileBoundModules(repoRoot string, options ReconcileBoundModulesOptions
 		return ReconcileBoundModulesResult{}, err
 	}
 	sharedFilesByID := buildSharedFilesByID(sharedFilesByRef)
-	moduleBindings, actualModulesByRef, _, _, err := loadModuleBindings(repoRoot, sharedFilesByRef)
+	moduleBindings, actualModulesByRef, _, _, err := loadModuleBindings(repoRoot)
 	if err != nil {
 		return ReconcileBoundModulesResult{}, err
 	}
@@ -229,25 +231,8 @@ func reconcileModule(repoRoot string, binding moduleBinding, options Options, sh
 	moduleExplicit := contains(options.Modules, binding.Status.Module)
 	relevantSelectedRefs := selectedSharedRefsForModule(binding.SharedRefs, options.SharedRefs, options.SharedIDs, sharedFilesByRef)
 
-	bindingDiagnostics := []string{}
-	bindingIssue := false
-	for _, ref := range binding.SharedRefs {
-		shared, ok := sharedFilesByRef[ref]
-		if !ok {
-			bindingIssue = true
-			bindingDiagnostics = append(bindingDiagnostics, fmt.Sprintf("missing shared file for ref %s", ref))
-			continue
-		}
-		expectedPrefix := "s_"
-		if shared.Layer == "candidate" {
-			expectedPrefix = "c_"
-		}
-		if !strings.HasPrefix(filepath.Base(shared.FileRef), expectedPrefix) {
-			bindingIssue = true
-			bindingDiagnostics = append(bindingDiagnostics, fmt.Sprintf("shared file %s has layer %s but file prefix does not match", shared.FileRef, shared.Layer))
-		}
-	}
-	result.Diagnostics = append(result.Diagnostics, bindingDiagnostics...)
+	bindingIssue := len(binding.BindingIssues) > 0
+	result.Diagnostics = append(result.Diagnostics, binding.BindingIssues...)
 
 	switch binding.Status.ActiveLayer {
 	case "candidate":
@@ -489,7 +474,7 @@ func buildSharedFilesByFileRef(sharedFilesByRef map[string]sharedFile) map[strin
 	return result
 }
 
-func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile) (map[string]moduleBinding, map[string][]string, map[string][]string, []string, error) {
+func loadModuleBindings(repoRoot string) (map[string]moduleBinding, map[string][]string, map[string][]string, []string, error) {
 	statuses, err := statusfile.LoadModuleStatuses(repoRoot)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -504,17 +489,25 @@ func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+		bindingIssues := []string{}
 		bindings[status.Module] = moduleBinding{
 			Status:     status,
 			SharedRefs: refs,
 		}
 		for _, ref := range refs {
-			actualByRef[ref] = append(actualByRef[ref], status.Module)
-			if shared, ok := sharedFilesByRef[ref]; ok {
-				actualByID[shared.SharedContractID] = append(actualByID[shared.SharedContractID], status.Module)
+			resolved, err := sharedbinding.ResolveRef(repoRoot, status.ActiveLayer, ref)
+			if err != nil {
+				bindingIssues = append(bindingIssues, err.Error())
+				unresolvedRefs = append(unresolvedRefs, ref)
 				continue
 			}
-			unresolvedRefs = append(unresolvedRefs, ref)
+			actualByRef[resolved.VersionRef] = append(actualByRef[resolved.VersionRef], status.Module)
+			actualByID[resolved.SharedContractID] = append(actualByID[resolved.SharedContractID], status.Module)
+		}
+		bindings[status.Module] = moduleBinding{
+			Status:        status,
+			SharedRefs:    refs,
+			BindingIssues: normalizeStrings(bindingIssues),
 		}
 	}
 	for ref := range actualByRef {
@@ -526,20 +519,30 @@ func loadModuleBindings(repoRoot string, sharedFilesByRef map[string]sharedFile)
 	return bindings, actualByRef, actualByID, normalizeStrings(unresolvedRefs), nil
 }
 
-func buildScopeModules(moduleBindings map[string]moduleBinding, actualModulesByRef map[string][]string, actualModulesByID map[string][]string, options Options) []string {
+func buildScopeModules(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, options Options) []string {
 	scope := map[string]bool{}
 	hasExplicitScope := len(options.Modules) > 0 || len(options.SharedRefs) > 0 || len(options.SharedIDs) > 0
+	scopedRefSet := map[string]bool{}
+	scopedIDSet := map[string]bool{}
 	for _, module := range options.Modules {
 		scope[module] = true
 	}
 	for _, ref := range options.SharedRefs {
-		for _, module := range actualModulesByRef[ref] {
-			scope[module] = true
-		}
+		scopedRefSet[ref] = true
 	}
 	for _, sharedID := range options.SharedIDs {
-		for _, module := range actualModulesByID[sharedID] {
-			scope[module] = true
+		scopedIDSet[sharedID] = true
+	}
+	for module, binding := range moduleBindings {
+		for _, ref := range binding.SharedRefs {
+			if scopedRefSet[ref] {
+				scope[module] = true
+				continue
+			}
+			shared, ok := sharedFilesByRef[ref]
+			if ok && scopedIDSet[shared.SharedContractID] {
+				scope[module] = true
+			}
 		}
 	}
 	if hasExplicitScope && len(scope) == 0 {

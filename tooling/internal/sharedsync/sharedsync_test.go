@@ -233,6 +233,78 @@ Body changed.
 	}
 }
 
+func TestSyncImpactRejectsStableModuleBindingCandidateShared(t *testing.T) {
+	repoRoot := t.TempDir()
+	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.StableDir)))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
+
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
+		"# Spec Status",
+		"",
+		"## Formal Modules",
+		"",
+		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
+		"|---|---|---|---|---|---|",
+		"| `module_demo` | `yes` | `no` | `stable` | `spec_fork` | stable round |",
+	}, "\n")+"\n")
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("stable", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: module_demo",
+		"layer: stable",
+		"version: 1.0.0",
+		"---",
+		"",
+		"# Demo",
+		"",
+		"## Global Constraint Alignment",
+		"",
+		"1. system_constraints_stable_ref: none",
+		"2. shared_contract_refs:",
+		"   - c_shared_demo@0.1.0",
+		"",
+	}, "\n"))
+
+	writeSharedFile(t, repoRoot, `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.1.0
+bound_modules:
+  - module_demo
+---
+
+# Shared
+
+Body stays the same.
+`)
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{"c_shared_demo@0.1.0"}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ModuleResults) != 1 {
+		t.Fatalf("expected one module result, got %d", len(result.ModuleResults))
+	}
+	moduleResult := result.ModuleResults[0]
+	if moduleResult.Outcome != "rerouted" {
+		t.Fatalf("expected rerouted outcome, got %+v", moduleResult)
+	}
+	if moduleResult.FallbackReasonCode != "binding_drift" {
+		t.Fatalf("expected binding_drift, got %s", moduleResult.FallbackReasonCode)
+	}
+	if moduleResult.NextCommand != "stable_verify" {
+		t.Fatalf("expected next command stable_verify, got %s", moduleResult.NextCommand)
+	}
+	if len(moduleResult.Diagnostics) == 0 || !strings.Contains(moduleResult.Diagnostics[0], "stable-layer module binding must use an s_ shared ref") {
+		t.Fatalf("expected stable binding diagnostic, got %+v", moduleResult.Diagnostics)
+	}
+}
+
 func TestSyncImpactKeepsStableLandingModule(t *testing.T) {
 	repoRoot := t.TempDir()
 	sharedRef := setupStableSharedRepo(t, repoRoot)

@@ -87,3 +87,36 @@ func TestUpsertModuleStatusCreatesNewRow(t *testing.T) {
 		t.Fatalf("created status row not found:\n%s", string(data))
 	}
 }
+
+func TestUpsertModuleStatusRejectsUnsupportedNextCommand(t *testing.T) {
+	repoRoot := t.TempDir()
+	statusPath := filepath.Join(repoRoot, "docs/specs")
+	if err := os.MkdirAll(statusPath, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := strings.Join([]string{
+		"# Spec Status",
+		"",
+		"## Formal Modules",
+		"",
+		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
+		"|---|---|---|---|---|---|",
+		"| `module_ai` | `yes` | `no` | `stable` | `spec_fork` | stable note |",
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(statusPath, "_status.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write status: %v", err)
+	}
+
+	_, err := UpsertModuleStatus(repoRoot, ModuleStatus{
+		Module:      "module_ai",
+		Stable:      "yes",
+		Candidate:   "no",
+		ActiveLayer: "stable",
+		NextCommand: "typo_command",
+		Notes:       "stable note",
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "not a supported status value") {
+		t.Fatalf("expected unsupported next command error, got %v", err)
+	}
+}

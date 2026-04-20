@@ -336,6 +336,90 @@ bound_modules:
 	}
 }
 
+func TestRebuildCurrentRejectsSharedVersionMismatch(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupSnapshotValidationRepo(t, repoRoot)
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), `---
+id: module_demo
+layer: candidate
+version: 0.1.0
+---
+
+# Demo
+
+## Global Constraint Alignment
+
+1. system_constraints_stable_ref: none
+2. shared_contract_refs:
+   - c_shared_demo@0.1.0
+`)
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate/c_shared_demo.md"), `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.2.0
+bound_modules:
+  - module_demo
+---
+
+# Shared
+`)
+
+	_, err = RebuildCurrent(repoRoot, "module_demo")
+	if err == nil || !strings.Contains(err.Error(), "does not match frontmatter shared_version") {
+		t.Fatalf("expected shared-version mismatch error, got %v", err)
+	}
+}
+
+func TestRebuildCurrentRejectsStableModuleBindingCandidateShared(t *testing.T) {
+	repoRoot := t.TempDir()
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
+	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.StableDir)))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
+
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `yes` | `no` | `stable` | `spec_fork` | note |\n"
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("stable", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), `---
+id: module_demo
+layer: stable
+version: 1.0.0
+---
+
+# Demo
+
+## Global Constraint Alignment
+
+1. system_constraints_stable_ref: none
+2. shared_contract_refs:
+   - c_shared_demo@0.1.0
+`)
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate/c_shared_demo.md"), `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.1.0
+bound_modules:
+  - module_demo
+---
+
+# Shared
+`)
+
+	_, err = RebuildCurrent(repoRoot, "module_demo")
+	if err == nil || !strings.Contains(err.Error(), "stable-layer module binding must use an s_ shared ref") {
+		t.Fatalf("expected stable-layer binding error, got %v", err)
+	}
+}
+
 func TestRebuildCurrentRespectsExplicitNoneSystemConstraintsBinding(t *testing.T) {
 	repoRoot := t.TempDir()
 	setupSnapshotValidationRepo(t, repoRoot)

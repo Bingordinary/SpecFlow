@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/sharedbinding"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/statusfile"
 )
@@ -136,7 +137,7 @@ func RebuildCurrent(repoRoot, module string) (Snapshot, error) {
 	result.SystemConstraintsStableVersionRef = systemVersionRef
 	result.SystemConstraintsStableFingerprint = systemFingerprint
 
-	sharedEntries, err := buildSharedContractSnapshot(repoRoot, body)
+	sharedEntries, err := buildSharedContractSnapshot(repoRoot, moduleStatus.ActiveLayer, body)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -354,7 +355,7 @@ func buildSystemConstraintsSnapshot(repoRoot, body string) (string, string, stri
 	return systemFileRef, fmt.Sprintf("s_system_constraints@%s", systemVersion), hashNormalizedText(string(systemContent)), nil
 }
 
-func buildSharedContractSnapshot(repoRoot, body string) ([]SharedContractEntry, error) {
+func buildSharedContractSnapshot(repoRoot, moduleLayer, body string) ([]SharedContractEntry, error) {
 	refs, hasField, err := parseSharedContractRefs(body)
 	if err != nil {
 		return nil, err
@@ -364,31 +365,16 @@ func buildSharedContractSnapshot(repoRoot, body string) ([]SharedContractEntry, 
 	}
 	entries := make([]SharedContractEntry, 0, len(refs))
 	for _, ref := range refs {
-		fileRef, err := sharedFileRefFromVersionRef(ref)
+		resolved, err := sharedbinding.ResolveRef(repoRoot, moduleLayer, ref)
 		if err != nil {
 			return nil, err
 		}
-		absPath := filepath.Join(repoRoot, filepath.FromSlash(fileRef))
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("read shared contract %s: %w", fileRef, err)
-		}
-		frontmatter, _, err := parseFrontmatter(string(content))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", fileRef, err)
-		}
-		sharedID := strings.TrimSpace(frontmatter["shared_contract_id"])
-		layer := strings.TrimSpace(frontmatter["layer"])
-		sharedVersion := strings.TrimSpace(frontmatter["shared_version"])
-		if sharedID == "" || layer == "" || sharedVersion == "" {
-			return nil, fmt.Errorf("%s: missing shared_contract_id/layer/shared_version", fileRef)
-		}
 		entries = append(entries, SharedContractEntry{
-			SharedContractID: sharedID,
-			Layer:            layer,
-			FileRef:          fileRef,
-			VersionRef:       fmt.Sprintf("%s@%s", strings.TrimSuffix(filepath.Base(fileRef), ".md"), sharedVersion),
-			Fingerprint:      hashNormalizedText(string(content)),
+			SharedContractID: resolved.SharedContractID,
+			Layer:            resolved.Layer,
+			FileRef:          resolved.FileRef,
+			VersionRef:       resolved.VersionRef,
+			Fingerprint:      hashNormalizedText(resolved.Content),
 		})
 	}
 
@@ -557,22 +543,6 @@ func mainSpecModule(mainSpecRef string) (string, error) {
 		return base[2:], nil
 	default:
 		return "", fmt.Errorf("unsupported main spec file ref %q", mainSpecRef)
-	}
-}
-
-func sharedFileRefFromVersionRef(ref string) (string, error) {
-	parts := strings.SplitN(ref, "@", 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
-		return "", fmt.Errorf("invalid shared contract ref %q", ref)
-	}
-	prefix := strings.TrimSpace(parts[0])
-	switch {
-	case strings.HasPrefix(prefix, "c_"):
-		return fmt.Sprintf("docs/specs/shared_contracts/candidate/%s.md", prefix), nil
-	case strings.HasPrefix(prefix, "s_"):
-		return fmt.Sprintf("docs/specs/shared_contracts/stable/%s.md", prefix), nil
-	default:
-		return "", fmt.Errorf("invalid shared contract ref prefix %q", ref)
 	}
 }
 
