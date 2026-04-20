@@ -313,9 +313,11 @@ func buildAppendixSnapshot(repoRoot, mainSpecRef, body string) ([]AppendixEntry,
 		if module := strings.TrimSpace(frontmatter["module"]); module != "" && module != currentModule {
 			return nil, fmt.Errorf("%s: appendix module %q does not match main spec module %q", relPath, module, currentModule)
 		}
-		appendixRef := frontmatter["spec_version_ref"]
-		if strings.TrimSpace(appendixRef) == "" {
-			appendixRef = strings.TrimSuffix(filepath.Base(relPath), ".md") + "@unversioned"
+		appendixPrefix := strings.TrimSuffix(filepath.Base(relPath), ".md")
+		appendixVersionRef := strings.TrimSpace(frontmatter["spec_version_ref"])
+		appendixRef := appendixPrefix + "@unversioned"
+		if appendixVersionRef != "" {
+			appendixRef = appendixPrefix + "@" + appendixVersionRef
 		}
 		entries = append(entries, AppendixEntry{
 			FileRef:     relPath,
@@ -573,17 +575,20 @@ func parseProcessSnapshot(content string) (processSnapshot, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, " ") {
+		indent := leadingSpaceCount(line)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+
+		if indent == 0 {
 			currentList = ""
 			currentIndex = -1
-			parts := strings.SplitN(strings.TrimSpace(line), ":", 2)
-			if len(parts) != 2 {
+			key, value, ok := parseSnapshotFieldLine(trimmed)
+			if !ok {
 				continue
 			}
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
 			result.presentFields[key] = true
-			value = strings.Trim(value, "`")
 			if value == "" {
 				switch key {
 				case "module_appendix_snapshot":
@@ -599,24 +604,33 @@ func parseProcessSnapshot(content string) (processSnapshot, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "  - ") {
-			payload := strings.TrimPrefix(line, "  - ")
-			key, value := splitKeyValue(payload)
+		if indent == 2 {
+			key, value, ok := parseSnapshotFieldLine(trimmed)
+			if !ok {
+				continue
+			}
 			switch currentList {
 			case "module_appendix_snapshot":
-				result.appendixEntries = append(result.appendixEntries, AppendixEntry{})
-				currentIndex = len(result.appendixEntries) - 1
+				if currentIndex < 0 || key == "file_ref" {
+					result.appendixEntries = append(result.appendixEntries, AppendixEntry{})
+					currentIndex = len(result.appendixEntries) - 1
+				}
 				assignAppendixField(&result.appendixEntries[currentIndex], key, value)
 			case "shared_contract_snapshot":
-				result.sharedEntries = append(result.sharedEntries, SharedContractEntry{})
-				currentIndex = len(result.sharedEntries) - 1
+				if currentIndex < 0 || key == "shared_contract_id" {
+					result.sharedEntries = append(result.sharedEntries, SharedContractEntry{})
+					currentIndex = len(result.sharedEntries) - 1
+				}
 				assignSharedField(&result.sharedEntries[currentIndex], key, value)
 			}
 			continue
 		}
 
-		if strings.HasPrefix(line, "    ") && currentIndex >= 0 {
-			key, value := splitKeyValue(strings.TrimSpace(line))
+		if indent >= 4 && currentIndex >= 0 {
+			key, value, ok := parseSnapshotFieldLine(trimmed)
+			if !ok {
+				continue
+			}
 			switch currentList {
 			case "module_appendix_snapshot":
 				assignAppendixField(&result.appendixEntries[currentIndex], key, value)
@@ -635,6 +649,29 @@ func parseProcessSnapshot(content string) (processSnapshot, error) {
 		result.sharedEntries = nil
 	}
 	return result, nil
+}
+
+func parseSnapshotFieldLine(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "- ")
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key := normalizeFieldKey(strings.TrimSpace(parts[0]))
+	if key == "" {
+		return "", "", false
+	}
+	value := strings.Trim(strings.TrimSpace(parts[1]), "`")
+	return key, value, true
+}
+
+func leadingSpaceCount(line string) int {
+	count := 0
+	for count < len(line) && line[count] == ' ' {
+		count++
+	}
+	return count
 }
 
 func splitKeyValue(line string) (string, string) {

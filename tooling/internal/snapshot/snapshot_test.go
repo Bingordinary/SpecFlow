@@ -85,7 +85,7 @@ version: 1.1.0
 	if len(result.ModuleAppendixSnapshot) != 1 {
 		t.Fatalf("expected one appendix snapshot entry, got %d", len(result.ModuleAppendixSnapshot))
 	}
-	if result.ModuleAppendixSnapshot[0].AppendixRef != "c_module_demo@0.1.0" {
+	if result.ModuleAppendixSnapshot[0].AppendixRef != "c_module_demo_prompt@c_module_demo@0.1.0" {
 		t.Fatalf("unexpected appendix ref: %s", result.ModuleAppendixSnapshot[0].AppendixRef)
 	}
 	if result.SystemConstraintsStableVersionRef != "s_system_constraints@1.1.0" {
@@ -344,6 +344,72 @@ func TestValidateProcessFileAcceptsSnapshotFieldsWithoutYAMLFence(t *testing.T) 
 		"system_constraints_stable_version_ref: none",
 		"system_constraints_stable_fingerprint: none",
 		"shared_contract_snapshot: none",
+		"",
+	}, "\n"))
+
+	result, err := ValidateProcessFile(repoRoot, "module_demo", "check")
+	if err != nil {
+		t.Fatalf("ValidateProcessFile: %v", err)
+	}
+	if !result.Valid {
+		t.Fatalf("expected valid result, got mismatches %+v", result.Mismatches)
+	}
+}
+
+func TestValidateProcessFileAcceptsMarkdownBulletSnapshotFormat(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupSnapshotValidationRepo(t, repoRoot)
+	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateAppendixDir)))
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), `---
+id: module_demo
+layer: candidate
+version: 0.1.0
+---
+
+# Demo
+
+See [appendix](./appendix/c_module_demo_prompt.md).
+
+## Global Constraint Alignment
+
+1. system_constraints_stable_ref: none
+2. shared_contract_refs: none
+`)
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateAppendixDir), "c_module_demo_prompt.md"), `---
+module: module_demo
+layer: candidate
+spec_version_ref: c_module_demo@0.1.0
+---
+
+# Appendix
+`)
+
+	expected, err := RebuildCurrent(repoRoot, "module_demo")
+	if err != nil {
+		t.Fatalf("RebuildCurrent: %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md"), strings.Join([]string{
+		"# module_demo cand_check snapshot",
+		"",
+		"## Check Result Snapshot",
+		"",
+		"- `spec_file_ref`: `" + expected.SpecFileRef + "`",
+		"- `spec_version_ref`: `" + expected.SpecVersionRef + "`",
+		"- `spec_fingerprint`: `" + expected.SpecFingerprint + "`",
+		"- `module_appendix_snapshot`:",
+		"  - `file_ref`: `" + expected.ModuleAppendixSnapshot[0].FileRef + "`",
+		"  - `appendix_ref`: `" + expected.ModuleAppendixSnapshot[0].AppendixRef + "`",
+		"  - `fingerprint`: `" + expected.ModuleAppendixSnapshot[0].Fingerprint + "`",
+		"- `system_constraints_stable_file_ref`: `none`",
+		"- `system_constraints_stable_version_ref`: `none`",
+		"- `system_constraints_stable_fingerprint`: `none`",
+		"- `shared_contract_snapshot`: `none`",
 		"",
 	}, "\n"))
 
