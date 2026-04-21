@@ -330,6 +330,7 @@ The output must include at least:
 10. a leading `user-facing close-out block`
    - it must appear before routing detail or repository-truth evidence
    - it must use the same semantic slots and localized-label rule defined by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - for `next-stage entry gap`, use the non-lifecycle governance-flow meaning defined there rather than the module-lifecycle meaning
    - `current state` must explicitly report whether `shared_ops` is closed or blocked and which routed internal flow currently owns the request
    - when the request is blocked or checkpointed, it must also include `resume signal`
 

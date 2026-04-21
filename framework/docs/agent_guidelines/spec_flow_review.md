@@ -426,6 +426,7 @@ The output should include:
 15. a leading `user-facing close-out block`
    - it must appear before block coverage, detailed findings, or supporting review evidence
    - it must use the same semantic slots and localized-label rule defined by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - for `next-stage entry gap`, use the non-lifecycle governance-flow meaning defined there rather than the module-lifecycle meaning
    - `current state` must explicitly report whether the review scope passed, is blocked, or still has findings that prevent a `pass`
    - when the review is blocked on a prerequisite action or checkpoint-like stop, it must also include `resume signal`
 

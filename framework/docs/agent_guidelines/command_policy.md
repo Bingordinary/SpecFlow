@@ -321,8 +321,13 @@ Additional requirements:
 20. `next step` must name the smallest legal next step for the current result rather than a broad later-phase suggestion.
 21. `why this next step` must explain the blocking fact, gate fact, or completion fact in plain user-facing language rather than only repeating the command name or `_status.md` field.
 22. If `Next Command` remains the same command that just ran, `why this next step` must explicitly state that the round is not stalled and must name the concrete unfinished closure surface that keeps the workflow on the current command.
-23. `next-stage entry gap` has one fixed boundary meaning:
-   - it reports the entry condition for the first later lifecycle command that is different from the command that just ran
-   - if that later different command is already the current `next step`, the slot must explicitly say that the later-stage entry condition is already satisfied
-   - if the workflow is still staying on the same command, the slot must name what still blocks entry into that later different command
-24. If the command result is blocked, stopped at a checkpoint, or waiting on a named prerequisite condition, the same `user-facing close-out block` must also include `resume signal`.
+23. `next-stage entry gap` has two fixed boundary meanings owned by the framework:
+   - for a standard module command, it reports the entry condition for the first later lifecycle command that is different from the command that just ran
+   - for a user-facing non-lifecycle governance flow that explicitly adopts the same close-out block slots, it reports the entry condition for the first later formal follow-up step that is different from the flow that just ran
+24. When Rule 23 is applied to a standard module command:
+   - if that later lifecycle command is already the current `next step`, the slot must explicitly say that the later-stage entry condition is already satisfied
+   - if the workflow is still staying on the same command, the slot must name what still blocks entry into that later lifecycle command
+25. When Rule 23 is applied to a user-facing non-lifecycle governance flow:
+   - if that later formal follow-up step is already the current `next step`, the slot must explicitly say that the later-step entry condition is already satisfied
+   - if the workflow is still staying on the same flow, the slot must name what still blocks entry into that later formal follow-up step
+26. If the command result is blocked, stopped at a checkpoint, or waiting on a named prerequisite condition, the same `user-facing close-out block` must also include `resume signal`.
