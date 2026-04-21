@@ -215,6 +215,10 @@ The output should include:
    - which registered project-local standard file was used
    - how that surface affected `progressability`, `content completeness`, or structured findings
 13. when follow-up work only confirmed local repair or ran a scoped review instead of a new formal rerun, that this result was non-authoritative and did not change lifecycle state
+14. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - when a checkpoint was raised, also report `resume signal`
+   - if `Next Command=cand_check`, `why this next step` must explicitly state whether the blocker is truth repair, user clarification, or a required decision rather than only repeating that closure is incomplete
 
 When the result is `blocked` or `fix_required`, findings must be structured and must not be reduced to vague summaries.
 

@@ -175,6 +175,10 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
      - `Active Layer=candidate`
      - `Next Command=cand_check`
      - `resume through shared_ops` before any later promotion retry
+23. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - when promotion recovery or shared-governance reroute occurred, also report `resume signal`
+   - `current state` must match the post-promotion or post-recovery state actually restored in `_status.md`
 
 Allowed checkpoint types:
 

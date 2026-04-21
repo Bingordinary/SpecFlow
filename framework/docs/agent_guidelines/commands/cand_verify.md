@@ -92,6 +92,10 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
 12. next-step suggestion
 13. git close-out result
 14. `_status.md` update result
+15. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - when a `human_verify` checkpoint was raised, also report `resume signal`
+   - if `Next Command` remains `cand_verify` or falls back to `cand_impl`, `why this next step` must explicitly state whether the remaining blocker is missing evidence, human-effect judgment, or implementation deviation
 
 Allowed checkpoint types:
 

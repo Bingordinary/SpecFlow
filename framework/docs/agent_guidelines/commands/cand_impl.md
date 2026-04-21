@@ -77,6 +77,11 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
 9. fallback reason if the pass gate or plan was invalid
 10. git close-out result
 11. `_status.md` update result
+12. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - `current state` must explicitly confirm the written `Active Layer` and `Next Command`
+   - if `Next Command=cand_impl`, `why this next step` must explicitly state that implementation progressed but candidate closure has not yet reached the `cand_verify` entry condition
+   - `next-stage entry gap` must name the unfinished implementation, verification, or closure surfaces that still block `cand_verify`
 
 Allowed checkpoint types:
 

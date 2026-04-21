@@ -101,6 +101,10 @@ Before execution:
 6. Shared Contract reconciliation result when the round changed shared truth or bindings
 7. git close-out result
 8. next-step suggestion
+9. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - `current state` must explicitly confirm the stable-layer landing written to `_status.md`
+   - if the round stopped and rerouted through `shared_ops`, `next step` must name that reroute directly instead of implying that onboarding closed
 
 ## 7. Non-Goals
 

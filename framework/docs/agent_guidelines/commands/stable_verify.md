@@ -100,6 +100,10 @@ Only a new independent full-scope run of `stable_verify` may produce that advanc
    - `spec_fork:{module}` may be suggested only as a later follow-up after stable alignment has been restored
 9. git close-out result
 10. `_status.md` update result
+11. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - `current state` must explicitly confirm `Active Layer=stable` and the written `Next Command`
+   - if `Next Command=stable_verify`, `why this next step` must explicitly state that alignment is not yet restored rather than implying a no-op rerun
 
 Allowed `fallback_reason_code` values:
 

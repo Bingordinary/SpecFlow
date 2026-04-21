@@ -96,6 +96,10 @@ Only a new independent full-scope run of `spec_new` may produce that advancing r
 8. Shared Contract reconciliation result when the round changed shared truth or bindings
 9. git close-out result
 10. remaining closure items
+11. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - `current state` must explicitly confirm `Active Layer=candidate` and `Next Command=cand_check`
+   - `next-stage entry gap` must explicitly confirm that entry into the later different command `cand_check` is already satisfied after `spec_new` closes
 
 ## 7. Non-Goals
 

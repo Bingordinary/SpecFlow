@@ -327,6 +327,11 @@ The output must include at least:
 7. if a checkpoint stopped the request, whether that checkpoint came from `shared_escape` or from a previously routed internal shared flow
 8. when a previously routed internal shared flow raised a `shared_ops` checkpoint directly, that the current `shared_ops` result is `blocked` rather than closed, plus the declared `resume_next_step`
 9. the git close-out result when governance files or commit-triggering files were changed
+10. a leading `user-facing close-out block`
+   - it must appear before routing detail or repository-truth evidence
+   - it must use the same semantic slots and localized-label rule defined by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - `current state` must explicitly report whether `shared_ops` is closed or blocked and which routed internal flow currently owns the request
+   - when the request is blocked or checkpointed, it must also include `resume signal`
 
 ## 11. Boundary Against Other Objects
 

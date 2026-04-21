@@ -302,3 +302,27 @@ Additional requirements:
 11. If the command may fall back or block, it must define which standardized `fallback_reason_code` values it may emit instead of leaving fallback wording to executor invention.
 12. If the command grades findings or deviations by severity, it must use one explicitly referenced centralized severity contract instead of redefining severity meanings locally.
 13. If the command may advance `_status.md` to a later lifecycle step, it must explicitly state that such advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from Section 8 Rules 27-30 instead of redefining a second advancement contract locally.
+14. Every user-facing standard command final response must begin with a `user-facing close-out block`.
+15. That `user-facing close-out block` must appear before process detail, evidence matrices, file inventories, or git close-out detail.
+16. The `user-facing close-out block` must include all of the following fixed semantic slots in this order:
+   - `round conclusion`
+   - `current state`
+   - `next step`
+   - `why this next step`
+   - `next-stage entry gap`
+17. The slot names above define semantic meaning and order, not mandatory literal surface labels.
+18. Executors and hosts may localize or restyle the displayed labels if all of the following still hold:
+   - the slot order stays unchanged
+   - each slot keeps the same meaning
+   - the rendered labels remain easy for the user to distinguish
+19. For standard module commands, `current state` must explicitly report the command-owned lifecycle state written back in `docs/specs/_status.md`, including at minimum:
+   - `Active Layer`
+   - `Next Command`
+20. `next step` must name the smallest legal next step for the current result rather than a broad later-phase suggestion.
+21. `why this next step` must explain the blocking fact, gate fact, or completion fact in plain user-facing language rather than only repeating the command name or `_status.md` field.
+22. If `Next Command` remains the same command that just ran, `why this next step` must explicitly state that the round is not stalled and must name the concrete unfinished closure surface that keeps the workflow on the current command.
+23. `next-stage entry gap` has one fixed boundary meaning:
+   - it reports the entry condition for the first later lifecycle command that is different from the command that just ran
+   - if that later different command is already the current `next step`, the slot must explicitly say that the later-stage entry condition is already satisfied
+   - if the workflow is still staying on the same command, the slot must name what still blocks entry into that later different command
+24. If the command result is blocked, stopped at a checkpoint, or waiting on a named prerequisite condition, the same `user-facing close-out block` must also include `resume signal`.

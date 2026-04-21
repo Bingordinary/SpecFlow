@@ -103,6 +103,10 @@ Only a new independent full-scope run of `spec_fork` may produce that advancing 
 8. Shared Contract reconciliation result when the round changed shared truth or bindings
 9. when post-fork `shared_sync` could not continue safely, that the command stopped as `blocked` and must resume through `shared_ops`
 10. git close-out result
+11. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - `current state` must explicitly confirm the candidate-layer state written to `_status.md`
+   - if post-fork follow-up is blocked on `shared_ops`, the block must name that reroute as the immediate `next step`
 
 ## 7. Non-Goals
 

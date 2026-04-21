@@ -423,6 +423,11 @@ The output should include:
    - which registered project-local standard files were used
    - how they tightened or clarified findings or the final conclusion
 14. the next action
+15. a leading `user-facing close-out block`
+   - it must appear before block coverage, detailed findings, or supporting review evidence
+   - it must use the same semantic slots and localized-label rule defined by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - `current state` must explicitly report whether the review scope passed, is blocked, or still has findings that prevent a `pass`
+   - when the review is blocked on a prerequisite action or checkpoint-like stop, it must also include `resume signal`
 
 ## 8. Non-Goals
 

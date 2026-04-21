@@ -127,6 +127,10 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
 10. blocking reason and resume signal when planning stayed at `cand_plan` without fallback
 11. git close-out result
 12. `_status.md` update result
+13. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+   - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
+   - when a checkpoint was raised or planning stayed blocked at `cand_plan`, also report `resume signal`
+   - if `Next Command=cand_plan`, `why this next step` must explicitly state whether planning is waiting on implementation facts, unresolved direction, or truth writeback
 
 Allowed checkpoint types:
 
