@@ -160,6 +160,8 @@ If any in-scope file cannot be assigned to a review block, do not issue `pass`.
    - missing ownership
 4. complete the required cross-block convergence checks
 5. produce findings ordered by governance risk
+   - every real finding must use the fixed finding contract from Section 7.1
+   - do not collapse a real finding into a one-line conclusion with no repair guidance
 6. issue the final result only after block review and cross-block convergence are both complete
 
 ## 7. Output Contract
@@ -174,11 +176,47 @@ The output must report at least:
 6. the impact-reconciliation coverage result
 7. the tooling coverage result
 8. the cross-block convergence results
-9. the final conclusion:
+9. the findings result:
+   - explicit `none` when no real finding exists
+   - otherwise every finding must satisfy Section 7.1
+10. the final conclusion:
    - `pass`
    - `blocked`
 
-If the output does not explicitly report Items 5 through 8, the review is not complete.
+If the output does not explicitly report Items 5 through 9, the review is not complete.
+
+### 7.1 Finding Contract
+
+When `spec_flow_review` reports a real finding, that finding must be written as one self-contained repairable unit.
+
+The minimum required fields are:
+
+1. `title`
+   - one short problem label
+2. `severity`
+   - required when the finding is graded under `severity_policy.md`
+3. `background`
+   - the minimum repository or rule context needed to understand why this finding matters
+4. `what happened`
+   - the concrete mismatch, drift, omission, or conflict that was observed
+5. `impact`
+   - what governance risk, flow break, or downstream instability this creates
+6. `recommended fix`
+   - the concrete repair direction that should be executed next
+7. `why this fix is the minimal correct fix`
+   - why the recommendation closes the problem without inventing a wider redesign
+8. `blocking`
+   - explicit `yes` or `no`
+9. `evidence`
+   - the file refs, block boundary, or tool/runtime result that directly supports the finding
+
+Additional rules:
+
+1. if `severity` is present, the finding must satisfy the shared explanation baseline from `specflow/framework/docs/agent_guidelines/severity_policy.md`
+2. `recommended fix` must be specific enough that a later user instruction such as "go fix it" can clearly refer back to that proposed repair without requiring a second clarification round
+3. do not replace `recommended fix` with a vague statement such as "should be aligned" or "needs cleanup"
+4. if more than one plausible repair exists and the review cannot justify one minimal correct fix, the finding must say that the repair path is still unresolved and the review must not present a guessed fix as settled
+5. when no real finding exists, the output must say so explicitly instead of omitting the finding section
 
 ## 8. Non-Goals
 
