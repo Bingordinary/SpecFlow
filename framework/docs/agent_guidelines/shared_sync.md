@@ -35,6 +35,7 @@ It may:
    - `project`
 5. interpret shared-specific execution-local exceptions such as:
    - `current_stable_landing_module`
+   - `stable_landing_shared_refs`
    - `bound_modules_only_shared_file_refs`
 6. convert those exceptions into exception-resolved downstream impact input
 7. pass the final affected object set to `impact_sync`
