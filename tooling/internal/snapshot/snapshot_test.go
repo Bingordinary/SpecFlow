@@ -274,8 +274,11 @@ func TestValidateProcessFileRejectsMissingRequiredSnapshotField(t *testing.T) {
 	setupSnapshotValidationRepo(t, repoRoot)
 
 	writeCheckProcessFile(t, repoRoot, strings.Join([]string{
-		"spec_file_ref: docs/specs/modules/candidate/c_module_demo.md",
-		"spec_version_ref: c_module_demo@0.1.0",
+		"object_type: module",
+		"object_ref: module_demo",
+		"truth_layer_ref: candidate",
+		"truth_file_ref: docs/specs/modules/candidate/c_module_demo.md",
+		"truth_version_ref: c_module_demo@0.1.0",
 		"module_appendix_snapshot: none",
 		"system_constraints_stable_file_ref: none",
 		"system_constraints_stable_version_ref: none",
@@ -290,8 +293,8 @@ func TestValidateProcessFileRejectsMissingRequiredSnapshotField(t *testing.T) {
 	if result.Valid {
 		t.Fatalf("expected invalid result, got valid")
 	}
-	if !containsMismatch(result.Mismatches, "missing required field: spec_fingerprint") {
-		t.Fatalf("expected missing spec_fingerprint mismatch, got %+v", result.Mismatches)
+	if !containsMismatch(result.Mismatches, "missing required field: truth_fingerprint") {
+		t.Fatalf("expected missing truth_fingerprint mismatch, got %+v", result.Mismatches)
 	}
 }
 
@@ -305,9 +308,12 @@ func TestValidateProcessFileAcceptsExplicitNoneSnapshots(t *testing.T) {
 	}
 
 	writeCheckProcessFile(t, repoRoot, strings.Join([]string{
-		"spec_file_ref: " + expected.SpecFileRef,
-		"spec_version_ref: " + expected.SpecVersionRef,
-		"spec_fingerprint: " + expected.SpecFingerprint,
+		"object_type: module",
+		"object_ref: " + expected.Module,
+		"truth_layer_ref: " + expected.TruthLayerRef,
+		"truth_file_ref: " + expected.SpecFileRef,
+		"truth_version_ref: " + expected.SpecVersionRef,
+		"truth_fingerprint: " + expected.SpecFingerprint,
 		"module_appendix_snapshot: none",
 		"system_constraints_stable_file_ref: none",
 		"system_constraints_stable_version_ref: none",
@@ -336,9 +342,12 @@ func TestValidateProcessFileAcceptsSnapshotFieldsWithoutYAMLFence(t *testing.T) 
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md"), strings.Join([]string{
 		"# check",
 		"",
-		"spec_file_ref: " + expected.SpecFileRef,
-		"spec_version_ref: " + expected.SpecVersionRef,
-		"spec_fingerprint: " + expected.SpecFingerprint,
+		"object_type: module",
+		"object_ref: " + expected.Module,
+		"truth_layer_ref: " + expected.TruthLayerRef,
+		"truth_file_ref: " + expected.SpecFileRef,
+		"truth_version_ref: " + expected.SpecVersionRef,
+		"truth_fingerprint: " + expected.SpecFingerprint,
 		"module_appendix_snapshot: none",
 		"system_constraints_stable_file_ref: none",
 		"system_constraints_stable_version_ref: none",
@@ -399,9 +408,12 @@ spec_version_ref: c_module_demo@0.1.0
 		"",
 		"## Check Result Snapshot",
 		"",
-		"- `spec_file_ref`: `" + expected.SpecFileRef + "`",
-		"- `spec_version_ref`: `" + expected.SpecVersionRef + "`",
-		"- `spec_fingerprint`: `" + expected.SpecFingerprint + "`",
+		"- `object_type`: `module`",
+		"- `object_ref`: `" + expected.Module + "`",
+		"- `truth_layer_ref`: `" + expected.TruthLayerRef + "`",
+		"- `truth_file_ref`: `" + expected.SpecFileRef + "`",
+		"- `truth_version_ref`: `" + expected.SpecVersionRef + "`",
+		"- `truth_fingerprint`: `" + expected.SpecFingerprint + "`",
 		"- `module_appendix_snapshot`:",
 		"  - `file_ref`: `" + expected.ModuleAppendixSnapshot[0].FileRef + "`",
 		"  - `appendix_ref`: `" + expected.ModuleAppendixSnapshot[0].AppendixRef + "`",

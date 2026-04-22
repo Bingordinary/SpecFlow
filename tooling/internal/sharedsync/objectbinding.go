@@ -164,16 +164,18 @@ func processSnapshotContainsSelectedShared(repoRoot, objectType, object, activeL
 
 func isValidModuleRemovedBindingEvidence(repoRoot, module, activeLayer, processKind string, processSnapshot snapshot.ProcessSnapshotData, scopedRefs, scopedIDs []string) (bool, error) {
 	requiredScalars := []string{
+		"object_type",
+		"object_ref",
 		"gate",
 		"decision",
 		"allow_next",
 		"next_command",
 		"blocking_summary",
 		"coverage_summary",
-		"spec_layer_ref",
-		"spec_file_ref",
-		"spec_version_ref",
-		"spec_fingerprint",
+		"truth_layer_ref",
+		"truth_file_ref",
+		"truth_version_ref",
+		"truth_fingerprint",
 		"system_constraints_stable_file_ref",
 		"system_constraints_stable_version_ref",
 		"system_constraints_stable_fingerprint",
@@ -200,15 +202,15 @@ func isValidModuleRemovedBindingEvidence(repoRoot, module, activeLayer, processK
 	if !ok {
 		return false, nil
 	}
-
-	validation, err := snapshot.ValidateProcessFile(repoRoot, module, processKind)
+	currentSnapshot, err := snapshot.RebuildCurrent(repoRoot, module)
 	if err != nil {
 		return false, err
 	}
-	for _, mismatch := range validation.Mismatches {
-		if !strings.HasPrefix(mismatch, "shared_contract_snapshot mismatch") {
-			return false, nil
-		}
+	if processSnapshot.Scalars["object_type"] != "module" {
+		return false, nil
+	}
+	if processSnapshot.Scalars["object_ref"] != module {
+		return false, nil
 	}
 	if processSnapshot.Scalars["gate"] != expectedGate {
 		return false, nil
@@ -222,18 +224,30 @@ func isValidModuleRemovedBindingEvidence(repoRoot, module, activeLayer, processK
 	if processSnapshot.Scalars["next_command"] != expectedNextCommand {
 		return false, nil
 	}
-	if processSnapshot.Scalars["spec_layer_ref"] != activeLayer {
+	if processSnapshot.Scalars["truth_layer_ref"] != activeLayer {
 		return false, nil
 	}
 	if processKind == "verify" && strings.TrimSpace(processSnapshot.Scalars["verification_scope_ref"]) == "" {
 		return false, nil
 	}
+	if processSnapshot.Scalars["truth_file_ref"] != currentSnapshot.SpecFileRef {
+		return false, nil
+	}
+	if !matchesObjectVersionRef(processSnapshot.Scalars["truth_version_ref"], "module", activeLayer, module) {
+		return false, nil
+	}
+	if processSnapshot.Scalars["system_constraints_stable_file_ref"] != currentSnapshot.SystemConstraintsStableFileRef ||
+		processSnapshot.Scalars["system_constraints_stable_version_ref"] != currentSnapshot.SystemConstraintsStableVersionRef ||
+		processSnapshot.Scalars["system_constraints_stable_fingerprint"] != currentSnapshot.SystemConstraintsStableFingerprint {
+		return false, nil
+	}
+	if !equalAppendixEntries(processSnapshot.ModuleAppendixSnapshot, currentSnapshot.ModuleAppendixSnapshot) {
+		return false, nil
+	}
 
 	return sharedSnapshotMatchesRemovedBindingEvidence(
-		repoRoot,
-		activeLayer,
 		processSnapshot.SharedContractSnapshot,
-		validation.Expected.SharedContractSnapshot,
+		currentSnapshot.SharedContractSnapshot,
 		scopedRefs,
 		scopedIDs,
 	)
@@ -299,9 +313,10 @@ func isValidRemovedBindingEvidence(repoRoot string, processSnapshot snapshot.Pro
 	if processSnapshot.Scalars["truth_layer_ref"] != activeLayer {
 		return false, nil
 	}
-	if processSnapshot.Scalars["truth_file_ref"] != currentSnapshot.TruthFileRef ||
-		processSnapshot.Scalars["truth_version_ref"] != currentSnapshot.TruthVersionRef ||
-		processSnapshot.Scalars["truth_fingerprint"] != currentSnapshot.TruthFingerprint {
+	if processSnapshot.Scalars["truth_file_ref"] != currentSnapshot.TruthFileRef {
+		return false, nil
+	}
+	if !matchesObjectVersionRef(processSnapshot.Scalars["truth_version_ref"], objectType, activeLayer, object) {
 		return false, nil
 	}
 	if processSnapshot.Scalars["gate"] != expectedGate {
@@ -328,8 +343,6 @@ func isValidRemovedBindingEvidence(repoRoot string, processSnapshot snapshot.Pro
 		return false, nil
 	}
 	return sharedSnapshotMatchesRemovedBindingEvidence(
-		repoRoot,
-		activeLayer,
 		processSnapshot.SharedContractSnapshot,
 		currentSnapshot.SharedContractSnapshot,
 		scopedRefs,
@@ -367,6 +380,20 @@ func equalObjectSnapshotEntries(actual, expected []snapshot.ObjectSnapshotEntry)
 	return true
 }
 
+func equalAppendixEntries(actual, expected []snapshot.AppendixEntry) bool {
+	actual = normalizeAppendixEntries(actual)
+	expected = normalizeAppendixEntries(expected)
+	if len(actual) != len(expected) {
+		return false
+	}
+	for idx := range actual {
+		if actual[idx] != expected[idx] {
+			return false
+		}
+	}
+	return true
+}
+
 func equalSharedSnapshotEntries(actual, expected []snapshot.SharedContractEntry) bool {
 	actual = normalizeSharedSnapshotEntries(actual)
 	expected = normalizeSharedSnapshotEntries(expected)
@@ -379,6 +406,20 @@ func equalSharedSnapshotEntries(actual, expected []snapshot.SharedContractEntry)
 		}
 	}
 	return true
+}
+
+func normalizeAppendixEntries(entries []snapshot.AppendixEntry) []snapshot.AppendixEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	items := append([]snapshot.AppendixEntry(nil), entries...)
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].FileRef != items[j].FileRef {
+			return items[i].FileRef < items[j].FileRef
+		}
+		return items[i].AppendixRef < items[j].AppendixRef
+	})
+	return items
 }
 
 func normalizeObjectSnapshotEntries(entries []snapshot.ObjectSnapshotEntry) []snapshot.ObjectSnapshotEntry {
@@ -587,6 +628,42 @@ func parseObjectVersionRefPrefix(prefix string) (string, string, string, error) 
 	}
 }
 
+func matchesObjectVersionRef(ref, objectType, activeLayer, object string) bool {
+	prefix, version, found := strings.Cut(strings.TrimSpace(ref), "@")
+	if !found || strings.TrimSpace(prefix) == "" || strings.TrimSpace(version) == "" {
+		return false
+	}
+	expectedPrefix, ok := expectedObjectVersionPrefix(objectType, activeLayer, object)
+	return ok && prefix == expectedPrefix
+}
+
+func expectedObjectVersionPrefix(objectType, activeLayer, object string) (string, bool) {
+	switch objectType {
+	case "module":
+		switch activeLayer {
+		case "candidate":
+			return "c_" + object, true
+		case "stable":
+			return "s_" + object, true
+		}
+	case "flow":
+		switch activeLayer {
+		case "candidate":
+			return "c_flow_" + object, true
+		case "stable":
+			return "s_flow_" + object, true
+		}
+	case "project":
+		switch activeLayer {
+		case "candidate":
+			return "c_project", true
+		case "stable":
+			return "s_project", true
+		}
+	}
+	return "", false
+}
+
 func buildSystemConstraintsSnapshot(repoRoot, body string) (string, string, string, error) {
 	ref, _, err := parseSystemConstraintsStableRef(body)
 	if err != nil {
@@ -721,7 +798,7 @@ func hashNormalizedText(content string) string {
 	return fmt.Sprintf("%x", sum)
 }
 
-func sharedSnapshotMatchesRemovedBindingEvidence(repoRoot, activeLayer string, stored, current []snapshot.SharedContractEntry, scopedRefs, scopedIDs []string) (bool, error) {
+func sharedSnapshotMatchesRemovedBindingEvidence(stored, current []snapshot.SharedContractEntry, scopedRefs, scopedIDs []string) (bool, error) {
 	stored = normalizeSharedSnapshotEntries(stored)
 	current = normalizeSharedSnapshotEntries(current)
 	if equalSharedSnapshotEntries(stored, current) {
@@ -746,35 +823,17 @@ func sharedSnapshotMatchesRemovedBindingEvidence(repoRoot, activeLayer string, s
 		if currentSet[sharedSnapshotEntryKey(entry)] {
 			continue
 		}
-		allowed, err := isAllowedRemovedSelectedSharedEntry(repoRoot, activeLayer, entry, scopedRefs, scopedIDs)
-		if err != nil {
-			return false, err
-		}
-		if !allowed {
+		if !matchesSelectedSharedEntry(entry, scopedRefs, scopedIDs) {
 			return false, nil
 		}
 	}
 	return true, nil
 }
 
-func isAllowedRemovedSelectedSharedEntry(repoRoot, activeLayer string, entry snapshot.SharedContractEntry, scopedRefs, scopedIDs []string) (bool, error) {
+func matchesSelectedSharedEntry(entry snapshot.SharedContractEntry, scopedRefs, scopedIDs []string) bool {
 	refSet := makeStringSet(scopedRefs)
 	idSet := makeStringSet(scopedIDs)
-	if !refSet[entry.VersionRef] && !idSet[entry.SharedContractID] {
-		return false, nil
-	}
-	resolved, err := sharedbinding.ResolveRef(repoRoot, activeLayer, entry.VersionRef)
-	if err != nil {
-		return false, err
-	}
-	expected := snapshot.SharedContractEntry{
-		SharedContractID: resolved.SharedContractID,
-		Layer:            resolved.Layer,
-		FileRef:          resolved.FileRef,
-		VersionRef:       resolved.VersionRef,
-		Fingerprint:      hashNormalizedText(resolved.Content),
-	}
-	return entry == expected, nil
+	return refSet[entry.VersionRef] || idSet[entry.SharedContractID]
 }
 
 func sharedSnapshotEntryKey(entry snapshot.SharedContractEntry) string {

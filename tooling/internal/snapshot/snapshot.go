@@ -38,6 +38,7 @@ type ObjectSnapshotEntry struct {
 
 type Snapshot struct {
 	Module                             string
+	TruthLayerRef                      string
 	SpecFileRef                        string
 	SpecVersionRef                     string
 	SpecFingerprint                    string
@@ -71,9 +72,12 @@ var markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 
 var requiredProcessSnapshotFields = map[string][]string{
 	"check": {
-		"spec_file_ref",
-		"spec_version_ref",
-		"spec_fingerprint",
+		"object_type",
+		"object_ref",
+		"truth_layer_ref",
+		"truth_file_ref",
+		"truth_version_ref",
+		"truth_fingerprint",
 		"module_appendix_snapshot",
 		"system_constraints_stable_file_ref",
 		"system_constraints_stable_version_ref",
@@ -81,9 +85,12 @@ var requiredProcessSnapshotFields = map[string][]string{
 		"shared_contract_snapshot",
 	},
 	"plan": {
-		"spec_file_ref",
-		"spec_version_ref",
-		"spec_fingerprint",
+		"object_type",
+		"object_ref",
+		"truth_layer_ref",
+		"truth_file_ref",
+		"truth_version_ref",
+		"truth_fingerprint",
 		"module_appendix_snapshot",
 		"system_constraints_stable_file_ref",
 		"system_constraints_stable_version_ref",
@@ -91,9 +98,12 @@ var requiredProcessSnapshotFields = map[string][]string{
 		"shared_contract_snapshot",
 	},
 	"verify": {
-		"spec_file_ref",
-		"spec_version_ref",
-		"spec_fingerprint",
+		"object_type",
+		"object_ref",
+		"truth_layer_ref",
+		"truth_file_ref",
+		"truth_version_ref",
+		"truth_fingerprint",
 		"module_appendix_snapshot",
 		"verification_scope_ref",
 		"system_constraints_stable_file_ref",
@@ -125,6 +135,7 @@ func RebuildCurrent(repoRoot, module string) (Snapshot, error) {
 
 	result := Snapshot{
 		Module:          module,
+		TruthLayerRef:   moduleStatus.ActiveLayer,
 		SpecFileRef:     mainSpecRef,
 		SpecFingerprint: hashNormalizedText(string(mainSpecContent)),
 	}
@@ -195,9 +206,12 @@ func ValidateProcessFile(repoRoot, module, processKind string) (ValidationResult
 		}
 	}
 
-	compareScalar(&result, "spec_file_ref", actual.scalars["spec_file_ref"], expected.SpecFileRef)
-	compareScalar(&result, "spec_version_ref", actual.scalars["spec_version_ref"], expected.SpecVersionRef)
-	compareScalar(&result, "spec_fingerprint", actual.scalars["spec_fingerprint"], expected.SpecFingerprint)
+	compareScalar(&result, "object_type", actual.scalars["object_type"], "module")
+	compareScalar(&result, "object_ref", actual.scalars["object_ref"], expected.Module)
+	compareScalar(&result, "truth_layer_ref", actual.scalars["truth_layer_ref"], expected.TruthLayerRef)
+	compareScalar(&result, "truth_file_ref", actual.scalars["truth_file_ref"], expected.SpecFileRef)
+	compareScalar(&result, "truth_version_ref", actual.scalars["truth_version_ref"], expected.SpecVersionRef)
+	compareScalar(&result, "truth_fingerprint", actual.scalars["truth_fingerprint"], expected.SpecFingerprint)
 	compareScalar(&result, "system_constraints_stable_file_ref", actual.scalars["system_constraints_stable_file_ref"], expected.SystemConstraintsStableFileRef)
 	compareScalar(&result, "system_constraints_stable_version_ref", actual.scalars["system_constraints_stable_version_ref"], expected.SystemConstraintsStableVersionRef)
 	compareScalar(&result, "system_constraints_stable_fingerprint", actual.scalars["system_constraints_stable_fingerprint"], expected.SystemConstraintsStableFingerprint)
@@ -256,10 +270,12 @@ func LoadProcessSnapshot(repoRoot, module, processKind string) (ProcessSnapshotD
 
 func Render(snapshot Snapshot) string {
 	lines := []string{
-		fmt.Sprintf("module: %s", snapshot.Module),
-		fmt.Sprintf("spec_file_ref: %s", snapshot.SpecFileRef),
-		fmt.Sprintf("spec_version_ref: %s", snapshot.SpecVersionRef),
-		fmt.Sprintf("spec_fingerprint: %s", snapshot.SpecFingerprint),
+		"object_type: module",
+		fmt.Sprintf("object_ref: %s", snapshot.Module),
+		fmt.Sprintf("truth_layer_ref: %s", snapshot.TruthLayerRef),
+		fmt.Sprintf("truth_file_ref: %s", snapshot.SpecFileRef),
+		fmt.Sprintf("truth_version_ref: %s", snapshot.SpecVersionRef),
+		fmt.Sprintf("truth_fingerprint: %s", snapshot.SpecFingerprint),
 		fmt.Sprintf("system_constraints_stable_file_ref: %s", snapshot.SystemConstraintsStableFileRef),
 		fmt.Sprintf("system_constraints_stable_version_ref: %s", snapshot.SystemConstraintsStableVersionRef),
 		fmt.Sprintf("system_constraints_stable_fingerprint: %s", snapshot.SystemConstraintsStableFingerprint),

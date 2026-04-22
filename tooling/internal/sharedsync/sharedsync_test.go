@@ -890,8 +890,8 @@ func TestSyncImpactIgnoresModuleEvidenceThatDoesNotMatchCurrentModuleIdentity(t 
 		processSnapshot.ModuleAppendixSnapshot,
 		processSnapshot.SharedContractSnapshot,
 	)
-	rewritten := strings.Replace(validProcess, "spec_file_ref: docs/specs/modules/candidate/c_module_demo.md", "spec_file_ref: docs/specs/modules/candidate/c_module_other.md", 1)
-	rewritten = strings.Replace(rewritten, "spec_fingerprint: ", "spec_fingerprint: wrong-", 1)
+	rewritten := strings.Replace(validProcess, "truth_file_ref: docs/specs/modules/candidate/c_module_demo.md", "truth_file_ref: docs/specs/modules/candidate/c_module_other.md", 1)
+	rewritten = strings.Replace(rewritten, "truth_fingerprint: ", "truth_fingerprint: wrong-", 1)
 	mustWriteFile(t, processPath, "# check\n\n```yaml\n"+rewritten+"\n```\n")
 
 	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
@@ -1787,17 +1787,18 @@ func renderModuleProcessSnapshotForTest(t *testing.T, repoRoot, processKind, mod
 	}
 	truthFingerprint := fingerprintForTest(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)))
 	scalars := []string{
-		"module: " + module,
+		"object_type: module",
+		"object_ref: " + module,
 		"gate: " + map[string]string{"check": "cand_check", "verify": "cand_verify"}[processKind],
 		"decision: pass",
 		"allow_next: true",
 		"next_command: " + map[string]string{"check": "cand_plan", "verify": "cand_promote"}[processKind],
 		"blocking_summary: none",
 		"coverage_summary: current candidate",
-		"spec_layer_ref: candidate",
-		"spec_file_ref: " + mainSpecRef,
-		"spec_version_ref: c_" + module + "@0.1.0",
-		"spec_fingerprint: " + truthFingerprint,
+		"truth_layer_ref: candidate",
+		"truth_file_ref: " + mainSpecRef,
+		"truth_version_ref: c_" + module + "@0.1.0",
+		"truth_fingerprint: " + truthFingerprint,
 		"system_constraints_stable_file_ref: none",
 		"system_constraints_stable_version_ref: none",
 		"system_constraints_stable_fingerprint: none",
