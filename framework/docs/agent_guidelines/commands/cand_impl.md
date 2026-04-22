@@ -15,7 +15,7 @@ By default it handles:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `cand_impl` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
@@ -77,7 +77,7 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
 9. fallback reason if the pass gate or plan was invalid
 10. git close-out result
 11. `_status.md` update result
-12. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+12. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - `current state` must explicitly confirm the written `Active Layer` and `Next Command`
    - if `Next Command=cand_impl`, `why this next step` must explicitly state that implementation progressed but candidate closure has not yet reached the `cand_verify` entry condition

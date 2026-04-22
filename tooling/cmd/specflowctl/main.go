@@ -725,7 +725,7 @@ func writeProcessUsage(w io.Writer) {
 
 func writeSharedUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl shared sync-impact [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--stable-landing-module module_a] [--bound-modules-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_x.md] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl shared sync-impact (--shared-refs c_shared_x@0.1.0 | --shared-ids shared_x) [--modules module_a,module_b] [--stable-landing-module module_a] [--bound-modules-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_x.md] [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl shared reconcile-bound-modules [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--repo-root PATH]")
 }
 

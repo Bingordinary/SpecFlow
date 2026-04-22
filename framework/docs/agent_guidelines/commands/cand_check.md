@@ -32,7 +32,7 @@ By default this command reviews:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `cand_check` may produce that advancing result; later local confirmation, repair-side reassessment, or scoped follow-up review must not advance lifecycle state.
 
 `cand_check` is not a "minimum can-move-forward review."
@@ -215,7 +215,7 @@ The output should include:
    - which registered project-local standard file was used
    - how that surface affected `progressability`, `content completeness`, or structured findings
 13. when follow-up work only confirmed local repair or ran a scoped review instead of a new formal rerun, that this result was non-authoritative and did not change lifecycle state
-14. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+14. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a checkpoint was raised, also report `resume signal`
    - if `Next Command=cand_check`, `why this next step` must explicitly state whether the blocker is truth repair, user clarification, or a required decision rather than only repeating that closure is incomplete

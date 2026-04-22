@@ -18,7 +18,7 @@ By default it handles:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `cand_verify` may produce that advancing result; later local confirmation, narrowed evidence refresh, or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
@@ -92,7 +92,7 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
 12. next-step suggestion
 13. git close-out result
 14. `_status.md` update result
-15. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+15. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a `human_verify` checkpoint was raised, also report `resume signal`
    - if `Next Command` remains `cand_verify` or falls back to `cand_impl`, `why this next step` must explicitly state whether the remaining blocker is missing evidence, human-effect judgment, or implementation deviation

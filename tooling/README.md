@@ -35,7 +35,7 @@ The tooling layer must not:
 
 `impact_sync` is a governance concept first.
 The current CLI exposes only the deterministic pieces already justified by rules.
-For shared-change reconciliation, the current mechanical entry remains `shared sync-impact`.
+For shared-change reconciliation, the current mechanical entry remains `shared sync-impact`, but that entry must first compute `shared_sync` scope and exceptions and only then hand the fixed downstream object set to internal `impact_sync`.
 
 ## Current Command Surface
 
@@ -68,7 +68,7 @@ For shared-change reconciliation, the current mechanical entry remains `shared s
 14. `status set-object`
    - write one unified object row in `_status.md`
 15. `shared sync-impact`
-   - compute shared-specific impact and execute deterministic downstream fallback for affected objects according to the current shared-governance contract
+   - compute shared-specific scope and exceptions, then execute deterministic downstream fallback for the fixed affected objects through internal `impact_sync`
 16. `shared reconcile-bound-modules`
    - rewrite Shared Contract `bound_modules` metadata from current formal bindings
 
@@ -102,7 +102,7 @@ Examples:
 ./specflow/tooling/bin/specflowctl-linux-amd64 snapshot rebuild --module module_ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --module module_ai --from-command cand_promote --reason evidence_incomplete
 ./specflow/tooling/bin/specflowctl-linux-amd64 status set-object --type flow --object flow_task_execution --stable yes --candidate no --active-layer stable --next-command flow_fork
-./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --modules module_ai --shared-refs c_shared_app_config_topology@0.2.0
+./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs c_shared_app_config_topology@0.2.0 --modules module_ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared reconcile-bound-modules --shared-ids shared_app_config_topology
 ```
 

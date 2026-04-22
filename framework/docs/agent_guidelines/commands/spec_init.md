@@ -27,7 +27,7 @@ It does not handle:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `spec_init` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
@@ -80,7 +80,7 @@ Before execution:
 10. if the round changed any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, run `shared_sync` after `_status.md` has been updated, even when no additional affected module is known yet
    - pass execution-local `current_stable_landing_module={module}` into that `shared_sync` run because this same round just wrote the module's first stable truth together with its current stable Shared Contract binding
    - if any touched shared file changed only in `bound_modules` during this round, pass execution-local `bound_modules_only_shared_file_refs` with the exact file refs for those files
-   - the deterministic reconciliation part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared sync-impact --modules {module} --stable-landing-module {module}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
+   - the deterministic reconciliation part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared sync-impact --shared-refs <shared-ref> --modules {module} --stable-landing-module {module}` or the corresponding `--shared-ids` form, and at least one shared trigger input must already be known before this deterministic execution starts
 11. perform git close-out if required by policy
 
 ## 5. Stop Conditions
@@ -101,7 +101,7 @@ Before execution:
 6. Shared Contract reconciliation result when the round changed shared truth or bindings
 7. git close-out result
 8. next-step suggestion
-9. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+9. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - `current state` must explicitly confirm the stable-layer landing written to `_status.md`
    - if the round stopped and rerouted through `shared_ops`, `next step` must name that reroute directly instead of implying that onboarding closed

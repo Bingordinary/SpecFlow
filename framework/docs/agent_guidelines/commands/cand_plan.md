@@ -17,7 +17,7 @@ By default it handles:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `cand_plan` may produce that advancing result; later local confirmation, research-side reassessment, or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
@@ -127,7 +127,7 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
 10. blocking reason and resume signal when planning stayed at `cand_plan` without fallback
 11. git close-out result
 12. `_status.md` update result
-13. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+13. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a checkpoint was raised or planning stayed blocked at `cand_plan`, also report `resume signal`
    - if `Next Command=cand_plan`, `why this next step` must explicitly state whether planning is waiting on implementation facts, unresolved direction, or truth writeback

@@ -101,7 +101,7 @@ func TestSyncImpactRejectsMissingExplicitScope(t *testing.T) {
 	setupCandidateSharedRepo(t, repoRoot)
 
 	_, err := SyncImpact(repoRoot, Options{})
-	if err == nil || !strings.Contains(err.Error(), "at least one of modules, shared refs, or shared ids is required") {
+	if err == nil || !strings.Contains(err.Error(), "at least one of shared refs or shared ids is required") {
 		t.Fatalf("expected missing-scope error, got %v", err)
 	}
 }
@@ -494,28 +494,54 @@ Body changed.
 	}
 }
 
-func TestSyncImpactReroutesStableModuleWhenOnlyModuleScopeMarksChangedBinding(t *testing.T) {
+func TestSyncImpactFiltersModulesWithinSharedScope(t *testing.T) {
 	repoRoot := t.TempDir()
-	setupStableSharedRepo(t, repoRoot)
+	sharedRef := setupCandidateSharedRepo(t, repoRoot)
+
+	statusPath := filepath.Join(repoRoot, "docs/specs/_status.md")
+	mustWriteFile(t, statusPath, strings.Join([]string{
+		"# Spec Status",
+		"",
+		"## Formal Modules",
+		"",
+		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
+		"|---|---|---|---|---|---|",
+		"| `module_demo` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+		"| `module_other` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+	}, "\n")+"\n")
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_other")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: module_other",
+		"layer: candidate",
+		"version: 0.1.0",
+		"---",
+		"",
+		"# Demo",
+		"",
+		"## Global Constraint Alignment",
+		"",
+		"1. system_constraints_stable_ref: none",
+		"2. shared_contract_refs: none",
+		"",
+	}, "\n"))
 
 	result, err := SyncImpact(repoRoot, Options{
-		Modules: []string{"module_demo"},
+		Modules:    []string{"module_other"},
+		SharedRefs: []string{sharedRef},
 	})
 	if err != nil {
 		t.Fatalf("SyncImpact: %v", err)
 	}
-	if len(result.ModuleResults) != 1 {
-		t.Fatalf("expected one module result, got %d", len(result.ModuleResults))
+	if len(result.ScopedModules) != 0 {
+		t.Fatalf("expected filtered module scope to stay empty, got %+v", result.ScopedModules)
 	}
-	moduleResult := result.ModuleResults[0]
-	if moduleResult.Outcome != "rerouted" {
-		t.Fatalf("expected rerouted outcome, got %+v", moduleResult)
-	}
-	if moduleResult.FallbackReasonCode != "binding_drift" {
-		t.Fatalf("expected binding_drift, got %s", moduleResult.FallbackReasonCode)
-	}
-	if moduleResult.NextCommand != "stable_verify" {
-		t.Fatalf("expected next command stable_verify, got %s", moduleResult.NextCommand)
+	if len(result.ModuleResults) != 0 {
+		t.Fatalf("expected no module results after filter, got %+v", result.ModuleResults)
 	}
 }
 
@@ -543,7 +569,10 @@ func TestSyncImpactRejectsEmptySharedContractRefsList(t *testing.T) {
 		"",
 	}, "\n"))
 
-	_, err = SyncImpact(repoRoot, Options{Modules: []string{"module_demo"}})
+	_, err = SyncImpact(repoRoot, Options{
+		Modules:    []string{"module_demo"},
+		SharedRefs: []string{"c_shared_demo@0.1.0"},
+	})
 	if err == nil || !strings.Contains(err.Error(), "must not be an empty list") {
 		t.Fatalf("expected empty-list error, got %v", err)
 	}
@@ -575,9 +604,24 @@ func TestSyncImpactRejectsDuplicateSharedContractRefs(t *testing.T) {
 		"",
 	}, "\n"))
 
-	_, err = SyncImpact(repoRoot, Options{Modules: []string{"module_demo"}})
+	_, err = SyncImpact(repoRoot, Options{
+		Modules:    []string{"module_demo"},
+		SharedRefs: []string{"c_shared_demo@0.1.0"},
+	})
 	if err == nil || !strings.Contains(err.Error(), "duplicate item") {
 		t.Fatalf("expected duplicate-item error, got %v", err)
+	}
+}
+
+func TestSyncImpactRejectsModulesOnlyScope(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupStableSharedRepo(t, repoRoot)
+
+	_, err := SyncImpact(repoRoot, Options{
+		Modules: []string{"module_demo"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "at least one of shared refs or shared ids is required") {
+		t.Fatalf("expected modules-only scope to be rejected, got %v", err)
 	}
 }
 

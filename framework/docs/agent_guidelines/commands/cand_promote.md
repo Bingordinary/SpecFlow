@@ -16,7 +16,7 @@ By default it handles:
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
-When this command advances `_status.md`, that advancement inherits the centralized authoritative-run and non-authoritative-follow-up rules from `specflow/framework/docs/agent_guidelines/command_policy.md` Section 8 Rules 27-30.
+当本命令推进 `_status.md` 时，这个推进继承 `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.5 节定义的 authoritative / non-authoritative 中心契约。
 Only a new independent full-scope run of `cand_promote` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
@@ -119,7 +119,7 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
    - this post-promotion `shared_sync` closes external affected-module fallout and shared-state reconciliation; it must not overturn the promoted module's own successful stable landing merely because the same promotion round also wrote the stable Shared Contract file or stable binding that the promoted module now legally uses
    - pass execution-local `current_stable_landing_module={module}` into that `shared_sync` run
    - if any surviving touched shared file changed only in `bound_modules` during this round, also pass execution-local `bound_modules_only_shared_file_refs` with the exact file refs for those files
-   - the deterministic reconciliation part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared sync-impact --modules {module} --stable-landing-module {module}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
+   - the deterministic reconciliation part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared sync-impact --shared-refs <shared-ref> --modules {module} --stable-landing-module {module}` or the corresponding `--shared-ids` form, and at least one shared trigger input must already be known before this deterministic execution starts
    - if that post-promotion `shared_sync` returns control because repository truth is still insufficient to continue safely, do not claim promotion success:
      - immediately run incomplete promotion recovery according to `recovery_policy.md`
      - after recovery, require rerouting through `shared_ops:{natural-language request}` from the restored candidate-layer repository truth
@@ -175,7 +175,7 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
      - `Active Layer=candidate`
      - `Next Command=cand_check`
      - `resume through shared_ops` before any later promotion retry
-23. `user-facing close-out block` required by `specflow/framework/docs/agent_guidelines/command_policy.md`
+23. `specflow/framework/docs/agent_guidelines/command_policy.md` 第 8.6 节要求的 `user-facing close-out block`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when promotion recovery or shared-governance reroute occurred, also report `resume signal`
    - `current state` must match the post-promotion or post-recovery state actually restored in `_status.md`
