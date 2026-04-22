@@ -176,14 +176,27 @@ func SyncImpact(repoRoot string, options Options) (Result, error) {
 		return Result{}, err
 	}
 
-	scopeModules := buildScopeModules(moduleBindings, sharedFilesByRef, normalized)
-	scopeFlows := buildScopeObjects(flowBindings, sharedFilesByRef, normalized.SharedRefs, normalized.SharedIDs)
-	scopeProjects := buildScopeObjects(projectBindings, sharedFilesByRef, normalized.SharedRefs, normalized.SharedIDs)
+	removedBindingModules, err := candidateModulesWithRemovedSelectedBinding(repoRoot, moduleBindings, normalized.SharedRefs, normalized.SharedIDs)
+	if err != nil {
+		return Result{}, err
+	}
+	removedBindingFlows, err := candidateObjectsWithRemovedSelectedBinding(repoRoot, flowBindings, normalized.SharedRefs, normalized.SharedIDs)
+	if err != nil {
+		return Result{}, err
+	}
+	removedBindingProjects, err := candidateObjectsWithRemovedSelectedBinding(repoRoot, projectBindings, normalized.SharedRefs, normalized.SharedIDs)
+	if err != nil {
+		return Result{}, err
+	}
+
+	scopeModules := buildScopeModules(moduleBindings, sharedFilesByRef, normalized, removedBindingModules)
+	scopeFlows := buildScopeObjects(flowBindings, sharedFilesByRef, normalized.SharedRefs, normalized.SharedIDs, removedBindingFlows)
+	scopeProjects := buildScopeObjects(projectBindings, sharedFilesByRef, normalized.SharedRefs, normalized.SharedIDs, removedBindingProjects)
 
 	impactResult, err := impactsync.Apply(repoRoot, impactsync.Input{
-		Modules:  scopedModulesForImpact(scopeModules, moduleBindings, normalized, sharedFilesByRef, boundModulesOnlyFileRefs),
-		Flows:    scopedObjectsForImpact("flow", scopeFlows, flowBindings, normalized.SharedRefs, normalized.SharedIDs, sharedFilesByRef, boundModulesOnlyFileRefs),
-		Projects: scopedObjectsForImpact("project", scopeProjects, projectBindings, normalized.SharedRefs, normalized.SharedIDs, sharedFilesByRef, boundModulesOnlyFileRefs),
+		Modules:  scopedModulesForImpact(scopeModules, moduleBindings, normalized, sharedFilesByRef, boundModulesOnlyFileRefs, removedBindingModules),
+		Flows:    scopedObjectsForImpact("flow", scopeFlows, flowBindings, normalized.SharedRefs, normalized.SharedIDs, sharedFilesByRef, boundModulesOnlyFileRefs, removedBindingFlows),
+		Projects: scopedObjectsForImpact("project", scopeProjects, projectBindings, normalized.SharedRefs, normalized.SharedIDs, sharedFilesByRef, boundModulesOnlyFileRefs, removedBindingProjects),
 	})
 	if err != nil {
 		return Result{}, err
@@ -398,12 +411,15 @@ func loadModuleBindings(repoRoot string) (map[string]moduleBinding, map[string][
 	return bindings, actualByRef, actualByID, normalizeStrings(unresolvedRefs), nil
 }
 
-func buildScopeModules(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, options Options) []string {
+func buildScopeModules(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, options Options, removedBindingScope map[string]bool) []string {
 	affected := map[string]bool{}
 	for module, binding := range moduleBindings {
 		if len(selectedSharedRefsForObject(binding.SharedRefs, options.SharedRefs, options.SharedIDs, sharedFilesByRef)) > 0 {
 			affected[module] = true
 		}
+	}
+	for module := range removedBindingScope {
+		affected[module] = true
 	}
 	if len(options.Modules) == 0 {
 		return sortedKeys(affected)
@@ -417,7 +433,7 @@ func buildScopeModules(moduleBindings map[string]moduleBinding, sharedFilesByRef
 	return sortedKeys(narrowed)
 }
 
-func scopedModulesForImpact(scopeModules []string, moduleBindings map[string]moduleBinding, options Options, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool) []impactsync.ScopedModule {
+func scopedModulesForImpact(scopeModules []string, moduleBindings map[string]moduleBinding, options Options, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool, removedBindingScope map[string]bool) []impactsync.ScopedModule {
 	result := make([]impactsync.ScopedModule, 0, len(scopeModules))
 	stableLandingSharedRefSet := makeStringSet(options.StableLandingSharedRefs)
 	for _, module := range scopeModules {
@@ -435,14 +451,14 @@ func scopedModulesForImpact(scopeModules []string, moduleBindings map[string]mod
 				BindingIssues: append([]string{}, binding.BindingIssues...),
 			},
 			InvalidatingSharedRefs:                invalidatingSharedRefs,
-			ExplicitFallbackScope:                 false,
+			ExplicitFallbackScope:                 removedBindingScope[module],
 			AllowedSharedSnapshotMismatchFileRefs: allowedSharedSnapshotMismatchFileRefs(selectedSharedRefs, sharedFilesByRef, boundModulesOnlyFileRefs),
 		})
 	}
 	return result
 }
 
-func scopedObjectsForImpact(objectType string, scopeObjects []string, bindings map[string]objectBinding, scopedRefs, scopedIDs []string, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool) []impactsync.ScopedObject {
+func scopedObjectsForImpact(objectType string, scopeObjects []string, bindings map[string]objectBinding, scopedRefs, scopedIDs []string, sharedFilesByRef map[string]sharedFile, boundModulesOnlyFileRefs map[string]bool, removedBindingScope map[string]bool) []impactsync.ScopedObject {
 	result := make([]impactsync.ScopedObject, 0, len(scopeObjects))
 	for _, object := range scopeObjects {
 		binding := bindings[object]
@@ -455,10 +471,31 @@ func scopedObjectsForImpact(objectType string, scopeObjects []string, bindings m
 				NextCommand:   binding.Status.NextCommand,
 				BindingIssues: append([]string{}, binding.BindingIssues...),
 			},
+			ExplicitFallbackScope:  removedBindingScope[object],
 			InvalidatingSharedRefs: filterInvalidatingSharedRefs(selectedSharedRefs, sharedFilesByRef, boundModulesOnlyFileRefs),
 		})
 	}
 	return result
+}
+
+func candidateModulesWithRemovedSelectedBinding(repoRoot string, moduleBindings map[string]moduleBinding, scopedRefs, scopedIDs []string) (map[string]bool, error) {
+	result := map[string]bool{}
+	for module, binding := range moduleBindings {
+		if binding.Status.ActiveLayer != "candidate" {
+			continue
+		}
+		if len(selectedSharedRefsForObject(binding.SharedRefs, scopedRefs, scopedIDs, nil)) > 0 {
+			continue
+		}
+		matched, err := processSnapshotContainsSelectedShared(repoRoot, binding.Status.Module, []string{"check", "plan", "verify"}, scopedRefs, scopedIDs)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			result[module] = true
+		}
+	}
+	return result, nil
 }
 
 func allReferencedSharedRefs(moduleBindings map[string]moduleBinding, flowBindings, projectBindings map[string]objectBinding) map[string]bool {

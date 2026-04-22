@@ -757,6 +757,45 @@ func TestSyncImpactDoesNotExpandScopeWithExplicitModuleSelector(t *testing.T) {
 	}
 }
 
+func TestSyncImpactIncludesCandidateModuleWhenSelectedBindingWasRemovedFromCurrentTruth(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateSharedRepo(t, repoRoot)
+
+	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
+	if err != nil {
+		t.Fatalf("MainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: module_demo",
+		"layer: candidate",
+		"version: 0.1.0",
+		"---",
+		"",
+		"# Demo",
+		"",
+		"## Global Constraint Alignment",
+		"",
+		"1. system_constraints_stable_ref: none",
+		"2. shared_contract_refs: none",
+		"",
+	}, "\n"))
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ScopedModules) != 1 || result.ScopedModules[0] != "module_demo" {
+		t.Fatalf("expected removed-binding module to remain in scope, got %+v", result.ScopedModules)
+	}
+	if len(result.ModuleResults) != 1 {
+		t.Fatalf("expected one module result, got %+v", result.ModuleResults)
+	}
+	if result.ModuleResults[0].Outcome != "invalidated" || result.ModuleResults[0].NextCommand != "cand_check" {
+		t.Fatalf("expected invalidated module fallback, got %+v", result.ModuleResults[0])
+	}
+}
+
 func TestSyncImpactRejectsEmptySharedContractRefsList(t *testing.T) {
 	repoRoot := t.TempDir()
 	setupCandidateSharedRepo(t, repoRoot)
@@ -846,6 +885,98 @@ func TestSyncImpactRejectsUnknownSharedRefWithoutCurrentBindingReference(t *test
 	})
 	if err == nil || !strings.Contains(err.Error(), "is not present under docs/specs/shared_contracts/ and is not referenced by current downstream bindings") {
 		t.Fatalf("expected unknown shared ref error, got %v", err)
+	}
+}
+
+func TestSyncImpactIncludesCandidateFlowWhenSelectedBindingWasRemovedFromCurrentTruth(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateFlowSharedRepo(t, repoRoot)
+
+	mainSpecRef, err := specpaths.ObjectMainSpecFileRef("flow", "candidate", "flow_demo")
+	if err != nil {
+		t.Fatalf("ObjectMainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: flow_demo",
+		"layer: candidate",
+		"version: 0.1.0",
+		"---",
+		"",
+		"# Demo Flow",
+		"",
+		"## Shared Contracts",
+		"",
+		"1. shared_contract_refs: none",
+		"",
+	}, "\n"))
+	writeNamedProcessFile(t, repoRoot, "check", "flow_demo", strings.Join([]string{
+		"shared_contract_snapshot:",
+		"  - shared_contract_id: shared_demo",
+		"    layer: candidate",
+		"    file_ref: docs/specs/shared_contracts/candidate/c_shared_demo.md",
+		"    version_ref: c_shared_demo@0.1.0",
+		"    fingerprint: demo",
+	}, "\n"))
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ScopedFlows) != 1 || result.ScopedFlows[0] != "flow_demo" {
+		t.Fatalf("expected removed-binding flow to remain in scope, got %+v", result.ScopedFlows)
+	}
+	if len(result.FlowResults) != 1 {
+		t.Fatalf("expected one flow result, got %+v", result.FlowResults)
+	}
+	if result.FlowResults[0].FallbackReasonCode != "binding_drift" {
+		t.Fatalf("expected binding_drift, got %+v", result.FlowResults[0])
+	}
+}
+
+func TestSyncImpactIncludesCandidateProjectWhenSelectedBindingWasRemovedFromCurrentTruth(t *testing.T) {
+	repoRoot := t.TempDir()
+	sharedRef := setupCandidateProjectSharedRepo(t, repoRoot)
+
+	mainSpecRef, err := specpaths.ObjectMainSpecFileRef("project", "candidate", "project")
+	if err != nil {
+		t.Fatalf("ObjectMainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: project",
+		"layer: candidate",
+		"version: 0.1.0",
+		"---",
+		"",
+		"# Demo Project",
+		"",
+		"## Shared Contracts",
+		"",
+		"1. shared_contract_refs: none",
+		"",
+	}, "\n"))
+	writeNamedProcessFile(t, repoRoot, "check", "project", strings.Join([]string{
+		"shared_contract_snapshot:",
+		"  - shared_contract_id: shared_demo",
+		"    layer: candidate",
+		"    file_ref: docs/specs/shared_contracts/candidate/c_shared_demo.md",
+		"    version_ref: c_shared_demo@0.1.0",
+		"    fingerprint: demo",
+	}, "\n"))
+
+	result, err := SyncImpact(repoRoot, Options{SharedRefs: []string{sharedRef}})
+	if err != nil {
+		t.Fatalf("SyncImpact: %v", err)
+	}
+	if len(result.ScopedProjects) != 1 || result.ScopedProjects[0] != "project" {
+		t.Fatalf("expected removed-binding project to remain in scope, got %+v", result.ScopedProjects)
+	}
+	if len(result.ProjectResults) != 1 {
+		t.Fatalf("expected one project result, got %+v", result.ProjectResults)
+	}
+	if result.ProjectResults[0].FallbackReasonCode != "binding_drift" {
+		t.Fatalf("expected binding_drift, got %+v", result.ProjectResults[0])
 	}
 }
 
@@ -1178,7 +1309,67 @@ Body stays the same.
 	return "s_shared_demo@1.0.0"
 }
 
+func setupCandidateProjectSharedRepo(t *testing.T, repoRoot string) string {
+	t.Helper()
+	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateProjectDir)))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
+
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
+		"# Spec Status",
+		"",
+		"## Formal Objects",
+		"",
+		"| Object Type | Object | Stable | Candidate | Active Layer | Next Command | Notes |",
+		"|---|---|---|---|---|---|---|",
+		"| `project` | `project` | `no` | `yes` | `candidate` | `project_verify` | current round |",
+	}, "\n")+"\n")
+
+	mainSpecRef, err := specpaths.ObjectMainSpecFileRef("project", "candidate", "project")
+	if err != nil {
+		t.Fatalf("ObjectMainSpecFileRef: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(mainSpecRef)), strings.Join([]string{
+		"---",
+		"id: project",
+		"layer: candidate",
+		"version: 0.1.0",
+		"---",
+		"",
+		"# Demo Project",
+		"",
+		"## Shared Contracts",
+		"",
+		"1. shared_contract_refs:",
+		"   - c_shared_demo@0.1.0",
+		"",
+	}, "\n"))
+
+	writeSharedFile(t, repoRoot, `---
+shared_contract_id: shared_demo
+layer: candidate
+shared_version: 0.1.0
+bound_modules: none
+---
+
+# Shared
+
+Body stays the same.
+`)
+
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/project.md"), "check")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_verify_result/project.md"), "verify")
+	return "c_shared_demo@0.1.0"
+}
+
 func writeProcessFile(t *testing.T, repoRoot, processKind, snapshotBody string) {
+	t.Helper()
+	writeNamedProcessFile(t, repoRoot, processKind, "module_demo", snapshotBody)
+}
+
+func writeNamedProcessFile(t *testing.T, repoRoot, processKind, object, snapshotBody string) {
 	t.Helper()
 	dir := map[string]string{
 		"check":  "docs/specs/_check_result",
@@ -1187,7 +1378,7 @@ func writeProcessFile(t *testing.T, repoRoot, processKind, snapshotBody string) 
 	}[processKind]
 	mustMkdirAll(t, filepath.Join(repoRoot, dir))
 	content := fmt.Sprintf("# %s\n\n```yaml\n%s\n```\n", processKind, snapshotBody)
-	mustWriteFile(t, filepath.Join(repoRoot, dir, "module_demo.md"), content)
+	mustWriteFile(t, filepath.Join(repoRoot, dir, object+".md"), content)
 }
 
 func writeSharedFile(t *testing.T, repoRoot, content string) {
