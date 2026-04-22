@@ -255,24 +255,26 @@ func applyCandidateFallback(repoRoot string, result ModuleResult, fallbackReason
 	result.Outcome = "invalidated"
 	result.NextCommand = "cand_check"
 	for _, processKind := range []string{"check", "plan", "verify"} {
-		processPath, err := snapshot.ProcessFilePath(result.Module, processKind)
+		processPaths, err := snapshot.ProcessArtifactPaths(result.Module, processKind)
 		if err != nil {
 			return ModuleResult{}, err
 		}
-		processAbs := filepath.Join(repoRoot, filepath.FromSlash(processPath))
-		if _, err := os.Stat(processAbs); err != nil {
-			if os.IsNotExist(err) {
-				if !contains(result.MissingFiles, processPath) {
-					result.MissingFiles = append(result.MissingFiles, processPath)
+		for _, processPath := range processPaths {
+			processAbs := filepath.Join(repoRoot, filepath.FromSlash(processPath))
+			if _, err := os.Stat(processAbs); err != nil {
+				if os.IsNotExist(err) {
+					if !contains(result.MissingFiles, processPath) {
+						result.MissingFiles = append(result.MissingFiles, processPath)
+					}
+					continue
 				}
-				continue
+				return ModuleResult{}, fmt.Errorf("stat %s: %w", processPath, err)
 			}
-			return ModuleResult{}, fmt.Errorf("stat %s: %w", processPath, err)
+			if err := os.Remove(processAbs); err != nil {
+				return ModuleResult{}, fmt.Errorf("delete %s: %w", processPath, err)
+			}
+			result.DeletedFiles = append(result.DeletedFiles, processPath)
 		}
-		if err := os.Remove(processAbs); err != nil {
-			return ModuleResult{}, fmt.Errorf("delete %s: %w", processPath, err)
-		}
-		result.DeletedFiles = append(result.DeletedFiles, processPath)
 	}
 	updated, err := statusfile.UpdateNextCommand(repoRoot, result.Module, result.NextCommand)
 	if err != nil {
@@ -381,14 +383,11 @@ func applyObjectStableReroute(repoRoot string, result ObjectResult, objectType s
 func objectProcessPaths(object string, processKinds []string) []string {
 	paths := make([]string, 0, len(processKinds))
 	for _, processKind := range processKinds {
-		switch processKind {
-		case "check":
-			paths = append(paths, fmt.Sprintf("docs/specs/_check_result/%s.md", object))
-		case "plan":
-			paths = append(paths, fmt.Sprintf("docs/specs/_plans/%s.md", object))
-		case "verify":
-			paths = append(paths, fmt.Sprintf("docs/specs/_verify_result/%s.md", object))
+		processPaths, err := snapshot.ProcessArtifactPaths(object, processKind)
+		if err != nil {
+			continue
 		}
+		paths = append(paths, processPaths...)
 	}
 	return normalizeStrings(paths)
 }

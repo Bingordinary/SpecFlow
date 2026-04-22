@@ -959,12 +959,33 @@ func renderSharedLines(entries []SharedContractEntry) []string {
 	return lines
 }
 
+func ActivePlanFilePath(module string) string {
+	return fmt.Sprintf("docs/specs/_plans/active/%s.md", module)
+}
+
+func DraftPlanFilePath(module string) string {
+	return fmt.Sprintf("docs/specs/_plans/draft/%s.md", module)
+}
+
+func ProcessArtifactPaths(module, processKind string) ([]string, error) {
+	switch processKind {
+	case "check":
+		return []string{fmt.Sprintf("docs/specs/_check_result/%s.md", module)}, nil
+	case "plan":
+		return []string{DraftPlanFilePath(module), ActivePlanFilePath(module)}, nil
+	case "verify":
+		return []string{fmt.Sprintf("docs/specs/_verify_result/%s.md", module)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported process kind %q", processKind)
+	}
+}
+
 func ProcessFilePath(module, processKind string) (string, error) {
 	switch processKind {
 	case "check":
 		return fmt.Sprintf("docs/specs/_check_result/%s.md", module), nil
 	case "plan":
-		return fmt.Sprintf("docs/specs/_plans/%s.md", module), nil
+		return ActivePlanFilePath(module), nil
 	case "verify":
 		return fmt.Sprintf("docs/specs/_verify_result/%s.md", module), nil
 	default:

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/snapshot"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/statusfile"
 )
@@ -171,16 +172,13 @@ func lookupRule(fromCommand, reason string) (cleanupRule, error) {
 func filePathsForModule(module string, fileKinds []string) []string {
 	paths := make([]string, 0, len(fileKinds))
 	for _, fileKind := range fileKinds {
-		switch fileKind {
-		case "check":
-			paths = append(paths, fmt.Sprintf("docs/specs/_check_result/%s.md", module))
-		case "plan":
-			paths = append(paths, fmt.Sprintf("docs/specs/_plans/%s.md", module))
-		case "verify":
-			paths = append(paths, fmt.Sprintf("docs/specs/_verify_result/%s.md", module))
+		filePaths, err := snapshot.ProcessArtifactPaths(module, fileKind)
+		if err != nil {
+			continue
 		}
+		paths = append(paths, filePaths...)
 	}
-	return paths
+	return sortAndDedupeStrings(paths)
 }
 
 func successCleanupPaths(repoRoot, module, mode string) ([]string, error) {

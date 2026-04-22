@@ -6,6 +6,8 @@ templates/root/docs/chart_syntax_compatibility.md	docs/chart_syntax_compatibilit
 templates/root/docs/project_standards/_registry.md	docs/project_standards/_registry.md	project
 templates/root/docs/specs/_check_result/README.md	docs/specs/_check_result/README.md	framework
 templates/root/docs/specs/_plans/README.md	docs/specs/_plans/README.md	framework
+templates/root/docs/specs/_plans/draft/README.md	docs/specs/_plans/draft/README.md	framework
+templates/root/docs/specs/_plans/active/README.md	docs/specs/_plans/active/README.md	framework
 templates/root/docs/specs/_verify_result/README.md	docs/specs/_verify_result/README.md	framework
 templates/root/docs/specs/_status.md	docs/specs/_status.md	project
 templates/root/docs/specs/system/stable/s_system_constraints.md	docs/specs/system/stable/s_system_constraints.md	project

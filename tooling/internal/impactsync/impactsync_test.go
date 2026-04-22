@@ -25,7 +25,8 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 	}, "\n")+"\n")
 	for _, relPath := range []string{
 		"docs/specs/_check_result/module_demo.md",
-		"docs/specs/_plans/module_demo.md",
+		"docs/specs/_plans/active/module_demo.md",
+		"docs/specs/_plans/draft/module_demo.md",
 		"docs/specs/_verify_result/module_demo.md",
 		"docs/specs/_check_result/flow_demo.md",
 		"docs/specs/_verify_result/flow_demo.md",
@@ -79,7 +80,8 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 
 	for _, relPath := range []string{
 		"docs/specs/_check_result/module_demo.md",
-		"docs/specs/_plans/module_demo.md",
+		"docs/specs/_plans/active/module_demo.md",
+		"docs/specs/_plans/draft/module_demo.md",
 		"docs/specs/_verify_result/module_demo.md",
 		"docs/specs/_check_result/flow_demo.md",
 		"docs/specs/_verify_result/flow_demo.md",
@@ -386,7 +388,7 @@ func TestApplyKeepsCandidateModuleWhenPlanUsesPlanContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
-	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_plans/module_demo.md"), renderImpactPlanProcessSnapshot(snap))
+	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_plans/active/module_demo.md"), renderImpactPlanProcessSnapshot(snap))
 
 	result, err := Apply(repoRoot, Input{
 		Modules: []ScopedModule{{
@@ -414,7 +416,8 @@ func setupImpactRepo(t *testing.T, repoRoot, statusContent string) {
 	t.Helper()
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
-	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
 	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), statusContent)
 }
@@ -424,7 +427,8 @@ func setupImpactModuleSharedRepo(t *testing.T, repoRoot string) string {
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
-	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
 		"# Spec Status",
 		"",
@@ -489,6 +493,9 @@ func mustMkdirImpactAll(t *testing.T, path string) {
 
 func mustWriteImpactFile(t *testing.T, path, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}

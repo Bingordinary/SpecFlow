@@ -55,6 +55,8 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		"specflow/templates/root/docs/specs/_status.md",
 		"specflow/templates/root/docs/specs/_check_result/README.md",
 		"specflow/templates/root/docs/specs/_plans/README.md",
+		"specflow/templates/root/docs/specs/_plans/draft/README.md",
+		"specflow/templates/root/docs/specs/_plans/active/README.md",
 		"specflow/templates/root/docs/specs/_verify_result/README.md",
 		"specflow/templates/root/docs/project_standards/_registry.md",
 	}

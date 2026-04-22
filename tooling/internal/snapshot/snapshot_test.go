@@ -511,7 +511,7 @@ func TestValidateProcessFileAcceptsPlanSchemaWithoutGateFields(t *testing.T) {
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
 
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_plans/module_demo.md"), "# plan\n\n```yaml\n"+renderFormalPlanProcessBody(expected)+"\n```\n")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_plans/active/module_demo.md"), "# plan\n\n```yaml\n"+renderFormalPlanProcessBody(expected)+"\n```\n")
 
 	result, err := ValidateProcessFile(repoRoot, "module_demo", "plan")
 	if err != nil {
@@ -708,7 +708,8 @@ func setupSnapshotValidationRepo(t *testing.T, repoRoot string) {
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 
 	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
@@ -792,6 +793,9 @@ func mustMkdirAll(t *testing.T, path string) {
 
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
