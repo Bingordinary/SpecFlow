@@ -70,7 +70,7 @@ For shared-change reconciliation, the current mechanical entry remains `shared s
 15. `shared sync-impact`
    - compute shared-specific scope, resolve shared-only exceptions into generic impact input, then execute deterministic downstream fallback for the fixed affected objects through internal `impact_sync`
    - when stable landing self-exemption is needed, the caller must pass both `--stable-landing-module` and exact `--stable-landing-shared-refs`
-   - explicit downstream scope may be narrowed with `--modules`, `--flows`, and `--projects`, but at least one shared trigger input must still be provided through `--shared-refs` or `--shared-ids`
+   - the caller may narrow the derived module subset with `--modules`, but at least one shared trigger input must still be provided through `--shared-refs` or `--shared-ids`
 16. `shared reconcile-bound-modules`
    - rewrite Shared Contract `bound_modules` metadata from current formal bindings
 
@@ -104,7 +104,7 @@ Examples:
 ./specflow/tooling/bin/specflowctl-linux-amd64 snapshot rebuild --module module_ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --module module_ai --from-command cand_promote --reason evidence_incomplete
 ./specflow/tooling/bin/specflowctl-linux-amd64 status set-object --type flow --object flow_task_execution --stable yes --candidate no --active-layer stable --next-command flow_fork
-./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs c_shared_app_config_topology@0.2.0 --modules module_ai --flows flow_release --projects project
+./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs c_shared_app_config_topology@0.2.0 --modules module_ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared reconcile-bound-modules --shared-ids shared_app_config_topology
 ```
 

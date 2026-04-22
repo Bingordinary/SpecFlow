@@ -390,8 +390,6 @@ func runShared(args []string, stdout, stderr io.Writer) error {
 		fs.SetOutput(stderr)
 		repoRoot := fs.String("repo-root", ".", "repository root")
 		modules := fs.String("modules", "", "comma-separated formal modules")
-		flows := fs.String("flows", "", "comma-separated formal flows")
-		projects := fs.String("projects", "", "comma-separated formal projects")
 		sharedRefs := fs.String("shared-refs", "", "comma-separated shared version refs")
 		sharedIDs := fs.String("shared-ids", "", "comma-separated shared contract ids")
 		stableLandingModule := fs.String("stable-landing-module", "", "formal module whose same-round stable landing should not invalidate itself")
@@ -403,8 +401,6 @@ func runShared(args []string, stdout, stderr io.Writer) error {
 
 		result, err := sharedsync.SyncImpact(mustAbs(*repoRoot), sharedsync.Options{
 			Modules:                        parseCSV(*modules),
-			Flows:                          parseCSV(*flows),
-			Projects:                       parseCSV(*projects),
 			SharedRefs:                     parseCSV(*sharedRefs),
 			SharedIDs:                      parseCSV(*sharedIDs),
 			StableLandingModule:            strings.TrimSpace(*stableLandingModule),
@@ -733,7 +729,7 @@ func writeProcessUsage(w io.Writer) {
 
 func writeSharedUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl shared sync-impact (--shared-refs c_shared_x@0.1.0 | --shared-ids shared_x) [--modules module_a,module_b] [--flows flow_a,flow_b] [--projects project] [--stable-landing-module module_a --stable-landing-shared-refs s_shared_x@1.0.0] [--bound-modules-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_x.md] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl shared sync-impact (--shared-refs c_shared_x@0.1.0 | --shared-ids shared_x) [--modules module_a,module_b] [--stable-landing-module module_a --stable-landing-shared-refs s_shared_x@1.0.0] [--bound-modules-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_x.md] [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl shared reconcile-bound-modules [--modules module_a,module_b] [--shared-refs c_shared_x@0.1.0] [--shared-ids shared_x] [--repo-root PATH]")
 }
 

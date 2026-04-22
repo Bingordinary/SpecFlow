@@ -72,7 +72,7 @@ func readObjectSharedRefs(repoRoot string, status statusfile.ObjectStatus) ([]st
 	return normalizeStrings(refs), nil
 }
 
-func buildScopeObjects(bindings map[string]objectBinding, sharedFilesByRef map[string]sharedFile, scopedRefs, scopedIDs, explicitObjects []string) []string {
+func buildScopeObjects(bindings map[string]objectBinding, sharedFilesByRef map[string]sharedFile, scopedRefs, scopedIDs []string) []string {
 	if len(scopedRefs) == 0 && len(scopedIDs) == 0 {
 		return nil
 	}
@@ -82,9 +82,6 @@ func buildScopeObjects(bindings map[string]objectBinding, sharedFilesByRef map[s
 		if len(selectedSharedRefsForObject(binding.SharedRefs, scopedRefs, scopedIDs, sharedFilesByRef)) > 0 {
 			scope[object] = true
 		}
-	}
-	for _, object := range explicitObjects {
-		scope[object] = true
 	}
 	return sortedKeys(scope)
 }
