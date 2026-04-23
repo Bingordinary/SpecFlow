@@ -15,6 +15,8 @@ Plain input `spec_flow_review` means the default governance-baseline review defi
 
 This flow does not review business truth by default.
 It reviews the mechanism that governs business truth.
+It does not prove that the current governance design is sensible, humane, or worth using as designed.
+That judgment belongs to `spec_flow_design_review`.
 
 ## 2. Default Scope
 
@@ -232,3 +234,4 @@ This flow does not:
 2. replace `impact_sync`
 3. review business truth by default
 4. treat recently touched governance files as the whole scope unless the user explicitly narrows it that way
+5. prove design adequacy, human operability, or design worthiness

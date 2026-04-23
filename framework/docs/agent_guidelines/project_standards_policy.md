@@ -258,6 +258,13 @@ When it runs in the current project instance, it should:
 2. review those active registered files for governance conflict against the framework baseline
 3. if `spec_flow_review` also defines a project-local overlay surface for tightening or clarifying its own result, resolve that overlay separately under `spec_flow_review.md` rather than using the overlay selector to narrow the governance-input read set
 
+`spec_flow_design_review` is also a governance flow.
+When it runs in the current project instance, it should:
+
+1. read the active registered project-local standard files resolved from `docs/project_standards/_registry.md` as design-governance inputs instead of ignoring their content
+2. review those active registered files for design-surface cost, entry burden, and governance conflict against the framework baseline
+3. treat those active files as in-scope design inputs only in v1, because `spec_flow_design_review` does not define a project-local overlay surface for tightening or clarifying its own result yet
+
 ---
 
 ## 11. Non-Goals
