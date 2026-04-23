@@ -1,4 +1,4 @@
-# Stable Verify Command
+# Module Stable Verify Command
 
 ## 1. Purpose
 
@@ -27,13 +27,13 @@ It does not:
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `stable_verify` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_stable_verify` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
 1. complete required pre-checks
 2. the module's current `Active Layer=stable`
-3. `_status.md` says `Next Command=stable_verify`
+3. `_status.md` says `Next Command=module_stable_verify`
 4. the target module is explicit
 5. the module has valid `stable`
 6. there is actual implementation context that must be checked
@@ -72,12 +72,12 @@ Only a new independent full-scope run of `stable_verify` may produce that advanc
    - return code to `stable` semantics
    - or rerun stable-layer verification when the drift is stable-truth-side rather than code-side
    - or refresh the stable-layer verification conclusion against the current formal global baseline when the drift is baseline-side rather than code-side
-   - rerun `stable_verify:{module}` after the required repair or re-judgment work
-   - do not open `spec_fork:{module}` while the current implementation still fails `stable_verify`
+   - rerun `module_stable_verify:{module}` after the required repair or re-judgment work
+   - do not open `module_fork:{module}` while the current implementation still fails `module_stable_verify`
 12. update `_status.md`:
-   - if still aligned -> `Next Command=spec_fork`
-   - if drift exists -> keep `Next Command=stable_verify`
-   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command <spec_fork-or-stable_verify> --notes <status-note>`
+   - if still aligned -> `Next Command=module_fork`
+   - if drift exists -> keep `Next Command=module_stable_verify`
+   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command <module_fork-or-module_stable_verify> --notes <status-note>`
 13. perform git close-out if required
 
 ## 5. Stop Conditions
@@ -96,14 +96,14 @@ Only a new independent full-scope run of `stable_verify` may produce that advanc
 6. deviation list
 7. `fallback_reason_code` when stable alignment cannot be claimed safely
 8. next-step recommendation
-   - if drift exists, the immediate next step must remain `stable_verify`
-   - `spec_fork:{module}` may be suggested only as a later follow-up after stable alignment has been restored
+   - if drift exists, the immediate next step must remain `module_stable_verify`
+   - `module_fork:{module}` may be suggested only as a later follow-up after stable alignment has been restored
 9. git close-out result
 10. `_status.md` update result
 11. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - `current state` must explicitly confirm `Active Layer=stable` and the written `Next Command`
-   - if `Next Command=stable_verify`, `why this next step` must explicitly state that alignment is not yet restored rather than implying a no-op rerun
+   - if `Next Command=module_stable_verify`, `why this next step` must explicitly state that alignment is not yet restored rather than implying a no-op rerun
 
 Allowed `fallback_reason_code` values:
 
@@ -122,5 +122,5 @@ Allowed `fallback_reason_code` values:
 ## 8. Example
 
 ```md
-stable_verify:module_ai
+module_stable_verify:module_ai
 ```

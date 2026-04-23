@@ -21,15 +21,15 @@ Keep repository-specific rules outside the managed block. `specFlow` tooling may
 When a request hits any of the following, handle it with `specFlow` rules:
 
 1. Standard commands:
-   - `spec_init:{module}`
-   - `stable_verify:{module}`
-   - `spec_new:{module}`
-   - `spec_fork:{module}`
-   - `cand_check:{module}`
-   - `cand_plan:{module}`
-   - `cand_impl:{module}`
-   - `cand_verify:{module}`
-   - `cand_promote:{module}`
+   - `module_init:{module}`
+   - `module_stable_verify:{module}`
+   - `module_new:{module}`
+   - `module_fork:{module}`
+   - `module_check:{module}`
+   - `module_plan:{module}`
+   - `module_impl:{module}`
+   - `module_verify:{module}`
+   - `module_promote:{module}`
    - `flow_new:{flow}`
    - `flow_stable_verify:{flow}`
    - `flow_fork:{flow}`
@@ -82,15 +82,15 @@ See the command files:
 The standard commands are grouped by object family:
 
 1. `module`
-   - `spec_init:{module}`
-   - `stable_verify:{module}`
-   - `spec_new:{module}`
-   - `spec_fork:{module}`
-   - `cand_check:{module}`
-   - `cand_plan:{module}`
-   - `cand_impl:{module}`
-   - `cand_verify:{module}`
-   - `cand_promote:{module}`
+   - `module_init:{module}`
+   - `module_stable_verify:{module}`
+   - `module_new:{module}`
+   - `module_fork:{module}`
+   - `module_check:{module}`
+   - `module_plan:{module}`
+   - `module_impl:{module}`
+   - `module_verify:{module}`
+   - `module_promote:{module}`
 2. `flow`
    - `flow_new:{flow}`
    - `flow_stable_verify:{flow}`
@@ -197,8 +197,8 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
 2. If you are unsure whether a change is a behavior change, treat it as a behavior change.
 3. Behavior changes must not start from code. Follow `specflow/framework/docs/agent_guidelines/spec_policy.md` first.
 4. Direct implementation requests must first be classified through `specflow/framework/docs/agent_guidelines/implementation_change_policy.md`. `truth_writeback_required` and `boundary_unclear` must not start from code.
-5. A brand-new module or flow may start with `candidate`; its first `stable` is created later by `cand_promote:{module}` or `flow_promote:{flow}`.
-6. A historical module entering governance for the first time must begin with `spec_init:{module}` to create its first `stable`.
+5. A brand-new module or flow may start with `candidate`; its first `stable` is created later by `module_promote:{module}` or `flow_promote:{flow}`.
+6. A historical module entering governance for the first time must begin with `module_init:{module}` to create its first `stable`.
 7. A historical project entering governance for the first time must begin with `project_init` to create its first `stable`.
 7. Under `docs/specs/`, every Spec file except `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` is a behavior source of truth and should normally enter git history.
 8. `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` are draft-layer artifacts, but draft-layer status does not block commits. When a round reaches a reviewable checkpoint, those files should normally be committed together with the linked process or code changes of that checkpoint.

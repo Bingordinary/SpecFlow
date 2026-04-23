@@ -68,7 +68,7 @@ It may also route into:
 It does not:
 
 1. replace module command chains
-2. replace `cand_check`, `cand_plan`, `cand_impl`, `cand_verify`, or `cand_promote`
+2. replace `module_check`, `module_plan`, `module_impl`, `module_verify`, or `module_promote`
 3. create an independent `system_constraints` command chain
 4. allow the executor to invent an ad hoc sixth standard shared flow outside the routing rules here
 
@@ -205,7 +205,7 @@ This is mandatory, not optional.
 6. if routing is not stable, enter `shared_escape`
 7. if the routed flow changes shared truth or module shared bindings, do not claim closure until required reconciliation through `shared_sync` is complete
    - if that routed work makes a touched shared file lose its last formal binding, do not claim closure until the owner of that binding/topology change has either resolved that file's terminal state or returned control to `shared_escape`
-8. if a module-side command such as `cand_promote` stops because post-promotion Shared Contract topology is unclear, re-enter shared governance through `shared_ops` from current repository truth instead of guessing a module-local-only continuation
+8. if a module-side command such as `module_promote` stops because post-promotion Shared Contract topology is unclear, re-enter shared governance through `shared_ops` from current repository truth instead of guessing a module-local-only continuation
 9. if the request crosses into `system_constraints_change_proposal`, stop through `shared_escape` and raise a checkpoint instead of inventing a shared-side continuation
 10. if `shared_escape` emitted a `remaining_steps_contract`, do not claim `shared_ops` closure until every listed step has finished under that contract
 
@@ -229,7 +229,7 @@ Fixed closure rules:
 3. if `shared_topology` changes any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, it must not claim closure until `shared_sync` has completed
 4. if a routed request crosses into `system_constraints_change_proposal`, the shared flow must stop through `shared_escape` and raise a `shared_ops` checkpoint rather than inventing a shared-side continuation
 5. no internal shared flow may guess the module current layer without resolving it from `_status.md` first when the named module already exists
-6. no internal shared flow may modify module `stable` truth directly; if a shared request needs module truth writeback and the target module is currently at `stable`, the flow must stop at a `shared_ops` checkpoint and require `spec_fork:{module}` first
+6. no internal shared flow may modify module `stable` truth directly; if a shared request needs module truth writeback and the target module is currently at `stable`, the flow must stop at a `shared_ops` checkpoint and require `module_fork:{module}` first
 7. if `shared_escape` emits a `remaining_steps_contract`, finishing only the first routed flow does not close `shared_ops`
 8. if a routed internal shared flow later discovers that repository truth is insufficient to continue stably, it must stop that flow and return control to `shared_escape` instead of inventing a flow-local checkpoint
 9. if a routed internal shared flow changes bindings or topology so a touched shared file would have no formal bindings remaining, that same handling round must resolve the touched file's terminal state or return control to `shared_escape`; `shared_ops` must not leave cleanup ownership implicit
@@ -281,7 +281,7 @@ A checkpoint is mandatory when any one of the following holds:
 3. the boundary between shared truth and `system_constraints_change_proposal` is unstable
 4. the execution order of multiple shared actions would change the resulting formal truth
 5. current repository truth is insufficient to support a stable decomposition
-6. the current flow cannot continue legally until an upstream command such as `spec_fork:{module}` has created the required writeback target
+6. the current flow cannot continue legally until an upstream command such as `module_fork:{module}` has created the required writeback target
 
 ### 9.3 Shared Checkpoint Output
 
@@ -321,7 +321,7 @@ The output must include at least:
 1. the recognized intent from the user request
 2. the routed target flow and why that flow owns the request
 3. the repository truth inputs used to make the routing decision
-4. whether the request required direct module truth writeback and whether any target module first had to stop for `spec_fork:{module}`
+4. whether the request required direct module truth writeback and whether any target module first had to stop for `module_fork:{module}`
 5. whether reconciliation through `shared_sync` was required and whether it has completed
 6. if `shared_escape` emitted a `remaining_steps_contract`, that contract, the current completion position, and the fact that the contract is execution-local rather than durable truth
 7. if a checkpoint stopped the request, whether that checkpoint came from `shared_escape` or from a previously routed internal shared flow
@@ -341,7 +341,7 @@ The output must include at least:
 1. `module` keeps the full lifecycle command chain
 2. `shared_ops` handles only cross-module shared-truth governance
 3. if the real task is still single-module candidate closure, do not route into `shared_ops`
-4. if the needed truth writeback target is a module currently at `stable`, `shared_ops` must stop for module-side `spec_fork` rather than writing stable directly
+4. if the needed truth writeback target is a module currently at `stable`, `shared_ops` must stop for module-side `module_fork` rather than writing stable directly
 
 ### 11.2 Boundary Against `system_constraints_change_proposal`
 

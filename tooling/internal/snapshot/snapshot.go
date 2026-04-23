@@ -288,11 +288,11 @@ func ValidateProcessFile(repoRoot, module, processKind string) (ValidationResult
 func expectedModuleProcessRouting(processKind string) (string, string, error) {
 	switch processKind {
 	case "check":
-		return "cand_check", "cand_plan", nil
+		return "module_check", "module_plan", nil
 	case "plan":
-		return "cand_plan", "cand_impl", nil
+		return "module_plan", "module_impl", nil
 	case "verify":
-		return "cand_verify", "cand_promote", nil
+		return "module_verify", "module_promote", nil
 	default:
 		return "", "", fmt.Errorf("unsupported process kind %q", processKind)
 	}

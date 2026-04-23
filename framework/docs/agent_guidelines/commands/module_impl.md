@@ -1,4 +1,4 @@
-# Candidate Implement Command
+# Module Implement Command
 
 ## 1. Purpose
 
@@ -12,17 +12,17 @@ By default it handles:
 2. adding necessary tests or verification actions
 3. dynamically confirming which legacy dependencies have already stopped being required
 4. writing progress back into `_plans/active/{module}.md`
-5. consuming the `cand_plan -> cand_impl` handoff only when gate and plan bindings both still hold
+5. consuming the `module_plan -> module_impl` handoff only when gate and plan bindings both still hold
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `cand_impl` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_impl` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
 1. complete required pre-checks
-2. `_status.md` says `Next Command=cand_impl`
+2. `_status.md` says `Next Command=module_impl`
 3. a current valid `docs/specs/_check_result/{module}.md` exists
 4. a current valid `docs/specs/_plans/active/{module}.md` exists
 5. the candidate still aligns with the current formal global baseline state
@@ -41,13 +41,13 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
    - delete `_plans/draft/{module}.md`
    - delete `_plans/active/{module}.md`
    - delete `_verify_result/{module}.md` if it exists
-   - fall back `_status.md` to `cand_check`
+   - fall back `_status.md` to `module_check`
 7. if `system_constraints_stable_ref` no longer matches the current formal global baseline state, stop immediately:
    - delete `_check_result/{module}.md`
    - delete `_plans/draft/{module}.md`
    - delete `_plans/active/{module}.md`
    - delete `_verify_result/{module}.md` if it exists
-   - fall back to `cand_check`
+   - fall back to `module_check`
 8. only when both pass gate and plan are still valid may implementation continue
 9. implement slice by slice in the order defined by the current plan unless the plan itself declares a dependency-safe different order
 10. for each slice, use the recorded objective, file scope, dependencies, verification action, and done condition as the execution boundary
@@ -56,12 +56,12 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
    - an execution surface has been cut over to its target path
    - a named retirement target is now confirmed as no longer required
 13. when implementation discovers additional legacy paths, legacy helpers, legacy patches, or legacy wrappers that were not yet fully modeled:
-   - keep the work in `cand_impl` if the discovery only deepens implementation facts
+   - keep the work in `module_impl` if the discovery only deepens implementation facts
    - write the discovery back into the current active plan under the round's implementation-progress sections
-   - do not restart the round from `cand_plan` unless the discovery proves candidate truth itself is insufficient
+   - do not restart the round from `module_plan` unless the discovery proves candidate truth itself is insufficient
 14. if implementation discovers that the active plan's convergence target cannot stand without a new behavior or boundary decision:
    - stop treating the issue as implementation-only
-   - fall back to `cand_check`
+   - fall back to `module_check`
 15. run necessary verification for the slices advanced in this round, or record clearly what could not be run
 16. write slice completion status, blockers, verification results, and retirement progression back into `_plans/active/{module}.md`
 17. ensure the active plan write-back records at minimum:
@@ -71,9 +71,9 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
    - `Residual Legacy Dependencies`
    - for each advanced slice: `execution_surface`, `cutover_result`, `retirement_result`, and `verification_note`
 18. update `_status.md`:
-   - if implementation is ready for verification -> `Next Command=cand_verify`
-   - if implementation is still blocked -> keep `Next Command=cand_impl`
-   - if candidate truth or formal global baseline drift means closure must restart -> `Next Command=cand_check`
+   - if implementation is ready for verification -> `Next Command=module_verify`
+   - if implementation is still blocked -> keep `Next Command=module_impl`
+   - if candidate truth or formal global baseline drift means closure must restart -> `Next Command=module_check`
 19. perform git close-out if required
 
 ## 5. Stop Conditions
@@ -81,7 +81,7 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
 1. the current plan slices have advanced as far as feasible in this round, and each claimed advance names either a target-path cutover or a retirement confirmation
 2. the plan file has been written back
 3. `_status.md` points to the real next executable step
-4. if the pass gate or plan became invalid, or implementation discovered that candidate truth itself must be re-closed, implementation was stopped and `_status.md` was fallen back to `cand_check`
+4. if the pass gate or plan became invalid, or implementation discovered that candidate truth itself must be re-closed, implementation was stopped and `_status.md` was fallen back to `module_check`
 
 ## 6. Output Contract
 
@@ -93,16 +93,16 @@ Only a new independent full-scope run of `cand_impl` may produce that advancing 
 6. plan write-back result
 7. blocked-slice result when implementation could not finish the current plan round
 8. `handoff validation result`
-9. cleanup result when implementation fell back to `cand_check`
-10. `fallback_reason_code` when implementation fell back to `cand_check`
-11. fallback reason when implementation fell back to `cand_check`
+9. cleanup result when implementation fell back to `module_check`
+10. `fallback_reason_code` when implementation fell back to `module_check`
+11. fallback reason when implementation fell back to `module_check`
 12. git close-out result
 13. `_status.md` update result
 14. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - `current state` must explicitly confirm the written `Active Layer` and `Next Command`
-   - if `Next Command=cand_impl`, `why this next step` must explicitly state that implementation progressed but candidate closure has not yet reached the `cand_verify` entry condition
-   - `next-stage entry gap` must name the unfinished implementation, verification, closure, or retirement surfaces that still block `cand_verify`
+   - if `Next Command=module_impl`, `why this next step` must explicitly state that implementation progressed but candidate closure has not yet reached the `module_verify` entry condition
+   - `next-stage entry gap` must name the unfinished implementation, verification, closure, or retirement surfaces that still block `module_verify`
 
 Allowed checkpoint types:
 

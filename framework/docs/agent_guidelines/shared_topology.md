@@ -59,7 +59,7 @@ Before execution:
    - do not treat only the user-named modules or currently obvious consumers as sufficient when other modules may still bind the touched shared objects
 8. resolve every affected module's current layer from `_status.md` before reading its main Spec
 9. read every affected module current-layer main file needed to derive the real binding set from `shared_contract_refs`
-10. if any affected module is currently at `stable` and the topology change would require module truth writeback, also read `specflow/framework/docs/agent_guidelines/commands/spec_fork.md`
+10. if any affected module is currently at `stable` and the topology change would require module truth writeback, also read `specflow/framework/docs/agent_guidelines/commands/module_fork.md`
 11. read `docs/specs/system/stable/s_system_constraints.md` when the topology request may cross into project-wide default-rule promotion
 12. if this round may raise a checkpoint, read `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
 
@@ -72,7 +72,7 @@ Before execution:
 3. if current repository truth is insufficient to derive that complete affected-module set safely, stop this flow and return control to `shared_escape` through `shared_ops` instead of guessing
 4. if any affected module current layer is `stable` and the topology change would require module truth writeback:
    - raise a blocking `shared_ops` checkpoint with `type=prerequisite_action`
-   - require `spec_fork:{module}` for each such module before topology writeback continues
+   - require `module_fork:{module}` for each such module before topology writeback continues
    - set `required_writeback_target` to the corresponding module candidate main file set because chat-only agreement does not create legal topology-writeback targets
 5. decide the current-round topology plan explicitly against that complete affected-module set:
    - which touched shared object identity remains the same
@@ -113,7 +113,7 @@ Stop when one of the following is true:
 
 1. the topology change is complete, every touched shared file's terminal state is resolved, and `shared_sync` has finished reconciliation
 2. the request is not really topology change and must be re-routed to another shared flow
-3. one or more affected modules are currently at `stable` and the flow has raised a `shared_ops` checkpoint for `spec_fork` first
+3. one or more affected modules are currently at `stable` and the flow has raised a `shared_ops` checkpoint for `module_fork` first
 4. repository truth is insufficient to continue safely, so control has returned to `shared_escape` through `shared_ops`
 5. the topology plan requires new or changed stable-layer shared semantics, so this flow has completed the current-round candidate-layer Shared Contract writeback and any required `shared_sync` without direct stable-layer writeback; any later stable-layer Shared Contract file must be produced by a legal promotion rather than by this flow
 6. the request has crossed into `system_constraints_change_proposal`, so control has returned to `shared_escape` through `shared_ops` for checkpoint handling instead of continuing here

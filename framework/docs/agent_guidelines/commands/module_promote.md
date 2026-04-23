@@ -1,4 +1,4 @@
-# Candidate Promote Command
+# Module Promote Command
 
 ## 1. Purpose
 
@@ -12,17 +12,17 @@ By default it handles:
 2. updating state files
 3. cleaning this round's candidate and process files
 4. updating `s_system_constraints.md` when a closed module-carried global proposal is ready
-5. consuming the `cand_verify -> cand_promote` handoff only when verification still covers the current round
+5. consuming the `module_verify -> module_promote` handoff only when verification still covers the current round
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `cand_promote` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_promote` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
 1. complete required pre-checks
-2. `_status.md` says `Next Command=cand_promote`
+2. `_status.md` says `Next Command=module_promote`
 3. a latest valid `_verify_result/{module}.md` still covers the current candidate, current implementation, and current formal global baseline state
 4. implementation alignment is complete and no blocking verification issue remains
 5. the candidate's `system_constraints_stable_ref` matches the current formal global baseline state
@@ -42,28 +42,28 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
 4. if `_verify_result/{module}.md` is invalid, identify the reason and stop immediately:
    - if code changed after verification:
      - delete `_verify_result/{module}.md`
-     - fall back to `cand_verify`
+     - fall back to `module_verify`
    - if implementation drift against candidate exists:
      - delete `_verify_result/{module}.md`
-     - fall back to `cand_impl`
+     - fall back to `module_impl`
    - if another required binding of `_verify_result/{module}.md` no longer matches the current round:
      - delete `_check_result/{module}.md`
      - delete `_plans/draft/{module}.md`
      - delete `_plans/active/{module}.md`
      - delete `_verify_result/{module}.md`
-     - use `fallback_reason_code=binding_drift` and fall back to `cand_check`
+     - use `fallback_reason_code=binding_drift` and fall back to `module_check`
    - if bound Shared Contract truth, layer, version, or snapshot drifted:
      - delete `_check_result/{module}.md`
      - delete `_plans/draft/{module}.md`
      - delete `_plans/active/{module}.md`
      - delete `_verify_result/{module}.md`
-     - use `fallback_reason_code=shared_contract_drift` and fall back to `cand_check`
+     - use `fallback_reason_code=shared_contract_drift` and fall back to `module_check`
    - if candidate truth or formal global baseline changed:
      - delete `_check_result/{module}.md`
      - delete `_plans/draft/{module}.md`
      - delete `_plans/active/{module}.md`
      - delete `_verify_result/{module}.md`
-     - fall back to `cand_check`
+     - fall back to `module_check`
 5. continue only when bindings, coverage, and gate fields all remain valid
 6. before the first file mutation, capture the recovery baseline required by `recovery_policy.md`
 7. confirm that candidate `frontmatter.version` is the new `stable` version for this round
@@ -92,7 +92,7 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
    - if such a touched file now has no formal bound modules and the round intentionally keeps it as independently authored shared truth, write that same file with:
      - `unbound_retention: intentional`
      - `unbound_retention_reason: <why this unbound state is intentional now>`
-     - `unbound_retention_owner: cand_promote`
+     - `unbound_retention_owner: module_promote`
    - if the required post-promotion truth shape is still unclear, or the round cannot safely judge whether an unbound touched file should be deleted or kept as independently authored shared truth, stop promotion and require rerouting through `shared_ops:{natural-language request}` from current repository truth instead of guessing a module-local-only continuation
 10. if the module candidate contains a closed `system_constraints_change_proposal` that this round has implemented and verified, absorb the promoted conclusion into `docs/specs/system/stable/s_system_constraints.md`
 11. generate or update `docs/specs/modules/stable/s_{module}.md`
@@ -105,8 +105,8 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
    - `Stable=yes`
    - `Candidate=no`
    - `Active Layer=stable`
-   - `Next Command=spec_fork`
-   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command spec_fork --notes <status-note>`
+   - `Next Command=module_fork`
+   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command module_fork --notes <status-note>`
 15. if the round touched any Shared Contract file, before `shared_sync`, update `bound_modules` for every remaining touched Shared Contract file only after Step 11 has written the promoted module stable truth and Step 14 has updated `_status.md`, so each surviving stable-layer or candidate-layer file matches the real post-promotion binding set implied by module `shared_contract_refs`
    - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-modules --modules {module}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
    - if a remaining touched Shared Contract file now has one or more formal bound modules after this promotion round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
@@ -117,7 +117,7 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
    - `_plans/draft/{module}.md`
    - `_plans/active/{module}.md`
    - `_verify_result/{module}.md`
-   - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --module {module} --mode cand_promote`
+   - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --module {module} --mode module_promote`
 17. if the command is interrupted after promotion internals started but before final cleanup finished, run incomplete promotion recovery according to `recovery_policy.md` instead of claiming success
 18. if the round changed any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, run `shared_sync` only after `_status.md` already reflects the promoted stable layer and Step 15 has written the surviving shared-file metadata, even when no additional affected module is known yet
    - this post-promotion `shared_sync` closes external affected-module fallout and shared-state reconciliation; it must not overturn the promoted module's own successful stable landing merely because the same promotion round also wrote the stable Shared Contract file or stable binding that the promoted module now legally uses
@@ -138,10 +138,10 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
    - `Stable=yes`
    - `Candidate=no`
    - `Active Layer=stable`
-   - `Next Command=spec_fork`
+   - `Next Command=module_fork`
 3. this round's candidate cleanup is complete
 4. if verification became invalid, the command stopped and `_status.md` fell back appropriately
-5. if the command entered incomplete-promotion recovery state, candidate semantics were restored and the module can restart from `cand_check`
+5. if the command entered incomplete-promotion recovery state, candidate semantics were restored and the module can restart from `module_check`
 6. if post-promotion `shared_sync` could not continue safely, incomplete promotion recovery is complete and the next required action is rerunning `shared_ops` from restored candidate truth before any later candidate-chain restart
 7. if a candidate-layer Shared Contract sibling remains after promotion, its next-round draft state is already explicit for the current repository truth
 
@@ -174,12 +174,12 @@ Only a new independent full-scope run of `cand_promote` may produce that advanci
      - `Stable=yes`
      - `Candidate=no`
      - `Active Layer=stable`
-     - `Next Command=spec_fork`
+     - `Next Command=module_fork`
    - when promotion recovery occurred because post-promotion `shared_sync` could not continue safely, the follow-up state must explicitly confirm:
      - `Stable=yes|no` restored from the recovery baseline
      - `Candidate=yes`
      - `Active Layer=candidate`
-     - `Next Command=cand_check`
+     - `Next Command=module_check`
      - `resume through shared_ops` before any later promotion retry
 23. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`

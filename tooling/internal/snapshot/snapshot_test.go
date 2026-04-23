@@ -16,7 +16,7 @@ func TestRebuildCurrentCollectsAppendixAndSharedSnapshot(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/system/stable"))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpec := `---
@@ -106,7 +106,7 @@ func TestRebuildCurrentCollectsEquivalentAppendixSubdirAndPlainFieldNames(t *tes
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/system/stable"))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpec := `---
@@ -186,7 +186,7 @@ func TestRebuildCurrentRejectsUnsortedSharedContractRefs(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
@@ -240,7 +240,7 @@ func TestRebuildCurrentIgnoresRawAppendixPathLiteral(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateAppendixDir)))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
@@ -286,7 +286,7 @@ func TestRebuildCurrentRejectsRootDirectoryAppendixDrift(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
@@ -331,10 +331,10 @@ func TestValidateProcessFileRejectsMissingRequiredSnapshotField(t *testing.T) {
 	writeCheckProcessFile(t, repoRoot, strings.Join([]string{
 		"object_type: module",
 		"object_ref: module_demo",
-		"gate: cand_check",
+		"gate: module_check",
 		"decision: pass",
 		"allow_next: true",
-		"next_command: cand_plan",
+		"next_command: module_plan",
 		"blocking_summary: none",
 		"coverage_summary: current candidate",
 		"truth_layer_ref: candidate",
@@ -443,16 +443,16 @@ spec_version_ref: c_module_demo@0.1.0
 	}
 
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md"), strings.Join([]string{
-		"# module_demo cand_check snapshot",
+		"# module_demo module_check snapshot",
 		"",
 		"## Check Result Snapshot",
 		"",
 		"- `object_type`: `module`",
 		"- `object_ref`: `" + expected.Module + "`",
-		"- `gate`: `cand_check`",
+		"- `gate`: `module_check`",
 		"- `decision`: `pass`",
 		"- `allow_next`: `true`",
-		"- `next_command`: `cand_plan`",
+		"- `next_command`: `module_plan`",
 		"- `blocking_summary`: `none`",
 		"- `coverage_summary`: `current candidate`",
 		"- `truth_layer_ref`: `" + expected.TruthLayerRef + "`",
@@ -488,7 +488,7 @@ func TestValidateProcessFileRejectsUnexpectedGate(t *testing.T) {
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
 
-	writeCheckProcessFile(t, repoRoot, strings.Replace(renderFormalCheckProcessBody(expected), "gate: cand_check", "gate: cand_plan", 1))
+	writeCheckProcessFile(t, repoRoot, strings.Replace(renderFormalCheckProcessBody(expected), "gate: module_check", "gate: module_plan", 1))
 
 	result, err := ValidateProcessFile(repoRoot, "module_demo", "check")
 	if err != nil {
@@ -497,7 +497,7 @@ func TestValidateProcessFileRejectsUnexpectedGate(t *testing.T) {
 	if result.Valid {
 		t.Fatalf("expected invalid result, got valid")
 	}
-	if !containsMismatch(result.Mismatches, "gate mismatch: actual=cand_plan expected=cand_check") {
+	if !containsMismatch(result.Mismatches, "gate mismatch: actual=module_plan expected=module_check") {
 		t.Fatalf("expected gate mismatch, got %+v", result.Mismatches)
 	}
 }
@@ -637,7 +637,7 @@ func TestRebuildCurrentRejectsStableModuleBindingCandidateShared(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.StableDir)))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `yes` | `no` | `stable` | `spec_fork` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `yes` | `no` | `stable` | `module_fork` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("stable", "module_demo")
@@ -711,7 +711,7 @@ func setupSnapshotValidationRepo(t *testing.T, repoRoot string) {
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 
-	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | note |\n"
+	status := "# Spec Status\n\n## Formal Modules\n\n| Module | Stable | Candidate | Active Layer | Next Command | Notes |\n|---|---|---|---|---|---|\n| `module_demo` | `no` | `yes` | `candidate` | `module_check` | note |\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 
 	mainSpec := `---
@@ -744,10 +744,10 @@ func renderFormalCheckProcessBody(expected Snapshot) string {
 	return strings.Join([]string{
 		"object_type: module",
 		"object_ref: " + expected.Module,
-		"gate: cand_check",
+		"gate: module_check",
 		"decision: pass",
 		"allow_next: true",
-		"next_command: cand_plan",
+		"next_command: module_plan",
 		"blocking_summary: none",
 		"coverage_summary: current candidate",
 		"truth_layer_ref: " + expected.TruthLayerRef,

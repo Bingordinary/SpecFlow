@@ -24,9 +24,9 @@ By default it governs:
 
 1. `spec_flow_review`
 2. `spec_flow_design_review`
-3. `cand_check`
-4. `cand_verify`
-5. `stable_verify`
+3. `module_check`
+4. `module_verify`
+5. `module_stable_verify`
 
 It may also be reused by other governance flows if those flows explicitly say so.
 
@@ -143,9 +143,9 @@ This policy works together with:
 
 1. `specflow/framework/docs/agent_guidelines/spec_flow_review.md`
 2. `specflow/framework/docs/agent_guidelines/spec_flow_design_review.md`
-3. `specflow/framework/docs/agent_guidelines/commands/cand_check.md`
-4. `specflow/framework/docs/agent_guidelines/commands/cand_verify.md`
-5. `specflow/framework/docs/agent_guidelines/commands/stable_verify.md`
+3. `specflow/framework/docs/agent_guidelines/commands/module_check.md`
+4. `specflow/framework/docs/agent_guidelines/commands/module_verify.md`
+5. `specflow/framework/docs/agent_guidelines/commands/module_stable_verify.md`
 
 Priority rules:
 

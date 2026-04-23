@@ -1,4 +1,4 @@
-# Spec Init Command
+# Module Init Command
 
 ## 1. Purpose
 
@@ -28,7 +28,7 @@ It does not handle:
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `spec_init` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_init` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
@@ -38,7 +38,7 @@ Before execution:
 2. the target module name is explicit
 3. the module is not yet in `docs/specs/_status.md`
 4. the goal is to capture current truth, not define future design
-5. if onboarding current truth would create duplicated formal truth across modules, or if the shared/module boundary is still unstable, do not start `spec_init`; resolve that shared-truth boundary through `specflow/framework/docs/agent_guidelines/shared_ops.md` first
+5. if onboarding current truth would create duplicated formal truth across modules, or if the shared/module boundary is still unstable, do not start `module_init`; resolve that shared-truth boundary through `specflow/framework/docs/agent_guidelines/shared_ops.md` first
 6. if the first `stable` reuses already-existing shared truth, read the relevant `shared_contract` files before writing `shared_contract_refs`
 7. if the task also touches global baseline, shared mechanisms, or exceptions, read `docs/specs/system/stable/s_system_constraints.md`
 8. if the module involves technical choices, shared infrastructure, cross-module reuse, global exceptions, or system-level constraint relationships, the first `stable` must include `Global Constraint Alignment` or an equivalent section
@@ -75,8 +75,8 @@ Before execution:
    - `Stable=yes`
    - `Candidate=no`
    - `Active Layer=stable`
-   - `Next Command=spec_fork`
-   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command spec_fork --notes <status-note> --create`
+   - `Next Command=module_fork`
+   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable yes --candidate no --active-layer stable --next-command module_fork --notes <status-note> --create`
 10. if the round changed any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, run `shared_sync` after `_status.md` has been updated, even when no additional affected module is known yet
    - pass execution-local `current_stable_landing_module={module}` into that `shared_sync` run because this same round just wrote the module's first stable truth together with its current stable Shared Contract binding
    - pass execution-local `stable_landing_shared_refs=<exact-shared-ref-list-written-by-this-landing>` into that same `shared_sync` run; `current_stable_landing_module` alone is not sufficient
@@ -117,5 +117,5 @@ Before execution:
 ## 8. Example
 
 ```md
-spec_init:module_ai
+module_init:module_ai
 ```

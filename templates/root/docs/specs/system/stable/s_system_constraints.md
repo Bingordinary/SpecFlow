@@ -4,7 +4,7 @@ version: 0.1.0
 
 # System Constraints Spec
 
-> Version note: this document describes the currently effective formal global system constraints. It is not a normal module Spec, does not enter `docs/specs/_status.md`, and by default may be updated only as a linked side product of module `cand_promote`. Whenever the body is actually changed, `frontmatter.version` must be incremented in the same round. If the file is only read and not changed, do not change the version.
+> Version note: this document describes the currently effective formal global system constraints. It is not a normal module Spec, does not enter `docs/specs/_status.md`, and by default may be updated only as a linked side product of module `module_promote`. Whenever the body is actually changed, `frontmatter.version` must be incremented in the same round. If the file is only read and not changed, do not change the version.
 
 ## 1. Context & Scope
 

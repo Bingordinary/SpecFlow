@@ -9,7 +9,7 @@ It answers five questions:
 1. what "downgrade" means in Spec Flow
 2. which evidence states may still be downgraded
 3. which evidence states must stop progression immediately
-4. how `cand_verify` and `stable_verify` consume the same downgrade rules
+4. how `module_verify` and `module_stable_verify` consume the same downgrade rules
 5. which standardized `fallback_reason_code` values are allowed when downgrade does not hold
 
 This is a centralized governance policy. It does not replace command-local procedure text.
@@ -22,13 +22,13 @@ This policy applies only where a command has already completed substantive verif
 
 By default it governs:
 
-1. `cand_verify`
-2. `stable_verify`
+1. `module_verify`
+2. `module_stable_verify`
 
 It does not govern:
 
-1. `cand_check` closure blocking
-2. pass-gate binding validation in `cand_plan`, `cand_impl`, or `cand_promote`
+1. `module_check` closure blocking
+2. pass-gate binding validation in `module_plan`, `module_impl`, or `module_promote`
 3. human clarification checkpoints that must be written back into truth first
 
 ---
@@ -66,8 +66,8 @@ These status meanings are fixed:
 
 A narrower safe conclusion means:
 
-1. for `cand_verify`, promotion may proceed only when the remaining uncertainty does not weaken the candidate's acceptance basis for this round
-2. for `stable_verify`, "still aligned with stable" may be claimed only when the remaining uncertainty does not weaken confidence in the stable contract's externally observable behavior
+1. for `module_verify`, promotion may proceed only when the remaining uncertainty does not weaken the candidate's acceptance basis for this round
+2. for `module_stable_verify`, "still aligned with stable" may be claimed only when the remaining uncertainty does not weaken confidence in the stable contract's externally observable behavior
 
 ---
 
@@ -110,9 +110,9 @@ When downgrade is forbidden:
 
 ## 6. Command Mapping
 
-### 6.1 `cand_verify`
+### 6.1 `module_verify`
 
-`cand_verify` may allow promotion under downgrade only when:
+`module_verify` may allow promotion under downgrade only when:
 
 1. all rules from Section 4 hold
 2. the candidate's key acceptance basis remains covered
@@ -124,9 +124,9 @@ If downgrade does not hold:
 2. use `evidence_incomplete` when the code may still be correct but the remaining uncertainty is not bounded tightly enough
 3. use `truth_drift`, `binding_drift`, `baseline_drift`, or `shared_contract_drift` when the upstream truth relation changed
 
-### 6.2 `stable_verify`
+### 6.2 `module_stable_verify`
 
-`stable_verify` may still conclude "aligned with stable" under downgrade only when:
+`module_stable_verify` may still conclude "aligned with stable" under downgrade only when:
 
 1. all rules from Section 4 hold
 2. the remaining uncertainty does not weaken confidence in the current stable contract
@@ -158,8 +158,8 @@ When a governed command applies this policy, its output should include:
 
 This policy works together with:
 
-1. `specflow/framework/docs/agent_guidelines/commands/cand_verify.md`
-2. `specflow/framework/docs/agent_guidelines/commands/stable_verify.md`
+1. `specflow/framework/docs/agent_guidelines/commands/module_verify.md`
+2. `specflow/framework/docs/agent_guidelines/commands/module_stable_verify.md`
 3. `specflow/framework/docs/agent_guidelines/command_policy.md`
 
 Priority rules:
@@ -175,6 +175,6 @@ Priority rules:
 This file does not:
 
 1. redefine verification evidence formats
-2. replace `cand_verify` or `stable_verify`
+2. replace `module_verify` or `module_stable_verify`
 3. convert weak evidence into a normal pass
 4. decide business truth completeness

@@ -187,7 +187,7 @@ flowchart LR
 
 在进入案例前先补一个前提：
 
-- 如果这个模块在 `specFlow` 接入前就已经存在，那么第一次纳管时先用 `spec_init:{module}`
+- 如果这个模块在 `specFlow` 接入前就已经存在，那么第一次纳管时先用 `module_init:{module}`
 - 它的作用不是设计下一版，而是先把“当前已经生效的真实行为”落成第一份 governed `stable`
 - 从那以后，这个模块就会按下面这条故事线继续走
 
@@ -200,28 +200,28 @@ flowchart LR
 如果你想精确控制：
 
 ```text
-spec_new:module_search
+module_new:module_search
 -> write docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
--> cand_plan:module_search
--> cand_impl:module_search
--> cand_verify:module_search
--> cand_promote:module_search
+-> module_check:module_search
+-> module_plan:module_search
+-> module_impl:module_search
+-> module_verify:module_search
+-> module_promote:module_search
 ```
 
 这些命令分别在干什么：
 
-- `spec_new` 先给这个新模块创建第一份 `candidate`
+- `module_new` 先给这个新模块创建第一份 `candidate`
 - 接着你或 runtime 把真正的 candidate 内容写进 `c_module_search.md`
-- `cand_check` 判断这份 candidate 是否已经闭合到足以支撑后续工作
-- `cand_plan` 把这份真相转成实现计划
-- `cand_impl` 按 candidate 去改代码
-- `cand_verify` 检查代码是否真的符合 candidate
-- `cand_promote` 把被接受的 candidate 变成新的 `stable`
+- `module_check` 判断这份 candidate 是否已经闭合到足以支撑后续工作
+- `module_plan` 把这份真相转成实现计划
+- `module_impl` 按 candidate 去改代码
+- `module_verify` 检查代码是否真的符合 candidate
+- `module_promote` 把被接受的 candidate 变成新的 `stable`
 
 文档内容是在什么时候写进去的：
 
-- `spec_new` 之后，文件虽然存在了，但内容还没有自然完整到能直接推进
+- `module_new` 之后，文件虽然存在了，但内容还没有自然完整到能直接推进
 - 这时你要在 `c_module_search.md` 里把第一版 candidate 真正写出来
 - 最少应该写到让人能看懂：
   - 这个模块到底负责什么
@@ -229,8 +229,8 @@ spec_new:module_search
   - 主要流程怎么走
   - 关键边界情况是什么
   - 你准备拿什么标准判断它算正确
-- 只有写到这个程度，`cand_check` 才有东西可判断
-- 如果 `cand_check` 认为还不够闭合，就继续回到同一个 candidate 文件里补内容
+- 只有写到这个程度，`module_check` 才有东西可判断
+- 如果 `module_check` 认为还不够闭合，就继续回到同一个 candidate 文件里补内容
 
 这里 `specFlow` 额外提供的价值是：
 
@@ -247,33 +247,33 @@ spec_new:module_search
 如果你想精确控制：
 
 ```text
-spec_fork:module_search
+module_fork:module_search
 -> edit docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
--> cand_plan:module_search
--> cand_impl:module_search
--> cand_verify:module_search
--> cand_promote:module_search
+-> module_check:module_search
+-> module_plan:module_search
+-> module_impl:module_search
+-> module_verify:module_search
+-> module_promote:module_search
 ```
 
 这些命令分别在干什么：
 
-- `spec_fork` 从当前 `stable` 打开一个新的 `candidate`
+- `module_fork` 从当前 `stable` 打开一个新的 `candidate`
 - 接着你或 runtime 修改 `c_module_search.md`，描述这一轮的下一版行为
-- `cand_check` 确认这份更新后的 candidate 是否已经写清楚
-- `cand_plan`、`cand_impl`、`cand_verify` 负责把这一轮真相真正推进成代码并验证
-- `cand_promote` 则把这一轮的下一版变成新的正式 `stable`
+- `module_check` 确认这份更新后的 candidate 是否已经写清楚
+- `module_plan`、`module_impl`、`module_verify` 负责把这一轮真相真正推进成代码并验证
+- `module_promote` 则把这一轮的下一版变成新的正式 `stable`
 
 文档内容是在什么时候写进去的：
 
-- `spec_fork` 不是直接把下一版写完，它只是给你一个从当前 stable 派生出来的起点
+- `module_fork` 不是直接把下一版写完，它只是给你一个从当前 stable 派生出来的起点
 - 真正的变化内容，还是要你写进 `c_module_search.md`
 - 这一轮通常会改到这些东西：
   - 协议或字段含义变了什么
   - 主流程哪里变了
   - 验证规则或错误行为哪里变了
   - 这轮新增了什么验收标准
-- `cand_check` 的作用就是问一句：这份“下一版真相”现在是不是已经写清楚到足够驱动实现
+- `module_check` 的作用就是问一句：这份“下一版真相”现在是不是已经写清楚到足够驱动实现
 - 如果答案是否，那就继续回到 candidate 文档里补，不是硬往后推
 
 这里 `specFlow` 额外提供的价值是：
@@ -292,20 +292,20 @@ spec_fork:module_search
 
 ```text
 read docs/specs/modules/stable/s_module_search.md
--> stable_verify:module_search
+-> module_stable_verify:module_search
 ```
 
 如果发现 drift，而且你想顺势开始下一轮改动：
 
 ```text
-spec_fork:module_search
+module_fork:module_search
 -> edit docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
+-> module_check:module_search
 ```
 
 这个命令在做什么：
 
-- `stable_verify` 检查的是：当前实现是否还符合当前正式接受的 `stable`
+- `module_stable_verify` 检查的是：当前实现是否还符合当前正式接受的 `stable`
 - 它不是因为你提了“检查”就自动开启一个新的 candidate 轮次
 - 如果发现 drift，就先把“已经漂移”这个事实说清楚，再决定后续怎么处理
 
@@ -317,10 +317,10 @@ spec_fork:module_search
 
 给新手的最短总结：
 
-- 新模块第一版：`spec_new` + candidate 链
-- 已经纳管的模块继续做下一版：`spec_fork` + candidate 链
-- 后来做对齐检查：`stable_verify`
-- 历史模块第一次纳管：`spec_init`
+- 新模块第一版：`module_new` + candidate 链
+- 已经纳管的模块继续做下一版：`module_fork` + candidate 链
+- 后来做对齐检查：`module_stable_verify`
+- 历史模块第一次纳管：`module_init`
 
 你依然可以从自然语言开始。
 这些命令只是把这条生命周期背后的精确抓手显式写出来。
@@ -391,20 +391,20 @@ flowchart LR
 
 | 你的情况 | 对应命令 |
 | --- | --- |
-| 历史模块第一次纳入治理 | `spec_init:{module}` |
-| 全新模块第一次进入治理 | `spec_new:{module}` |
-| 已有 stable 的模块要开新一轮演进 | `spec_fork:{module}` |
+| 历史模块第一次纳入治理 | `module_init:{module}` |
+| 全新模块第一次进入治理 | `module_new:{module}` |
+| 已有 stable 的模块要开新一轮演进 | `module_fork:{module}` |
 
 一旦模块已经进入 candidate 链，后面的正常顺序通常是：
 
 ```text
-cand_check -> cand_plan -> cand_impl -> cand_verify -> cand_promote
+module_check -> module_plan -> module_impl -> module_verify -> module_promote
 ```
 
 另外还有一个 stable 侧的维护动作：
 
 ```text
-stable_verify
+module_stable_verify
 ```
 
 只有在模块当前停留在 `stable`，而你又想确认代码是不是还和这份 stable 对得上时，才会用到它。
@@ -413,11 +413,11 @@ stable_verify
 
 ```mermaid
 flowchart LR
-    A["A. spec_init 或 spec_new 或 spec_fork"] --> B["B. cand_check"]
-    B --> C["C. cand_plan"]
-    C --> D["D. cand_impl"]
-    D --> E["E. cand_verify"]
-    E --> F["F. cand_promote"]
+    A["A. module_init 或 module_new 或 module_fork"] --> B["B. module_check"]
+    B --> C["C. module_plan"]
+    C --> D["D. module_impl"]
+    D --> E["E. module_verify"]
+    E --> F["F. module_promote"]
 ```
 
 这就是显式控制面。

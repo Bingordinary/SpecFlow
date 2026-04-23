@@ -1,4 +1,4 @@
-# Spec New Command
+# Module New Command
 
 ## 1. Purpose
 
@@ -27,7 +27,7 @@ It does not:
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `spec_new` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_new` may produce that advancing result; later local confirmation or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
@@ -35,7 +35,7 @@ Only a new independent full-scope run of `spec_new` may produce that advancing r
 2. the target module name is explicit
 3. the module is not yet in `_status.md`
 4. the goal is future design first, not capturing current truth first
-5. if the first candidate depends on shared truth that is not yet formalized as `shared_contract`, or if the shared/module boundary is still unstable, do not start `spec_new`; resolve that shared truth through `specflow/framework/docs/agent_guidelines/shared_ops.md` first
+5. if the first candidate depends on shared truth that is not yet formalized as `shared_contract`, or if the shared/module boundary is still unstable, do not start `module_new`; resolve that shared truth through `specflow/framework/docs/agent_guidelines/shared_ops.md` first
 6. if the first candidate reuses already-existing shared truth, read the relevant `shared_contract` files before writing `shared_contract_refs`
 7. if the round will create, update, or delete any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, read `shared_sync.md`
 8. if the round may update `bound_modules` or remove intentional-unbound retention fields from a touched Shared Contract file, read every current-layer module main file needed to derive the real repository-wide binding set of each touched Shared Contract from `shared_contract_refs`
@@ -68,8 +68,8 @@ Only a new independent full-scope run of `spec_new` may produce that advancing r
    - `Stable=no`
    - `Candidate=yes`
    - `Active Layer=candidate`
-   - `Next Command=cand_check`
-   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable no --candidate yes --active-layer candidate --next-command cand_check --notes <status-note> --create`
+   - `Next Command=module_check`
+   - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-module --module {module} --stable no --candidate yes --active-layer candidate --next-command module_check --notes <status-note> --create`
 10. if the round changed any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, run `shared_sync` after `_status.md` has been updated, even when no additional affected module is known yet
    - if any touched shared file changed only in `bound_modules` during this round, pass execution-local `bound_modules_only_shared_file_refs` with the exact file refs for those files
    - the deterministic reconciliation part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared sync-impact --shared-refs <shared-ref> --modules {module}` or the corresponding `--shared-ids` form, and at least one shared trigger input must already be known before this deterministic execution starts
@@ -98,19 +98,19 @@ Only a new independent full-scope run of `spec_new` may produce that advancing r
 10. remaining closure items
 11. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
-   - `current state` must explicitly confirm `Active Layer=candidate` and `Next Command=cand_check`
-   - `next-stage entry gap` must explicitly confirm that entry into the later different command `cand_check` is already satisfied after `spec_new` closes
+   - `current state` must explicitly confirm `Active Layer=candidate` and `Next Command=module_check`
+   - `next-stage entry gap` must explicitly confirm that entry into the later different command `module_check` is already satisfied after `module_new` closes
 
 ## 7. Non-Goals
 
 1. creating the first formal `stable`
 2. capturing historical behavior
-3. automatically entering `cand_impl`
+3. automatically entering `module_impl`
 4. creating an independent `system_constraints` candidate file
 5. using `shared_contract_refs=none` to postpone required shared-truth closure
 
 ## 8. Example
 
 ```md
-spec_new:module_executor
+module_new:module_executor
 ```

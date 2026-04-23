@@ -61,25 +61,25 @@ Meaning rules:
 12. `direction_unresolved`
    - candidate truth still stands, but more than one materially different implementation direction remains viable and a user decision is required before a stable plan may be written
 13. `promotion_recovery`
-   - `cand_promote` had already started mutating repository state and had to restore the module back to candidate semantics before the chain could continue
+   - `module_promote` had already started mutating repository state and had to restore the module back to candidate semantics before the chain could continue
 
 Executors may add natural-language explanation, but the standardized code must appear first when a fallback or blocking reason is reported.
 
 ---
 
-## 3. Handoff: `cand_check -> cand_plan`
+## 3. Handoff: `module_check -> module_plan`
 
 ### 3.1 Minimum Upstream Artifact
 
-`cand_plan` minimally requires a current valid `_check_result/{module}.md`.
+`module_plan` minimally requires a current valid `_check_result/{module}.md`.
 
 ### 3.2 Required Re-Validation
 
-Before consumption, `cand_plan` must re-validate:
+Before consumption, `module_plan` must re-validate:
 
 1. `decision=pass`
 2. `allow_next=true`
-3. `next_command=cand_plan`
+3. `next_command=module_plan`
 4. current candidate file path, version ref, and fingerprint
 5. current `module_appendix_snapshot`
 6. current `system_constraints` binding fields
@@ -87,11 +87,11 @@ Before consumption, `cand_plan` must re-validate:
 
 ### 3.3 Allowed Entry Condition
 
-`cand_plan` may continue only when the pass gate still covers the current candidate round exactly.
+`module_plan` may continue only when the pass gate still covers the current candidate round exactly.
 
 ### 3.4 Smallest Fallback
 
-If the handoff is invalid, the smallest fallback is `cand_check`.
+If the handoff is invalid, the smallest fallback is `module_check`.
 
 ### 3.5 Allowed Reason Codes
 
@@ -108,18 +108,18 @@ Use only:
 
 ---
 
-## 4. Handoff: `cand_plan -> cand_impl`
+## 4. Handoff: `module_plan -> module_impl`
 
 ### 4.1 Minimum Upstream Artifacts
 
-`cand_impl` minimally requires both:
+`module_impl` minimally requires both:
 
 1. a current valid `_check_result/{module}.md`
 2. a current valid `_plans/active/{module}.md`
 
 ### 4.2 Required Re-Validation
 
-Before consumption, `cand_impl` must re-validate:
+Before consumption, `module_impl` must re-validate:
 
 1. all required `_check_result` bindings from Section 3
 2. current plan file path and existence
@@ -130,11 +130,11 @@ Before consumption, `cand_impl` must re-validate:
 
 ### 4.3 Allowed Entry Condition
 
-`cand_impl` may continue only when both the pass gate and the plan still cover the same current candidate round.
+`module_impl` may continue only when both the pass gate and the plan still cover the same current candidate round.
 
 ### 4.4 Smallest Fallback
 
-If either artifact is missing or invalid, the smallest fallback is `cand_check`.
+If either artifact is missing or invalid, the smallest fallback is `module_check`.
 
 ### 4.5 Allowed Reason Codes
 
@@ -148,18 +148,18 @@ Use only:
 
 ---
 
-## 5. Handoff: `cand_impl -> cand_verify`
+## 5. Handoff: `module_impl -> module_verify`
 
 ### 5.1 Minimum Upstream Artifacts
 
-`cand_verify` minimally requires both:
+`module_verify` minimally requires both:
 
 1. a current valid `_check_result/{module}.md`
 2. a current valid `_plans/active/{module}.md`
 
 ### 5.2 Required Re-Validation
 
-Before consumption, `cand_verify` must re-validate:
+Before consumption, `module_verify` must re-validate:
 
 1. all required gate bindings
 2. all required plan bindings
@@ -167,12 +167,12 @@ Before consumption, `cand_verify` must re-validate:
 
 ### 5.3 Allowed Entry Condition
 
-`cand_verify` may continue only when verification still targets the same candidate truth round that implementation used.
+`module_verify` may continue only when verification still targets the same candidate truth round that implementation used.
 
 ### 5.4 Smallest Fallback
 
-If bindings drift, the smallest fallback is `cand_check`.
-If candidate truth still stands but implementation diverged, the fallback is `cand_impl`.
+If bindings drift, the smallest fallback is `module_check`.
+If candidate truth still stands but implementation diverged, the fallback is `module_impl`.
 
 ### 5.5 Allowed Reason Codes
 
@@ -189,19 +189,19 @@ Use only:
 
 ---
 
-## 6. Handoff: `cand_verify -> cand_promote`
+## 6. Handoff: `module_verify -> module_promote`
 
 ### 6.1 Minimum Upstream Artifact
 
-`cand_promote` minimally requires a current valid `_verify_result/{module}.md`.
+`module_promote` minimally requires a current valid `_verify_result/{module}.md`.
 
 ### 6.2 Required Re-Validation
 
-Before consumption, `cand_promote` must re-validate:
+Before consumption, `module_promote` must re-validate:
 
 1. `decision=pass`
 2. `allow_next=true`
-3. `next_command=cand_promote`
+3. `next_command=module_promote`
 4. current candidate file path, version ref, and fingerprint
 5. current `module_appendix_snapshot`
 6. current implementation still covered by `verification_scope_ref`
@@ -210,13 +210,13 @@ Before consumption, `cand_promote` must re-validate:
 
 ### 6.3 Allowed Entry Condition
 
-`cand_promote` may continue only when the verify result still covers current candidate truth, current implementation, and current baseline state together.
+`module_promote` may continue only when the verify result still covers current candidate truth, current implementation, and current baseline state together.
 
 ### 6.4 Smallest Fallback
 
-If verification evidence is outdated or incomplete but candidate truth still stands, the smallest fallback is `cand_verify`.
-If implementation no longer aligns with the candidate, the fallback is `cand_impl`.
-If candidate truth or upstream bindings drifted, the fallback is `cand_check`.
+If verification evidence is outdated or incomplete but candidate truth still stands, the smallest fallback is `module_verify`.
+If implementation no longer aligns with the candidate, the fallback is `module_impl`.
+If candidate truth or upstream bindings drifted, the fallback is `module_check`.
 
 ### 6.5 Allowed Reason Codes
 

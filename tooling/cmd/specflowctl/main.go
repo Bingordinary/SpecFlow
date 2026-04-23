@@ -724,7 +724,7 @@ func writeReviewUsage(w io.Writer) {
 func writeProcessUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl process cleanup-fallback --module MODULE --from-command COMMAND --reason CODE [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl process cleanup-success --module MODULE --mode spec_fork|cand_promote [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl process cleanup-success --module MODULE --mode module_fork|module_promote [--repo-root PATH]")
 }
 
 func writeSharedUsage(w io.Writer) {

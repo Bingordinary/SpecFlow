@@ -131,7 +131,7 @@ It may additionally record planning-local fields such as:
 
 Rules:
 
-1. draft plan files must never be treated as valid inputs for `cand_impl` or `cand_verify`
+1. draft plan files must never be treated as valid inputs for `module_impl` or `module_verify`
 2. draft plan files do not inherit the active-plan binding revalidation contract
 3. draft plan files may be deleted whenever the current round falls back, forks, promotes, or closes candidate state
 

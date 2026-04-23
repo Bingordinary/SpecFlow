@@ -1,4 +1,4 @@
-# Candidate Plan Command
+# Module Plan Command
 
 ## 1. Purpose
 
@@ -20,12 +20,12 @@ By default it handles:
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `cand_plan` may produce that advancing result; later local confirmation, research-side reassessment, or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_plan` may produce that advancing result; later local confirmation, research-side reassessment, or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
 1. complete required pre-checks
-2. `_status.md` says `Next Command=cand_plan`
+2. `_status.md` says `Next Command=module_plan`
 3. a current valid `docs/specs/_check_result/{module}.md` exists
 4. the current candidate still aligns with the current formal global baseline state
 5. read any explicitly referenced candidate appendix files and bound Shared Contract files
@@ -43,7 +43,7 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
    - delete `_plans/draft/{module}.md` if it exists
    - delete `_plans/active/{module}.md` if it exists
    - delete `_verify_result/{module}.md` if it exists
-   - fall back `_status.md` to `cand_check`
+   - fall back `_status.md` to `module_check`
 6. if the module already has `stable`, derive a planning-aid change surface before judging the round:
    - use `git diff --no-index -- docs/specs/modules/stable/s_{module}.md docs/specs/modules/candidate/c_{module}.md`
    - use the diff to identify which candidate sections changed in this round and which implementation slices need direct focus first
@@ -51,62 +51,62 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
    - do not assume unchanged lines are irrelevant, because unchanged candidate truth may still constrain implementation
    - if the module has no `stable` yet, skip this step
 7. determine the planning result shape for this round before plan write-back:
-   - every `cand_plan` run must end in exactly one of these result shapes: `plan-ready`, `truth-fallback`, `plan-blocked`, or `decision-checkpoint`
+   - every `module_plan` run must end in exactly one of these result shapes: `plan-ready`, `truth-fallback`, `plan-blocked`, or `decision-checkpoint`
    - if research preflight is not required because implementation-critical unknowns are already sufficiently closed, treat the round as `plan-ready`
 8. determine whether research preflight is required:
    - use it only when current candidate truth is already closed enough to investigate implementation, but key implementation-critical unknowns still prevent a stable plan
    - do not use research preflight to replace missing behavior truth, boundary truth, or acceptance truth in the candidate
-   - if research confirms that the real blocker is incomplete candidate truth, do not continue planning and fall back to `cand_check`
+   - if research confirms that the real blocker is incomplete candidate truth, do not continue planning and fall back to `module_check`
 9. after research preflight, allow only these three result shapes:
    - plan-ready: implementation-critical unknowns are closed enough to write a stable plan
-   - truth-fallback: research found that candidate truth itself is still incomplete, so planning must fall back to `cand_check`
+   - truth-fallback: research found that candidate truth itself is still incomplete, so planning must fall back to `module_check`
    - plan-blocked: candidate truth still stands, but planning is blocked on a clearly named external condition, further bounded research result, or human-supplied implementation fact
 10. `decision-checkpoint` is a distinct result shape:
    - use it only when a `decision` checkpoint is actually raised because implementation direction is still unresolved
    - do not merge it into `plan-blocked`, because unresolved direction and missing implementation facts are different blocking causes
    - do not create or update `docs/specs/_plans/active/{module}.md`
-   - keep `_status.md` at `cand_plan` unless the checkpoint answer must first be written back into candidate truth or appendix truth
+   - keep `_status.md` at `module_plan` unless the checkpoint answer must first be written back into candidate truth or appendix truth
 11. if the result is `truth-fallback`:
    - delete `_check_result/{module}.md`
    - delete `_plans/draft/{module}.md` if it exists
    - delete `_plans/active/{module}.md` if it exists
    - delete `_verify_result/{module}.md` if it exists
    - do not create or update `docs/specs/_plans/active/{module}.md`
-   - update `_status.md` to `cand_check`
+   - update `_status.md` to `module_check`
    - report `fallback_reason_code=truth_incomplete`
 12. if the result is `plan-blocked`:
    - create or update `docs/specs/_plans/draft/{module}.md`
    - do not create or update `docs/specs/_plans/active/{module}.md`
    - if an old `active/{module}.md` still exists for the same round, revalidate whether it remains consumable; if not, delete it rather than leaving a stale active plan available to downstream commands
-   - keep `_status.md` at `cand_plan`
+   - keep `_status.md` at `module_plan`
    - report `fallback_reason_code=implementation_unknown`
    - record the blocking point, the missing condition, and the exact resume signal
 13. determine whether a `decision` checkpoint is required:
    - only use it when key implementation direction is still not locked
-   - if the unresolved decision changes behavior truth, boundary truth, or acceptance truth, the resume path must go back to `cand_check` after writeback
+   - if the unresolved decision changes behavior truth, boundary truth, or acceptance truth, the resume path must go back to `module_check` after writeback
    - do not treat the checkpoint as permission to continue without that writeback
 14. if a `decision` checkpoint is raised:
    - set the result shape to `decision-checkpoint`
    - create or update `docs/specs/_plans/draft/{module}.md`
    - do not create or update `docs/specs/_plans/active/{module}.md`
    - if an old `active/{module}.md` still exists for the same round, revalidate whether it remains consumable; if not, delete it rather than leaving a stale active plan available to downstream commands
-   - keep `_status.md` at `cand_plan` when the unresolved decision is implementation-direction only
+   - keep `_status.md` at `module_plan` when the unresolved decision is implementation-direction only
    - report `fallback_reason_code=direction_unresolved`
-   - use `resume_next_step=cand_check` only when the checkpoint answer must first be written back into candidate truth or appendix truth
+   - use `resume_next_step=module_check` only when the checkpoint answer must first be written back into candidate truth or appendix truth
 15. create or update `docs/specs/_plans/active/{module}.md` only when no checkpoint blocks planning and the result is `plan-ready`
 16. if `docs/specs/_plans/draft/{module}.md` exists for the same round and the round is now `plan-ready`, extract only the stabilized planning content into `active/{module}.md`; do not rename the draft file in place
 17. after a successful active-plan write for the current round, delete `docs/specs/_plans/draft/{module}.md` if it exists
 18. identify the changed execution surfaces of this round before finalizing either draft or active planning output:
    - define an execution surface as the concrete capability path that this round is actually changing inside the module
    - do not force one whole-module owner or one whole-module path when the round touches only a narrower capability slice
-   - name each execution surface directly enough that `cand_impl` and `cand_verify` can reuse the same surface labels without reinterpretation
+   - name each execution surface directly enough that `module_impl` and `module_verify` can reuse the same surface labels without reinterpretation
 19. for each changed execution surface, record at minimum:
    - current known path
    - target path for the end of this round
    - retirement goal naming which legacy dependency should stop being a required prerequisite
    - the first stable cutover slices that can advance now
 20. if current implementation facts are still insufficient to name a target path or retirement goal safely, but candidate truth still stands:
-   - keep the round at `cand_plan`
+   - keep the round at `module_plan`
    - update `docs/specs/_plans/draft/{module}.md`
    - record the missing implementation fact under `open_modeling_unknowns`
 21. if planning discovers that the real blocker is missing behavior truth, missing boundary truth, or missing acceptance truth:
@@ -131,14 +131,14 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
    - the changed execution surfaces of this round are identified
    - each changed execution surface has a target path
    - each changed execution surface has at least one explicit retirement goal
-   - the first implementation slices are stable enough to enter `cand_impl`
+   - the first implementation slices are stable enough to enter `module_impl`
 24. update `_status.md`:
-   - if the candidate is now ready for implementation -> `Next Command=cand_impl`
-   - if candidate truth drift was discovered -> `Next Command=cand_check`
-   - if research preflight found candidate truth gaps -> `Next Command=cand_check`
-   - if research preflight is blocked on implementation-critical unknowns but no truth rewrite is pending -> keep `Next Command=cand_plan`
-   - if the result is `decision-checkpoint` and no truth writeback is pending -> keep `Next Command=cand_plan`
-   - if a `decision` checkpoint stopped planning and no truth writeback is pending -> keep `Next Command=cand_plan`
+   - if the candidate is now ready for implementation -> `Next Command=module_impl`
+   - if candidate truth drift was discovered -> `Next Command=module_check`
+   - if research preflight found candidate truth gaps -> `Next Command=module_check`
+   - if research preflight is blocked on implementation-critical unknowns but no truth rewrite is pending -> keep `Next Command=module_plan`
+   - if the result is `decision-checkpoint` and no truth writeback is pending -> keep `Next Command=module_plan`
+   - if a `decision` checkpoint stopped planning and no truth writeback is pending -> keep `Next Command=module_plan`
 25. perform git close-out if required
 
 ## 5. Stop Conditions
@@ -157,17 +157,17 @@ Only a new independent full-scope run of `cand_plan` may produce that advancing 
 7. changed execution surfaces and their target-path result
 8. retirement-target planning result
 9. `handoff validation result`
-10. cleanup result when planning fell back to `cand_check`
+10. cleanup result when planning fell back to `module_check`
 11. `checkpoint result` when a checkpoint stop was raised
    - when present, it must satisfy the fixed checkpoint fields defined by `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
 12. `fallback_reason_code` for fallback, blocking, or checkpoint stops
-13. blocking reason and resume signal when planning stayed at `cand_plan` without fallback
+13. blocking reason and resume signal when planning stayed at `module_plan` without fallback
 14. git close-out result
 15. `_status.md` update result
 16. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
-   - when a checkpoint was raised or planning stayed blocked at `cand_plan`, also report `resume signal`
-   - if `Next Command=cand_plan`, `why this next step` must explicitly state whether planning is waiting on implementation facts, unresolved direction, or truth writeback
+   - when a checkpoint was raised or planning stayed blocked at `module_plan`, also report `resume signal`
+   - if `Next Command=module_plan`, `why this next step` must explicitly state whether planning is waiting on implementation facts, unresolved direction, or truth writeback
 
 Allowed checkpoint types:
 

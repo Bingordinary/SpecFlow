@@ -79,7 +79,7 @@ It does not own:
 
 Therefore:
 
-1. `flow` command family has `new`, `stable_verify`, `fork`, `check`, `verify`, and `promote`
+1. `flow` command family has `new`, `module_stable_verify`, `fork`, `check`, `verify`, and `promote`
 2. `flow` command family does not have `plan` or `impl`
 
 ## 6. Verification Meaning

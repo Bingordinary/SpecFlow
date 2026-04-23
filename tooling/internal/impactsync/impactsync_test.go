@@ -19,7 +19,7 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 		"",
 		"| Object Type | Object | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|---|",
-		"| `module` | `module_demo` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+		"| `module` | `module_demo` | `no` | `yes` | `candidate` | `module_plan` | current round |",
 		"| `flow` | `flow_demo` | `no` | `yes` | `candidate` | `flow_verify` | current round |",
 		"| `project` | `project` | `no` | `yes` | `candidate` | `project_verify` | current round |",
 	}, "\n")+"\n")
@@ -41,7 +41,7 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 			Binding: ModuleBinding{
 				Module:        "module_demo",
 				ActiveLayer:   "candidate",
-				NextCommand:   "cand_plan",
+				NextCommand:   "module_plan",
 				BindingIssues: []string{"binding drift"},
 			},
 		}},
@@ -68,7 +68,7 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	if len(result.ModuleResults) != 1 || result.ModuleResults[0].NextCommand != "cand_check" || result.ModuleResults[0].Outcome != "invalidated" {
+	if len(result.ModuleResults) != 1 || result.ModuleResults[0].NextCommand != "module_check" || result.ModuleResults[0].Outcome != "invalidated" {
 		t.Fatalf("unexpected module result: %+v", result.ModuleResults)
 	}
 	if len(result.FlowResults) != 1 || result.FlowResults[0].NextCommand != "flow_check" || result.FlowResults[0].Outcome != "invalidated" {
@@ -99,7 +99,7 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 	}
 	statusText := string(statusData)
 	for _, expected := range []string{
-		"| `module` | `module_demo` | `no` | `yes` | `candidate` | `cand_check` | current round |",
+		"| `module` | `module_demo` | `no` | `yes` | `candidate` | `module_check` | current round |",
 		"| `flow` | `flow_demo` | `no` | `yes` | `candidate` | `flow_check` | current round |",
 		"| `project` | `project` | `no` | `yes` | `candidate` | `project_check` | current round |",
 	} {
@@ -118,7 +118,7 @@ func TestApplyReroutesStableObjectsToVerifyCommands(t *testing.T) {
 		"",
 		"| Object Type | Object | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|---|",
-		"| `module` | `module_demo` | `yes` | `no` | `stable` | `spec_fork` | stable round |",
+		"| `module` | `module_demo` | `yes` | `no` | `stable` | `module_fork` | stable round |",
 		"| `flow` | `flow_demo` | `yes` | `no` | `stable` | `flow_fork` | stable round |",
 		"| `project` | `project` | `yes` | `no` | `stable` | `project_fork` | stable round |",
 	}, "\n")+"\n")
@@ -128,7 +128,7 @@ func TestApplyReroutesStableObjectsToVerifyCommands(t *testing.T) {
 			Binding: ModuleBinding{
 				Module:        "module_demo",
 				ActiveLayer:   "stable",
-				NextCommand:   "spec_fork",
+				NextCommand:   "module_fork",
 				BindingIssues: []string{"binding drift"},
 			},
 		}},
@@ -155,7 +155,7 @@ func TestApplyReroutesStableObjectsToVerifyCommands(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	if len(result.ModuleResults) != 1 || result.ModuleResults[0].NextCommand != "stable_verify" || result.ModuleResults[0].Outcome != "rerouted" {
+	if len(result.ModuleResults) != 1 || result.ModuleResults[0].NextCommand != "module_stable_verify" || result.ModuleResults[0].Outcome != "rerouted" {
 		t.Fatalf("unexpected module result: %+v", result.ModuleResults)
 	}
 	if len(result.FlowResults) != 1 || result.FlowResults[0].NextCommand != "flow_stable_verify" || result.FlowResults[0].Outcome != "rerouted" {
@@ -171,7 +171,7 @@ func TestApplyReroutesStableObjectsToVerifyCommands(t *testing.T) {
 	}
 	statusText := string(statusData)
 	for _, expected := range []string{
-		"| `module` | `module_demo` | `yes` | `no` | `stable` | `stable_verify` | stable round |",
+		"| `module` | `module_demo` | `yes` | `no` | `stable` | `module_stable_verify` | stable round |",
 		"| `flow` | `flow_demo` | `yes` | `no` | `stable` | `flow_stable_verify` | stable round |",
 		"| `project` | `project` | `yes` | `no` | `stable` | `project_stable_verify` | stable round |",
 	} {
@@ -190,7 +190,7 @@ func TestApplyUsesResolvedSharedInvalidationForStableObjects(t *testing.T) {
 		"",
 		"| Object Type | Object | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|---|",
-		"| `module` | `module_demo` | `yes` | `no` | `stable` | `spec_fork` | stable round |",
+		"| `module` | `module_demo` | `yes` | `no` | `stable` | `module_fork` | stable round |",
 		"| `flow` | `flow_demo` | `yes` | `no` | `stable` | `flow_fork` | stable round |",
 		"| `project` | `project` | `yes` | `no` | `stable` | `project_fork` | stable round |",
 	}, "\n")+"\n")
@@ -200,7 +200,7 @@ func TestApplyUsesResolvedSharedInvalidationForStableObjects(t *testing.T) {
 			Binding: ModuleBinding{
 				Module:      "module_demo",
 				ActiveLayer: "stable",
-				NextCommand: "spec_fork",
+				NextCommand: "module_fork",
 			},
 			InvalidatingSharedRefs: []string{"s_shared_demo@1.0.0"},
 		}},
@@ -356,7 +356,7 @@ func TestApplyKeepsCandidateModuleWhenCallerAllowsSharedSnapshotMismatch(t *test
 			Binding: ModuleBinding{
 				Module:      "module_demo",
 				ActiveLayer: "candidate",
-				NextCommand: "cand_plan",
+				NextCommand: "module_plan",
 			},
 			AllowedSharedSnapshotMismatchFileRefs: []string{"docs/specs/shared_contracts/candidate/c_shared_demo.md"},
 		}},
@@ -372,8 +372,8 @@ func TestApplyKeepsCandidateModuleWhenCallerAllowsSharedSnapshotMismatch(t *test
 	if moduleResult.Outcome != "unchanged" {
 		t.Fatalf("expected unchanged outcome, got %+v", moduleResult)
 	}
-	if moduleResult.NextCommand != "cand_plan" {
-		t.Fatalf("expected next command cand_plan, got %+v", moduleResult)
+	if moduleResult.NextCommand != "module_plan" {
+		t.Fatalf("expected next command module_plan, got %+v", moduleResult)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_check_result/module_demo.md")); err != nil {
 		t.Fatalf("expected process file to remain, stat err=%v", err)
@@ -395,7 +395,7 @@ func TestApplyKeepsCandidateModuleWhenPlanUsesPlanContract(t *testing.T) {
 			Binding: ModuleBinding{
 				Module:      "module_demo",
 				ActiveLayer: "candidate",
-				NextCommand: "cand_verify",
+				NextCommand: "module_verify",
 			},
 		}},
 	})
@@ -407,7 +407,7 @@ func TestApplyKeepsCandidateModuleWhenPlanUsesPlanContract(t *testing.T) {
 		t.Fatalf("expected one module result, got %+v", result.ModuleResults)
 	}
 	moduleResult := result.ModuleResults[0]
-	if moduleResult.Outcome != "unchanged" || moduleResult.NextCommand != "cand_verify" {
+	if moduleResult.Outcome != "unchanged" || moduleResult.NextCommand != "module_verify" {
 		t.Fatalf("expected unchanged module with valid plan contract, got %+v", moduleResult)
 	}
 }
@@ -436,7 +436,7 @@ func setupImpactModuleSharedRepo(t *testing.T, repoRoot string) string {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_demo` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+		"| `module_demo` | `no` | `yes` | `candidate` | `module_plan` | current round |",
 	}, "\n")+"\n")
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
@@ -508,10 +508,10 @@ func renderImpactCheckProcessSnapshot(snap snapshot.Snapshot) string {
 		"```yaml",
 		"object_type: module",
 		"object_ref: " + snap.Module,
-		"gate: cand_check",
+		"gate: module_check",
 		"decision: pass",
 		"allow_next: true",
-		"next_command: cand_plan",
+		"next_command: module_plan",
 		"blocking_summary: none",
 		"coverage_summary: current candidate",
 		"truth_layer_ref: " + snap.TruthLayerRef,

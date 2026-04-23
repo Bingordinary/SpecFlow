@@ -23,7 +23,7 @@ func TestValidateRegistryPassesForKnownCandCheckEntry(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_ai` | `yes` | `yes` | `candidate` | `cand_check` | note |",
+		"| `module_ai` | `yes` | `yes` | `candidate` | `module_check` | note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(repoRoot, "docs/specs/_status.md"), []byte(status), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)
@@ -36,7 +36,7 @@ func TestValidateRegistryPassesForKnownCandCheckEntry(t *testing.T) {
 		"",
 		"| standard_id | type | surface | file | consumed_by | applies_to | effect | conflict_rule | notes |",
 		"|---|---|---|---|---|---|---|---|---|",
-		"| `prompt_rule` | `review_standard` | `candidate_closure_review` | `docs/project_standards/prompt_guidelines.md` | `cand_check` | `module:module_ai` | `tighten` | `framework_wins` | note |",
+		"| `prompt_rule` | `review_standard` | `candidate_closure_review` | `docs/project_standards/prompt_guidelines.md` | `module_check` | `module:module_ai` | `tighten` | `framework_wins` | note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(repoRoot, "docs/project_standards/_registry.md"), []byte(registry), 0o644); err != nil {
 		t.Fatalf("write registry: %v", err)
@@ -70,7 +70,7 @@ func TestValidateRegistryRejectsUnsupportedScenarioForCandCheck(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_ai` | `yes` | `yes` | `candidate` | `cand_check` | note |",
+		"| `module_ai` | `yes` | `yes` | `candidate` | `module_check` | note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(repoRoot, "docs/specs/_status.md"), []byte(status), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)
@@ -83,7 +83,7 @@ func TestValidateRegistryRejectsUnsupportedScenarioForCandCheck(t *testing.T) {
 		"",
 		"| standard_id | type | surface | file | consumed_by | applies_to | effect | conflict_rule | notes |",
 		"|---|---|---|---|---|---|---|---|---|",
-		"| `prompt_rule` | `review_standard` | `candidate_closure_review` | `docs/project_standards/prompt_guidelines.md` | `cand_check` | `review_scenario:default_governance_baseline` | `tighten` | `framework_wins` | note |",
+		"| `prompt_rule` | `review_standard` | `candidate_closure_review` | `docs/project_standards/prompt_guidelines.md` | `module_check` | `review_scenario:default_governance_baseline` | `tighten` | `framework_wins` | note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(repoRoot, "docs/project_standards/_registry.md"), []byte(registry), 0o644); err != nil {
 		t.Fatalf("write registry: %v", err)

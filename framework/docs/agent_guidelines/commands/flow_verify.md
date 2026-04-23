@@ -41,5 +41,5 @@ The output must report:
 
 ## 6. Non-Goals
 
-1. replacing `cand_impl:{module}`
+1. replacing `module_impl:{module}`
 2. implicitly repairing affected modules

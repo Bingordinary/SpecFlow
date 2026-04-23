@@ -27,7 +27,7 @@ It may:
 3. update an existing candidate-layer `shared_contract` that is still the same shared object
 4. record expected future landing points in planning text when consumer modules do not yet have current-layer candidates
 5. trigger `shared_sync` after shared truth writeback
-6. declare the later `cand_promote` owner when the round opens the next candidate-layer file for a shared object that already has a stable-layer sibling
+6. declare the later `module_promote` owner when the round opens the next candidate-layer file for a shared object that already has a stable-layer sibling
 
 It does not:
 

@@ -9,8 +9,8 @@
 5. `candidate` main files and their appendix files are draft-layer artifacts, but draft-layer status does not forbid commits. When a round reaches a reviewable checkpoint, the current `candidate` should normally enter git history together with any linked process or code changes for that checkpoint.
 6. `specflow/framework/docs/agent_guidelines/*.md` and `specflow/framework/docs/agent_guidelines/commands/*.md` are part of repository governance and should normally be committed in the current task.
 7. Changes to registered entry index files are also governance changes and should normally be committed in the current task after entry-file sync is complete.
-8. When `Active Layer=stable` and code changes introduce new formal-layer implementation drift, the module's `Next Command` should normally fall back to `stable_verify`.
-9. `docs/specs/system/stable/s_system_constraints.md` is treated by default as a formal side product of module `cand_promote`.
+8. When `Active Layer=stable` and code changes introduce new formal-layer implementation drift, the module's `Next Command` should normally fall back to `module_stable_verify`.
+9. `docs/specs/system/stable/s_system_constraints.md` is treated by default as a formal side product of module `module_promote`.
 10. `docs/specs/shared_contracts/candidate/*.md` are draft-layer shared truth files and follow candidate-layer commit rules by default.
 
 ---
@@ -30,7 +30,7 @@ Rules:
 4. If the change only brings code back to the currently aligned layer, `fix:` may be used.
 5. If the change is only structural and does not alter the behavior defined by the current aligned layer, `refactor:` may be used.
 6. Candidate-progress commits should be created at reviewable checkpoints rather than for every incomplete draft save.
-7. Default reviewable checkpoints include a candidate state ready for `cand_check`, a completed `cand_plan`, a coherent `cand_impl` slice that aligns code to the current candidate, and a passed `cand_verify`.
+7. Default reviewable checkpoints include a candidate state ready for `module_check`, a completed `module_plan`, a coherent `module_impl` slice that aligns code to the current candidate, and a passed `module_verify`.
 8. A candidate-progress commit may contain only draft-layer files when that checkpoint itself is the thing being reviewed.
 9. A candidate-progress commit must stay separate in meaning from the later promotion commit that makes behavior formally active through `stable`.
 
@@ -40,7 +40,7 @@ Rules:
 
 Applicable case:
 
-1. executing `cand_promote:{module}`
+1. executing `module_promote:{module}`
 
 Rules:
 
@@ -97,11 +97,11 @@ Notes:
 
 Rules:
 
-1. The default closure scope of `cand_promote` includes only the round's module `stable`, any linked update to `s_system_constraints.md`, any Shared Contract handled in the round, and cleanup of the round's candidate main file, candidate appendix files, and candidate-side process files.
+1. The default closure scope of `module_promote` includes only the round's module `stable`, any linked update to `s_system_constraints.md`, any Shared Contract handled in the round, and cleanup of the round's candidate main file, candidate appendix files, and candidate-side process files.
 2. Promotion does not by itself force a Shared Contract to be absorbed into `s_system_constraints.md` or module `stable`.
 3. A Shared Contract may remain an independent stable shared truth after promotion.
-4. This repository does not currently require maintaining a root `VERSION` file during `cand_promote`.
-5. This repository does not currently require creating a Git tag during `cand_promote`.
+4. This repository does not currently require maintaining a root `VERSION` file during `module_promote`.
+5. This repository does not currently require creating a Git tag during `module_promote`.
 
 ---
 
@@ -114,7 +114,7 @@ If the task changes only `docs/specs/*.md`:
 1. If it changes `docs/specs/modules/candidate/c_{module}.md`, candidate appendix files under `docs/specs/modules/candidate/appendix/` or an equivalent dedicated subdirectory, or `docs/specs/shared_contracts/candidate/*.md`, commit when the round has reached a reviewable checkpoint. Purely temporary incomplete draft saves do not require their own commit.
 2. If it changes `docs/specs/modules/stable/*.md`, stable appendix files under `docs/specs/modules/stable/appendix/*.md` or an equivalent dedicated subdirectory, `docs/specs/shared_contracts/stable/*.md`, `docs/specs/system/stable/*.md`, `docs/specs/_status.md`, `docs/specs/_check_result/*.md`, `docs/specs/_verify_result/*.md`, or `docs/specs/_plans/**/*.md`, it should normally be committed in the current task.
 3. `docs/specs/_plans/draft/*.md` are planning working artifacts; they may be committed together with a reviewable checkpoint, but a blocked planning round does not require a standalone commit solely to preserve draft accumulation.
-4. If `stable` changes, treat it as a formal contract change. If the task hits `cand_promote`, follow the promotion-commit rules.
+4. If `stable` changes, treat it as a formal contract change. If the task hits `module_promote`, follow the promotion-commit rules.
 5. If a `candidate` change belongs to the same command flow as the corresponding code implementation, plan file, check result, verify result, or promotion commit, commit the checkpoint as one traceable unit instead of leaving candidate-only drift in the worktree.
 
 ### 6.2 `specflow/framework/docs/agent_guidelines/*.md` And `specflow/framework/docs/agent_guidelines/commands/*.md`

@@ -45,8 +45,8 @@ Body stays the same.
 	if moduleResult.Outcome != "unchanged" {
 		t.Fatalf("expected unchanged outcome, got %+v", moduleResult)
 	}
-	if moduleResult.NextCommand != "cand_plan" {
-		t.Fatalf("expected next command cand_plan, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_plan" {
+		t.Fatalf("expected next command module_plan, got %s", moduleResult.NextCommand)
 	}
 	if len(result.BoundModuleDrifts) != 1 {
 		t.Fatalf("expected one bound_modules drift, got %d", len(result.BoundModuleDrifts))
@@ -176,8 +176,8 @@ Body changed.
 	if moduleResult.FallbackReasonCode != "shared_contract_drift" {
 		t.Fatalf("expected shared_contract_drift, got %s", moduleResult.FallbackReasonCode)
 	}
-	if moduleResult.NextCommand != "cand_check" {
-		t.Fatalf("expected next command cand_check, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_check" {
+		t.Fatalf("expected next command module_check, got %s", moduleResult.NextCommand)
 	}
 	if !moduleResult.StatusUpdated {
 		t.Fatalf("expected status update")
@@ -190,7 +190,7 @@ Body changed.
 	if err != nil {
 		t.Fatalf("read status: %v", err)
 	}
-	if !strings.Contains(string(statusData), "| `module_demo` | `no` | `yes` | `candidate` | `cand_check` | current round |") {
+	if !strings.Contains(string(statusData), "| `module_demo` | `no` | `yes` | `candidate` | `module_check` | current round |") {
 		t.Fatalf("status row not updated:\n%s", string(statusData))
 	}
 }
@@ -367,14 +367,14 @@ Body changed.
 	if moduleResult.FallbackReasonCode != "shared_contract_drift" {
 		t.Fatalf("expected shared_contract_drift, got %s", moduleResult.FallbackReasonCode)
 	}
-	if moduleResult.NextCommand != "stable_verify" {
-		t.Fatalf("expected next command stable_verify, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_stable_verify" {
+		t.Fatalf("expected next command module_stable_verify, got %s", moduleResult.NextCommand)
 	}
 	statusData, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/_status.md"))
 	if err != nil {
 		t.Fatalf("read status: %v", err)
 	}
-	if !strings.Contains(string(statusData), "| `module_demo` | `yes` | `no` | `stable` | `stable_verify` | stable round |") {
+	if !strings.Contains(string(statusData), "| `module_demo` | `yes` | `no` | `stable` | `module_stable_verify` | stable round |") {
 		t.Fatalf("status row not updated:\n%s", string(statusData))
 	}
 }
@@ -437,7 +437,7 @@ func TestSyncImpactRejectsStableModuleBindingCandidateShared(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_demo` | `yes` | `no` | `stable` | `spec_fork` | stable round |",
+		"| `module_demo` | `yes` | `no` | `stable` | `module_fork` | stable round |",
 	}, "\n")+"\n")
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("stable", "module_demo")
@@ -488,8 +488,8 @@ Body stays the same.
 	if moduleResult.FallbackReasonCode != "binding_drift" {
 		t.Fatalf("expected binding_drift, got %s", moduleResult.FallbackReasonCode)
 	}
-	if moduleResult.NextCommand != "stable_verify" {
-		t.Fatalf("expected next command stable_verify, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_stable_verify" {
+		t.Fatalf("expected next command module_stable_verify, got %s", moduleResult.NextCommand)
 	}
 	if len(moduleResult.Diagnostics) == 0 || !strings.Contains(moduleResult.Diagnostics[0], "stable-layer module binding must use an s_ shared ref") {
 		t.Fatalf("expected stable binding diagnostic, got %+v", moduleResult.Diagnostics)
@@ -529,8 +529,8 @@ Body changed.
 	if moduleResult.Outcome != "unchanged" {
 		t.Fatalf("expected unchanged outcome for stable landing module, got %+v", moduleResult)
 	}
-	if moduleResult.NextCommand != "spec_fork" {
-		t.Fatalf("expected next command spec_fork, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_fork" {
+		t.Fatalf("expected next command module_fork, got %s", moduleResult.NextCommand)
 	}
 }
 
@@ -592,8 +592,8 @@ Body changed.
 	if moduleResult.FallbackReasonCode != "shared_contract_drift" {
 		t.Fatalf("expected shared_contract_drift, got %+v", moduleResult)
 	}
-	if moduleResult.NextCommand != "stable_verify" {
-		t.Fatalf("expected next command stable_verify, got %s", moduleResult.NextCommand)
+	if moduleResult.NextCommand != "module_stable_verify" {
+		t.Fatalf("expected next command module_stable_verify, got %s", moduleResult.NextCommand)
 	}
 }
 
@@ -706,8 +706,8 @@ func TestSyncImpactDoesNotExpandScopeWithExplicitModuleSelector(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_demo` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
-		"| `module_other` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+		"| `module_demo` | `no` | `yes` | `candidate` | `module_plan` | current round |",
+		"| `module_other` | `no` | `yes` | `candidate` | `module_plan` | current round |",
 	}, "\n")+"\n")
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_other")
@@ -812,7 +812,7 @@ func TestSyncImpactIncludesCandidateModuleWhenSelectedBindingWasRemovedFromCurre
 	if len(result.ModuleResults) != 1 {
 		t.Fatalf("expected one module result, got %+v", result.ModuleResults)
 	}
-	if result.ModuleResults[0].Outcome != "invalidated" || result.ModuleResults[0].NextCommand != "cand_check" {
+	if result.ModuleResults[0].Outcome != "invalidated" || result.ModuleResults[0].NextCommand != "module_check" {
 		t.Fatalf("expected invalidated module fallback, got %+v", result.ModuleResults[0])
 	}
 }
@@ -1156,7 +1156,7 @@ func TestSyncImpactIncludesRemovedBindingWhenSharedIDIsUnambiguous(t *testing.T)
 	if len(result.ScopedModules) != 1 || result.ScopedModules[0] != "module_demo" {
 		t.Fatalf("expected unambiguous shared-id removed binding to remain in scope, got %+v", result.ScopedModules)
 	}
-	if len(result.ModuleResults) != 1 || result.ModuleResults[0].Outcome != "invalidated" || result.ModuleResults[0].NextCommand != "cand_check" {
+	if len(result.ModuleResults) != 1 || result.ModuleResults[0].Outcome != "invalidated" || result.ModuleResults[0].NextCommand != "module_check" {
 		t.Fatalf("expected removed-binding shared-id path to invalidate module, got %+v", result.ModuleResults)
 	}
 }
@@ -1769,7 +1769,7 @@ func setupCandidateSharedRepo(t *testing.T, repoRoot string) string {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_demo` | `no` | `yes` | `candidate` | `cand_plan` | current round |",
+		"| `module_demo` | `no` | `yes` | `candidate` | `module_plan` | current round |",
 	}, "\n")+"\n")
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("candidate", "module_demo")
@@ -1828,7 +1828,7 @@ func setupStableSharedRepo(t *testing.T, repoRoot string) string {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_demo` | `yes` | `no` | `stable` | `spec_fork` | stable round |",
+		"| `module_demo` | `yes` | `no` | `stable` | `module_fork` | stable round |",
 	}, "\n")+"\n")
 
 	mainSpecRef, err := specpaths.MainSpecFileRef("stable", "module_demo")
@@ -2112,10 +2112,10 @@ func renderModuleProcessSnapshotForTest(t *testing.T, repoRoot, processKind, mod
 	scalars := []string{
 		"object_type: module",
 		"object_ref: " + module,
-		"gate: " + map[string]string{"check": "cand_check", "verify": "cand_verify"}[processKind],
+		"gate: " + map[string]string{"check": "module_check", "verify": "module_verify"}[processKind],
 		"decision: pass",
 		"allow_next: true",
-		"next_command: " + map[string]string{"check": "cand_plan", "verify": "cand_promote"}[processKind],
+		"next_command: " + map[string]string{"check": "module_plan", "verify": "module_promote"}[processKind],
 		"blocking_summary: none",
 		"coverage_summary: current candidate",
 		"truth_layer_ref: candidate",

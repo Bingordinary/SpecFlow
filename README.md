@@ -189,7 +189,7 @@ How to read this:
 
 One note before the story:
 
-- if the module already existed before `specFlow`, use `spec_init:{module}` once to capture its current accepted behavior as the first governed `stable`
+- if the module already existed before `specFlow`, use `module_init:{module}` once to capture its current accepted behavior as the first governed `stable`
 - after that, the module behaves like the story below
 
 ### Case 1: The First Version Of A Module
@@ -201,28 +201,28 @@ What you say:
 If you want exact control:
 
 ```text
-spec_new:module_search
+module_new:module_search
 -> write docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
--> cand_plan:module_search
--> cand_impl:module_search
--> cand_verify:module_search
--> cand_promote:module_search
+-> module_check:module_search
+-> module_plan:module_search
+-> module_impl:module_search
+-> module_verify:module_search
+-> module_promote:module_search
 ```
 
 What those commands are doing:
 
-- `spec_new` creates the first `candidate` for the new module
+- `module_new` creates the first `candidate` for the new module
 - then you or the runtime write the actual candidate content into `c_module_search.md`
-- `cand_check` makes sure that written candidate truth is closed enough to guide work
-- `cand_plan` turns that truth into an implementation plan
-- `cand_impl` writes code against that candidate
-- `cand_verify` checks whether the code matches the candidate
-- `cand_promote` turns the accepted candidate into the new `stable`
+- `module_check` makes sure that written candidate truth is closed enough to guide work
+- `module_plan` turns that truth into an implementation plan
+- `module_impl` writes code against that candidate
+- `module_verify` checks whether the code matches the candidate
+- `module_promote` turns the accepted candidate into the new `stable`
 
 When you write the document content:
 
-- right after `spec_new`, the file exists but it still needs real content
+- right after `module_new`, the file exists but it still needs real content
 - this is where you write the first candidate design in `c_module_search.md`
 - the minimum useful content is:
   - what the module is for
@@ -230,8 +230,8 @@ When you write the document content:
   - what the main flow is
   - what edge cases matter
   - how you will know the result is correct
-- only after that does `cand_check` have something real to judge
-- if `cand_check` says the candidate is still incomplete, you keep editing the same candidate file until it is closed enough
+- only after that does `module_check` have something real to judge
+- if `module_check` says the candidate is still incomplete, you keep editing the same candidate file until it is closed enough
 
 What `specFlow` adds here:
 
@@ -248,33 +248,33 @@ What you say:
 If you want exact control:
 
 ```text
-spec_fork:module_search
+module_fork:module_search
 -> edit docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
--> cand_plan:module_search
--> cand_impl:module_search
--> cand_verify:module_search
--> cand_promote:module_search
+-> module_check:module_search
+-> module_plan:module_search
+-> module_impl:module_search
+-> module_verify:module_search
+-> module_promote:module_search
 ```
 
 What those commands are doing:
 
-- `spec_fork` opens a new `candidate` from the current `stable`
+- `module_fork` opens a new `candidate` from the current `stable`
 - then you or the runtime edit `c_module_search.md` to describe the next version
-- `cand_check` confirms that edited next truth is clear enough
-- `cand_plan`, `cand_impl`, and `cand_verify` move that next truth into code and verify it
-- `cand_promote` makes the next truth become the new accepted `stable`
+- `module_check` confirms that edited next truth is clear enough
+- `module_plan`, `module_impl`, and `module_verify` move that next truth into code and verify it
+- `module_promote` makes the next truth become the new accepted `stable`
 
 When you write the document content:
 
-- `spec_fork` gives you a starting point by deriving the candidate from the current stable truth
+- `module_fork` gives you a starting point by deriving the candidate from the current stable truth
 - then you edit the candidate file to describe what changes in this round
 - this is where you update things such as:
   - changed protocol or field meaning
   - changed main flow
   - new validation or error behavior
   - new acceptance criteria
-- `cand_check` is the point where the system asks "is this updated candidate written clearly enough to drive the implementation round"
+- `module_check` is the point where the system asks "is this updated candidate written clearly enough to drive the implementation round"
 - if the answer is no, you go back to the same candidate file and keep refining it
 
 What `specFlow` adds here:
@@ -293,15 +293,15 @@ If you want exact control:
 
 ```text
 read docs/specs/modules/stable/s_module_search.md
--> stable_verify:module_search
+-> module_stable_verify:module_search
 ```
 
 If drift exists and you want to start the next change round:
 
 ```text
-spec_fork:module_search
+module_fork:module_search
 -> edit docs/specs/modules/candidate/c_module_search.md
--> cand_check:module_search
+-> module_check:module_search
 ```
 
 What that command is doing:
@@ -318,10 +318,10 @@ What `specFlow` adds here:
 
 The beginner takeaway is simple:
 
-- first version of a new module: `spec_new` + candidate chain
-- next version of an existing governed module: `spec_fork` + candidate chain
-- later alignment check: `stable_verify`
-- historical module entering governance for the first time: `spec_init`
+- first version of a new module: `module_new` + candidate chain
+- next version of an existing governed module: `module_fork` + candidate chain
+- later alignment check: `module_stable_verify`
+- historical module entering governance for the first time: `module_init`
 
 You can still start in natural language.
 These command names are the exact handles behind that lifecycle.
@@ -395,33 +395,33 @@ Most manual control starts from just three entry decisions:
 
 | Situation | Use this command |
 | --- | --- |
-| bring an existing historical module into governance for the first time | `spec_init:{module}` |
-| start a brand-new module | `spec_new:{module}` |
-| change a module that already has governed `stable` truth | `spec_fork:{module}` |
+| bring an existing historical module into governance for the first time | `module_init:{module}` |
+| start a brand-new module | `module_new:{module}` |
+| change a module that already has governed `stable` truth | `module_fork:{module}` |
 
 After that, the normal candidate chain is:
 
 ```text
-cand_check -> cand_plan -> cand_impl -> cand_verify -> cand_promote
+module_check -> module_plan -> module_impl -> module_verify -> module_promote
 ```
 
 There is also one stable-side maintenance step:
 
 ```text
-stable_verify
+module_stable_verify
 ```
 
-Use `stable_verify:{module}` only when the module is currently on `stable`, but you need to check whether the code still matches that accepted truth.
+Use `module_stable_verify:{module}` only when the module is currently on `stable`, but you need to check whether the code still matches that accepted truth.
 
 If you want one compact picture:
 
 ```mermaid
 flowchart LR
-    A["A. spec_init or spec_new or spec_fork"] --> B["B. cand_check"]
-    B --> C["C. cand_plan"]
-    C --> D["D. cand_impl"]
-    D --> E["E. cand_verify"]
-    E --> F["F. cand_promote"]
+    A["A. module_init or module_new or module_fork"] --> B["B. module_check"]
+    B --> C["C. module_plan"]
+    C --> D["D. module_impl"]
+    D --> E["E. module_verify"]
+    E --> F["F. module_promote"]
 ```
 
 This is the explicit control surface.

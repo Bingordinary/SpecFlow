@@ -21,13 +21,13 @@ func TestUpdateNextCommand(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_ai` | `yes` | `yes` | `candidate` | `cand_check` | note |",
+		"| `module_ai` | `yes` | `yes` | `candidate` | `module_check` | note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(statusPath, "_status.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)
 	}
 
-	updated, err := UpdateNextCommand(repoRoot, "module_ai", "cand_plan")
+	updated, err := UpdateNextCommand(repoRoot, "module_ai", "module_plan")
 	if err != nil {
 		t.Fatalf("UpdateNextCommand: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestUpdateNextCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read status: %v", err)
 	}
-	if !strings.Contains(string(data), "| `module_ai` | `yes` | `yes` | `candidate` | `cand_plan` | note |") {
+	if !strings.Contains(string(data), "| `module_ai` | `yes` | `yes` | `candidate` | `module_plan` | note |") {
 		t.Fatalf("updated status row not found:\n%s", string(data))
 	}
 }
@@ -58,7 +58,7 @@ func TestUpsertModuleStatusCreatesNewRow(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_ai` | `yes` | `no` | `stable` | `spec_fork` | stable note |",
+		"| `module_ai` | `yes` | `no` | `stable` | `module_fork` | stable note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(statusPath, "_status.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)
@@ -69,7 +69,7 @@ func TestUpsertModuleStatusCreatesNewRow(t *testing.T) {
 		Stable:      "no",
 		Candidate:   "yes",
 		ActiveLayer: "candidate",
-		NextCommand: "cand_check",
+		NextCommand: "module_check",
 		Notes:       "new note",
 	}, true)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestUpsertModuleStatusCreatesNewRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read status: %v", err)
 	}
-	if !strings.Contains(string(data), "| `module_new` | `no` | `yes` | `candidate` | `cand_check` | new note |") {
+	if !strings.Contains(string(data), "| `module_new` | `no` | `yes` | `candidate` | `module_check` | new note |") {
 		t.Fatalf("created status row not found:\n%s", string(data))
 	}
 }
@@ -102,7 +102,7 @@ func TestUpsertModuleStatusRejectsUnsupportedNextCommand(t *testing.T) {
 		"",
 		"| Module | Stable | Candidate | Active Layer | Next Command | Notes |",
 		"|---|---|---|---|---|---|",
-		"| `module_ai` | `yes` | `no` | `stable` | `spec_fork` | stable note |",
+		"| `module_ai` | `yes` | `no` | `stable` | `module_fork` | stable note |",
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(statusPath, "_status.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)

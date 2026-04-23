@@ -1,4 +1,4 @@
-# Candidate Verify Command
+# Module Verify Command
 
 ## 1. Purpose
 
@@ -13,19 +13,19 @@ By default it handles:
 3. structured verification evidence generation
 4. structural convergence verification for the changed execution surfaces of the round
 5. writing `_verify_result/{module}.md`
-6. deciding whether the module may enter `cand_promote`
+6. deciding whether the module may enter `module_promote`
 7. stopping at a `human_verify` checkpoint only when automation is still insufficient to close confidence
 8. confirming that any `system_constraints_change_proposal` claimed by the current candidate is actually reflected in implementation evidence
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
 When this command advances `_status.md`, that advancement inherits the authoritative / non-authoritative central contract defined in Section 8.5 of `specflow/framework/docs/agent_guidelines/command_policy.md`.
-Only a new independent full-scope run of `cand_verify` may produce that advancing result; later local confirmation, narrowed evidence refresh, or scoped follow-up review must not advance lifecycle state.
+Only a new independent full-scope run of `module_verify` may produce that advancing result; later local confirmation, narrowed evidence refresh, or scoped follow-up review must not advance lifecycle state.
 
 ## 3. Preconditions
 
 1. complete required pre-checks
-2. `_status.md` says `Next Command=cand_verify`
+2. `_status.md` says `Next Command=module_verify`
 3. a current valid `_check_result/{module}.md` exists
 4. a current valid `_plans/active/{module}.md` exists
 5. the candidate still aligns with the current formal global baseline state
@@ -42,7 +42,7 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
    - delete `_plans/draft/{module}.md`
    - delete `_plans/active/{module}.md`
    - delete `_verify_result/{module}.md` if it exists
-   - fall back `_status.md` to `cand_check`
+   - fall back `_status.md` to `module_check`
 4. verify current code against key protocols, main flow, error handling, acceptance criteria, and any explicit `system_constraints_change_proposal`
 5. perform goal-backward verification for each key acceptance claim instead of stopping at artifact existence
 6. for each key claim, judge at minimum:
@@ -66,23 +66,23 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
    - the current execution surface still requires a legacy path before the planned target path can succeed
    - a legacy helper, patch, wrapper, or equivalent dependency named in `Retirement Targets` is still required
    - a new implementation exists but the target path was not actually cut over
-   - a core retirement target is not achieved but the round still attempts to enter `cand_promote`
+   - a core retirement target is not achieved but the round still attempts to enter `module_promote`
 13. output `Coverage Summary`
 14. determine whether a `human_verify` checkpoint is required:
    - use it only when automated verification is insufficient but a small amount of human effect judgment can close the remaining uncertainty
-   - if human verification confirms implementation deviation while candidate truth still stands, fall back to `cand_impl`
-   - if human verification shows acceptance truth itself is still incomplete, fall back to `cand_check`
+   - if human verification confirms implementation deviation while candidate truth still stands, fall back to `module_impl`
+   - if human verification shows acceptance truth itself is still incomplete, fall back to `module_check`
 15. classify deviations with the shared severity meanings defined by `specflow/framework/docs/agent_guidelines/severity_policy.md`
 16. conclude:
-   - if `fail` exists, do not enter `cand_promote`
+   - if `fail` exists, do not enter `module_promote`
    - if `partial` or `not_checked` exists, promotion is allowed only if `specflow/framework/docs/agent_guidelines/downgrade_policy.md` allows downgrade for the current evidence state
    - if key deviations are cleared, retirement targets are satisfied, and evidence is complete, promotion may proceed
 17. write or update `docs/specs/_verify_result/{module}.md`
 18. update `_status.md`:
-   - if ready to promote -> `Next Command=cand_promote`
-   - if implementation has deviations but candidate truth still stands -> `Next Command=cand_impl`
-   - if candidate truth or formal global baseline must be re-closed -> `Next Command=cand_check`
-   - if verification evidence is still incomplete but no upstream truth drift exists -> `Next Command=cand_verify`
+   - if ready to promote -> `Next Command=module_promote`
+   - if implementation has deviations but candidate truth still stands -> `Next Command=module_impl`
+   - if candidate truth or formal global baseline must be re-closed -> `Next Command=module_check`
+   - if verification evidence is still incomplete but no upstream truth drift exists -> `Next Command=module_verify`
 19. perform git close-out if required
 
 ## 5. Stop Conditions
@@ -91,7 +91,7 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
 2. changed execution surfaces either prove structural convergence or produce an explicit deviation result
 3. whether promotion is allowed is clear
 4. `_status.md` points to the real next executable step
-5. if pass gate or plan was invalid, verification stopped and `_status.md` fell back to `cand_check`
+5. if pass gate or plan was invalid, verification stopped and `_status.md` fell back to `module_check`
 
 ## 6. Output Contract
 
@@ -102,7 +102,7 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
 5. goal-backward evidence result
 6. downgrade decision when `partial` or `not_checked` exists
 7. verify-result write-back result
-8. cleanup result when verification fell back to `cand_check`
+8. cleanup result when verification fell back to `module_check`
 9. `checkpoint result` when a checkpoint stop was raised
    - when present, it must satisfy the fixed checkpoint fields defined by `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
 10. `fallback_reason_code` for fallback or checkpoint stops
@@ -114,7 +114,7 @@ Only a new independent full-scope run of `cand_verify` may produce that advancin
 16. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a `human_verify` checkpoint was raised, also report `resume signal`
-   - if `Next Command` remains `cand_verify` or falls back to `cand_impl`, `why this next step` must explicitly state whether the remaining blocker is missing evidence, human-effect judgment, or implementation deviation
+   - if `Next Command` remains `module_verify` or falls back to `module_impl`, `why this next step` must explicitly state whether the remaining blocker is missing evidence, human-effect judgment, or implementation deviation
 
 Allowed checkpoint types:
 

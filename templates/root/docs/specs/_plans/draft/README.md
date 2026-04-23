@@ -1,11 +1,11 @@
 # Candidate Plan Drafts
 
-This directory stores non-consumable planning working artifacts for `cand_plan`.
+This directory stores non-consumable planning working artifacts for `module_plan`.
 
 Rules:
 
 1. Each module may have one `draft/{module}.md`.
-2. Draft plans are not valid inputs to `cand_impl` or `cand_verify`.
+2. Draft plans are not valid inputs to `module_impl` or `module_verify`.
 3. A draft plan may record:
    - changed execution surfaces for the round
    - current known paths and target paths
@@ -33,6 +33,6 @@ Rules:
    - `slice_cutover_plan`
    - `research_notes`
 5. Draft plans do not carry gate-bearing semantics and do not replace the active plan.
-6. Draft plans may carry implementation-fact accumulation and implementation convergence planning only; if planning discovers missing behavior truth, boundary truth, or acceptance truth, the round must go back to `cand_check`.
-7. `truth-fallback`, `spec_fork`, `cand_promote`, recovery, and `Candidate=no` must delete the corresponding draft file.
+6. Draft plans may carry implementation-fact accumulation and implementation convergence planning only; if planning discovers missing behavior truth, boundary truth, or acceptance truth, the round must go back to `module_check`.
+7. `truth-fallback`, `module_fork`, `module_promote`, recovery, and `Candidate=no` must delete the corresponding draft file.
 8. After a round successfully writes `active/{module}.md`, the corresponding draft file should normally be deleted.

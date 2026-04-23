@@ -52,7 +52,7 @@ var supportedTypes = map[string]bool{
 }
 
 var contracts = map[string]map[string]surfaceContract{
-	"cand_check": {
+	"module_check": {
 		"candidate_closure_review": {
 			StandardType: "review_standard",
 			AllowedEffects: map[string]bool{

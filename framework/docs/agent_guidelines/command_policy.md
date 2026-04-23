@@ -75,15 +75,15 @@ Additional rules:
 
 ### 5.1 Module Commands
 
-1. `spec_init:{module}`
-2. `stable_verify:{module}`
-3. `spec_new:{module}`
-4. `spec_fork:{module}`
-5. `cand_check:{module}`
-6. `cand_plan:{module}`
-7. `cand_impl:{module}`
-8. `cand_verify:{module}`
-9. `cand_promote:{module}`
+1. `module_init:{module}`
+2. `module_stable_verify:{module}`
+3. `module_new:{module}`
+4. `module_fork:{module}`
+5. `module_check:{module}`
+6. `module_plan:{module}`
+7. `module_impl:{module}`
+8. `module_verify:{module}`
+9. `module_promote:{module}`
 
 ### 5.2 Flow Commands
 
@@ -162,15 +162,15 @@ Rules:
 
 ### 7.1 Module
 
-1. `spec_init`
-2. `stable_verify`
-3. `spec_fork`
-4. `spec_new`
-5. `cand_check`
-6. `cand_plan`
-7. `cand_impl`
-8. `cand_verify`
-9. `cand_promote`
+1. `module_init`
+2. `module_stable_verify`
+3. `module_fork`
+4. `module_new`
+5. `module_check`
+6. `module_plan`
+7. `module_impl`
+8. `module_verify`
+9. `module_promote`
 
 ### 7.2 Flow
 
@@ -208,7 +208,7 @@ Candidate-side process files become invalid when any current required binding ch
 
 At minimum:
 
-1. `module` candidate process files fall back to `cand_check`
+1. `module` candidate process files fall back to `module_check`
 2. `flow` candidate process files fall back to `flow_check`
 3. `project` candidate process files fall back to `project_check`
 
@@ -218,7 +218,7 @@ Stable-layer alignment claims become invalid when any current required binding c
 
 At minimum:
 
-1. `module` stable alignment falls back to `stable_verify`
+1. `module` stable alignment falls back to `module_stable_verify`
 2. `flow` stable alignment falls back to `flow_stable_verify`
 3. `project` stable alignment falls back to `project_stable_verify`
 

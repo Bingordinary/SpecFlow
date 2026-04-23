@@ -24,7 +24,7 @@ This policy covers:
    - `flow`
    - `project`
 2. incomplete promotion recovery for:
-   - `cand_promote`
+   - `module_promote`
    - `flow_promote`
    - `project_promote`
 
@@ -69,13 +69,13 @@ For candidate-side invalidation:
 
 Default candidate fallback targets:
 
-1. invalid `module` candidate -> `cand_check`
+1. invalid `module` candidate -> `module_check`
 2. invalid `flow` candidate -> `flow_check`
 3. invalid `project` candidate -> `project_check`
 
 Default candidate cleanup map:
 
-1. `module -> cand_check`
+1. `module -> module_check`
    - delete `_check_result/{module}.md`
    - delete `_plans/draft/{module}.md`
    - delete `_plans/active/{module}.md`
@@ -101,7 +101,7 @@ For stable-side invalidation:
 
 Default stable fallback targets:
 
-1. invalid `module` stable -> `stable_verify`
+1. invalid `module` stable -> `module_stable_verify`
 2. invalid `flow` stable -> `flow_stable_verify`
 3. invalid `project` stable -> `project_stable_verify`
 
@@ -121,7 +121,7 @@ At minimum:
 
 Object-specific minimums:
 
-1. `cand_promote`
+1. `module_promote`
    - `docs/specs/modules/candidate/c_{module}.md`
    - `docs/specs/modules/stable/s_{module}.md` when present
    - `_check_result/{module}.md`
@@ -170,7 +170,7 @@ When incomplete promotion recovery is triggered:
    - keep `Candidate=yes`
    - keep `Active Layer=candidate`
    - set the smallest restart step to:
-     - `module -> cand_check`
+     - `module -> module_check`
      - `flow -> flow_check`
      - `project -> project_check`
 5. keep `Stable=yes|no` consistent with the pre-round state from the recovery baseline

@@ -34,48 +34,48 @@ type cleanupRule struct {
 }
 
 var rules = map[string]map[string]cleanupRule{
-	"cand_plan": {
-		"gate_missing":          {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"truth_drift":           {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"binding_drift":         {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"baseline_drift":        {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"shared_contract_drift": {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"truth_incomplete":      {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
+	"module_plan": {
+		"gate_missing":          {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"truth_drift":           {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"binding_drift":         {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"baseline_drift":        {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"shared_contract_drift": {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"truth_incomplete":      {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
 	},
-	"cand_impl": {
-		"gate_missing":          {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"truth_drift":           {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"binding_drift":         {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"baseline_drift":        {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"shared_contract_drift": {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
+	"module_impl": {
+		"gate_missing":          {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"truth_drift":           {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"binding_drift":         {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"baseline_drift":        {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"shared_contract_drift": {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
 	},
-	"cand_verify": {
-		"gate_missing":          {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"truth_drift":           {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"binding_drift":         {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"baseline_drift":        {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"shared_contract_drift": {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
+	"module_verify": {
+		"gate_missing":          {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"truth_drift":           {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"binding_drift":         {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"baseline_drift":        {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"shared_contract_drift": {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
 		"implementation_deviation": {
-			NextCommand: "cand_impl",
+			NextCommand: "module_impl",
 			FileKinds:   []string{"verify"},
 		},
 		"evidence_incomplete": {
-			NextCommand: "cand_verify",
+			NextCommand: "module_verify",
 			FileKinds:   []string{"verify"},
 		},
-		"truth_incomplete": {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
+		"truth_incomplete": {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
 	},
-	"cand_promote": {
-		"truth_drift":           {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"binding_drift":         {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"baseline_drift":        {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
-		"shared_contract_drift": {NextCommand: "cand_check", FileKinds: []string{"check", "plan", "verify"}},
+	"module_promote": {
+		"truth_drift":           {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"binding_drift":         {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"baseline_drift":        {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
+		"shared_contract_drift": {NextCommand: "module_check", FileKinds: []string{"check", "plan", "verify"}},
 		"implementation_deviation": {
-			NextCommand: "cand_impl",
+			NextCommand: "module_impl",
 			FileKinds:   []string{"verify"},
 		},
 		"evidence_incomplete": {
-			NextCommand: "cand_verify",
+			NextCommand: "module_verify",
 			FileKinds:   []string{"verify"},
 		},
 	},
@@ -184,14 +184,14 @@ func filePathsForModule(module string, fileKinds []string) []string {
 func successCleanupPaths(repoRoot, module, mode string) ([]string, error) {
 	paths := []string{}
 	switch mode {
-	case "spec_fork":
+	case "module_fork":
 		paths = append(paths, filePathsForModule(module, []string{"check", "plan", "verify"})...)
 		appendixPaths, err := candidateAppendixPaths(repoRoot, module)
 		if err != nil {
 			return nil, err
 		}
 		paths = append(paths, appendixPaths...)
-	case "cand_promote":
+	case "module_promote":
 		candidateMainRef, err := specpaths.MainSpecFileRef("candidate", module)
 		if err != nil {
 			return nil, err

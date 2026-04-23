@@ -111,7 +111,7 @@ Examples:
 ./specflow/tooling/bin/specflowctl-linux-amd64 doctor
 ./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope
 ./specflow/tooling/bin/specflowctl-linux-amd64 snapshot rebuild --module module_ai
-./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --module module_ai --from-command cand_promote --reason evidence_incomplete
+./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --module module_ai --from-command module_promote --reason evidence_incomplete
 ./specflow/tooling/bin/specflowctl-linux-amd64 status set-object --type flow --object flow_task_execution --stable yes --candidate no --active-layer stable --next-command flow_fork
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs c_shared_app_config_topology@0.2.0 --modules module_ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared reconcile-bound-modules --shared-ids shared_app_config_topology

@@ -28,7 +28,7 @@ This policy does not replace:
 
 1. module command files
 2. shared-governance routing
-3. `stable_verify`, `cand_check`, `cand_impl`, or any other lifecycle gate
+3. `module_stable_verify`, `module_check`, `module_impl`, or any other lifecycle gate
 
 Repository mode rule:
 
@@ -48,7 +48,7 @@ Before classification:
 4. read the current-layer main Spec and any explicitly referenced appendix truth needed to judge whether formal behavior truth changes
 5. read bound Shared Contract files when the relevant behavior depends on them
 6. read `docs/specs/system/stable/s_system_constraints.md` when the request may affect shared mechanisms, global default rules, or explicit global exceptions
-7. if the request is for a brand-new module, confirm only that the module name is clear and non-conflicting before routing to `spec_new:{module}`
+7. if the request is for a brand-new module, confirm only that the module name is clear and non-conflicting before routing to `module_new:{module}`
 
 The executor must not classify from code shape alone when repository truth already exists.
 
@@ -134,13 +134,13 @@ The smallest legal next step after classification is fixed as follows:
 
 | Current situation | Smallest legal next step |
 |---|---|
-| brand-new module, user directly asks to write code | `spec_new:{module}` |
-| existing `stable` module, and the requested change would alter formal behavior truth | `spec_fork:{module}` first, then write the new candidate truth before implementation |
-| existing `candidate` module, and the requested change would alter current candidate truth | write back into the current candidate main file, required appendix truth, or required Shared Contract truth first, then rerun `cand_check:{module}` |
+| brand-new module, user directly asks to write code | `module_new:{module}` |
+| existing `stable` module, and the requested change would alter formal behavior truth | `module_fork:{module}` first, then write the new candidate truth before implementation |
+| existing `candidate` module, and the requested change would alter current candidate truth | write back into the current candidate main file, required appendix truth, or required Shared Contract truth first, then rerun `module_check:{module}` |
 | request touches cross-module shared truth | `shared_ops:{natural-language request}` |
-| `implementation_only`, target module has `Active Layer=stable` | implementation may continue only within current stable truth; after code changes, the module must return to `stable_verify:{module}` before stable alignment may be claimed again |
-| `implementation_only`, target module has `Active Layer=candidate` and `_status.md` says `Next Command=cand_impl` | implementation may continue, but only under `cand_impl` semantics |
-| `implementation_only`, target module has `Active Layer=candidate` and `_status.md` says any `Next Command` other than `cand_impl` | do not modify code; return to the currently recorded smallest legal next step first |
+| `implementation_only`, target module has `Active Layer=stable` | implementation may continue only within current stable truth; after code changes, the module must return to `module_stable_verify:{module}` before stable alignment may be claimed again |
+| `implementation_only`, target module has `Active Layer=candidate` and `_status.md` says `Next Command=module_impl` | implementation may continue, but only under `module_impl` semantics |
+| `implementation_only`, target module has `Active Layer=candidate` and `_status.md` says any `Next Command` other than `module_impl` | do not modify code; return to the currently recorded smallest legal next step first |
 
 Additional routing rules:
 

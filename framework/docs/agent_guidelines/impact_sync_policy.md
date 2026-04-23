@@ -62,13 +62,13 @@ Before `impact_sync` runs, the caller must already know:
 
 Candidate fallback rules:
 
-1. invalid `module` -> `cand_check`
+1. invalid `module` -> `module_check`
 2. invalid `flow` -> `flow_check`
 3. invalid `project` -> `project_check`
 
 Stable fallback rules:
 
-1. invalid `module` -> `stable_verify`
+1. invalid `module` -> `module_stable_verify`
 2. invalid `flow` -> `flow_stable_verify`
 3. invalid `project` -> `project_stable_verify`
 
@@ -92,5 +92,5 @@ Therefore:
 
 1. create a new user-facing command
 2. replace `shared_ops`
-3. replace `cand_check`, `flow_check`, or `project_check`
-4. replace `stable_verify`, `flow_stable_verify`, or `project_stable_verify`
+3. replace `module_check`, `flow_check`, or `project_check`
+4. replace `module_stable_verify`, `flow_stable_verify`, or `project_stable_verify`

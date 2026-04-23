@@ -1033,9 +1033,9 @@ func detectSharedContractRefIndent(fieldLine string, existingListLines []string)
 func expectedModuleProcessRouting(processKind string) (string, string, bool) {
 	switch processKind {
 	case "check":
-		return "cand_check", "cand_plan", true
+		return "module_check", "module_plan", true
 	case "verify":
-		return "cand_verify", "cand_promote", true
+		return "module_verify", "module_promote", true
 	default:
 		return "", "", false
 	}

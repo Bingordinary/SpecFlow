@@ -59,7 +59,7 @@ Before execution:
    - read every additional current-layer module main file needed to judge which modules currently bind those touched Shared Contract files through `shared_contract_refs`
    - do not treat the target module alone as sufficient when other modules may already bind the same shared truth
 11. read `docs/specs/system/stable/s_system_constraints.md` when the request may cross into project-wide default-rule promotion
-12. if the target module is currently at `stable`, also read `specflow/framework/docs/agent_guidelines/commands/spec_fork.md`
+12. if the target module is currently at `stable`, also read `specflow/framework/docs/agent_guidelines/commands/module_fork.md`
 13. read `specflow/framework/docs/agent_guidelines/git_policy.md` when the round may change module `shared_contract_refs`, update `bound_modules`, validate or rewrite `promotion_owner_module`, delete a touched Shared Contract file, or otherwise mutate commit-triggering governance files
 14. if the round may create, update, or delete any module `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, read `specflow/framework/docs/agent_guidelines/shared_sync.md` first
 
@@ -70,7 +70,7 @@ Before execution:
 1. confirm the target module truly reuses the target shared truth rather than merely sharing a topic or naming style
 2. if the target module current layer is `stable`, do not modify `stable` directly:
    - raise a blocking `shared_ops` checkpoint with `type=prerequisite_action`
-   - require `spec_fork:{module}` to create the target module candidate first
+   - require `module_fork:{module}` to create the target module candidate first
    - set `required_writeback_target` to that module candidate main file because chat-only agreement does not create a legal binding target
 3. if the module current-layer binding already points to another Shared Contract file and this round is retargeting that binding, record the previous bound Shared Contract file before writeback
 4. resolve the repository-wide real binding set of the target shared file and any previous bound Shared Contract file from current repository truth before shared metadata writeback:
@@ -104,7 +104,7 @@ Stop when one of the following is true:
    - when the round retargeted away from a previous shared file, that previous file's terminal state must also be resolved before closure
 2. the request is not really binding and must be re-routed to another shared flow
 3. the target module does not actually depend on the shared truth
-4. the target module is currently at `stable` and the flow has raised a `shared_ops` checkpoint for `spec_fork:{module}` first
+4. the target module is currently at `stable` and the flow has raised a `shared_ops` checkpoint for `module_fork:{module}` first
 5. the request has crossed into `system_constraints_change_proposal` and must stop at a `shared_ops` checkpoint instead of continuing here
 6. a touched candidate-layer Shared Contract file with a stable-layer sibling cannot keep or receive one stable `promotion_owner_module` from current repository truth after this round's binding change
 
@@ -116,7 +116,7 @@ The output must include at least:
 
 1. the target module and target shared contract
 2. why the module truly depends on that shared truth
-3. whether the target module was already at `candidate` or first had to stop for `spec_fork:{module}`
+3. whether the target module was already at `candidate` or first had to stop for `module_fork:{module}`
 4. the binding writeback result in the module candidate-layer Spec, or the checkpoint result when candidate writeback could not start yet
 5. the body-level consumption explanation added or updated
 6. the repository-wide binding-set review result used for the target shared file and any previous shared file touched by retargeting
