@@ -120,7 +120,7 @@ This installs the basic structure you need:
 
 - `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`
 - `docs/specs/`
-  - including module Specs, appendix files, and process-state files
+  - including unit Specs, appendix files, and process-state files
 - `.githooks/pre-commit`
 - supporting files used by the workflow
 
@@ -158,18 +158,18 @@ What makes this spec-driven is simple:
 - the current accepted truth of one unit lives in `docs/specs/units/stable/s_unit_{unit}.md`
 - the next truth being prepared lives in `docs/specs/units/candidate/c_unit_{unit}.md`
 
-The main document you write is that module Spec file.
+The main document you write is that unit Spec file.
 
 A formal unit Spec should cover at least:
 
-- module goal and boundary
+- unit goal and boundary
 - key terminology
 - data structures and protocols
 - state machine and main flow
 - edge cases and error handling
 - verifiability and acceptance criteria
 
-If the module depends on shared truth or global constraints, the Spec also needs to record that alignment explicitly.
+If the unit depends on shared truth or global constraints, the Spec also needs to record that alignment explicitly.
 
 Read the three cases below as one rough story about the same unit over time.
 This is intentionally simplified.
@@ -183,16 +183,16 @@ flowchart LR
 
 How to read this:
 
-- `A. first version` is when the module is created for the first time.
+- `A. first version` is when the unit is created for the first time.
 - `B. next version` is when that same unit changes later.
 - `C. later alignment check` is when you want confidence that current code still matches the accepted truth.
 
 One note before the story:
 
-- if the module already existed before `specFlow`, use `unit_init:{module}` once to capture its current accepted behavior as the first governed `stable`
-- after that, the module behaves like the story below
+- if the unit already existed before `specFlow`, use `unit_init:{unit}` once to capture its current accepted behavior as the first governed `stable`
+- after that, the unit behaves like the story below
 
-### Case 1: The First Version Of A Module
+### Case 1: The First Version Of A Unit
 
 What you say:
 
@@ -225,7 +225,7 @@ When you write the document content:
 - right after `unit_new`, the file exists but it still needs real content
 - this is where you write the first candidate design in `c_unit_search.md`
 - the minimum useful content is:
-  - what the module is for
+  - what the unit is for
   - what inputs and outputs it owns
   - what the main flow is
   - what edge cases matter
@@ -236,10 +236,10 @@ When you write the document content:
 What `specFlow` adds here:
 
 - the new unit does not begin as "just some new code"
-- the repository gets a written first version of the module's behavior before implementation drifts
-- later agents can see what the module was supposed to do, not just what happened to get coded first
+- the repository gets a written first version of the unit's behavior before implementation drifts
+- later agents can see what the unit was supposed to do, not just what happened to get coded first
 
-### Case 2: The Next Version Of That Same Module
+### Case 2: The Next Version Of That Same Unit
 
 What you say:
 
@@ -314,14 +314,14 @@ What `specFlow` adds here:
 
 - verification becomes an explicit repository action, not only a conversational judgment
 - the project gets a clear answer to "still aligned" versus "drift exists"
-- that makes it easier to trust the result later, especially when a different person or a different agent revisits the module
+- that makes it easier to trust the result later, especially when a different person or a different agent revisits the unit
 
 The beginner takeaway is simple:
 
 - first version of a new unit: `unit_new` + candidate chain
 - next version of an existing governed unit: `unit_fork` + candidate chain
 - later alignment check: `unit_stable_verify`
-- historical module entering governance for the first time: `unit_init`
+- historical unit entering governance for the first time: `unit_init`
 
 You can still start in natural language.
 These command names are the exact handles behind that lifecycle.
@@ -389,7 +389,7 @@ Manual control matters only when:
 
 - you want to drive the exact step yourself
 - the runtime did not route your request the way you expected
-- you are debugging governance state for a module
+- you are debugging governance state for a unit
 
 Most manual control starts from just three entry decisions:
 
@@ -411,7 +411,7 @@ There is also one stable-side maintenance step:
 unit_stable_verify
 ```
 
-Use `unit_stable_verify:{unit}` only when the module is currently on `stable`, but you need to check whether the code still matches that accepted truth.
+Use `unit_stable_verify:{unit}` only when the unit is currently on `stable`, but you need to check whether the code still matches that accepted truth.
 
 If you want one compact picture:
 
@@ -433,13 +433,13 @@ You only need it when natural-language routing is not enough.
 
 You normally look at it only when one of these is true:
 
-- the project has many modules
-- you are not sure which layer one module is currently on
-- you want to know the default next step for that module
+- the project has many units
+- you are not sure which layer one unit is currently on
+- you want to know the default next step for that unit
 
 ```mermaid
 flowchart LR
-    A["A. not sure where one module currently stands"] --> B["B. read docs/specs/_status.md"]
+    A["A. not sure where one unit currently stands"] --> B["B. read docs/specs/_status.md"]
     B --> C["C. find Active Layer"]
     C --> D["D. find Next Command"]
 ```
@@ -447,39 +447,39 @@ flowchart LR
 How to read this:
 
 - `B. read docs/specs/_status.md` tells you the current recorded state.
-- `C. find Active Layer` tells you whether the module is currently on `stable` or `candidate`.
+- `C. find Active Layer` tells you whether the unit is currently on `stable` or `candidate`.
 - `D. find Next Command` tells you the default next legal step.
 
 In normal use, `_status.md` is for reading state, not for manual scratch edits.
 
-## When Work Stops Being Module-Local
+## When Work Stops Being Unit-Local
 
 Most work should stay unit-local for as long as possible.
 
 There are three different places truth can live:
 
-- the module main spec
-- the module appendix
+- the unit main spec
+- the unit appendix
 - cross-unit shared truth
 
 ```mermaid
 flowchart LR
-    A["A. module main spec"] --> B["B. module appendix"]
+    A["A. unit main spec"] --> B["B. unit appendix"]
     B --> C["C. shared natural-language intent"]
     C --> D["D. shared_ops request"]
 ```
 
 How to read this:
 
-- `A. module main spec` is the main home for one module's behavior.
-- `B. module appendix` is still one module's truth, just expanded out of the main file.
-- `D. shared_ops request` is where you enter when the truth is no longer only about one module.
+- `A. unit main spec` is the main home for one unit's behavior.
+- `B. unit appendix` is still one unit's truth, just expanded out of the main file.
+- `D. shared_ops request` is where you enter when the truth is no longer only about one unit.
 
 Use this rule:
 
-- first appearance stays in the current module
+- first appearance stays in the current unit
 - do not extract something into shared just because it may be reused later
-- move into shared only when multiple modules really depend on the same truth
+- move into shared only when multiple units really depend on the same truth
 
 ### How To Use `shared_ops`
 
@@ -488,10 +488,10 @@ Use this rule:
 Use it when you want to:
 
 - design shared truth from the start
-- extract already-written module truth into a shared contract
-- bind a module to an existing shared contract
+- extract already-written unit truth into a shared contract
+- bind a unit to an existing shared contract
 - change shared topology such as split, merge, rename, or retire
-- check which modules are affected after a shared-contract change
+- check which units are affected after a shared-contract change
 
 The important idea is simple:
 
@@ -580,7 +580,7 @@ Two you should know exist are:
 - `spec_flow_review`
 - `shared_ops:{natural-language request}`
 
-Use `spec_flow_review` when you want to review the governance system itself rather than move one business module forward.
+Use `spec_flow_review` when you want to review the governance system itself rather than move one business unit forward.
 Its default scope now covers both the governance baseline documents and the governance tooling implementation under `specflow/tooling/`.
 
 ### What To Read If You Want The Full Baseline
