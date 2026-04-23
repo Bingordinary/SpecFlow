@@ -75,7 +75,7 @@ Default candidate fallback targets:
 
 Default candidate cleanup map:
 
-1. `module -> unit_check`
+1. `unit -> unit_check`
    - delete `_check_result/{unit}.md`
    - delete `_plans/draft/{unit}.md`
    - delete `_plans/active/{unit}.md`
@@ -170,8 +170,8 @@ When incomplete promotion recovery is triggered:
    - keep `Candidate=yes`
    - keep `Active Layer=candidate`
    - set the smallest restart step to:
-     - `module -> unit_check`
-     - `flow -> scenario_check`
+     - `unit -> unit_check`
+     - `scenario -> scenario_check`
      - `project -> project_check`
 5. keep `Stable=yes|no` consistent with the pre-round state from the recovery baseline
 6. after repository restoration, delete candidate-side process files for that target object because they are no longer safe for reuse

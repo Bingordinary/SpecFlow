@@ -4,7 +4,7 @@ This directory stores non-consumable planning working artifacts for `unit_plan`.
 
 Rules:
 
-1. Each module may have one `draft/{module}.md`.
+1. Each unit may have one `draft/{unit}.md`.
 2. Draft plans are not valid inputs to `unit_impl` or `unit_verify`.
 3. A draft plan may record:
    - changed execution surfaces for the round
@@ -35,4 +35,4 @@ Rules:
 5. Draft plans do not carry gate-bearing semantics and do not replace the active plan.
 6. Draft plans may carry implementation-fact accumulation and implementation convergence planning only; if planning discovers missing behavior truth, boundary truth, or acceptance truth, the round must go back to `unit_check`.
 7. `truth-fallback`, `unit_fork`, `unit_promote`, recovery, and `Candidate=no` must delete the corresponding draft file.
-8. After a round successfully writes `active/{module}.md`, the corresponding draft file should normally be deleted.
+8. After a round successfully writes `active/{unit}.md`, the corresponding draft file should normally be deleted.

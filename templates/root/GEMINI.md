@@ -197,8 +197,8 @@ If a request is inside the `specFlow` scope but is not a standard command, handl
 2. If you are unsure whether a change is a behavior change, treat it as a behavior change.
 3. Behavior changes must not start from code. Follow `specflow/framework/docs/agent_guidelines/spec_policy.md` first.
 4. Direct implementation requests must first be classified through `specflow/framework/docs/agent_guidelines/implementation_change_policy.md`. `truth_writeback_required` and `boundary_unclear` must not start from code.
-5. A brand-new module or flow may start with `candidate`; its first `stable` is created later by `unit_promote:{module}` or `scenario_promote:{flow}`.
-6. A historical module entering governance for the first time must begin with `unit_init:{module}` to create its first `stable`.
+5. A brand-new unit or scenario may start with `candidate`; its first `stable` is created later by `unit_promote:{unit}` or `scenario_promote:{scenario}`.
+6. A historical unit entering governance for the first time must begin with `unit_init:{unit}` to create its first `stable`.
 7. A historical project entering governance for the first time must begin with `project_init` to create its first `stable`.
 7. Under `docs/specs/`, every Spec file except `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` is a behavior source of truth and should normally enter git history.
 8. `candidate` main files, candidate appendix files, and `docs/specs/shared_contracts/candidate/*.md` are draft-layer artifacts, but draft-layer status does not block commits. When a round reaches a reviewable checkpoint, those files should normally be committed together with the linked process or code changes of that checkpoint.

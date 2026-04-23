@@ -283,7 +283,7 @@ When a command or internal governance flow revalidates a process file, it must r
 At minimum:
 
 1. for gate-bearing files, rebuild the common `truth_*` fields
-2. for module plan files, rebuild `spec_file_ref`, `spec_version_ref`, and `spec_fingerprint`
+2. for unit plan files, rebuild `spec_file_ref`, `spec_version_ref`, and `spec_fingerprint`
 3. rebuild the currently bound `system_constraints_stable_*` fields
 4. rebuild the object-specific snapshot fields allowed for that object type
 5. compare stored and rebuilt values exactly
