@@ -143,11 +143,19 @@ git config core.hooksPath .githooks
 
 ## 实际怎么用
 
-执行完 `init` 后，日常使用通常有两种方式：
+执行完 `init` 后，日常使用通常有三种方式：
 
 1. 直接用自然语言描述你要做什么
 2. 让 runtime 把这个意图路由到合适的 `specFlow` 步骤
 3. 如果你想精确控制，再自己显式写命令
+
+但在推进某个 `unit` 或 `scenario` 之前，先判断一件事：这个仓库有没有已经写清楚的项目治理坐标系。
+
+- 如果这是个新仓库，或者你对这个仓库还不熟，先定义 `ProjectSpec`
+- 还没有当前正式 `ProjectSpec` 时，用 `project_new`
+- 仓库已经有真实结构，只是第一次把它纳入正式治理时，用 `project_init`
+- 这份 `ProjectSpec` 必须把 `Governed Unit Definition`、`Support Surface Rules`、`Topology Mapping`、`Current Formal Object Graph`、`Global Constraint Alignment` 五块写闭合
+- 只有这一步站住了，后面的 `unit` 或 `scenario` 才有稳定坐标系
 
 这套东西之所以叫“文档驱动”，核心就在这里：
 
@@ -379,6 +387,8 @@ flowchart LR
 命令系统存在的意义，是把这条顺序显式化、可审阅化。
 但对新手来说，先理解这条顺序，通常比先背命令更重要。
 
+放到仓库层面，同样的顺序要再往前补一步：如果仓库还没写清“路径怎么归属到正式对象”，先写 `ProjectSpec`，再推进后续对象。
+
 ## 什么时候需要手动控命令
 
 只有这些时候，你才真的需要自己显式控制命令：
@@ -387,10 +397,11 @@ flowchart LR
 - runtime 路由出来的结果和你预期不一致
 - 你正在排查某个单元的治理状态
 
-大多数手动控制，先从三个入口判断开始：
+大多数手动控制，先从四个入口判断开始：
 
 | 你的情况 | 对应命令 |
 | --- | --- |
+| 新仓库或陌生仓库，要先建立项目治理坐标系 | `project_new` 或 `project_init` |
 | 历史单元第一次纳入治理 | `unit_init:{unit}` |
 | 全新单元第一次进入治理 | `unit_new:{unit}` |
 | 已有 stable 的单元要开新一轮演进 | `unit_fork:{unit}` |

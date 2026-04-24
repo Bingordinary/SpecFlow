@@ -147,11 +147,19 @@ The runtime should route that intent into the correct internal `specFlow` flow.
 
 ## How You Actually Use It
 
-After `init`, you normally use `specFlow` in one of two ways:
+After `init`, you normally use `specFlow` in one of three ways:
 
 1. say what you want in natural language
 2. let the runtime route it into the right `specFlow` step
 3. when you want exact control, use the matching command yourself
+
+Before you push one `unit` or `scenario`, first decide whether the repository already has governed project coordinates.
+
+- if the repository is brand-new or still unfamiliar, define the project truth first
+- use `project_new` when there is no current governed `ProjectSpec` yet
+- use `project_init` when the repository already has a real structure and you are capturing its first stable `ProjectSpec`
+- that `ProjectSpec` must explicitly close `Governed Unit Definition`, `Support Surface Rules`, `Topology Mapping`, `Current Formal Object Graph`, and `Global Constraint Alignment`
+- only after that should later `unit` or `scenario` work claim repository coordinates
 
 What makes this spec-driven is simple:
 
@@ -383,6 +391,8 @@ This is what `specFlow` is trying to protect.
 The command system exists to make this sequence explicit and reviewable.
 But for a beginner, the sequence matters more than the exact command names.
 
+At repository scope, the same rule starts one step earlier: write the `ProjectSpec` first when the repository still does not clearly say how governed paths map to formal objects.
+
 ## When You Need Manual Control
 
 Manual control matters only when:
@@ -391,10 +401,11 @@ Manual control matters only when:
 - the runtime did not route your request the way you expected
 - you are debugging governance state for a unit
 
-Most manual control starts from just three entry decisions:
+Most manual control starts from four common entry decisions:
 
 | Situation | Use this command |
 | --- | --- |
+| establish project governance coordinates for a brand-new or still-unfamiliar repository | `project_new` or `project_init` |
 | bring an existing historical unit into governance for the first time | `unit_init:{unit}` |
 | start a brand-new unit | `unit_new:{unit}` |
 | change a unit that already has governed `stable` truth | `unit_fork:{unit}` |

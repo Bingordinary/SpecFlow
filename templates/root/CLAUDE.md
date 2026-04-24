@@ -113,6 +113,15 @@ Governance review entries are:
 2. `spec_flow_design_review`
 3. `shared_ops:{natural-language request}`
 
+### 2.1 Project-First Repository Routing
+
+When the repository is brand-new, unfamiliar, or its governed path ownership is not yet explicit:
+
+1. do not guess `unit` or `scenario` boundaries from directory shape alone
+2. establish or read current `ProjectSpec` first
+3. if no current project row exists, start with `project_new` or `project_init` as appropriate
+4. only after `ProjectSpec` states `Governed Unit Definition`, `Support Surface Rules`, `Topology Mapping`, `Current Formal Object Graph`, and `Global Constraint Alignment` may later `unit` or `scenario` work claim repository coordinates
+
 Additional rules:
 
 1. `spec_flow_review`, `spec_flow_design_review`, and `shared_ops:{natural-language request}` are not standard object-lifecycle commands.
