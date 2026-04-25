@@ -10,7 +10,7 @@ func TestCollectDefaultSpecFlowScopeExcludesInvalidRegistryEntryFromGovernanceIn
 	repoRoot := t.TempDir()
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/spec_flow_review.md"), "# review\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/spec_flow_design_review.md"), "# design review\n")
-	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/executor_bootstrap_clarity.md"), "# bootstrap\n")
+	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/agent_operability_standard.md"), "# operability\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/natural_language_routing.md"), "# routing\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/command_policy.md"), "# command policy\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/implementation_change_policy.md"), "# implementation policy\n")
@@ -64,8 +64,8 @@ func TestCollectDefaultSpecFlowScopeExcludesInvalidRegistryEntryFromGovernanceIn
 	if len(scope.RegistryDiagnostics) == 0 {
 		t.Fatalf("expected registry diagnostics, got none")
 	}
-	if !containsString(scope.ExecutorBootstrapFiles, "specflow/framework/docs/agent_guidelines/executor_bootstrap_clarity.md") {
-		t.Fatalf("expected executor bootstrap clarity file in scope, got %+v", scope.ExecutorBootstrapFiles)
+	if !containsString(scope.AgentOperabilityFiles, "specflow/framework/docs/agent_guidelines/agent_operability_standard.md") {
+		t.Fatalf("expected agent operability file in scope, got %+v", scope.AgentOperabilityFiles)
 	}
 	if !containsString(scope.ProjectEntryFiles, "AGENTS.md") {
 		t.Fatalf("expected project entry files in scope, got %+v", scope.ProjectEntryFiles)
@@ -76,7 +76,7 @@ func TestCollectDefaultSpecFlowScopeExcludesUnsupportedSpecFlowReviewEntry(t *te
 	repoRoot := t.TempDir()
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/spec_flow_review.md"), "# review\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/spec_flow_design_review.md"), "# design review\n")
-	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/executor_bootstrap_clarity.md"), "# bootstrap\n")
+	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/agent_operability_standard.md"), "# operability\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/natural_language_routing.md"), "# routing\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/command_policy.md"), "# command policy\n")
 	mustWrite(t, filepath.Join(repoRoot, "specflow/framework/docs/agent_guidelines/implementation_change_policy.md"), "# implementation policy\n")

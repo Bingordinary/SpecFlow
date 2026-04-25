@@ -297,7 +297,7 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 		writeList(stdout, "Template governance files", scope.TemplateGovernanceFiles)
 		writeList(stdout, "Template entry files", scope.TemplateEntryFiles)
 		writeList(stdout, "Project entry files", scope.ProjectEntryFiles)
-		writeList(stdout, "Executor bootstrap clarity files", scope.ExecutorBootstrapFiles)
+		writeList(stdout, "Agent operability files", scope.AgentOperabilityFiles)
 		writeList(stdout, "Project registry files", scope.ProjectRegistryFiles)
 		writeList(stdout, "Project registry diagnostics", scope.RegistryDiagnostics)
 		writeList(stdout, "Tooling contract files", scope.ToolingContractFiles)

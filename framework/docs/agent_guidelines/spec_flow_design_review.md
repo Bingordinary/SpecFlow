@@ -29,7 +29,7 @@ That default scope includes:
 
 1. core governance and boundary rules
    - `spec_flow_design_review.md`
-   - `executor_bootstrap_clarity.md`
+   - `agent_operability_standard.md`
    - `spec_policy.md`
    - `command_policy.md`
    - `natural_language_routing.md`
@@ -87,7 +87,7 @@ For the default design-baseline review, the execution-local `review_plan` must u
 
 1. `design_foundation`
    - `spec_flow_design_review.md`
-   - `executor_bootstrap_clarity.md`
+   - `agent_operability_standard.md`
    - `spec_policy.md`
    - `command_policy.md`
    - `natural_language_routing.md`

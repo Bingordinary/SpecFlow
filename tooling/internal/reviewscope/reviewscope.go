@@ -19,7 +19,7 @@ type SpecFlowScope struct {
 	TemplateGovernanceFiles    []string
 	TemplateEntryFiles         []string
 	ProjectEntryFiles          []string
-	ExecutorBootstrapFiles     []string
+	AgentOperabilityFiles      []string
 	ProjectRegistryFiles       []string
 	RegistryDiagnostics        []string
 	ToolingContractFiles       []string
@@ -79,7 +79,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		"specflow/framework/docs/agent_guidelines/tooling_execution_policy.md",
 		"specflow/tooling/README.md",
 	}
-	bootstrapFiles := executorBootstrapFiles(projectEntryFiles, templateEntryFiles, templateGovernanceFiles)
+	agentOperabilityFiles := collectAgentOperabilityFiles(projectEntryFiles, templateEntryFiles, templateGovernanceFiles)
 
 	toolingCmdFiles, err := walkRelativeFiles(repoRoot, "specflow/tooling/cmd", ".go")
 	if err != nil {
@@ -99,7 +99,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	required = append(required, templateGovernanceFiles...)
 	required = append(required, templateEntryFiles...)
 	required = append(required, projectEntryFiles...)
-	required = append(required, bootstrapFiles...)
+	required = append(required, agentOperabilityFiles...)
 	required = append(required, projectRegistryFiles...)
 	required = append(required, toolingContractFiles...)
 	if err := ensureRelativeFiles(repoRoot, required); err != nil {
@@ -124,7 +124,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	scope.TemplateGovernanceFiles = templateGovernanceFiles
 	scope.TemplateEntryFiles = templateEntryFiles
 	scope.ProjectEntryFiles = projectEntryFiles
-	scope.ExecutorBootstrapFiles = bootstrapFiles
+	scope.AgentOperabilityFiles = agentOperabilityFiles
 	scope.ProjectRegistryFiles = projectRegistryFiles
 	scope.RegistryDiagnostics = sortAndDedupe(validation.Diagnostics)
 	scope.ToolingContractFiles = toolingContractFiles
@@ -133,9 +133,9 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	return scope, nil
 }
 
-func executorBootstrapFiles(projectEntryFiles, templateEntryFiles, templateGovernanceFiles []string) []string {
+func collectAgentOperabilityFiles(projectEntryFiles, templateEntryFiles, templateGovernanceFiles []string) []string {
 	files := []string{
-		"specflow/framework/docs/agent_guidelines/executor_bootstrap_clarity.md",
+		"specflow/framework/docs/agent_guidelines/agent_operability_standard.md",
 		"specflow/framework/docs/agent_guidelines/spec_flow_review.md",
 		"specflow/framework/docs/agent_guidelines/spec_flow_design_review.md",
 		"specflow/framework/docs/agent_guidelines/natural_language_routing.md",
