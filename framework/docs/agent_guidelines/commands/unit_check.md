@@ -14,7 +14,9 @@ By default, closure means all of the following:
 2. `content completeness`
    - the candidate has formally acknowledged key behavior truth that affects implementation results
    - key decisions are not left outside the Spec in chat context, README vision, oral consensus, or author memory
-3. the candidate is still aligned with the current formal global baseline state
+3. `candidate design quality`
+   - the candidate connects the user goal, first-round scope, selected direction, and acceptance criteria strongly enough to avoid implementing a merely well-formed but poor project design
+4. the candidate is still aligned with the current formal global baseline state
 
 ## 2. Scope
 
@@ -29,6 +31,7 @@ By default this command reviews:
 7. whether shared-candidate signals require routing into shared governance or directly reporting a dual-source-of-truth conflict
 8. whether the remaining blocker is actually a user-intent clarification or decision-point that must be written back before closure can pass
 9. whether any registered project-local review standard applies on a `unit_check`-owned generic review extension surface and tightens the closure decision for the current candidate
+10. whether the candidate records a coherent current design rather than an over-broad, unresolved, or chat-dependent proposal
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
@@ -136,60 +139,70 @@ Project-local review extension contract:
    - `Behavior Basis Completeness`
    - `Decision Surface Completeness`
    - `Acceptance Basis Completeness`
-8. complete the framework-baseline closure checks owned by `unit_check`, including the fixed completeness review objects plus the baseline, shared-contract, and shared-truth checks below, before finalizing any project-local review merge
-9. for each `unit_check`-owned supported generic review extension surface:
+8. complete `Candidate Design Quality` review as part of the framework baseline:
+   - the candidate must connect the current user or actor goal to the behavior being proposed
+   - the candidate must define the first-round scope and non-goals clearly enough that future capabilities are not silently implemented now
+   - the candidate must record one current selected direction when multiple solution options were discussed
+   - the candidate must define acceptance criteria that can prove the result is useful, not only that artifacts exist
+   - the candidate must not depend on chat context, guidance discussion, README vision, or rejected alternatives for implementation-critical meaning
+   - over-broad scope, unresolved direction, unverifiable success, or chat-dependent behavior truth can only result in `blocked` or `fix_required`
+9. complete the framework-baseline closure checks owned by `unit_check`, including the fixed completeness review objects, `Candidate Design Quality`, baseline, shared-contract, and shared-truth checks below, before finalizing any project-local review merge
+10. for each `unit_check`-owned supported generic review extension surface:
    - resolve matching registered `review_standard` entries from `docs/project_standards/_registry.md`
    - let each registered standard's own applicability contract decide whether it applies to the current target inside that surface
    - execute only the standards whose applicability contract applies to the current target
    - merge the result only as tightening or clarifying input into `progressability`, `content completeness`, and structured findings
    - do not let project-local review bypass framework-baseline closure checks
-10. process `system_constraints_ref`:
+11. process `system_constraints_ref`:
    - if the formal global baseline exists and the candidate is still compatible, a mechanical update to the current version is allowed
    - if incompatible, the result can only be `blocked` or `fix_required`
    - if the formal global baseline does not exist, `system_constraints_ref` must be `none`
-11. process `system_constraints_change_proposal`:
+12. process `system_constraints_change_proposal`:
    - if present, it must clearly state the proposed global rule delta, the reason the current baseline is insufficient, the unit-local implementation/verification impact, and the affected units or shared contracts
    - if those fields are unclear, the result can only be `blocked` or `fix_required`
-12. process `shared_contract_refs`:
+13. process `shared_contract_refs`:
    - if current behavior depends on Shared Contract truth but bindings are missing or incomplete, the result can only be `blocked` or `fix_required`
    - if bindings exist but the body does not explain which behavior chain reuses them, the result can only be `blocked` or `fix_required`
-13. process shared-candidate signals:
+14. process shared-candidate signals:
    - by default, shared-candidate hints only trigger a suggestion to enter natural-language shared governance
    - if the current required reading range already confirms a dual source of truth, report it directly as a blocking issue with `fallback_reason_code=shared_truth_conflict`
-14. determine whether a blocking checkpoint is the correct stop form:
+15. determine whether a blocking checkpoint is the correct stop form:
    - use `clarification` when user intent, boundary meaning, or acceptance meaning is still missing from truth
    - use `decision` when multiple materially different directions remain and the user must choose one
-15. checkpoint rules:
+16. checkpoint rules:
    - a checkpoint is not `pass`
    - if a checkpoint conclusion changes behavior truth, it must be written back to candidate or appendix before `unit_check` may be rerun
    - do not write `_check_result/{module}.md` for checkpoint-only stops
-16. merge conclusions in this order:
+17. merge conclusions in this order:
    - `progressability`
    - `content completeness`
+   - `Candidate Design Quality`
    - overall gate conclusion
-17. merge rules:
+18. merge rules:
    - if `progressability` fails -> only `blocked` or `fix_required`
    - if any `critical` completeness gap exists -> only `blocked` or `fix_required`
+   - if `Candidate Design Quality` fails on scope, selected direction, acceptance usefulness, or chat-dependent truth -> only `blocked` or `fix_required`
    - if only `important` or `elaboration` issues remain, `pass` is still possible
-18. if the result is `pass`, create or update `docs/specs/_check_result/{module}.md`
+19. if the result is `pass`, create or update `docs/specs/_check_result/{module}.md`
    - when a supported project-local review extension surface was consumed and this file allows project-side extension write-back for that surface, write the corresponding `project_review_extensions` items together with the pass gate
-19. if the result is not `pass`, do not write a failed `_check_result/{module}.md`; delete an old pass gate if it is no longer valid
-20. if the result is `blocked` or `fix_required`, close the current `unit_check` run after writing any required findings:
+20. if the result is not `pass`, do not write a failed `_check_result/{module}.md`; delete an old pass gate if it is no longer valid
+21. if the result is `blocked` or `fix_required`, close the current `unit_check` run after writing any required findings:
    - any later truth repair belongs to follow-up work, not to a still-open `unit_check`
    - any later repair-side reassessment or scoped follow-up review remains non-authoritative unless a new fresh full-scope `unit_check` run is entered through command routing
-21. update `_status.md`:
+22. update `_status.md`:
    - if pass -> `Next Command=unit_plan`
    - otherwise -> `Next Command=unit_check`
-22. perform git close-out if required
+23. perform git close-out if required
 
 ## 5. Stop Conditions
 
 1. whether the candidate satisfies both `progressability` and `content completeness` is clear
-2. if the round passes, `_check_result/{module}.md` holds the pass gate
-3. if the round does not pass, no invalid old pass gate remains
-4. `_status.md` is updated
-5. if a supported project-local review extension surface was consumed and the round passes, its allowed project extension write-back is clear
-6. no repair-side reassessment or scoped follow-up review has been mistaken for a formal `unit_check pass`
+2. whether `Candidate Design Quality` passes or blocks the candidate is clear
+3. if the round passes, `_check_result/{module}.md` holds the pass gate
+4. if the round does not pass, no invalid old pass gate remains
+5. `_status.md` is updated
+6. if a supported project-local review extension surface was consumed and the round passes, its allowed project extension write-back is clear
+7. no repair-side reassessment or scoped follow-up review has been mistaken for a formal `unit_check pass`
 
 ## 6. Output Contract
 
@@ -198,9 +211,10 @@ The output should include:
 1. overall conclusion
 2. severity summary
 3. formal global baseline alignment result
-4. the two-threshold conclusion:
+4. the gate conclusion set:
    - `progressability`
    - `content completeness`
+   - `Candidate Design Quality`
    - overall gate conclusion
 5. whether `Check Result Snapshot` was written back or an old gate was cleaned up
 6. `checkpoint result` when a checkpoint stop was raised

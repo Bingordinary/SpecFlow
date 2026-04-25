@@ -16,6 +16,7 @@ By default it handles:
 6. deciding whether the module may enter `unit_promote`
 7. stopping at a `human_verify` checkpoint only when automation is still insufficient to close confidence
 8. confirming that any `system_constraints_change_proposal` claimed by the current candidate is actually reflected in implementation evidence
+9. requiring fresh evidence for every pass claim made in the current verification round
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
@@ -43,55 +44,63 @@ Only a new independent full-scope run of `unit_verify` may produce that advancin
    - delete `_plans/active/{unit}.md`
    - delete `_verify_result/{unit}.md` if it exists
    - fall back `_status.md` to `unit_check`
-4. verify current code against key protocols, main flow, error handling, acceptance criteria, and any explicit `system_constraints_change_proposal`
-5. perform goal-backward verification for each key acceptance claim instead of stopping at artifact existence
-6. for each key claim, judge at minimum:
+4. establish the current-round evidence basis before making any pass claim:
+   - evidence must be collected or refreshed in the current `unit_verify` run
+   - old test output, previous command output, agent reports, or implementation claims may be used only as pointers to what must be rechecked
+   - each evidence item must name the command or inspection used, the checked target, the observed result, and the candidate requirement it proves
+   - no acceptance claim may be marked pass without at least one current evidence item
+5. verify current code against key protocols, main flow, error handling, acceptance criteria, and any explicit `system_constraints_change_proposal`
+6. perform goal-backward verification for each key acceptance claim instead of stopping at artifact existence
+7. for each key claim, judge at minimum:
    - `existence`: the required artifact, path, handler, test, or integration point exists
    - `substance`: the artifact contains meaningful implementation rather than hollow placeholder structure
    - `wiring`: the artifact is actually connected to the main execution path, user path, or protocol path required by the current candidate
-7. if a required outcome depends on cross-file integration, name that integration path directly in the evidence matrix
-8. if implementation pieces exist but are not wired into the claimed path, treat that as `implementation_deviation` rather than as successful existence evidence
-9. verify the changed execution surfaces named by the active plan, not just the module as an undifferentiated whole
-10. produce both:
+8. if a required outcome depends on cross-file integration, name that integration path directly in the evidence matrix
+9. if implementation pieces exist but are not wired into the claimed path, treat that as `implementation_deviation` rather than as successful existence evidence
+10. verify the changed execution surfaces named by the active plan, not just the module as an undifferentiated whole
+11. produce both:
    - the structured verification evidence matrix
    - a `Structure Convergence Matrix`
-11. for each changed execution surface in the `Structure Convergence Matrix`, report at minimum:
+12. for each changed execution surface in the `Structure Convergence Matrix`, report at minimum:
    - `execution_surface`
    - `behavior_alignment`
    - `target_path_evidence`
    - `legacy_not_required_evidence`
    - `retirement_result`
    - `deviation_reason`
-12. treat any of the following as direct `implementation_deviation`:
+13. treat any of the following as direct `implementation_deviation`:
    - the current execution surface still requires a legacy path before the planned target path can succeed
    - a legacy helper, patch, wrapper, or equivalent dependency named in `Retirement Targets` is still required
    - a new implementation exists but the target path was not actually cut over
    - a core retirement target is not achieved but the round still attempts to enter `unit_promote`
-13. output `Coverage Summary`
-14. determine whether a `human_verify` checkpoint is required:
+14. output `Coverage Summary`
+15. determine whether a `human_verify` checkpoint is required:
    - use it only when automated verification is insufficient but a small amount of human effect judgment can close the remaining uncertainty
    - if human verification confirms implementation deviation while candidate truth still stands, fall back to `unit_impl`
    - if human verification shows acceptance truth itself is still incomplete, fall back to `unit_check`
-15. classify deviations with the shared severity meanings defined by `specflow/framework/docs/agent_guidelines/severity_policy.md`
-16. conclude:
+16. classify deviations with the shared severity meanings defined by `specflow/framework/docs/agent_guidelines/severity_policy.md`
+17. conclude:
    - if `fail` exists, do not enter `unit_promote`
    - if `partial` or `not_checked` exists, promotion is allowed only if `specflow/framework/docs/agent_guidelines/downgrade_policy.md` allows downgrade for the current evidence state
+   - if any key acceptance claim lacks current-round evidence, the result cannot be pass and must remain `not_checked`, `partial`, or `evidence_incomplete`
+   - if tests pass but do not prove the candidate requirement, report the gap instead of treating the test result as requirement evidence
    - if key deviations are cleared, retirement targets are satisfied, and evidence is complete, promotion may proceed
-17. write or update `docs/specs/_verify_result/{unit}.md`
-18. update `_status.md`:
+18. write or update `docs/specs/_verify_result/{unit}.md`
+19. update `_status.md`:
    - if ready to promote -> `Next Command=unit_promote`
    - if implementation has deviations but candidate truth still stands -> `Next Command=unit_impl`
    - if candidate truth or formal global baseline must be re-closed -> `Next Command=unit_check`
    - if verification evidence is still incomplete but no upstream truth drift exists -> `Next Command=unit_verify`
-19. perform git close-out if required
+20. perform git close-out if required
 
 ## 5. Stop Conditions
 
 1. candidate-versus-code alignment is clear
 2. changed execution surfaces either prove structural convergence or produce an explicit deviation result
-3. whether promotion is allowed is clear
-4. `_status.md` points to the real next executable step
-5. if pass gate or plan was invalid, verification stopped and `_status.md` fell back to `unit_check`
+3. current-round evidence exists for every pass claim
+4. whether promotion is allowed is clear
+5. `_status.md` points to the real next executable step
+6. if pass gate or plan was invalid, verification stopped and `_status.md` fell back to `unit_check`
 
 ## 6. Output Contract
 
@@ -99,19 +108,20 @@ Only a new independent full-scope run of `unit_verify` may produce that advancin
 2. structured verification evidence matrix
 3. `Structure Convergence Matrix`
 4. `Coverage Summary`
-5. goal-backward evidence result
-6. downgrade decision when `partial` or `not_checked` exists
-7. verify-result write-back result
-8. cleanup result when verification fell back to `unit_check`
-9. `checkpoint result` when a checkpoint stop was raised
+5. current-round evidence freshness result
+6. goal-backward evidence result
+7. downgrade decision when `partial` or `not_checked` exists
+8. verify-result write-back result
+9. cleanup result when verification fell back to `unit_check`
+10. `checkpoint result` when a checkpoint stop was raised
    - when present, it must satisfy the fixed checkpoint fields defined by `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
-10. `fallback_reason_code` for fallback or checkpoint stops
-11. deviation list
-12. fallback reason if pass gate or plan was invalid
-13. next-step suggestion
-14. git close-out result
-15. `_status.md` update result
-16. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
+11. `fallback_reason_code` for fallback or checkpoint stops
+12. deviation list
+13. fallback reason if pass gate or plan was invalid
+14. next-step suggestion
+15. git close-out result
+16. `_status.md` update result
+17. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a `human_verify` checkpoint was raised, also report `resume signal`
    - if `Next Command` remains `unit_verify` or falls back to `unit_impl`, `why this next step` must explicitly state whether the remaining blocker is missing evidence, human-effect judgment, or implementation deviation

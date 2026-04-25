@@ -72,6 +72,7 @@ Natural language routing may identify fragments that later route into:
 5. repository mapping handling
 6. shared-governance internal routing through `shared_ops.md`
 7. system-constraint boundary handling through the responsible unit candidate truth
+8. framework guidance skills under `specflow/framework/guidance/skills/`
 
 Natural language routing does not:
 
@@ -80,6 +81,7 @@ Natural language routing does not:
 3. allow implementation before required truth writeback
 4. allow chat-only decisions to replace durable truth
 5. authorize a full multi-step chain to run automatically just because a sequence can be described
+6. make guidance output durable truth before it is written into candidate, appendix, Shared Contract, repository mapping, or system-constraint truth
 
 ---
 
@@ -98,6 +100,7 @@ Fixed read rules:
 7. if the request depends on cross-unit shared truth, shared binding, shared topology, or shared impact, read `shared_ops.md` and the relevant Shared Contract files
 8. if the request may affect global default rules, shared mechanisms promoted into the global baseline, or explicit global exceptions, read `docs/specs/system_constraints.md`
 9. if a governance-review fragment remains after natural-language parsing, read the governance file that defines that review scope before reading unrelated object state
+10. if a `guidance` fragment is present, read `specflow/framework/guidance/skills/using-specflow-guidance/SKILL.md` and then only the specific guidance skill needed for the current blocker
 
 The executor must not read every file by default.
 The executor must read enough current truth to prove the route, the missing blocker, or the safe first step.
@@ -128,7 +131,9 @@ Allowed fragment families are:
    - the request asks to create, modify, or delete repo-tracked code, tests, config, migrations, build scripts, or other implementation-side files
 7. `governance_review`
    - the request asks to review the governance mechanism or design
-8. `explanation_only`
+8. `guidance`
+   - the request asks to clarify a vague project idea, cut scope, compare solution directions, review a discussion-stage design, or write an approved guidance conclusion into candidate truth
+9. `explanation_only`
    - the request asks only for explanation and does not need repository mutation
 
 For each fragment, the executor must record these facts in working judgment before routing:
@@ -146,6 +151,14 @@ Implementation fragment rules:
 3. if that policy returns `truth_writeback_required` or `boundary_unclear`, route to the required truth or boundary step before implementation
 4. if a request has both implementation and truth fragments, truth routing wins unless the policy proves that implementation is already allowed by current truth
 
+Guidance fragment rules:
+
+1. guidance is used before formal truth writeback when the project goal, first-round scope, solution direction, or writeback-ready design is not yet clear enough to become candidate truth
+2. guidance must not create `_check_result`, `_plans/active`, `_verify_result`, or `_status.md` updates
+3. guidance conclusions remain chat context until written into the correct formal truth target
+4. once guidance produces an approved conclusion that affects behavior, boundary, acceptance, shared truth, repository mapping, or system constraints, the next legal step is formal truth writeback followed by rerouting from current truth
+5. guidance must not intercept exact standard commands or exact governance review entries
+
 ---
 
 ## 6. Routing Procedure
@@ -160,7 +173,8 @@ Route in this order:
 6. resolve existing `unit` or `scenario` object state through `_status.md`
 7. route shared-truth fragments through `shared_ops.md`
 8. route system-constraint boundary handling through the responsible unit candidate truth
-9. handle explanation-only fragments only after confirming that no mutation or governance route is required
+9. route guidance fragments through the smallest applicable guidance skill when the request is not yet clear enough for formal truth writeback or a standard command
+10. handle explanation-only fragments only after confirming that no mutation, guidance, or governance route is required
 
 This order is a decision order, not permission to skip required reads.
 If a later family is needed to decide an earlier family safely, read the later family's truth as input before choosing the route.
@@ -178,6 +192,29 @@ Example:
 1. the user says "continue payment"
 2. `_status.md` shows `unit:payment` has `Next Command=unit_plan`
 3. route to `unit_plan:payment`
+
+### 7.1.1 Guidance Intent
+
+When the request is a design or project-shaping request that is not yet ready for formal truth writeback, route to the smallest applicable guidance skill.
+
+Allowed guidance skill entry points are:
+
+1. `using-specflow-guidance`
+2. `project-framing`
+3. `scope-cutting`
+4. `solution-design`
+5. `design-quality-review`
+6. `spec-writeback-guidance`
+
+Guidance routing rules:
+
+1. use `project-framing` when goal, user, problem, success meaning, or first-version non-goals are unclear
+2. use `scope-cutting` when the request is too broad for one candidate round or mixes independent capabilities
+3. use `solution-design` when the goal and scope are clear but the solution direction is not locked
+4. use `design-quality-review` only before candidate writeback, to review a discussion-stage design
+5. use `spec-writeback-guidance` only after the user has approved a design conclusion that must become formal truth
+6. if a guidance step produces writeback-ready content, rerun natural-language routing from current repository truth before any implementation step
+7. if the request already names an exact standard command, do not route to guidance
 
 ### 7.2 Multiple Fragments With Safe Order
 
@@ -311,6 +348,7 @@ When natural language routing is the active entry, the output must include:
 5. any `routing_steps_contract` when safe decomposition was used
 6. the smallest legal next step
 7. why that next step is legal
+8. when guidance was routed, the guidance skill selected and whether its expected result is discussion-only or candidate writeback
 
 If the output starts an existing standard command, the command's own output contract controls the final close-out.
 
@@ -326,3 +364,4 @@ Natural language routing does not:
 4. treat a multi-step plan as completed because the first step was routed
 5. make `shared_ops:{natural-language request}` a user-facing command
 6. create compatibility aliases for retired user-facing shared entries
+7. let guidance skills replace candidate truth, command gates, or verification evidence

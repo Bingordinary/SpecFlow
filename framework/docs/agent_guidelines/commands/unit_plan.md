@@ -16,6 +16,7 @@ By default it handles:
 6. writing or updating `_plans/draft/{unit}.md` when planning cannot yet produce a consumable active plan
 7. keeping active-plan bindings aligned with the current candidate, current formal global baseline state, and current Shared Contract snapshot
 8. stopping at a structured decision checkpoint only when key implementation direction is still not locked
+9. ensuring the active plan is executable without chat context, placeholders, or unstated verification meaning
 
 ### 2.1 Lifecycle-State Advance Inheritance
 
@@ -117,7 +118,7 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
    - `Retirement Targets`
    - `Verification Targets`
    - execution slices rather than one undifferentiated implementation block
-   - for each slice: objective, file scope, dependencies, verification action, done condition, and current status
+   - for each slice: objective, file scope, dependencies, implementation action, verification action, done condition, and current status
    - progress, blockers, and verification focus for this round
    - `spec_file_ref`
    - `spec_version_ref`
@@ -127,24 +128,33 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
    - `system_constraints_version_ref`
    - `system_constraints_fingerprint`
    - `shared_contract_snapshot`
-23. treat `plan-ready` as valid only when all of the following hold:
+23. complete `Plan Executability` review before treating the round as `plan-ready`:
+   - the active plan must not contain placeholder instructions such as `TBD`, `TODO`, `follow up later`, `similar to above`, `后续补充`, `类似上面处理`, or equivalent unresolved work markers
+   - each execution slice must be understandable without chat context, guidance discussion, or rejected design options
+   - each key candidate behavior and acceptance criterion must map to at least one execution slice or verification target
+   - each verification action must name the command, inspection, or evidence to collect, and state which candidate requirement it proves
+   - if the active plan lacks these details while candidate truth still stands, the result is `plan-blocked` and the missing planning content must be recorded in a draft plan or blocking reason
+   - if the missing planning detail reveals incomplete behavior, boundary, or acceptance truth, the result is `truth-fallback`
+24. treat `plan-ready` as valid only when all of the following hold:
    - the changed execution surfaces of this round are identified
    - each changed execution surface has a target path
    - each changed execution surface has at least one explicit retirement goal
    - the first implementation slices are stable enough to enter `unit_impl`
-24. update `_status.md`:
+   - `Plan Executability` passes
+25. update `_status.md`:
    - if the candidate is now ready for implementation -> `Next Command=unit_impl`
    - if candidate truth drift was discovered -> `Next Command=unit_check`
    - if research preflight found candidate truth gaps -> `Next Command=unit_check`
    - if research preflight is blocked on implementation-critical unknowns but no truth rewrite is pending -> keep `Next Command=unit_plan`
    - if the result is `decision-checkpoint` and no truth writeback is pending -> keep `Next Command=unit_plan`
    - if a `decision` checkpoint stopped planning and no truth writeback is pending -> keep `Next Command=unit_plan`
-25. perform git close-out if required
+26. perform git close-out if required
 
 ## 5. Stop Conditions
 
 1. either a valid active plan file exists for the current candidate truth and records the changed execution surfaces, target paths, retirement targets, and first stable cutover slices, or planning stopped with no consumable active plan artifact because of fallback, bounded blocking, or checkpoint
-2. `_status.md` points to the real next step
+2. any active plan created in this round passes `Plan Executability`
+3. `_status.md` points to the real next step
 
 ## 6. Output Contract
 
@@ -157,14 +167,15 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
 7. changed execution surfaces and their target-path result
 8. retirement-target planning result
 9. `handoff validation result`
-10. cleanup result when planning fell back to `unit_check`
-11. `checkpoint result` when a checkpoint stop was raised
+10. `Plan Executability` result
+11. cleanup result when planning fell back to `unit_check`
+12. `checkpoint result` when a checkpoint stop was raised
    - when present, it must satisfy the fixed checkpoint fields defined by `specflow/framework/docs/agent_guidelines/checkpoint_protocol.md`
-12. `fallback_reason_code` for fallback, blocking, or checkpoint stops
-13. blocking reason and resume signal when planning stayed at `unit_plan` without fallback
-14. git close-out result
-15. `_status.md` update result
-16. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
+13. `fallback_reason_code` for fallback, blocking, or checkpoint stops
+14. blocking reason and resume signal when planning stayed at `unit_plan` without fallback
+15. git close-out result
+16. `_status.md` update result
+17. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/docs/agent_guidelines/command_policy.md`
    - report `round conclusion`, `current state`, `next step`, `why this next step`, and `next-stage entry gap`
    - when a checkpoint was raised or planning stayed blocked at `unit_plan`, also report `resume signal`
    - if `Next Command=unit_plan`, `why this next step` must explicitly state whether planning is waiting on implementation facts, unresolved direction, or truth writeback
