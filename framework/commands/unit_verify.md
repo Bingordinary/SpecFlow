@@ -12,7 +12,7 @@ By default it handles:
 2. goal-backward verification from acceptance claims into implementation evidence
 3. structured verification evidence generation
 4. structural convergence verification for the changed execution surfaces of the round
-5. writing `_verify_result/{unit}.md`
+5. writing `_verify_result/unit/{unit}.md`
 6. deciding whether the unit may enter `unit_promote`
 7. stopping at a `human_verify` checkpoint only when automation is still insufficient to close confidence
 8. confirming that any `system_constraints_change_proposal` claimed by the current candidate is actually reflected in implementation evidence
@@ -27,7 +27,7 @@ Only a new independent full-scope run of `unit_verify` may produce that advancin
 
 1. complete required pre-checks
 2. `_status.md` says `Next Command=unit_verify`
-3. a current valid `_check_result/{unit}.md` exists
+3. a current valid `_check_result/unit/{unit}.md` exists
 4. a current valid `_plans/active/{unit}.md` exists
 5. the candidate still aligns with the current formal global baseline state
 6. read required candidate appendix files and bound Shared Contract files
@@ -39,10 +39,10 @@ Only a new independent full-scope run of `unit_verify` may produce that advancin
 1. read the candidate Spec, required appendix files, Shared Contract files, pass gate, and plan
 2. validate all required bindings
 3. if the pass gate or plan is invalid, stop immediately:
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md`
    - delete `_plans/active/{unit}.md`
-   - delete `_verify_result/{unit}.md` if it exists
+   - delete `_verify_result/unit/{unit}.md` if it exists
    - fall back `_status.md` to `unit_check`
 4. establish the current-round evidence basis before making any pass claim:
    - evidence must be collected or refreshed in the current `unit_verify` run
@@ -85,7 +85,7 @@ Only a new independent full-scope run of `unit_verify` may produce that advancin
    - if any key acceptance claim lacks current-round evidence, the result cannot be pass and must remain `not_checked`, `partial`, or `evidence_incomplete`
    - if tests pass but do not prove the candidate requirement, report the gap instead of treating the test result as requirement evidence
    - if key deviations are cleared, retirement targets are satisfied, and evidence is complete, promotion may proceed
-18. write or update `docs/specs/_verify_result/{unit}.md`
+18. write or update `docs/specs/_verify_result/unit/{unit}.md`
 19. update `_status.md`:
    - if ready to promote -> `Next Command=unit_promote`
    - if implementation has deviations but candidate truth still stands -> `Next Command=unit_impl`

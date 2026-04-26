@@ -172,7 +172,7 @@ func lookupRule(fromCommand, reason string) (cleanupRule, error) {
 func filePathsForModule(module string, fileKinds []string) []string {
 	paths := make([]string, 0, len(fileKinds))
 	for _, fileKind := range fileKinds {
-		filePaths, err := snapshot.ProcessArtifactPaths(module, fileKind)
+		filePaths, err := snapshot.ProcessArtifactPaths("unit", module, fileKind)
 		if err != nil {
 			continue
 		}

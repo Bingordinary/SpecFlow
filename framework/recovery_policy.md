@@ -73,13 +73,13 @@ Default candidate fallback targets:
 Default candidate cleanup map:
 
 1. `unit -> unit_check`
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md`
    - delete `_plans/active/{unit}.md`
-   - delete `_verify_result/{unit}.md`
+   - delete `_verify_result/unit/{unit}.md`
 2. `scenario -> scenario_check`
-   - delete `_check_result/{scenario}.md`
-   - delete `_verify_result/{scenario}.md`
+   - delete `_check_result/scenario/{scenario}.md`
+   - delete `_verify_result/scenario/{scenario}.md`
 
 Plain meaning:
 
@@ -117,15 +117,15 @@ Object-specific minimums:
 1. `unit_promote`
    - `docs/specs/units/candidate/c_unit_{unit}.md`
    - `docs/specs/units/stable/s_unit_{unit}.md` when present
-   - `_check_result/{unit}.md`
+   - `_check_result/unit/{unit}.md`
    - `_plans/draft/{unit}.md`
    - `_plans/active/{unit}.md`
-   - `_verify_result/{unit}.md`
+   - `_verify_result/unit/{unit}.md`
 2. `scenario_promote`
    - `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
    - `docs/specs/scenarios/stable/s_scenario_{scenario}.md` when present
-   - `_check_result/{scenario}.md`
-   - `_verify_result/{scenario}.md`
+   - `_check_result/scenario/{scenario}.md`
+   - `_verify_result/scenario/{scenario}.md`
 
 Rules:
 

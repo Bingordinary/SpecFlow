@@ -19,6 +19,10 @@ var fingerprintRoots = []string{
 
 var fingerprintSingleFiles = []string{
 	"specflow/tooling/go.mod",
+	"specflow/tooling/manifest.tsv",
+}
+
+var optionalFingerprintSingleFiles = []string{
 	"specflow/tooling/go.sum",
 }
 
@@ -61,6 +65,16 @@ func SourceInputFiles(repoRoot string) ([]string, error) {
 	}
 
 	for _, relPath := range fingerprintSingleFiles {
+		path := filepath.Join(repoRoot, filepath.FromSlash(relPath))
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, relPath)
+			continue
+		} else {
+			return nil, fmt.Errorf("required tooling source file missing: %s", relPath)
+		}
+	}
+
+	for _, relPath := range optionalFingerprintSingleFiles {
 		path := filepath.Join(repoRoot, filepath.FromSlash(relPath))
 		if _, err := os.Stat(path); err == nil {
 			files = append(files, relPath)

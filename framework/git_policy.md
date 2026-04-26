@@ -46,7 +46,7 @@ Rules:
 
 1. The commit must update or create the corresponding `stable`.
 2. The commit must delete the round's `docs/specs/units/candidate/c_unit_{unit}.md` and that unit's round-specific candidate appendix files under `docs/specs/units/candidate/appendix/` or an equivalent dedicated subdirectory. If the round also handled Shared Contract files, it must also resolve the corresponding `docs/specs/shared_contracts/candidate/*.md` or `docs/specs/shared_contracts/stable/*.md`.
-3. If `_check_result/{unit}.md`, `_verify_result/{unit}.md`, `_plans/draft/{unit}.md`, or `_plans/active/{unit}.md` exist for the round, they must be deleted in the same commit.
+3. If `_check_result/unit/{unit}.md`, `_verify_result/unit/{unit}.md`, `_plans/draft/{unit}.md`, or `_plans/active/{unit}.md` exist for the round, they must be deleted in the same commit.
 4. If the unit candidate contains a closed `system_constraints_change_proposal` that is promoted in the same round, the same commit must also update `docs/specs/system_constraints.md`.
 
 ---
@@ -112,7 +112,7 @@ Rules:
 If the task changes only `docs/specs/*.md`:
 
 1. If it changes `docs/specs/units/candidate/c_unit_{unit}.md`, candidate appendix files under `docs/specs/units/candidate/appendix/` or an equivalent dedicated subdirectory, or `docs/specs/shared_contracts/candidate/*.md`, commit when the round has reached a reviewable checkpoint. Purely temporary incomplete draft saves do not require their own commit.
-2. If it changes `docs/specs/units/stable/*.md`, stable appendix files under `docs/specs/units/stable/appendix/*.md` or an equivalent dedicated subdirectory, `docs/specs/shared_contracts/stable/*.md`, `docs/specs/system_constraints.md`, `docs/specs/_status.md`, `docs/specs/_check_result/*.md`, `docs/specs/_verify_result/*.md`, or `docs/specs/_plans/**/*.md`, it should normally be committed in the current task.
+2. If it changes `docs/specs/units/stable/*.md`, stable appendix files under `docs/specs/units/stable/appendix/*.md` or an equivalent dedicated subdirectory, `docs/specs/shared_contracts/stable/*.md`, `docs/specs/system_constraints.md`, `docs/specs/_status.md`, `docs/specs/_check_result/**/*.md`, `docs/specs/_verify_result/**/*.md`, or `docs/specs/_plans/**/*.md`, it should normally be committed in the current task.
 3. `docs/specs/_plans/draft/*.md` are planning working artifacts; they may be committed together with a reviewable checkpoint, but a blocked planning round does not require a standalone commit solely to preserve draft accumulation.
 4. If `stable` changes, treat it as a formal contract change. If the task hits `unit_promote`, follow the promotion-commit rules.
 5. If a `candidate` change belongs to the same command flow as the corresponding code implementation, plan file, check result, verify result, or promotion commit, commit the checkpoint as one traceable unit instead of leaving candidate-only drift in the worktree.
@@ -141,7 +141,8 @@ If the task changes current-binary tooling inputs under:
 1. `specflow/tooling/cmd/**/*.go`
 2. `specflow/tooling/internal/**/*.go`
 3. `specflow/tooling/go.mod`
-4. `specflow/tooling/go.sum`
+4. `specflow/tooling/manifest.tsv`
+5. `specflow/tooling/go.sum`
 
 and the repository tracks compiled tooling binaries under `specflow/tooling/bin/`:
 

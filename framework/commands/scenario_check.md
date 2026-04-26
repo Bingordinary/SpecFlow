@@ -25,7 +25,7 @@ Only a new independent full-scope run of `scenario_check` may produce that advan
    - `system_constraints_ref`
 3. verify `repository_mapping_ref` matches the current repository mapping
 4. verify entry, path, exit, and failure absorption are explicit enough to verify
-5. if pass, write `_check_result/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, then advance `Next Command=scenario_verify`
+5. if pass, write `_check_result/scenario/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, then advance `Next Command=scenario_verify`
 6. if not pass, keep `Next Command=scenario_check`
 
 ## 5. Output Contract
@@ -33,7 +33,7 @@ Only a new independent full-scope run of `scenario_check` may produce that advan
 The output must report:
 
 1. `check gate result`
-2. `_check_result/{scenario}.md` write, delete, or keep result
+2. `_check_result/scenario/{scenario}.md` write, delete, or keep result
 3. `_status.md` update result
 4. `round conclusion`
 5. `current state`

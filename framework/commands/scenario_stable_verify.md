@@ -26,7 +26,7 @@ Only a new independent full-scope run of `scenario_stable_verify` may produce th
 The output must report:
 
 1. stable alignment result
-2. whether any `_verify_result/{scenario}.md` write, delete, or keep action occurred
+2. whether any `_verify_result/scenario/{scenario}.md` write, delete, or keep action occurred
 3. `_status.md` update result
 4. `round conclusion`
 5. `current state`

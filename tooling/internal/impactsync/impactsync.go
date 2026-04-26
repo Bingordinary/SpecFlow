@@ -151,7 +151,7 @@ func reconcileCandidate(repoRoot string, binding ModuleBinding, result ModuleRes
 	sharedMismatch := false
 	nonSharedMismatch := false
 	for _, processKind := range []string{"check", "plan", "verify"} {
-		processPath, err := snapshot.ProcessFilePath(binding.Module, processKind)
+		processPath, err := snapshot.ProcessFilePath("unit", binding.Module, processKind)
 		if err != nil {
 			return ModuleResult{}, err
 		}
@@ -173,7 +173,7 @@ func reconcileCandidate(repoRoot string, binding ModuleBinding, result ModuleRes
 			continue
 		}
 
-		processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, binding.Module, processKind)
+		processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "unit", binding.Module, processKind)
 		if err != nil {
 			return ModuleResult{}, err
 		}
@@ -243,7 +243,7 @@ func applyCandidateFallback(repoRoot string, result ModuleResult, fallbackReason
 	result.Outcome = "invalidated"
 	result.NextCommand = "unit_check"
 	for _, processKind := range []string{"check", "plan", "verify"} {
-		processPaths, err := snapshot.ProcessArtifactPaths(result.Module, processKind)
+		processPaths, err := snapshot.ProcessArtifactPaths("unit", result.Module, processKind)
 		if err != nil {
 			return ModuleResult{}, err
 		}
@@ -324,7 +324,7 @@ func applyObjectCandidateFallback(repoRoot string, result ObjectResult, objectTy
 	result.Outcome = "invalidated"
 	result.NextCommand = config.CandidateNextCommand
 
-	for _, processPath := range objectProcessPaths(result.Object, config.CandidateProcessKinds) {
+	for _, processPath := range objectProcessPaths(objectType, result.Object, config.CandidateProcessKinds) {
 		processAbs := filepath.Join(repoRoot, filepath.FromSlash(processPath))
 		if _, err := os.Stat(processAbs); err != nil {
 			if os.IsNotExist(err) {
@@ -362,10 +362,10 @@ func applyObjectStableReroute(repoRoot string, result ObjectResult, objectType s
 	return result, nil
 }
 
-func objectProcessPaths(object string, processKinds []string) []string {
+func objectProcessPaths(objectType, object string, processKinds []string) []string {
 	paths := make([]string, 0, len(processKinds))
 	for _, processKind := range processKinds {
-		processPaths, err := snapshot.ProcessArtifactPaths(object, processKind)
+		processPaths, err := snapshot.ProcessArtifactPaths(objectType, object, processKind)
 		if err != nil {
 			continue
 		}

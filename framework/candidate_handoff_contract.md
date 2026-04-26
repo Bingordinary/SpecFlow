@@ -71,7 +71,7 @@ Executors may add natural-language explanation, but the standardized code must a
 
 ### 3.1 Minimum Upstream Artifact
 
-`unit_plan` minimally requires a current valid `_check_result/{unit}.md`.
+`unit_plan` minimally requires a current valid `_check_result/unit/{unit}.md`.
 
 ### 3.2 Required Re-Validation
 
@@ -114,7 +114,7 @@ Use only:
 
 `unit_impl` minimally requires both:
 
-1. a current valid `_check_result/{unit}.md`
+1. a current valid `_check_result/unit/{unit}.md`
 2. a current valid `_plans/active/{unit}.md`
 
 ### 4.2 Required Re-Validation
@@ -154,7 +154,7 @@ Use only:
 
 `unit_verify` minimally requires both:
 
-1. a current valid `_check_result/{unit}.md`
+1. a current valid `_check_result/unit/{unit}.md`
 2. a current valid `_plans/active/{unit}.md`
 
 ### 5.2 Required Re-Validation
@@ -193,7 +193,7 @@ Use only:
 
 ### 6.1 Minimum Upstream Artifact
 
-`unit_promote` minimally requires a current valid `_verify_result/{unit}.md`.
+`unit_promote` minimally requires a current valid `_verify_result/unit/{unit}.md`.
 
 ### 6.2 Required Re-Validation
 
@@ -235,7 +235,7 @@ Use only:
 
 ### 7.1 Minimum Upstream Artifact
 
-`scenario_verify` minimally requires a current valid `_check_result/{scenario}.md`.
+`scenario_verify` minimally requires a current valid `_check_result/scenario/{scenario}.md`.
 
 ### 7.2 Required Re-Validation
 
@@ -275,7 +275,7 @@ Use only:
 
 ### 8.1 Minimum Upstream Artifact
 
-`scenario_promote` minimally requires a current valid `_verify_result/{scenario}.md`.
+`scenario_promote` minimally requires a current valid `_verify_result/scenario/{scenario}.md`.
 
 ### 8.2 Required Re-Validation
 

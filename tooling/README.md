@@ -24,6 +24,7 @@ The tooling layer may:
 5. compare
 6. cleanup
 7. sync
+8. maintain mechanical review run-state fields
 
 The tooling layer must not:
 
@@ -53,26 +54,70 @@ For shared-change reconciliation, the current mechanical entry remains `shared s
    - sync registered project-side entry managed blocks from one explicit source
 7. `registry validate`
    - validate `docs/project_standards/_registry.md`
-8. `review collect-default-scope`
-   - collect the deterministic default `spec_flow_review` scope
-9. `snapshot rebuild`
+8. `review collect-default-scope --flow <review_flow>`
+   - collect the deterministic default scope for the explicit review flow
+9. `review run-init --flow <review_flow>`
+   - create or reuse the full-scope run-state file for the explicit review flow
+10. `review run-validate --flow <review_flow>`
+   - validate required run-state fields, timestamps, fixed statuses, baseline slices, score state when present, and dynamic slice parent links
+11. `review run-refresh --flow <review_flow>`
+   - recompute slice input fingerprints, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
+12. `review run-touch --flow <review_flow>`
+   - refresh only `last_updated_at`
+13. `snapshot rebuild`
    - rebuild current process snapshots from bound truth
-10. `snapshot validate-process`
+14. `snapshot validate-process`
    - compare one process file against rebuilt current truth
-11. `process cleanup-fallback`
+15. `process cleanup-fallback`
    - execute deterministic unit fallback cleanup
-12. `process cleanup-success`
+16. `process cleanup-success`
    - execute deterministic unit success cleanup
-13. `status set-unit`
+17. `status set-unit`
    - write one deterministic `unit` row in `_status.md`
-14. `status set-object`
+18. `status set-object`
    - write one unified object row in `_status.md`
-15. `shared sync-impact`
+19. `shared sync-impact`
    - compute shared-specific scope, resolve shared-only exceptions into generic impact input, then execute deterministic downstream fallback for the fixed affected objects through internal `impact_sync`
    - when stable landing self-exemption is needed, the caller must pass both `--stable-landing-unit` and exact `--stable-landing-shared-refs`
+   - when a current-round Shared Contract file delta is proven to be limited to `bound_objects` metadata, the caller must pass its exact file path through `--bound-objects-only-shared-file-refs`
    - the caller may narrow the derived unit subset with `--units`, but at least one shared trigger input must still be provided through `--shared-refs` or `--shared-ids`
-16. `shared reconcile-bound-objects`
+20. `shared reconcile-bound-objects`
    - rewrite Shared Contract `bound_objects` metadata from current formal bindings
+
+## Review Run-State Commands
+
+The `review run-*` commands require an explicit review flow:
+
+1. `spec_flow_review`
+2. `spec_flow_design_review`
+
+They maintain only mechanical fields in:
+
+```text
+docs/specs/_governance_review/spec_flow_review/{review_run_id}.md
+docs/specs/_governance_review/spec_flow_design_review/{review_run_id}.md
+```
+
+Rules:
+
+1. timestamps are written from Go runtime UTC time using `YYYY-MM-DDTHH:MM:SSZ`
+2. input fingerprints are computed from repository-relative input files
+3. `run-refresh` may change `passed` slices to `stale` when inputs change or disappear
+4. tooling must not change `pending`, `blocked`, or `skipped_not_in_scope` into a passing judgment
+5. tooling may create and validate the `spec_flow_design_review` score-state skeleton
+6. tooling must not write findings, severities, question scores, score basis, hard-blocker judgments, or final `pass | blocked` conclusions
+
+## Tooling Input Set
+
+The current tooling source input set is:
+
+1. `specflow/tooling/cmd/**/*.go`
+2. `specflow/tooling/internal/**/*.go`
+3. `specflow/tooling/go.mod`
+4. `specflow/tooling/manifest.tsv`
+5. `specflow/tooling/go.sum` when it exists
+
+The manifest is included because it controls which framework-managed and project-managed files `init`, `upgrade`, and `doctor` inspect or write.
 
 ## Unified Status Table
 
@@ -109,11 +154,18 @@ Examples:
 
 ```bash
 ./specflow/tooling/bin/specflowctl-linux-amd64 doctor
-./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope
+./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_review
+./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl-linux-amd64 review run-init --flow spec_flow_review
+./specflow/tooling/bin/specflowctl-linux-amd64 review run-init --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl-linux-amd64 review run-validate --flow spec_flow_review --file docs/specs/_governance_review/spec_flow_review/20260426-103000-default_governance_baseline.md
+./specflow/tooling/bin/specflowctl-linux-amd64 review run-refresh --flow spec_flow_design_review --file docs/specs/_governance_review/spec_flow_design_review/20260426-103000-default_design_baseline.md
+./specflow/tooling/bin/specflowctl-linux-amd64 review run-touch --flow spec_flow_design_review --file docs/specs/_governance_review/spec_flow_design_review/20260426-103000-default_design_baseline.md
 ./specflow/tooling/bin/specflowctl-linux-amd64 snapshot rebuild --unit ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 process cleanup-fallback --unit ai --from-command unit_promote --reason evidence_incomplete
 ./specflow/tooling/bin/specflowctl-linux-amd64 status set-object --type scenario --object task_execution --stable yes --candidate no --active-layer stable --next-command scenario_fork
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs c_shared_app_config_topology@0.2.0 --units ai
+./specflow/tooling/bin/specflowctl-linux-amd64 shared sync-impact --shared-refs s_shared_app_config_topology@0.2.0 --bound-objects-only-shared-file-refs docs/specs/shared_contracts/stable/s_shared_app_config_topology.md
 ./specflow/tooling/bin/specflowctl-linux-amd64 shared reconcile-bound-objects --shared-ids shared_app_config_topology
 ```
 

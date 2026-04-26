@@ -4,7 +4,7 @@ This directory stores candidate-chain pass gates for formal command-target objec
 
 Rules:
 
-1. `_check_result/{object}.md` should exist only for formal objects that passed their current-layer `check` command and still hold a valid candidate-chain gate.
+1. `_check_result/{object_type}/{object}.md` should exist only for formal objects that passed their current-layer `check` command and still hold a valid candidate-chain gate.
 2. These files are not formal Specs and are not behavior sources of truth.
 3. The current round allows only these command-target object types here:
    - `unit`
@@ -31,9 +31,9 @@ Rules:
 6. `gate` must equal the formal `check` command for the current object family.
 7. A `check` command creates or overwrites this file only when the result is `pass`.
 8. When `check` does not pass, it must not write a failed-state file; if an old gate is no longer valid, delete it.
-9. As soon as current candidate truth changes, `_check_result/{object}.md` becomes outdated.
+9. As soon as current candidate truth changes, `_check_result/{object_type}/{object}.md` becomes outdated.
 10. It also becomes outdated when current baseline bindings or current object-owned snapshots drift from current truth.
 11. Consumers must validate bindings, not just existence.
 12. Snapshot fields in this file must use the fixed definitions from `specflow/framework/process_snapshot_contract.md`.
-13. `_check_result/{object}.md` carries only the current pass-gate snapshot. It does not carry failed fallback records.
+13. `_check_result/{object_type}/{object}.md` carries only the current pass-gate snapshot. It does not carry failed fallback records.
 14. When commands explain why this pass gate cannot be consumed or why the object must fall back, they must use the standardized `fallback_reason_code` taxonomy first and then add natural-language explanation.

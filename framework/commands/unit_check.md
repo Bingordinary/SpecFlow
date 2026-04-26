@@ -72,7 +72,7 @@ This section is the `unit_check`-local elaboration of the centralized authoritat
 4. any repair-side reassessment or scoped follow-up review performed after such repair is non-authoritative:
    - it may report only whether the reported findings appear resolved within the checked scope
    - it must not be labeled a formal `unit_check pass`
-   - it must not write `docs/specs/_check_result/{unit}.md`
+   - it must not write `docs/specs/_check_result/unit/{unit}.md`
    - it must not advance `_status.md` to `unit_plan`
    - checking only the repaired truth fragment, only the previously reported blocker, or any other narrowed review slice does not count as a fresh full-scope `unit_check` rerun
 
@@ -95,7 +95,7 @@ Project-local review extension contract:
 6. `candidate_closure_review` must not:
    - redefine `unit_check`'s lifecycle position
    - create a new command-level result type
-   - bypass `_check_result/{unit}.md` pass-gate rules
+   - bypass `_check_result/unit/{unit}.md` pass-gate rules
 7. `unit_check` may allow project-side extension write-back only where this file explicitly says so.
 8. The currently allowed `_check_result` project extension write-back container for `candidate_closure_review` is:
    - `project_review_extensions`
@@ -109,7 +109,7 @@ Project-local review extension contract:
    - `unit_check` is already writing a pass gate for the current round
    - a registered `candidate_closure_review` standard consumed by `unit_check` either applies to the current target or explicitly requires non-hit semantics for pass-gate write-back
 12. If no consumed registered standard requires project-side write-back, `unit_check` may omit `project_review_extensions`.
-13. If a consumed standard does not apply, `unit_check` may still write that standard's non-hit semantics only inside the same pass gate write-back. It must not create a standalone or failed-state `_check_result/{unit}.md`.
+13. If a consumed standard does not apply, `unit_check` may still write that standard's non-hit semantics only inside the same pass gate write-back. It must not create a standalone or failed-state `_check_result/unit/{unit}.md`.
 
 ## 3. Preconditions
 
@@ -121,7 +121,7 @@ Project-local review extension contract:
 6. if `docs/project_standards/_registry.md` exists, read it and only the registered project-local standard files enabled for a `unit_check`-defined supported generic review extension surface
 7. if `docs/project_standards/_registry.md` is missing, stop and report governance drift according to `specflow/framework/project_standards_policy.md`
 8. if this round may raise a checkpoint, read `specflow/framework/checkpoint_protocol.md`
-9. if `_check_result/{unit}.md`, `_status.md`, candidate truth, or other commit-triggering governance files may change, read the git policy first
+9. if `_check_result/unit/{unit}.md`, `_status.md`, candidate truth, or other commit-triggering governance files may change, read the git policy first
 10. if referenced appendix files have directory drift, fix that first and rerun the pre-check
 
 ## 4. Procedure
@@ -172,7 +172,7 @@ Project-local review extension contract:
 16. checkpoint rules:
    - a checkpoint is not `pass`
    - if a checkpoint conclusion changes behavior truth, it must be written back to candidate or appendix before `unit_check` may be rerun
-   - do not write `_check_result/{unit}.md` for checkpoint-only stops
+   - do not write `_check_result/unit/{unit}.md` for checkpoint-only stops
 17. merge conclusions in this order:
    - `progressability`
    - `content completeness`
@@ -183,9 +183,9 @@ Project-local review extension contract:
    - if any `critical` completeness gap exists -> only `blocked` or `fix_required`
    - if `Candidate Design Quality` fails on scope, selected direction, acceptance usefulness, or chat-dependent truth -> only `blocked` or `fix_required`
    - if only `important` or `elaboration` issues remain, `pass` is still possible
-19. if the result is `pass`, create or update `docs/specs/_check_result/{unit}.md`
+19. if the result is `pass`, create or update `docs/specs/_check_result/unit/{unit}.md`
    - when a supported project-local review extension surface was consumed and this file allows project-side extension write-back for that surface, write the corresponding `project_review_extensions` items together with the pass gate
-20. if the result is not `pass`, do not write a failed `_check_result/{unit}.md`; delete an old pass gate if it is no longer valid
+20. if the result is not `pass`, do not write a failed `_check_result/unit/{unit}.md`; delete an old pass gate if it is no longer valid
 21. if the result is `blocked` or `fix_required`, close the current `unit_check` run after writing any required findings:
    - any later truth repair belongs to follow-up work, not to a still-open `unit_check`
    - any later repair-side reassessment or scoped follow-up review remains non-authoritative unless a new fresh full-scope `unit_check` run is entered through command routing
@@ -198,7 +198,7 @@ Project-local review extension contract:
 
 1. whether the candidate satisfies both `progressability` and `content completeness` is clear
 2. whether `Candidate Design Quality` passes or blocks the candidate is clear
-3. if the round passes, `_check_result/{unit}.md` holds the pass gate
+3. if the round passes, `_check_result/unit/{unit}.md` holds the pass gate
 4. if the round does not pass, no invalid old pass gate remains
 5. `_status.md` is updated
 6. if a supported project-local review extension surface was consumed and the round passes, its allowed project extension write-back is clear

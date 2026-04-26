@@ -4,7 +4,7 @@ This directory stores candidate verification results for formal command-target o
 
 Rules:
 
-1. `_verify_result/{object}.md` should exist only for formal objects whose current `verify` result still covers current truth and current verification scope.
+1. `_verify_result/{object_type}/{object}.md` should exist only for formal objects whose current `verify` result still covers current truth and current verification scope.
 2. These files are not formal Specs and are not behavior sources of truth.
 3. The current round allows only these command-target object types here:
    - `unit`

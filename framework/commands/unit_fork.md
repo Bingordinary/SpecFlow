@@ -68,7 +68,7 @@ Only a new independent full-scope run of `unit_fork` may produce that advancing 
    - if a touched Shared Contract file still has one or more formal bound units after this round, remove or stop carrying any `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` fields from that resulting bound file state in the same round
    - update `bound_objects` only as declarative metadata so each remaining touched Shared Contract file matches the real binding set implied by unit `shared_contract_refs`
    - the deterministic metadata writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> shared reconcile-bound-objects --units {unit}` and additional `--shared-refs` / `--shared-ids` filters when the active flow has already identified them
-12. delete old `_check_result/{unit}.md`, `_verify_result/{unit}.md`, `_plans/draft/{unit}.md`, `_plans/active/{unit}.md`, and previous-round candidate appendix files
+12. delete old `_check_result/unit/{unit}.md`, `_verify_result/unit/{unit}.md`, `_plans/draft/{unit}.md`, `_plans/active/{unit}.md`, and previous-round candidate appendix files
    - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --unit {unit} --mode unit_fork`
 13. update `_status.md`:
    - `Stable=yes`

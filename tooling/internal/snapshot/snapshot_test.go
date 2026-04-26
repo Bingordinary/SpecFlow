@@ -386,7 +386,7 @@ func TestValidateProcessFileAcceptsSnapshotFieldsWithoutYAMLFence(t *testing.T) 
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
 
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/demo.md"), strings.Join([]string{
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md"), strings.Join([]string{
 		"# check",
 		"",
 		renderFormalCheckProcessBody(expected),
@@ -440,7 +440,7 @@ spec_version_ref: c_unit_demo@0.1.0
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
 
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/demo.md"), strings.Join([]string{
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md"), strings.Join([]string{
 		"# demo unit_check snapshot",
 		"",
 		"## Check Result Snapshot",
@@ -704,7 +704,7 @@ func setupSnapshotValidationRepo(t *testing.T, repoRoot string) {
 	t.Helper()
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 
@@ -734,7 +734,7 @@ version: 0.1.0
 func writeCheckProcessFile(t *testing.T, repoRoot, yamlBody string) {
 	t.Helper()
 	content := "# check\n\n```yaml\n" + yamlBody + "\n```\n"
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/demo.md"), content)
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md"), content)
 }
 
 func renderFormalCheckProcessBody(expected Snapshot) string {

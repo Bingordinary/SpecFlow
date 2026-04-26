@@ -51,6 +51,7 @@ That default scope includes:
    - `specflow/templates/docs/specs/_plans/draft/README.md`
    - `specflow/templates/docs/specs/_plans/active/README.md`
    - `specflow/templates/docs/specs/_verify_result/README.md`
+   - `specflow/templates/docs/specs/_governance_review/README.md`
 3. human-entry and extension-surface rules
    - `AGENTS.md`
    - `GEMINI.md`
@@ -140,6 +141,102 @@ If a narrowed review still crosses one of those boundaries and the owner block i
 
 ## 5. Preconditions
 
+### 5.1 Full-Scope Review Run State
+
+Default full-scope `spec_flow_design_review` uses a run-state process file.
+
+The process file is not a Spec, not durable behavior truth, and not a substitute for the review output.
+It records review progress, baseline slice status, dynamic risk slice status, score-state progress, input fingerprints, findings, blocked reason, and resume position for one full-scope design review run.
+
+The run-state path is:
+
+```text
+docs/specs/_governance_review/spec_flow_design_review/{review_run_id}.md
+```
+
+`review_run_id` must use this shape:
+
+```text
+YYYYMMDD-HHMMSS-default_design_baseline
+```
+
+Rules:
+
+1. full-scope default `spec_flow_design_review` must use this run-state file procedure
+2. narrowed `spec_flow_design_review` does not use full-scope run state by default
+3. a narrowed review may use a run-state file only when the user explicitly asks for resumable design review
+4. the run-state file must not replace the fixed review blocks, the eight fixed design questions, the hard-blocker rules, or the pass gate
+5. deterministic tooling may maintain only mechanical fields:
+   - UTC timestamps
+   - baseline slice skeleton rows
+   - score-state skeleton rows
+   - input fingerprints
+   - structural validation
+   - stale status changes caused by changed or missing input files
+6. deterministic tooling must not write or modify:
+   - question scores
+   - `score_basis`
+   - design finding content
+   - finding severity
+   - hard-blocker judgment
+   - final `pass | blocked` conclusion
+
+### 5.2 Baseline Slice Catalog
+
+For default full-scope `spec_flow_design_review`, the run-state baseline slice catalog is fixed.
+These slices record review progress and input freshness only.
+They do not replace the fixed design blocks or the scoring model.
+
+The required baseline slices are:
+
+1. `design_foundation`
+   - tracks the fixed `design_foundation` review block from Section 3
+2. `lifecycle_and_gate_design`
+   - tracks the fixed `lifecycle_and_gate_design` review block from Section 3
+3. `human_operability_and_extension`
+   - tracks the fixed `human_operability_and_extension` review block from Section 3
+4. `foundation_to_lifecycle_convergence`
+   - tracks `design_foundation <-> lifecycle_and_gate_design`
+5. `foundation_to_operability_convergence`
+   - tracks `design_foundation <-> human_operability_and_extension`
+6. `lifecycle_to_operability_convergence`
+   - tracks `lifecycle_and_gate_design <-> human_operability_and_extension`
+7. `scoring_and_pass_gate`
+   - tracks whether the hard-blocker review, eight question scores, group averages, weighted score, and pass gate were completed by the executor
+
+The final result must not issue `pass` until every required baseline slice and every dynamic risk slice is closed as `passed` or `skipped_not_in_scope`.
+
+### 5.3 Dynamic Risk Slices
+
+Dynamic risk slices extend the fixed baseline slice catalog during execution.
+They are required only when a design risk cannot be safely tracked by one existing baseline slice.
+
+Rules:
+
+1. a dynamic risk slice may be local or cross-convergence
+2. a cross-block design risk must become a cross-convergence dynamic slice
+3. a dynamic risk slice may only increase review coverage; it must not weaken or replace a baseline slice
+4. a dynamic risk slice must be added before final conclusion when the executor discovers:
+   - a cross-block design risk
+   - a hard-blocker candidate that needs isolated review
+   - an in-scope or excluded-scope dependency gap that affects a conclusion
+   - a finding whose repair path needs separate re-review before final judgment
+5. every dynamic risk slice must record the same slice fields used by the baseline slice table
+6. dynamic risk slices do not create extra scoring questions and do not change the fixed weighting formula
+
+### 5.4 Score State
+
+The run-state file must contain a fixed `Score State` table with exactly eight rows: `q1` through `q8`.
+
+Rules:
+
+1. `Score State` records scoring progress only
+2. the row IDs map directly to the eight questions in Section 7.1
+3. tool-created rows start as `pending`
+4. an executor may fill score values and evidence while performing the review
+5. tooling may validate table shape and supported status values
+6. tooling must not decide whether a score is correct, whether a score basis is sufficient, or whether the pass gate is satisfied
+
 Before execution:
 
 1. make the review scope explicit
@@ -148,26 +245,29 @@ Before execution:
 4. name the required cross-block convergence checks before final conclusions
 5. if project-local governance standards are registered, resolve the active in-scope entries from `docs/project_standards/_registry.md`
 6. if the default scope is used, explicitly confirm that the review stayed inside the design main chain and did not silently rely on excluded tooling or internal shared-flow files
+7. for default full-scope review, create or reuse the run-state file from Section 5.1 before reviewing the first baseline slice
 
 If any in-scope file cannot be assigned to a review block, do not issue `pass`.
 
 ## 6. Procedure
 
 1. collect the in-scope governance files
-2. build the `review_plan`
-3. review each fixed block for:
+2. for default full-scope review, execute the run-state startup procedure from Section 5.1
+3. build the `review_plan`
+4. review each fixed block for:
    - design necessity
    - human operability
    - gate usefulness
    - extension-surface cost
-4. complete the required cross-block convergence checks
-5. judge the hard-blocker set from Section 7.4 before any scoring-based `pass` claim
-6. score all eight fixed design questions from Section 7.1
-7. compute the fixed group averages from Section 7.2
-8. compute the `weighted_score` from Section 7.3
-9. produce findings ordered by design risk
+5. complete the required cross-block convergence checks
+6. add required dynamic risk slices when newly discovered design risks cannot be tracked by an existing baseline slice
+7. judge the hard-blocker set from Section 7.4 before any scoring-based `pass` claim
+8. score all eight fixed design questions from Section 7.1
+9. compute the fixed group averages from Section 7.2
+10. compute the `weighted_score` from Section 7.3
+11. produce findings ordered by design risk
    - every real finding must use the fixed finding contract from Section 8.1
-10. issue the final result only after hard-blocker review, question scoring, group checks, weighted-score calculation, findings review, and cross-block convergence are all complete
+12. issue the final result only after baseline slices, dynamic risk slices, hard-blocker review, question scoring, group checks, weighted-score calculation, findings review, and cross-block convergence are all complete
 
 ## 7. Scoring Model
 
@@ -301,25 +401,31 @@ Otherwise the result is `blocked`.
 The output must report at least:
 
 1. `review scope`
-2. `review_plan`
-3. the fixed review blocks used
-4. the file coverage per block
-5. the hard-blocker result
-6. all eight question scores, each with:
+2. whether full-scope run state was created, reused, deleted and recreated, or not used
+3. the run-state file path when full-scope run state is used
+4. `review_plan`
+5. the fixed review blocks used
+6. the file coverage per block
+7. the baseline slice table and slice statuses when run state is used
+8. the dynamic risk slice table and slice statuses, or explicit `none`, when run state is used
+9. the score-state table when run state is used
+10. the stale slice result when run state is used
+11. the hard-blocker result
+12. all eight question scores, each with:
    - `score`
    - `score_basis`
    - `evidence`
-7. the fixed group averages
-8. the `weighted_score`
-9. the cross-block convergence results
-10. the findings result:
+13. the fixed group averages
+14. the `weighted_score`
+15. the cross-block convergence results
+16. the findings result:
    - explicit `none` when no real finding exists
    - otherwise every finding must satisfy Section 8.1
-11. the final conclusion:
+17. the final conclusion:
    - `pass`
    - `blocked`
 
-If the output does not explicitly report Items 5 through 10, the review is not complete.
+If the output does not explicitly report Items 11 through 16, the review is not complete.
 
 ### 8.1 Finding Contract
 

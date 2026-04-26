@@ -23,7 +23,7 @@ Only a new independent full-scope run of `unit_impl` may produce that advancing 
 
 1. complete required pre-checks
 2. `_status.md` says `Next Command=unit_impl`
-3. a current valid `docs/specs/_check_result/{unit}.md` exists
+3. a current valid `docs/specs/_check_result/unit/{unit}.md` exists
 4. a current valid `docs/specs/_plans/active/{unit}.md` exists
 5. the candidate still aligns with the current formal global baseline state
 6. read required candidate appendix files and bound Shared Contract files
@@ -33,20 +33,20 @@ Only a new independent full-scope run of `unit_impl` may produce that advancing 
 
 1. read the candidate Spec and all required appendix or Shared Contract files
 2. read `system_constraints.md` if it exists
-3. read the current `_check_result/{unit}.md`
+3. read the current `_check_result/unit/{unit}.md`
 4. read the current `_plans/active/{unit}.md`
 5. validate all required bindings of the pass gate and plan file according to the candidate handoff contract
 6. if any binding is invalid, stop immediately:
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md`
    - delete `_plans/active/{unit}.md`
-   - delete `_verify_result/{unit}.md` if it exists
+   - delete `_verify_result/unit/{unit}.md` if it exists
    - fall back `_status.md` to `unit_check`
 7. if `system_constraints_ref` no longer matches the current formal global baseline state, stop immediately:
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md`
    - delete `_plans/active/{unit}.md`
-   - delete `_verify_result/{unit}.md` if it exists
+   - delete `_verify_result/unit/{unit}.md` if it exists
    - fall back to `unit_check`
 8. only when both pass gate and plan are still valid may implementation continue
 9. implement slice by slice in the order defined by the current plan unless the plan itself declares a dependency-safe different order

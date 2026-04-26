@@ -27,7 +27,7 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
 
 1. complete required pre-checks
 2. `_status.md` says `Next Command=unit_plan`
-3. a current valid `docs/specs/_check_result/{unit}.md` exists
+3. a current valid `docs/specs/_check_result/unit/{unit}.md` exists
 4. the current candidate still aligns with the current formal global baseline state
 5. read any explicitly referenced candidate appendix files and bound Shared Contract files
 6. if this round may raise a checkpoint, read `specflow/framework/checkpoint_protocol.md`
@@ -37,13 +37,13 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
 
 1. read the candidate Spec and all required appendix or Shared Contract files
 2. read `system_constraints.md` if it exists
-3. read `docs/specs/_check_result/{unit}.md`
+3. read `docs/specs/_check_result/unit/{unit}.md`
 4. verify the pass gate bindings are still valid
 5. if the pass gate is invalid, stop immediately:
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md` if it exists
    - delete `_plans/active/{unit}.md` if it exists
-   - delete `_verify_result/{unit}.md` if it exists
+   - delete `_verify_result/unit/{unit}.md` if it exists
    - fall back `_status.md` to `unit_check`
 6. if the unit already has `stable`, derive a planning-aid change surface before judging the round:
    - use `git diff --no-index -- docs/specs/units/stable/s_unit_{unit}.md docs/specs/units/candidate/c_unit_{unit}.md`
@@ -68,10 +68,10 @@ Only a new independent full-scope run of `unit_plan` may produce that advancing 
    - do not create or update `docs/specs/_plans/active/{unit}.md`
    - keep `_status.md` at `unit_plan` unless the checkpoint answer must first be written back into candidate truth or appendix truth
 11. if the result is `truth-fallback`:
-   - delete `_check_result/{unit}.md`
+   - delete `_check_result/unit/{unit}.md`
    - delete `_plans/draft/{unit}.md` if it exists
    - delete `_plans/active/{unit}.md` if it exists
-   - delete `_verify_result/{unit}.md` if it exists
+   - delete `_verify_result/unit/{unit}.md` if it exists
    - do not create or update `docs/specs/_plans/active/{unit}.md`
    - update `_status.md` to `unit_check`
    - report `fallback_reason_code=truth_incomplete`

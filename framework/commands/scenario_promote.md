@@ -12,18 +12,18 @@ Only a new independent full-scope run of `scenario_promote` may produce that adv
 ## 3. Preconditions
 
 1. `_status.md` says `Object Type=scenario`, `Active Layer=candidate`, `Next Command=scenario_promote`
-2. current valid `_verify_result/{scenario}.md` exists
+2. current valid `_verify_result/scenario/{scenario}.md` exists
 3. read `specflow/framework/candidate_handoff_contract.md`
 4. read `specflow/framework/recovery_policy.md` before promotion
 
 ## 4. Procedure
 
-1. read and re-check the latest `_verify_result/{scenario}.md`
+1. read and re-check the latest `_verify_result/scenario/{scenario}.md`
 2. read and re-check `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
-3. validate `_verify_result/{scenario}.md` according to the `scenario_verify -> scenario_promote` handoff in `specflow/framework/candidate_handoff_contract.md`
-4. if `_verify_result/{scenario}.md` is invalid, stop before truth-file mutation:
-   - if candidate truth, repository mapping snapshot, required unit bindings, bound Shared Contract snapshots, or formal global baseline snapshots drifted, delete current-round scenario `_check_result/{scenario}.md` and `_verify_result/{scenario}.md`, update `_status.md` to `Next Command=scenario_check`, and use the matching standardized code: `truth_drift`, `binding_drift`, `shared_contract_drift`, or `baseline_drift`
-   - if only verification coverage is stale or incomplete while the check gate still covers current truth, delete `_verify_result/{scenario}.md`, update `_status.md` to `Next Command=scenario_verify`, and use `fallback_reason_code=evidence_incomplete`
+3. validate `_verify_result/scenario/{scenario}.md` according to the `scenario_verify -> scenario_promote` handoff in `specflow/framework/candidate_handoff_contract.md`
+4. if `_verify_result/scenario/{scenario}.md` is invalid, stop before truth-file mutation:
+   - if candidate truth, repository mapping snapshot, required unit bindings, bound Shared Contract snapshots, or formal global baseline snapshots drifted, delete current-round scenario `_check_result/scenario/{scenario}.md` and `_verify_result/scenario/{scenario}.md`, update `_status.md` to `Next Command=scenario_check`, and use the matching standardized code: `truth_drift`, `binding_drift`, `shared_contract_drift`, or `baseline_drift`
+   - if only verification coverage is stale or incomplete while the check gate still covers current truth, delete `_verify_result/scenario/{scenario}.md`, update `_status.md` to `Next Command=scenario_verify`, and use `fallback_reason_code=evidence_incomplete`
 5. continue only when candidate truth, verification coverage, and required bindings still remain valid
 6. before the first truth-file mutation, capture the recovery baseline required by `recovery_policy.md`
 7. write `docs/specs/scenarios/stable/s_scenario_{scenario}.md`
@@ -34,8 +34,8 @@ Only a new independent full-scope run of `scenario_promote` may produce that adv
    - `Next Command=scenario_fork`
 9. only after `_status.md` has already been updated to `Candidate=no`, delete:
    - `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
-   - current-round scenario `_check_result/{scenario}.md`
-   - current-round scenario `_verify_result/{scenario}.md`
+   - current-round scenario `_check_result/scenario/{scenario}.md`
+   - current-round scenario `_verify_result/scenario/{scenario}.md`
 10. if the command is interrupted after promotion internals started but before final cleanup finished, run incomplete promotion recovery according to `recovery_policy.md` instead of claiming success
 
 ## 5. Output Contract
@@ -44,7 +44,7 @@ The output must report:
 
 1. stable truth file write result
 2. candidate truth file delete result
-3. `_check_result/{scenario}.md` and `_verify_result/{scenario}.md` cleanup result
+3. `_check_result/scenario/{scenario}.md` and `_verify_result/scenario/{scenario}.md` cleanup result
 4. lifecycle-state transition result
 5. `_status.md` update result
 6. `handoff validation result`

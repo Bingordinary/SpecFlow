@@ -23,12 +23,12 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 		"| `scenario` | `demo` | `no` | `yes` | `candidate` | `scenario_verify` | current round |",
 	}, "\n")+"\n")
 	for _, relPath := range []string{
-		"docs/specs/_check_result/demo.md",
+		"docs/specs/_check_result/unit/demo.md",
 		"docs/specs/_plans/active/demo.md",
 		"docs/specs/_plans/draft/demo.md",
-		"docs/specs/_verify_result/demo.md",
-		"docs/specs/_check_result/demo.md",
-		"docs/specs/_verify_result/demo.md",
+		"docs/specs/_verify_result/unit/demo.md",
+		"docs/specs/_check_result/scenario/demo.md",
+		"docs/specs/_verify_result/scenario/demo.md",
 	} {
 		mustWriteImpactFile(t, filepath.Join(repoRoot, relPath), "# process\n")
 	}
@@ -63,12 +63,12 @@ func TestApplyInvalidatesCandidateObjectsAndCleansProcessFiles(t *testing.T) {
 		t.Fatalf("unexpected flow result: %+v", result.FlowResults)
 	}
 	for _, relPath := range []string{
-		"docs/specs/_check_result/demo.md",
+		"docs/specs/_check_result/unit/demo.md",
 		"docs/specs/_plans/active/demo.md",
 		"docs/specs/_plans/draft/demo.md",
-		"docs/specs/_verify_result/demo.md",
-		"docs/specs/_check_result/demo.md",
-		"docs/specs/_verify_result/demo.md",
+		"docs/specs/_verify_result/unit/demo.md",
+		"docs/specs/_check_result/scenario/demo.md",
+		"docs/specs/_verify_result/scenario/demo.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, relPath)); !os.IsNotExist(err) {
 			t.Fatalf("expected %s to be deleted, stat err=%v", relPath, err)
@@ -203,8 +203,8 @@ func TestApplyUsesExplicitFallbackScopeForObjects(t *testing.T) {
 		"| `scenario` | `demo` | `no` | `yes` | `candidate` | `scenario_verify` | current round |",
 	}, "\n")+"\n")
 	for _, relPath := range []string{
-		"docs/specs/_check_result/demo.md",
-		"docs/specs/_verify_result/demo.md",
+		"docs/specs/_check_result/scenario/demo.md",
+		"docs/specs/_verify_result/scenario/demo.md",
 	} {
 		mustWriteImpactFile(t, filepath.Join(repoRoot, relPath), "# process\n")
 	}
@@ -303,7 +303,7 @@ func TestApplyKeepsCandidateModuleWhenCallerAllowsSharedSnapshotMismatch(t *test
 	if moduleResult.NextCommand != "unit_plan" {
 		t.Fatalf("expected next command unit_plan, got %+v", moduleResult)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_check_result/demo.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md")); err != nil {
 		t.Fatalf("expected process file to remain, stat err=%v", err)
 	}
 }
@@ -343,10 +343,12 @@ func TestApplyKeepsCandidateModuleWhenPlanUsesPlanContract(t *testing.T) {
 func setupImpactRepo(t *testing.T, repoRoot, statusContent string) {
 	t.Helper()
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs"))
-	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/scenario"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
-	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/unit"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/scenario"))
 	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), statusContent)
 }
 
@@ -354,7 +356,7 @@ func setupImpactModuleSharedRepo(t *testing.T, repoRoot string) string {
 	t.Helper()
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
-	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirImpactAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
 	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
@@ -408,7 +410,7 @@ func setupImpactModuleSharedRepo(t *testing.T, repoRoot string) string {
 	if err != nil {
 		t.Fatalf("RebuildCurrent: %v", err)
 	}
-	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/demo.md"), renderImpactCheckProcessSnapshot(snap))
+	mustWriteImpactFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md"), renderImpactCheckProcessSnapshot(snap))
 	return "docs/specs/shared_contracts/candidate/c_shared_demo.md"
 }
 

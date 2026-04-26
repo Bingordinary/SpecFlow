@@ -12,17 +12,17 @@ Only a new independent full-scope run of `scenario_verify` may produce that adva
 ## 3. Preconditions
 
 1. `_status.md` says `Object Type=scenario`, `Active Layer=candidate`, `Next Command=scenario_verify`
-2. current valid `_check_result/{scenario}.md` exists
+2. current valid `_check_result/scenario/{scenario}.md` exists
 3. read `specflow/framework/candidate_handoff_contract.md`
 
 ## 4. Procedure
 
 1. read current candidate scenario truth
-2. revalidate `_check_result/{scenario}.md` according to the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`
+2. revalidate `_check_result/scenario/{scenario}.md` according to the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`
 3. revalidate current repository mapping, bound units, shared contracts, and baseline snapshots
 4. verify the declared trigger-to-outcome path from entry to claimed outcome
 5. report `affected_units` when implementation work is still required downstream
-6. if pass, write `_verify_result/{scenario}.md` so it satisfies the `scenario_verify -> scenario_promote` handoff, then advance `Next Command=scenario_promote`
+6. if pass, write `_verify_result/scenario/{scenario}.md` so it satisfies the `scenario_verify -> scenario_promote` handoff, then advance `Next Command=scenario_promote`
 7. if the check handoff is invalid or repository mapping, unit, shared-contract, or baseline bindings drifted, fall back to `scenario_check` with the matching allowed `fallback_reason_code`
 
 ## 5. Output Contract
@@ -30,7 +30,7 @@ Only a new independent full-scope run of `scenario_verify` may produce that adva
 The output must report:
 
 1. verification gate result
-2. `_verify_result/{scenario}.md` write, delete, or keep result
+2. `_verify_result/scenario/{scenario}.md` write, delete, or keep result
 3. `_status.md` update result
 4. `affected_units` when downstream implementation is still required
 5. `round conclusion`

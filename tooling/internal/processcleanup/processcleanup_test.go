@@ -11,7 +11,7 @@ import (
 
 func TestApplyFallbackForPromoteEvidenceIncomplete(t *testing.T) {
 	repoRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs/_verify_result"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs/_verify_result/unit"), 0o755); err != nil {
 		t.Fatalf("mkdir verify_result: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs"), 0o755); err != nil {
@@ -30,7 +30,7 @@ func TestApplyFallbackForPromoteEvidenceIncomplete(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoRoot, "docs/specs/_status.md"), []byte(status), 0o644); err != nil {
 		t.Fatalf("write status: %v", err)
 	}
-	verifyPath := filepath.Join(repoRoot, "docs/specs/_verify_result/ai.md")
+	verifyPath := filepath.Join(repoRoot, "docs/specs/_verify_result/unit/ai.md")
 	if err := os.WriteFile(verifyPath, []byte("verify"), 0o644); err != nil {
 		t.Fatalf("write verify file: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestApplyFallbackForPromoteEvidenceIncomplete(t *testing.T) {
 	if result.NextCommand != "unit_verify" {
 		t.Fatalf("expected next command unit_verify, got %s", result.NextCommand)
 	}
-	if len(result.DeletedFiles) != 1 || result.DeletedFiles[0] != "docs/specs/_verify_result/ai.md" {
+	if len(result.DeletedFiles) != 1 || result.DeletedFiles[0] != "docs/specs/_verify_result/unit/ai.md" {
 		t.Fatalf("unexpected deleted files: %v", result.DeletedFiles)
 	}
 	if _, err := os.Stat(verifyPath); !os.IsNotExist(err) {
@@ -52,9 +52,9 @@ func TestApplyFallbackForPromoteEvidenceIncomplete(t *testing.T) {
 
 func TestApplyFallbackForVerifyImplementationDeviation(t *testing.T) {
 	repoRoot := t.TempDir()
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 
 	status := strings.Join([]string{
@@ -67,9 +67,9 @@ func TestApplyFallbackForVerifyImplementationDeviation(t *testing.T) {
 		"| `unit` | `ai` | `yes` | `yes` | `candidate` | `unit_verify` | note |",
 	}, "\n") + "\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/ai.md"), "check")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/ai.md"), "check")
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_plans/active/ai.md"), "plan")
-	verifyPath := filepath.Join(repoRoot, "docs/specs/_verify_result/ai.md")
+	verifyPath := filepath.Join(repoRoot, "docs/specs/_verify_result/unit/ai.md")
 	mustWriteFile(t, verifyPath, "verify")
 
 	result, err := ApplyFallback(repoRoot, "ai", "unit_verify", "implementation_deviation")
@@ -79,10 +79,10 @@ func TestApplyFallbackForVerifyImplementationDeviation(t *testing.T) {
 	if result.NextCommand != "unit_impl" {
 		t.Fatalf("expected next command unit_impl, got %s", result.NextCommand)
 	}
-	if len(result.DeletedFiles) != 1 || result.DeletedFiles[0] != "docs/specs/_verify_result/ai.md" {
+	if len(result.DeletedFiles) != 1 || result.DeletedFiles[0] != "docs/specs/_verify_result/unit/ai.md" {
 		t.Fatalf("unexpected deleted files: %v", result.DeletedFiles)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_check_result/ai.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_check_result/unit/ai.md")); err != nil {
 		t.Fatalf("expected check file to remain, stat err=%v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/_plans/active/ai.md")); err != nil {
@@ -95,10 +95,10 @@ func TestApplyFallbackForVerifyImplementationDeviation(t *testing.T) {
 
 func TestApplyFallbackForVerifyTruthIncomplete(t *testing.T) {
 	repoRoot := t.TempDir()
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 
 	status := strings.Join([]string{
@@ -112,10 +112,10 @@ func TestApplyFallbackForVerifyTruthIncomplete(t *testing.T) {
 	}, "\n") + "\n"
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), status)
 	for _, relPath := range []string{
-		"docs/specs/_check_result/ai.md",
+		"docs/specs/_check_result/unit/ai.md",
 		"docs/specs/_plans/active/ai.md",
 		"docs/specs/_plans/draft/ai.md",
-		"docs/specs/_verify_result/ai.md",
+		"docs/specs/_verify_result/unit/ai.md",
 	} {
 		mustWriteFile(t, filepath.Join(repoRoot, relPath), relPath)
 	}
@@ -131,10 +131,10 @@ func TestApplyFallbackForVerifyTruthIncomplete(t *testing.T) {
 		t.Fatalf("expected 4 deleted files, got %d: %v", len(result.DeletedFiles), result.DeletedFiles)
 	}
 	for _, relPath := range []string{
-		"docs/specs/_check_result/ai.md",
+		"docs/specs/_check_result/unit/ai.md",
 		"docs/specs/_plans/active/ai.md",
 		"docs/specs/_plans/draft/ai.md",
-		"docs/specs/_verify_result/ai.md",
+		"docs/specs/_verify_result/unit/ai.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, relPath)); !os.IsNotExist(err) {
 			t.Fatalf("expected %s to be deleted, stat err=%v", relPath, err)
@@ -145,10 +145,10 @@ func TestApplyFallbackForVerifyTruthIncomplete(t *testing.T) {
 func TestApplySuccessCleanupForPromote(t *testing.T) {
 	repoRoot := t.TempDir()
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateAppendixDir)))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/active"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_plans/draft"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 
 	status := strings.Join([]string{
@@ -167,10 +167,10 @@ func TestApplySuccessCleanupForPromote(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(candidateMainRef)), "candidate")
 	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateAppendixDir), "c_unit_ai_prompt.md"), "appendix")
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/ai.md"), "check")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit/ai.md"), "check")
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_plans/active/ai.md"), "plan")
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_plans/draft/ai.md"), "draft plan")
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_verify_result/ai.md"), "verify")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_verify_result/unit/ai.md"), "verify")
 
 	result, err := ApplySuccessCleanup(repoRoot, "ai", "unit_promote")
 	if err != nil {
@@ -182,10 +182,10 @@ func TestApplySuccessCleanupForPromote(t *testing.T) {
 	for _, relPath := range []string{
 		candidateMainRef,
 		specpaths.CandidateAppendixDir + "/c_unit_ai_prompt.md",
-		"docs/specs/_check_result/ai.md",
+		"docs/specs/_check_result/unit/ai.md",
 		"docs/specs/_plans/active/ai.md",
 		"docs/specs/_plans/draft/ai.md",
-		"docs/specs/_verify_result/ai.md",
+		"docs/specs/_verify_result/unit/ai.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relPath))); !os.IsNotExist(err) {
 			t.Fatalf("expected %s to be deleted, stat err=%v", relPath, err)

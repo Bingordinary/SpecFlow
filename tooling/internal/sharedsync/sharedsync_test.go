@@ -54,7 +54,7 @@ Body stays the same.
 	if !result.BoundObjectDrifts[0].BoundObjectsOnlyDelta {
 		t.Fatalf("expected bound_objects-only drift, got %+v", result.BoundObjectDrifts[0])
 	}
-	checkPath := filepath.Join(repoRoot, "docs/specs/_check_result/demo.md")
+	checkPath := filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md")
 	if _, err := os.Stat(checkPath); err != nil {
 		t.Fatalf("expected process file to remain, stat err=%v", err)
 	}
@@ -182,7 +182,7 @@ Body changed.
 	if !moduleResult.StatusUpdated {
 		t.Fatalf("expected status update")
 	}
-	checkPath := filepath.Join(repoRoot, "docs/specs/_check_result/demo.md")
+	checkPath := filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md")
 	if _, err := os.Stat(checkPath); !os.IsNotExist(err) {
 		t.Fatalf("expected process file to be deleted, stat err=%v", err)
 	}
@@ -274,8 +274,8 @@ Body stays the same.
 		t.Fatalf("expected next command scenario_verify, got %s", flowResult.NextCommand)
 	}
 	for _, relPath := range []string{
-		"docs/specs/_check_result/demo.md",
-		"docs/specs/_verify_result/demo.md",
+		"docs/specs/_check_result/scenario/demo.md",
+		"docs/specs/_verify_result/scenario/demo.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, relPath)); err != nil {
 			t.Fatalf("expected %s to remain, stat err=%v", relPath, err)
@@ -327,8 +327,8 @@ Body changed.
 		t.Fatalf("status row not updated:\n%s", string(statusData))
 	}
 	for _, relPath := range []string{
-		"docs/specs/_check_result/demo.md",
-		"docs/specs/_verify_result/demo.md",
+		"docs/specs/_check_result/scenario/demo.md",
+		"docs/specs/_verify_result/scenario/demo.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, relPath)); !os.IsNotExist(err) {
 			t.Fatalf("expected %s to be deleted, stat err=%v", relPath, err)
@@ -723,7 +723,7 @@ func TestSyncImpactDoesNotExpandScopeWithExplicitModuleSelector(t *testing.T) {
 func TestSyncImpactIncludesCandidateModuleWhenSelectedBindingWasRemovedFromCurrentTruth(t *testing.T) {
 	repoRoot := t.TempDir()
 	sharedRef := setupCandidateSharedRepo(t, repoRoot)
-	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "demo", "check")
+	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "unit", "demo", "check")
 	if err != nil {
 		t.Fatalf("LoadProcessSnapshot: %v", err)
 	}
@@ -819,7 +819,7 @@ func TestSyncImpactIgnoresIncompleteRemovedBindingEvidenceForModule(t *testing.T
 func TestSyncImpactIgnoresModuleEvidenceThatDoesNotMatchCurrentModuleIdentity(t *testing.T) {
 	repoRoot := t.TempDir()
 	sharedRef := setupCandidateSharedRepo(t, repoRoot)
-	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "demo", "check")
+	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "unit", "demo", "check")
 	if err != nil {
 		t.Fatalf("LoadProcessSnapshot: %v", err)
 	}
@@ -844,7 +844,7 @@ func TestSyncImpactIgnoresModuleEvidenceThatDoesNotMatchCurrentModuleIdentity(t 
 		"",
 	}, "\n"))
 
-	processPath := filepath.Join(repoRoot, "docs/specs/_check_result/demo.md")
+	processPath := filepath.Join(repoRoot, "docs/specs/_check_result/unit/demo.md")
 	validProcess := renderModuleProcessSnapshotForTest(
 		t,
 		repoRoot,
@@ -872,7 +872,7 @@ func TestSyncImpactIgnoresModuleEvidenceThatDoesNotMatchCurrentModuleIdentity(t 
 func TestSyncImpactIgnoresModuleEvidenceWhenCurrentTruthChangedBeyondRemovedBinding(t *testing.T) {
 	repoRoot := t.TempDir()
 	sharedRef := setupCandidateSharedRepo(t, repoRoot)
-	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "demo", "check")
+	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "unit", "demo", "check")
 	if err != nil {
 		t.Fatalf("LoadProcessSnapshot: %v", err)
 	}
@@ -1096,7 +1096,7 @@ func TestSyncImpactIncludesRemovedBindingWhenSharedIDIsUnambiguous(t *testing.T)
 	repoRoot := t.TempDir()
 	setupCandidateSharedRepo(t, repoRoot)
 
-	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "demo", "check")
+	processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, "unit", "demo", "check")
 	if err != nil {
 		t.Fatalf("LoadProcessSnapshot: %v", err)
 	}
@@ -1690,7 +1690,7 @@ func setupCandidateSharedRepo(t *testing.T, repoRoot string) string {
 	t.Helper()
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateDir)))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/unit"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
@@ -1809,8 +1809,8 @@ func setupCandidateFlowSharedRepo(t *testing.T, repoRoot string) string {
 	t.Helper()
 	mustMkdirAll(t, filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateFlowDir)))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/shared_contracts/candidate"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result"))
-	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_check_result/scenario"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs/_verify_result/scenario"))
 	mustMkdirAll(t, filepath.Join(repoRoot, "docs/specs"))
 
 	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_status.md"), strings.Join([]string{
@@ -1858,8 +1858,8 @@ bound_objects: none
 Body stays the same.
 `)
 
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/demo.md"), "check")
-	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_verify_result/demo.md"), "verify")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_check_result/scenario/demo.md"), "check")
+	mustWriteFile(t, filepath.Join(repoRoot, "docs/specs/_verify_result/scenario/demo.md"), "verify")
 	return "c_shared_demo@0.1.0"
 }
 
@@ -1870,10 +1870,14 @@ func writeProcessFile(t *testing.T, repoRoot, processKind, snapshotBody string) 
 
 func writeNamedProcessFile(t *testing.T, repoRoot, processKind, object, snapshotBody string) {
 	t.Helper()
+	objectType := "unit"
+	if strings.Contains(snapshotBody, "object_type: scenario") || strings.Contains(snapshotBody, "`object_type`: `scenario`") {
+		objectType = "scenario"
+	}
 	dir := map[string]string{
-		"check":  "docs/specs/_check_result",
+		"check":  filepath.ToSlash(filepath.Join("docs/specs/_check_result", objectType)),
 		"plan":   "docs/specs/_plans",
-		"verify": "docs/specs/_verify_result",
+		"verify": filepath.ToSlash(filepath.Join("docs/specs/_verify_result", objectType)),
 	}[processKind]
 	mustMkdirAll(t, filepath.Join(repoRoot, dir))
 	content := fmt.Sprintf("# %s\n\n```yaml\n%s\n```\n", processKind, snapshotBody)

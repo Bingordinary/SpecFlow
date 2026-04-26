@@ -21,12 +21,12 @@ Executors must not create per-command snapshot shapes.
 This contract governs process files for:
 
 1. `unit`
-   - `docs/specs/_check_result/{unit}.md`
+   - `docs/specs/_check_result/unit/{unit}.md`
    - `docs/specs/_plans/active/{unit}.md`
-   - `docs/specs/_verify_result/{unit}.md`
+   - `docs/specs/_verify_result/unit/{unit}.md`
 2. `scenario`
-   - `docs/specs/_check_result/{scenario}.md`
-   - `docs/specs/_verify_result/{scenario}.md`
+   - `docs/specs/_check_result/scenario/{scenario}.md`
+   - `docs/specs/_verify_result/scenario/{scenario}.md`
 
 It also governs any internal flow that revalidates those files, including:
 
@@ -63,8 +63,8 @@ Every gate-bearing process file covered by this contract must record:
 
 Gate-bearing process files are:
 
-1. `docs/specs/_check_result/{object}.md`
-2. `docs/specs/_verify_result/{object}.md`
+1. `docs/specs/_check_result/{object_type}/{object}.md`
+2. `docs/specs/_verify_result/{object_type}/{object}.md`
 
 Rules:
 

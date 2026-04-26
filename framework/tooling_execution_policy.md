@@ -120,6 +120,7 @@ The required tooling-contract document set is:
    - `specflow/tooling/cmd/**/*.go`
    - `specflow/tooling/internal/**/*.go`
    - `specflow/tooling/go.mod`
+   - `specflow/tooling/manifest.tsv`
    - `specflow/tooling/go.sum` when it exists
 
 Default `spec_flow_review` must not issue `pass` when any of the following is true:
@@ -140,6 +141,7 @@ Required rules:
    - `specflow/tooling/cmd/**/*.go`
    - `specflow/tooling/internal/**/*.go`
    - `specflow/tooling/go.mod`
+   - `specflow/tooling/manifest.tsv`
    - `specflow/tooling/go.sum` when it exists
 3. `build-release` must embed one build-time fingerprint derived from that source input set into the produced binaries
 4. a compiled tooling binary must compare its embedded fingerprint against the current live source fingerprint before executing ordinary governance actions

@@ -23,7 +23,7 @@ Only a new independent full-scope run of `unit_promote` may produce that advanci
 
 1. complete required pre-checks
 2. `_status.md` says `Next Command=unit_promote`
-3. a latest valid `_verify_result/{unit}.md` still covers the current candidate, current implementation, and current formal global baseline state
+3. a latest valid `_verify_result/unit/{unit}.md` still covers the current candidate, current implementation, and current formal global baseline state
 4. implementation alignment is complete and no blocking verification issue remains
 5. the candidate's `system_constraints_ref` matches the current formal global baseline state
 6. read required candidate appendix files and any Shared Contract files already bound by the unit candidate or otherwise already known to be touched by this promotion round, and decide how each touched Shared Contract file will be handled after promotion
@@ -36,33 +36,33 @@ Only a new independent full-scope run of `unit_promote` may produce that advanci
 
 ## 4. Procedure
 
-1. read and re-check the latest `_verify_result/{unit}.md`
+1. read and re-check the latest `_verify_result/unit/{unit}.md`
 2. read `docs/specs/units/candidate/c_unit_{unit}.md` and all required appendix files
-3. validate the full binding relation of `_verify_result/{unit}.md` according to the candidate handoff contract
-4. if `_verify_result/{unit}.md` is invalid, identify the reason and stop immediately:
+3. validate the full binding relation of `_verify_result/unit/{unit}.md` according to the candidate handoff contract
+4. if `_verify_result/unit/{unit}.md` is invalid, identify the reason and stop immediately:
    - if code changed after verification:
-     - delete `_verify_result/{unit}.md`
+     - delete `_verify_result/unit/{unit}.md`
      - fall back to `unit_verify`
    - if implementation drift against candidate exists:
-     - delete `_verify_result/{unit}.md`
+     - delete `_verify_result/unit/{unit}.md`
      - fall back to `unit_impl`
-   - if another required binding of `_verify_result/{unit}.md` no longer matches the current round:
-     - delete `_check_result/{unit}.md`
+   - if another required binding of `_verify_result/unit/{unit}.md` no longer matches the current round:
+     - delete `_check_result/unit/{unit}.md`
      - delete `_plans/draft/{unit}.md`
      - delete `_plans/active/{unit}.md`
-     - delete `_verify_result/{unit}.md`
+     - delete `_verify_result/unit/{unit}.md`
      - use `fallback_reason_code=binding_drift` and fall back to `unit_check`
    - if bound Shared Contract truth, layer, version, or snapshot drifted:
-     - delete `_check_result/{unit}.md`
+     - delete `_check_result/unit/{unit}.md`
      - delete `_plans/draft/{unit}.md`
      - delete `_plans/active/{unit}.md`
-     - delete `_verify_result/{unit}.md`
+     - delete `_verify_result/unit/{unit}.md`
      - use `fallback_reason_code=shared_contract_drift` and fall back to `unit_check`
    - if candidate truth or formal global baseline changed:
-     - delete `_check_result/{unit}.md`
+     - delete `_check_result/unit/{unit}.md`
      - delete `_plans/draft/{unit}.md`
      - delete `_plans/active/{unit}.md`
-     - delete `_verify_result/{unit}.md`
+     - delete `_verify_result/unit/{unit}.md`
      - fall back to `unit_check`
 5. continue only when bindings, coverage, and gate fields all remain valid
 6. before the first file mutation, capture the recovery baseline required by `recovery_policy.md`
@@ -113,10 +113,10 @@ Only a new independent full-scope run of `unit_promote` may produce that advanci
 16. only after that update may physical deletion happen:
    - `docs/specs/units/candidate/c_unit_{unit}.md`
    - current-round candidate appendix files
-   - `_check_result/{unit}.md`
+   - `_check_result/unit/{unit}.md`
    - `_plans/draft/{unit}.md`
    - `_plans/active/{unit}.md`
-   - `_verify_result/{unit}.md`
+   - `_verify_result/unit/{unit}.md`
    - the deterministic cleanup part may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> process cleanup-success --unit {unit} --mode unit_promote`
 17. if the command is interrupted after promotion internals started but before final cleanup finished, run incomplete promotion recovery according to `recovery_policy.md` instead of claiming success
 18. if the round changed any unit `shared_contract_refs` value or any file under `docs/specs/shared_contracts/**`, run `shared_sync` only after `_status.md` already reflects the promoted stable layer and Step 15 has written the surviving shared-file metadata, even when no additional affected unit is known yet

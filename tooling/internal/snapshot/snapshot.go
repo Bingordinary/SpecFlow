@@ -186,7 +186,7 @@ func ValidateProcessFile(repoRoot, module, processKind string) (ValidationResult
 		return ValidationResult{}, fmt.Errorf("unsupported process kind %q", processKind)
 	}
 
-	processFile, err := ProcessFilePath(module, processKind)
+	processFile, err := ProcessFilePath("unit", module, processKind)
 	if err != nil {
 		return ValidationResult{}, err
 	}
@@ -298,8 +298,8 @@ func expectedModuleProcessRouting(processKind string) (string, string, error) {
 	}
 }
 
-func LoadProcessSnapshot(repoRoot, module, processKind string) (ProcessSnapshotData, error) {
-	processFile, err := ProcessFilePath(module, processKind)
+func LoadProcessSnapshot(repoRoot, objectType, object, processKind string) (ProcessSnapshotData, error) {
+	processFile, err := ProcessFilePath(objectType, object, processKind)
 	if err != nil {
 		return ProcessSnapshotData{}, err
 	}
@@ -969,27 +969,41 @@ func DraftPlanFilePath(module string) string {
 	return fmt.Sprintf("docs/specs/_plans/draft/%s.md", module)
 }
 
-func ProcessArtifactPaths(module, processKind string) ([]string, error) {
+func CheckResultFilePath(objectType, object string) string {
+	return fmt.Sprintf("docs/specs/_check_result/%s/%s.md", objectType, object)
+}
+
+func VerifyResultFilePath(objectType, object string) string {
+	return fmt.Sprintf("docs/specs/_verify_result/%s/%s.md", objectType, object)
+}
+
+func ProcessArtifactPaths(objectType, object, processKind string) ([]string, error) {
 	switch processKind {
 	case "check":
-		return []string{fmt.Sprintf("docs/specs/_check_result/%s.md", module)}, nil
+		return []string{CheckResultFilePath(objectType, object)}, nil
 	case "plan":
-		return []string{DraftPlanFilePath(module), ActivePlanFilePath(module)}, nil
+		if objectType != "unit" {
+			return nil, fmt.Errorf("process kind %q is not supported for object type %q", processKind, objectType)
+		}
+		return []string{DraftPlanFilePath(object), ActivePlanFilePath(object)}, nil
 	case "verify":
-		return []string{fmt.Sprintf("docs/specs/_verify_result/%s.md", module)}, nil
+		return []string{VerifyResultFilePath(objectType, object)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported process kind %q", processKind)
 	}
 }
 
-func ProcessFilePath(module, processKind string) (string, error) {
+func ProcessFilePath(objectType, object, processKind string) (string, error) {
 	switch processKind {
 	case "check":
-		return fmt.Sprintf("docs/specs/_check_result/%s.md", module), nil
+		return CheckResultFilePath(objectType, object), nil
 	case "plan":
-		return ActivePlanFilePath(module), nil
+		if objectType != "unit" {
+			return "", fmt.Errorf("process kind %q is not supported for object type %q", processKind, objectType)
+		}
+		return ActivePlanFilePath(object), nil
 	case "verify":
-		return fmt.Sprintf("docs/specs/_verify_result/%s.md", module), nil
+		return VerifyResultFilePath(objectType, object), nil
 	default:
 		return "", fmt.Errorf("unsupported process kind %q", processKind)
 	}

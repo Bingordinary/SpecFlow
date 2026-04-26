@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/entrysync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/install"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/processcleanup"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/projectstandards"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/sharedsync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/snapshot"
@@ -281,23 +283,35 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 		fs := flag.NewFlagSet("review collect-default-scope", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		repoRoot := fs.String("repo-root", ".", "repository root")
+		flow := fs.String("flow", "", "review flow")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
+		if err := requireReviewFlow(*flow, stderr); err != nil {
+			return err
+		}
 
-		scope, err := reviewscope.CollectDefaultSpecFlowScope(mustAbs(*repoRoot))
+		var scope reviewscope.SpecFlowScope
+		var err error
+		switch *flow {
+		case reviewrun.FlowSpecFlowReview:
+			scope, err = reviewscope.CollectDefaultSpecFlowScope(mustAbs(*repoRoot))
+		case reviewrun.FlowSpecFlowDesignReview:
+			scope, err = reviewscope.CollectDefaultSpecFlowDesignScope(mustAbs(*repoRoot))
+		default:
+			return fmt.Errorf("unsupported review flow %q", *flow)
+		}
 		if err != nil {
 			return err
 		}
 
+		fmt.Fprintf(stdout, "Review flow: %s\n", *flow)
 		fmt.Fprintf(stdout, "Review scenario: %s\n", scope.Scenario)
 		writeList(stdout, "Framework guideline files", scope.FrameworkGuidelineFiles)
 		writeList(stdout, "Command files", scope.CommandFiles)
 		writeList(stdout, "Guidance skill files", scope.GuidanceSkillFiles)
 		writeList(stdout, "Shared-governance minimum files", scope.SharedGovernanceFiles)
 		writeList(stdout, "Template governance files", scope.TemplateGovernanceFiles)
-		writeList(stdout, "Project process/state files", scope.ProjectProcessStateFiles)
-		writeList(stdout, "Project repository truth files", scope.ProjectRepositoryTruthFiles)
 		writeList(stdout, "Template entry files", scope.TemplateEntryFiles)
 		writeList(stdout, "Project entry files", scope.ProjectEntryFiles)
 		writeList(stdout, "Agent operability files", scope.AgentOperabilityFiles)
@@ -306,6 +320,111 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 		writeList(stdout, "Tooling contract files", scope.ToolingContractFiles)
 		writeList(stdout, "Tooling source files", scope.ToolingSourceFiles)
 		writeList(stdout, "Active project-local governance-input files", scope.ActiveProjectStandardFiles)
+		return nil
+	case "run-init":
+		fs := flag.NewFlagSet("review run-init", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		flow := fs.String("flow", "", "review flow")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireReviewFlow(*flow, stderr); err != nil {
+			return err
+		}
+		result, err := reviewrun.Init(mustAbs(*repoRoot), *flow, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if result.Created {
+			fmt.Fprintf(stdout, "Review run-state created: %s\n", result.File)
+			if len(result.DeletedFiles) > 0 {
+				fmt.Fprintf(stdout, "Deleted run-state files (%d):\n", len(result.DeletedFiles))
+				for _, deleted := range result.DeletedFiles {
+					fmt.Fprintf(stdout, "- %s | reason=%s\n", deleted.File, deleted.Reason)
+				}
+			}
+			return nil
+		}
+		fmt.Fprintf(stdout, "Review run-state reused: %s\n", result.File)
+		return nil
+	case "run-validate":
+		fs := flag.NewFlagSet("review run-validate", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		flow := fs.String("flow", "", "review flow")
+		file := fs.String("file", "", "review run-state file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireReviewFlow(*flow, stderr); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*file) == "" {
+			writeReviewUsage(stderr)
+			return errors.New("file is required")
+		}
+		absRepoRoot := mustAbs(*repoRoot)
+		result := reviewrun.ValidateFile(absRepoRoot, *flow, resolvePath(absRepoRoot, *file), time.Now().UTC())
+		if result.Valid {
+			fmt.Fprintf(stdout, "Review run-state is valid: %s\n", result.File)
+			return nil
+		}
+		fmt.Fprintf(stdout, "Review run-state is invalid: %s\n", result.File)
+		for _, diagnostic := range result.Diagnostics {
+			fmt.Fprintf(stdout, "- %s\n", diagnostic)
+		}
+		return errors.New("review run-state validation failed")
+	case "run-refresh":
+		fs := flag.NewFlagSet("review run-refresh", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		flow := fs.String("flow", "", "review flow")
+		file := fs.String("file", "", "review run-state file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireReviewFlow(*flow, stderr); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*file) == "" {
+			writeReviewUsage(stderr)
+			return errors.New("file is required")
+		}
+		absRepoRoot := mustAbs(*repoRoot)
+		result, err := reviewrun.Refresh(absRepoRoot, *flow, resolvePath(absRepoRoot, *file), time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Review run-state refreshed: %s\n", result.File)
+		fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
+		writeList(stdout, "Changed fingerprint slices", result.ChangedSlices)
+		writeList(stdout, "Stale slices", result.StaleSlices)
+		writeList(stdout, "Missing inputs", result.MissingInputs)
+		return nil
+	case "run-touch":
+		fs := flag.NewFlagSet("review run-touch", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		flow := fs.String("flow", "", "review flow")
+		file := fs.String("file", "", "review run-state file")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireReviewFlow(*flow, stderr); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*file) == "" {
+			writeReviewUsage(stderr)
+			return errors.New("file is required")
+		}
+		absRepoRoot := mustAbs(*repoRoot)
+		result, err := reviewrun.Touch(absRepoRoot, *flow, resolvePath(absRepoRoot, *file), time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Review run-state touched: %s\n", result.File)
+		fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
 		return nil
 	case "-h", "--help", "help":
 		writeReviewUsage(stdout)
@@ -686,7 +805,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  build-release Build platform binaries into specflow/tooling/bin")
 	fmt.Fprintln(w, "  entry    Check or sync registered entry-file managed blocks")
 	fmt.Fprintln(w, "  registry Validate docs/project_standards/_registry.md")
-	fmt.Fprintln(w, "  review   Collect deterministic governance review scope")
+	fmt.Fprintln(w, "  review   Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  process  Execute deterministic fallback cleanup")
 	fmt.Fprintln(w, "  shared   Execute deterministic shared-impact reconciliation helpers")
 	fmt.Fprintln(w, "  snapshot Rebuild or compare process snapshot fields")
@@ -706,7 +825,26 @@ func writeRegistryUsage(w io.Writer) {
 
 func writeReviewUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl review collect-default-scope [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl review collect-default-scope --flow spec_flow_review|spec_flow_design_review [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl review run-init --flow spec_flow_review|spec_flow_design_review [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl review run-validate --flow spec_flow_review|spec_flow_design_review --file FILE [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl review run-refresh --flow spec_flow_review|spec_flow_design_review --file FILE [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl review run-touch --flow spec_flow_review|spec_flow_design_review --file FILE [--repo-root PATH]")
+}
+
+func requireReviewFlow(flow string, stderr io.Writer) error {
+	flow = strings.TrimSpace(flow)
+	if flow == "" {
+		writeReviewUsage(stderr)
+		return errors.New("flow is required")
+	}
+	for _, supported := range reviewrun.ConfiguredFlows() {
+		if flow == supported {
+			return nil
+		}
+	}
+	writeReviewUsage(stderr)
+	return fmt.Errorf("unsupported review flow %q", flow)
 }
 
 func writeProcessUsage(w io.Writer) {
@@ -750,6 +888,13 @@ func mustAbs(path string) string {
 		return path
 	}
 	return abs
+}
+
+func resolvePath(base, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(base, filepath.FromSlash(path))
 }
 
 func parseCSV(value string) []string {

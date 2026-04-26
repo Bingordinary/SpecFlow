@@ -135,7 +135,7 @@ func processSnapshotContainsSelectedShared(repoRoot, objectType, object, activeL
 	refSet := makeStringSet(scopedRefs)
 	idSet := makeStringSet(scopedIDs)
 	for _, processKind := range processKinds {
-		processPath, err := snapshot.ProcessFilePath(object, processKind)
+		processPath, err := snapshot.ProcessFilePath(objectType, object, processKind)
 		if err != nil {
 			return false, err
 		}
@@ -146,7 +146,7 @@ func processSnapshotContainsSelectedShared(repoRoot, objectType, object, activeL
 			}
 			return false, fmt.Errorf("stat %s: %w", processPath, err)
 		}
-		processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, object, processKind)
+		processSnapshot, err := snapshot.LoadProcessSnapshot(repoRoot, objectType, object, processKind)
 		if err != nil {
 			return false, err
 		}
