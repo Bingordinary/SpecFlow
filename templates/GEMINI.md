@@ -84,13 +84,27 @@ Stop instead of guessing when any of these are true:
 
 ### 6. Required Report
 
-For any request routed through `specFlow`, the executor's final or stop report must state:
+For any request routed through `specFlow`, the executor's final or stop report must separate the user-facing answer from traceability details.
+Project-structure language means the current repository's capability areas, delivery surfaces, entry points, and responsibility areas as proven by current repository truth or named by the user.
+
+The user-facing answer must:
+
+1. answer the user's goal first
+2. use project-structure language before internal governance language
+3. describe next actions as plain engineering actions
+4. state the current state, next action, reason, expected result, and remaining gap when they apply
+5. avoid requiring the user to understand internal object-family names, command names, lifecycle state names, policy-file names, or governance-flow names
+
+The execution note, when needed, must appear after the user-facing answer and stay short.
+It may state:
 
 1. the entry shape and first policy file used
 2. the current owner, command, governance flow, or checkpoint
 3. the files changed, if any
 4. the next legal step, if work remains
 5. the reason execution stopped, if a checkpoint or clarification is required
+
+The execution note must not be required for the user to understand the answer.
 
 ### 7. Detail Owners
 

@@ -47,7 +47,7 @@ Rules:
 4. executors must route by repository truth and intent closure, not by keywords alone
 5. when the route is not stable, executors must stop and ask only for the smallest missing input that blocks routing
 6. executors must not require users to understand or choose specFlow object-family names before routing
-7. executor-facing object names such as `unit`, `scenario`, `shared_contract`, `system_constraints`, and `repository_mapping` may be used in internal route reports, but user questions must be phrased as ordinary goal, scope, outcome, or verification questions
+7. executor-facing object names such as `unit`, `scenario`, `shared_contract`, `system_constraints`, and `repository_mapping` may appear only in execution trace notes, not as the user's required decision language
 
 There are only three entry shapes:
 
@@ -73,14 +73,34 @@ Natural-language intake must start from the user's goal, not from command names.
 The executor must translate user wording into specFlow ownership internally.
 It must not ask the user to classify the request as a `unit`, `scenario`, `shared_contract`, `system_constraints`, or `repository_mapping` request unless the user already chose those terms and the route still needs confirmation about their intended meaning.
 
+User-facing communication must use this language priority:
+
+```mermaid
+flowchart TD
+  A["A. User Goal Language"] --> B["B. Project Structure Language"]
+  B --> C["C. Plain Engineering Action"]
+  C --> D["D. Final Execution Note"]
+```
+
+Rules:
+
+1. `A. User Goal Language` answers the user's actual question first.
+2. `B. Project Structure Language` uses the current repository's capability areas, delivery surfaces, entry points, and responsibility areas.
+3. `C. Plain Engineering Action` describes the action in ordinary engineering terms such as checking whether a design can support development, confirming code and design alignment, or turning confirmed design into a development plan.
+4. `D. Final Execution Note` is the only user-visible place where internal routing names, command names, lifecycle state names, or policy-file trace details may appear.
+5. project structure language must come from current repository truth or terms already used by the user.
+6. project structure language must describe responsibility or delivery meaning, not merely list directory names when a clearer responsibility phrase exists.
+7. if current repository truth does not clearly identify the relevant project structure, say that the structure ownership is unclear instead of inventing a friendly label.
+
 For user-facing communication:
 
 1. describe the user's goal in ordinary language
-2. describe the current project state in ordinary language
-3. describe the next action in ordinary language
+2. describe the current project state through project structure language
+3. describe the next action as a plain engineering action
 4. describe why that action is required by the current project state
 5. describe the expected result of the next action
 6. describe only the remaining blocker that the user can answer or verify
+7. keep internal trace details out of the main answer body
 
 Examples of allowed user-facing questions:
 
@@ -100,6 +120,15 @@ Which specFlow command family owns this?
 ```
 
 The executor may still name internal object families in final or stop reports when doing so helps traceability, but those names must not be the user's required decision vocabulary.
+Those names may appear only in a final execution note after the ordinary project-structure explanation.
+
+When an internal state or command affects user-facing text, translate it before using it in the main answer:
+
+1. `candidate` means a design description that is still being confirmed for the current round.
+2. `stable` means an accepted design baseline.
+3. `unit_check` means checking whether the design description is strong enough to support the next development step.
+4. `unit_plan` means turning the confirmed design into an executable development plan.
+5. `unit_impl` means implementing according to the confirmed plan.
 
 ---
 
@@ -658,6 +687,15 @@ Fixed rules:
 
 When natural language routing is the active entry, the output must include:
 
+1. a user-facing main answer
+2. an execution note when traceability is needed
+
+The user-facing main answer must be understandable without internal specFlow knowledge.
+It must use the language priority defined in Section 2.1.
+It must not present internal command names, lifecycle state names, object-family names, policy-file names, or formal route names as the recommended action.
+
+The execution note may include:
+
 1. the recognized intent
 2. the routed first step or checkpoint type
 3. the repository truth used to make the route
@@ -667,14 +705,20 @@ When natural language routing is the active entry, the output must include:
 7. why that next step is legal
 8. when guidance was routed, the guidance skill selected and whether its expected result is discussion-only or candidate writeback
 
+Execution note rules:
+
+1. it must appear after the user-facing main answer
+2. it must be short enough that it does not become the answer body
+3. it must not be required for the user to understand the current state, next action, reason, expected result, or remaining blocker
+
 ### 11.1 User-Facing Report Contract
 
 The user-facing part of the output must also include ordinary-language statements for:
 
 1. `current state`
-   - what the repository truth says now
+   - what the repository truth says now, expressed through project structure language
 2. `next action`
-   - what will be done first
+   - what will be done first, expressed as a plain engineering action
 3. `why this action`
    - why this is the legal and useful next action
 4. `expected result`
@@ -682,10 +726,11 @@ The user-facing part of the output must also include ordinary-language statement
 5. `remaining gap`
    - what still cannot be claimed after this step, if anything
 
-The output must not make the user understand internal object-family names before they can evaluate the state or next action.
-Internal names may be included as traceability details after the ordinary-language explanation.
+The main answer must not make the user understand internal object-family names, command names, lifecycle state names, or governance-flow names before they can evaluate the state or next action.
+Internal names may be included only in the execution note after the project-structure explanation.
 
 If the output starts an existing standard command, the command's own output contract controls the final close-out.
+That command output must still follow the user-facing language separation required by `specflow/framework/command_policy.md`.
 
 ---
 

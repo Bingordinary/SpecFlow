@@ -98,7 +98,8 @@ Additional rules:
 The default user-facing entry is natural language.
 
 Natural-language entry is a user-goal governance entry, not a command-alias system.
-It diagnoses the user's goal, reads the current repository truth needed for routing, chooses the legal specFlow route internally, and reports the current state and next action in ordinary language.
+It diagnoses the user's goal, reads the current repository truth needed for routing, chooses the legal specFlow route internally, and reports the current state and next action through user-goal language, project-structure language, and plain engineering action language.
+Internal routing names are trace details, not the user's required decision language.
 
 Natural-language requests must follow:
 
@@ -113,7 +114,7 @@ Rules:
 4. if the request can be safely decomposed, only the first smallest legal step may be entered in the current handling round
 5. natural-language routing may assemble an internal chain across multiple existing command families or governance flows, but that chain is not permission to skip a command gate or continue after the first step without rerouting from current truth
 6. if the request is missing target, scope, success meaning, acceptance meaning, or boundary truth, the executor must stop through the checkpoint protocol instead of guessing
-7. checkpoint questions and ordinary user-facing route reports must not require the user to choose internal object-family names or internal shared-governance flow names
+7. checkpoint questions and ordinary user-facing route reports must not require the user to choose internal object-family names, command names, lifecycle state names, or internal shared-governance flow names
 8. if the request touches cross-unit shared truth, route into the shared-governance branch defined by `natural_language_routing.md`
 9. direct shared command shapes are not user-facing command forms
 
@@ -270,6 +271,17 @@ This block must report at least:
 5. `next-stage entry gap`
 6. when the command enters a checkpoint or another explicit resumable stop, it must also report `resume signal`
 7. individual command files may add stricter fields or wording requirements, but they must not delete the fixed fields defined here
+
+User-facing close-out language rules:
+
+1. the block must be understandable without internal specFlow knowledge
+2. it must use user-goal language first, project-structure language second, and plain engineering action language third
+3. project-structure language means the current repository's capability areas, delivery surfaces, entry points, and responsibility areas as proven by current repository truth or named by the user
+4. project-structure language must not become a raw directory listing when a responsibility phrase is available
+5. if current repository truth does not clearly identify the relevant project structure, the block must say that structure ownership is unclear instead of inventing a friendly label
+6. internal command names, lifecycle state names, object-family names, policy-file names, and formal route names must not appear as the recommended action in the user-facing block unless the user explicitly asked for those internal details
+7. traceability details may appear only in a short execution note after the user-facing close-out block
+8. the execution note may record internal state, command names, file paths, and policy inputs, but it must not be required for the user to understand the conclusion, next step, reason, or remaining gap
 
 ## 9. Non-Goals
 
