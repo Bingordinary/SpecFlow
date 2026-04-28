@@ -11,32 +11,38 @@
 
 **English** · [简体中文](./README.zh-CN.md)
 
-[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [How To Use It](#how-you-actually-use-it) · [Shared Truth](#when-work-stops-being-unit-local) · [Advanced Usage](#advanced-usage)
+[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [Core Concepts](#core-concepts) · [Natural-Language Guidance](#natural-language-guidance) · [Reader Progress View](#reader-progress-view) · [Manual Commands](#when-you-need-manual-commands) · [Advanced Usage](#advanced-usage)
 
 ---
 
-`specFlow` makes AI-assisted development feel like engineering again: instead of letting requirements dissolve into chat logs, code diffs, and personal memory, it gives every governed unit a current truth, a next truth, and a clear path from idea to verified change. Humans and agents can move fast together while the repository still knows what is true, what is changing, and what is ready to ship. It is not a rigid template, but a strong working skeleton you can adapt and sharpen for your own domain.
+`specFlow` makes AI-assisted development feel like engineering again: instead of letting requirements dissolve into chat logs, code diffs, and personal memory, it gives every governed unit a current truth, a next truth, and a clear path from idea to verified change. Humans and agents can move fast together while the repository still knows what is true, what is changing, and what is ready to ship.
+
+It is not a fixed business template, and it does not force every team to write the same documents.
+It is an engineering collaboration skeleton: requirements enter repository truth first, then planning, implementation, verification, and promotion follow that truth.
 
 ## What Problem It Solves
 
-> When the code moves fast, truth has to move slower.
+> When code moves fast, truth must not drift.
 
 Many AI-assisted projects eventually hit the same problems:
 
 - the real requirement only exists in chat history
-- different people understand the same feature differently
-- code changed, but nobody can clearly say whether behavior is still correct
-- each person or agent uses a different working style, so the process becomes hard to trust
+- different people or agents understand the same feature differently
+- code changed, but nobody can clearly state the official behavior now
+- work moves quickly in the moment, but later it is hard to know whether the change actually closed
 
-`specFlow` solves that by making one thing explicit:
+`specFlow` handles that directly:
 
-- the behavior source of truth should live in files
+- put behavior truth in repository files
+- make the agent read current truth before moving work forward
+- keep design, planning, implementation, verification, and promotion aligned to the same truth
 
-Then it adds a small command set around that truth, so design, planning, implementation, verification, and promotion do not drift apart.
+The point is not to add documentation burden.
+The point is to stop the project from depending only on chat memory and reverse-engineering intent from code.
 
 ## How specFlow Is Used
 
-> Runtime-driven. Unit-governed. Spec-first.
+> Runtime-driven. Spec-first. Humans own goal judgment.
 
 `specFlow` is not a standalone runtime.
 
@@ -48,44 +54,49 @@ It is a governance layer that works together with an agentic runtime, such as:
 
 In plain language:
 
-- `specFlow` provides the working rules
-- the runtime reads those rules and executes the work
+- `specFlow` defines how work should move inside the repository
+- the runtime reads those rules and performs file edits, code changes, and verification
+- humans state the goal, confirm important boundaries, and accept or redirect the result
 
-`specFlow` is also unit-governed.
-
-That means:
-
-- the basic working target is a formal `unit`
-- Specs, planning, implementation, verification, and promotion are normally organized per unit
+You do not need to memorize every command on day one.
+The recommended entry is now natural language: say what you want to accomplish, and the agent should guide the request to the right next step from current repository truth.
 
 ## Start Here
 
-> Learn the shortest path first. Expand later.
+If you are new to `specFlow`, understand it in this order:
 
-If you are new, do not try to understand the whole system first.
+1. first understand why it exists: requirements and behavior truth should live in the repository
+2. then complete the smallest installation path: copy `specflow/` into your project and run `init`
+3. learn only the core concepts: `Spec`, `stable`, `candidate`, `unit`, `scenario`, and `shared`
+4. use natural language for daily work
+5. use Reader to inspect progress and object relationships
+6. learn manual commands only when you need exact control
 
-Read in this order:
+The goal is to start using it correctly before learning every internal mechanism.
 
-1. `Add To Your Repository`
-2. `Quick Start`
-3. `How You Actually Use It`
-4. `The Core Model`
-5. `The 3-Minute Flow`
-6. `When You Need Manual Control`, only when you actually need it
+```mermaid
+flowchart LR
+    A["A. Understand the purpose"] --> B["B. Add it to the repository"]
+    B --> C["C. Learn the minimum concepts"]
+    C --> D["D. Start with natural language"]
+    D --> E["E. Inspect progress in Reader"]
+    E --> F["F. Use manual commands when needed"]
+```
 
-That is enough to start using `specFlow`.
+How to read this:
 
-If later you want to understand how to customize the rules or use the deeper governance features, jump to `Advanced Usage`.
+- `A. Understand the purpose` means knowing why repository truth matters
+- `D. Start with natural language` is the normal daily entry
+- `E. Inspect progress in Reader` shows where the project currently stands
+- `F. Use manual commands when needed` is for exact control
 
 ## Add To Your Repository
-
-> First place `specflow/` in your repository. Then run `init`.
 
 For most teams, the default setup is enough:
 
 1. clone this repository somewhere else
 2. copy only the `specflow/` directory into your project root
-3. run `init`
+3. run `init` from your project root
 
 Shell example:
 
@@ -101,535 +112,393 @@ git clone https://github.com/Bingordinary/SpecFlow.git $env:TEMP\SpecFlow
 Copy-Item -Recurse -Force $env:TEMP\SpecFlow\specflow .\specflow
 ```
 
-If you need a long-term upstream sync workflow, treat that as advanced maintenance and see [tooling/README.md](./tooling/README.md) plus the repository history strategy you prefer.
+If you need a long-term upstream sync workflow, treat that as a maintenance concern.
+See [tooling/README.md](./tooling/README.md) for tooling details.
 
 ## Quick Start
 
-> Bootstrap the files, then let the runtime follow the flow.
-
-After the `specflow/` directory is in your repository, run this from the repository root:
+After `specflow/` is in your repository, run this from the repository root:
 
 ```bash
 <specflow-binary> init
 ```
 
-For all command examples below, `<specflow-binary>` means the compiled executable that matches your platform under `specflow/tooling/bin/`.
-See [tooling/README.md](./tooling/README.md) for the exact filenames.
+In this document, `<specflow-binary>` means the platform-matching `specflowctl` executable under `specflow/tooling/bin/`.
+See [tooling/README.md](./tooling/README.md) for exact filenames.
 
-This installs the basic structure you need:
+`init` installs the basic structure:
 
-- `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`
+- `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md`
 - `docs/specs/`
-  - including unit Specs, appendix files, and process-state files
 - `.githooks/pre-commit`
-- supporting files used by the workflow
+- other workflow support files
 
-One clarification:
-
-- `init` creates the hook file under `.githooks/pre-commit`
-- Git will not automatically use that folder unless `core.hooksPath` points to `.githooks`
-
-If you want Git to actually use the installed hook, run:
+If you want Git to use the installed hook, run:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-From this point on, a beginner usually does not need to start by memorizing commands.
+After this step, beginners usually do not need to memorize commands first.
+You can tell the agent:
 
-If your runtime reads the installed instruction files, the normal day-one experience can be natural language:
+```text
+Add rate limiting to auth.
+The checkout refund behavior changed. Update truth first, then implement it.
+Check whether search still matches the accepted truth.
+This rule will be reused by multiple modules. Help me decide where it belongs.
+```
 
-- "Add rate limiting to the auth module."
-- "This checkout behavior changed. Update the truth first, then implement it."
-- "Check whether current code still matches the accepted truth."
+The agent should read the installed entry files and current repository truth, then decide whether the next step is writing Spec truth, checking a boundary, creating a plan, implementing code, verifying behavior, or asking one required clarification.
 
-The runtime should route that intent into the correct internal `specFlow` flow.
+## Core Concepts
 
-## How You Actually Use It
+These are enough to start.
 
-After `init`, you normally use `specFlow` in one of three ways:
+`Spec` is behavior truth written in the repository.
+It is not ordinary explanatory text; implementation and verification should follow it.
 
-1. say what you want in natural language
-2. let the runtime route it into the right `specFlow` step
-3. when you want exact control, use the matching command yourself
+`stable` is the current accepted truth.
+If the project officially accepts a behavior, the matching `stable` file should say so.
 
-Before you push one `unit` or `scenario`, first make sure the repository structure is understandable.
+`candidate` is the next truth currently being prepared.
+New requirements, behavior changes, and boundary changes usually enter `candidate` first, then become `stable` after acceptance.
 
-- the current structure truth lives in `docs/specs/repository_mapping.md`
-- this file is not a command object and has no `stable` or `candidate` lifecycle
-- if the repository is brand-new, unfamiliar, or structurally changed, update this file first
-- it must state `Project Overview`, `Governed Object Map`, `Boundary Rules`, `Path Ownership`, `Global Constraint Alignment`, and `Drift Handling`
-- later `unit` and `scenario` work uses this file as the map for path ownership and object boundaries
+`unit` is one engineering responsibility that can be described, implemented, and verified independently.
+It does not automatically equal a directory, package, or service.
 
-What makes this spec-driven is simple:
+`scenario` is an end-to-end result path.
+When the question is whether a user-visible chain works from trigger to outcome, rather than whether one local capability works, a `scenario` may be needed.
 
-- the current accepted truth of one unit lives in `docs/specs/units/stable/s_unit_{unit}.md`
-- the next truth being prepared lives in `docs/specs/units/candidate/c_unit_{unit}.md`
+`shared` is truth reused by more than one object.
+If the same formal rule is used by multiple `unit` or `scenario` objects, it should not be copied everywhere; it should become shared truth.
 
-The main document you write is that unit Spec file.
+`repository_mapping.md` is repository structure truth.
+It explains how paths, objects, and responsibility boundaries connect, so the agent does not guess ownership from directory names alone.
 
-A formal unit Spec should cover at least:
+`_status.md` is the state index.
+It records each object's current layer and next step, but it does not contain behavior rules.
 
-- unit goal and boundary
-- key terminology
-- data structures and protocols
-- state machine and main flow
-- edge cases and error handling
-- verifiability and acceptance criteria
-
-If the unit depends on shared truth or global constraints, the Spec also needs to record that alignment explicitly.
-
-Read the three cases below as one rough story about the same unit over time.
-This is intentionally simplified.
-The point is to show the lifecycle shape, not every exact rule.
+The smallest model looks like this:
 
 ```mermaid
 flowchart LR
-    A["A. first version"] --> B["B. next version"]
-    B --> C["C. later alignment check"]
+    A["A. stable current truth"] --> B["B. candidate next truth"]
+    B --> C["C. implementation and verification"]
+    C --> D["D. promote into new stable"]
+    D --> A
+```
+
+The key points:
+
+- `A. stable current truth` is the behavior already accepted now
+- `B. candidate next truth` is the behavior being changed in this round
+- `C. implementation and verification` must follow the candidate
+- `D. promote into new stable` means the round has been accepted
+
+## Natural-Language Guidance
+
+Natural-language guidance is the recommended daily entry.
+
+You do not need to decide which command to use first.
+You state the result you want, and the agent routes the request from current repository truth.
+
+Here, "route" simply means deciding the next step that is legal now.
+For example: write Spec truth, check the current design, create a plan, implement, verify, or ask you because a boundary is unclear.
+
+```mermaid
+flowchart LR
+    A["A. You describe the goal"] --> B["B. Agent reads repository truth"]
+    B --> C["C. Agent decides the next step"]
+    C --> D["D. Agent performs the current legal action"]
+    C --> E["E. Agent asks when boundaries are unclear"]
+    D --> F["F. Reader shows progress"]
 ```
 
 How to read this:
 
-- `A. first version` is when the unit is created for the first time.
-- `B. next version` is when that same unit changes later.
-- `C. later alignment check` is when you want confidence that current code still matches the accepted truth.
+- `A. You describe the goal` is your ordinary-language request
+- `B. Agent reads repository truth` means the agent checks current Specs, state, and repository structure
+- `C. Agent decides the next step` selects the smallest legal current action
+- `E. Agent asks when boundaries are unclear` prevents the agent from guessing business ownership
+- `F. Reader shows progress` lets you inspect the project state visually
 
-One note before the story:
+### How To Ask Clearly
 
-- if the unit already existed before `specFlow`, use `unit_init:{unit}` once to capture its current accepted behavior as the first governed `stable`
-- after that, the unit behaves like the story below
+Natural language does not mean every short sentence is enough.
+The request is easier to route when it says three things:
 
-### Case 1: The First Version Of A Unit
+- what result you want
+- what this round includes and excludes
+- what would prove the work is complete
 
-What you say:
-
-- "Create a new unit for search."
-
-If you want exact control:
-
-```text
-unit_new:search
--> write docs/specs/units/candidate/c_unit_search.md
--> unit_check:search
--> unit_plan:search
--> unit_impl:search
--> unit_verify:search
--> unit_promote:search
-```
-
-What those commands are doing:
-
-- `unit_new` creates the first `candidate` for the new unit
-- then you or the runtime write the actual candidate content into `c_unit_search.md`
-- `unit_check` makes sure that written candidate truth is closed enough to guide work
-- `unit_plan` turns that truth into an implementation plan
-- `unit_impl` writes code against that candidate
-- `unit_verify` checks whether the code matches the candidate
-- `unit_promote` turns the accepted candidate into the new `stable`
-
-When you write the document content:
-
-- right after `unit_new`, the file exists but it still needs real content
-- this is where you write the first candidate design in `c_unit_search.md`
-- the minimum useful content is:
-  - what the unit is for
-  - what inputs and outputs it owns
-  - what the main flow is
-  - what edge cases matter
-  - how you will know the result is correct
-- only after that does `unit_check` have something real to judge
-- if `unit_check` says the candidate is still incomplete, you keep editing the same candidate file until it is closed enough
-
-What `specFlow` adds here:
-
-- the new unit does not begin as "just some new code"
-- the repository gets a written first version of the unit's behavior before implementation drifts
-- later agents can see what the unit was supposed to do, not just what happened to get coded first
-
-### Case 2: The Next Version Of That Same Unit
-
-What you say:
-
-- "Update search so typo correction runs before ranking."
-
-If you want exact control:
+You can say:
 
 ```text
-unit_fork:search
--> edit docs/specs/units/candidate/c_unit_search.md
--> unit_check:search
--> unit_plan:search
--> unit_impl:search
--> unit_verify:search
--> unit_promote:search
+I want to add refund status tracking to checkout.
+This round only covers refund state transitions. Do not change payment gateway integration.
+Completion means users can see refund pending, refund succeeded, and refund failed.
+If the boundary is unclear, ask me first instead of guessing.
 ```
 
-What those commands are doing:
-
-- `unit_fork` opens a new `candidate` from the current `stable`
-- then you or the runtime edit `c_unit_search.md` to describe the next version
-- `unit_check` confirms that edited next truth is clear enough
-- `unit_plan`, `unit_impl`, and `unit_verify` move that next truth into code and verify it
-- `unit_promote` makes the next truth become the new accepted `stable`
-
-When you write the document content:
-
-- `unit_fork` gives you a starting point by deriving the candidate from the current stable truth
-- then you edit the candidate file to describe what changes in this round
-- this is where you update things such as:
-  - changed protocol or field meaning
-  - changed main flow
-  - new validation or error behavior
-  - new acceptance criteria
-- `unit_check` is the point where the system asks "is this updated candidate written clearly enough to drive the implementation round"
-- if the answer is no, you go back to the same candidate file and keep refining it
-
-What `specFlow` adds here:
-
-- it separates current accepted behavior from next behavior being prepared
-- the repository does not have to guess after the fact whether the code change was a bug fix, a behavior change, or an unfinished idea
-- another agent can read the current truth and the next truth directly instead of reconstructing intent from diffs and chat logs
-
-### Case 3: Later You Recheck Whether It Is Still Aligned
-
-What you say:
-
-- "Check whether the search unit still matches the accepted truth."
-
-If you want exact control:
+Or shorter:
 
 ```text
-read docs/specs/units/stable/s_unit_search.md
--> unit_stable_verify:search
+Change search ranking so relevance comes before updated time. Update truth first, then implement.
 ```
 
-If drift exists and you want to start the next change round:
+If you do not know where to start, say that directly:
 
 ```text
-unit_fork:search
--> edit docs/specs/units/candidate/c_unit_search.md
--> unit_check:search
+I want to change the login security policy, but I am not sure what should move first. Read current project truth and tell me the next step.
 ```
 
-What that command is doing:
+### Common Entry Examples
 
-- it checks the current implementation against the current accepted `stable`
-- it does not start a new candidate round just because you asked for verification
-- if drift exists, that drift must be handled before anyone claims stable alignment
+New capability:
 
-What `specFlow` adds here:
-
-- verification becomes an explicit repository action, not only a conversational judgment
-- the project gets a clear answer to "still aligned" versus "drift exists"
-- that makes it easier to trust the result later, especially when a different person or a different agent revisits the unit
-
-The beginner takeaway is simple:
-
-- first version of a new unit: `unit_new` + candidate chain
-- next version of an existing governed unit: `unit_fork` + candidate chain
-- later alignment check: `unit_stable_verify`
-- historical unit entering governance for the first time: `unit_init`
-
-You can still start in natural language.
-These command names are the exact handles behind that lifecycle.
-
-## The Core Model
-
-> One accepted truth. One next truth.
-
-There are only two core states a beginner needs first:
-
-- `stable`: the behavior that the project currently treats as true
-- `candidate`: the next version of behavior that is being prepared
-
-```mermaid
-flowchart LR
-    A["A. stable"] --> B["B. open candidate"]
-    B --> C["C. candidate"]
-    C --> D["D. implement and verify"]
-    D --> E["E. promote"]
-    E --> A
+```text
+Add a search capability. Write the first behavior truth before implementation.
 ```
 
-How to read this:
+Evolve existing capability:
 
-- `A. stable` is the currently accepted version.
-- `C. candidate` is the next version being shaped.
-- `D. implement and verify` happens around the candidate.
-- `E. promote` turns the accepted candidate into the new stable.
-
-## The 3-Minute Flow
-
-> Learn the work pattern first. Learn the command names later.
-
-If you only want the shortest useful model, remember this sequence:
-
-1. write or update the behavior truth
-2. make sure that truth is clear enough to guide work
-3. implement against that truth
-4. verify the code against that truth
-5. promote the verified next truth into the accepted version
-
-```mermaid
-flowchart LR
-    A["A. write truth"] --> B["B. close the truth enough to work"]
-    B --> C["C. implement"]
-    C --> D["D. verify"]
-    D --> E["E. promote"]
+```text
+Update search so typo correction runs before ranking.
 ```
 
-How to read this:
+Check whether implementation still aligns:
 
-- `A. write truth` means the behavior should become explicit in files first.
-- `B. close the truth enough to work` means the repository should not rely on chat memory for key decisions.
-- `C. implement` and `D. verify` happen against that written truth.
-- `E. promote` makes the accepted next version become the current baseline.
+```text
+Check whether search still matches the accepted truth.
+```
 
-This is what `specFlow` is trying to protect.
+Reuse one rule across multiple objects:
 
-The command system exists to make this sequence explicit and reviewable.
-But for a beginner, the sequence matters more than the exact command names.
+```text
+This error-code rule will be used by auth and checkout. Decide whether it should stay in one unit or become shared truth.
+```
 
-At repository scope, the same rule starts one step earlier: update `docs/specs/repository_mapping.md` first when the repository still does not clearly say how governed paths map to formal objects.
+Review the governance mechanism itself:
 
-## When You Need Manual Control
+```text
+Check whether the current specFlow rules leave the agent unclear about the next step anywhere.
+```
 
-Manual control matters only when:
+## Reader Progress View
 
-- you want to drive the exact step yourself
-- the runtime did not route your request the way you expected
-- you are debugging governance state for a unit
+`specflow-reader` is a read-only local view.
+It helps you inspect current project state; it does not edit files and does not advance lifecycle state.
 
-Most manual control starts from four common entry decisions:
+Start it with:
 
-| Situation | Use this command |
+```bash
+<specflow-reader-binary> serve --repo-root . --addr 127.0.0.1:17863
+```
+
+`<specflow-reader-binary>` means the platform-matching `specflow-reader` executable under `specflow/tooling/bin/`.
+
+Reader answers questions like:
+
+- which `unit`, `scenario`, and `shared` objects exist now
+- which objects already have accepted truth and which are preparing next truth
+- what each object's next step is
+- how Spec documents, shared rules, and implementation paths connect
+- which source file produced a displayed state or relationship
+
+The three common views are:
+
+- `Status`: object layer and next step
+- `Project Structure`: path ownership and implementation locations
+- `SpecFlow`: relationships among Specs, shared rules, system constraints, and support files
+
+Important boundaries:
+
+- Reader only reads repository truth
+- Reader does not decide which governance flow a request should enter
+- Reader does not write page conclusions back into project files
+- if files are missing or malformed, Reader should report diagnostics instead of repairing them silently
+
+The usual workflow is:
+
+1. ask the agent to move work forward in natural language
+2. the agent reads or updates repository truth
+3. open Reader to inspect object state, next step, and related files
+4. if the state is unexpected, ask the agent to explain or correct it
+
+## When You Need Manual Commands
+
+Most of the time, start with natural language.
+Use explicit commands only when:
+
+- you want to choose the exact current step
+- the agent's route does not match your expectation
+- you are debugging one object's governance state
+- you are writing automation or a fixed process
+
+Common entries:
+
+| Situation | Common action |
 | --- | --- |
-| establish or refresh repository structure truth for a brand-new, changed, or still-unfamiliar repository | update `docs/specs/repository_mapping.md` |
-| bring an existing historical unit into governance for the first time | `unit_init:{unit}` |
-| start a brand-new unit | `unit_new:{unit}` |
-| change a unit that already has governed `stable` truth | `unit_fork:{unit}` |
+| New, unfamiliar, or structurally changed repository | update `docs/specs/repository_mapping.md` |
+| Existing capability entering governance for the first time | `unit_init:{unit}` |
+| Brand-new capability entering governance | `unit_new:{unit}` |
+| Accepted capability opening a new change round | `unit_fork:{unit}` |
+| Check whether implementation still matches accepted truth | `unit_stable_verify:{unit}` |
 
-After that, the normal candidate chain is:
+Once an object enters the candidate chain, the common order is:
 
 ```text
 unit_check -> unit_plan -> unit_impl -> unit_verify -> unit_promote
 ```
 
-There is also one stable-side maintenance step:
+Meaning:
 
-```text
-unit_stable_verify
-```
+- `unit_check`: check whether next truth is clear enough
+- `unit_plan`: turn truth into an implementation plan
+- `unit_impl`: implement according to the plan
+- `unit_verify`: verify implementation against truth
+- `unit_promote`: promote the accepted next truth into stable truth
 
-Use `unit_stable_verify:{unit}` only when the unit is currently on `stable`, but you need to check whether the code still matches that accepted truth.
-
-If you want one compact picture:
-
-```mermaid
-flowchart LR
-    A["A. unit_init or unit_new or unit_fork"] --> B["B. unit_check"]
-    B --> C["C. unit_plan"]
-    C --> D["D. unit_impl"]
-    D --> E["E. unit_verify"]
-    E --> F["F. unit_promote"]
-```
-
-This is the explicit control surface.
-You only need it when natural-language routing is not enough.
-
-## When To Read `_status.md`
-
-`docs/specs/_status.md` is the project state index.
-
-You normally look at it only when one of these is true:
-
-- the project has many units
-- you are not sure which layer one unit is currently on
-- you want to know the default next step for that unit
-
-```mermaid
-flowchart LR
-    A["A. not sure where one unit currently stands"] --> B["B. read docs/specs/_status.md"]
-    B --> C["C. find Active Layer"]
-    C --> D["D. find Next Command"]
-```
-
-How to read this:
-
-- `B. read docs/specs/_status.md` tells you the current recorded state.
-- `C. find Active Layer` tells you whether the unit is currently on `stable` or `candidate`.
-- `D. find Next Command` tells you the default next legal step.
-
-In normal use, `_status.md` is for reading state, not for manual scratch edits.
+Manual commands are an exact control surface.
+They are not the first thing a new user must memorize.
 
 ## When Work Stops Being Unit-Local
 
-Most work should stay unit-local for as long as possible.
+Most truth should start inside the current `unit`.
+Do not extract shared truth only because something might be reused later.
 
-There are three different places truth can live:
+Use this rough judgment:
 
-- the unit main spec
-- the unit appendix
-- cross-unit shared truth
+- one capability's own behavior: put it in that `unit` Spec
+- detailed evidence, protocol expansion, or history for one capability: put it in that `unit` appendix
+- formally reused by multiple objects: consider shared truth
+- repository-wide defaults, prohibitions, or global exceptions: consider system constraints
 
-```mermaid
-flowchart LR
-    A["A. unit main spec"] --> B["B. unit appendix"]
-    B --> C["C. shared natural-language intent"]
-    C --> D["D. natural-language routing"]
-    D --> E["E. shared governance"]
+If you are unsure, ask naturally:
+
+```text
+This rule may be reused by multiple modules. Decide whether it should stay in the current unit or become shared truth.
 ```
 
-How to read this:
-
-- `A. unit main spec` is the main home for one unit's behavior.
-- `B. unit appendix` is still one unit's truth, just expanded out of the main file.
-- `D. natural-language routing` is where the runtime decides whether the truth is no longer only about one unit.
-- `E. shared governance` is the internal branch that chooses the correct shared flow.
-
-Use this rule:
-
-- first appearance stays in the current unit
-- do not extract something into shared just because it may be reused later
-- move into shared only when multiple units really depend on the same truth
-
-### How To Work With Shared Truth
-
-Shared work starts from natural language.
-There is no separate user-facing shared command to memorize.
-
-Describe the shared intent when you want to:
-
-- design shared truth from the start
-- extract already-written unit truth into a shared contract
-- bind a unit to an existing shared contract
-- change shared topology such as split, merge, rename, or retire
-- check which units are affected after a shared-contract change
-
-The important idea is simple:
-
-- you describe the shared intent
-- the runtime chooses the internal shared flow
-- if the route is unsafe or ambiguous, it must stop at a checkpoint instead of guessing
+The agent should read current repository truth before deciding.
+If the boundary is unclear, it should ask instead of guessing.
 
 ## Advanced Usage
 
-Once basic usage makes sense, this is the section that helps you understand the whole system and adapt it to your own project.
+Read this section after the basics are clear.
+It explains how the system is maintained and extended.
 
-The advanced part is mainly about four things:
+### Project Structure
 
-- understanding the document structure
-- knowing which files you should customize
-- adding project-local standards
-- knowing which governance flows exist beyond the standard unit commands
-
-### The Project Structure
-
-At a high level, the repository splits into four layers:
+At a high level, a repository with `specFlow` has four kinds of content:
 
 ```mermaid
 flowchart TD
-    A["A. tooling"] --> B["B. bootstrap and maintenance"]
-    C["C. templates root"] --> D["D. files installed into the host project"]
-    E["E. framework docs"] --> F["F. baseline governance rules and command docs"]
-    G["G. host project docs and entry files"] --> H["H. your project-specific truth and standards"]
+    A["A. specflow/tooling"] --> B["B. init, checks, and read-only views"]
+    C["C. specflow/framework"] --> D["D. specFlow governance rules"]
+    E["E. specflow/templates"] --> F["F. templates installed into the host project"]
+    G["G. docs and entry files"] --> H["H. project truth and project standards"]
 ```
 
 How to read this:
 
-- `A. tooling` installs, checks, and upgrades the paradigm.
-- `C. templates root` is the material copied into the target repository.
-- `E. framework docs` is the baseline rule system of `specFlow` itself.
-- `G. host project docs and entry files` is where your project expresses its own truth and standards.
+- `A. specflow/tooling` owns `init`, `doctor`, `upgrade`, and Reader
+- `C. specflow/framework` is the specFlow rule baseline
+- `E. specflow/templates` contains files installed into the host project
+- `G. docs and entry files` is where your project expresses truth, standards, and collaboration entry instructions
 
-### What You Normally Customize
+### What You Usually Edit
 
-The safe beginner rule is:
-
-- change project-owned files first
-- change framework files only when you intentionally want to evolve the paradigm itself
-
-Most teams mainly customize:
+Most teams usually edit:
 
 - `docs/specs/**`
 - `docs/project_standards/**`
 - the project-owned parts of `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md`
 
-### Project-Specific Standards
+Only edit these when you are intentionally changing `specFlow` itself:
 
-`specFlow` allows a project to add its own local standards on top of the framework baseline.
+- `specflow/framework/**`
+- `specflow/templates/**`
+- `specflow/tooling/**`
+- `specflow/README*.md`
 
-These standards live in:
+### Project Standards
+
+`specFlow` allows a project to add its own standards on top of the framework baseline.
+
+Those standards usually live in:
 
 - `docs/project_standards/`
 - `docs/project_standards/_registry.md`
 
-One important rule:
+The important rule:
 
-- a standard file is not active just because it exists
+- a standard file does not become active just because it exists
 - it becomes active only after it is registered in `_registry.md`
 
-In normal use, you usually do not need to build these files by hand.
-The simplest path is to ask the agent in plain language.
+In normal use, you do not need to build these files manually from nothing.
+You can ask the agent to create or update them from your project rules.
 
-### Maintenance Tools
+### Maintenance Tooling
 
-The tooling surface is useful, but it is not the first thing a beginner needs to learn.
-
-The most common maintenance commands are:
+The tooling layer performs deterministic maintenance actions.
+Common commands are:
 
 - `init`
 - `doctor`
 - `upgrade`
 
+Reader also lives in the tooling layer, but it is read-only.
 See [tooling/README.md](./tooling/README.md) for the full tooling surface.
 
 ### Advanced Flows
 
-Besides the standard unit commands, `specFlow` also has advanced flows.
+Beyond unit commands, `specFlow` has governance-oriented flows.
 
-Two you should know exist are:
+The most common ones are:
 
 - `spec_flow_review`
+- `spec_flow_design_review`
 - natural-language shared governance
 
-Use `spec_flow_review` when you want to review the governance system itself rather than move one business unit forward.
-Its default scope now covers both the governance baseline documents and the governance tooling implementation under `specflow/tooling/`.
+Use these when reviewing the governance system itself, not when simply moving one business capability forward.
 
-### What To Read If You Want The Full Baseline
+### Reading The Full Baseline
 
 If you want to deeply understand or redesign the system, read in this order:
 
-1. `framework/spec_policy.md`
-2. `framework/command_policy.md`
-3. `framework/natural_language_routing.md`
+1. `framework/natural_language_routing.md`
+2. `framework/spec_policy.md`
+3. `framework/command_policy.md`
 4. `framework/git_policy.md`
-5. the shared-governance flow docs under `framework/shared_*.md`
+5. `framework/shared_*.md`
 6. `framework/spec_flow_review.md`
-7. the command docs under `framework/commands/`
-8. the installed project-side files under `docs/`
+7. `framework/commands/`
+8. the installed project-side `docs/` files
 
 ## File Ownership
 
 `specFlow` has two ownership modes:
 
 - `framework`
-  - `specFlow` owns the file shape
+  - `specFlow` manages the file structure
   - `upgrade` may refresh it
 - `project`
-  - your repository owns it after bootstrap
-  - `upgrade` must not overwrite an existing project-owned file
+  - after initialization, this belongs to your project
+  - `upgrade` should not overwrite existing project files directly
 
-This matters because `specFlow` is meant to be adapted, not to control the entire repository forever.
+Entry files such as `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md` use a managed block model.
+That means `specFlow` owns its block, while your project can keep long-term instructions outside that block.
 
-Files like `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md` use a managed block model, so the host project can keep its own instructions outside the `specFlow` block.
+## When It May Be Too Heavy
 
-## When Not To Use It
+`specFlow` may be too much if:
 
-`specFlow` is probably too heavy if:
+- the project is very small
+- the team does not want formal behavior truth in files
+- you do not need `stable` and `candidate` layers
+- you do not need humans and AI agents to follow the same long-term collaboration model
 
-- your project is very small
-- your team does not want formal behavior truth in files
-- you do not need `stable` and `candidate`
-- you do not need humans and AI to follow one shared operating model
+If you only want an agent to make a few temporary code edits, `specFlow` may not be the shortest path.
+If you want a project to be maintained by multiple people and multiple agents over time, it starts to pay off.
