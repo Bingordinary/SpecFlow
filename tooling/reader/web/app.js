@@ -8,6 +8,7 @@ let activeDocMode = "rendered";
 let mermaidReady = false;
 let activeSpecflowNavGroup = "unit";
 let snapshotRequestInFlight = false;
+let snapshotDataSignature = "";
 
 const LANGUAGE_STORAGE_KEY = "specflow-reader-language";
 const SUPPORTED_LANGUAGES = ["zh-CN", "en"];
@@ -391,7 +392,7 @@ const truthTab = document.getElementById("truth-tab");
 const truthPanel = document.getElementById("truth-panel");
 const languageSelect = document.getElementById("language-select");
 
-document.getElementById("refresh-button").addEventListener("click", loadSnapshot);
+document.getElementById("refresh-button").addEventListener("click", refreshReader);
 languageSelect.value = currentLanguage;
 languageSelect.addEventListener("change", () => setLanguage(languageSelect.value));
 document.querySelectorAll(".tab").forEach((button) => {
@@ -476,11 +477,32 @@ async function loadSnapshot() {
   snapshotRequestInFlight = true;
   try {
     const response = await fetch("/api/snapshot");
-    snapshot = await response.json();
-    render();
+    const nextSnapshot = await response.json();
+    const nextSignature = snapshotSignature(nextSnapshot);
+    if (!snapshot || nextSignature !== snapshotDataSignature) {
+      snapshot = nextSnapshot;
+      snapshotDataSignature = nextSignature;
+      render();
+    }
   } finally {
     snapshotRequestInFlight = false;
   }
+}
+
+async function refreshReader() {
+  const openPath = sourcePath.textContent.trim();
+  await loadSnapshot();
+  if (openPath && isReadableOriginalPath(openPath)) {
+    await openSource(openPath, { activate: activeInspectorTab === "truth" });
+  }
+}
+
+function snapshotSignature(value) {
+  if (!value) return "";
+  const comparable = { ...value };
+  delete comparable.version;
+  delete comparable.generated_at;
+  return JSON.stringify(comparable);
 }
 
 function render() {
