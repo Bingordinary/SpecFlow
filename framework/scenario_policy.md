@@ -14,10 +14,24 @@ It answers five questions:
 
 ## 2. Object Definition
 
-`scenario_xxx` is the formal trigger-to-outcome chain object.
+`scenario_xxx` is the formal trigger-to-outcome chain object and the end-to-end user-result contract.
+
+Its practical value is cross-unit closure.
+Unit verification proves that one unit satisfies its own truth.
+Scenario verification proves that the required units, shared contracts, and baseline constraints work together from a declared trigger to the promised user-visible result.
 
 It is the normal formal anchor for a user-visible end-to-end outcome, but it is not the mandatory starting point for every user request.
 Natural-language routing decides whether the user's goal requires a scenario, a local unit route, shared governance, system-constraint handling, repository mapping, implementation classification, or explanation only.
+
+A `scenario` is required when at least one of these is true:
+
+1. the user's goal promises a user-visible result that crosses more than one unit responsibility
+2. the success result cannot be proven by one unit's local verification alone
+3. the request asks to verify a declared path, integration, or user flow from input to final result
+
+A `scenario` must not be created merely because several files, directories, units, or implementation tasks are mentioned.
+When current repository truth proves that a local unit result is sufficient, the route must stay local.
+When the request is only about a rule reused by more than one formal object, the route must test shared governance instead of creating a scenario by default.
 
 It answers:
 
@@ -34,6 +48,7 @@ It does not answer:
 2. shared-contract field-level body text
 3. repository-wide mapping rules
 4. implementation ownership for code edits
+5. unit implementation planning or unit-local verification
 
 ## 3. Files
 
@@ -76,7 +91,7 @@ User-facing routing rule:
 `scenario` owns:
 
 1. trigger-to-outcome closure
-2. end-to-end verification
+2. cross-unit end-to-end verification
 3. promotion of candidate scenario truth into stable scenario truth
 
 It does not own:
@@ -84,6 +99,7 @@ It does not own:
 1. implementation planning
 2. implementation editing
 3. unit-local repair
+4. unit-local acceptance replacement
 
 Therefore:
 
@@ -92,7 +108,8 @@ Therefore:
 
 ## 6. Verification Meaning
 
-`scenario_verify` means:
+`scenario_verify` is the cross-unit verification gate for the end-to-end user-result contract.
+It means:
 
 1. current scenario truth has been read
 2. current required unit and shared bindings have been revalidated

@@ -332,6 +332,71 @@ Rules:
 
 ---
 
+## 5.2 Abstraction Guidance Boundary
+
+Abstraction guidance decides when the executor should respect the user's local wording and when the executor must guide the request into the formal object that actually owns the work.
+
+It is not a new lifecycle object, command, or governance flow.
+It runs after work-shape classification and before formal owner resolution.
+It translates user wording into the existing `unit`, `scenario`, `shared_contract`, `system_constraints`, and `repository_mapping` owners without asking the user to choose those internal names.
+
+User wording is input evidence, not ownership proof.
+Words such as module, shared file, common code, flow, integration, feature, or end-to-end are clues only.
+The executor must decide from the user's desired result, current repository truth, and required verification meaning.
+
+Respect a local capability route when current repository truth proves all of the following:
+
+1. the requested result is confined to one unit responsibility
+2. one unit's current truth can express the acceptance meaning without inventing a broader chain
+3. no cross-unit shared rule, global baseline rule, repository mapping change, or end-to-end user-result proof is required
+
+When these conditions hold, do not create or require a scenario merely because scenarios exist or because multiple implementation files may be edited.
+
+Test for a scenario route when any of the following is true:
+
+1. the user describes a trigger, input, request, or entry point and a final user-visible result
+2. the requested result crosses more than one unit responsibility or depends on handoff between units
+3. the user asks whether an integration path, workflow, or user flow works
+4. one unit's local verification cannot prove that the promised user-visible result is complete
+
+When a scenario route is indicated, the executor must derive the likely unit and shared-contract bindings from current repository truth and the described user-visible flow.
+If those bindings cannot be derived safely, the executor must ask for the smallest missing ordinary-language fact about the entry point, final result, or required path, or route to repository mapping when ownership truth is missing.
+
+Test for a shared-governance route when any of the following is true:
+
+1. the requested rule is reused by two or more formal objects
+2. the user describes one rule that several capabilities must interpret the same way
+3. the request names a shared file, common module, or common mechanism whose formal effect is a reusable rule rather than a whole unit or a whole end-to-end chain
+
+When a shared-governance route is indicated, route through the Shared Governance Branch instead of treating the request as a local unit edit.
+If the same rule could legally land in unit-local truth, Shared Contract truth, or system constraints, stop with a decision checkpoint using ordinary-language options.
+
+Clarification questions must use user-goal language.
+They must ask for the missing result, scope, entry point, or verification meaning.
+They must not ask the user to choose an internal object family or command name.
+
+Allowed question shape:
+
+```text
+Do you want to change only this local capability, or prove the full path from input to final result?
+```
+
+Disallowed question shape:
+
+```text
+Is this a unit or a scenario?
+```
+
+This boundary does not:
+
+1. force every multi-file request into a scenario
+2. force every reused implementation helper into a Shared Contract
+3. create a `feature`, `project_flow`, or other umbrella lifecycle object
+4. allow chat-only conclusions to replace formal truth writeback
+5. override exact standard commands, exact governance review entries, or exact project-instance migration entries
+
+---
+
 ## 6. Routing Procedure
 
 Route in this order:
@@ -341,17 +406,18 @@ Route in this order:
 3. if the request is an exact project-instance migration entry, leave this file and execute `spec_flow_migrate`
 4. otherwise treat the request as natural language and perform goal diagnosis
 5. classify the work shape before choosing the formal owner
-6. identify all intent fragments needed to route the classified work shapes
-7. apply mandatory gates for every fragment, especially `implementation_change_policy.md` for implementation fragments
-8. route project-instance migration fragments through `specflow/framework/spec_flow_migrate.md` when the user asks to update old project-instance files to current framework contracts
-9. resolve repository mapping boundary checks before claiming `unit` or `scenario` ownership
-10. resolve existing `unit` or `scenario` object state through `_status.md`
-11. apply onboarding source decision when the target has no formal truth, has candidate source drift, or may use existing implementation as candidate evidence
-12. route shared-truth fragments through the Shared Governance Branch in this file
-13. route system-constraint boundary handling through the responsible unit candidate truth
-14. route guidance fragments through the smallest applicable guidance skill when the request is not yet clear enough for formal truth writeback or a standard command
-15. assemble the internal development chain when the request spans more than one formal object or work shape
-16. handle explanation-only fragments only after confirming that no mutation, guidance, or governance route is required
+6. apply the Abstraction Guidance Boundary before formal owner resolution
+7. identify all intent fragments needed to route the classified work shapes
+8. apply mandatory gates for every fragment, especially `implementation_change_policy.md` for implementation fragments
+9. route project-instance migration fragments through `specflow/framework/spec_flow_migrate.md` when the user asks to update old project-instance files to current framework contracts
+10. resolve repository mapping boundary checks before claiming `unit` or `scenario` ownership
+11. resolve existing `unit` or `scenario` object state through `_status.md`
+12. apply onboarding source decision when the target has no formal truth, has candidate source drift, or may use existing implementation as candidate evidence
+13. route shared-truth fragments through the Shared Governance Branch in this file
+14. route system-constraint boundary handling through the responsible unit candidate truth
+15. route guidance fragments through the smallest applicable guidance skill when the request is not yet clear enough for formal truth writeback or a standard command
+16. assemble the internal development chain when the request spans more than one formal object or work shape
+17. handle explanation-only fragments only after confirming that no mutation, guidance, or governance route is required
 
 This order is a decision order, not permission to skip required reads.
 If a later family is needed to decide an earlier family safely, read the later family's truth as input before choosing the route.
