@@ -20,6 +20,22 @@ Official platform binaries are GitHub Release assets.
 Release tags use the source commit form `specflow-<12-character-commit>`.
 The release workflow builds binaries from the tagged source and uploads the binaries plus `SHA256SUMS`.
 
+Download release binaries for the installed source revision:
+
+```bash
+mkdir -p specflow/tooling/bin
+tag="specflow-$(git -C specflow rev-parse --short=12 HEAD)"
+base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
+curl -L -o specflow/tooling/bin/specflowctl-linux-amd64 "${base}/specflowctl-linux-amd64"
+curl -L -o specflow/tooling/bin/specflow-reader-linux-amd64 "${base}/specflow-reader-linux-amd64"
+curl -L -o specflow/tooling/bin/SHA256SUMS "${base}/SHA256SUMS"
+chmod +x specflow/tooling/bin/specflowctl-linux-amd64 specflow/tooling/bin/specflow-reader-linux-amd64
+(cd specflow/tooling/bin && sha256sum -c SHA256SUMS --ignore-missing)
+```
+
+Replace `linux-amd64` with the target platform suffix:
+`darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64.exe`, or `windows-arm64.exe`.
+
 ## Governance Boundary
 
 The tooling layer may:

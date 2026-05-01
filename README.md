@@ -145,6 +145,37 @@ If you want every clone of your project to include the exact same `specFlow` fra
 If you need a long-term upstream sync workflow, treat that as a separate maintenance concern.
 See [tooling/README.md](./tooling/README.md) for tooling details.
 
+## Prepare Local Binaries
+
+`specflow/tooling/bin/` is not committed to git.
+Before running `init`, download the platform-matching binaries from the Release that matches your installed `specflow` source revision.
+
+For Linux amd64:
+
+```bash
+mkdir -p specflow/tooling/bin
+tag="specflow-$(git -C specflow rev-parse --short=12 HEAD)"
+base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
+curl -L -o specflow/tooling/bin/specflowctl-linux-amd64 "${base}/specflowctl-linux-amd64"
+curl -L -o specflow/tooling/bin/specflow-reader-linux-amd64 "${base}/specflow-reader-linux-amd64"
+curl -L -o specflow/tooling/bin/SHA256SUMS "${base}/SHA256SUMS"
+chmod +x specflow/tooling/bin/specflowctl-linux-amd64 specflow/tooling/bin/specflow-reader-linux-amd64
+(cd specflow/tooling/bin && sha256sum -c SHA256SUMS --ignore-missing)
+```
+
+For Windows amd64 PowerShell:
+
+```powershell
+$tag = "specflow-" + (git -C specflow rev-parse --short=12 HEAD)
+$base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
+New-Item -ItemType Directory -Force specflow/tooling/bin | Out-Null
+Invoke-WebRequest "$base/specflowctl-windows-amd64.exe" -OutFile "specflow/tooling/bin/specflowctl-windows-amd64.exe"
+Invoke-WebRequest "$base/specflow-reader-windows-amd64.exe" -OutFile "specflow/tooling/bin/specflow-reader-windows-amd64.exe"
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile "specflow/tooling/bin/SHA256SUMS"
+```
+
+Other supported suffixes are `darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`, `windows-amd64.exe`, and `windows-arm64.exe`.
+
 ## Quick Start
 
 After `specflow/` is in your repository, run this from the repository root:

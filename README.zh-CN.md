@@ -144,6 +144,37 @@ Add-Content .gitignore "specflow/"
 如果你需要长期跟上游同步，把它当成单独的维护问题处理即可。
 具体工具细节见 [tooling/README.md](./tooling/README.md)。
 
+## 准备本地二进制文件
+
+`specflow/tooling/bin/` 不提交到 git。
+执行 `init` 前，先从与你当前 `specflow` 源码版本匹配的 Release 下载当前平台需要的 binary。
+
+Linux amd64 示例：
+
+```bash
+mkdir -p specflow/tooling/bin
+tag="specflow-$(git -C specflow rev-parse --short=12 HEAD)"
+base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
+curl -L -o specflow/tooling/bin/specflowctl-linux-amd64 "${base}/specflowctl-linux-amd64"
+curl -L -o specflow/tooling/bin/specflow-reader-linux-amd64 "${base}/specflow-reader-linux-amd64"
+curl -L -o specflow/tooling/bin/SHA256SUMS "${base}/SHA256SUMS"
+chmod +x specflow/tooling/bin/specflowctl-linux-amd64 specflow/tooling/bin/specflow-reader-linux-amd64
+(cd specflow/tooling/bin && sha256sum -c SHA256SUMS --ignore-missing)
+```
+
+Windows amd64 PowerShell 示例：
+
+```powershell
+$tag = "specflow-" + (git -C specflow rev-parse --short=12 HEAD)
+$base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
+New-Item -ItemType Directory -Force specflow/tooling/bin | Out-Null
+Invoke-WebRequest "$base/specflowctl-windows-amd64.exe" -OutFile "specflow/tooling/bin/specflowctl-windows-amd64.exe"
+Invoke-WebRequest "$base/specflow-reader-windows-amd64.exe" -OutFile "specflow/tooling/bin/specflow-reader-windows-amd64.exe"
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile "specflow/tooling/bin/SHA256SUMS"
+```
+
+其他平台后缀包括 `darwin-amd64`、`darwin-arm64`、`linux-amd64`、`linux-arm64`、`windows-amd64.exe` 和 `windows-arm64.exe`。
+
 ## 快速开始
 
 当 `specflow/` 已经进入你的仓库后，在仓库根目录执行：
