@@ -18,12 +18,12 @@ const (
 	FlowSpecFlowReview       = "spec_flow_review"
 	FlowSpecFlowDesignReview = "spec_flow_design_review"
 
-	statusInProgress       = "in_progress"
-	statusBlockedOnFinding = "blocked_on_finding"
-	statusReadyForFinal    = "ready_for_final"
-	statusClosedPass       = "closed_pass"
+	statusInProgress                 = "in_progress"
+	statusBlockedOnFinding           = "blocked_on_finding"
+	statusReadyForFinal              = "ready_for_final"
+	statusClosedPass                 = "closed_pass"
 	statusClosedPassWithOptimization = "closed_pass_with_optimization"
-	statusClosedBlocked    = "closed_blocked"
+	statusClosedBlocked              = "closed_blocked"
 
 	slicePending           = "pending"
 	slicePassed            = "passed"

@@ -21,8 +21,8 @@ Rules:
    - which fields and status values are legal
 10. Full-scope review mechanical writes are maintained by `specflowctl review run-* --flow <review_flow>`, including the run-state skeleton, UTC timestamps, baseline slice table, input fingerprints, structural validation, and stale refresh.
 11. Tooling maintains only mechanical fields. It does not maintain review judgment.
-12. Slice pass decisions, question scores, score basis, finding content, finding severity, hard-blocker judgment, and the final `pass | blocked` conclusion remain review-executor judgments under the owning review policy.
+12. Slice pass decisions, question scores, score basis, finding content, finding severity, non-blocking optimization content, hard-blocker judgment, and the final `pass | pass-with-optimization | blocked` conclusion remain review-executor judgments under the owning review policy.
 13. When a full-scope review resumes a run-state file, it must refresh slice fingerprints and mark changed slices as stale before continuing.
-14. A full-scope review result must not claim `pass` until every required baseline slice and dynamic slice is closed by the owning review policy.
+14. A full-scope review result must not claim `pass` or `pass-with-optimization` until every required baseline slice and dynamic slice is closed by the owning review policy.
 15. Each review flow has only one fixed run-state file. Starting a new full-scope review deletes the previous fixed file before the new run state is written.
 16. `_governance_review/` must not contain per-flow run-state subdirectories.

@@ -156,7 +156,7 @@ If a narrowed review still crosses one of those boundaries and the owner block i
 Default full-scope `spec_flow_design_review` uses a run-state process file.
 
 The process file is not a Spec, not durable behavior truth, and not a substitute for the review output.
-It records review progress, baseline slice status, dynamic risk slice status, score-state progress, input fingerprints, findings, blocked reason, and resume position for one full-scope design review run.
+It records review progress, baseline slice status, dynamic risk slice status, score-state progress, input fingerprints, findings, non-blocking optimization references, blocked reason, and resume position for one full-scope design review run.
 
 The run-state path is:
 
@@ -170,6 +170,15 @@ It must use this shape:
 ```text
 YYYYMMDD-HHMMSS-default_design_baseline
 ```
+
+Final review conclusions map to run-state status values as follows:
+
+1. `pass` -> `closed_pass`
+2. `pass-with-optimization` -> `closed_pass_with_optimization`
+3. `blocked` -> `closed_blocked`
+
+All three mapped status values are closed run states.
+The startup procedure must delete any closed run state before creating a new full-scope default design review run.
 
 There must be at most one `spec_flow_design_review` run-state file in the repository at any time.
 Starting a new full-scope default design review must delete the previous `spec_flow_design_review` run-state file before writing the new run state.
@@ -193,8 +202,9 @@ Rules:
    - `score_basis`
    - design finding content
    - finding severity
+   - non-blocking optimization content
    - hard-blocker judgment
-   - final `pass | blocked` conclusion
+   - final `pass | pass-with-optimization | blocked` conclusion
 7. the startup procedure must inspect only `docs/specs/_governance_review/spec_flow_design_review.md`
 8. if the fixed run-state file does not exist, the startup procedure must create a new run-state file and begin at `design_foundation`
 9. if the fixed run-state file is closed or structurally invalid, the startup procedure must delete it, report the deletion reason, create a new run-state file, and begin at `design_foundation`
@@ -234,7 +244,7 @@ The required baseline slices are:
 7. `scoring_and_pass_gate`
    - tracks whether the hard-blocker review, eight question scores, group averages, weighted score, and pass gate were completed by the executor
 
-The final result must not issue `pass` until every required baseline slice and every dynamic risk slice is closed as `passed` or `skipped_not_in_scope`.
+The final result must not issue `pass` or `pass-with-optimization` until every required baseline slice and every dynamic risk slice is closed as `passed` or `skipped_not_in_scope`.
 
 ### 5.3 Dynamic Risk Slices
 
@@ -289,15 +299,17 @@ If any in-scope file cannot be assigned to a review block, do not issue `pass`.
    - human operability
    - gate usefulness
    - extension-surface cost
-5. complete the required cross-block convergence checks
-6. add required dynamic risk slices when newly discovered design risks cannot be tracked by an existing baseline slice
-7. judge the hard-blocker set from Section 7.4 before any scoring-based `pass` claim
-8. score all eight fixed design questions from Section 7.1
-9. compute the fixed group averages from Section 7.2
-10. compute the `weighted_score` from Section 7.3
-11. produce findings ordered by design risk
+5. when a design risk concerns avoidable rule weight, classify the affected rule text with the rule-weight classes from Section 7.1 before scoring Questions 6, 7, or 8
+6. complete the required cross-block convergence checks
+7. add required dynamic risk slices when newly discovered design risks cannot be tracked by an existing baseline slice
+8. judge the hard-blocker set from Section 7.4 before any scoring-based `pass` claim
+9. score all eight fixed design questions from Section 7.1
+10. compute the fixed group averages from Section 7.2
+11. compute the `weighted_score` from Section 7.3
+12. separate blocking findings from non-blocking optimizations
    - every real finding must use the fixed finding contract from Section 8.1
-12. issue the final result only after baseline slices, dynamic risk slices, hard-blocker review, question scoring, group checks, weighted-score calculation, findings review, and cross-block convergence are all complete
+   - every non-blocking optimization must use the optimization contract from Section 8.2
+13. issue the final result only after baseline slices, dynamic risk slices, hard-blocker review, question scoring, group checks, weighted-score calculation, findings review, optimization review, and cross-block convergence are all complete
 
 ## 7. Scoring Model
 
@@ -333,6 +345,30 @@ Allowed score values are fixed:
 5. `4`
    - clearly holds with strong evidence
 
+Rule-weight classification is part of design judgment for Questions 6, 7, and 8.
+It does not create another review flow, another score group, or another output formula.
+
+When a review identifies avoidable rule weight, classify the affected rule text as exactly one of these classes:
+
+1. `hard_rule`
+   - the rule is required because removing it could change durable truth, object ownership, lifecycle advancement, implementation permission, shared truth, system truth, or end-to-end verification claims
+2. `judgment_guidance`
+   - the rule helps an executor choose a route or evaluate risk, but it does not itself authorize writes, forbid writes, advance state, or define a stop condition
+3. `example_or_wording`
+   - the text exists only to make the rule easier to understand, and it is justified only when it removes a real execution ambiguity
+4. `duplicate_or_restatement`
+   - the text repeats another owner file without adding a local allowed action, forbidden action, stop condition, output requirement, dependency order, or scoring consequence
+5. `overweight_rule`
+   - the rule forces a heavier path than the work risk requires, or applies a specialized structure to routine work where no durable-truth, ownership, shared, system, or end-to-end verification risk needs that structure
+
+Rules:
+
+1. accuracy has priority over lightness when a rule prevents durable truth drift, unsafe implementation, ambiguous ownership, skipped verification, or unrecoverable lifecycle advancement
+2. lightness has priority once the same execution safety is already provided by another owner rule or by a smaller path
+3. do not treat a rule as overweight only because it is long; treat it as overweight only when the extra reading or execution burden does not produce a distinct control gain
+4. do not preserve duplicate text merely because it is familiar; preserve it only when deleting it would make the executor guess an owner, boundary, dependency, next action, or scoring consequence
+5. if an in-scope rule is classified as `overweight_rule` or `duplicate_or_restatement` and does not create a hard blocker or finding, it must be reported as a non-blocking optimization instead of being hidden inside a residual score weakness
+
 Question-specific scoring rules:
 
 1. Question 1 must judge:
@@ -361,14 +397,30 @@ Question-specific scoring rules:
    - whether a normal user or executor can tell where they are
    - whether they can tell the next step and why it is the next step
    - whether the official documents, rather than author memory, carry the needed orientation
+   - whether the in-scope rules force a normal user or executor to learn avoidable internal mechanism detail before they can understand current position, next action, and reason
+   - whether `judgment_guidance`, `example_or_wording`, and `duplicate_or_restatement` content is kept small enough that it does not hide the governing hard rules
 7. Question 7 must judge:
    - whether small changes have a smaller legal path than large changes
    - whether routine work avoids full-chain over-processing
    - whether the mechanism's operational steps scale with actual work size
+   - whether `hard_rule` requirements are limited to cases where durable truth, ownership, lifecycle, implementation permission, shared truth, system truth, or end-to-end verification risk actually requires them
+   - whether a specialized structure is optional or conditional when the current work does not need that structure for safe closure
 8. Question 8 must judge:
    - whether the control gained is visible and repeatable
    - whether the documentation, learning, and execution cost stay proportionate to that gain
    - whether the mechanism still looks worth maintaining over time
+   - whether each heavy gate or required read produces a distinct control gain that is not already produced by a smaller rule or owner file
+   - whether the recommended repair for excess rule weight is the smallest correct one: keep as `hard_rule`, downgrade to `judgment_guidance`, keep only as `example_or_wording`, merge or link as `duplicate_or_restatement`, or remove or narrow an `overweight_rule`
+
+When Question 6, 7, or 8 scores below `4`, the review must classify each cited weakness as one of:
+
+1. `acceptable residual weakness`
+   - use when the weakness is real but no clear, smaller, safe optimization is available without losing needed control
+2. `non-blocking optimization`
+   - use when a clear improvement exists, the current design still passes, and the issue does not trigger a hard blocker or pass-gate failure
+
+The score basis for Questions 6, 7, and 8 must state which category applies.
+If no non-blocking optimization is reported while any of those questions scores below `4`, the output must explain why every cited weakness is only an `acceptable residual weakness`.
 
 ### 7.2 Fixed Question Groups
 
@@ -414,15 +466,20 @@ Any one of them forces the final conclusion to `blocked`, regardless of the weig
 3. any key gate has Question `4 = 0`
 4. the mechanism clearly rewards surface compliance over real risk reduction
 5. a normal user cannot rely on the official documents alone to know current position, next step, and why that step is next
-6. simple changes are still forced through the full heavy path with no smaller legal path
+6. the mechanism forces simple changes through a full heavy path when the work does not change durable truth, object ownership, lifecycle advancement, implementation permission, shared truth, system truth, or end-to-end verification obligations, and the design provides no smaller legal path
 
 ### 7.5 Pass Gate
 
-If no hard blocker exists, `pass` still requires all of the following:
+If no hard blocker exists, passing still requires all of the following:
 
 1. no individual question score is below `2`
 2. every fixed group average is at least `2.5`
 3. `weighted_score` is at least `75`
+
+When these pass-gate conditions hold:
+
+1. use `pass` only when no non-blocking optimization exists
+2. use `pass-with-optimization` when at least one non-blocking optimization exists
 
 Otherwise the result is `blocked`.
 
@@ -451,15 +508,24 @@ The output must report at least:
 16. the findings result:
    - explicit `none` when no real finding exists
    - otherwise every finding must satisfy Section 8.1
-17. the final conclusion:
+17. the optimization result:
+   - explicit `none` when no non-blocking optimization exists
+   - otherwise every optimization must satisfy Section 8.2
+18. when the final conclusion is `pass-with-optimization`, `why pass still holds`
+19. when Question 6, 7, or 8 scores below `4` and no non-blocking optimization is reported for that question, the acceptable residual weakness explanation
+20. the final conclusion:
    - `pass`
+   - `pass-with-optimization`
    - `blocked`
 
-If the output does not explicitly report Items 11 through 16, the review is not complete.
+If the output does not explicitly report Items 11 through 17, the review is not complete.
+If the final conclusion is `pass-with-optimization` and the output omits Item 18, the review is not complete.
 
 ### 8.1 Finding Contract
 
 When `spec_flow_design_review` reports a real finding, that finding must be written as one self-contained repairable unit.
+A finding is reserved for a blocking design problem or a design problem that changes hard-blocker, score, group-average, weighted-score, or pass-gate judgment.
+Non-blocking improvements must be reported under Section 8.2 instead of being mixed into findings.
 
 The minimum required fields are:
 
@@ -484,7 +550,36 @@ Additional rules:
 2. `severity` explains design harm; it does not replace the fixed score model
 3. `score` explains current design quality; it does not replace explicit blocking judgment
 4. `recommended fix` must be specific enough that later repair work can execute it without a second clarification round
-5. when no real finding exists, the output must say so explicitly instead of omitting the finding section
+5. when a finding concerns avoidable rule weight, `recommended fix` must state the smallest correct rule-weight repair: keep as `hard_rule`, downgrade to `judgment_guidance`, keep only as `example_or_wording`, merge or link as `duplicate_or_restatement`, or remove or narrow an `overweight_rule`
+6. when no real finding exists, the output must say so explicitly instead of omitting the finding section
+
+### 8.2 Optimization Contract
+
+When `spec_flow_design_review` reports a non-blocking optimization, that optimization must be written separately from findings.
+
+A non-blocking optimization is allowed only when all of the following hold:
+
+1. no hard blocker is triggered by the issue
+2. the fixed pass gate still passes
+3. the issue has a clear smaller improvement that preserves required governance control
+4. the issue affects Question 6, 7, or 8, or concerns an in-scope `overweight_rule` or `duplicate_or_restatement`
+
+The minimum required fields are:
+
+1. `title`
+2. `affected_questions`
+3. `rule_weight_class`
+4. `why non-blocking`
+5. `recommended optimization`
+6. `why this is the smallest correct optimization`
+7. `evidence`
+
+Rules:
+
+1. `why non-blocking` must state why the issue does not trigger a hard blocker, score below `2`, group average failure, or weighted-score failure
+2. `recommended optimization` must cut only the unnecessary rule weight; it must not weaken a `hard_rule`
+3. if the final conclusion is `pass-with-optimization`, at least one optimization item is required
+4. if no non-blocking optimization exists, the output must say `optimization result: none`
 
 ## 9. Non-Goals
 
