@@ -17,112 +17,65 @@ Keep repository-specific rules outside the managed block. `specFlow` tooling may
 Use this entry procedure for requests that belong to `specFlow`.
 Before any lifecycle action or file edit, choose the owning policy file and follow only that policy's allowed path.
 
-### 1. First Actions For Every Request
+### 1. First Read
 
-Before editing files or advancing lifecycle state, do this:
+1. If the request is an exact standard command, read `specflow/framework/command_policy.md`, then the matching file under `specflow/framework/commands/`.
+2. If the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without a narrowing phrase, read the matching review policy directly.
+3. If the request is exactly `spec_flow_migrate`, with or without a narrowing phrase, read `specflow/framework/spec_flow_migrate.md` directly.
+4. If the request only asks for implementation-side edits and does not ask for truth, boundary, shared, system, scenario, governance, migration, or guidance work, read `specflow/framework/implementation_change_policy.md` first.
+5. For every other `specFlow` request, read `specflow/framework/natural_language_routing.md` first.
 
-1. Decide whether the request belongs to `specFlow`.
-   - It belongs to `specFlow` when it asks for project design, implementation, verification, promotion, explanation, governance, repository mapping, shared truth, system constraints, or project-local standards.
-   - If it is outside those areas, follow the host agent rules.
-2. Classify the entry shape.
-   - Exact standard command: read `specflow/framework/command_policy.md`, then read the matching command file under `specflow/framework/commands/`.
-   - Exact governance review entry: if the request is `spec_flow_review` or `spec_flow_design_review`, with or without an explicit narrowing phrase, read the matching review policy directly.
-   - Exact project-instance migration entry: if the request is `spec_flow_migrate`, with or without an explicit narrowing phrase, read `specflow/framework/spec_flow_migrate.md` directly.
-   - Natural-language request: read `specflow/framework/natural_language_routing.md` before choosing any command, governance flow, or implementation step.
-3. Continue from the first policy file you read.
-   - For lifecycle, file, command, checkpoint, and output details, follow the routed policy files.
+After the first policy file routes the request, continue only through the routed policy, command, governance flow, or checkpoint path.
 
-### 2. Natural-Language Request Procedure
+### 2. Pre-Action Rules
 
-When the request routes to `specflow/framework/natural_language_routing.md`, the executor must:
+1. Do not edit implementation-side files until `specflow/framework/implementation_change_policy.md` proves the change is `implementation_only` or the routed command explicitly allows implementation.
+2. Do not change behavior truth, acceptance truth, object ownership, rule truth, global rules, lifecycle state, or process files unless the active policy or command explicitly allows that write.
+3. Resolve path ownership and object boundaries from `docs/specs/repository_mapping.md` when they matter; do not guess from directories.
+4. Resolve existing `unit` or `scenario` state from `docs/specs/_status.md` before advancing any lifecycle step.
+5. Read `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may affect repository-wide defaults, shared mechanisms, prohibitions, or explicit exceptions.
+6. Enter rule-governance only through `specflow/framework/natural_language_routing.md`.
+7. Keep registered entry index managed blocks consistent according to `specflow/framework/entry_index_registry.md`.
 
-1. identify every intent fragment in the request, because one request may mix implementation, truth, mapping, shared truth, review, guidance, and explanation work
-2. read only the current truth needed to route those fragments
-3. resolve path ownership and object boundaries from `docs/specs/repository_mapping.md` instead of guessing from directories
-4. resolve existing `unit` or `scenario` state from `docs/specs/_status.md` before choosing the next lifecycle step
-5. read `docs/specs/system_constraints.md` when the request may affect repository-wide defaults or global exceptions
-6. enter shared-governance only through the shared flow selected by `natural_language_routing.md`
-7. enter guidance only when the request is not clear enough for formal truth writeback or a standard command
-8. take only the smallest legal next step, or stop at the checkpoint required by the routing policy
+### 3. Terms That Must Not Be Guessed
 
-### 3. Modification Gates
+These project terms must be interpreted only through the policy files:
 
-Before changing repo-tracked files, prove that the current route allows the change.
+1. `Spec`
+2. `unit`
+3. `scenario`
+4. `stable`
+5. `candidate`
+6. `_status.md`
+7. `repository_mapping.md`
+8. `rule`
+9. `checkpoint`
+10. `implementation_change_policy.md`
 
-1. For implementation-side files, including code, tests, config, migrations, and build scripts, read `specflow/framework/implementation_change_policy.md` before editing.
-2. If that policy returns `truth_writeback_required` or `boundary_unclear`, do not edit implementation files. Route to the required truth or boundary step first.
-3. If a request includes both truth changes and implementation changes, handle truth first unless `implementation_change_policy.md` proves the implementation is already allowed by current truth.
-4. If the change may create, modify, delete, stage, or commit Spec files, framework governance files, or registered entry index files, read `specflow/framework/git_policy.md` before git close-out.
-5. Registered entry index files are `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md`. Their managed blocks must stay consistent according to `specflow/framework/entry_index_registry.md`.
-
-### 4. Terms That Must Not Be Guessed
-
-These terms are project-specific. Use the policy files instead of ordinary software-engineering meanings.
-
-1. `Spec`: a durable source-of-truth file, not a normal explanation document
-2. `unit`: a governed object, not automatically a directory, package, service, or module name
-3. `scenario`: an end-to-end trigger-to-outcome chain, not direct implementation ownership
-4. `stable`: accepted truth
-5. `candidate`: proposed truth for the current change round
-6. `_status.md`: a state index, not behavior truth
-7. `repository_mapping.md`: the truth for path ownership, object boundaries, and repository structure
-8. `shared_contract`: shared truth reused across formal objects
-9. `checkpoint`: a required stop report that records why execution cannot safely continue and how it can resume
-10. `implementation_change_policy.md`: the mandatory gate before direct implementation-side modification
-
-### 5. Hard Stops
+### 4. Hard Stops
 
 Stop instead of guessing when any of these are true:
 
 1. the request's intent or target object is unclear
 2. path ownership, object boundary, or support-surface ownership is unclear
-3. a behavior change has not been written into the required truth file
-4. implementation permission is not proven by `implementation_change_policy.md`
-5. shared-truth or system-constraint ownership is unclear
-6. a prerequisite command or checkpoint is required before the requested work
-7. Spec, command, routing, implementation, checkpoint, or git rules conflict
-8. a decision exists only in chat and has not been written into durable truth
+3. a behavior, acceptance, boundary, shared, or system decision exists only in chat and has not been written into durable truth
+4. implementation permission is not proven
+5. rule-truth or global-rule ownership is unclear
+6. a prerequisite command, truth writeback, checkpoint, or verification gate is required first
+7. Spec, command, routing, implementation, checkpoint, or entry-sync rules conflict
 
-### 6. Required Report
+### 5. Required Report
 
-For any request routed through `specFlow`, the executor's final or stop report must separate the user-facing answer from traceability details.
-Project-structure language means the current repository's capability areas, delivery surfaces, entry points, and responsibility areas as proven by current repository truth or named by the user.
+For any `specFlow` route, report the user-facing answer first and keep traceability details separate.
 
-The user-facing answer must:
+The user-facing answer must state the current state, next action, reason, expected result, and remaining gap in plain project-structure language when they apply.
+It must not require the user to understand internal object-family names, command names, lifecycle state names, policy-file names, or governance-flow names.
 
-1. answer the user's goal first
-2. use project-structure language before internal governance language
-3. describe next actions as plain engineering actions
-4. state the current state, next action, reason, expected result, and remaining gap when they apply
-5. avoid requiring the user to understand internal object-family names, command names, lifecycle state names, policy-file names, or governance-flow names
+The execution note may name the entry shape, first policy file, routed owner, files changed, next legal step, and stop reason.
+It must not be required for the user to understand the answer.
 
-The execution note, when needed, must appear after the user-facing answer and stay short.
-It may state:
+### 6. Detailed Rule Owners
 
-1. the entry shape and first policy file used
-2. the current owner, command, governance flow, or checkpoint
-3. the files changed, if any
-4. the next legal step, if work remains
-5. the reason execution stopped, if a checkpoint or clarification is required
-
-The execution note must not be required for the user to understand the answer.
-
-### 7. Detail Owners
-
-Use these files for the detailed rules:
-
-1. `specflow/framework/natural_language_routing.md`: natural-language intent closure, routing, missing intent, and multi-step request handling
-2. `specflow/framework/command_policy.md`: standard command forms, command families, lifecycle order, and shared gate rules
-3. `specflow/framework/spec_flow_migrate.md`: project-instance migration after framework rule updates
-4. `specflow/framework/spec_policy.md`: Spec objects, layers, source-of-truth boundaries, and file ownership rules
-5. `specflow/framework/implementation_change_policy.md`: direct implementation classification and diversion rules
-6. `specflow/framework/onboarding_decision_policy.md`: candidate source decision and evidence appendix requirements for new, historical, or partially implemented scopes
-7. `specflow/framework/repository_mapping_policy.md`: repository structure and path-ownership governance
-8. `specflow/framework/checkpoint_protocol.md`: checkpoint fields, stop reports, and resume behavior
-9. `docs/specs/repository_mapping.md`: current project structure truth
-10. `docs/specs/system_constraints.md`: current global technical baseline and system constraints
-11. `specflow/framework/skills/using-specflow-guidance/SKILL.md`: guidance entry when a request is not ready for formal truth writeback
-12. `specflow/framework/shared_new.md`, `shared_extract.md`, `shared_bind.md`, `shared_topology.md`, `shared_sync.md`, and `shared_escape.md`: internal shared-governance flows reached by natural-language routing
-13. `specflow/framework/git_policy.md`: commit boundaries and git handling
-14. `specflow/framework/entry_index_registry.md`: registered entry files and managed-block sync rules
+Detailed routing, object, command, checkpoint, implementation, migration, rule-governance, project-standard, and entry-sync rules live under `specflow/framework/`.
+Project truth inputs live under `docs/specs/`.
 <!-- SPECFLOW:END -->

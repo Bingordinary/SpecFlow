@@ -9,7 +9,7 @@ This file records the current repository-structure truth.
 
 It is not a command object.
 It has no `stable`, `candidate`, `fork`, `verify`, or `promote` lifecycle.
-It is read by `unit`, `scenario`, shared-governance, review, and implementation flows when they need to understand path ownership, governed object boundaries, support surfaces, or repository-level drift.
+It is read by `unit`, `scenario`, rule-governance, review, and implementation flows when they need to understand path ownership, governed object boundaries, support surfaces, or repository-level drift.
 
 ## 1. Project Overview
 
@@ -26,8 +26,8 @@ At minimum, keep this map aligned with:
 3. `docs/specs/units/candidate/`
 4. `docs/specs/scenarios/stable/`
 5. `docs/specs/scenarios/candidate/`
-6. `docs/specs/shared_contracts/stable/`
-7. `docs/specs/shared_contracts/candidate/`
+6. `docs/specs/rules/stable/`
+7. `docs/specs/rules/candidate/`
 
 ## 3. Boundary Rules
 
@@ -37,7 +37,7 @@ These rules must be specific enough for a later command to decide whether a chan
 
 1. one formal `unit`
 2. one formal `scenario`
-3. one `shared_contract`
+3. one `rule`
 4. a support surface
 5. ignored or external content
 
@@ -48,16 +48,16 @@ Record the path rules that connect repository files to formal objects.
 The map must make these decisions resolvable:
 
 1. which source paths are governed by each `unit`
-2. which truth files belong to each `unit`, `scenario`, and `shared_contract`
+2. which truth files belong to each `unit`, `scenario`, and `rule`
 3. which paths are support surfaces
 4. which paths are ignored
 5. which precedence rule applies when a path could match more than one category
 
-## 5. Global Constraint Alignment
+## 5. Rule Alignment
 
-Record which global constraints and shared contracts shape repository-level structure.
+Record which global rules and rules shape repository-level structure.
 
-At minimum, state the current `system_constraints` reference and any repository-wide Shared Contract assumptions that affect path ownership or object boundaries.
+At minimum, state the current stable `g_` rule reference and any repository-wide Rule assumptions that affect path ownership or object boundaries.
 
 ## 6. Drift Handling
 

@@ -11,7 +11,7 @@
 
 **English** · [简体中文](./README.zh-CN.md)
 
-[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [Core Concepts](#core-concepts) · [Natural-Language Guidance](#natural-language-guidance) · [Reader Progress View](#reader-progress-view) · [Manual Commands](#when-you-need-manual-commands) · [Advanced Usage](#advanced-usage)
+[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [Core Concepts](#core-concepts) · [Development Workflow](#development-workflow) · [Reader Progress View](#reader-progress-view) · [Standard Commands](#standard-commands) · [Natural-Language Guidance](#natural-language-guidance) · [Advanced Usage](#advanced-usage)
 
 ---
 
@@ -58,8 +58,9 @@ In plain language:
 - the runtime reads those rules and performs file edits, code changes, and verification
 - humans state the goal, confirm important boundaries, and accept or redirect the result
 
-You do not need to memorize every command on day one.
-The recommended entry is now natural language: say what you want to accomplish, and the agent should guide the request to the right next step from current repository truth.
+You will need to learn a few core concepts and the basic development workflow.
+Once those are clear, you can drive most work with standard commands.
+Natural language is the safety net: when you are unsure which step to take, describe your goal in plain language and the agent will route it.
 
 ## Start Here
 
@@ -67,28 +68,31 @@ If you are new to `specFlow`, understand it in this order:
 
 1. first understand why it exists: requirements and behavior truth should live in the repository
 2. then complete the smallest installation path: copy `specflow/` into your project and run `init`
-3. learn only the core concepts: `Spec`, `stable`, `candidate`, `unit`, `scenario`, and `shared`
-4. use natural language for daily work
+3. learn the four core abstractions: `unit`, `scenario`, `rule`, and `repository_mapping`
+4. understand the development workflow: the `stable` → `candidate` → verify → promote loop, and the standard command chain
 5. use Reader to inspect progress and object relationships
-6. learn manual commands only when you need exact control
+6. use standard commands for daily work
+7. fall back to natural language when the next step is unclear
 
-The goal is to start using it correctly before learning every internal mechanism.
+The first four steps are essential before you start. The rest becomes natural with practice.
 
 ```mermaid
 flowchart LR
     A["A. Understand the purpose"] --> B["B. Add it to the repository"]
-    B --> C["C. Learn the minimum concepts"]
-    C --> D["D. Start with natural language"]
+    B --> C["C. Learn the four abstractions"]
+    C --> D["D. Understand the workflow"]
     D --> E["E. Inspect progress in Reader"]
-    E --> F["F. Use manual commands when needed"]
+    E --> F["F. Use commands for daily work"]
+    F --> G["G. Fall back to natural language"]
 ```
 
 How to read this:
 
 - `A. Understand the purpose` means knowing why repository truth matters
-- `D. Start with natural language` is the normal daily entry
-- `E. Inspect progress in Reader` shows where the project currently stands
-- `F. Use manual commands when needed` is for exact control
+- `C. Learn the four abstractions` is the minimum conceptual vocabulary
+- `D. Understand the workflow` means knowing the lifecycle and the standard command chain
+- `F. Use commands for daily work` is the normal daily entry
+- `G. Fall back to natural language` is the safety net when you are unsure
 
 ## Add To Your Repository
 
@@ -197,60 +201,69 @@ See [tooling/README.md](./tooling/README.md) for exact filenames.
 
 - `AGENTS.md`, `GEMINI.md`, and `CLAUDE.md`
 - `docs/specs/`
-- `.githooks/pre-commit`
 - other workflow support files
 
-If you want Git to use the installed hook, run:
+After this step, read [Core Concepts](#core-concepts) and [Development Workflow](#development-workflow) before starting daily work.
 
-```bash
-git config core.hooksPath .githooks
-```
-
-After this step, beginners usually do not need to memorize commands first.
-You can tell the agent:
+For daily work, use standard commands:
 
 ```text
-Add rate limiting to auth.
+unit_new:search
+unit_check:auth
+unit_fork:payment
+unit_verify:checkout
+```
+
+When unsure, fall back to natural language:
+
+```text
+I want to add rate limiting to auth, but I am not sure what should move first. Read current project truth and tell me the next step.
 The checkout refund behavior changed. Update truth first, then implement it.
-Check whether search still matches the accepted truth.
 This rule will be reused by multiple modules. Help me decide where it belongs.
 ```
 
-The agent should read the installed entry files and current repository truth, then decide whether the next step is writing Spec truth, checking a boundary, creating a plan, implementing code, verifying behavior, or asking one required clarification.
+The agent reads the installed entry files and current repository truth, then decides which command to enter, whether to write Spec truth, check a boundary, or ask a required clarification.
 
 ## Core Concepts
 
-These are enough to start.
+`specFlow` has only four formal abstractions. Everything else is built from these.
 
-`Spec` is behavior truth written in the repository.
-It is not ordinary explanatory text; implementation and verification should follow it.
+### The Four Abstractions
 
-`stable` is the current accepted truth.
-If the project officially accepts a behavior, the matching `stable` file should say so.
-
-`candidate` is the next truth currently being prepared.
-New requirements, behavior changes, and boundary changes usually enter `candidate` first, then become `stable` after acceptance.
-
-`unit` is one engineering responsibility that can be described, implemented, and verified independently.
+`unit` is one independently describable, implementable, and verifiable engineering responsibility.
+It is the smallest governed object. A unit owns its own behavior truth, implementation planning, and implementation work.
 It does not automatically equal a directory, package, or service.
 
-`scenario` is an end-to-end result path.
-When the question is whether a user-visible chain works from trigger to outcome, rather than whether one local capability works, a `scenario` may be needed.
+`scenario` is one end-to-end trigger-to-outcome chain.
+When the question is whether a user-visible path works from entry point to final result — crossing multiple units — a scenario is needed.
+A scenario owns chain truth and end-to-end verification. It does not own implementation planning.
 
-`shared` is truth reused by more than one object.
-If the same formal rule is used by multiple `unit` or `scenario` objects, it should not be copied everywhere; it should become shared truth.
+`rule` is one formally reusable rule shared across objects.
+It comes in two scopes: global (`g_`) rules apply repository-wide; bound (`b_`) rules apply only to the units or scenarios that explicitly reference them.
+A rule is not a command target — users enter rule work through natural language, and the agent routes to the correct internal rule-governance flow.
 
-`repository_mapping.md` is repository structure truth.
-It explains how paths, objects, and responsibility boundaries connect, so the agent does not guess ownership from directory names alone.
+`repository_mapping` is the repository structure truth file (`docs/specs/repository_mapping.md`).
+It records which formal objects exist, which paths belong to which objects, and how ownership boundaries are decided.
+It is not a command target and does not use the `stable`/`candidate` layer model.
 
-`_status.md` is the state index.
-It records each object's current layer and next step, but it does not contain behavior rules.
+### Layers: stable and candidate
 
-The smallest model looks like this:
+`stable` and `candidate` are not standalone concepts. They are the two layers a `unit`, `scenario`, or `rule` can be in.
+
+`stable` is the currently accepted truth. If the project officially accepts a behavior, the matching `stable` file says so.
+
+`candidate` is the next truth being prepared. New requirements, behavior changes, and boundary changes enter `candidate` first, then become `stable` after acceptance.
+
+### State Index
+
+`_status.md` is the state index (`docs/specs/_status.md`).
+It records each `unit` and `scenario` object's current layer and next legal command. It does not contain behavior rules.
+
+### The Smallest Model
 
 ```mermaid
 flowchart LR
-    A["A. stable current truth"] --> B["B. candidate next truth"]
+    A["A. unit/scenario/rule in stable"] --> B["B. unit/scenario/rule in candidate"]
     B --> C["C. implementation and verification"]
     C --> D["D. promote into new stable"]
     D --> A
@@ -258,20 +271,98 @@ flowchart LR
 
 The key points:
 
-- `A. stable current truth` is the behavior already accepted now
-- `B. candidate next truth` is the behavior being changed in this round
+- `A. stable` is the behavior already accepted now
+- `B. candidate` is the behavior being changed in this round
 - `C. implementation and verification` must follow the candidate
 - `D. promote into new stable` means the round has been accepted
 
+## Development Workflow
+
+This is the main loop you will use for daily work. Understanding it is essential before you start.
+
+### The Lifecycle
+
+A governed object moves through a fixed sequence of stages. Each stage has one standard command.
+
+For a `unit`, the full chain is:
+
+```text
+unit_init → unit_stable_verify → unit_fork → unit_new → unit_check → unit_plan → unit_impl → unit_verify → unit_promote
+```
+
+In practice, the common loop is shorter:
+
+```mermaid
+flowchart LR
+    A["A. stable truth exists"] --> B["B. unit_fork: open a change round"]
+    B --> C["C. unit_check: is the candidate clear?"]
+    C --> D["D. unit_plan: create an implementation plan"]
+    D --> E["E. unit_impl: implement"]
+    E --> F["F. unit_verify: verify against truth"]
+    F --> G["G. unit_promote: promote to new stable"]
+    G --> A
+```
+
+How to read this:
+
+- `A. stable truth exists` means the unit already has accepted behavior truth on disk
+- `B. unit_fork` opens a new candidate round from the current stable
+- `C. unit_check` confirms the candidate truth is clear enough to plan from
+- `D. unit_plan` turns truth into an executable implementation plan
+- `E. unit_impl` implements according to the plan
+- `F. unit_verify` verifies the implementation against candidate truth
+- `G. unit_promote` promotes the accepted candidate into new stable truth
+
+For a brand-new unit that has never had stable truth, the chain starts at `unit_new` instead of `unit_fork`.
+
+For a `scenario`, the chain is similar but excludes implementation planning:
+
+```text
+scenario_new → scenario_stable_verify → scenario_fork → scenario_check → scenario_verify → scenario_promote
+```
+
+### Standard Commands At a Glance
+
+| Situation | Command |
+| --- | --- |
+| Existing capability entering governance for the first time | `unit_init:{unit}` |
+| Brand-new capability entering governance | `unit_new:{unit}` |
+| Accepted capability opening a new change round | `unit_fork:{unit}` |
+| Check whether candidate truth is clear enough | `unit_check:{unit}` |
+| Create an implementation plan from truth | `unit_plan:{unit}` |
+| Implement according to the plan | `unit_impl:{unit}` |
+| Verify implementation against truth | `unit_verify:{unit}` |
+| Promote candidate to new stable | `unit_promote:{unit}` |
+| Check whether implementation still matches stable truth | `unit_stable_verify:{unit}` |
+
+The scenario equivalents follow the same shape: `scenario_new`, `scenario_fork`, `scenario_check`, `scenario_verify`, `scenario_promote`, `scenario_stable_verify`.
+
+### Your Role
+
+As a user, your main responsibilities are:
+
+1. **Maintain spec documents** — write and update the behavior truth in `docs/specs/units/` (for units) and `docs/specs/scenarios/` (for scenarios). These are the source of truth that commands consume.
+2. **Drive the lifecycle** — issue the right command at the right stage. Use `_status.md` and Reader to know the current stage and next legal command.
+3. **Judge acceptance** — confirm that candidate truth is correct before promotion, and that verification results match your expectations.
+
+The agent handles the mechanical work of each command: reading truth, validating gates, producing plans, writing code, and running verification.
+
+### When to Use Natural Language Instead
+
+Natural language is the fallback. Use it when:
+
+- you are unsure which command is the right next step
+- the request spans multiple objects and the order matters
+- you are dealing with cross-unit rules and the ownership is unclear
+- you want the agent to read current truth and tell you the next step
+
 ## Natural-Language Guidance
 
-Natural-language guidance is the recommended daily entry.
+Natural-language guidance is the safety net — not the primary daily entry.
 
-You do not need to decide which command to use first.
-You state the result you want, and the agent routes the request from current repository truth.
+When you know which command to use, use it directly. Natural language is for moments when the next step is unclear: you describe your goal in plain language, and the agent reads current repository truth to decide the smallest legal next action.
 
-Here, "route" simply means deciding the next step that is legal now.
-For example: write Spec truth, check the current design, create a plan, implement, verify, or ask you because a boundary is unclear.
+Routing means deciding the next step that is legal now: write Spec truth, check the current design, create a plan, implement, verify, or ask you because a boundary is unclear.
 
 ```mermaid
 flowchart LR
@@ -343,7 +434,7 @@ Check whether search still matches the accepted truth.
 Reuse one rule across multiple objects:
 
 ```text
-This error-code rule will be used by auth and checkout. Decide whether it should stay in one unit or become shared truth.
+This error-code rule will be used by auth and checkout. Decide whether it should stay in one unit or become rule truth.
 ```
 
 Review the governance mechanism itself:
@@ -377,10 +468,10 @@ cd specflow/tooling/bin
 
 Reader answers questions like:
 
-- which `unit`, `scenario`, and `shared` objects exist now
+- which `unit`, `scenario`, and `rule` objects exist now
 - which objects already have accepted truth and which are preparing next truth
 - what each object's next step is
-- how Spec documents, shared rules, and implementation paths connect
+- how Spec documents, rules, and implementation paths connect
 - which source file produced a displayed state or relationship
 
 The reader refresh button requests a new snapshot from disk immediately.
@@ -391,7 +482,7 @@ The three common views are:
 
 - `Status`: object layer and next step
 - `Project Structure`: path ownership and implementation locations
-- `SpecFlow`: relationships among Specs, shared rules, system constraints, and support files
+- `SpecFlow`: relationships among Specs, rules, stable g_ rules, and support files
 
 Important boundaries:
 
@@ -407,19 +498,15 @@ The usual workflow is:
 3. open Reader to inspect object state, next step, and related files
 4. if the state is unexpected, ask the agent to explain or correct it
 
-## When You Need Manual Commands
+## Standard Commands
 
-Most of the time, start with natural language.
-Use explicit commands only when:
+In daily work, you will mostly use the standard `unit` commands shown in [Development Workflow](#development-workflow).
 
-- you want to choose the exact current step
-- the agent's route does not match your expectation
-- you are debugging one object's governance state
-- you are writing automation or a fixed process
+The command form is `{command}:{unit}` or `{command}:{scenario}`. For example: `unit_check:payment`, `scenario_verify:checkout_flow`.
 
-Common entries:
+### Choosing the Right Entry Point
 
-| Situation | Common action |
+| Situation | Action |
 | --- | --- |
 | New, unfamiliar, or structurally changed repository | update `docs/specs/repository_mapping.md` |
 | Existing capability entering governance for the first time | `unit_init:{unit}` |
@@ -428,39 +515,38 @@ Common entries:
 | Check whether implementation still matches accepted truth | `unit_stable_verify:{unit}` |
 | Existing project files need to match newer `specFlow` framework rules | `spec_flow_migrate` |
 
-Once an object enters the candidate chain, the common order is:
+Once a unit enters the candidate chain, follow the standard order:
 
 ```text
-unit_check -> unit_plan -> unit_impl -> unit_verify -> unit_promote
+unit_check → unit_plan → unit_impl → unit_verify → unit_promote
 ```
 
-Meaning:
+### When Natural Language Is the Better Choice
 
-- `unit_check`: check whether next truth is clear enough
-- `unit_plan`: turn truth into an implementation plan
-- `unit_impl`: implement according to the plan
-- `unit_verify`: verify implementation against truth
-- `unit_promote`: promote the accepted next truth into stable truth
+Use natural language instead of a direct command when:
 
-Manual commands are an exact control surface.
-They are not the first thing a new user must memorize.
+- you are unsure which command is the right next step
+- the agent's route from a previous command does not match your expectation
+- you are debugging one object's governance state
+- the work spans multiple objects and the order of operations matters
+- you are dealing with cross-unit rules
 
-## When Work Stops Being Unit-Local
+## When Work Goes Beyond One Unit
 
 Most truth should start inside the current `unit`.
-Do not extract shared truth only because something might be reused later.
+Do not extract a `rule` only because something might be reused later.
 
 Use this rough judgment:
 
 - one capability's own behavior: put it in that `unit` Spec
 - detailed evidence, protocol expansion, or history for one capability: put it in that `unit` appendix
-- formally reused by multiple objects: consider shared truth
-- repository-wide defaults, prohibitions, or global exceptions: consider system constraints
+- formally reused by multiple objects: extract into a `rule` (either global `g_` or bound `b_`)
+- repository-wide defaults, prohibitions, or global exceptions: consider a global `g_` rule
 
-If you are unsure, ask naturally:
+If you are unsure, fall back to natural language:
 
 ```text
-This rule may be reused by multiple modules. Decide whether it should stay in the current unit or become shared truth.
+This rule may be reused by multiple modules. Decide whether it should stay in the current unit or become a rule.
 ```
 
 The agent should read current repository truth before deciding.
@@ -562,17 +648,18 @@ It must not change business truth or implementation code.
 
 ### Advanced Flows
 
-Beyond unit commands, `specFlow` has governance-oriented flows.
+Beyond unit and scenario commands, `specFlow` has governance-oriented flows.
 
 The most common ones are:
 
 - `spec_flow_review`
 - `spec_flow_design_review`
 - `spec_flow_migrate`
-- natural-language shared governance
+- rule governance (entered through natural language)
 
 Use `spec_flow_review` and `spec_flow_design_review` when reviewing the governance system itself, not when simply moving one business capability forward.
 Use `spec_flow_migrate` after updating `specflow/`; see [Update Notice](#update-notice).
+For rule work — extracting, binding, restructuring, or checking the impact of cross-unit rules — describe the intent in natural language and the agent will route through the rule-governance branch.
 
 ### Reading The Full Baseline
 
@@ -581,12 +668,11 @@ If you want to deeply understand or redesign the system, read in this order:
 1. `framework/natural_language_routing.md`
 2. `framework/spec_policy.md`
 3. `framework/command_policy.md`
-4. `framework/git_policy.md`
-5. `framework/shared_*.md`
-6. `framework/spec_flow_review.md`
-7. `framework/spec_flow_migrate.md`
-8. `framework/commands/`
-9. the installed project-side `docs/` files
+4. `framework/rule_new.md`, `framework/rule_extract.md`, `framework/rule_bind.md`, `framework/rule_topology.md`, `framework/rule_sync.md`, `framework/rule_escape.md`
+5. `framework/spec_flow_review.md`
+6. `framework/spec_flow_migrate.md`
+7. `framework/commands/`
+8. the installed project-side `docs/` files
 
 ## File Ownership
 
