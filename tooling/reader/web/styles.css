@@ -172,10 +172,10 @@ button:hover {
 
 .view-nav .tab {
   position: relative;
-  min-width: 130px;
+  min-width: 118px;
   border: 1px solid var(--line);
   border-radius: 0;
-  padding: 8px 18px;
+  padding: 8px 14px;
   background: #f8fafc;
   text-align: center;
 }
@@ -597,6 +597,32 @@ button:hover {
   background: transparent;
 }
 
+.todo-view-active .graph-legend {
+  display: none;
+}
+
+.todo-view-active .layout {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.todo-view-active .workspace {
+  border-radius: 8px;
+}
+
+.todo-view-active .resize-bar,
+.todo-view-active .inspector-panel {
+  display: none;
+}
+
+.todo-view-active .graph-shell {
+  grid-template-rows: 1fr;
+}
+
+.todo-view-active .graph-view {
+  padding: 12px;
+  background: #f8fafc;
+}
+
 .status-board {
   display: flex;
   flex: 1 0 auto;
@@ -829,6 +855,166 @@ button:hover {
   background: var(--accent);
 }
 
+.progress-line.complete span {
+  background: #22c55e;
+}
+
+.next-round-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-board {
+  width: 100%;
+  min-width: 720px;
+}
+
+.todo-board-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.todo-board-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.todo-board-heading p,
+.todo-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.todo-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.todo-card {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.todo-card.active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.todo-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.todo-type {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #f1f5f9;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.todo-command-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-detail-section code,
+.todo-source code {
+  font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.todo-copy-command {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  border-color: #bfdbfe;
+  padding: 3px 7px;
+  background: #eff6ff;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.todo-copy-command code {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.todo-detail-section {
+  margin-top: 14px;
+}
+
+.todo-source-list {
+  display: grid;
+  gap: 7px;
+}
+
+.todo-source {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.todo-source span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.todo-source code {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.todo-empty-state {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+}
+
+.todo-empty-state h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.todo-empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .review-progress-panel {
   margin: 0 0 18px;
   border-bottom: 1px solid var(--line);
@@ -849,10 +1035,6 @@ button:hover {
   padding-top: 0;
   color: var(--accent);
   font-size: 15px;
-}
-
-.review-progress-track {
-  margin-top: 0;
 }
 
 .review-next-command {
