@@ -112,6 +112,8 @@ The accepted acceptance-item set is the only acceptance set `unit_plan` may map 
 
 If the handoff is invalid, the smallest fallback is `unit_check`.
 
+The fallback re-runs the full gate, not a truth rewrite. The `truth_layer` (candidate truth, acceptance item set, Rule snapshot, global baseline, repository mapping) and `gate_layer` (check gate process shape) distinction defined by `specflow/framework/recovery_policy.md` Section 4.1 determines which process files are deleted. A `truth_layer` failure deletes all downstream process files; a `gate_layer` failure deletes only the check gate.
+
 ### 3.5 Allowed Reason Codes
 
 Use only:

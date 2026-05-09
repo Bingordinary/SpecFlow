@@ -77,6 +77,10 @@ Before execution:
 4. resolve the repository-wide real binding set of the target rule file and any previous bound Rule file from current repository truth before shared metadata writeback:
    - derive that set from current-layer unit and scenario `rule_refs` rather than from `bound_objects`
    - if current repository truth is insufficient to determine those touched real binding sets safely, stop this flow and return control to `rule_escape` through rule-governance routing instead of guessing
+4.5. before any unit candidate-side rule_refs write or rule-file metadata update, capture the recovery baseline required by `specflow/framework/recovery_policy.md` Section 6.5.1:
+     - the target unit candidate main file
+     - the touched rule file(s) that may be updated in bound_objects or promotion_owner_unit
+     - `docs/specs/rules/**` files that may be created, updated, or deleted by this round
 5. update the unit candidate-layer `rule_refs` using the Rule binding contract from `specflow/framework/spec_policy.md` Section 6.1
 6. update unit candidate body text so the relevant behavior chain explains which behavior consumes the rule truth
 7. for each touched candidate-layer Rule file from the target rule file or the previous bound Rule file recorded in Step 3 that already has a stable-layer sibling, validate that resulting draft's `promotion_owner_unit` against current repository truth plus this round's prepared unit writeback:
@@ -119,7 +123,7 @@ Stop when one of the following is true:
 2. the request is not really binding and must be re-routed to another rule flow
 3. the target unit does not actually depend on the rule truth
 4. the target unit is currently at `stable` and the flow has raised a rule-governance checkpoint for `unit_fork:{unit}` first
-6. a touched candidate-layer Rule file with a stable-layer sibling cannot keep or receive one stable `promotion_owner_unit` from current repository truth after this round's binding change
+5. a touched candidate-layer Rule file with a stable-layer sibling cannot keep or receive one stable `promotion_owner_unit` from current repository truth after this round's binding change
 
 ---
 

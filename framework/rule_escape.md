@@ -64,6 +64,9 @@ Before execution:
 
 1. identify the smallest distinct action units inside the current request
 2. if control was returned by an already-routed internal rule flow, identify the unresolved remainder from that flow using current repository truth instead of assuming the earlier route is still sufficient
+2.5. if control was returned by an already-routed internal rule flow after file mutation (i.e., rule_sync returned control because repository truth is insufficient), check whether a recovery baseline exists in execution context:
+     - if a recovery baseline exists and files were mutated, execute `specflow/framework/recovery_policy.md` Section 6.5.3 (Rule-Governance Recovery Procedure) before proceeding to decomposition
+     - if no recovery baseline exists but files were mutated, raise a `prerequisite_action` checkpoint listing each file believed to have been mutated
 3. test whether the request can be routed into exactly one standard rule flow without ambiguity
 4. if yes, stop and route back to that one standard flow instead of continuing inside `rule_escape`
 5. if more than one rule flow is involved, test whether a sequence exists whose order does not change formal truth

@@ -181,6 +181,10 @@ Object-specific minimums:
    - `_verify_result/unit/{unit}.md`
    - every same-round stable landing retargeted unit candidate main file when `unit_promote` changes that unit's `rule_refs`
    - every same-round stable landing retargeted unit candidate process file that may be deleted by post-promotion rule impact reconciliation
+   - every surviving candidate file that references `c_unit_{unit}.md` through a known candidate-to-candidate file reference, because unit_promote deletes that target file and must be able to restore the cross-referencing file's original reference if incomplete-promotion recovery is required
+   - every unit or scenario Spec file under `docs/specs/units/**` or `docs/specs/scenarios/**` that may be mechanically retargeted from `c_unit_{unit}` to `s_unit_{unit}` during promotion dependency reference retargeting
+   - every `_status.md` row that may be changed because a retargeted current-layer stable object must run stable verification or a retargeted current-layer candidate object must fall back to check
+   - every current-round process file that may be deleted because a retargeted candidate unit or scenario can no longer reuse process state written against the old candidate dependency reference
 2. `scenario_promote`
    - `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
    - `docs/specs/scenarios/stable/s_scenario_{scenario}.md` when present
@@ -237,12 +241,52 @@ The command must not claim:
 2. that old verify evidence is still reusable
 3. that the round can resume from a later step than the family restart step
 
+### 6.5 Rule-Governance Recovery
+
+Required when a rule-governance flow (rule_new, rule_extract, rule_bind, rule_topology) has already mutated rule truth files, repository_mapping.md, or downstream unit/scenario candidate files, and rule_sync returns control to rule_escape before the flow can safely close.
+
+#### 6.5.1 Required Recovery Baseline Before Mutation
+
+Before the first file write in any rule-governance flow that may mutate:
+
+1. the target candidate-layer Rule file(s)
+2. any stable-layer sibling Rule file that may be created, updated, or deleted
+3. any downstream unit or scenario candidate file that may be rewritten (rule_refs, body text)
+4. `docs/specs/repository_mapping.md` when the round may change the rule object map
+5. every other file under `docs/specs/rules/**` that may be touched by this round
+
+#### 6.5.2 When Recovery Is Required
+
+Rule-governance recovery is required when both are true:
+
+1. the rule flow already mutated at least one rule-truth file, repository_mapping.md file, or downstream unit/scenario file
+2. rule_sync returns control to rule_escape because repository truth is insufficient to continue safely
+
+#### 6.5.3 Recovery Procedure
+
+1. stop claiming the rule flow succeeded
+2. restore every mutated file covered by the recovery baseline to its exact pre-mutation state
+3. delete any new file created only by the interrupted round that did not exist in the recovery baseline
+4. if `repository_mapping.md` was modified, restore it from the recovery baseline
+5. if any downstream unit or scenario candidate file was mutated and later restored, those objects may need candidate-side process invalidation through the candidate fallback rules from Section 4
+
+#### 6.5.4 Recovery Result
+
+After rule-governance recovery completes:
+
+1. all rule-truth files are restored to pre-mutation state
+2. `repository_mapping.md` is restored to pre-mutation state when it was touched
+3. any downstream unit/scenario candidate file modified by the interrupted round is restored
+4. the next action is rerunning natural-language routing from current repository truth
+
 ## 7. Reason Codes
 
 This policy adds one standardized recovery code:
 
 1. `promotion_recovery`
    - use only when a promote command already mutated repository truth and the round had to be restored
+2. `rule_governance_recovery`
+   - use only when a rule-governance flow already mutated rule truth, repository_mapping, or downstream unit/scenario files and rule_sync returned control to rule_escape
 
 Other fallback or drift cases keep using the existing standardized handoff codes.
 
@@ -252,7 +296,8 @@ This policy works together with:
 
 1. `specflow/framework/command_policy.md`
 2. `specflow/framework/impact_sync_policy.md`
-3. the active promote command file
+3. `specflow/framework/checkpoint_protocol.md`
+4. the active promote command file
 
 Priority rules:
 

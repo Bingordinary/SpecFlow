@@ -107,6 +107,9 @@ Checkpoint resume must follow these rules:
 5. `resume_next_step` must be the smallest legal step, not the most convenient step
 6. a checkpoint answer does not become durable truth until it is written to the required truth target when writeback is required
 7. after a checkpoint answer that changes behavior, boundary, acceptance, rule truth, system truth, or repository ownership, the active flow must reroute or re-judge from current repository truth instead of continuing from the pre-checkpoint assumption
+8. when a checkpoint is raised after the active command or governance flow has already mutated repository truth (written a new truth file, updated an existing truth file, or deleted a truth file), the checkpoint enters `unstable_state`. The active flow must follow `specflow/framework/recovery_policy.md` Section 6 (Incomplete Promotion Recovery) or Section 6.5 (Rule-Governance Recovery) before the checkpoint answer can be processed
+
+Re-entry: after incomplete promotion recovery or rule-governance recovery, the next legal entry is `specflow/framework/natural_language_routing.md` (rerun from current repository truth), not a direct checkpoint resume from the post-mutation state
 
 Writeback rules:
 
@@ -146,7 +149,8 @@ The checkpoint protocol works together with:
 
 1. `specflow/framework/command_policy.md`
 2. `specflow/framework/candidate_handoff_contract.md`
-3. the active command file or governance-flow file
+3. `specflow/framework/recovery_policy.md`
+4. the active command file or governance-flow file
 
 Priority rules:
 

@@ -68,7 +68,19 @@ Before `impact_sync` revalidates any process file or writes any fallback result,
 1. `_status.md`
 2. candidate-side process file cleanup for invalid downstream objects
 
-Candidate fallback rules:
+### 4.1 Execution Order
+
+When `impact_sync` is invoked, the executor must follow this sequence:
+
+1. **Revalidate snapshots** — rebuild process snapshots from current bound truth using the Snapshot Revalidation Rules in this section; identify which process files no longer match
+2. **Classify failure layer** — for each invalid process file, classify the failed surface using `recovery_policy.md` Section 4 (Failure Layers: `truth_layer`, `gate_layer`, `plan_layer`, `implementation_layer`, `evidence_layer`, `dependency_readiness_layer`)
+3. **Select fallback target** — for each classified failure layer, apply the Candidate Fallback Rules (for candidate objects) or Stable-Side Fallback Rules (for stable objects) in this section to choose the smallest legal next command
+4. **Execute cleanup per layer** — for each candidate-side fallback, apply the Candidate-Side Cleanup Rules in this section to delete process files and update `_status.md`
+5. **Report output** — produce the output contract fields listed in this section
+
+Each step depends on the previous step. Do not skip to cleanup before snapshot revalidation, and do not select a fallback target before classifying the failure layer.
+
+### 4.2 Candidate Fallback Rules
 
 1. invalid `unit` truth layer -> `unit_check`
 2. invalid `unit` gate layer -> `unit_check`
@@ -80,12 +92,14 @@ Candidate fallback rules:
 8. invalid `scenario` evidence layer -> `scenario_verify`
 9. invalid `scenario` dependency readiness layer -> `scenario_promote`
 
-Stable fallback rules:
+### 4.3 Stable-Side Fallback Rules
 
-1. invalid `unit` -> `unit_stable_verify`
-2. invalid `scenario` -> `scenario_stable_verify`
+1. when an invalid stable `unit` falls back to `unit_stable_verify`, update `_status.md` to that next step
+2. when an invalid stable `scenario` falls back to `scenario_stable_verify`, update `_status.md` to that next step
+3. stable-side fallback must not delete candidate-side process files solely because stable alignment became stale
+4. stable-side fallback is invoked only after the upstream change is already known to affect stable-layer alignment claims; it must not be used as a periodic health check
 
-Snapshot revalidation rules:
+### 4.4 Snapshot Revalidation Rules
 
 1. rebuild current process snapshots according to `process_snapshot_contract.md`
 2. apply the fingerprint, ordering, and exact-comparison rules from that contract
@@ -93,17 +107,13 @@ Snapshot revalidation rules:
 4. classify each invalid process file by `recovery_policy.md` Section 4 before cleanup
 5. treat the process file as invalid for downstream use when any required stored field differs from the rebuilt value after allowed exceptions
 
-Candidate-side cleanup rules:
+### 4.5 Candidate-Side Cleanup Rules
 
 1. update `_status.md` to the next step selected by the recovery layer
 2. delete exactly the process files listed for that object family and recovery layer in `recovery_policy.md`
 3. a cleanup target that is already absent is recorded as an absent cleanup target; it does not create a different fallback state
 
-Stable-side fallback rules:
-
-1. when an invalid stable `unit` falls back to `unit_stable_verify`, update `_status.md` to that next step
-2. when an invalid stable `scenario` falls back to `scenario_stable_verify`, update `_status.md` to that next step
-3. stable-side fallback must not delete candidate-side process files solely because stable alignment became stale
+### 4.6 Output Report
 
 `impact_sync` output must report:
 

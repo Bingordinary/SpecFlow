@@ -78,6 +78,12 @@ Before execution:
    - raise a blocking rule-governance checkpoint with `type=prerequisite_action`
    - require `unit_fork:{unit}` for each such unit before extraction continues
    - set `required_writeback_target` to the corresponding unit candidate main file set because chat-only agreement does not create legal extraction targets
+5.5. before any rule file writeback, capture the recovery baseline required by `specflow/framework/recovery_policy.md` Section 6.5.1:
+     - the target candidate-layer Rule file
+     - any stable-layer sibling that may be created or updated
+     - any downstream unit candidate file that may be rewritten (rule_refs, body text)
+     - `docs/specs/repository_mapping.md` when the round may change the rule object map
+     - every other file under `docs/specs/rules/**` that may be touched by this round
 6. create or update the target candidate-layer `rule`
 7. if Step 6 created the first file for a brand-new rule object, initialize `rule_version=0.1.0`
 8. if Step 6 reopened an already-stable rule object at the candidate layer, set the candidate `rule_version` to the intended next stable version according to Rule semantic version rules

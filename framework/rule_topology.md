@@ -84,6 +84,10 @@ Before execution:
    - which touched rule files must be deleted in this round
    - which touched rule files will remain intentionally unbound as independently authored rule truth
 6. if the current repository truth is not sufficient to stabilize Step 5, stop this flow and return control to `rule_escape` through rule-governance routing instead of guessing
+6.5. before any rule file writeback, capture the recovery baseline required by `specflow/framework/recovery_policy.md` Section 6.5.1:
+     - every touched candidate-layer and stable-layer Rule file
+     - every downstream unit or scenario candidate file that may be rewritten
+     - `docs/specs/repository_mapping.md` when the round may change the rule object map
 7. create, update, or delete the touched candidate-layer Rule files according to the topology plan:
    - if the round creates the first file for a brand-new rule object, initialize `rule_version=0.1.0`
    - if the round opens or rewrites a candidate-layer file for a rule object that already has a stable-layer sibling, set that candidate file's `rule_version` to the intended next stable version according to Rule semantic version rules
