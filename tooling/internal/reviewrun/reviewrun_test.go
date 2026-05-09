@@ -845,6 +845,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"severity_policy.md",
 		"scenario_policy.md",
 		"spec_policy.md",
+		"spec_writing_guide.md",
 		"repository_mapping_policy.md",
 		"candidate_handoff_contract.md",
 		"downgrade_policy.md",

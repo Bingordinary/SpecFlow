@@ -23,7 +23,7 @@ This file states only `scenario_fork`-local entry, output, and stop rules.
    - if the fork selects behavior from implementation, tests, runtime behavior, historical material, or other non-stable evidence, prepare the required `source_basis`, `evidence_appendix_ref`, and candidate evidence appendix in the same round
    - if that source decision or evidence appendix is not ready, stop before writing the candidate main Spec
 3. create or overwrite `docs/specs/scenarios/candidate/c_scenario_{scenario}.md` and write the prepared `source_basis` and `evidence_appendix_ref` fields in the same candidate write
-4. ensure the candidate `Testability / Acceptance Criteria` section uses explicit acceptance items that satisfy `specflow/framework/spec_policy.md` Section 5.5
+4. ensure the candidate `Testability / Acceptance Criteria` section uses explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
    - if the stable source already has structured acceptance items, carry them forward and edit only the items affected by the new round
    - if the stable source still has historical prose-only acceptance text, convert the relevant scenario acceptance scope into explicit items in the candidate instead of preserving the ambiguity
 5. carry forward stable bindings

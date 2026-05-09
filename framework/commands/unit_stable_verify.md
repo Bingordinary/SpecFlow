@@ -43,40 +43,40 @@ This file states only `unit_stable_verify`-local entry, output, and stop rules.
 ## 4. Procedure
 
 1. read `docs/specs/units/stable/s_unit_{unit}.md` and any required appendix or Rule files
-4. verify that the stable `Testability / Acceptance Criteria` section contains explicit acceptance items according to `spec_policy.md` Section 5.5
+2. verify that the stable `Testability / Acceptance Criteria` section contains explicit acceptance items according to `spec_writing_guide.md` Section 5
    - historical stable Specs that still use prose-only acceptance text must not be treated as automatically passing
    - if the stable truth lacks structured acceptance items, report the gap and keep the object at `unit_stable_verify` or route through the smallest legal truth-update path before claiming stable alignment
-5. verify current code against key protocols, main flow, error handling, and acceptance criteria in `stable`
-6. build a structured verification evidence matrix around acceptance item `id` values:
+3. verify current code against key protocols, main flow, error handling, and acceptance criteria in `stable`
+4. build a structured verification evidence matrix around acceptance item `id` values:
    - each row must name `acceptance_item_id`, `target`, `verification_surface`, `implementation_surface`, `verification_method`, `evidence`, and `status`
    - `status` must be exactly one of `pass`, `fail`, `partial`, `not_checked`, or `not_runnable_yet`
    - `pass` requires current-round evidence that directly proves the item's `pass_condition`
    - `not_runnable_yet` may be used only when the stable item itself explicitly records `not_runnable_yet` and the current run confirms the same missing runnable surface still exists
    - passing tests that do not prove the item's `pass_condition` must be reported as insufficient evidence, not as `pass`
-7. ensure all current-gate acceptance items are covered
-8. output `Coverage Summary` with at least:
+5. ensure all current-gate acceptance items are covered
+6. output `Coverage Summary` with at least:
    - `Total`
    - `Pass`
    - `Fail`
    - `Partial`
    - `Not Checked`
    - `Not Runnable Yet`
-9. add risk notes to every `partial`, `not_checked`, and `not_runnable_yet` item
-10. classify deviations with the shared severity meanings defined by `specflow/framework/severity_policy.md`
-11. conclude:
+7. add risk notes to every `partial`, `not_checked`, and `not_runnable_yet` item
+8. classify deviations with the shared severity meanings defined by `specflow/framework/severity_policy.md`
+9. conclude:
    - if explicitly referenced stable appendix truth changed enough that the current stable-alignment claim must be re-judged, the result can only be "stable truth drift exists; rerun stable verification against the current stable truth"
    - if any `fail` exists, the result can only be "drift exists; return to stable first"
    - `partial`, `not_checked`, and `not_runnable_yet` are non-blocking only when `specflow/framework/downgrade_policy.md` allows downgrade for the current evidence state
    - if tests pass but do not prove the stable acceptance item, report the evidence gap instead of treating the test result as stable-alignment evidence
    - if key deviations are cleared and evidence is complete, the result is "still aligned with stable"
-12. if code, acceptance-item structure, or formal global baseline has drifted from the currently claimed stable state, the next action can only be:
+10. if code, acceptance-item structure, or formal global baseline has drifted from the currently claimed stable state, the next action can only be:
    - return code to `stable` semantics
    - or update stable truth through the smallest legal truth path when the blocker is a missing structured acceptance section rather than code drift
    - or rerun stable-layer verification when the drift is stable-truth-side rather than code-side
    - or refresh the stable-layer verification conclusion against the current formal global baseline when the drift is baseline-side rather than code-side
    - rerun `unit_stable_verify:{unit}` after the required repair or re-judgment work
    - do not open `unit_fork:{unit}` while the current implementation still fails `unit_stable_verify`
-13. update `_status.md`:
+11. update `_status.md`:
    - if still aligned -> `Next Command=unit_fork`
    - if drift exists -> keep `Next Command=unit_stable_verify`
    - the deterministic row writeback may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> status set-object --type unit --object {unit} --stable yes --candidate no --active-layer stable --next-command <unit_fork-or-unit_stable_verify> --notes <status-note>`
@@ -93,14 +93,14 @@ This file states only `unit_stable_verify`-local entry, output, and stop rules.
 1. verification conclusion
 2. structured verification evidence matrix by acceptance item `id`
 3. `Coverage Summary`
-5. downgrade decision when `partial`, `not_checked`, or `not_runnable_yet` exists
-6. deviation list
-7. `fallback_reason_code` when stable alignment cannot be claimed safely
-8. next-step recommendation
+4. downgrade decision when `partial`, `not_checked`, or `not_runnable_yet` exists
+5. deviation list
+6. `fallback_reason_code` when stable alignment cannot be claimed safely
+7. next-step recommendation
    - if drift exists, the immediate next step must remain `unit_stable_verify`
    - `unit_fork:{unit}` may be suggested only as a later follow-up after stable alignment has been restored
-9. `_status.md` update result
-10. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/command_policy.md`
+8. `_status.md` update result
+9. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/command_policy.md`
    - `current state` must explicitly confirm `Active Layer=stable` and the written `Next Command`
    - if `Next Command=unit_stable_verify`, `why this next step` must explicitly state that alignment is not yet restored rather than implying a no-op rerun
 

@@ -50,7 +50,7 @@ This file states only `unit_fork`-local entry, output, and stop rules.
    - compatible fix or alignment -> next `PATCH`
 7. generate `docs/specs/units/candidate/c_unit_{unit}.md` from the current stable file and write the prepared `source_basis` and `evidence_appendix_ref` fields in the same candidate write
 8. set candidate `frontmatter.version` to that target version
-9. ensure the candidate `Testability / Acceptance Criteria` section uses explicit acceptance items that satisfy `specflow/framework/spec_policy.md` Section 5.5
+9. ensure the candidate `Testability / Acceptance Criteria` section uses explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
    - if the stable source already has structured acceptance items, carry them forward and edit only the items affected by the new round
    - if the stable source still has historical prose-only acceptance text, convert the relevant current acceptance scope into explicit items in the candidate instead of preserving the ambiguity
 11. re-check `rule_refs`:

@@ -34,7 +34,7 @@ This file states only `scenario_new`-local entry, output, and stop rules.
    - `repository_mapping_ref` to the post-writeback `docs/specs/repository_mapping.md` version
    - `unit_refs`
    - `rule_refs`
-4. ensure the candidate scenario contains `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `specflow/framework/spec_policy.md` Section 5.5
+4. ensure the candidate scenario contains `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
 5. write the prepared `docs/specs/repository_mapping.md` update in the same round as the candidate writeback
 6. write or upsert `_status.md` row:
    - `Object Type=scenario`

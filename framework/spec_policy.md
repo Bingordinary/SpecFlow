@@ -4,13 +4,14 @@
 
 This file defines the formal truth objects used by `specFlow` in this repository.
 
-It answers five questions:
+It answers six questions:
 
 1. which formal objects exist
 2. which files carry those objects
 3. how object identity is recorded
 4. how bindings, snapshots, and invalidation are anchored
 5. how executors must read truth before governance actions
+6. how the spec writing guide relates to the governance rules
 
 ## 2. Core Object Families
 
@@ -260,55 +261,10 @@ When a candidate-layer rule file already has a stable-layer sibling for the same
 
 ## 5. Required Binding Fields
 
-### 5.1 `unit`
+The required spec fields, acceptance criteria format, and content organization rules are defined by `specflow/framework/spec_writing_guide.md`.
+This section defines only the governance-side conditional fields that apply to rule files.
 
-Each current-layer unit truth must record:
-
-2. `rule_refs`
-
-Each candidate-layer unit main file must additionally record these frontmatter fields:
-
-1. `source_basis`
-2. `evidence_appendix_ref`
-
-`unit` does not formally record `scenario_refs`.
-
-### 5.2 `scenario`
-
-Each current-layer scenario truth must record:
-
-1. `repository_mapping_ref`
-2. `unit_refs`
-3. `rule_refs`
-
-Each candidate-layer scenario main file must additionally record these frontmatter fields:
-
-1. `source_basis`
-2. `evidence_appendix_ref`
-
-### 5.3 `repository_mapping`
-
-`repository_mapping` must record:
-
-1. current `unit` IDs
-2. current `scenario` IDs, or `none`
-3. current `rule` IDs
-
-This is repository-structure truth, not lifecycle binding metadata for a command-target object.
-
-### 5.4 `rule`
-
-Each current-layer rule file must record:
-
-1. `rule_id`
-2. `rule_scope`
-   - `global`
-   - `bound`
-3. `layer`
-4. `rule_version`
-5. `bound_objects`
-   - `all_units` for stable global rules
-   - typed refs or `none` for bound rules and candidate global rules
+### 5.1 Rule Conditional Fields
 
 Conditional field:
 
@@ -327,91 +283,6 @@ Conditional field:
 7. when the resulting rule file has one or more formal bound objects, the intentional-unbound retention fields must not be recorded
 8. when a file that previously carried intentional-unbound retention becomes formally bound again, the same round that restores the binding must remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`
 9. intentional-unbound retention fields are terminal-state truth for the rule file only; they do not replace `rule_refs`, do not create a formal binding, and do not skip required `rule_sync` or `impact_sync` reconciliation
-
-### 5.5 Testability / Acceptance Criteria Contract
-
-Each current-layer `unit` and `scenario` main Spec must include a `Testability / Acceptance Criteria` section, or an explicitly equivalent acceptance section title.
-
-This section is not a prose-only result description.
-It is the formal list of verifiable acceptance items that downstream `check`, `plan`, `verify`, `stable_verify`, and `promote` commands must consume.
-
-Each acceptance item must record these fields:
-
-1. `id`
-   - a stable, object-local identifier
-   - examples: `ai.model_provider_public_port`, `runtime.task_dispatch_integration`
-2. `target`
-   - the exact behavior, protocol, boundary, event, storage effect, or external outcome being accepted
-3. `verification_surface`
-   - exactly one value from the fixed list below
-4. `implementation_surface`
-   - the concrete package, path set, entrypoint, storage surface, event surface, or manual effect surface that must satisfy the item
-5. `verification_method`
-   - the command, test, inspection, fixture, external-consumer stub, or manual observation that can prove the item
-6. `pass_condition`
-   - the concrete observed condition required for this item to pass
-
-The first-version fixed `verification_surface` values are:
-
-1. `public_api`
-2. `internal_flow`
-3. `error_handling`
-4. `eventing`
-5. `storage`
-6. `integration`
-7. `manual_effect`
-
-Runnable-state rules:
-
-1. If an acceptance item cannot be verified in the current repository state, the item must explicitly record `not_runnable_yet` and a non-empty reason.
-2. `not_runnable_yet` never counts as `pass`.
-3. A command must not silently treat missing test harnesses, missing runtime entrypoints, or unavailable external effects as passed acceptance.
-4. `not_runnable_yet` may be used only to avoid making a false pass claim. It does not allow implementation or verification to claim the underlying behavior is complete.
-
-Surface-specific rules:
-
-1. For `verification_surface=public_api`:
-   - `implementation_surface` must name the public package, file, or exported contract surface
-   - `verification_method` must describe an external-consumer style check
-   - `pass_condition` must state that the consumer can satisfy the contract without importing `internal` packages
-2. For `verification_surface=integration`:
-   - the item must name the runnable integration entrypoint or chain
-   - if no such entrypoint exists yet, the item must be marked `not_runnable_yet` with the missing entrypoint reason
-   - a broad integration claim must not be counted as accepted only because unit-local pieces pass
-3. For `verification_surface=manual_effect`:
-   - `verification_method` must name the exact human-observable effect and the observation procedure
-   - commands may use `human_verify` only when the remaining uncertainty is truly effect judgment rather than missing executable evidence
-
-Acceptance item writing rules:
-
-1. Do not infer acceptance items from words such as "must", "only", "external", or "replaceable".
-2. If a requirement is important enough to block planning, implementation, verification, or promotion, it must appear as an explicit acceptance item.
-3. A vague item such as "works", "aligns with design", "is replaceable", or "supports integration" is not sufficient unless the required fields make it directly verifiable.
-4. By default, every acceptance item is a current gate item that downstream commands must close.
-5. An item is outside the current pass claim only when it explicitly records `not_runnable_yet`, gives the reason, and its `pass_condition` states that it is not a current pass claim.
-6. Commands must not infer "key" or "non-key" status from wording, position, length, or apparent importance.
-7. Historical stable Specs are not required to be rewritten immediately only because this contract was introduced. They must be brought into this format the next time the object enters `unit_stable_verify`, `scenario` verification, or a fork that touches the acceptance section.
-
-Example item shapes:
-
-```md
-- id: ai.model_provider_public_port
-  target: External model adapters can implement the AI model provider contract without importing internal packages.
-  verification_surface: public_api
-  implementation_surface: AgentCore/contracts/model*.go; AgentCore/ports/model_provider.go
-  verification_method: External-consumer style compile test with a stub provider that imports only contracts and ports.
-  pass_condition: The stub implements ModelProvider and StreamingModelProvider using only public contracts/ports types and no internal import path.
-```
-
-```md
-- id: runtime.task_dispatch_integration
-  target: Runtime dispatch reaches the task execution scenario entrypoint.
-  verification_surface: integration
-  implementation_surface: Runtime trigger-to-outcome entrypoint
-  verification_method: not_runnable_yet
-  not_runnable_yet_reason: The repository does not yet expose a complete runtime entrypoint for this chain.
-  pass_condition: Not a current pass claim; it becomes runnable only after the runtime entrypoint exists.
-```
 
 ## 6. Binding Contracts
 
@@ -450,7 +321,28 @@ Downstream invalidation rule:
 1. upstream change may invalidate downstream process files or stable-alignment claims
 2. downstream change does not automatically invalidate upstream truth
 
-### 6.3 Version Contract
+### 6.3 Promotion Dependency Reference Retarget Contract
+
+When `unit_promote:{unit}` lands `docs/specs/units/candidate/c_unit_{unit}.md` as `docs/specs/units/stable/s_unit_{unit}.md`, the promote command may mechanically retarget existing formal Spec references to that same unit from the candidate layer to the stable layer in the same round.
+
+This is a narrow reference-maintenance exception. It is not a general stable truth editing permission.
+
+Rules:
+
+1. the retarget may change only the promoted unit's path or version ref:
+   - `docs/specs/units/candidate/c_unit_{unit}.md` to `docs/specs/units/stable/s_unit_{unit}.md`
+   - relative paths that resolve to the same candidate file to relative paths that resolve to the same stable file
+   - `c_unit_{unit}@<version>` to `s_unit_{unit}@<same-version>`
+2. the retarget must preserve the same referenced unit, same promoted version, same behavior meaning, same acceptance meaning, same ownership boundary, and same Rule binding meaning
+3. the retarget must stop instead of editing when the reference text carries candidate-only meaning, including claims that the dependency is temporary, not formally accepted, unresolved, or only valid while the target remains candidate-layer truth
+4. a current-layer stable unit other than the promoted unit retargeted this way must not be forked only because of the mechanical reference update; its `_status.md` row must instead move to `Next Command=unit_stable_verify`
+5. a current-layer stable scenario retargeted this way must not be forked only because of the mechanical reference update; its `_status.md` row must instead move to `Next Command=scenario_stable_verify`
+6. the promoted unit's own newly written stable file may be retargeted as part of the same stable landing, and that self-retarget must not replace the promoted unit's successful `Next Command=unit_fork` follow-up state
+7. a current-layer candidate unit or scenario retargeted this way must fall back to its check command because its current process files were written against the old dependency path
+8. non-current historical files may be mechanically retargeted when the same narrow conditions hold, but they do not update `_status.md` merely because they are not the active truth layer
+9. the promote command must include every retargeted file, affected status row, and candidate-side process file cleanup in its incomplete-promotion recovery baseline
+
+### 6.4 Version Contract
 
 Formal version values use `MAJOR.MINOR.PATCH`.
 
@@ -495,7 +387,7 @@ Before any governance action:
 1. read the target object's current-layer main file
 2. read any explicitly required appendix truth for that object family
 3. read bound rule files when `rule_refs` is not empty
-5. read `docs/specs/repository_mapping.md` when object boundary, path ownership, support surface, or current object map matters
+4. read `docs/specs/repository_mapping.md` when object boundary, path ownership, support surface, or current object map matters
 
 Additional rules:
 
@@ -549,3 +441,8 @@ Formal routing remains:
 
 1. `rule_sync` for rule-governance downstream discovery
 2. `impact_sync` for generic fallback and cleanup once the affected downstream object set is fixed
+
+## 10. Relationship to Other Framework Documents
+
+1. The spec writing rules (required fields, acceptance criteria format, content organization) are defined by `specflow/framework/spec_writing_guide.md`.
+2. Commands and governance flows that need to check spec content must reference `specflow/framework/spec_writing_guide.md` directly, not the writing-related sections formerly in this file.

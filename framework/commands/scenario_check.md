@@ -49,16 +49,17 @@ Scoped confirmation of the repaired fragment must not write `_check_result/scena
    - evidence appendix conflicts or unknowns that still affect selected scenario behavior block pass unless the candidate scenario main Spec explicitly makes a bounded selected rule that no longer depends on them
 4. verify `repository_mapping_ref` matches the current repository mapping
 5. verify entry, path, exit, and failure absorption are explicit enough to verify
-6. verify explicit scenario acceptance items:
+6. verify content organization: the candidate scenario main Spec and its appendix files must satisfy `spec_writing_guide.md` Section 6
+7. verify explicit scenario acceptance items:
    - the scenario must contain a `Testability / Acceptance Criteria` section, or an explicitly equivalent acceptance section title
    - each acceptance item must record `id`, `target`, `verification_surface`, `implementation_surface`, `verification_method`, and `pass_condition`
-   - `verification_surface` must use only the fixed values from `specflow/framework/spec_policy.md` Section 5.5
+   - `verification_surface` must use only the fixed values from `spec_writing_guide.md` Section 5
    - scenario-level `integration` items must name the runnable trigger-to-outcome entrypoint or mark the item as `not_runnable_yet` with a concrete missing-entrypoint reason
    - broad wording such as "end-to-end works", "all units are connected", or "the flow is integrated" is not enough unless the required fields make the scenario directly verifiable
    - if an item is marked `not_runnable_yet`, `scenario_check` may treat the item as explicitly bounded only when the reason is concrete and the scenario does not use that same item as a current pass claim
    - missing, vague, incomplete, or falsely passing acceptance items can only result in `blocked` or `fix_required`
-7. if pass, write `_check_result/scenario/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, including the accepted acceptance-item set by `id`, `verification_surface`, and `not_runnable_yet` state, then advance `Next Command=scenario_verify`
-8. if not pass:
+8. if pass, write `_check_result/scenario/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, including the accepted acceptance-item set by `id`, `verification_surface`, and `not_runnable_yet` state, then advance `Next Command=scenario_verify`
+9. if not pass:
    - conclude `blocked` or `fix_required`
    - do not write a failed `_check_result/scenario/{scenario}.md`
    - delete an old `_check_result/scenario/{scenario}.md` when it no longer covers the current candidate scenario, repository mapping, bound units, bound Rule files, or formal global baseline state

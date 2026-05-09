@@ -150,6 +150,9 @@ func loadRepositoryMapping(repoRoot string) repositoryMapping {
 			case strings.Contains(trimmed, "`implementation_surface`"):
 				currentPathKind = "implementation"
 				continue
+			case strings.Contains(trimmed, "`implementation_realization_note`"):
+				currentPathKind = ""
+				continue
 			case strings.HasPrefix(trimmed, "- `"):
 				pathRef, ok := parseListCodePath(trimmed, relPath, idx+1)
 				if !ok {

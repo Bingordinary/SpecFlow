@@ -14,7 +14,7 @@ This file states only `scenario_stable_verify`-local entry, output, and stop rul
 1. `_status.md` says `Object Type=scenario`, `Active Layer=stable`, `Next Command=scenario_stable_verify`
 2. current stable scenario file exists at `docs/specs/scenarios/stable/s_scenario_{scenario}.md`
 3. read `specflow/framework/scenario_policy.md`
-4. read `specflow/framework/spec_policy.md` Section 5.5
+4. read `spec_writing_guide.md` Section 5
 5. read `specflow/framework/process_snapshot_contract.md`
 6. read `specflow/framework/downgrade_policy.md`
 7. read `specflow/framework/severity_policy.md` when confirmed deviations are graded
@@ -33,7 +33,7 @@ This file states only `scenario_stable_verify`-local entry, output, and stop rul
    - the stable summary is not behavior truth
    - the stable summary is not a current implementation-alignment claim
    - the command must still collect current evidence before claiming alignment with stable
-5. verify that the stable scenario `Testability / Acceptance Criteria` section contains explicit acceptance items according to `specflow/framework/spec_policy.md` Section 5.5
+5. verify that the stable scenario `Testability / Acceptance Criteria` section contains explicit acceptance items according to `spec_writing_guide.md` Section 5
    - historical stable scenarios that still use prose-only acceptance text must not be treated as automatically passing
    - if the stable truth lacks structured acceptance items, report the gap and keep the object at `scenario_stable_verify` or route through the smallest legal truth-update path before claiming stable alignment
 6. verify the current declared trigger-to-outcome path against the stable scenario truth, including current bound unit behavior, bound Rule behavior, and applicable global-baseline constraints

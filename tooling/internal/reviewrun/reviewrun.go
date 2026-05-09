@@ -750,6 +750,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return []string{
 					"specflow/framework/spec_policy.md",
+					"specflow/framework/spec_writing_guide.md",
 					"specflow/framework/repository_mapping_policy.md",
 					"specflow/framework/implementation_change_policy.md",
 					"specflow/framework/onboarding_decision_policy.md",
@@ -792,6 +793,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 					"specflow/framework/scenario_policy.md",
 					"specflow/framework/spec_flow_migrate.md",
 					"specflow/framework/spec_policy.md",
+					"specflow/framework/spec_writing_guide.md",
 				}, scope.RuleGovernanceFiles, scope.TemplateGovernanceFiles, scope.ProjectInstanceCompatibilityFiles)
 			},
 		},

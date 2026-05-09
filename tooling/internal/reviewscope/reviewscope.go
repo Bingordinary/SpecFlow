@@ -204,6 +204,7 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		"specflow/framework/spec_flow_design_review.md",
 		"specflow/framework/agent_operability_standard.md",
 		"specflow/framework/spec_policy.md",
+		"specflow/framework/spec_writing_guide.md",
 		"specflow/framework/command_policy.md",
 		"specflow/framework/natural_language_routing.md",
 		"specflow/framework/spec_flow_migrate.md",

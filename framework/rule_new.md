@@ -82,6 +82,11 @@ If the request names units that do not yet have current-layer Spec files and the
    - if current repository truth is insufficient to derive that binding set or owner set safely, stop this flow and return control to `rule_escape` through rule-governance routing instead of guessing
    - if the affected-unit owner set is empty but the binding set is not empty, stop this flow and return control to `rule_escape`; scenario-only current bindings cannot supply the required `promotion_owner_unit`
    - if both sets are empty, continue only when current repository truth explicitly shows that the already-stable rule object is intentionally kept as independently authored rule truth with no current formal bindings; otherwise stop this flow and return control to `rule_escape` through rule-governance routing instead of guessing a lifecycle owner with no current formal consumer set
+5.5. before any rule file writeback, capture the recovery baseline required by `specflow/framework/recovery_policy.md` Section 6.5.1:
+     - the target candidate-layer Rule file
+     - any stable-layer sibling that may be created or updated
+     - `docs/specs/repository_mapping.md` when the round may change the rule object map
+     - every other file under `docs/specs/rules/**` that may be touched by this round
 6. if the request is to continue evolving an already-independent rule object that currently has only a stable-layer file, create or update the sibling candidate-layer `rule` for the same `rule_id`, set its `rule_version` to the intended next stable version according to Rule semantic version rules, and write exactly one `promotion_owner_unit` into that candidate-layer rule file:
    - when the repository-wide affected-unit owner set from Step 5 is not empty, the owner must be one formal unit from that set
    - when Step 5 confirmed that the already-stable rule object is intentionally kept with no current formal bindings, the owner must be one formal unit explicitly required by the current round as the future adopter of that next-round draft
@@ -89,6 +94,7 @@ If the request names units that do not yet have current-layer Spec files and the
    - the owner unit may still remain formally bound to the current stable-layer shared sibling until a later legal unit candidate round rewrites its `rule_refs`
    - if current repository truth is insufficient to justify the no-current-binding continuation or to name one stable promotion owner unit, stop this flow and return control to `rule_escape` through rule-governance routing instead of guessing
 7. otherwise create or update the target candidate-layer `rule`
+7.5. ensure the candidate-layer rule file body satisfies `spec_writing_guide.md` Section 6: explanatory and normative content must be separated at the subsection level
 8. if Step 7 created the first file for a brand-new rule object, initialize `rule_version=0.1.0`
 9. if the target candidate-layer rule file has a stable-layer sibling after Steps 6 to 8, validate that the resulting candidate-layer file still carries exactly one valid `promotion_owner_unit`:
    - if Step 6 already wrote the owner, confirm that the resulting file still keeps that owner
@@ -115,7 +121,7 @@ Stop when one of the following is true:
 3. duplicate formal truth remains in unit-local files and boundary closure has not been completed
 4. current repository truth is insufficient to rule out duplicate formal truth or alternate formal landing points, so control has returned to `rule_escape` through rule-governance routing
 5. the request is really a pure unit retarget or rule impact-check request and must be re-routed to another rule flow
-7. a next-round candidate-layer rule file for an already-stable rule object would exist after this round, but no stable `promotion_owner_unit` can be named from current repository truth
+6. a next-round candidate-layer rule file for an already-stable rule object would exist after this round, but no stable `promotion_owner_unit` can be named from current repository truth
 
 ---
 

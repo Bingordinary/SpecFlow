@@ -62,7 +62,7 @@ Before execution:
    - `Data Structures / Protocols`
    - `State Machine / Business Flow`
    - `Edge Cases & Error Handling`
-   - `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `specflow/framework/spec_policy.md` Section 5.5
+   - `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
 7. if needed, add `Rule Alignment` with at least:
    - `rule_refs` written in the Rule binding contract from `specflow/framework/spec_policy.md` Section 6.1
    - `rule_reuse_summary`

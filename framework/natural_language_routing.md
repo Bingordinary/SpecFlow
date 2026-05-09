@@ -561,12 +561,12 @@ When the request is a design or project-shaping request that is not yet ready fo
 
 Allowed guidance skill entry points are:
 
-1. `using-specflow-guidance`
-2. `project-framing`
-3. `scope-cutting`
-4. `solution-design`
-5. `design-quality-review`
-6. `spec-writeback-guidance`
+1. `using-specflow-guidance` (`specflow/framework/skills/using-specflow-guidance/SKILL.md`)
+2. `project-framing` (`specflow/framework/skills/project-framing/SKILL.md`)
+3. `scope-cutting` (`specflow/framework/skills/scope-cutting/SKILL.md`)
+4. `solution-design` (`specflow/framework/skills/solution-design/SKILL.md`)
+5. `design-quality-review` (`specflow/framework/skills/design-quality-review/SKILL.md`)
+6. `spec-writeback-guidance` (`specflow/framework/skills/spec-writeback-guidance/SKILL.md`)
 
 Guidance routing rules:
 
@@ -727,31 +727,31 @@ The executor must not route by keyword alone when the named files already show a
 
 ### 10.1 Rule Flow Routing
 
-Use `rule_new` only when the request clearly means:
+Use `rule_new` only when the request clearly means: (file: `specflow/framework/rule_new.md`)
 
 1. the user wants to design rule truth from the start, or open the next candidate-layer round for an already-independent rule object
 2. that truth is intended to exist independently rather than first living in one unit appendix
 3. the main task is shaping rule truth itself rather than binding one unit to it or only checking downstream impact
 
-Use `rule_extract` only when the request clearly means:
+Use `rule_extract` only when the request clearly means: (file: `specflow/framework/rule_extract.md`)
 
 1. truth already exists inside one or more units
 2. that truth should now be extracted into one independent `rule`
 3. the main task is the boundary extraction itself
 
-Use `rule_bind` only when the request clearly means:
+Use `rule_bind` only when the request clearly means: (file: `specflow/framework/rule_bind.md`)
 
 1. a `rule` already exists
 2. a unit now needs to consume it
 3. the main task is binding and unit-side explanation, not redesigning the rule truth itself
 
-Use `rule_sync` only when the request clearly means:
+Use `rule_sync` only when the request clearly means: (file: `specflow/framework/rule_sync.md`)
 
 1. a `rule` changed
 2. the user wants to know which units or scenarios are affected
 3. the main task is state fallback, snapshot invalidation, or impact closure
 
-Use `rule_topology` only when the request clearly means:
+Use `rule_topology` only when the request clearly means: (file: `specflow/framework/rule_topology.md`)
 
 1. one or more existing `rule` objects need structural topology change or terminal-state resolution
 2. the main task is not simple first-time authoring, extraction, one-unit binding, or impact check
@@ -760,12 +760,12 @@ Use `rule_topology` only when the request clearly means:
 Do not route to `rule_topology` only because a unit promotion will land its owned candidate Rule as stable and retarget other candidate units from that exact candidate Rule ref to the same-`rule_id`, same-`rule_version` stable Rule ref in the same round.
 That shape is owned by the promoting unit's `unit_promote` command when the retarget changes only the Rule layer target and the affected units are already at `candidate`.
 
-Use `rule_escape` when the request cannot be stably routed into exactly one standard rule flow.
+Use `rule_escape` when the request cannot be stably routed into exactly one standard rule flow. (file: `specflow/framework/rule_escape.md`)
 This is mandatory when at least one of these holds:
 
 1. one request simultaneously hits more than one standard rule flow and the action order matters to formal truth
 2. the request is really redrawing the boundary between unit-local truth and rule truth
-4. current repository truth is insufficient to stably judge which part belongs to shared and which part stays unit-local
+3. current repository truth is insufficient to stably judge which part belongs to shared and which part stays unit-local
 
 ### 10.2 Rule Branch Procedure
 
@@ -798,12 +798,12 @@ Fixed closure rules:
 1. if `rule_new` or `rule_extract` writes `docs/specs/rules/**`, it must not claim closure until `rule_sync` has completed
 2. if `rule_bind` changes any unit `rule_refs`, it must not claim closure until `rule_sync` has completed
 3. if `rule_topology` changes any unit or scenario `rule_refs` value or any file under `docs/specs/rules/**`, it must not claim closure until `rule_sync` has completed
-5. no internal rule flow may guess a unit or scenario current layer without resolving it from `_status.md` first when the named object already exists
-6. no internal rule flow may modify unit or scenario `stable` truth directly; if a rule request needs command-target truth writeback and the target object is currently at `stable`, the flow must stop at a rule-governance checkpoint and require `unit_fork:{unit}` or `scenario_fork:{scenario}` first
-7. if `rule_escape` emits a `remaining_steps_contract`, finishing only the first routed flow does not close rule governance
-8. if a routed internal rule flow later discovers that repository truth is insufficient to continue stably, it must stop that flow and return control to `rule_escape` instead of inventing a flow-local checkpoint
-9. if a routed internal rule flow changes bindings or topology so a touched rule file would have no formal bindings remaining, that same handling round must resolve the touched file's terminal state or return control to `rule_escape`; rule governance must not leave cleanup ownership implicit
-10. when rule governance routes a current-round impact-check request into `rule_sync`, it must pass execution-local `bound_objects_only_rule_file_refs` for every directly affected Rule file whose current-round delta is provably `bound_objects`-only, and it must not invent that metadata-only proof for any other file
+4. no internal rule flow may guess a unit or scenario current layer without resolving it from `_status.md` first when the named object already exists
+5. no internal rule flow may modify unit or scenario `stable` truth directly; if a rule request needs command-target truth writeback and the target object is currently at `stable`, the flow must stop at a rule-governance checkpoint and require `unit_fork:{unit}` or `scenario_fork:{scenario}` first
+6. if `rule_escape` emits a `remaining_steps_contract`, finishing only the first routed flow does not close rule governance
+7. if a routed internal rule flow later discovers that repository truth is insufficient to continue stably, it must stop that flow and return control to `rule_escape` instead of inventing a flow-local checkpoint
+8. if a routed internal rule flow changes bindings or topology so a touched rule file would have no formal bindings remaining, that same handling round must resolve the touched file's terminal state or return control to `rule_escape`; rule governance must not leave cleanup ownership implicit
+9. when rule governance routes a current-round impact-check request into `rule_sync`, it must pass execution-local `bound_objects_only_rule_file_refs` for every directly affected Rule file whose current-round delta is provably `bound_objects`-only, and it must not invent that metadata-only proof for any other file
 
 ### 10.4 Rule Checkpoints
 
@@ -836,6 +836,9 @@ When natural language routing is the active entry, the output must include:
 The user-facing main answer must be understandable without internal specFlow knowledge.
 It must use the language priority defined in Section 2.1.
 It must not present internal command names, lifecycle state names, object-family names, policy-file names, or formal route names as the recommended action.
+
+Natural language routing also inherits the framework output baseline defined by `specflow/framework/output_baseline.md`.
+The user-facing answer must satisfy the baseline's core principle (Section 2), minimum information responsibilities (Section 3), separation rules (Section 4), and must not produce the forbidden output shapes (Section 5).
 
 Natural language routing also consumes registered project-local output standards through the shared response surface:
 
@@ -875,6 +878,8 @@ The user-facing part of the output must also include ordinary-language statement
    - what should be true after the next action completes
 5. `remaining gap`
    - what still cannot be claimed after this step, if anything
+
+These five fields satisfy the framework output baseline defined by `specflow/framework/output_baseline.md` Section 3. Fields that are not applicable in a routing-only context (such as `round conclusion` and `completed actions` when the output describes a routing decision without executing work) are covered by the baseline's escape hatch for non-applicable items.
 
 The main answer must not make the user understand internal object-family names, command names, lifecycle state names, or governance-flow names before they can evaluate the state or next action.
 Internal names may be included only in the execution note after the project-structure explanation.

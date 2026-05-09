@@ -62,7 +62,7 @@ This file states only `unit_new`-local entry, output, and stop rules.
 6. initialize `frontmatter.version` to `0.1.0`
 7. initialize `frontmatter.source_basis` and `frontmatter.evidence_appendix_ref` according to `onboarding_decision_policy.md`
 8. if `source_basis=existing_implementation` or `source_basis=mixed`, create the evidence appendix named by `evidence_appendix_ref`; if `source_basis=new_design` or `source_basis=replacement`, write `evidence_appendix_ref=none`
-9. ensure the file covers the core sections of a formal Spec, including `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `specflow/framework/spec_policy.md` Section 5.5
+9. ensure the file covers the core sections of a formal Spec, including `Testability / Acceptance Criteria` with explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
 10. initialize `Rule Alignment`:
    - write `rule_refs=none` only when the first candidate does not yet reuse rule truth
    - if the first candidate already reuses existing rule truth, write the explicit `rule_refs` set using the Rule binding contract from `specflow/framework/spec_policy.md` Section 6.1 and explain that reuse in the candidate body in the same round
