@@ -57,6 +57,12 @@ This file states only `unit_fork`-local entry, output, and stop rules.
 8. generate `docs/specs/units/candidate/c_unit_{unit}.md` from the current stable file and write the prepared `candidate_intent`, `source_basis`, and `evidence_appendix_ref` fields in the same candidate write
    - for `candidate_intent=repair`, also write `repair_basis` and the candidate-only `Repair Scope` required by the selected intent standard
    - for `candidate_intent=change`, do not write `repair_basis`
+   - before writing current-round candidate appendices, delete any previous-round `docs/specs/units/candidate/appendix/c_unit_{unit}_*.md` files for the same unit
+   - for each same-unit stable appendix explicitly linked by the stable main Spec and still needed by the candidate truth, write a same-purpose candidate appendix under `docs/specs/units/candidate/appendix/` using the `c_unit_{unit}_*.md` prefix
+   - each copied candidate appendix must write `unit: {unit}` and `layer: candidate` in frontmatter and must not carry `spec_version_ref`
+   - retarget the candidate main Spec links and direct same-unit appendix path literals from `./appendix/s_unit_{unit}_*.md` or `docs/specs/units/stable/appendix/s_unit_{unit}_*.md` to the copied candidate appendix paths
+   - retarget copied appendix markdown links and direct same-unit main or appendix path literals that point to the stable main Spec or copied same-unit stable appendices so they point to the candidate main Spec or copied candidate appendices
+   - do not leave the candidate main Spec dependent on a stable-layer appendix as current-layer supporting truth
 9. set candidate `frontmatter.version` to that target version
 10. ensure the candidate `Testability / Acceptance Criteria` section uses explicit acceptance items that satisfy `spec_writing_guide.md` Section 5
    - if the stable source already has structured acceptance items, carry them forward and edit only the items affected by the new round
@@ -84,7 +90,8 @@ This file states only `unit_fork`-local entry, output, and stop rules.
    - `Candidate=yes`
    - `Active Layer=candidate`
    - `Next Command=unit_check`
-   - old `_check_result/unit/{unit}.md`, `_verify_result/unit/{unit}.md`, `_plans/draft/{unit}.md`, `_plans/active/{unit}.md`, and previous-round candidate appendix files are deleted by the command close success cleanup
+   - old `_check_result/unit/{unit}.md`, `_verify_result/unit/{unit}.md`, `_plans/draft/{unit}.md`, and `_plans/active/{unit}.md` are deleted by the command close success cleanup
+   - previous-round candidate appendix files are deleted before current-round candidate appendix writeback, and current-round candidate appendix files are preserved by command close success cleanup
    - the deterministic command closure may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> command close --command unit_fork --object-type unit --object {unit} --outcome candidate_created --notes <status-note> --apply`
 15. do not separately call `status set-object` for normal command closure; that subcommand is a low-level status tool, not the standard `unit_fork` closing entry
 16. do not update `docs/specs/repository_mapping.md` only because this fork changed the active layer from `stable` to `candidate`; the current unit main Spec path is resolved from `_status.md` plus the `unit_default` truth-surface rule
@@ -100,8 +107,9 @@ This file states only `unit_fork`-local entry, output, and stop rules.
 3. the new candidate contains explicit acceptance items for the current round
 4. Rule side effects are closed
 5. `_status.md` is updated
-6. if a touched Rule file became unbound because of this round's binding change, its terminal state is already resolved or the command has stopped and rerouted through natural-language rule governance
-7. if post-fork `rule_sync` could not continue safely, the command result is `blocked`, the candidate-layer state remains the current formal layer, and the required next step is rerunning natural-language routing from current repository truth so it can re-enter rule governance
+6. any current-layer appendix needed by the candidate truth exists under the candidate appendix directory and is linked from the candidate main Spec by candidate-layer path
+7. if a touched Rule file became unbound because of this round's binding change, its terminal state is already resolved or the command has stopped and rerouted through natural-language rule governance
+8. if post-fork `rule_sync` could not continue safely, the command result is `blocked`, the candidate-layer state remains the current formal layer, and the required next step is rerunning natural-language routing from current repository truth so it can re-enter rule governance
 
 ## 6. Output Contract
 
@@ -112,14 +120,15 @@ This file states only `unit_fork`-local entry, output, and stop rules.
 5. initialized `repair_basis` and `Repair Scope` result when the intent is `repair`
 6. initialized `source_basis`
 7. initialized `evidence_appendix_ref` and evidence appendix write result when required
-8. candidate acceptance-item structure result
-9. written formal global baseline reference or `none`
-10. Rule terminal-state result when the round changed rule bindings or rule files
-11. cleanup result
-12. `_status.md` update result
-13. Rule reconciliation result when the round changed rule truth or bindings
-14. when post-fork `rule_sync` could not continue safely, that the command stopped as `blocked` and must resume through natural-language rule governance
-15. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/command_policy.md`
+8. appendix retarget result, including copied candidate appendix paths and removed previous-round candidate appendix paths
+9. candidate acceptance-item structure result
+10. written formal global baseline reference or `none`
+11. Rule terminal-state result when the round changed rule bindings or rule files
+12. cleanup result
+13. `_status.md` update result
+14. Rule reconciliation result when the round changed rule truth or bindings
+15. when post-fork `rule_sync` could not continue safely, that the command stopped as `blocked` and must resume through natural-language rule governance
+16. the `user-facing close-out block` required by Section 8.6 of `specflow/framework/command_policy.md`
    - `current state` must explicitly confirm the candidate-layer state written to `_status.md`
    - if post-fork follow-up is blocked on rule governance, the block must name natural-language rule-governance rerouting as the immediate `next step`
 

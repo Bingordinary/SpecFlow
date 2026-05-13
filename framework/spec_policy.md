@@ -415,6 +415,7 @@ Object-owned snapshot extensions are fixed by object type:
 2. `scenario`
    - `repository_mapping_snapshot`
    - `unit_snapshot`
+   - `scenario_appendix_snapshot`
    - `rule_snapshot`
 
 Process files become invalid when their required current truth or required current bindings no longer match.

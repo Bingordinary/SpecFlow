@@ -283,9 +283,10 @@ Before consumption, `scenario_verify` must re-validate:
 4. `truth_layer_ref`, `truth_file_ref`, `truth_version_ref`, and `truth_fingerprint` against the current candidate scenario truth
 5. current `repository_mapping_snapshot`
 6. current `unit_snapshot`
-7. current stable `g_` rule binding fields
-8. current `rule_snapshot`
-9. the accepted scenario acceptance-item set against the current scenario `Testability / Acceptance Criteria` section
+7. current `scenario_appendix_snapshot`
+8. current stable `g_` rule binding fields
+9. current `rule_snapshot`
+10. the accepted scenario acceptance-item set against the current scenario `Testability / Acceptance Criteria` section
 
 ### 7.3 Allowed Entry Condition
 
@@ -294,7 +295,7 @@ The verify run must use the accepted scenario acceptance-item set as its evidenc
 
 ### 7.4 Smallest Fallback
 
-If scenario truth, repository mapping, unit bindings, Rule bindings, baseline, or acceptance item ids drifted, the smallest fallback is `scenario_check`.
+If scenario truth, scenario appendix truth, repository mapping, unit bindings, Rule bindings, baseline, or acceptance item ids drifted, the smallest fallback is `scenario_check`.
 If the scenario check gate is missing, malformed, or not tool-valid while current scenario truth and bindings still match, the smallest fallback is `scenario_check` as a gate rebuild, not a truth fallback.
 If current `repository_mapping_snapshot` no longer matches `docs/specs/repository_mapping.md`, use `binding_drift`.
 
@@ -327,11 +328,12 @@ Before consumption, `scenario_promote` must re-validate:
 4. `truth_layer_ref`, `truth_file_ref`, `truth_version_ref`, and `truth_fingerprint` against the current candidate scenario truth
 5. current `repository_mapping_snapshot`
 6. current `unit_snapshot`
-7. current `verification_scope_ref`
-8. current stable `g_` rule binding fields
-9. current `rule_snapshot`
-10. current scenario acceptance-item `id` set and every current-gate item's verification status in `_verify_result/scenario/{scenario}.md`
-11. stable dependency readiness for the current candidate scenario:
+7. current `scenario_appendix_snapshot`
+8. current `verification_scope_ref`
+9. current stable `g_` rule binding fields
+10. current `rule_snapshot`
+11. current scenario acceptance-item `id` set and every current-gate item's verification status in `_verify_result/scenario/{scenario}.md`
+12. stable dependency readiness for the current candidate scenario:
    - every current `unit_refs` entry resolves to existing stable-layer unit truth
    - every current `rule_refs` entry resolves to existing stable-layer Rule truth, unless the formal value is `none`
    - candidate-layer, missing, or unresolved dependency refs are not consumable by `scenario_promote`
@@ -345,10 +347,10 @@ It must also confirm stable dependency readiness before any stable scenario trut
 ### 8.4 Smallest Fallback
 
 If verification evidence is outdated or incomplete but the check gate still covers current truth, the smallest fallback is `scenario_verify`.
-If candidate scenario truth or upstream bindings drifted, the smallest fallback is `scenario_check`.
+If candidate scenario truth, scenario appendix truth, or upstream bindings drifted, the smallest fallback is `scenario_check`.
 If current `repository_mapping_snapshot` no longer matches `docs/specs/repository_mapping.md`, the smallest fallback is `scenario_check` with `binding_drift`.
 If stable dependency readiness fails because a dependency is candidate-layer, missing, or not safely resolvable, `scenario_promote` must stop before stable writeback, keep candidate semantics, report the affected dependency and its current legal next step from `_status.md` when present, and remain at `scenario_promote` under `dependency_readiness_layer`.
-After dependency landing, `scenario_promote` must revalidate the current verify handoff and stable dependency readiness before promotion. A fresh `scenario_check` and `scenario_verify` are required only when scenario truth, scenario bindings, repository mapping, Rule bindings, baseline, acceptance item ids, or verification evidence changed.
+After dependency landing, `scenario_promote` must revalidate the current verify handoff and stable dependency readiness before promotion. A fresh `scenario_check` and `scenario_verify` are required only when scenario truth, scenario appendix truth, scenario bindings, repository mapping, Rule bindings, baseline, acceptance item ids, or verification evidence changed.
 
 ### 8.5 Allowed Reason Codes
 

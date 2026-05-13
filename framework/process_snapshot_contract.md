@@ -217,7 +217,8 @@ Rules:
 
 1. `repository_mapping_snapshot`
 2. `unit_snapshot`
-3. `rule_snapshot`
+3. `scenario_appendix_snapshot`
+4. `rule_snapshot`
 
 `repository_mapping_snapshot` has only one legal form:
 
@@ -236,6 +237,13 @@ Rules:
    - `version_ref`
    - `fingerprint`
 
+`scenario_appendix_snapshot` has only two legal forms:
+
+1. literal `none`
+2. a normalized ordered list where each item contains:
+   - `file_ref`
+   - `fingerprint`
+
 `rule_snapshot` uses the same shape as `unit`.
 
 ## 5. Binding And Inclusion Boundary
@@ -245,10 +253,11 @@ Snapshot inclusion must follow the formal binding contract, not heuristic scanni
 Rules:
 
 1. `unit_appendix_snapshot` includes only appendix files explicitly referenced by the current-layer unit truth
-2. `repository_mapping_snapshot` captures only `docs/specs/repository_mapping.md`
-3. `unit_snapshot` includes only units formally bound by current `scenario` truth
-4. `rule_snapshot` includes all stable global rules and every formal rule listed by `rule_refs`
-5. Rule files must not record `bound_objects`; consumer lists are derived from current-layer frontmatter `rule_refs`
+2. `scenario_appendix_snapshot` includes only appendix files explicitly referenced by the current-layer scenario truth
+3. `repository_mapping_snapshot` captures only `docs/specs/repository_mapping.md`
+4. `unit_snapshot` includes only units formally bound by current `scenario` truth
+5. `rule_snapshot` includes all stable global rules and every formal rule listed by `rule_refs`
+6. Rule files must not record `bound_objects`; consumer lists are derived from current-layer frontmatter `rule_refs`
 
 ## 6. Fingerprint Contract
 
@@ -296,20 +305,22 @@ Ordering rules:
 
 1. `unit_appendix_snapshot`
    - sort by `file_ref`
-2. `unit_snapshot`
+2. `scenario_appendix_snapshot`
+   - sort by `file_ref`
+3. `unit_snapshot`
    - sort by `unit`
    - then by `layer`
    - then by `file_ref`
-3. `rule_snapshot`
+4. `rule_snapshot`
    - sort by `rule_id`
    - then by `layer`
    - then by `file_ref`
-4. `acceptance_item_set`
+5. `acceptance_item_set`
    - sort by `id`
    - then by `verification_surface`
-5. `acceptance_item_plan_coverage`
+6. `acceptance_item_plan_coverage`
    - sort by `id`
-6. `acceptance_item_evidence_matrix`
+7. `acceptance_item_evidence_matrix`
    - sort by `id`
 7. `acceptance_item_coverage_summary`
    - sort by `acceptance_item_id`

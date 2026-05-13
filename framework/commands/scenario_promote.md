@@ -19,14 +19,15 @@ Before reading `_verify_result/scenario/{scenario}.md` as a usable promotion inp
 
 1. `_status.md` says `Object Type=scenario`, `Active Layer=candidate`, `Next Command=scenario_promote`
 2. current valid `_verify_result/scenario/{scenario}.md` exists
-3. read `specflow/framework/candidate_handoff_contract.md`
-4. read `specflow/framework/recovery_policy.md` before promotion
+3. read required current candidate appendix files explicitly linked by the candidate scenario
+4. read `specflow/framework/candidate_handoff_contract.md`
+5. read `specflow/framework/recovery_policy.md` before promotion
 
 ## 4. Procedure
 
 1. run command preflight for `scenario_promote:{scenario}` and stop before stable truth-file mutation if authoritative validation is unavailable
 2. read and re-check the latest `_verify_result/scenario/{scenario}.md`
-3. read and re-check `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
+3. read and re-check `docs/specs/scenarios/candidate/c_scenario_{scenario}.md` and all required current candidate appendix files
 4. validate `_verify_result/scenario/{scenario}.md` according to the `scenario_verify -> scenario_promote` handoff in `specflow/framework/candidate_handoff_contract.md`
    - the verify result must cover the current candidate scenario acceptance item `id` set exactly
    - each current-gate acceptance item must have an allowed promotion state according to `scenario_verify` and any applicable downgrade policy
@@ -46,6 +47,11 @@ Before reading `_verify_result/scenario/{scenario}.md` as a usable promotion inp
 7. continue only when candidate truth, verification coverage, required bindings, and stable dependency readiness still remain valid
 8. before the first truth-file mutation, capture the recovery baseline required by `recovery_policy.md`
 9. write `docs/specs/scenarios/stable/s_scenario_{scenario}.md`
+   - candidate-only frontmatter fields must not be copied into stable
+   - if current-round candidate appendix files exist, in the same promotion round either migrate retained content to `docs/specs/scenarios/stable/appendix/`, absorb the content into `docs/specs/scenarios/stable/s_scenario_{scenario}.md`, or delete candidate appendix files no longer needed
+   - delete evidence appendix files by default because they are current-round evidence, not stable behavior truth
+   - absorb only the small amount of background needed for stable readers into the stable main Spec; do not migrate evidence appendix files as stable appendix files unless a command-specific rule explicitly makes them stable supporting truth
+   - before candidate cleanup, the stable main Spec must not point to `docs/specs/scenarios/candidate/appendix/c_scenario_{scenario}_*.md`
 10. write the minimal stable acceptance coverage summary for this promoted round before current-round verify cleanup:
    - target path: `docs/specs/_verify_result/stable/scenario/{scenario}.md`
    - record the promoted stable truth file, version, fingerprint, acceptance item `id` set, each item's final verification status, and the key evidence source refs from the current `_verify_result/scenario/{scenario}.md`
@@ -60,7 +66,7 @@ Before reading `_verify_result/scenario/{scenario}.md` as a usable promotion inp
    - command close writes `Candidate=no` before it deletes the candidate main file and current process files through success cleanup
 12. only after `_status.md` has already been updated to `Candidate=no`, delete:
    - `docs/specs/scenarios/candidate/c_scenario_{scenario}.md`
-   - current-round scenario evidence appendix files
+   - current-round scenario candidate appendix files after the Step 9 appendix handling is complete
    - current-round scenario `_check_result/scenario/{scenario}.md`
    - current-round scenario `_verify_result/scenario/{scenario}.md`
    - command close performs this success cleanup for the `promoted` outcome
@@ -73,7 +79,7 @@ Before reading `_verify_result/scenario/{scenario}.md` as a usable promotion inp
 3. if stable dependency readiness fails, no stable scenario truth is written, candidate semantics remain active, `_status.md` keeps `Next Command=scenario_promote`, and the affected dependency plus its current legal next step is reported when `_status.md` can provide it
 4. if the stable acceptance summary cannot be written before current-round verify cleanup, the current-round verify result remains undeleted; if promotion mutation has already started, incomplete promotion recovery is complete before close-out
 5. if promotion succeeds, stable scenario truth exists, the stable acceptance summary for the promoted round is written, `_status.md` records `Stable=yes`, `Candidate=no`, `Active Layer=stable`, and `Next Command=scenario_fork`
-6. if promotion succeeds, candidate scenario truth, candidate evidence appendix files, current-round scenario check result, and current-round scenario verify result are deleted only after `_status.md` already records candidate removal
+6. if promotion succeeds, candidate scenario truth, current-round candidate appendix files, current-round scenario check result, and current-round scenario verify result are deleted only after `_status.md` already records candidate removal and after retained appendix content has been migrated, absorbed, or intentionally deleted
 7. if promotion internals started but final cleanup did not finish, incomplete promotion recovery restored candidate semantics and the scenario can restart from `scenario_check`
 
 ## 6. Output Contract
@@ -82,7 +88,7 @@ The output must report:
 
 1. stable truth file write result
 2. candidate truth file delete result
-3. evidence appendix deletion or absorption result
+3. candidate appendix migration, absorption, or deletion result, including evidence appendix deletion or absorption result
 4. `_check_result/scenario/{scenario}.md` and `_verify_result/scenario/{scenario}.md` cleanup result
 5. stable acceptance coverage summary write result
 6. stable dependency readiness result, including affected dependency refs when promotion stopped before stable writeback

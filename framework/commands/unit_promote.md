@@ -192,7 +192,7 @@ Before reading `_verify_result/unit/{unit}.md` as a usable promotion input, run 
    - the deterministic command closure may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> command close --command unit_promote --object-type unit --object {unit} --outcome promoted --notes <status-note> --apply`
    - command close writes the promoted stable state from Step 16 before it deletes:
    - `docs/specs/units/candidate/c_unit_{unit}.md`
-   - current-round candidate appendix files
+   - current-round candidate appendix files after the Step 14 appendix handling is complete
    - `_check_result/unit/{unit}.md`
    - `_plans/draft/{unit}.md`
    - `_plans/active/{unit}.md`
@@ -243,7 +243,7 @@ Before reading `_verify_result/unit/{unit}.md` as a usable promotion input, run 
 9. confirmation that every remaining touched Rule file omits `bound_objects`
 10. terminal-state result for any touched Rule file that became unbound in this round
 11. Rule reconciliation result when the round changed rule truth or bindings
-12. evidence appendix deletion or absorption result
+12. candidate appendix migration, absorption, or deletion result, including evidence appendix deletion or absorption result
 13. stable acceptance coverage summary write result
 14. cleanup result
 15. `handoff validation result`, including acceptance-item coverage validation

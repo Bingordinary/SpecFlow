@@ -26,7 +26,7 @@ That judgment belongs to `spec_flow_design_review`.
 It does not pass a review only because the required files were read or the required slices were visited.
 Each in-scope rule, file, slice, and cross-convergence path must satisfy the standards in this section.
 
-The fixed standards are `content validity`, `logical closure`, `chain closure`, `state-space closure`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `agent operability`, `tooling boundary`, `project-instance compatibility`, and `project-instance migration closure`.
+The fixed standards are `content validity`, `logical closure`, `chain closure`, `state-space closure`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting truth lifecycle closure`, `agent operability`, `tooling boundary`, `project-instance compatibility`, and `project-instance migration closure`.
 
 ### 2.1 Content Validity
 
@@ -172,6 +172,34 @@ When onboarding source decision is in scope, the review must verify that candida
 If a narrowed review crosses a boundary whose owner slice is not included, the narrowed review must stop or explicitly remain non-baseline.
 It must not claim default governance-baseline `pass`.
 
+### 2.7.1 Supporting Truth Lifecycle Closure
+
+Durable supporting truth must remain layer-correct across fork, promote, cleanup, rule release, and impact-reconciliation paths.
+
+For this review, supporting truth includes:
+
+1. stable and candidate main Spec files
+2. stable and candidate appendix files
+3. evidence appendix files
+4. Rule refs and Rule files consumed by current-layer Specs
+5. process snapshots and cleanup targets that preserve or delete those files
+6. deterministic tooling that creates, retargets, deletes, validates, or reports those files
+
+Supporting truth lifecycle closure requires all of the following:
+
+1. a fork path that creates candidate truth from stable truth must prove whether every stable-layer supporting file referenced by the stable main Spec is copied, retargeted, intentionally omitted, or remains only historical evidence
+2. a promote path that lands candidate truth as stable truth must prove whether every candidate-layer supporting file is migrated, absorbed, deleted as evidence, or intentionally left out of stable behavior truth
+3. success cleanup must preserve current-round supporting truth until the owning command has migrated, absorbed, or intentionally deleted it
+4. deterministic auto-fork tooling must implement the same supporting-file writeback, retarget, and cleanup contract as the command rule it mechanizes
+5. current-layer main Specs must not depend on previous-layer appendix files as current behavior truth
+6. stable main Specs must not point to candidate-layer appendix files as stable behavior truth
+7. evidence appendix files must stay evidence only; they must not become stable behavior truth unless an in-scope command rule explicitly makes that migration legal
+
+A review must not mark a supporting-truth lifecycle path `passed` only because files are present, readable, or shape-valid.
+It must prove the current layer, link targets, cleanup ownership, and tool/source agreement for the path being reviewed.
+
+If a fork, promote, auto-fork, cleanup, or impact-reconciliation path can leave a current-layer Spec dependent on the wrong layer's supporting truth, can delete current-layer supporting truth before it is absorbed or migrated, or can make tooling behavior diverge from command rules, the review must report a finding.
+
 ### 2.8 Agent Operability
 
 Governance files must be operable by a capable executor without prior `specFlow` memory.
@@ -207,6 +235,8 @@ The compatibility check may judge only:
 4. agreement between project-instance object references and `docs/specs/_status.md`, `docs/specs/repository_mapping.md`, and current framework path rules
 5. whether existing project-instance files use names, states, command forms, and reference formats that the current framework can consume
 6. candidate metadata shape for current candidates, including unit `candidate_intent`, unit `repair_basis` when required, `source_basis`, `evidence_appendix_ref`, required evidence appendix reference presence, and evidence appendix file shape when the current framework requires one
+7. current-layer supporting-truth reference shape, including whether candidate main Specs avoid stable appendix dependencies and stable main Specs avoid candidate appendix dependencies
+8. appendix frontmatter and path agreement for owner, layer, and file-prefix shape, without judging the appendix's business content
 
 The compatibility check must not judge:
 
@@ -218,6 +248,7 @@ The compatibility check must not judge:
 6. whether an evidence appendix's observed behavior is business-correct or should be retained
 
 If the project-instance compatibility check finds old file shape, unsupported status values, missing required references, invalid binding format, missing candidate source fields, invalid evidence appendix references, missing required evidence appendix files, or unreadable process-state shape, it is a `spec_flow_review` finding because the framework cannot safely operate on the current project instance.
+If the compatibility check finds a current-layer main Spec whose supporting-truth references point to the wrong layer, or an appendix whose owner, layer, or path prefix disagrees with the current framework path rules, it is a `spec_flow_review` finding because current framework commands cannot safely consume that project instance.
 If the discovered concern is only about the truth content being wrong, incomplete, or undesirable as business truth, report that it is outside this check and route it to the owning command, rule-governance flow, repository-mapping flow, or design review.
 
 ### 2.11 Project-Instance Migration Closure
@@ -345,8 +376,10 @@ Default scope must explicitly include:
    - at minimum project-instance status, repository mapping, global rules, existing process files, and existing formal truth files under `docs/specs/`, limited by Section 2.10
 9. the project-instance migration flow
    - at minimum `spec_flow_migrate.md`, `natural_language_routing.md` where it routes project-instance migration, `command_policy.md` where it defines the non-command boundary, `checkpoint_protocol.md`, `process_snapshot_contract.md`, `recovery_policy.md`, `entry_index_registry.md`, and the template-side process and entry files that migration consumes
+10. the supporting-truth lifecycle closure check
+   - at minimum fork commands, promote commands, process cleanup and recovery rules, Rule sync and release-version paths, project-instance compatibility inputs, tooling contracts, and tooling source that creates, retargets, preserves, or deletes supporting truth
 
-If any one of those nine coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
+If any one of those ten coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
 
 ## 4. Baseline Slice Catalog
 
@@ -384,7 +417,7 @@ Local slices review one owner area for internal closure, side effects, contract 
 7. `project_instance_contract_compatibility`
    - reviews the current project-instance files under `docs/specs/` only for format and contract compatibility with current framework rules
    - reviews `spec_flow_migrate.md` as the migration owner for old project-instance shape discovered by this slice
-   - verifies status shape, repository mapping shape, global rules shape, process-file shape, formal object file shape, candidate source metadata shape, candidate intent standard shape, evidence appendix reference shape, evidence appendix file shape, reference format, status values, command names, rule binding format, migration writeback boundary, migration state invalidation, migration checkpoint handling, and migration output closure
+   - verifies status shape, repository mapping shape, global rules shape, process-file shape, formal object file shape, candidate source metadata shape, candidate intent standard shape, evidence appendix reference shape, evidence appendix file shape, current-layer supporting-truth reference shape, appendix owner/layer/path agreement, reference format, status values, command names, rule binding format, migration writeback boundary, migration state invalidation, migration checkpoint handling, and migration output closure
    - must not judge unit, scenario, rule, or evidence-appendix business truth correctness
 8. `entry_and_project_extension`
    - reviews `entry_index_registry.md`, `project_standards_policy.md`, `project_standard_create.md`, registered entry files, template entry files, template project-standard registry, project registry, and active project-local standards in scope
@@ -416,9 +449,13 @@ Cross-convergence slices review whether locally correct rules still compose into
    - verifies entry files and project-local standards cannot bypass the framework baseline, narrow default scope silently, or change review meaning without owner rules
 7. `tooling_to_rule_convergence`
    - verifies tooling executes only rule-decided mechanical work, does not become a second semantic source of truth, and does not introduce a migration command unless a rule owner defines its mechanical surface
-8. `project_instance_to_framework_convergence`
+8. `supporting_truth_lifecycle_convergence`
+   - depends on `routing_and_command_policy`, `truth_and_implementation_gates`, `process_and_impact_state`, `project_instance_contract_compatibility`, and `tooling_execution`
+   - verifies fork, promote, cleanup, rule `release-version`, rule sync, project-instance compatibility, and tooling-to-rule agreement for stable and candidate main Specs, appendices, evidence appendices, and Rule refs
+   - must explicitly report the supporting-truth lifecycle paths walked; a generic cross-convergence `passed` statement is not sufficient
+9. `project_instance_to_framework_convergence`
    - verifies the project-instance compatibility check and `spec_flow_migrate` compose with routing, command, process-state, repository-mapping, shared-binding, entry-file, and tooling rules without judging business truth content
-9. `agent_operability_path_walk`
+10. `agent_operability_path_walk`
    - walks representative execution paths across routing, advance, command, shared, process-state, entry, and tooling rules
    - verifies a new executor can proceed from request to next legal action without hidden context
 
@@ -699,24 +736,30 @@ The output must report at least:
 10. the tooling coverage result, including reader runtime coverage
 11. the project-instance compatibility and migration-flow result
 12. the agent-operability result, including local slice results and path-walk result
-13. the cross-convergence results
-14. the state-space coverage result:
+13. the supporting-truth lifecycle result:
+   - fork paths reviewed for stable-to-candidate supporting truth retargeting
+   - promote paths reviewed for candidate-to-stable supporting truth migration, absorption, or deletion
+   - cleanup paths reviewed for preserving current-round supporting truth until owned handling completes
+   - deterministic tooling paths reviewed for agreement with command rules
+   - wrong-layer current reference cases found, or explicit `none`
+14. the cross-convergence results
+15. the state-space coverage result:
    - covered state carriers
    - covered commands and governance flows
    - key non-success transitions reviewed
    - same-command rerun cases and their legal state-changing source, or explicit `none`
    - uncovered important state types, if any, reported as findings
-15. the findings result:
+16. the findings result:
    - explicit `none` when no real finding exists
    - otherwise every finding must satisfy Section 8.2
    - when real findings exist, the final or stop report shown to the user must include every minimum required field from Section 8.2 for each finding
    - a run-state file may store the same finding fields, but pointing to that file does not satisfy the user-facing report requirement
    - do not summarize a real finding only as a problem statement, impact statement, or blocked reason
-16. the final conclusion:
+17. the final conclusion:
    - `pass`
    - `blocked`
 
-If the output does not explicitly report Items 7 through 15, the review is not complete.
+If the output does not explicitly report Items 7 through 16, the review is not complete.
 
 ### 8.1 Run-State File Shape
 

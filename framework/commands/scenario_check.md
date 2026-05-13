@@ -60,7 +60,7 @@ Scoped confirmation of the repaired fragment must not write `_check_result/scena
    - broad wording such as "end-to-end works", "all units are connected", or "the flow is integrated" is not enough unless the required fields make the scenario directly verifiable
    - if an item is marked `not_runnable_yet`, `scenario_check` may treat the item as explicitly bounded only when the reason is concrete and the scenario does not use that same item as a current pass claim
    - missing, vague, incomplete, or falsely passing acceptance items can only result in `blocked` or `fix_required`
-8. if pass, write `_check_result/scenario/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, including the accepted acceptance-item set by `id`, `verification_surface`, and `not_runnable_yet` state, then advance `Next Command=scenario_verify`
+8. if pass, write `_check_result/scenario/{scenario}.md` so it satisfies the `scenario_check -> scenario_verify` handoff in `specflow/framework/candidate_handoff_contract.md`, including the accepted acceptance-item set by `id`, `verification_surface`, and `not_runnable_yet` state plus the current `scenario_appendix_snapshot`, then advance `Next Command=scenario_verify`
 9. if not pass:
    - conclude `blocked` or `fix_required`
    - do not write a failed `_check_result/scenario/{scenario}.md`

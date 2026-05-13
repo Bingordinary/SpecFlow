@@ -27,7 +27,7 @@ Before reading `_check_result/scenario/{scenario}.md` as a usable verification i
 4. revalidate current repository mapping, bound units, rules, and baseline snapshots using only preflight or `snapshot validate-process` as the authoritative process-file validation source
 4. confirm that the check gate's accepted acceptance-item set still matches the current candidate scenario
 5. if the check handoff is missing or invalid, classify the failure before cleanup:
-   - if scenario truth, acceptance item ids, repository mapping, unit snapshot, Rule snapshot, or baseline binding drifted, use `truth_layer`, delete `_check_result/scenario/{scenario}.md` and `_verify_result/scenario/{scenario}.md`, update `_status.md` to `Next Command=scenario_check`, and report the matching drift code
+   - if scenario truth, scenario appendix snapshot, acceptance item ids, repository mapping, unit snapshot, Rule snapshot, or baseline binding drifted, use `truth_layer`, delete `_check_result/scenario/{scenario}.md` and `_verify_result/scenario/{scenario}.md`, update `_status.md` to `Next Command=scenario_check`, and report the matching drift code
    - if only the check gate is missing, malformed, or not tool-valid while current scenario truth and bindings still match, use `gate_layer`, delete `_check_result/scenario/{scenario}.md`, update `_status.md` to `Next Command=scenario_check`, and do not delete unrelated current evidence unless it separately fails validation
 6. verify the declared trigger-to-outcome path from entry to claimed outcome
 7. build the scenario evidence matrix by acceptance item `id`:
@@ -49,7 +49,7 @@ Before reading `_check_result/scenario/{scenario}.md` as a usable verification i
    - if the non-pass state reveals incomplete scenario truth, fall back to `scenario_check`
    - if the non-pass state is caused by affected unit work, stop as `blocked_by_affected_units`
    - otherwise stop as `evidence_incomplete` with `failure_layer=evidence_layer`, keep or set the scenario row to `Next Command=scenario_verify`, delete any stale `_verify_result/scenario/{scenario}.md`, and report `fallback_reason_code=evidence_incomplete`
-10. if pass, write `_verify_result/scenario/{scenario}.md` so it satisfies the `scenario_verify -> scenario_promote` handoff, including the acceptance-item evidence matrix and covered `id` set, then advance `Next Command=scenario_promote`
+10. if pass, write `_verify_result/scenario/{scenario}.md` so it satisfies the `scenario_verify -> scenario_promote` handoff, including the acceptance-item evidence matrix, covered `id` set, and current `scenario_appendix_snapshot`, then advance `Next Command=scenario_promote`
 11. close the command after the result is selected:
    - use `pass` only after `_verify_result/scenario/{scenario}.md` has been written and validates
    - the deterministic command closure may be executed with `specflow/tooling/bin/specflowctl-<os>-<arch> command close --command scenario_verify --object-type scenario --object {scenario} --outcome <pass|gate_fallback|evidence_incomplete|blocked_by_affected_units> --notes <status-note> --apply`
