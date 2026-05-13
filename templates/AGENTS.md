@@ -16,11 +16,12 @@ Before any lifecycle action or file edit, choose the owning policy file and foll
 
 ### 1. First Read
 
-1. If the request is an exact standard command, read `specflow/framework/command_policy.md`, then the matching file under `specflow/framework/commands/`.
-2. If the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without a narrowing phrase, read the matching review policy directly.
-3. If the request is exactly `spec_flow_migrate`, with or without a narrowing phrase, read `specflow/framework/spec_flow_migrate.md` directly.
-4. If the request only asks for implementation-side edits and does not ask for truth, boundary, shared, system, scenario, governance, migration, or guidance work, read `specflow/framework/implementation_change_policy.md` first.
-5. For every other `specFlow` request, read `specflow/framework/natural_language_routing.md` first.
+1. If the request exactly matches `unit_advance:{unit}` or `scenario_advance:{scenario}`, read `specflow/framework/advance_policy.md` directly.
+2. If the request is an exact standard command, read `specflow/framework/command_policy.md`, then the matching file under `specflow/framework/commands/`.
+3. If the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without a narrowing phrase, read the matching review policy directly.
+4. If the request is exactly `spec_flow_migrate`, with or without a narrowing phrase, read `specflow/framework/spec_flow_migrate.md` directly.
+5. If the request only asks for implementation-side edits and does not ask for truth, boundary, shared, system, scenario, governance, migration, or guidance work, read `specflow/framework/implementation_change_policy.md` first.
+6. For every other `specFlow` request, read `specflow/framework/natural_language_routing.md` first.
 
 After the first policy file routes the request, continue only through the routed policy, command, governance flow, or checkpoint path.
 
@@ -73,6 +74,6 @@ It must not be required for the user to understand the answer.
 
 ### 6. Detailed Rule Owners
 
-Detailed routing, object, command, checkpoint, implementation, migration, rule-governance, project-standard, and entry-sync rules live under `specflow/framework/`.
+Detailed routing, object, command, advance, checkpoint, implementation, migration, rule-governance, project-standard, and entry-sync rules live under `specflow/framework/`.
 Project truth inputs live under `docs/specs/`.
 <!-- SPECFLOW:END -->

@@ -355,6 +355,9 @@ Command preflight rule:
 3. if `command preflight` is unavailable, the command must explicitly run each required `snapshot validate-process` command before continuing
 4. if `command preflight` fails, the command must not compensate with manual hash calculation or local file inspection; it must stop or enter the command's tool-backed fallback path using only the reported failure data
 5. a command with no covered process-file input may treat preflight as a status-row check only; this does not create permission to skip command-local semantic checks
+6. `command close` must repeat the same mechanical preflight for non-fallback close outcomes of commands that consume covered process files, so lifecycle progression cannot succeed only because the executor forgot to run preflight at command entry
+7. `command close` must report close-time input validation separately from output process validation through `input_validation_action`, `input_validated_processes`, and `input_validation_mismatches`
+8. fallback and recovery close outcomes may skip close-time input validation only when their purpose is to return to the smallest legal recovery point rather than to consume the old process file as still current
 
 Rule-specific exception rule:
 

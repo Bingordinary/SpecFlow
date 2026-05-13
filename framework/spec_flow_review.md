@@ -328,7 +328,7 @@ The active full-scope run-state file is governed by the run-state procedure in S
 Default scope must explicitly include:
 
 1. the onboarding source decision rule set
-   - at minimum `natural_language_routing.md` where it enters onboarding source decision, `onboarding_decision_policy.md`, `spec_policy.md`, `implementation_change_policy.md`, `unit_new.md`, `unit_check.md`, `unit_plan.md`, `unit_impl.md`, `unit_promote.md`, `scenario_new.md`, `scenario_check.md`, `scenario_promote.md`, `candidate_handoff_contract.md`, `candidate_intent_policy.md`, and `candidate_intents/*.md`
+   - at minimum `natural_language_routing.md` where it enters onboarding source decision or advance routing, `advance_policy.md`, `onboarding_decision_policy.md`, `spec_policy.md`, `implementation_change_policy.md`, `unit_new.md`, `unit_check.md`, `unit_plan.md`, `unit_impl.md`, `unit_promote.md`, `scenario_new.md`, `scenario_check.md`, `scenario_promote.md`, `candidate_handoff_contract.md`, `candidate_intent_policy.md`, and `candidate_intents/*.md`
 2. the rule-governance rule set
    - at minimum `natural_language_routing.md` only where it defines the rule-governance branch, `rule_new.md`, `rule_extract.md`, `rule_bind.md`, `rule_topology.md`, `rule_sync.md`, and `rule_escape.md`
 3. the guidance-skill rule set
@@ -340,7 +340,7 @@ Default scope must explicitly include:
 6. the agent-operability standard
    - at minimum `agent_operability_standard.md`, entry files, routing policy files, onboarding source decision files, command policy files, command files, candidate intent policy and standards, rule-governance files, guidance skill files, review policy files, and process-state contract files in the current review scope
 7. the state-space closure check
-   - at minimum routing policy, command policy, command files, candidate intent policy and standards, implementation permission rules, process-state contracts, recovery rules, impact-sync rules, migration rules, and project-instance compatibility inputs needed to prove important non-success transitions
+   - at minimum routing policy, advance policy, command policy, command files, candidate intent policy and standards, implementation permission rules, process-state contracts, recovery rules, impact-sync rules, migration rules, and project-instance compatibility inputs needed to prove important non-success transitions
 8. the project-instance compatibility check
    - at minimum project-instance status, repository mapping, global rules, existing process files, and existing formal truth files under `docs/specs/`, limited by Section 2.10
 9. the project-instance migration flow
@@ -370,8 +370,8 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `spec_flow_review.md`, `spec_flow_design_review.md`, `severity_policy.md`, and `checkpoint_protocol.md`
    - verifies review entry meaning, output contracts, finding contracts, and stop behavior
 3. `routing_and_command_policy`
-   - reviews `natural_language_routing.md`, `onboarding_decision_policy.md`, `command_policy.md`, `scenario_policy.md`, `spec_flow_migrate.md`, `candidate_intent_policy.md`, `candidate_intents/*.md`, `commands/*.md`, and `skills/*/SKILL.md`
-   - verifies exact command routing, exact project-instance migration routing, natural-language routing, onboarding source routing, unit command progression, scenario command progression, and guidance entry behavior
+   - reviews `natural_language_routing.md`, `advance_policy.md`, `onboarding_decision_policy.md`, `command_policy.md`, `scenario_policy.md`, `spec_flow_migrate.md`, `candidate_intent_policy.md`, `candidate_intents/*.md`, `commands/*.md`, and `skills/*/SKILL.md`
+   - verifies exact command routing, exact advance routing, exact project-instance migration routing, natural-language routing, onboarding source routing, unit command progression, scenario command progression, and guidance entry behavior
 4. `truth_and_implementation_gates`
    - reviews `spec_policy.md`, `repository_mapping_policy.md`, `implementation_change_policy.md`, `onboarding_decision_policy.md`, `candidate_intent_policy.md`, `candidate_intents/*.md`, `candidate_handoff_contract.md`, `downgrade_policy.md`, and `recovery_policy.md`
    - verifies truth ownership, candidate source fields, evidence appendix ownership, implementation diversion, handoff, fallback, and recovery rules
@@ -400,14 +400,14 @@ Local slices review one owner area for internal closure, side effects, contract 
 Cross-convergence slices review whether locally correct rules still compose into one coherent governance baseline.
 
 1. `routing_to_command_convergence`
-   - verifies natural-language routing, exact command routing, exact project-instance migration routing, guidance entry, and review entry behavior converge without ambiguous owner selection
+   - verifies natural-language routing, exact command routing, exact advance routing, exact project-instance migration routing, guidance entry, and review entry behavior converge without ambiguous owner selection
 2. `command_to_process_state_convergence`
    - verifies command pass, fallback, cleanup, snapshot, and process-file consumption rules converge
 3. `truth_to_implementation_convergence`
    - verifies truth writeback, onboarding source decision, repository mapping, implementation gates, evidence appendix non-truth handling, handoff, and recovery converge
 4. `state_space_closure`
    - depends on `routing_and_command_policy`, `truth_and_implementation_gates`, `process_and_impact_state`, and `project_instance_contract_compatibility`
-   - verifies important command results, fallback states, checkpoint states, drift states, blocked states, repair states, migration states, and impact-sync states have legal progress transitions
+   - verifies important advance loops, command results, fallback states, checkpoint states, drift states, blocked states, repair states, migration states, and impact-sync states have legal progress transitions
    - verifies same-command reruns have a legal state-changing source before the rerun
    - must not use file-read coverage or local rule consistency as a substitute for transition proof
 5. `shared_to_impact_convergence`
@@ -419,7 +419,7 @@ Cross-convergence slices review whether locally correct rules still compose into
 8. `project_instance_to_framework_convergence`
    - verifies the project-instance compatibility check and `spec_flow_migrate` compose with routing, command, process-state, repository-mapping, shared-binding, entry-file, and tooling rules without judging business truth content
 9. `agent_operability_path_walk`
-   - walks representative execution paths across routing, command, shared, process-state, entry, and tooling rules
+   - walks representative execution paths across routing, advance, command, shared, process-state, entry, and tooling rules
    - verifies a new executor can proceed from request to next legal action without hidden context
 
 The final result must not issue `pass` until every required local baseline slice, every required cross-convergence baseline slice, and every dynamic slice is closed as `passed` or `skipped_not_in_scope`.

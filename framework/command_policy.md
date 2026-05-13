@@ -4,7 +4,7 @@
 
 This file defines how formal commands work in this repository.
 
-It answers six questions:
+It answers seven questions:
 
 1. what a command is
 2. which object families commands operate on
@@ -12,6 +12,7 @@ It answers six questions:
 4. which objects are not command targets
 5. which shared gate rules every command must follow
 6. how natural-language requests enter the command and governance system
+7. how exact advance entries coordinate existing commands without becoming commands
 
 ## 2. What A Command Is
 
@@ -71,6 +72,7 @@ Additional rules:
 4. natural-language routing is the default user-facing entry for requests that do not use explicit command syntax
 5. `rule_new`, `rule_extract`, `rule_bind`, `rule_topology`, `rule_sync`, `rule_escape`, and `impact_sync` are internal governance flows, not direct user-facing standard commands
 6. `spec_flow_migrate` is entered by its exact name and is governed by `specflow/framework/spec_flow_migrate.md`; it must not be written as `{command}:{unit}` or `{command}:{scenario}`
+7. `unit_advance:{unit}` and `scenario_advance:{scenario}` are exact advance entries governed by `specflow/framework/advance_policy.md`; they are not standard commands and must not have command files under `specflow/framework/commands/`
 
 ## 5. Standard Commands
 
@@ -95,7 +97,27 @@ Additional rules:
 5. `scenario_verify:{scenario}`
 6. `scenario_promote:{scenario}`
 
-### 5.3 Natural-Language Entry
+### 5.3 Advance Entry
+
+Advance entries coordinate automatic progression through existing standard commands.
+
+Supported forms:
+
+1. `unit_advance:{unit}`
+2. `scenario_advance:{scenario}`
+
+Rules:
+
+1. advance entries are user-facing exact entries, but they are not standard lifecycle commands
+2. advance entries must follow `specflow/framework/advance_policy.md`
+3. an advance entry may enter only existing standard commands named by the target object's current `Next Command`
+4. after every routed command closes, advance must re-read `docs/specs/_status.md` before deciding whether to continue
+5. advance must stop at stable completion, checkpoint, human-in-the-loop decision, rule-governance reroute, repository-mapping requirement, truth writeback requirement, unsupported next command, or loop guard
+6. advance must not write `_status.md`, process files, Spec truth, or implementation files directly; only the currently routed standard command may write within its own scope
+7. `unit_advance:{unit}` must stop after successful promotion at `Next Command=unit_fork` and must not open a new candidate round
+8. `scenario_advance:{scenario}` must stop after successful promotion at `Next Command=scenario_fork` and must not open a new candidate round
+
+### 5.4 Natural-Language Entry
 
 The default user-facing entry is natural language.
 
@@ -120,8 +142,9 @@ Rules:
 8. if the request touches cross-unit rule truth, route into the rule-governance branch defined by `natural_language_routing.md`
 9. direct shared command shapes are not user-facing command forms
 10. natural-language requests to update old project-instance files to current `specFlow` framework contracts route to `specflow/framework/spec_flow_migrate.md`
+11. natural-language requests that clearly ask for automatic progression until completion or blocker may route to `specflow/framework/advance_policy.md`; generic "continue" wording remains a single-step natural-language route unless automatic progression is explicit
 
-### 5.4 Project-Instance Migration Entry
+### 5.5 Project-Instance Migration Entry
 
 `spec_flow_migrate` owns project-instance format migration after a framework update.
 
@@ -133,7 +156,7 @@ Rules:
 4. `spec_flow_migrate` may invalidate stale process state only under the migration policy and the shared process-state rules it links
 5. `spec_flow_migrate` must stop instead of choosing business meaning, object ownership, acceptance meaning, rule-truth ownership, or global-rule meaning
 
-### 5.5 Rule Governance Internal Routing
+### 5.6 Rule Governance Internal Routing
 
 Rule governance is a branch of natural-language routing.
 
@@ -287,6 +310,9 @@ Rules:
 4. before authoritative validation succeeds, the command must not delete process files, update `_status.md`, write an active plan, write a verify result, write a stable truth file, or promote stable acceptance coverage
 5. manual hash output, shell checksum output, editor display, conversation-derived values, and temporary script results are diagnostic only and must not classify drift, choose a failure layer, select cleanup, or advance lifecycle state
 6. stable-layer verification commands that compare truth, Rule, repository mapping, or global-baseline fingerprints must use the fingerprint contract or deterministic tooling named by the active policy; if no authoritative comparison is available, they must report that alignment cannot be confirmed instead of claiming pass or drift from manual hashes
+7. `command close` is the final tool-backed guard for standard lifecycle state progression; when a close outcome would continue the current command result or advance to a later command while consuming process-file input, it must run the same mechanical preflight internally before writing `_status.md`, cleaning process files, or reporting the close as successful
+8. explicit fallback and recovery close outcomes may run without valid input process files only when the active command file defines that outcome as the legal recovery path
+9. low-level status tools such as `status set-object` and manual `_status.md` edits are not valid substitutes for `command close` in ordinary lifecycle progression
 
 ### 8.5 Authoritative And Non-Authoritative Result Contract
 

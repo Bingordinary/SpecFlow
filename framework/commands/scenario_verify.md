@@ -43,7 +43,8 @@ Before reading `_check_result/scenario/{scenario}.md` as a usable verification i
    - keep or set the scenario row in `_status.md` to `Active Layer=candidate` and `Next Command=scenario_verify`
    - read `_status.md` rows for each `affected_unit` and report that unit's current legal `Next Command`
    - report `fallback_reason_code` using the `blocked_by_affected_units` values in Section 6 of this file
-   - route follow-up through natural-language routing from current repository truth so each affected unit re-enters its own legal unit command chain
+   - ordinary `scenario_verify:{scenario}` follow-up routes through natural-language routing from current repository truth so each affected unit re-enters its own legal unit command chain
+   - when the active owner is `scenario_advance:{scenario}`, the close-out may be consumed by `specflow/framework/advance_policy.md` only if every affected unit identity is explicitly reported and confirmed from `_status.md`; advance then enters `unit_advance:{unit}` under that policy
 9. if any current-gate acceptance item is `fail`, `partial`, `not_checked`, or `not_runnable_yet`, do not write a pass verify result unless `specflow/framework/downgrade_policy.md` explicitly allows that non-pass evidence state for the current scenario round:
    - if the non-pass state reveals incomplete scenario truth, fall back to `scenario_check`
    - if the non-pass state is caused by affected unit work, stop as `blocked_by_affected_units`
@@ -77,7 +78,9 @@ The output must report:
 6. `affected_units` and each affected unit's current legal `Next Command` when downstream unit work is still required
 7. `fallback_reason_code` when verification stopped as `blocked_by_affected_units`, stopped as `evidence_incomplete`, or fell back to `scenario_check`
 8. fallback reason when the check handoff was missing, invalid, or drifted
-9. natural-language reroute requirement when verification stopped as `blocked_by_affected_units`
+9. follow-up route requirement when verification stopped as `blocked_by_affected_units`
+   - ordinary `scenario_verify:{scenario}` reports the natural-language reroute requirement
+   - `scenario_advance:{scenario}` reports the advance consumption permission and each resolved `unit_advance:{unit}` target when the active owner qualifies
 10. the `user-facing close-out block` required by `specflow/framework/command_policy.md` Section 8.6
 
 Allowed checkpoint types:

@@ -30,30 +30,31 @@ It decides which existing command, governance flow, or checkpoint is legal to en
 Use this path before reading the full file.
 It is a navigation rule only and does not weaken the detailed rules below.
 
-1. If the request exactly matches a standard command shape, stop here and read:
+1. If the request exactly matches `unit_advance:{unit}` or `scenario_advance:{scenario}`, stop here and read `specflow/framework/advance_policy.md`.
+2. If the request exactly matches a standard command shape, stop here and read:
    - `specflow/framework/command_policy.md`
    - the matching file under `specflow/framework/commands/`
-2. If the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without an explicit narrowing phrase, stop here and read the matching review policy.
-3. If the request is exactly `spec_flow_migrate`, with or without an explicit narrowing phrase, stop here and read `specflow/framework/spec_flow_migrate.md`.
-4. If this file is the first policy file read for a request that asks for code, test, config, database migration, build-script, or other implementation-side edits, read:
+3. If the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without an explicit narrowing phrase, stop here and read the matching review policy.
+4. If the request is exactly `spec_flow_migrate`, with or without an explicit narrowing phrase, stop here and read `specflow/framework/spec_flow_migrate.md`.
+5. If this file is the first policy file read for a request that asks for code, test, config, database migration, build-script, or other implementation-side edits, read:
    - this file through Section 4.1
    - `specflow/framework/implementation_change_policy.md` before any implementation-side edit
    - this file through the later sections only when Section 4.1 routes out of the direct implementation lightweight entry
-5. If the request asks for a local capability or behavior change, read:
+6. If the request asks for a local capability or behavior change, read:
    - this file through Section 7
    - `docs/specs/_status.md` when an existing `unit` or `scenario` is named
    - `docs/specs/repository_mapping.md` only when path ownership, object boundary, or support-surface ownership matters
-6. If the request asks for an end-to-end user-visible result, read:
+7. If the request asks for an end-to-end user-visible result, read:
    - this file through Section 6.3
    - `specflow/framework/scenario_policy.md`
    - current `unit` and `scenario` truth only after current-layer resolution from `_status.md`
-7. If the request asks for cross-unit rule truth, rule binding, rule topology, or rule impact, read:
+8. If the request asks for cross-unit rule truth, rule binding, rule topology, or rule impact, read:
    - this file through Section 10
    - the selected rule-governance flow reached by Section 10.1
-8. If the request asks for project-local standards, governance entry behavior, command behavior, migration behavior, or review design, read:
+9. If the request asks for project-local standards, governance entry behavior, command behavior, migration behavior, or review design, read:
    - this file through Section 7
    - the named framework or project-standard owner file
-9. If the request asks only for explanation, read only enough current truth to answer without mutating files.
+10. If the request asks only for explanation, read only enough current truth to answer without mutating files.
 
 After the first read path identifies the likely route, continue through the detailed sections required by that route.
 If any later rule requires a wider read, follow the later rule.
@@ -87,18 +88,21 @@ Rules:
 6. executors must not require users to understand or choose specFlow object-family names before routing
 7. executor-facing object names such as `unit`, `scenario`, `rule`, stable `g_` rule, and `repository_mapping` may appear only in execution trace notes, not as the user's required decision language
 
-There are only four entry shapes:
+There are only five entry shapes:
 
-1. exact standard command
+1. exact advance entry
+   - the request is exactly `unit_advance:{unit}` or `scenario_advance:{scenario}`
+   - route through `specflow/framework/advance_policy.md`
+2. exact standard command
    - the request matches one `unit` or `scenario` command form defined by `command_policy.md`
    - route through `command_policy.md` and the matching command file
-2. exact governance review entry
+3. exact governance review entry
    - the request is exactly `spec_flow_review` or `spec_flow_design_review`, with or without an explicit narrowing phrase
    - route through the matching review policy
-3. exact project-instance migration entry
+4. exact project-instance migration entry
    - the request is exactly `spec_flow_migrate`, with or without an explicit narrowing phrase
    - route through `specflow/framework/spec_flow_migrate.md`
-4. natural-language request
+5. natural-language request
    - every non-exact request that describes desired work, including requests that mention implementation, review, rule truth, mapping, or stable g_ rules
    - route through this file first
 
@@ -187,6 +191,7 @@ Natural language routing may identify fragments that later route into:
 8. global-rule boundary handling through the responsible unit candidate truth
 9. project-instance migration through `specflow/framework/spec_flow_migrate.md`
 10. framework skills under `specflow/framework/skills/`
+11. automatic progression through `specflow/framework/advance_policy.md`
 
 Natural language routing does not:
 
@@ -194,7 +199,7 @@ Natural language routing does not:
 2. create a new user-facing shared command
 3. allow implementation before required truth writeback
 4. allow chat-only decisions to replace durable truth
-5. authorize a full multi-step chain to run automatically just because a sequence can be described
+5. authorize a full multi-step chain to run automatically just because a sequence can be described, except when the request routes to `specflow/framework/advance_policy.md` through an exact advance entry or an explicit `advance_control` fragment
 6. make guidance output durable truth before it is written into candidate, appendix, Rule, repository mapping, or global-rule truth
 7. create a persistent `feature`, `project_flow`, or other umbrella lifecycle object above `unit` and `scenario`
 8. force every user request into an end-to-end scenario when current repository truth and user wording prove a narrower legal route
@@ -208,20 +213,21 @@ Before routing, read only the truth needed for the request.
 
 Fixed read rules:
 
-1. if the request is an exact standard command, stop natural-language routing and follow `command_policy.md` plus the matching command file
-2. if the request is an exact governance review entry, stop natural-language routing and follow the matching review policy
-3. if the request is an exact project-instance migration entry, stop natural-language routing and follow `specflow/framework/spec_flow_migrate.md`
-4. if the request is not an exact entry, identify intent fragments before choosing a command or governance flow
-5. if the request only asks for implementation-side work and has no explicit truth, boundary, shared, system, scenario, governance, migration, or guidance fragment, use the Direct Implementation Lightweight Entry in Section 4.1 before full route assembly
-6. if any fragment may modify repo-tracked code, tests, config, database migrations, build scripts, or other implementation-side files, read `implementation_change_policy.md` before any implementation-side edit
-7. if the request names existing formal `unit` or `scenario` objects, read `docs/specs/_status.md` before resolving their current-layer files
-8. if the request depends on path ownership, repository structure, support surfaces, or object boundaries, read `docs/specs/repository_mapping.md`
-9. if the request depends on cross-unit rule truth, rule binding, rule topology, or rule impact, use the Rule Governance Branch in this file and read the relevant Rule files plus the selected internal rule-flow file
-10. if the request may affect global default rules, reusable mechanisms promoted into the global baseline, or explicit global exceptions, read `docs/specs/rules/stable/s_g_rule_repository_baseline.md`
-11. if a governance-review fragment remains after natural-language parsing, read the governance file that defines that review scope before reading unrelated object state
-12. if a project-instance migration fragment remains after natural-language parsing, read `specflow/framework/spec_flow_migrate.md` before reading unrelated object state
-13. if the target scope has no current formal truth, the current candidate is missing candidate source fields, a direct implementation request touches an unmapped or unowned behavior scope, or candidate behavior may depend on existing implementation, read `specflow/framework/onboarding_decision_policy.md` only when the Direct Implementation Lightweight Entry or another routing rule cannot resolve the source decision through smaller current truth reads
-14. if a `guidance` fragment is present, read `specflow/framework/skills/using-specflow-guidance/SKILL.md` and then only the specific guidance skill needed for the current blocker
+1. if the request is an exact advance entry, stop natural-language routing and follow `specflow/framework/advance_policy.md`
+2. if the request is an exact standard command, stop natural-language routing and follow `command_policy.md` plus the matching command file
+3. if the request is an exact governance review entry, stop natural-language routing and follow the matching review policy
+4. if the request is an exact project-instance migration entry, stop natural-language routing and follow `specflow/framework/spec_flow_migrate.md`
+5. if the request is not an exact entry, identify intent fragments before choosing a command or governance flow
+6. if the request only asks for implementation-side work and has no explicit truth, boundary, shared, system, scenario, governance, migration, or guidance fragment, use the Direct Implementation Lightweight Entry in Section 4.1 before full route assembly
+7. if any fragment may modify repo-tracked code, tests, config, database migrations, build scripts, or other implementation-side files, read `implementation_change_policy.md` before any implementation-side edit
+8. if the request names existing formal `unit` or `scenario` objects, read `docs/specs/_status.md` before resolving their current-layer files
+9. if the request depends on path ownership, repository structure, support surfaces, or object boundaries, read `docs/specs/repository_mapping.md`
+10. if the request depends on cross-unit rule truth, rule binding, rule topology, or rule impact, use the Rule Governance Branch in this file and read the relevant Rule files plus the selected internal rule-flow file
+11. if the request may affect global default rules, reusable mechanisms promoted into the global baseline, or explicit global exceptions, read `docs/specs/rules/stable/s_g_rule_repository_baseline.md`
+12. if a governance-review fragment remains after natural-language parsing, read the governance file that defines that review scope before reading unrelated object state
+13. if a project-instance migration fragment remains after natural-language parsing, read `specflow/framework/spec_flow_migrate.md` before reading unrelated object state
+14. if the target scope has no current formal truth, the current candidate is missing candidate source fields, a direct implementation request touches an unmapped or unowned behavior scope, or candidate behavior may depend on existing implementation, read `specflow/framework/onboarding_decision_policy.md` only when the Direct Implementation Lightweight Entry or another routing rule cannot resolve the source decision through smaller current truth reads
+15. if a `guidance` fragment is present, read `specflow/framework/skills/using-specflow-guidance/SKILL.md` and then only the specific guidance skill needed for the current blocker
 
 The executor must not read every file by default.
 The executor must read enough current truth to prove the route, the missing blocker, or the safe first step.
@@ -270,7 +276,9 @@ Allowed fragment families are:
    - the request asks to migrate existing project-instance files to the current `specFlow` framework contracts after a framework update
 9. `guidance`
    - the request asks to clarify a vague project idea, cut scope, compare solution directions, review a discussion-stage design, or write an approved guidance conclusion into candidate truth
-10. `explanation_only`
+10. `advance_control`
+   - the request asks the executor to keep progressing one current unit or scenario automatically until stable completion or human-in-the-loop stop
+11. `explanation_only`
    - the request asks only for explanation and does not need repository mutation
 
 Intent fragments are executor-facing.
@@ -298,7 +306,14 @@ Guidance fragment rules:
 2. guidance must not create `_check_result`, `_plans/active`, `_verify_result`, or `_status.md` updates
 3. guidance conclusions remain chat context until written into the correct formal truth target
 4. once guidance produces an approved conclusion that affects behavior, boundary, acceptance, rule truth, repository mapping, or stable g_ rules, the next legal step is formal truth writeback followed by rerouting from current truth
-5. guidance must not intercept exact standard commands, exact governance review entries, or exact project-instance migration entries
+5. guidance must not intercept exact standard commands, exact advance entries, exact governance review entries, or exact project-instance migration entries
+
+Advance control fragment rules:
+
+1. use `advance_control` only when the user clearly asks for automatic progression, such as advancing until stable, completion, or blocker
+2. generic "continue", "next step", or "run the current command" wording does not create `advance_control` by itself
+3. when `advance_control` is present and exactly one existing unit or scenario target can be resolved, route to `specflow/framework/advance_policy.md`
+4. when the target cannot be resolved from current repository truth and user wording, stop with a clarification checkpoint in ordinary language
 
 ---
 
@@ -336,7 +351,10 @@ Allowed work shapes are:
 9. `project_instance_migration`
    - the user asks to update old project-instance files, process files, status files, or entry managed blocks so the current `specFlow` framework can consume them
    - typical owner shape: `spec_flow_migrate`
-10. `explanation_only`
+10. `lifecycle_auto_advance`
+   - the user wants the executor to progress one current lifecycle target repeatedly until stable completion or a real blocker
+   - typical owner shape: `advance_policy`
+11. `explanation_only`
    - the user asks to understand current behavior or current governance state without requesting mutation
 
 Rules:
@@ -411,7 +429,7 @@ This boundary does not:
 2. force every reused implementation helper into a Rule
 3. create a `feature`, `project_flow`, or other umbrella lifecycle object
 4. allow chat-only conclusions to replace formal truth writeback
-5. override exact standard commands, exact governance review entries, or exact project-instance migration entries
+5. override exact standard commands, exact advance entries, exact governance review entries, or exact project-instance migration entries
 
 ---
 
@@ -419,26 +437,28 @@ This boundary does not:
 
 Route in this order:
 
-1. if the request is an exact standard command, leave this file and execute command routing through `command_policy.md`
-2. if the request is an exact governance review entry, leave this file and execute the matching review policy
-3. if the request is an exact project-instance migration entry, leave this file and execute `spec_flow_migrate`
-4. if the request qualifies for the Direct Implementation Lightweight Entry in Section 4.1, run that entry first
+1. if the request is an exact advance entry, leave this file and execute `specflow/framework/advance_policy.md`
+2. if the request is an exact standard command, leave this file and execute command routing through `command_policy.md`
+3. if the request is an exact governance review entry, leave this file and execute the matching review policy
+4. if the request is an exact project-instance migration entry, leave this file and execute `spec_flow_migrate`
+5. if the request qualifies for the Direct Implementation Lightweight Entry in Section 4.1, run that entry first
    - if it returns `implementation_only`, the first legal step is the implementation-side action allowed by `implementation_change_policy.md`
-   - if it returns `truth_writeback_required` or `boundary_unclear`, continue this routing procedure from Step 5 using the classification result as input evidence
-5. otherwise treat the request as natural language and perform goal diagnosis
-6. classify the work shape before choosing the formal owner
-7. apply the Abstraction Guidance Boundary before formal owner resolution
-8. identify all intent fragments needed to route the classified work shapes
-9. apply mandatory gates for every fragment, especially `implementation_change_policy.md` for implementation fragments
-10. route project-instance migration fragments through `specflow/framework/spec_flow_migrate.md` when the user asks to update old project-instance files to current framework contracts
-11. resolve repository mapping boundary checks before claiming `unit` or `scenario` ownership
-12. resolve existing `unit` or `scenario` object state through `_status.md`
-13. apply onboarding source decision when the target has no formal truth, has candidate source drift, or may use existing implementation as candidate evidence
-14. route rule-truth fragments through the Rule Governance Branch in this file
-15. route global-rule boundary handling through the responsible unit candidate truth
-16. route guidance fragments through the smallest applicable guidance skill when the request is not yet clear enough for formal truth writeback or a standard command
-17. assemble the internal development chain when the request spans more than one formal object or work shape
-18. handle explanation-only fragments only after confirming that no mutation, guidance, or governance route is required
+   - if it returns `truth_writeback_required` or `boundary_unclear`, continue this routing procedure from Step 6 using the classification result as input evidence
+6. otherwise treat the request as natural language and perform goal diagnosis
+7. classify the work shape before choosing the formal owner
+8. apply the Abstraction Guidance Boundary before formal owner resolution
+9. identify all intent fragments needed to route the classified work shapes
+10. apply mandatory gates for every fragment, especially `implementation_change_policy.md` for implementation fragments
+11. route project-instance migration fragments through `specflow/framework/spec_flow_migrate.md` when the user asks to update old project-instance files to current framework contracts
+12. resolve repository mapping boundary checks before claiming `unit` or `scenario` ownership
+13. resolve existing `unit` or `scenario` object state through `_status.md`
+14. route advance-control fragments through `specflow/framework/advance_policy.md` only when automatic progression is explicit and one target is resolved
+15. apply onboarding source decision when the target has no formal truth, has candidate source drift, or may use existing implementation as candidate evidence
+16. route rule-truth fragments through the Rule Governance Branch in this file
+17. route global-rule boundary handling through the responsible unit candidate truth
+18. route guidance fragments through the smallest applicable guidance skill when the request is not yet clear enough for formal truth writeback or a standard command
+19. assemble the internal development chain when the request spans more than one formal object or work shape
+20. handle explanation-only fragments only after confirming that no mutation, guidance, or governance route is required
 
 This order is a decision order, not permission to skip required reads.
 If a later family is needed to decide an earlier family safely, read the later family's truth as input before choosing the route.
@@ -540,6 +560,7 @@ Rules:
 3. `scenario_verify` may report `affected_units`, but those units must re-enter their own legal unit command chain; scenario commands must not perform unit-local repair
 4. when a local request is already legally bounded and does not require end-to-end proof, do not create or require a scenario solely because scenarios exist
 5. when an end-to-end promise cannot be proven by a local unit result alone, do not claim user-goal closure until the scenario side of the chain is verified or the missing scenario truth is explicitly routed
+6. when the user explicitly asks for automatic progression, route to `advance_policy` instead of using `routing_steps_contract` as permission to run a multi-step chain
 
 ---
 
@@ -554,6 +575,9 @@ Example:
 1. the user says "continue payment"
 2. `_status.md` shows `unit:payment` has `Next Command=unit_plan`
 3. route to `unit_plan:payment`
+
+Generic "continue" remains a single-step route.
+Route to `advance_policy` only when the user asks to keep advancing automatically until stable completion or blocker.
 
 ### 7.1.1 Guidance Intent
 
@@ -576,7 +600,7 @@ Guidance routing rules:
 4. use `design-quality-review` only before candidate writeback, to review a discussion-stage design
 5. use `spec-writeback-guidance` only after the user has approved a design conclusion that must become formal truth
 6. if a guidance step produces writeback-ready content, rerun natural-language routing from current repository truth before any implementation step
-7. if the request already names an exact standard command, exact governance review entry, or exact project-instance migration entry, do not route to guidance
+7. if the request already names an exact standard command, exact advance entry, exact governance review entry, or exact project-instance migration entry, do not route to guidance
 
 ### 7.2 Multiple Fragments With Safe Order
 
@@ -854,6 +878,7 @@ The execution note may include:
 6. the smallest legal next step
 7. why that next step is legal
 8. when guidance was routed, the guidance skill selected and whether its expected result is discussion-only or candidate writeback
+9. when advance was routed, the exact advance entry and the resolved target row from `_status.md`
 
 Execution note rules:
 

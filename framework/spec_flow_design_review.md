@@ -32,6 +32,7 @@ That default scope includes:
    - `agent_operability_standard.md`
    - `spec_policy.md`
    - `command_policy.md`
+   - `advance_policy.md`
    - `natural_language_routing.md`
    - `spec_flow_migrate.md`
    - `onboarding_decision_policy.md`
@@ -39,6 +40,8 @@ That default scope includes:
    - `repository_mapping_policy.md`
    - `scenario_policy.md`
    - `spec_writing_guide.md`
+   - `candidate_intent_policy.md`
+   - `candidate_intents/`
    - `checkpoint_protocol.md`
    - `natural_language_routing.md` only where it defines the rule-governance branch
 2. lifecycle and gate-shape rules
@@ -93,6 +96,7 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `agent_operability_standard.md`
    - `spec_policy.md`
    - `command_policy.md`
+   - `advance_policy.md`
    - `natural_language_routing.md`
    - `spec_flow_migrate.md`
    - `onboarding_decision_policy.md`
@@ -100,6 +104,8 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `repository_mapping_policy.md`
    - `scenario_policy.md`
    - `spec_writing_guide.md`
+   - `candidate_intent_policy.md`
+   - `candidate_intents/`
    - `natural_language_routing.md` only where it defines the rule-governance branch
    - `AGENTS.md`
    - `GEMINI.md`
