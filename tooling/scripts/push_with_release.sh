@@ -54,7 +54,7 @@ echo "Pushing ${branch} to origin..."
 git push origin "${branch}"
 
 echo "Tagging release..."
-RELEASE_TAG="release-$(git rev-parse --short HEAD)"
+RELEASE_TAG="specflow-tooling-$(git rev-parse --short HEAD)"
 git tag "${RELEASE_TAG}"
 git push origin "${RELEASE_TAG}"
 echo "Tagged ${RELEASE_TAG} and pushed."
