@@ -9,6 +9,7 @@ GEMINI.md
 /docs/
 .tmp/
 .claude/
+.opencode/
 reference/
 _governance_review/cards/
 _governance_review/requests/
