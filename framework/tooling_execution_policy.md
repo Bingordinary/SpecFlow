@@ -149,15 +149,15 @@ The required tooling-contract document set is:
 
 1. this policy file for framework-level boundary rules
 2. `<tooling-root>/README.md` for the concrete command surface, build flow, recovery flow, and usage examples
-4. the current tooling source input files:
+3. the current tooling source input files:
    - `<tooling-root>/cmd/**/*.go`
    - `<tooling-root>/internal/**/*.go`
    - `<tooling-root>/go.mod`
    - `<tooling-root>/manifest.tsv`
    - `<tooling-root>/go.sum` when it exists
-5. the tooling helper script files:
+4. the tooling helper script files:
    - all regular files under `<tooling-root>/scripts/**`
-6. the runtime reader web files:
+5. the runtime reader web files:
    - `<tooling-root>/reader/web/**`
 
 Default `spec_flow_review` must not issue `pass` when any of the following is true:

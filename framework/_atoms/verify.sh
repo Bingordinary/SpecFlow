@@ -26,11 +26,6 @@ done
 
 log_verbose() { if $VERBOSE; then echo "  $1"; fi; }
 
-# Normalize text for comparison: remove leading/trailing blank lines
-normalize() {
-  echo "$1" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' 2>/dev/null || echo "$1" | sed '/^$/d'
-}
-
 verify_atom() {
   local atom_id="$1"
   local source_rel="$2"
@@ -80,8 +75,8 @@ verify_atom() {
 
     # Normalize: trim surrounding blank lines and trailing spaces
     local atom_norm target_norm
-    atom_norm=$(echo "$atom_content" | sed '/./,$!d' | tac | sed '/./,$!d' | tac)
-    target_norm=$(echo "$target_block" | sed '/./,$!d' | tac | sed '/./,$!d' | tac)
+    atom_norm=$(echo "$atom_content" | awk '{lines[count++]=$0} END {for(i=0;i<count;i++) if(lines[i]~/./){first=i;break} if(first<0)exit; for(i=count-1;i>=0;i--) if(lines[i]~/./){last=i;break} for(i=first;i<=last;i++) print lines[i]}')
+    target_norm=$(echo "$target_block" | awk '{lines[count++]=$0} END {for(i=0;i<count;i++) if(lines[i]~/./){first=i;break} if(first<0)exit; for(i=count-1;i>=0;i--) if(lines[i]~/./){last=i;break} for(i=first;i<=last;i++) print lines[i]}')
     atom_norm=$(echo "$atom_norm" | sed 's/[[:space:]]*$//')
     target_norm=$(echo "$target_norm" | sed 's/[[:space:]]*$//')
 

@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,10 +92,14 @@ func InstallHooks(repoRoot string) (HooksResult, error) {
 		if err != nil {
 			return result, fmt.Errorf("read %s: %w", f.source, err)
 		}
-		if err := os.WriteFile(dest, srcContent, 0o644); err != nil {
-			return result, fmt.Errorf("write %s: %w", f.dest, err)
+
+		dstContent, err := os.ReadFile(dest)
+		if err != nil || !bytes.Equal(srcContent, dstContent) {
+			if err := os.WriteFile(dest, srcContent, 0o644); err != nil {
+				return result, fmt.Errorf("write %s: %w", f.dest, err)
+			}
+			result.Copied++
 		}
-		result.Copied++
 	}
 
 	return result, nil

@@ -471,7 +471,7 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies repository mapping shape, appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`
-    - reviews hook configuration files: `specflow/hooks/hooks.json`, `specflow/hooks/hooks-cursor.json`, `specflow/hooks/hooks-codex.json`
+    - reviews hook configuration files: `specflow/hooks/hooks.json`
     - verifies `specflow/hooks/session-start` reads `framework/concepts.md` and produces correct platform-specific JSON output
     - verifies every platform plugin (`.opencode/plugins/specflow.js`, etc.) resolves its hardcoded file paths correctly from the deployment context per Section 2.16
     - verifies `framework/concepts.md` contains complete agent governance content (triggers, HARD RULES, commands reference)

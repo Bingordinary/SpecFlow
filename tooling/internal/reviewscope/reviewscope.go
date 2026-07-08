@@ -222,12 +222,22 @@ func layeredFrameworkFiles(repoRoot string, frameworkRoot string) ([]string, err
 		joinPath(frameworkRoot, "core"),
 		joinPath(frameworkRoot, "governance"),
 		joinPath(frameworkRoot, "operations"),
+		joinPath(frameworkRoot, "_atoms"),
 	} {
 		files, err := walkRelativeFiles(repoRoot, relDir, ".md")
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, files...)
+	}
+	for _, nonMdFile := range []string{
+		joinPath(frameworkRoot, "_atoms/manifest.txt"),
+		joinPath(frameworkRoot, "_atoms/generate.sh"),
+		joinPath(frameworkRoot, "_atoms/verify.sh"),
+	} {
+		if fileExists(repoRoot, nonMdFile) {
+			result = append(result, nonMdFile)
+		}
 	}
 	return sortAndDedupe(result), nil
 }

@@ -76,16 +76,47 @@ If the user declines a suggestion, continue editing. Do not insist.
 
 When the user's request does not match an explicit trigger (`spec_validate`, `spec_verify`, `spec_promote`), classify the intent into one of the 5 categories below. Do not use keyword matching — infer from context.
 
+**State disclosure first:** Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "要不要走validate-verify-promote流程?". Instead, disclose the state first, then state what is available for the user to choose from. See each intent's disclosure pattern below.
+
+| State to disclose | What to say |
+|-------------------|-------------|
+| Candidate spec exists for the unit | "当前已有 candidate spec（`...`），记录了你正在编辑的设计" |
+| No candidate spec for the unit | "当前没有 candidate spec，说明还没有设计被记录下来" |
+| Validate cache fresh | "validate 已经通过，且读取的文件没有变化" |
+| Validate cache missing/stale | "validate 缓存不存在/已过期，需要重新检查" |
+| Verify cache fresh | "verify 已经通过，且检查的文件没有变化" |
+| Verify cache missing/stale | "verify 缓存不存在/已过期，需要重新检查" |
+
+**State transition lookup table:**
+
+This table maps the three boolean state dimensions to the exact disclosure text and suggested action. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
+
+| candidate_exists | validate_fresh | verify_fresh | Disclose | Then offer |
+|---|---|---|---|---|
+| N | N/A | N/A | "当前没有 candidate spec" | "可以开始编写 candidate spec，记录你的设计思路。" |
+| Y | N | N/A | "candidate 已存在，但 validate 未通过或缓存过期。" | "可以继续更新 candidate，或者跑 validate 做设计质量检查。" |
+| Y | Y | N | "candidate 已存在，validate 已通过，但 verify 未做或缓存过期。" | "可以继续更新 candidate，或者跑 verify 检查实现是否匹配设计。" |
+| Y | N | Y | "candidate 已存在，verify 已通过，但 validate 缓存过期。" | "建议重新跑 validate，因为 design 可能已变更。" |
+| Y | Y | Y | "candidate 已通过 validate 和 verify。" | "如果设计已定稿，可以 promote 到 stable。" |
+
 | Intent | What user wants | Agent action | File state check |
 |--------|----------------|-------------|-----------------|
-| **designing** | Plan, change direction, explore approach | Route to `using-specflow-guidance` skill if vague; otherwise write/update candidate → suggest validate | No candidate → suggest writing spec first. Candidate exists → suggest validate |
+| **designing** | Plan, change direction, explore approach | **Use the state transition lookup table above** to determine the correct disclosure and action for the current state. Never phrase as a binary "要不要走流程". See the example conversations below for illustration. | Use the state transition lookup table above |
 | **implementing** | Write code, iterate, debug, test | Do not touch spec. Do not suggest validate/verify/promote. Let the user focus. | Candidate exists → ensure it's read but do not interrupt. No candidate, changing stable behavior → suggest fork first |
-| **verifying** | Check correctness, see if it's right | Run `spec_verify`. Read cache if present and fresh → report cached result instead of re-running. | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
+| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — if verify cache is fresh: "verify 缓存有效，上次检查结果全为 ALIGNED，文件未变化。需要重新跑 verify 吗？" If stale or missing: "verify 缓存不存在或已过期，需要重新检查。" Then run `spec_verify`. | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
 | **finalizing** | Lock in, wrap up, promote | Check validate cache then verify cache. Both fresh → suggest `spec_promote`. Cache stale/missing → suggest re-running the appropriate step |
 | **recovering** | Something is wrong, stuck, error | Diagnose first: is it a code bug (→ implementing), design flaw (→ designing), or external blocker (→ blocked, ask user) |
 
 **Fallback:** If the intent is unclear after reasonable effort, ask the user directly:
 "Are you designing something new, implementing code, checking your work, finalizing, or stuck on a problem?"
+
+**Designing disclosure pattern:** Use the state transition lookup table above to determine the correct disclosure for any `(candidate_exists, validate_fresh, verify_fresh)` combination. The examples below illustrate the most common states.
+
+**Example conversation (no candidate, user says "我想设计用户认证"):**
+> "好的。当前还没有 user_auth 单元的 candidate spec，说明还没有记录设计。我可以做以下事情： 1. 用 guidance 引导你完成设计，然后写到 candidate 2. 如果你已经有想法，我可以直接开始写 candidate。你倾向哪种？"
+
+**Example conversation (candidate exists, user says "检查一下"):**
+> "当前 user_auth 的 candidate spec 已存在，validate 缓存已过期。我可以： 1. 跑 validate — 检查 candidate spec 的设计质量 2. 跑 verify — 检查代码实现是否匹配设计 3. 继续编辑 candidate。你说的检查是指检查设计（validate）还是检查实现（verify）？"
 
 ### 3a. Validate
 
@@ -287,8 +318,8 @@ The CLI `specflowctl promote --unit <name>` also validates format (frontmatter, 
 
 These override default helpful-assistant behavior. They are not suggestions.
 
-**HARD RULE 1: Read Specs Before Implementation**
-Before modifying code, read the unit's stable and/or candidate spec. Create or update spec when design changes. If no spec exists, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
+**HARD RULE 1: Read Specs Before Discussing or Changing a Topic**
+Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable and/or candidate spec. If the spec already documents relevant design decisions, constraints, or boundaries, summarize them to the user before starting new analysis or proposals. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "当前 spec 中没有记录关于此主题的设计内容。我们可以从零开始设计。" Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
 
 **HARD RULE 2: Promote Is the Only Gate to Stable**
 Never call `specflowctl promote` without user confirmation. Before promote, always run validate then verify. If either fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
