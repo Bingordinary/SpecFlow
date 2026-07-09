@@ -128,12 +128,13 @@ When running `spec_validate {unit}`, read this section, then open a read-only su
 
 **Checklist:**
 
-1. **Frontmatter completeness** — Read `docs/specs/units/candidate/c_unit_{unit}.md`. Verify `id`, `layer` (must be "candidate"), `version`, `unit_refs`, `rule_refs` are all present.
-2. **Acceptance items** — Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `not_runnable_yet`.
-3. **Reference integrity** — Check that all `unit_refs` point to existing stable spec files. Check that all `rule_refs` point to existing rule files. Check that any referenced appendix files exist.
-4. **Cross-unit consistency** — Read related unit candidate specs (from `unit_refs`). Check for contradicting statements about shared protocols, data formats, or behavior.
-5. **Design quality** (advisory) — Does the candidate connect user goal to proposed behavior? Is the first-round scope and non-goals clear? Do acceptance criteria prove the result is useful, not just that artifacts exist? Does the candidate avoid depending on chat context or rejected alternatives?
-6. **Global constraint alignment** — Read `docs/specs/system_constraints.md` if it exists. Is the candidate compatible? If `system_constraints_ref` points to a version, does it match?
+1. **Structural integrity** — Read `docs/specs/units/candidate/c_unit_{unit}.md`. Verify `id`, `layer` (must be "candidate"), `version`, `unit_refs`, `rule_refs` are all present. Verify `acceptance_item_set` exists with at least one item, each with: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `not_runnable_yet`. Check that all `unit_refs` point to existing stable spec files, all `rule_refs` point to existing rule files, and any referenced appendix files exist.
+2. **Scope clarity** — Is the unit's goal and responsibility scope clearly stated? Are first-round non-goals and boundaries defined? Are dependencies, rule bindings, and ownership boundaries explicit?
+3. **Behavior completeness** — Are the main flow, key protocols, states and transitions, error paths, and data contracts described fully enough that implementation can proceed without guessing? Can verification proceed without guessing behavior, boundaries, or acceptance?
+4. **Decision completeness** — Are all implementation-critical decisions recorded in the spec or its appendices? Does the spec avoid depending on chat context, oral consensus, README vision, or rejected alternatives for essential meaning?
+5. **Acceptance verifiability** — Do the acceptance criteria prove the design goal is met, not just that artifacts exist? Are they testable and unambiguous? Does each item's `pass_condition` describe a verifiable outcome rather than a tautology or placeholder?
+6. **Cross-unit consistency** — Read related unit candidate specs (from `unit_refs`). Check for contradicting statements about shared protocols, data formats, or behavior.
+7. **Global constraint alignment** — Read `docs/specs/system_constraints.md` if it exists. Is the candidate compatible? If `system_constraints_ref` points to a version, does it match?
 
 **Resolution:** When a check fails, determine which type:
 - **fix_required** — The executor can identify a concrete repair inside the current candidate. Repair and re-run validate.
@@ -142,12 +143,13 @@ When running `spec_validate {unit}`, read this section, then open a read-only su
 **Output:**
 ```
 Validate result: PASS | FAIL (fix_required | blocked)
-1. Frontmatter: PASS | FAIL — reason
-2. Acceptance items: PASS | FAIL — reason
-3. References: PASS | FAIL — reason
-4. Cross-unit: PASS | FAIL — reason
-5. Design quality: PASS | FAIL — reason
-6. Global constraints: PASS | FAIL — reason
+1. Structural integrity: PASS | FAIL — reason
+2. Scope clarity: PASS | FAIL — reason
+3. Behavior completeness: PASS | FAIL — reason
+4. Decision completeness: PASS | FAIL — reason
+5. Acceptance verifiability: PASS | FAIL — reason
+6. Cross-unit consistency: PASS | FAIL — reason
+7. Global constraints: PASS | FAIL — reason
 Resolution: fix_required | blocked — next step
 Summary: ...
 ```

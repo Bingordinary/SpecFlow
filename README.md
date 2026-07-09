@@ -197,7 +197,7 @@ The agent also proactively suggests these at natural transition points: "Shall I
 
 1. **Read** — run `specflowctl next --unit <name>` (full path: `specflow/tooling/bin/specflowctl-<os>-<arch>`) to discover unit files
 2. **Edit and implement** — update candidate spec and code. No gate before this step.
-3. **Validate** — when you say `spec_validate {unit}` or confirm the agent's suggestion, opens a read-only subagent with a structured checklist (frontmatter, acceptance items, reference integrity, cross-unit consistency). Reports PASS/FAIL per check.
+3. **Validate** — when you say `spec_validate {unit}` or confirm the agent's suggestion, opens a read-only subagent with a structured checklist (structural integrity, scope clarity, behavior completeness, decision completeness, acceptance verifiability, cross-unit consistency, global constraints). Reports PASS/FAIL per check.
 4. **Verify** — when you say `spec_verify {unit}` or confirm, opens a read-only subagent with a verify checklist (per-item implementation check, scope check, code quality). Reports PASS/FAIL per item.
 5. **Promote** — when you say `spec_promote {unit}` or confirm, runs validate then verify, then calls `specflowctl promote --unit {name}`. Only promote writes files.
 

@@ -175,8 +175,8 @@ Agent：[运行 specflowctl promote...]
 
 | 触发词 | agent 做什么 |
 |--------|-------------|
-| `spec_validate {unit}` | 开只读 subagent 按 validate 清单检查 spec 质量 |
-| `spec_verify {unit}` | 开只读 subagent 按 verify 清单检查实现 |
+| `spec_validate {unit}` | 启动只读 subagent，按 validate 清单检查 spec 质量 |
+| `spec_verify {unit}` | 启动只读 subagent，按 verify 清单检查实现 |
 | `spec_promote {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
 | `spec_flow_migrate` | 跑迁移工具 + 检查项目文档格式 |
 
@@ -194,8 +194,8 @@ Agent 也会在合适时机主动建议："需要跑 validate 吗？"、"需要�
 
 1. **发现** —— 执行 `specflowctl next --unit <name>`（完整路径：`specflow/tooling/bin/specflowctl-<os>-<arch>`）发现 unit 文件
 2. **编辑和实现** —— 更新 candidate spec 和代码，没有门控
-3. **Validate** —— 开只读 subagent，按清单检查 frontmatter、acceptance items、引用完整性、跨 unit 一致性
-4. **Verify** —— 开只读 subagent，逐项检查 acceptance item 的实现、scope 和代码质量
+3. **Validate** —— 启动只读 subagent，按清单检查结构完整性、范围清晰度、行为完备性、决策完备性、验收可验证性、跨 unit 一致性、全局约束对齐
+4. **Verify** —— 启动只读 subagent，逐项检查 acceptance item 的实现、scope 和代码质量
 5. **Promote** —— 先 validate 再 verify，通过后调 `specflowctl promote`
 
 ### 什么时候退回自然语言
