@@ -26,6 +26,26 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+detect_layout() {
+  local repo_root="$1"
+  local parent_git_root
+
+  parent_git_root=$(cd "${repo_root}/.." && git rev-parse --show-toplevel 2>/dev/null || true)
+
+  if [[ -z "${parent_git_root}" ]]; then
+    echo "source_repo"
+    return 0
+  fi
+
+  if [[ -f "${parent_git_root}/.gitignore" ]] && grep -qxF "specflow/" "${parent_git_root}/.gitignore"; then
+    echo "installed_project"
+    return 0
+  fi
+
+  echo "unknown_nested"
+  return 0
+}
+
 cd "${REPO_ROOT}"
 
 branch="$(git branch --show-current)"
@@ -36,6 +56,14 @@ fi
 
 if [[ "${branch}" != "main" ]]; then
   echo "Error: push_with_release.sh must be run on the main branch." >&2
+  exit 1
+fi
+
+layout="$(detect_layout "${REPO_ROOT}")"
+if [[ "${layout}" != "source_repo" ]]; then
+  echo "Error: push_with_release.sh is designed for the SpecFlow development repository." >&2
+  echo "Run it from the SpecFlow source repository root." >&2
+  echo "(For project usage, use pull_with_release.sh instead.)" >&2
   exit 1
 fi
 

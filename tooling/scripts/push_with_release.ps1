@@ -42,6 +42,28 @@ function Invoke-CheckedOutput {
     ($output -join "`n").Trim()
 }
 
+function Detect-Layout {
+    param(
+        [string]$RepoRoot
+    )
+
+    $parentDir = Split-Path -Parent $RepoRoot
+    $parentGitRoot = & git -C $parentDir rev-parse --show-toplevel 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($parentGitRoot)) {
+        return "source_repo"
+    }
+
+    $gitignore = Join-Path $parentGitRoot ".gitignore"
+    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
+        $lines = Get-Content -LiteralPath $gitignore
+        if ($lines -contains "specflow/") {
+            return "installed_project"
+        }
+    }
+
+    return "unknown_nested"
+}
+
 if ($Help) {
     Show-Usage
     exit 0
@@ -61,6 +83,11 @@ try {
     $status = Invoke-CheckedOutput "git" @("status", "--porcelain")
     if (-not [string]::IsNullOrWhiteSpace($status)) {
         throw "Working tree is not clean. Commit or stash changes before pushing."
+    }
+
+    $layout = Detect-Layout -RepoRoot $repoRoot
+    if ($layout -ne "source_repo") {
+        throw "push_with_release.ps1 is designed for the SpecFlow development repository. Run it from the SpecFlow source repository root. (For project usage, use pull_with_release.ps1 instead.)"
     }
 
     $remoteUrl = Invoke-CheckedOutput "git" @("remote", "get-url", "origin")

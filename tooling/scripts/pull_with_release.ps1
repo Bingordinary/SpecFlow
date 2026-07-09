@@ -41,6 +41,28 @@ function Invoke-CheckedOutput {
     ($output -join "`n").Trim()
 }
 
+function Detect-Layout {
+    param(
+        [string]$RepoRoot
+    )
+
+    $parentDir = Split-Path -Parent $RepoRoot
+    $parentGitRoot = & git -C $parentDir rev-parse --show-toplevel 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($parentGitRoot)) {
+        return "source_repo"
+    }
+
+    $gitignore = Join-Path $parentGitRoot ".gitignore"
+    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
+        $lines = Get-Content -LiteralPath $gitignore
+        if ($lines -contains "specflow/") {
+            return "installed_project"
+        }
+    }
+
+    return "unknown_nested"
+}
+
 if ($Help) {
     Show-Usage
     exit 0
@@ -57,9 +79,9 @@ try {
         throw "Detached HEAD is not supported. Check out a branch before pulling."
     }
 
-    $status = Invoke-CheckedOutput "git" @("status", "--porcelain")
-    if (-not [string]::IsNullOrWhiteSpace($status)) {
-        throw "Working tree is not clean. Commit or stash changes before pulling."
+    $layout = Detect-Layout -RepoRoot $repoRoot
+    if ($layout -ne "installed_project") {
+        throw "pull_with_release.ps1 is designed for projects that use SpecFlow. Run it from a SpecFlow installation inside your project. (For SpecFlow development, use push_with_release.ps1 instead.)"
     }
 
     $remoteUrl = Invoke-CheckedOutput "git" @("remote", "get-url", "origin")
@@ -68,7 +90,8 @@ try {
     }
 
     Write-Host "Pulling $branch from origin..."
-    Invoke-CheckedNative "git" @("pull", "--ff-only", "origin", $branch)
+    Invoke-CheckedNative "git" @("fetch", "origin", $branch)
+    Invoke-CheckedNative "git" @("reset", "--hard", "origin/$branch")
 
     # Clear tooling/bin before updating binaries, so stale files are
     # removed before fresh ones are downloaded.

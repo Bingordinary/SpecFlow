@@ -28,6 +28,26 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+detect_layout() {
+  local repo_root="$1"
+  local parent_git_root
+
+  parent_git_root=$(cd "${repo_root}/.." && git rev-parse --show-toplevel 2>/dev/null || true)
+
+  if [[ -z "${parent_git_root}" ]]; then
+    echo "source_repo"
+    return 0
+  fi
+
+  if [[ -f "${parent_git_root}/.gitignore" ]] && grep -qxF "specflow/" "${parent_git_root}/.gitignore"; then
+    echo "installed_project"
+    return 0
+  fi
+
+  echo "unknown_nested"
+  return 0
+}
+
 cd "${REPO_ROOT}"
 
 branch="$(git branch --show-current)"
@@ -36,8 +56,11 @@ if [[ -z "${branch}" ]]; then
   exit 1
 fi
 
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "Error: working tree is not clean. Commit or stash changes before pulling." >&2
+layout="$(detect_layout "${REPO_ROOT}")"
+if [[ "${layout}" != "installed_project" ]]; then
+  echo "Error: pull_with_release.sh is designed for projects that use SpecFlow." >&2
+  echo "Run it from a SpecFlow installation inside your project." >&2
+  echo "(For SpecFlow development, use push_with_release.sh instead.)" >&2
   exit 1
 fi
 
@@ -48,7 +71,8 @@ if [[ -z "${remote_url}" ]]; then
 fi
 
 echo "Pulling ${branch} from origin..."
-git pull --ff-only origin "${branch}"
+git fetch origin "${branch}"
+git reset --hard "origin/${branch}"
 
 # Clear tooling/bin before updating binaries, so stale files are
 # removed before fresh ones are downloaded.
