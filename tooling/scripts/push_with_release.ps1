@@ -53,15 +53,7 @@ function Detect-Layout {
         return "source_repo"
     }
 
-    $gitignore = Join-Path $parentGitRoot ".gitignore"
-    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
-        $lines = Get-Content -LiteralPath $gitignore
-        if ($lines -contains "specflow/") {
-            return "installed_project"
-        }
-    }
-
-    return "unknown_nested"
+    return "installed_project"
 }
 
 if ($Help) {

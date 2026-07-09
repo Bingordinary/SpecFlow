@@ -60,6 +60,14 @@ function Detect-Layout {
         }
     }
 
+    $gitmodules = Join-Path $parentGitRoot ".gitmodules"
+    if (Test-Path -LiteralPath $gitmodules -PathType Leaf) {
+        $lines = Get-Content -LiteralPath $gitmodules
+        if ($lines -match '^\s*path\s*=\s*specflow\s*$') {
+            return "installed_project"
+        }
+    }
+
     return "unknown_nested"
 }
 
@@ -74,11 +82,6 @@ $repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
 try {
     Set-Location $repoRoot
 
-    $branch = Invoke-CheckedOutput "git" @("branch", "--show-current")
-    if ([string]::IsNullOrWhiteSpace($branch)) {
-        throw "Detached HEAD is not supported. Check out a branch before pulling."
-    }
-
     $layout = Detect-Layout -RepoRoot $repoRoot
     if ($layout -ne "installed_project") {
         throw "pull_with_release.ps1 is designed for projects that use SpecFlow. Run it from a SpecFlow installation inside your project. (For SpecFlow development, use push_with_release.ps1 instead.)"
@@ -89,9 +92,17 @@ try {
         throw "Git remote 'origin' is missing."
     }
 
-    Write-Host "Pulling $branch from origin..."
-    Invoke-CheckedNative "git" @("fetch", "origin", $branch)
-    Invoke-CheckedNative "git" @("reset", "--hard", "origin/$branch")
+    $branch = Invoke-CheckedOutput "git" @("branch", "--show-current")
+    if ([string]::IsNullOrWhiteSpace($branch)) {
+        Write-Host "Updating from origin (detached HEAD)..."
+        Invoke-CheckedNative "git" @("fetch", "origin")
+        Invoke-CheckedNative "git" @("checkout", "origin/HEAD")
+    }
+    else {
+        Write-Host "Pulling $branch from origin..."
+        Invoke-CheckedNative "git" @("fetch", "origin", $branch)
+        Invoke-CheckedNative "git" @("reset", "--hard", "origin/$branch")
+    }
 
     # Clear tooling/bin before updating binaries, so stale files are
     # removed before fresh ones are downloaded.

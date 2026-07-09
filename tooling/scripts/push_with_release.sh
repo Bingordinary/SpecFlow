@@ -37,12 +37,7 @@ detect_layout() {
     return 0
   fi
 
-  if [[ -f "${parent_git_root}/.gitignore" ]] && grep -qxF "specflow/" "${parent_git_root}/.gitignore"; then
-    echo "installed_project"
-    return 0
-  fi
-
-  echo "unknown_nested"
+  echo "installed_project"
   return 0
 }
 

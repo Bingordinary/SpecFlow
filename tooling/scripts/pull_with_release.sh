@@ -44,17 +44,16 @@ detect_layout() {
     return 0
   fi
 
+  if [[ -f "${parent_git_root}/.gitmodules" ]] && grep -qE '^\s*path\s*=\s*specflow\s*$' "${parent_git_root}/.gitmodules"; then
+    echo "installed_project"
+    return 0
+  fi
+
   echo "unknown_nested"
   return 0
 }
 
 cd "${REPO_ROOT}"
-
-branch="$(git branch --show-current)"
-if [[ -z "${branch}" ]]; then
-  echo "Error: detached HEAD is not supported. Check out a branch before pulling." >&2
-  exit 1
-fi
 
 layout="$(detect_layout "${REPO_ROOT}")"
 if [[ "${layout}" != "installed_project" ]]; then
@@ -70,9 +69,17 @@ if [[ -z "${remote_url}" ]]; then
   exit 1
 fi
 
-echo "Pulling ${branch} from origin..."
-git fetch origin "${branch}"
-git reset --hard "origin/${branch}"
+branch="$(git branch --show-current)"
+if [[ -z "${branch}" ]]; then
+  # detached HEAD — submodule scenario; update to remote default branch
+  echo "Updating from origin (detached HEAD)..."
+  git fetch origin
+  git checkout origin/HEAD
+else
+  echo "Pulling ${branch} from origin..."
+  git fetch origin "${branch}"
+  git reset --hard "origin/${branch}"
+fi
 
 # Clear tooling/bin before updating binaries, so stale files are
 # removed before fresh ones are downloaded.
