@@ -76,8 +76,27 @@ fi
 echo "Pushing ${branch} to origin..."
 git push origin "${branch}"
 
-echo "Tagging release..."
-RELEASE_TAG="specflow-tooling-$(git rev-parse --short HEAD)"
-git tag "${RELEASE_TAG}"
-git push origin "${RELEASE_TAG}"
-echo "Tagged ${RELEASE_TAG} and pushed."
+fingerprint="$("${REPO_ROOT}/tooling/scripts/tooling_fingerprint.sh" --short)"
+tag="specflow-tooling-${fingerprint}"
+
+if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+  echo "Release tag already exists on origin: ${tag}"
+  echo "No release tag push needed."
+  exit 0
+fi
+
+if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+  tag_commit="$(git rev-list -n 1 "${tag}")"
+  head_commit="$(git rev-parse HEAD)"
+  if [[ "${tag_commit}" != "${head_commit}" ]]; then
+    echo "Error: local tag ${tag} exists but does not point to HEAD." >&2
+    echo "Delete or inspect the local tag manually before pushing a release." >&2
+    exit 1
+  fi
+else
+  git tag "${tag}"
+fi
+
+echo "Pushing release tag ${tag}..."
+git push origin "${tag}"
+echo "Release workflow triggered by ${tag}."
