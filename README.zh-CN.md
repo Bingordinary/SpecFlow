@@ -149,7 +149,7 @@ Agent：[运行 specflowctl promote...]
 | `docs/specs/rules/stable/` | 已经稳定的共享规则 |
 | `docs/specs/rules/candidate/` | 正在编辑的规则 |
 
-`promote` 是唯一的门控，负责把 candidate 文件复制到 stable。其他所有操作由 agent 直接完成。
+`promote` 是唯一的门控，负责把 candidate 文件复制到 stable 并清理 candidate 文件。其他所有操作由 agent 直接完成。
 
 **unit** —— 一块独立可治理的工程责任。一个 unit 拥有自己的行为真相（Spec）、实现和验证。
 
@@ -164,7 +164,7 @@ Agent：[运行 specflowctl promote...]
 | 命令 | 作用 |
 |------|------|
 | `specflowctl next --unit <name>` | 发现 unit 文件、spec、规则和依赖 |
-| `specflowctl promote --unit <name>` | 格式校验 + candidate→stable（唯一门控） |
+| `specflowctl promote --unit <name>` | 格式校验 + candidate→stable 并清理 candidate 文件（唯一门控） |
 | `specflowctl init` | 安装框架文件和平台 hooks |
 | `specflowctl doctor` | 诊断项目配置 |
 | `specflowctl migrate` | 更新 hook 文件 + 检查工具版本 |

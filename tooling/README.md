@@ -106,7 +106,7 @@ It must not edit files, advance governance state, or store semantic conclusions 
    - `--explain` additionally inlines the current spec format rules
    - this is a render action: read-only, does not modify any project file
 6. `promote`
-   - validate candidate spec format and copy candidate files to stable directories
+    - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks, required-field validation, and reference integrity
    - this is the only write gate
 7. `review collect-default-scope --flow <review_flow>`

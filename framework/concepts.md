@@ -72,16 +72,16 @@ If the user declines a suggestion, continue editing. Do not insist.
 
 When the user's request does not match an explicit trigger (`spec_validate`, `spec_verify`, `spec_promote`), classify the intent into one of the 5 categories below. Do not use keyword matching — infer from context.
 
-**State disclosure first:** Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "要不要走validate-verify-promote流程?". Instead, disclose the state first, then state what is available for the user to choose from. See each intent's disclosure pattern below.
+**State disclosure first:** Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "Do you want to go through the validate-verify-promote process?". Instead, disclose the state first, then state what is available for the user to choose from. See each intent's disclosure pattern below.
 
 | State to disclose | What to say |
 |-------------------|-------------|
-| Candidate spec exists for the unit | "当前已有 candidate spec（`...`），记录了你正在编辑的设计" |
-| No candidate spec for the unit | "当前没有 candidate spec，说明还没有设计被记录下来" |
-| Validate cache fresh | "validate 已经通过，且读取的文件没有变化" |
-| Validate cache missing/stale | "validate 缓存不存在/已过期，需要重新检查" |
-| Verify cache fresh | "verify 已经通过，且检查的文件没有变化" |
-| Verify cache missing/stale | "verify 缓存不存在/已过期，需要重新检查" |
+| Candidate spec exists for the unit | "A candidate spec (`...`) exists, recording the design you are currently editing" |
+| No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
+| Validate cache fresh | "Validate has passed, and the read files have not changed" |
+| Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
+| Verify cache fresh | "Verify has passed, and the checked files have not changed" |
+| Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
 
 **State transition lookup table:**
 
@@ -89,17 +89,17 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 | candidate_exists | validate_fresh | verify_fresh | Disclose | Then offer |
 |---|---|---|---|---|
-| N | N/A | N/A | "当前没有 candidate spec" | "可以开始编写 candidate spec，记录你的设计思路。" |
-| Y | N | N/A | "candidate 已存在，但 validate 未通过或缓存过期。" | "可以继续更新 candidate，或者跑 validate 做设计质量检查。" |
-| Y | Y | N | "candidate 已存在，validate 已通过，但 verify 未做或缓存过期。" | "可以继续更新 candidate，或者跑 verify 检查实现是否匹配设计。" |
-| Y | N | Y | "candidate 已存在，verify 已通过，但 validate 缓存过期。" | "建议重新跑 validate，因为 design 可能已变更。" |
-| Y | Y | Y | "candidate 已通过 validate 和 verify。" | "如果设计已定稿，可以 promote 到 stable。" |
+| N | N/A | N/A | "No candidate spec exists" | "You can start writing a candidate spec to record your design." |
+| Y | N | N/A | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
+| Y | Y | N | "Candidate exists, validate has passed, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
+| Y | N | Y | "Candidate exists, verify has passed, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
+| Y | Y | Y | "Candidate has passed both validate and verify." | "If the design is finalized, you can promote it to stable." |
 
 | Intent | What user wants | Agent action | File state check |
 |--------|----------------|-------------|-----------------|
-| **designing** | Plan, change direction, explore approach | **Use the state transition lookup table above** to determine the correct disclosure and action for the current state. Never phrase as a binary "要不要走流程". See the example conversations below for illustration. | Use the state transition lookup table above |
+| **designing** | Plan, change direction, explore approach | **Use the state transition lookup table above** to determine the correct disclosure and action for the current state. Never phrase it as a binary "do you want to go through the process". See the example conversations below for illustration. | Use the state transition lookup table above |
 | **implementing** | Write code, iterate, debug, test | Do not touch spec. Do not suggest validate/verify/promote. Let the user focus. | Candidate exists → ensure it's read but do not interrupt. No candidate, changing stable behavior → suggest fork first |
-| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — if verify cache is fresh: "verify 缓存有效，上次检查结果全为 ALIGNED，文件未变化。需要重新跑 verify 吗？" If stale or missing: "verify 缓存不存在或已过期，需要重新检查。" Then run `spec_verify`. | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
+| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — if verify cache is fresh: "Verify cache is valid, all results from the last check were ALIGNED, and no files have changed. Need to re-run verify?" If stale or missing: "Verify cache does not exist or is expired, needs re-checking." Then run `spec_verify`. | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
 | **finalizing** | Lock in, wrap up, promote | Check validate cache then verify cache. Both fresh → suggest `spec_promote`. Cache stale/missing → suggest re-running the appropriate step |
 | **recovering** | Something is wrong, stuck, error | Diagnose first: is it a code bug (→ implementing), design flaw (→ designing), or external blocker (→ blocked, ask user) |
 
@@ -108,11 +108,11 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 **Designing disclosure pattern:** Use the state transition lookup table above to determine the correct disclosure for any `(candidate_exists, validate_fresh, verify_fresh)` combination. The examples below illustrate the most common states.
 
-**Example conversation (no candidate, user says "我想设计用户认证"):**
-> "好的。当前还没有 user_auth 单元的 candidate spec，说明还没有记录设计。我可以做以下事情： 1. 用 guidance 引导你完成设计，然后写到 candidate 2. 如果你已经有想法，我可以直接开始写 candidate。你倾向哪种？"
+**Example conversation (no candidate, user says "I want to design user authentication"):**
+> "OK. There is currently no candidate spec for the user_auth unit, meaning no design has been recorded yet. Here's what I can do: 1. Use guidance to walk through the design, then write it to the candidate. 2. If you already have an idea, I can write the candidate directly. Which do you prefer?"
 
-**Example conversation (candidate exists, user says "检查一下"):**
-> "当前 user_auth 的 candidate spec 已存在，validate 缓存已过期。我可以： 1. 跑 validate — 检查 candidate spec 的设计质量 2. 跑 verify — 检查代码实现是否匹配设计 3. 继续编辑 candidate。你说的检查是指检查设计（validate）还是检查实现（verify）？"
+**Example conversation (candidate exists, user says "Check it"):**
+> "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
 
 ### 4. Promote (only gate)
 
@@ -127,14 +127,14 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 The CLI `specflowctl promote --unit <name>` also validates format (frontmatter, required fields, reference integrity) and copies candidate files to stable.
 
-**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are preserved for the next round. See [Truth Hierarchy](#truth-hierarchy).
+**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, the agent forks from stable: copies `s_unit_<name>.md` (and its appendices) back to the candidate layer as `c_unit_<name>.md`. See [Truth Hierarchy](#truth-hierarchy).
 
 ## HARD RULES
 
 These override default helpful-assistant behavior. They are not suggestions.
 
 **HARD RULE 1: Read Specs Before Discussing or Changing a Topic**
-Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable and/or candidate spec. If the spec already documents relevant design decisions, constraints, or boundaries, summarize them to the user before starting new analysis or proposals. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "当前 spec 中没有记录关于此主题的设计内容。我们可以从零开始设计。" Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
+Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable and/or candidate spec. If the spec already documents relevant design decisions, constraints, or boundaries, summarize them to the user before starting new analysis or proposals. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
 
 **HARD RULE 2: Promote Is the Only Gate to Stable**
 Never call `specflowctl promote` without user confirmation. Before promote, always run validate then verify. If either fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.

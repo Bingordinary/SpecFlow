@@ -126,6 +126,21 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/c_unit_%s.md -> docs/specs/units/stable/s_unit_%s.md", unitName, unitName))
 
+	// Step 7: Remove candidate files so file existence remains an unambiguous state signal.
+	// "Candidate file exists = being edited" — after promote, no editing is in progress.
+	for _, m := range matches {
+		if err := os.Remove(m); err != nil {
+			r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate appendix: %s", filepath.Base(m)))
+		} else {
+			r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate appendix: docs/specs/units/candidate/appendix/%s", filepath.Base(m)))
+		}
+	}
+	if err := os.Remove(candidateSpec); err != nil {
+		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate spec: c_unit_%s.md", unitName))
+	} else {
+		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/c_unit_%s.md", unitName))
+	}
+
 	r.Passed = true
 	return r
 }

@@ -79,16 +79,32 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-    description: Test check passes.
-    verification_type: testable
-    verification_surface: internal
-    implementation_surface: internal
-    verification_method: test
-    pass_condition: passes
-    not_runnable_yet: no
+	description: Test check passes.
+	    verification_type: testable
+	    verification_surface: internal
+	    implementation_surface: internal
+	    verification_method: test
+	    pass_condition: passes
+	    not_runnable_yet: no
 `
 	specPath := filepath.Join(candidateDir, "c_unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a candidate appendix file
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendixContent := `---
+unit: test_unit
+layer: candidate
+---
+Appendix content for test.
+`
+	appendixPath := filepath.Join(appendixDir, "c_unit_test_unit_helper.md")
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,6 +123,7 @@ acceptance_item_set:
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
 	mappingHash := computeHash(mappingPath)
+	appendixHash := computeHash(appendixPath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 
@@ -120,9 +137,11 @@ files:
     hash: sha256:%s
   - path: docs/specs/repository_mapping.md
     hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
+    hash: sha256:%s
 ---
 Validate passed.
-`, specHash, mappingHash)
+`, specHash, mappingHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -139,9 +158,11 @@ files:
     hash: sha256:%s
   - path: docs/specs/repository_mapping.md
     hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
+    hash: sha256:%s
 ---
 Verify passed.
-`, specHash, mappingHash)
+`, specHash, mappingHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +191,26 @@ Verify passed.
 	cacheFiles, _ := filepath.Glob(filepath.Join(cacheDir, "*"))
 	if len(cacheFiles) > 0 {
 		t.Fatalf("expected cache cleared after promote, found: %v", cacheFiles)
+	}
+
+	// Verify candidate file was removed after promote (file existence is state)
+	if _, statErr := os.Stat(specPath); statErr == nil {
+		t.Fatal("candidate spec should be removed after promote, but still exists")
+	} else if !os.IsNotExist(statErr) {
+		t.Fatalf("unexpected error checking candidate spec: %v", statErr)
+	}
+
+	// Verify candidate appendix was removed after promote
+	if _, statErr := os.Stat(appendixPath); statErr == nil {
+		t.Fatal("candidate appendix should be removed after promote, but still exists")
+	} else if !os.IsNotExist(statErr) {
+		t.Fatalf("unexpected error checking candidate appendix: %v", statErr)
+	}
+
+	// Verify stable appendix was created after promote
+	stableAppendixPath := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/s_unit_test_unit_helper.md")
+	if _, err := os.Stat(stableAppendixPath); os.IsNotExist(err) {
+		t.Fatal("stable appendix was not created after promote")
 	}
 }
 

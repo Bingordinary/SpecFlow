@@ -152,7 +152,7 @@ Agent: [runs specflowctl promote...]
 | `docs/specs/rules/stable/` | Accepted shared rules |
 | `docs/specs/rules/candidate/` | Rules being edited |
 
-`promote` is the only gate. It copies candidate files to stable — everything else is done by the agent directly.
+`promote` is the only gate. It copies candidate files to stable and removes candidate files — everything else is done by the agent directly.
 
 **unit** — one independently governable engineering responsibility. A unit owns its own behavior truth (Spec), implementation, and verification.
 
@@ -167,7 +167,7 @@ All commands below use the binary at `specflow/tooling/bin/specflowctl-<os>-<arc
 | Command | What it does |
 |---------|-------------|
 | `specflowctl next --unit <name>` | Discover unit files, specs, rules, and dependencies |
-| `specflowctl promote --unit <name>` | Validate format + copy candidate→stable (only gate) |
+| `specflowctl promote --unit <name>` | Validate format + copy candidate→stable, then remove candidate files (only gate) |
 | `specflowctl init` | Install framework files and platform hooks |
 | `specflowctl doctor` | Diagnose project setup |
 | `specflowctl migrate` | Update hook files and check tooling version |
