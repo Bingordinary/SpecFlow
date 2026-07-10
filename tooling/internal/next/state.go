@@ -134,9 +134,5 @@ func FormatInfo(info *UnitInfo) string {
 		buf.WriteString("\nNote: repository_mapping.md not found\n")
 	}
 
-	buf.WriteString("\nFile existence is state. There are no lifecycle phases.\n")
-	buf.WriteString("To review quality: specflowctl review --unit <name>\n")
-	buf.WriteString("To finalize: specflowctl promote --unit <name>\n")
-
 	return buf.String()
 }
