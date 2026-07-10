@@ -12,7 +12,7 @@ This project uses SpecFlow to manage design documents. SpecFlow maintains spec d
 | `docs/specs/units/candidate/` | Design currently being edited |
 | `docs/specs/rules/stable/` | Accepted shared rules |
 | `docs/specs/rules/candidate/` | Rules being edited |
-| `docs/specs/_validation/` | Validate/verify cache (§3c) |
+| `docs/specs/_validation/` | Validate/verify cache. See `framework/validation_cache.md`. |
 
 ### Truth Hierarchy
 
@@ -51,21 +51,17 @@ Update the candidate spec and code. No gate before this step. Read first, then w
 
 ### 3. Validate, verify, promote (triggered by user)
 
-At natural transition points the agent suggests the next action. The user confirms with any affirmative response:
-
-| Agent says | Meaning |
-|-----------|---------|
-| "Shall I run **validate** to check the spec design?" | Read-only subagent per §3a |
-| "Shall I run **verify** to check the implementation?" | Read-only subagent per §3b |
-| "Ready to **promote** to stable?" | Finalize and archive |
-
-The user can also use explicit triggers at any time:
+The user can use explicit triggers at any time:
 
 | Trigger | What agent does |
 |---------|-----------------|
-| `spec_validate {unit}` | Read-only subagent with the validate checklist below. See §3a. |
-| `spec_verify {unit}` | Read-only subagent with the verify checklist below. See §3b. |
+| `spec_validate {unit}` | Read-only subagent with 9-point validate checklist. See `framework/validate_checklist.md`. |
+| `spec_verify {unit}` | Read-only subagent with 6-step verify checklist. See `framework/verify_checklist.md`. |
 | `spec_promote {unit}` | Runs validate then verify. If both pass: `specflowctl promote --unit {unit}`. If fails: stop, report. |
+
+**Cache lifecycle:** See `framework/validation_cache.md`.
+
+**Recovery patterns:** See `framework/recovery_patterns.md`.
 
 If the user's language is vague ("check this", "see if it's right"), clarify:
 "Did you mean **spec_validate** (check design) or **spec_verify** (verify implementation)?"
@@ -118,189 +114,6 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 **Example conversation (candidate exists, user says "检查一下"):**
 > "当前 user_auth 的 candidate spec 已存在，validate 缓存已过期。我可以： 1. 跑 validate — 检查 candidate spec 的设计质量 2. 跑 verify — 检查代码实现是否匹配设计 3. 继续编辑 candidate。你说的检查是指检查设计（validate）还是检查实现（verify）？"
 
-### 3a. Validate
-
-When running `spec_validate {unit}`, read this section, then open a read-only subagent with the checklist below embedded in the task prompt.
-
-**Subagent permissions:**
-- ALLOWED: Read, Grep, Glob
-- FORBIDDEN: Write, Edit, Bash, Task — do not modify files, execute commands, or spawn sub-agents
-
-**Checklist:**
-
-1. **Structural integrity** — Read `docs/specs/units/candidate/c_unit_{unit}.md`. Verify `id`, `layer` (must be "candidate"), `version`, `unit_refs`, `rule_refs` are all present. Verify `acceptance_item_set` exists with at least one item, each with: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `not_runnable_yet`. Check that all `unit_refs` point to existing stable spec files, all `rule_refs` point to existing rule files, and any referenced appendix files exist.
-2. **Scope clarity** — Is the unit's goal and responsibility scope clearly stated? Are first-round non-goals and boundaries defined? Are dependencies, rule bindings, and ownership boundaries explicit?
-3. **Behavior completeness** — Are the main flow, key protocols, states and transitions, error paths, and data contracts described fully enough that implementation can proceed without guessing? Can verification proceed without guessing behavior, boundaries, or acceptance?
-4. **Decision completeness** — Are all implementation-critical decisions recorded in the spec or its appendices? Does the spec avoid depending on chat context, oral consensus, README vision, or rejected alternatives for essential meaning?
-5. **Acceptance verifiability** — Do the acceptance criteria prove the design goal is met, not just that artifacts exist? Are they testable and unambiguous? Does each item's `pass_condition` describe a verifiable outcome rather than a tautology or placeholder?
-6. **Cross-unit consistency** — Read related unit candidate specs (from `unit_refs`). Check for contradicting statements about shared protocols, data formats, or behavior.
-7. **Global constraint alignment** — Read `docs/specs/system_constraints.md` if it exists. Is the candidate compatible? If `system_constraints_ref` points to a version, does it match?
-
-**Resolution:** When a check fails, determine which type:
-- **fix_required** — The executor can identify a concrete repair inside the current candidate. Repair and re-run validate.
-- **blocked** — The next step requires user input (unclear intent, missing decision, or external dependency). Stop and ask.
-
-**Output:**
-```
-Validate result: PASS | FAIL (fix_required | blocked)
-1. Structural integrity: PASS | FAIL — reason
-2. Scope clarity: PASS | FAIL — reason
-3. Behavior completeness: PASS | FAIL — reason
-4. Decision completeness: PASS | FAIL — reason
-5. Acceptance verifiability: PASS | FAIL — reason
-6. Cross-unit consistency: PASS | FAIL — reason
-7. Global constraints: PASS | FAIL — reason
-Resolution: fix_required | blocked — next step
-Summary: ...
-```
-
-**Cache:** After the subagent reports PASS, write a cache file to document which files were checked and their content hashes. This allows `specflowctl promote` to verify freshness without re-running the subagent. See §3c for file format and rules.
-
-```
-docs/specs/_validation/unit/{unit}/validate_result.md
-```
-
-After the subagent reports FAIL or blocked, delete any existing validate cache for this unit.
-
-### 3b. Verify
-
-When running `spec_verify {unit}`, read this section, then open a read-only subagent with the steps below embedded in the task prompt.
-
-**Subagent permissions:**
-- ALLOWED: Read, Grep, Glob
-- FORBIDDEN: Write, Edit, Bash, Task — do not modify files, execute commands, or spawn sub-agents
-
-**Target selection:**
-- If a candidate spec exists → verify code against **candidate** (the current working proposal). Candidate is not truth; mismatches trigger divergence resolution below.
-- If no candidate exists but a stable spec does → verify code against **stable** (check if current implementation still conforms to recorded truth).
-
-**Steps:**
-
-1. **Per-item verification** (functional) — For each acceptance item in the target spec:
-   - Read the implementation files listed in `affects.files` (or files matching `implementation_surface` / `verification_surface`)
-   - Does the implementation satisfy the `pass_condition`?
-   - Report per item: ALIGNED / MISMATCH / CANNOT_DETERMINE with evidence (file paths, line ranges, observations)
-
-2. **Scope check** — Scan affected files for behavioral changes not declared in acceptance items. Verify `affects.files` declarations match actual changes.
-
-3. **Retirement verification** (replacement scenario) — If the candidate's `source_basis` is `replacement`, verify old code paths are fully removed with no remaining references. Check for `old_code_deleted` and `no_remaining_refs` evidence.
-
-4. **Implementation quality** — Check for dead code, over-engineering, or disproportionate change volume.
-
-5. ⭐ **Divergence resolution** — For each MISMATCH item, analyze the root cause:
-   - **code_ahead** — The implementation has behavior that the spec does not describe. The candidate spec is stale and needs updating to match code.
-   - **spec_ahead** — The spec describes behavior that the implementation does not satisfy. Code is incomplete.
-   - **needs_design** — Neither matches a coherent design; the approach needs rethinking.
-   - **blocked** — The mismatch depends on external input or unresolved decisions.
-   
-   **Present findings to the user, do not decide automatically.** Example:
-   > "Item `auth.login` reports MISMATCH. The spec describes rate-limiting (5 req/min) but the implementation allows 10 req/min. Is the spec outdated (code_ahead) or is implementation incomplete (spec_ahead)?"
-   
-   After the user decides, record the resolution direction and next step.
-
-6. ⭐ **Stable-only mode** — When verifying against stable (no candidate exists):
-   - If code and stable are aligned → report ALIGNED. No further action needed.
-   - If code and stable diverge → this means the current implementation has drifted from recorded truth. Do NOT enter divergence resolution for stable directly — instead, recommend a `unit_fork` to create a candidate round that reconciles the difference.
-
-**Divergence resolution rules:**
-
-| User verdict | Meaning | Next step |
-|-------------|---------|-----------|
-| code_ahead | Code is correct, candidate is stale | Update candidate spec → re-run validate → re-run verify → promote |
-| spec_ahead | Candidate design is correct, code incomplete | Implement code → re-run verify → promote |
-| needs_design | Both need redesign | Redesign candidate → validate → verify → promote |
-| blocked | External dependency or missing decision | User unblocks → re-run verify |
-
-**Output:**
-```
-Verify result: ALIGNED | MISMATCH
-Target: candidate | stable
-Items:
-  - {item.id}: ALIGNED | MISMATCH — evidence
-    Direction: (only if MISMATCH) code_ahead | spec_ahead | needs_design
-    Resolution: update_candidate | implement_code | redesign | blocked
-Scope: PASS | FAIL — findings
-Quality: PASS | FAIL — findings
-Divergence summary: (only if any MISMATCH)
-  - {item.id}: file:line — {description}
-    User verdict: ...
-    Next step: ...
-Summary: ...
-```
-
-**Cache:** After the subagent reports ALIGNED, write a cache file with the content hashes of all checked files. After MISMATCH, delete any existing verify cache for this unit.
-
-```
-docs/specs/_validation/unit/{unit}/verify_result.md
-```
-
-### 3c. Validation cache lifecycle
-
-Cache files record the result and file content hashes of the last `spec_validate` or `spec_verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?"
-
-**File locations:**
-
-- `docs/specs/_validation/unit/{name}/validate_result.md`
-- `docs/specs/_validation/unit/{name}/verify_result.md`
-
-**Format (YAML frontmatter + markdown body):**
-
-```yaml
----
-command: validate            # or verify
-unit: user_auth
-result: pass                 # pass | aligned | blocked | mismatch
-target: candidate            # (verify only) candidate | stable
-timestamp: "2026-06-30T10:00:00Z"
-files:
-  - path: docs/specs/units/candidate/c_unit_user_auth.md
-    hash: sha256:abc123...
-  - path: src/auth/login.go
-    hash: sha256:def456...
----
-Free-form summary of the result.
-```
-
-**Hash algorithm (must be consistent across all agents and CLI):**
-
-Each file hash is computed as:
-1. Read the file content as UTF-8 text
-2. Normalize line endings: `\r\n` → `\n`, then standalone `\r` → `\n`
-3. Ensure trailing newline (append `\n` if missing)
-4. Compute SHA-256 of the normalized content
-5. Format as `sha256:<hex>` (e.g. `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`)
-
-This is the same normalization used by `specflowctl review` input fingerprints. It guarantees cross-platform consistency regardless of git's autocrlf settings or the agent's operating system.
-
-**Write rules:**
-
-| Event | Action |
-|-------|--------|
-| `spec_validate` PASS | Write `validate_result.md` with hashes of all files read during the check |
-| `spec_validate` FAIL / blocked | Delete `validate_result.md` if it exists |
-| `spec_verify` ALIGNED | Write `verify_result.md` with hashes of spec + implementation files checked |
-| `spec_verify` MISMATCH | Delete `verify_result.md` if it exists |
-| `specflowctl promote` succeeds | Delete both `validate_result.md` and `verify_result.md` |
-| File content changes (hash mismatch) | Cache becomes stale — detected at promote time |
-
-**Staleness detection:**
-
-`specflowctl promote --unit <name>` reads both cache files, re-computes SHA-256 hashes of every listed file, and compares against the stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected with guidance.
-
-**Important:** Cache is never refreshed automatically. Only the agent writing a new cache after a fresh validate/verify changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical hash check.
-
-### 3d. Recovery patterns
-
-Common situations where the standard flow diverges:
-
-1. **Code changed without updating candidate** — This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (verify intent → run `spec_verify`). Verify will detect the divergence and enter divergence resolution.
-
-2. **Candidate changed without implementing** — If the user changes the spec mid-implementation and then wants to check, run `spec_validate` first (to confirm the new design is sound), then `spec_verify`.
-
-3. **Stable and code have drifted (no candidate exists)** — The implementation no longer matches recorded stable truth. Run `spec_verify` in stable-only mode to see the gap. If a gap exists, suggest creating a candidate fork to reconcile.
-
-4. **Validate fails repeatedly** — Check whether the issue is `fix_required` (concrete repair possible in the candidate) or `blocked` (requires user input). If blocked, stop and present the question to the user.
-
 ### 4. Promote (only gate)
 
 `specflowctl promote --unit <name>` is the only operation that writes to stable. Before promoting, the CLI independently checks cache freshness:
@@ -343,8 +156,8 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 |---------|-------------|-------------|
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, then validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
-| `spec_validate {name}` (agent trigger) | Read-only subagent with validate checklist (§3a). Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {name}` (agent trigger) | Read-only subagent with verify checklist (§3b). Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
+| `spec_validate {name}` (agent trigger) | Read-only subagent with validate checklist. Writes cache on PASS. See `framework/validate_checklist.md`. | User says "spec_validate" or confirms agent suggestion |
+| `spec_verify {name}` (agent trigger) | Read-only subagent with verify checklist. Writes cache on ALIGNED. See `framework/verify_checklist.md`. | User says "spec_verify" or confirms agent suggestion |
 | `spec_promote {name}` (agent trigger) | Checks cache freshness → if stale, suggests re-run validate/verify → if fresh, calls promote | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
