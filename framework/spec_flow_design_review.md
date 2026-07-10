@@ -96,7 +96,7 @@ For the default design-baseline review, the execution-local `review_plan` must u
 The review must judge whether `framework/concepts.md` (the hook-injected instruction source) delivers a self-contained instruction pack to the executor, whether cross-file links are used only for non-essential context, and whether each specFlow process step can be executed without context inherited from prior steps.
 
 Project-instance migration design must be judged as part of `design_foundation`.
-The review must judge whether `spec_flow_migrate` solves the real framework-update migration problem without turning old-format compatibility into a permanent second path, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than project-instance format migration requires.
+The review must judge whether `spec_flow_update` solves the real framework-update migration problem without turning old-format compatibility into a permanent second path, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than project-instance format migration requires.
 
 ## 4. Required Cross-Block Convergence Checks
 

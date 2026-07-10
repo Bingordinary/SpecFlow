@@ -114,6 +114,30 @@ try {
 
     # Delegate binary update to the standalone per-platform script.
     & (Join-Path $scriptDir "update_tooling_binaries.ps1")
+
+    # Install hook files from specflow source to project root
+    $projectRoot = (Resolve-Path (Join-Path $repoRoot "..")).Path
+
+    function Install-Hook {
+        param([string]$Src, [string]$Dst)
+        $dir = Split-Path -Parent $Dst
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        if (Test-Path -LiteralPath $Src -PathType Leaf) {
+            Copy-Item -LiteralPath $Src -Destination $Dst -Force
+            Write-Host "  Installed: $((Split-Path -Leaf $Dst))"
+        }
+        else {
+            Write-Host "  Warning: source not found: $Src"
+        }
+    }
+
+    Write-Host "Installing hook files..."
+    Install-Hook -Src (Join-Path $repoRoot "hooks/hooks.json") -Dst (Join-Path $projectRoot "hooks/hooks.json")
+    Install-Hook -Src (Join-Path $repoRoot "templates/.claude-plugin/plugin.json") -Dst (Join-Path $projectRoot ".claude-plugin/plugin.json")
+    Install-Hook -Src (Join-Path $repoRoot "templates/.opencode/plugins/specflow.js") -Dst (Join-Path $projectRoot ".opencode/plugins/specflow.js")
+    Write-Host "Hook installation complete."
 }
 catch {
     Write-Error $_.Exception.Message

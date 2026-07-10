@@ -91,3 +91,23 @@ fi
 
 # Delegate binary update to the standalone per-platform script.
 "${SCRIPT_DIR}/update_tooling_binaries.sh"
+
+# Install hook files from specflow source to project root
+PROJECT_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
+
+install_hook() {
+  local src="$1" dst="$2"
+  mkdir -p "$(dirname "${dst}")"
+  if [ -f "${src}" ]; then
+    cp "${src}" "${dst}"
+    echo "  Installed: $(basename "${dst}")"
+  else
+    echo "  Warning: source not found: ${src}"
+  fi
+}
+
+echo "Installing hook files..."
+install_hook "${REPO_ROOT}/hooks/hooks.json" "${PROJECT_ROOT}/hooks/hooks.json"
+install_hook "${REPO_ROOT}/templates/.claude-plugin/plugin.json" "${PROJECT_ROOT}/.claude-plugin/plugin.json"
+install_hook "${REPO_ROOT}/templates/.opencode/plugins/specflow.js" "${PROJECT_ROOT}/.opencode/plugins/specflow.js"
+echo "Hook installation complete."

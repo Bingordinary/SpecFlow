@@ -181,7 +181,7 @@ All commands below use the binary at `specflow/tooling/bin/specflowctl-<os>-<arc
 | `spec_validate {unit}` | Open read-only subagent with validate checklist. Checks spec quality. |
 | `spec_verify {unit}` | Open read-only subagent with verify checklist. Checks implementation. |
 | `spec_promote {unit}` | Runs validate then verify. If both pass, calls `specflowctl promote`. |
-| `spec_flow_migrate` | Runs migration tooling then checks project document format. |
+| `spec_flow_update` | Pulls latest SpecFlow, updates binaries and hooks, then checks project document format. |
 
 The agent also proactively suggests these at natural transition points: "Shall I run validate?" / "Shall I run verify?" / "Ready to promote?"
 
@@ -225,10 +225,10 @@ specFlow may not be the right fit if: the project is very small, the team does n
 
 After updating `specflow/`, update hooks and check project document format:
 
-- If hooks are working: tell your agent `spec_flow_migrate`
-- If hooks are not yet installed: tell your agent "Read `framework/operations/migration.md` and follow the procedure"
+- Tell your agent `spec_flow_update`
+- The agent will pull the latest source, update binaries and hooks, and verify project document format.
 
-The migration procedure updates hook files, checks the binary version, and verifies project document format.
+If hooks are not yet installed (first-time setup), use `specflowctl init` instead.
 
 For framework governance: `spec_flow_review` (scoped by default), `spec_flow_review:full` (deep audit), and `spec_flow_design_review` (design quality review). Enter these through natural language.
 

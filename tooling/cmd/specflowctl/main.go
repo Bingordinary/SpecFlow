@@ -220,7 +220,7 @@ func runMigrate(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "All checks passed. No updates needed.")
 	}
 	fmt.Fprintln(stdout, "")
-	fmt.Fprintln(stdout, "Next step: run spec_flow_migrate in your agent session to check project document format.")
+	fmt.Fprintln(stdout, "Next step: run spec_flow_update in your agent session to check project document format.")
 	return nil
 }
 

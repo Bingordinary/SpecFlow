@@ -178,7 +178,7 @@ Agent：[运行 specflowctl promote...]
 | `spec_validate {unit}` | 启动只读 subagent，按 validate 清单检查 spec 质量 |
 | `spec_verify {unit}` | 启动只读 subagent，按 verify 清单检查实现 |
 | `spec_promote {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
-| `spec_flow_migrate` | 跑迁移工具 + 检查项目文档格式 |
+| `spec_flow_update` | 拉取最新 SpecFlow，更新二进制和 hooks，然后检查项目文档格式 |
 
 Agent 也会在合适时机主动建议："需要跑 validate 吗？"、"需要跑 verify 吗？"、"要 promote 吗？"
 
@@ -218,12 +218,12 @@ specFlow 可能偏重如果：项目非常小、团队不想把行为真相正�
 
 ## 维护
 
-更新 `specflow/` 后，需要更新 hooks 并检查项目文档格式：
+更新 `specflow/` 后，更新 hooks 并检查项目文档格式：
 
-- 如果 hooks 正常：告诉 agent `spec_flow_migrate`
-- 如果 hooks 尚未安装：告诉 agent "Read `framework/operations/migration.md` and follow the procedure"
+- 告诉 agent `spec_flow_update`
+- Agent 会拉取最新源码、更新二进制和 hooks、校验项目文档格式。
 
-迁移过程会更新 hook 文件、检查工具版本、校验项目文档格式。
+如果 hooks 尚未安装（首次安装），请使用 `specflowctl init`。
 
 框架治理方面：`spec_flow_review`（默认 scoped）、`spec_flow_review:full`（深度审计）、`spec_flow_design_review`（设计质量审查）。通过自然语言进入。
 

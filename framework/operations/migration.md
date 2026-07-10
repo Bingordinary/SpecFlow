@@ -1,3 +1,5 @@
+> **DEPRECATED:** `spec_flow_migrate` is superseded by `spec_flow_update`. See `framework/operations/update.md`.
+>
 # spec_flow_migrate
 
 When the user says `spec_flow_migrate`, follow this procedure. It first runs the deterministic tooling, then checks what only an LLM can judge.

@@ -161,8 +161,8 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `spec_promote {name}` (agent trigger) | Checks cache freshness → if stale, suggests re-run validate/verify → if fresh, calls promote | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
-| `specflowctl migrate` | Update hook files and check tooling version | Agent or human (fallback) |
-| `spec_flow_migrate` (agent trigger) | Full migration: run tool then check document format | User says "spec_flow_migrate" |
+| `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |
+| `spec_flow_update` (agent trigger) | Full update: pull framework, update binaries & hooks, check document format | User says "spec_flow_update" |
 | `specflowctl rule *` | Rule governance | Human maintainer |
 | `specflowctl validate` | Validate candidate spec structure (7 checks) or file write permissions | Human maintainer or agent |
 

@@ -250,15 +250,15 @@ If the discovered concern is only about the truth content being wrong, incomplet
 
 ### 2.11 Project-Instance Migration Closure
 
-Default full-scope `spec_flow_review` must review `spec_flow_migrate` as the owner of project-instance format migration after framework rule updates.
+Default full-scope `spec_flow_review` must review `spec_flow_update` as the owner of project-instance format migration after framework rule updates.
 
 The migration closure check verifies only whether the migration flow can safely update old project-instance files to the current framework shape.
 It does not review business truth correctness.
 
 The migration closure check must judge:
 
-1. entry routing for `spec_flow_migrate`
-2. rejection of migration write authority for requests that do not explicitly invoke `spec_flow_migrate`
+1. entry routing for `spec_flow_update`
+2. rejection of migration write authority for requests that do not explicitly invoke `spec_flow_update`
 3. migration read surface and target surface
 4. mechanical writeback boundaries
 5. forbidden compatibility aliases, fallback logic, and business-truth rewriting
@@ -502,7 +502,7 @@ Cross-convergence slices review whether locally correct rules still compose into
    - depends on `concept_and_command_policy`, `truth_and_implementation_gates`, `project_instance_contract_compatibility`, and `tooling_execution`
    - verifies promote path correctly migrates candidate supporting files to stable layer per Section 2.7.1
 7. `project_instance_to_framework_convergence`
-   - verifies the project-instance compatibility check and `spec_flow_migrate` compose with hook and tooling rules without judging business truth content
+   - verifies the project-instance compatibility check and `spec_flow_update` compose with hook and tooling rules without judging business truth content
  8. `agent_operability_path_walk`
     - walks representative execution paths starting from the hook-injected content (`framework/concepts.md`), through triggers (`spec_validate`, `spec_verify`, `spec_promote`), commands, and tooling rules
     - verifies a new executor can proceed from the injected content to the correct first command without hidden context or prior `specFlow` knowledge
