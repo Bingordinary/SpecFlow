@@ -81,16 +81,26 @@ The user can use explicit triggers at any time:
 
 **Recovery patterns:** See `framework/recovery_patterns.md`.
 
-If the user's language is vague ("check this", "see if it's right"), clarify:
-"Did you mean **spec_validate** (check design) or **spec_verify** (verify implementation)?"
-
 If the user declines a suggestion, continue editing. Do not insist.
 
 ### 3.0. Agent suggestion rules
 
-When the user's request does not match an explicit trigger (`spec_validate`, `spec_verify`, `spec_promote`), classify the intent into one of the 5 categories below. Do not use keyword matching — infer from context.
+**Default mode: assume editing.** When the user's request does not match an explicit trigger (`spec_validate`, `spec_verify`, `spec_promote`), the agent MUST assume the user is editing or iterating. Do not classify intent. Do not suggest spec operations. Do not disclose cache state.
 
-**State disclosure first:** Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "Do you want to go through the validate-verify-promote process?". Instead, disclose the state first, then state what is available for the user to choose from. See each intent's disclosure pattern below.
+The agent only reacts to these concrete signals:
+
+| User signal | What the user likely wants | Agent action |
+|-------------|---------------------------|-------------|
+| **design**: "I want to design X", "let's design X", "I need a design for X" | Create or update the candidate spec | Default mode: assume editing. If no candidate exists, offer to start one. If candidate exists, begin editing. Do not suggest spec operations. |
+| **quality check**: "check this", "is it right?", "review the design", "validate", "verify" | Validate or verify the spec against the code | Clarify: "Did you mean **spec_validate** (check design quality) or **spec_verify** (verify implementation)?" Then disclose relevant cache state (see disclosure table below). |
+| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote the candidate to stable | Candidate exists → check validate+verify cache. Both `mode: full` and fresh → suggest `spec_promote`. Cache missing/stale/scoped → "Validate/verify is not complete yet. I need to run those first. Shall I?" |
+| **stuck**: "something is wrong", "it's broken", "I'm stuck" | Diagnose and recover | Diagnose first: is it a code bug, design flaw, or external blocker? See `framework/recovery_patterns.md`. |
+
+If none of these signals are present, continue with the conversation without suggesting spec operations.
+
+**State disclosure (only use when triggered by a quality check or completion signal):**
+
+Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "Do you want to go through the validate-verify-promote process?". Instead, disclose the state first, then state what is available for the user to choose from.
 
 | State to disclose | What to say |
 |-------------------|-------------|
@@ -103,7 +113,9 @@ When the user's request does not match an explicit trigger (`spec_validate`, `sp
 | Verify cache fresh (scoped) | "Verify has passed for item {id}, but other items are not yet verified" |
 | Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
 
-**State transition lookup table:**
+When scoped cache exists, the agent should mention: "This is not a full check — run `:full` for complete verification before promoting."
+
+**State transition lookup table (use when the user has triggered a quality check or completion signal):**
 
 This table maps the three boolean state dimensions to the exact disclosure text and suggested action. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
 
@@ -122,24 +134,27 @@ The scope mode (scoped vs full) affects disclosure wording. If the fresh cache i
 | Y | Y (full) | Y (scoped) | "Candidate has full validate and scoped verify (item {id} only)." | "Run `spec_verify {unit}:full` for complete verification before promoting." |
 | Y | Y (scoped) | Y (full) | "Candidate has full verify and scoped validate (check-{n} only)." | "Run `spec_validate {unit}:full` for complete validation before promoting." |
 
-| Intent | What user wants | Agent action | File state check |
-|--------|----------------|-------------|-----------------|
-| **designing** | Plan, change direction, explore approach | **Use the state transition lookup table above** to determine the correct disclosure and action for the current state. Never phrase it as a binary "do you want to go through the process". See the example conversations below for illustration. | Use the state transition lookup table above |
-| **implementing** | Write code, iterate, debug, test | Do not touch spec. Do not suggest validate/verify/promote. Let the user focus. | Candidate exists → ensure it's read but do not interrupt. No candidate, changing stable behavior → suggest fork first |
-| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — differentiate scoped vs full. If scoped: "Verify cache is valid for item {id} (ALIGNED), but other items are not yet checked." If full: "Verify cache is valid, all items were ALIGNED, and no files have changed." Then offer: run scoped (`spec_verify`, `spec_verify:item-{id}`, `spec_verify:step-{n}`) or full (`spec_verify:full`). | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
-| **finalizing** | Lock in, wrap up, promote | Check validate cache then verify cache. Both fresh → suggest `spec_promote`. Cache stale/missing → suggest re-running the appropriate step |
-| **recovering** | Something is wrong, stuck, error | Diagnose first: is it a code bug (→ implementing), design flaw (→ designing), or external blocker (→ blocked, ask user) |
+**Example conversations:**
 
-**Fallback:** If the intent is unclear after reasonable effort, ask the user directly:
-"Are you designing something new, implementing code, checking your work, finalizing, or stuck on a problem?"
+> User: "I want to design user authentication" (design signal)
+> Agent: "OK. There is currently no candidate spec for the user_auth unit, meaning no design has been recorded yet. Here's what I can do: 1. Use guidance to walk through the design, then write it to the candidate. 2. If you already have an idea, I can write the candidate directly. Which do you prefer?"
 
-**Designing disclosure pattern:** Use the state transition lookup table above to determine the correct disclosure for any `(candidate_exists, validate_fresh, verify_fresh)` combination. The examples below illustrate the most common states.
+> User: "Check it" (quality check signal)
+> Agent: "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
 
-**Example conversation (no candidate, user says "I want to design user authentication"):**
-> "OK. There is currently no candidate spec for the user_auth unit, meaning no design has been recorded yet. Here's what I can do: 1. Use guidance to walk through the design, then write it to the candidate. 2. If you already have an idea, I can write the candidate directly. Which do you prefer?"
+> User: "It's done, promote this" (completion signal)
+> Agent: "Candidate exists, validate has passed all checks, verify has passed all items. Ready to promote. Running `spec_promote user_auth`..."
 
-**Example conversation (candidate exists, user says "Check it"):**
-> "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
+**RED FLAGS — common agent mistakes**
+
+| Agent thought | Reality |
+|---------------|---------|
+| "The user finished this change, they might want to check it" | Unless the user explicitly says "check" or "done", assume they are still iterating. Do not proactively suggest. |
+| "Let me give the user an option: verify+promote first, then handle remaining issues" | Remaining issues = still iterating. Do not mention promote during iteration. |
+| "Proactively disclosing cache status helps the user track progress" | When the user hasn't asked, cache status is noise. Only disclose on quality check or completion signals. |
+| "Suggesting validate/verify/promote helps the user maintain quality" | This interrupts the user's flow. They will ask when needed. |
+| "Let me ask if the user wants to finalize" | Do not ask abstract category questions. Detect concrete signals. |
+| "This example is ambiguous, safer to fall back to category questions" | Falling back to abstract categories is the last resort. Check for signals first. If still uncertain, ask a concrete question instead of category questions. |
 
 ### 4. Promote (only gate)
 

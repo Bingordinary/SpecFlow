@@ -4,7 +4,7 @@ Common situations where the standard validate → verify → promote flow diverg
 
 ## 1. Code changed without updating candidate
 
-This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (verify intent → run `spec_verify`), verify will detect the divergence and enter divergence resolution.
+This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (quality check signal → run `spec_verify`), verify will detect the divergence and enter divergence resolution.
 
 ## 2. Candidate changed without implementing
 
