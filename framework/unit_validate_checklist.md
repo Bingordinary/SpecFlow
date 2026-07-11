@@ -4,6 +4,19 @@
 
 When an agent executes `spec_validate {unit}`, it uses the 9 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
 
+## Mode Selection
+
+Before executing, read `framework/verification_scope.md` to determine the current scope mode from the trigger phrase. The mode determines which subset of checks to run:
+
+| Trigger | Mode | What to execute |
+|---------|------|-----------------|
+| `spec_validate {unit}` | scoped (default) | Git-aware: `git diff HEAD` on spec file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
+| `spec_validate {unit}:check-{n}` | scoped | Single check `{n}` only |
+| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "coverage" → Check 5) |
+| `spec_validate {unit}:full` | full | All 9 checks + cross-check (see `framework/verification_scope.md` §Cross-check for details) |
+
+**Output:** prefix the result with `Mode: scoped` or `Mode: full` and the specific scope (e.g., `Scope: check-1 (structural integrity)`). For scoped results, append a note: "This is not a full validation. Only check {n} was executed. Run `spec_validate {unit}:full` for complete validation."
+
 ## Execution Rules
 
 - **Subagent permissions:** may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents.

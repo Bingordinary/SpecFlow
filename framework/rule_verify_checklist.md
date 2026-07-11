@@ -7,6 +7,15 @@ Agent runs this when `spec_verify {target}` is called and the target has a `g_ru
 **Result:** ALIGNED writes `docs/specs/_validation/rule/{id}/verify_result.md`.
 MISMATCH does not write cache. The agent reports which consumers have drifted and how.
 
+## Mode Selection
+
+Before executing, read `framework/verification_scope.md` to determine the scope mode:
+
+| Trigger | Mode | What to execute |
+|---------|------|-----------------|
+| `spec_verify {rule}` | scoped (default) | Step 1 only — consumer ref version check (cheapest, most common drift) |
+| `spec_verify {rule}:full` | full | All 3 steps |
+
 ## Execution Rules
 
 - Agent may read rule files, unit specs, run `specflowctl rule consumers` (read-only), search text patterns

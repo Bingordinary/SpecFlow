@@ -6,6 +6,17 @@ Agent runs this when `spec_validate {target}` is called and the target has a `g_
 **Result:** PASS writes `docs/specs/_validation/rule/{id}/validate_result.md`.
 FAIL does not write cache. The agent reports which checks failed and why.
 
+## Mode Selection
+
+Before executing, read `framework/verification_scope.md` to determine the scope mode:
+
+| Trigger | Mode | What to execute |
+|---------|------|-----------------|
+| `spec_validate {rule}` | scoped (default) | Check 1 only — frontmatter completeness |
+| `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
+| `spec_validate {rule}:{keyword}` | scoped | Match keyword to check name |
+| `spec_validate {rule}:full` | full | All 7 checks + cross-check |
+
 ## Execution Rules
 
 - Agent may read rule files, search text patterns, check file existence

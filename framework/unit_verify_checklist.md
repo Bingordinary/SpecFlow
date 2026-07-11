@@ -4,6 +4,20 @@
 
 When an agent executes `spec_verify {unit}`, it uses the 6 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
 
+## Mode Selection
+
+Before executing, read `framework/verification_scope.md` to determine the scope mode from the trigger phrase. The mode determines what to verify:
+
+| Trigger | Mode | What to execute |
+|---------|------|-----------------|
+| `spec_verify {unit}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content (all 6 steps). See `framework/verification_scope.md` §Scoped Verify for detailed logic. |
+| `spec_verify {unit}:{keyword}` | scoped | Match keyword to spec content by title, feature name, or structure → verify that content |
+| `spec_verify {unit}:full` | full | Verify all spec content (all 6 steps, batch by spec structure) + cross-check |
+
+**Output:** prefix with `Mode: scoped` or `Mode: full` and describe what was checked in natural language.
+
+**Cache:** see `framework/validation_cache.md` for format.
+
 ## Core Principle
 
 Verify is a **static structural alignment check** — it compares what the spec describes against what the code implements, using static file inspection (reading file content, searching text by pattern, locating files by name pattern) and read-only repository history queries. It cannot run code, call APIs, or capture runtime output. The "evidence" in verify is **code references**: file paths, line numbers, and code snippets proving structural existence and consistency.
@@ -15,10 +29,10 @@ Verify is a **static structural alignment check** — it compares what the spec 
 
 ## Execution Rules
 
-- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files, execute commands that change state, or delegate to other agents.
-- Each acceptance item reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
+- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. In **scoped mode**, must NOT delegate to other agents. In **full mode**, the main agent may delegate batches to read-only sub-agents — each sub-agent follows the same permissions (read-only, no delegation chain).
+- Each verifiable claim in the spec reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
 - Evidence is always code-level (file:line, struct/function signatures, grep results) — never runtime output.
-- For CANNOT_DETERMINE items (pass_condition requires runtime verification): record the gap and continue.
+- For CANNOT_DETERMINE claims (e.g., pass_condition requires runtime verification): record the gap and continue.
 
 ## Output Format
 

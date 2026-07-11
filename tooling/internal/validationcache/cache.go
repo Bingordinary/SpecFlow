@@ -28,12 +28,15 @@ type CheckResult struct {
 
 // cacheFile is the parsed representation of a cache file.
 type cacheFile struct {
-	Command   string `yaml:"command"`
-	Unit      string `yaml:"unit"`
-	Result    string `yaml:"result"`
-	Target    string `yaml:"target,omitempty"`
-	Timestamp string `yaml:"timestamp"`
-	Files     []cacheFileEntry
+	Command     string `yaml:"command"`
+	Unit        string `yaml:"unit"`
+	Mode        string `yaml:"mode,omitempty"`
+	ScopedCheck string `yaml:"scoped_check,omitempty"`
+	ScopedItem  string `yaml:"scoped_item,omitempty"`
+	Result      string `yaml:"result"`
+	Target      string `yaml:"target,omitempty"`
+	Timestamp   string `yaml:"timestamp"`
+	Files       []cacheFileEntry
 }
 
 type cacheFileEntry struct {
@@ -122,6 +125,20 @@ func checkCache(repoRoot, unitName, command, fileName string, validResults []str
 		return CheckResult{
 			Fresh:  false,
 			Reason: fmt.Sprintf("%s cache result is %q, expected one of %v", command, cache.Result, validResults),
+		}, nil
+	}
+
+	// Reject scoped mode — only full-mode caches satisfy the promote gate
+	if cache.Mode == "scoped" {
+		var scopeDetail string
+		if cache.ScopedCheck != "" {
+			scopeDetail = fmt.Sprintf(" (check %s only)", cache.ScopedCheck)
+		} else if cache.ScopedItem != "" {
+			scopeDetail = fmt.Sprintf(" (item: %s)", cache.ScopedItem)
+		}
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("%s cache is scoped%s, run `spec_%s %s:full` before promoting", command, scopeDetail, command, cache.Unit),
 		}, nil
 	}
 
@@ -243,6 +260,12 @@ func readCache(path string) (*cacheFile, error) {
 					cache.Command = value
 				case "unit":
 					cache.Unit = value
+				case "mode":
+					cache.Mode = value
+				case "scoped_check":
+					cache.ScopedCheck = value
+				case "scoped_item":
+					cache.ScopedItem = value
 				case "result":
 					cache.Result = value
 				case "target":

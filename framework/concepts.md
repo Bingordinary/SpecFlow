@@ -73,8 +73,8 @@ The user can use explicit triggers at any time:
 
 | Trigger | What agent does |
 |---------|-----------------|
-| `spec_validate {target}` | Read-only subagent. Unit: 9-point validate checklist (`unit_validate_checklist.md`). Rule: 7-point rule validate checklist (`rule_validate_checklist.md`). Auto-detects type from target name. |
-| `spec_verify {target}` | Read-only subagent. Unit: 6-step spec-vs-code verify checklist (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. |
+| `spec_validate {target}` | Read-only subagent. Unit: 9-point validate checklist (`unit_validate_checklist.md`). Rule: 7-point rule validate checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. |
+| `spec_verify {target}` | Read-only subagent. Unit: 6-step spec-vs-code verify checklist (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. |
 | `spec_promote {target}` | 3-step promote workflow. Unit: candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
@@ -96,28 +96,37 @@ When the user's request does not match an explicit trigger (`spec_validate`, `sp
 |-------------------|-------------|
 | Candidate spec exists for the unit | "A candidate spec (`...`) exists, recording the design you are currently editing" |
 | No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
-| Validate cache fresh | "Validate has passed, and the read files have not changed" |
+| Validate cache fresh (full) | "Validate has passed all checks, and the read files have not changed" |
+| Validate cache fresh (scoped) | "Validate has passed for check-{n}, but other checks are not yet verified" |
 | Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
-| Verify cache fresh | "Verify has passed, and the checked files have not changed" |
+| Verify cache fresh (full) | "Verify has passed for all items, and the checked files have not changed" |
+| Verify cache fresh (scoped) | "Verify has passed for item {id}, but other items are not yet verified" |
 | Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
 
 **State transition lookup table:**
 
 This table maps the three boolean state dimensions to the exact disclosure text and suggested action. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
 
+The scope mode (scoped vs full) affects disclosure wording. If the fresh cache is `mode: full`, use "all checks" / "all items" language. If scoped, specify which check or item was verified. Only `mode: full` caches satisfy the promote gate — scoped results are for iterative feedback only, and the disclosure text should reflect that.
+
 | candidate_exists | validate_fresh | verify_fresh | Disclose | Then offer |
 |---|---|---|---|---|
 | N | N/A | N/A | "No candidate spec exists" | "You can start writing a candidate spec to record your design." |
 | Y | N | N/A | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
-| Y | Y | N | "Candidate exists, validate has passed, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
-| Y | N | Y | "Candidate exists, verify has passed, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
-| Y | Y | Y | "Candidate has passed both validate and verify." | "If the design is finalized, you can promote it to stable." |
+| Y | Y (full) | N | "Candidate exists, validate has passed all checks, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
+| Y | Y (scoped) | N | "Candidate exists, validate has passed for check-{n}, but other checks and verify are not done." | "You can continue updating, run a deeper validate check, or run `spec_validate {unit}:full` for complete validation." |
+| Y | N | Y (full) | "Candidate exists, verify has passed all items, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
+| Y | N | Y (scoped) | "Candidate exists, verify has passed for item {id}, but other items are not verified and validate cache is expired." | "It is recommended to re-run validate and run complete verify." |
+| Y | Y (full) | Y (full) | "Candidate has passed both validate (all checks) and verify (all items)." | "If the design is finalized, you can promote it to stable." |
+| Y | Y (scoped) | Y (scoped) | "Candidate has scoped results only — check-{n} for validate, item {id} for verify." | "Run `spec_validate {unit}:full` and `spec_verify {unit}:full` before promoting." |
+| Y | Y (full) | Y (scoped) | "Candidate has full validate and scoped verify (item {id} only)." | "Run `spec_verify {unit}:full` for complete verification before promoting." |
+| Y | Y (scoped) | Y (full) | "Candidate has full verify and scoped validate (check-{n} only)." | "Run `spec_validate {unit}:full` for complete validation before promoting." |
 
 | Intent | What user wants | Agent action | File state check |
 |--------|----------------|-------------|-----------------|
 | **designing** | Plan, change direction, explore approach | **Use the state transition lookup table above** to determine the correct disclosure and action for the current state. Never phrase it as a binary "do you want to go through the process". See the example conversations below for illustration. | Use the state transition lookup table above |
 | **implementing** | Write code, iterate, debug, test | Do not touch spec. Do not suggest validate/verify/promote. Let the user focus. | Candidate exists → ensure it's read but do not interrupt. No candidate, changing stable behavior → suggest fork first |
-| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — if verify cache is fresh: "Verify cache is valid, all results from the last check were ALIGNED, and no files have changed. Need to re-run verify?" If stale or missing: "Verify cache does not exist or is expired, needs re-checking." Then run `spec_verify`. | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
+| **verifying** | Check correctness, see if it's right | **Disclose cache state first** — differentiate scoped vs full. If scoped: "Verify cache is valid for item {id} (ALIGNED), but other items are not yet checked." If full: "Verify cache is valid, all items were ALIGNED, and no files have changed." Then offer: run scoped (`spec_verify`, `spec_verify:item-{id}`, `spec_verify:step-{n}`) or full (`spec_verify:full`). | Candidate exists → verify candidate vs code. Only stable → verify stable vs code |
 | **finalizing** | Lock in, wrap up, promote | Check validate cache then verify cache. Both fresh → suggest `spec_promote`. Cache stale/missing → suggest re-running the appropriate step |
 | **recovering** | Something is wrong, stuck, error | Diagnose first: is it a code bug (→ implementing), design flaw (→ designing), or external blocker (→ blocked, ask user) |
 
@@ -176,8 +185,8 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. | Agent or human maintainer |
-| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 9-point checklist (`unit_validate_checklist.md`). Rule: 7-point checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 6-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
+| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 9-point checklist (`unit_validate_checklist.md`). Rule: 7-point checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
+| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 6-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
 | `spec_promote {target}` (agent trigger) | 3-step promote workflow. Unit: archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
