@@ -129,7 +129,7 @@ Additional rule:
 1. ordinary branching, parsing guards, and shape checks inside code do not become forbidden merely because they use `if`
 2. the forbidden case is semantic decision-making that substitutes for governance judgment
 3. command preflight tooling may report whether the current status row and required process snapshots mechanically allow a command to continue, but it must not decide whether candidate truth is complete, whether evidence is sufficient, whether downgrade is allowed, or whether a promotion should happen
-4. promote tooling must not choose semantic outcome values, repair contradictory values, or infer a judgment from repository content
+4. promote tooling must not choose semantic outcome values, repair contradictory values, or infer a judgment from repository content. Mechanically transforming the `layer` frontmatter field (from `candidate` to `stable`) when copying from the candidate directory to the stable directory is not a semantic judgment — it is a defined transition rule determined by the fixed source and target directories.
 5. promote tooling may reject an unsupported state combination and must apply the defined transition rules
 6. slice work-state tooling may mark stale slices from fingerprint changes only when the adopting owner defines that mechanical action, but it must not mark semantic slices as passed, write finding content, choose severity, decide review scores, decide verification sufficiency, or decide a final command or review result
 7. relation calculation tooling may report explicit candidate references, ready candidates, blocked candidates, and cycles, but it must not infer dependencies from prose, judge candidate content quality, or repair references

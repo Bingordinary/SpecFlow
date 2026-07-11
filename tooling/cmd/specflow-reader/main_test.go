@@ -30,7 +30,10 @@ func TestParseOptionsDefaultsRepoRootToThreeLevelsUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := filepath.Clean(repoRoot)
+	want := repoRoot
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		want = resolved
+	}
 	if options.RepoRoot != want {
 		t.Fatalf("repo root = %q, want %q", options.RepoRoot, want)
 	}

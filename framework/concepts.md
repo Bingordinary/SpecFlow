@@ -125,7 +125,7 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 **Agent-side pre-check (optional):** Before calling `specflowctl promote`, the agent may optionally read the cache files to report freshness status to the user. This is redundant with the CLI's own enforcement but provides transparency. The agent can safely skip this step and call `specflowctl promote --unit <name>` directly — the CLI will reject with clear guidance if caches are missing or stale.
 
-The CLI `specflowctl promote --unit <name>` also validates format (frontmatter, required fields, reference integrity) and copies candidate files to stable.
+The CLI `specflowctl promote --unit <name>` also validates format (frontmatter, required fields, reference integrity) and copies candidate files to stable. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, ensuring the field matches the target directory.
 
 **Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, the agent forks from stable: copies `s_unit_<name>.md` (and its appendices) back to the candidate layer as `c_unit_<name>.md`. See [Truth Hierarchy](#truth-hierarchy).
 

@@ -109,7 +109,7 @@ func Promote(repoRoot, unitName string) *Result {
 	for _, m := range matches {
 		stableName := strings.Replace(filepath.Base(m), "c_unit_", "s_unit_", 1)
 		dest := filepath.Join(stableAppendixDir, stableName)
-		if err := copyFile(m, dest); err != nil {
+		if err := copyWithLayerTransform(m, dest); err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
 			r.Passed = false
 			return r
@@ -119,7 +119,7 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 
 	// Copy main spec last so it acts as the commit point.
-	if err := copyFile(candidateSpec, stableSpec); err != nil {
+	if err := copyWithLayerTransform(candidateSpec, stableSpec); err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy spec: %v", err))
 		r.Passed = false
 		return r

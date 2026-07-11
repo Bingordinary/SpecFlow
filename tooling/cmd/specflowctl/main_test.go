@@ -212,6 +212,26 @@ Verify passed.
 	if _, err := os.Stat(stableAppendixPath); os.IsNotExist(err) {
 		t.Fatal("stable appendix was not created after promote")
 	}
+
+	// Verify frontmatter layer was transformed from candidate to stable
+	stableContent, err := os.ReadFile(stablePath)
+	if err != nil {
+		t.Fatalf("failed to read stable spec: %v", err)
+	}
+	if !strings.Contains(string(stableContent), "layer: stable") {
+		t.Fatalf("stable spec frontmatter should contain 'layer: stable', got:\n%s", string(stableContent))
+	}
+	if strings.Contains(string(stableContent), "layer: candidate") {
+		t.Fatalf("stable spec frontmatter should not contain 'layer: candidate', got:\n%s", string(stableContent))
+	}
+
+	stableAppendixContent, err := os.ReadFile(stableAppendixPath)
+	if err != nil {
+		t.Fatalf("failed to read stable appendix: %v", err)
+	}
+	if !strings.Contains(string(stableAppendixContent), "layer: stable") {
+		t.Fatalf("stable appendix frontmatter should contain 'layer: stable', got:\n%s", string(stableAppendixContent))
+	}
 }
 
 func TestValidateCandidateFrontmatterDeprecated(t *testing.T) {
