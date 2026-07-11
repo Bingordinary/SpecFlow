@@ -244,8 +244,8 @@ func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	if !containsString(designFoundation.InputFiles, "framework/governance/review_scope.md") {
 		t.Fatalf("expected review scope policy in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
-	if !containsString(designFoundation.InputFiles, "framework/governance/rule_system.md") {
-		t.Fatalf("expected rule system policy in design foundation input files, got %+v", designFoundation.InputFiles)
+	if !containsString(designFoundation.InputFiles, "framework/rule_validate_checklist.md") {
+		t.Fatalf("expected rule validate checklist in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
 	if !containsString(designFoundation.InputFiles, "framework/operations/migration.md") {
 		t.Fatalf("expected migration policy in design foundation input files, got %+v", designFoundation.InputFiles)
@@ -1162,16 +1162,12 @@ func createReviewRunRepo(t *testing.T) string {
 	for _, relPath := range []string{
 		"framework/core/object_model.md",
 		"framework/core/repository_mapping.md",
-		"framework/governance/rule_system.md",
+		"framework/rule_validate_checklist.md",
+		"framework/rule_verify_checklist.md",
+		"framework/rule_promote_workflow.md",
 		"framework/governance/impact_sync.md",
 		"framework/governance/review.md",
 		"framework/governance/review_scope.md",
-		"framework/governance/rules/rule_new.md",
-		"framework/governance/rules/rule_extract.md",
-		"framework/governance/rules/rule_bind.md",
-		"framework/governance/rules/rule_topology.md",
-		"framework/governance/rules/rule_sync.md",
-		"framework/governance/rules/rule_escape.md",
 		"framework/operations/migration.md",
 		"framework/guidance/using-specflow-guidance/SKILL.md",
 		"framework/guidance/project-framing/SKILL.md",

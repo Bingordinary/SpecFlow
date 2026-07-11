@@ -8,8 +8,15 @@ This file is referenced by `framework/concepts.md` §3.
 
 ## File Locations
 
+### Unit
+
 - `docs/specs/_validation/unit/{name}/validate_result.md`
 - `docs/specs/_validation/unit/{name}/verify_result.md`
+
+### Rule
+
+- `docs/specs/_validation/rule/{id}/validate_result.md`
+- `docs/specs/_validation/rule/{id}/verify_result.md`
 
 ## Format
 
@@ -57,6 +64,8 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 ## Staleness Detection
 
 `specflowctl promote --unit <name>` reads both cache files, re-computes SHA-256 hashes of every listed file, and compares against the stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected with guidance.
+
+`specflowctl promote --rule <id>` does not enforce cache freshness. Rule validate/verify are agent-driven semantic checks; the CLI performs mechanical format validation independently.
 
 ## Important
 

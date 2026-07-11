@@ -57,11 +57,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	if err != nil {
 		return scope, err
 	}
-	ruleFlowFiles, err := globRelative(repoRoot, scope.FrameworkPath("governance/rules/*.md"))
-	if err != nil {
-		return scope, err
-	}
-	if len(frameworkFiles) == 0 || len(guidanceSkillFiles) == 0 || len(ruleFlowFiles) == 0 {
+	if len(frameworkFiles) == 0 || len(guidanceSkillFiles) == 0 {
 		return scope, fmt.Errorf("default governance files are incomplete")
 	}
 
@@ -74,10 +70,11 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("guidance/spec-writeback-guidance/SKILL.md"),
 	}
 	ruleFiles := []string{
-		scope.FrameworkPath("governance/rule_system.md"),
+		scope.FrameworkPath("rule_validate_checklist.md"),
+		scope.FrameworkPath("rule_verify_checklist.md"),
+		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
-	ruleFiles = sortAndDedupe(append(ruleFiles, ruleFlowFiles...))
 	templateProjectInstanceFiles := []string{
 		scope.TemplatePath("docs/specs/repository_mapping.md"),
 		scope.TemplatePath("docs/specs/rules/stable/s_g_rule_repository_baseline.md"),
@@ -164,7 +161,9 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("spec_flow_design_review.md"),
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
-		scope.FrameworkPath("governance/rule_system.md"),
+		scope.FrameworkPath("rule_validate_checklist.md"),
+		scope.FrameworkPath("rule_verify_checklist.md"),
+		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
 		scope.FrameworkPath("core/repository_mapping.md"),
@@ -200,7 +199,9 @@ func collectAgentOperabilityFiles(scope SpecFlowScope, guidanceSkillFiles, ruleF
 		scope.FrameworkPath("core/repository_mapping.md"),
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
-		scope.FrameworkPath("governance/rule_system.md"),
+		scope.FrameworkPath("rule_validate_checklist.md"),
+		scope.FrameworkPath("rule_verify_checklist.md"),
+		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("operations/migration.md"),
 		scope.FrameworkPath("severity_policy.md"),
 		scope.FrameworkPath("spec_flow_design_review.md"),

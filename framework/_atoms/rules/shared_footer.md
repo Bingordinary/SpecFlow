@@ -1,1 +1,0 @@
-Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.

@@ -33,6 +33,24 @@ When code, stable spec, and candidate spec disagree, their authority is not equa
 - **stable** — Accepted current project truth. The authoritative recorded design.
 - **candidate** — Proposed next project truth. A working draft, not truth on its own. Only stable is authoritative.
 
+### Automatic Target Type Detection
+
+`spec_validate`, `spec_verify`, and `spec_promote` work for both units and rules.
+The agent automatically detects the target type from its name:
+
+| Target format | Detected as | Example |
+|---------------|-------------|---------|
+| Name without prefix (`auth`, `user_service`) | Unit | `spec_validate auth` |
+| Name with `g_rule_` or `b_rule_` prefix | Rule | `spec_validate b_rule_auth` |
+
+Unit and rule follow the same validate→verify→promote pipeline, but each step executes different internal checks appropriate to the target type:
+
+| Phase | Unit executes | Rule executes |
+|-------|--------------|--------------|
+| validate | 9-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule format & integrity checklist (`rule_validate_checklist.md`) |
+| verify | 6-step spec-vs-code alignment check (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
+| promote | candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
+
 ## specflowctl Location
 
 ==ATOM_BEGIN:specflowctl_location==
@@ -55,9 +73,9 @@ The user can use explicit triggers at any time:
 
 | Trigger | What agent does |
 |---------|-----------------|
-| `spec_validate {unit}` | Read-only subagent with 9-point validate checklist. See `framework/validate_checklist.md`. |
-| `spec_verify {unit}` | Read-only subagent with 6-step verify checklist. See `framework/verify_checklist.md`. |
-| `spec_promote {unit}` | 3-step promote workflow with post-promote body reference cleanup. See `framework/promote_workflow.md`. |
+| `spec_validate {target}` | Read-only subagent. Unit: 9-point validate checklist (`unit_validate_checklist.md`). Rule: 7-point rule validate checklist (`rule_validate_checklist.md`). Auto-detects type from target name. |
+| `spec_verify {target}` | Read-only subagent. Unit: 6-step spec-vs-code verify checklist (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. |
+| `spec_promote {target}` | 3-step promote workflow. Unit: candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
 
@@ -116,15 +134,17 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 ### 4. Promote (only gate)
 
-The detailed promote workflow is defined in `framework/promote_workflow.md` (3 steps: optional agent pre-check, `specflowctl promote`, and post-promote body reference cleanup).
+The detailed promote workflow is defined in `framework/unit_promote_workflow.md` (unit) and `framework/rule_promote_workflow.md` (rule). Both follow 3 steps: optional agent pre-check, `specflowctl promote`, and post-promote body reference cleanup.
 
 Key rules that override the checklist:
 
-1. `specflowctl promote --unit <name>` is the only operation that writes to stable.
-2. The CLI independently checks cache freshness before promoting.
-3. After promote succeeds, the agent must run Step 3 of the checklist: scan the promoted stable spec body for `c_unit_` and `docs/specs/units/candidate/` file references that would become dangling, and update them to their stable equivalents.
+1. `specflowctl promote --unit <name>` and `specflowctl promote --rule <id>` are the only operations that write to stable.
+2. Unit promote: the CLI independently checks cache freshness before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
+3. After promote succeeds, the agent must run Step 3 of the checklist: scan the promoted stable spec body for dangling references and update them to their stable equivalents.
 
-`specflowctl promote` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
+`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
+
+`specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then runs release-version logic to update all consuming candidate units' `rule_refs` from the old version to the new version. After promote succeeds, the candidate rule file is deleted.
 
 **Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, the agent forks from stable: copies `s_unit_<name>.md` (and its appendices) back to the candidate layer as `c_unit_<name>.md`. See [Truth Hierarchy](#truth-hierarchy).
 
@@ -144,7 +164,7 @@ Validate and verify are quality gates. They write cache files (`_validation/`) b
 `validate` and `verify` check quality and report findings. They are read-only — they do not modify files or advance state. Only `promote` writes to stable. Commands like `next`, `rule`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
-When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the signal layer and review layer analysis (see `verify_checklist.md` Step 6) and provide a reasoned suggestion. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
+When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the signal layer and review layer analysis (see `unit_verify_checklist.md` Step 6) and provide a reasoned suggestion. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
 
 **HARD RULE 4: Stop When Unclear**
 Stop and ask when the target unit is unclear, the required spec or framework file cannot be found, or the next workflow step cannot be determined. Do not guess or proceed with incomplete information.
@@ -154,15 +174,15 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | Command | What it does | Who calls it |
 |---------|-------------|-------------|
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
-| `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, then validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
-| `spec_validate {name}` (agent trigger) | Read-only subagent with validate checklist. Writes cache on PASS. See `framework/validate_checklist.md`. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {name}` (agent trigger) | Read-only subagent with verify checklist. Writes cache on ALIGNED. See `framework/verify_checklist.md`. | User says "spec_verify" or confirms agent suggestion |
-| `spec_promote {name}` (agent trigger) | 3-step promote workflow per `framework/promote_workflow.md`, including post-promote body reference cleanup | User says "spec_promote" or confirms agent suggestion |
+| `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
+| `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. | Agent or human maintainer |
+| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 9-point checklist (`unit_validate_checklist.md`). Rule: 7-point checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
+| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 6-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
+| `spec_promote {target}` (agent trigger) | 3-step promote workflow. Unit: archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |
 | `spec_flow_update` (agent trigger) | Full update: pull framework, update binaries & hooks, check document format | User says "spec_flow_update" |
-| `specflowctl rule *` | Rule governance | Human maintainer |
 | `specflowctl validate` | Validate candidate spec structure (7 checks) or file write permissions | Human maintainer or agent |
 
 Project truth inputs: `docs/specs/`.

@@ -56,11 +56,24 @@ func parseFrontmatter(content string) map[string]string {
 // candidate to stable, and writes the result to dst. The directory of dst
 // is created if it does not exist.
 func copyWithLayerTransform(src, dst string) error {
+	return copyFileTransform(src, dst, "candidate", "stable")
+}
+
+// copyWithLayerTransformReverse reads src, transforms frontmatter layer from
+// stable to candidate, and writes the result to dst. The directory of dst
+// is created if it does not exist.
+func copyWithLayerTransformReverse(src, dst string) error {
+	return copyFileTransform(src, dst, "stable", "candidate")
+}
+
+// copyFileTransform reads src, transforms frontmatter layer from fromLayer
+// to toLayer, and writes the result to dst.
+func copyFileTransform(src, dst, fromLayer, toLayer string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	transformed := transformLayerInFrontmatter(string(data), "candidate", "stable")
+	transformed := transformLayerInFrontmatter(string(data), fromLayer, toLayer)
 	if err := os.MkdirAll(dirName(dst), 0755); err != nil {
 		return err
 	}

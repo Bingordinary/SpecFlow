@@ -63,8 +63,14 @@ When classification is uncertain, use the earliest proven invalidated layer and 
 
 ## Rule Sync Handoff
 
-Rule-governance flows notify `framework/governance/rules/rule_sync.md` of changed rule refs.
-`rule_sync` computes affected consumers from rule refs and current-layer unit frontmatter, then applies fallback routing through this file.
+Rule impact is handled directly — `specflowctl promote --rule` cascades MAJOR changes by forking stable consumers and updating candidate rule_refs (see `rule_promote_workflow.md`).
+
+For non-promote rule edits (creation, extraction, bindings): the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5. Cache staleness is detected at promote time.
+
+When `impact_sync` is triggered by a non-rule change, consumer discovery uses:
+- `g_rule_` files → every current-layer unit (unless the rule defines an explicit exception)
+- `b_rule_` files → only units whose `rule_refs` include that rule
+- Rule files must not store consumer lists
 
 ## Stop Conditions
 

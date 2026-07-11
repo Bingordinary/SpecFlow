@@ -1,6 +1,4 @@
 # Format: atom_id | source_file | target_files (comma-separated, paths relative to repo root)
 # Lines starting with # are comments. Blank lines are ignored.
 
-rule_layout_note | misc/layout_note.md | framework/governance/rules/rule_new.md,framework/governance/rules/rule_extract.md,framework/governance/rules/rule_bind.md,framework/governance/rules/rule_topology.md,framework/governance/rules/rule_sync.md,framework/governance/rules/rule_escape.md
-shared_footer | rules/shared_footer.md | framework/governance/rules/rule_new.md,framework/governance/rules/rule_extract.md,framework/governance/rules/rule_bind.md,framework/governance/rules/rule_topology.md,framework/governance/rules/rule_sync.md,framework/governance/rules/rule_escape.md
-specflowctl_location | misc/specflowctl_location.md | framework/concepts.md,framework/operations/migration.md,framework/hooks.md,framework/governance/rules/rule_sync.md
+specflowctl_location | misc/specflowctl_location.md | framework/concepts.md,framework/operations/migration.md,framework/hooks.md

@@ -56,8 +56,8 @@ func TestCollectDefaultSpecFlowDesignScopeAutoDetectsSourceRepoLayout(t *testing
 	if containsString(scope.FrameworkGuidelineFiles, "framework/operations/output_standard.md") {
 		t.Fatalf("deleted output standard must stay outside design scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
-	if !containsString(scope.FrameworkGuidelineFiles, "framework/governance/rule_system.md") {
-		t.Fatalf("expected source rule system in design scope, got %+v", scope.FrameworkGuidelineFiles)
+	if !containsString(scope.FrameworkGuidelineFiles, "framework/rule_validate_checklist.md") {
+		t.Fatalf("expected rule validate checklist in design scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
 	if containsString(scope.TemplateGovernanceFiles, "framework/operations/output_standard.md") {
 		t.Fatalf("deleted output standard must stay outside lifecycle contract scope, got %+v", scope.TemplateGovernanceFiles)
@@ -75,16 +75,12 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 	for _, relPath := range []string{
 		"framework/core/object_model.md",
 		"framework/core/repository_mapping.md",
-		"framework/governance/rule_system.md",
+		"framework/rule_validate_checklist.md",
+		"framework/rule_verify_checklist.md",
+		"framework/rule_promote_workflow.md",
 		"framework/governance/impact_sync.md",
 		"framework/governance/review.md",
 		"framework/governance/review_scope.md",
-		"framework/governance/rules/rule_bind.md",
-		"framework/governance/rules/rule_escape.md",
-		"framework/governance/rules/rule_extract.md",
-		"framework/governance/rules/rule_new.md",
-		"framework/governance/rules/rule_sync.md",
-		"framework/governance/rules/rule_topology.md",
 		"framework/operations/migration.md",
 		"framework/spec_flow_review.md",
 		"framework/spec_flow_design_review.md",

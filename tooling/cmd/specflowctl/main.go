@@ -89,21 +89,29 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	unitPtr := fs.String("unit", "", "unit name")
+	ruleIDPtr := fs.String("rule", "", "rule id")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	unitName := strings.TrimSpace(*unitPtr)
-	if unitName == "" {
-		fmt.Fprintln(stderr, "Usage: specflowctl promote --unit <name> [--repo-root PATH]")
+	ruleID := strings.TrimSpace(*ruleIDPtr)
+
+	if unitName == "" && ruleID == "" {
+		fmt.Fprintln(stderr, "Usage: specflowctl promote (--unit <name> | --rule <id>) [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "Validates the candidate spec and archives it to stable.")
-		fmt.Fprintln(stderr, "This is the only gate in specFlow. Agent should run review+verify before calling this.")
+		fmt.Fprintln(stderr, "Validates the candidate spec/rule and archives it to stable.")
+		fmt.Fprintln(stderr, "Agent should run review+verify before calling this.")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Flags:")
 		fmt.Fprintln(stderr, "  --unit NAME      Unit name to promote")
+		fmt.Fprintln(stderr, "  --rule ID        Rule id to promote")
 		fmt.Fprintln(stderr, "  --repo-root PATH Repository root path (default: .)")
-		return errors.New("missing --unit flag")
+		return errors.New("missing --unit or --rule flag")
+	}
+
+	if unitName != "" && ruleID != "" {
+		return errors.New("--unit and --rule are mutually exclusive")
 	}
 
 	absRoot, err := filepath.Abs(*repoRootPtr)
@@ -111,6 +119,11 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("resolve repo root: %w", err)
 	}
 
+	if ruleID != "" {
+		return runRulePromote(absRoot, ruleID, stdout)
+	}
+
+	// Unit promote path
 	// Check validate cache freshness
 	validateResult, err := validationcache.CheckValidate(absRoot, unitName)
 	if err != nil {
@@ -155,6 +168,18 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Validation cache cleared.")
 	}
 
+	return nil
+}
+
+func runRulePromote(absRoot, ruleID string, stdout io.Writer) error {
+	result := promote.PromoteRule(absRoot, ruleID)
+	_, err := fmt.Fprint(stdout, promote.FormatRuleResult(result))
+	if err != nil {
+		return err
+	}
+	if !result.Passed {
+		return errors.New("promote failed")
+	}
 	return nil
 }
 

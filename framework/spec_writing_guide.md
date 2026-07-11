@@ -95,7 +95,64 @@ rule_version: x.y.z
 
 `promotion_owner_unit` may be present when one unit owns the promotion decision.
 
-`unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers (see `framework/governance/rules/rule_new.md` Procedure step 8). These fields are used during rule creation and must be removed when formal consumers exist.
+`unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist.
+
+### 5.1 Rule Creation
+
+When creating a new rule:
+
+1. Confirm the truth is independent rule truth (not unit-local behavior, binding change, or implementation work).
+2. Check that the same formal rule truth is not already present in another rule file or duplicated as unit-local truth.
+3. Choose the smallest stable rule boundary. One rule file must carry one coherent shared constraint.
+4. A brand-new candidate rule starts at `rule_version: 0.1.0`.
+5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs` and choose exactly one valid `promotion_owner_unit`.
+6. Create the candidate rule file at `docs/specs/rules/candidate/c_{rule_id}.md`.
+7. If the bound shared rule has no formal current consumers after this write, keep it only when the file explicitly records:
+   - `unbound_retention: intentional`
+   - `unbound_retention_reason: <why this rule is intentionally independent now>`
+   - `unbound_retention_owner: <flow name>`
+8. If the bound shared rule has formal current consumers, remove any `unbound_retention` fields.
+9. Do not write consumer lists or `bound_objects` into the rule file.
+10. Update `docs/specs/repository_mapping.md` when the rule object map changes.
+
+### 5.2 Rule Extraction (Unit → Rule)
+
+When extracting existing unit-local formal truth into a rule:
+
+1. Confirm the request is extraction of existing unit-local formal truth (not new design).
+2. Identify the smallest rule object that carries only the shared constraint.
+3. Build the complete involved-unit set from current repository truth.
+4. If any writeback-required unit is currently stable, stop and create a candidate fork first.
+5. Create or update the target candidate rule file. If this is the first file for a new rule object, write `rule_version: 0.1.0`.
+6. If the target rule has a stable sibling, write exactly one `promotion_owner_unit`.
+7. Rewrite each source candidate unit so the extracted truth no longer remains as duplicated unit-local formal truth.
+8. Update each affected candidate unit's `rule_refs` and body explanation.
+9. Do not write consumer lists or `bound_objects` into any rule file.
+
+### 5.3 Consumer Discovery Constraint
+
+Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
+Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
+
+### 5.4 Rule Version Semantics
+
+Agent sets the rule version when editing the rule file. The version must change when the rule body changes (read-only access does not bump version).
+
+Change type determination — compare the candidate version against the current stable version. The first differing segment (MAJOR → MINOR → PATCH) determines the type:
+
+| Type | Condition | Example | Cascade? |
+|------|-----------|---------|----------|
+| **MAJOR** | Core constraint changes. What was previously allowed is now forbidden, or vice versa. Boundaries tighten or loosen. | `"Must use PostgreSQL"` → `"Must NOT use PostgreSQL"` | Yes |
+| **MINOR** | Compatible extension. New exceptions, new options, new clarifications added without changing existing constraint semantics. | `"Must use PostgreSQL"` → `"Must use PostgreSQL, except test environments may use SQLite"` | No |
+| **PATCH** | Wording clarification only. Typo fix, sentence rephrase, or any change that does not alter the rule's formal meaning. | `"Must use PostgresSQL"` → `"Must use PostgreSQL"` (spelling fix) | No |
+
+A brand-new rule starts at `0.1.0`. When a rule has no stable version yet (first promotion), no cascade occurs regardless of version.
+
+When editing an existing rule candidate, bump the version deterministically:
+- If any existing constraint changes meaning → bump MAJOR
+- If new compatible content is added without changing existing meaning → bump MINOR
+- If only wording is clarified without meaning change → bump PATCH
+- If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
 
 ## 6. Acceptance Criteria
 

@@ -432,7 +432,7 @@ The active full-scope run-state file is governed by the run-state procedure in S
 Default scope must explicitly cover:
 
 1. the concept and command rule set — at minimum `concepts.md` and `spec_writing_guide.md`
-2. the rule-governance rule set — at minimum `governance/rule_system.md` plus `governance/rules/rule_new.md`, `governance/rules/rule_extract.md`, `governance/rules/rule_bind.md`, `governance/rules/rule_topology.md`, `governance/rules/rule_sync.md`, and `governance/rules/rule_escape.md`
+2. the rule-governance rule set — at minimum `rule_validate_checklist.md`, `rule_verify_checklist.md`, and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected content), rule-governance files, and review policy files
 5. the project-instance compatibility check — at minimum the layout-selected repository mapping, global rule, and formal truth compatibility inputs, limited by Section 2.10
@@ -469,8 +469,8 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `spec_writing_guide.md`, `core/repository_mapping.md`, and `concepts.md`
    - verifies truth ownership and candidate entry rules
 5. `shared_governance`
-   - reviews `governance/rule_system.md` where it defines the rule-governance branch
-   - reviews `governance/rules/rule_new.md`, `governance/rules/rule_extract.md`, `governance/rules/rule_bind.md`, `governance/rules/rule_topology.md`, `governance/rules/rule_sync.md`, and `governance/rules/rule_escape.md`
+   - reviews `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md`
+   - verifies that rule validate/verify/promote checks cover design quality, consumer alignment, and post-promote cleanup
 6. `process_and_impact_state`
    - reviews `governance/impact_sync.md`
    - verifies impact handling and governance-review run-state boundaries

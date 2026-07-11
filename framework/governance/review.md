@@ -58,9 +58,6 @@ Files in `framework/` reference paths that resolve to the `source_repo` layout.
 project-instance files at `docs/specs/` do not exist in this layout and must be
 treated as informational references (agents must check path existence before reading
 and skip non-existent paths with a documented note).
-Rule files at `framework/governance/rules/` may include layout-aware notes on specific
-Required Reads entries; this section is the centralized authority for how those path
-references should be resolved.
 
 Review layout applies to exact `spec_flow_review:full` mechanism deep audit and
 every `spec_flow_design_review`. It does not widen ordinary `spec_flow_review`

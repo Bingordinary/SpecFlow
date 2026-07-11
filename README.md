@@ -171,7 +171,6 @@ All commands below use the binary at `specflow/tooling/bin/specflowctl-<os>-<arc
 | `specflowctl init` | Install framework files and platform hooks |
 | `specflowctl doctor` | Diagnose project setup |
 | `specflowctl migrate` | Update hook files and check tooling version |
-| `specflowctl rule *` | Rule governance |
 | `specflowctl validate` | Validate file write permissions |
 
 ### Agent Triggers (said to the agent)

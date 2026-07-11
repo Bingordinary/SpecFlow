@@ -48,24 +48,18 @@ That default scope includes:
    - `core/repository_mapping.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-   - `governance/rule_system.md` where it defines the rule-governance branch
-2. process rules
-   - `concepts.md` (the candidate-to-promote process)
-   - `spec_writing_guide.md`
-   - `governance/impact_sync.md`
-The default scope excludes:
+    - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline
+ 2. process rules
+    - `concepts.md` (the candidate-to-promote process)
+    - `spec_writing_guide.md`
+    - `governance/impact_sync.md`
+ The default scope excludes:
 
-1. `tooling_execution_policy.md`
-2. `<tooling-root>/README.md`
-3. `<tooling-root>/bin/**`
-4. `<tooling-root>/cmd/**`
-5. `<tooling-root>/internal/**`
-6. `governance/rules/rule_new.md`
-7. `governance/rules/rule_extract.md`
-8. `governance/rules/rule_bind.md`
-9. `governance/rules/rule_topology.md`
-10. `governance/rules/rule_sync.md`
-11. `governance/rules/rule_escape.md`
+ 1. `tooling_execution_policy.md`
+ 2. `<tooling-root>/README.md`
+ 3. `<tooling-root>/bin/**`
+ 4. `<tooling-root>/cmd/**`
+ 5. `<tooling-root>/internal/**`
 
 If a conclusion, finding, or `pass` claim directly depends on one excluded file, the executor must explicitly widen scope first.
 Do not claim that an excluded file supports the current design conclusion when that file was never made in-scope.
@@ -83,8 +77,8 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `core/repository_mapping.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-   - `governance/rule_system.md` where it defines the rule-governance branch
-   - `governance/impact_sync.md`
+    - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline
+    - `governance/impact_sync.md`
 2. `process_and_gate_design`
    - `concepts.md` (the candidate-to-promote process design)
    - `spec_writing_guide.md`

@@ -29,4 +29,17 @@ When the user disagrees with the agent's suggested direction (code_ahead / spec_
 
 1. Record the user's stated direction as the verdict.
 2. Do not argue or re-suggest — the user has more context.
-3. Proceed with the agreed next step per the direction table in `verify_checklist.md` Step 6.
+3. Proceed with the agreed next step per the direction table in `unit_verify_checklist.md` Step 6.
+
+## 6. Rule Operation Unsafe or Blocked
+
+When a rule operation cannot proceed safely (ambiguous, combines multiple actions, or previous step returned blocked):
+
+1. **Route to exactly one action** — reduce the request to the smallest distinct rule action:
+   - Creating new rule truth → write candidate rule (see `spec_writing_guide.md` §5.1)
+   - Extracting unit-local truth → extract to rule (see `spec_writing_guide.md` §5.2)
+   - Binding/unbinding a unit → edit unit `rule_refs` and body explanation (normal spec editing)
+   - Splitting/merging/renaming/retiring rules → manual multi-step change: create/update rule files (see `spec_writing_guide.md` §5.1), update consumer `rule_refs`, delete old files
+2. **Raise a clarification checkpoint** when the requested meaning is unclear — ask the user for specifics before proceeding
+3. **Raise a decision checkpoint** when the user must choose between two valid approaches
+4. **Raise a prerequisite checkpoint** when a legal upstream action must happen before the rule change (e.g., a consuming unit must be forked to candidate before its binding can change)
