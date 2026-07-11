@@ -22,6 +22,16 @@ It reviews the mechanism that governs business truth.
 It does not prove that the current governance design is sensible, humane, or worth using as designed.
 That judgment belongs to `spec_flow_design_review`.
 
+### Terminology Note
+
+"Review" in this file has two distinct meanings:
+
+1. **`spec_flow_review`** — the meta-governance command that reviews the framework mechanism itself (Sections 1, 2, 6-9, and the file as a whole). This is a developer command, not part of the user workflow. See `framework/governance/review.md` for routing.
+
+2. **`review`** — one of the three user workflow commands (next, review, promote) defined in Sections 2.3-2.4. This command reviews candidate spec quality and is implemented as `spec_validate`. It has no relation to `spec_flow_review`.
+
+When reading Sections 2.3-2.4, "review" refers to the user workflow command. Everywhere else, "review" or `spec_flow_review` refers to the meta-governance command.
+
 ## 2. Review Standard
 
 `spec_flow_review` judges whether the in-scope governance rules are correct, closed, coherent, executable, and handoff-safe.

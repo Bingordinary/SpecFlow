@@ -212,6 +212,8 @@ Rule scope is resolved from rule truth:
 - `rule_scope: global` or id beginning with `g_rule_` → repository-wide rule, applies to every current-layer unit
 - `rule_scope: bound` or id beginning with `b_rule_` → bound shared rule, applies only to units listing it in `rule_refs`
 
+When both `rule_scope` and id prefix are present, `rule_scope` in frontmatter takes precedence over id prefix.
+
 Rule files must not store consumer lists. `bound_objects` is not the source of rule consumers. The bound shared rule consumer graph is reconstructed from current-layer unit frontmatter `rule_refs`.
 
 ## 10. Dependency Order

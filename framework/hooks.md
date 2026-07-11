@@ -35,7 +35,7 @@ The `session-start` script detects the target platform from environment variable
 | Gemini CLI or no plugin platform | No platform-specific variable detected | `{ "additionalContext": "..." }` |
 
 ==ATOM_BEGIN:specflowctl_location==
-specflowctl is not on PATH. Its binary is at `specflow/tooling/bin/specflowctl-<os>-<arch>`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
+specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. In the `installed_project` layout (deployed to a parent project), `<tooling-root>` is `specflow/tooling`. In the `source_repo` layout (the specFlow framework repository itself), it is `tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
 ==ATOM_END:specflowctl_location==
 
 ### Hook Configuration Files

@@ -52,6 +52,8 @@ Rule bound or global scope is resolved from rule frontmatter `rule_scope` or by 
 1. `g_rule_` means global
 2. `b_rule_` means bound
 
+When both `rule_scope` and id prefix are present, `rule_scope` in frontmatter takes precedence over id prefix.
+
 The registry must not use a `scope` column for this.
 
 ## Path Ownership

@@ -34,12 +34,11 @@ When the request also requires unit binding, `rule_escape` must either decompose
 Before any write, read:
 
 1. `framework/spec_writing_guide.md`
-2. `framework/governance/rules/rule_sync.md`
-3. `framework/governance/impact_sync.md`
-4. every current-layer unit main Spec needed to check whether the target truth already exists as unit-local truth or is already bound through `rule_refs`
-5. every existing rule file that names or overlaps the requested rule truth
-6. `docs/specs/repository_mapping.md` when a new rule id is created or the rule object map may change
-7. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may become a repository-wide default rule
+2. `framework/governance/rules/rule_sync.md` (routes fallback to `framework/governance/impact_sync.md`)
+3. every current-layer unit main Spec needed to check whether the target truth already exists as unit-local truth or is already bound through `rule_refs`
+4. every existing rule file that names or overlaps the requested rule truth
+5. `docs/specs/repository_mapping.md` when a new rule id is created or the rule object map may change
+6. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may become a repository-wide default rule
 
 ==ATOM_BEGIN:shared_footer==
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.

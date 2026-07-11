@@ -25,7 +25,7 @@ type Result struct {
 //  1. Check candidate spec exists
 //  2. Validate frontmatter fields
 //  3. Validate acceptance items
-//  4. Check reference integrity (appendix files, rule files)
+//  4. Find candidate appendix files
 //  5. Check repository_mapping.md entry
 //  6. Copy candidate files to stable
 func Promote(repoRoot, unitName string) *Result {

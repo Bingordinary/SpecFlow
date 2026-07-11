@@ -6,7 +6,7 @@ When an agent executes `spec_verify {unit}`, it uses the 6 steps defined in this
 
 ## Core Principle
 
-Verify is a **static structural alignment check** — it compares what the spec describes against what the code implements, using only Read/Grep/Glob. It cannot run code, call APIs, or capture runtime output. The "evidence" in verify is **code references**: file paths, line numbers, and code snippets proving structural existence and consistency.
+Verify is a **static structural alignment check** — it compares what the spec describes against what the code implements, using static file inspection (reading file content, searching text by pattern, locating files by name pattern) and read-only repository history queries. It cannot run code, call APIs, or capture runtime output. The "evidence" in verify is **code references**: file paths, line numbers, and code snippets proving structural existence and consistency.
 
 ## Target Selection
 
@@ -15,7 +15,7 @@ Verify is a **static structural alignment check** — it compares what the spec 
 
 ## Execution Rules
 
-- **Subagent permissions:** ALLOWED: Read, Grep, Glob. FORBIDDEN: Write, Edit, Bash, Task.
+- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files, execute commands that change state, or delegate to other agents.
 - Each acceptance item reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
 - Evidence is always code-level (file:line, struct/function signatures, grep results) — never runtime output.
 - For CANNOT_DETERMINE items (pass_condition requires runtime verification): record the gap and continue.
@@ -53,13 +53,13 @@ Summary: ...
 
 | Declaration type | What to extract | How to verify in code |
 |---|---|---|
-| API endpoints / handlers | path, method, request/response types | Grep for route registration, check handler function signature |
-| Function signatures | name, parameters, return types | Grep for function definition, verify signature |
-| Data structures | struct/type definitions, field names, types, tags | Grep for type definition, check fields and types |
-| Enums / constants | allowed values, string representations | Grep for const/enum block, verify values exist |
-| Error codes / types | error type names, error messages | Grep for error definition, check usage in error paths |
-| State machines | state values, transition triggers | Grep for state type, switch/case blocks |
-| Configuration keys | key names, default values | Grep for config struct or usage |
+| API endpoints / handlers | path, method, request/response types | Search for route registration, check handler function signature |
+| Function signatures | name, parameters, return types | Search for function definition, verify signature |
+| Data structures | struct/type definitions, field names, types, tags | Search for type definition, check fields and types |
+| Enums / constants | allowed values, string representations | Search for const/enum block, verify values exist |
+| Error codes / types | error type names, error messages | Search for error definition, check usage in error paths |
+| State machines | state values, transition triggers | Search for state type, switch/case blocks |
+| Configuration keys | key names, default values | Search for config struct or usage |
 
 3. For each declaration found in the spec, locate the corresponding implementation:
 
@@ -98,7 +98,7 @@ For each acceptance item in the target spec:
 
 | pass_condition type | What to check in code | Verifiable? |
 |---|---|---|
-| "Returns HTTP {status}" | Handler returns that status code | ✅ Yes — grep for status code in handler |
+| "Returns HTTP {status}" | Handler returns that status code | ✅ Yes — search for status code in handler |
 | "Returns {field} in response" | Response struct has that field | ✅ Yes — check response type definition |
 | "Calls {function} when {condition}" | Function call exists in correct branch | ✅ Yes — read conditional block |
 | "Returns error when {condition}" | Error return in conditional path | ✅ Yes — read error handling path |
@@ -156,14 +156,14 @@ For each acceptance item in the target spec:
 
 2. For each acceptance item with `affects.rules`:
 ```
-- Grep for each declared rule name or pattern in the implementation files
+- Search for each declared rule name or pattern in the implementation files
 - Is the rule being used? How?
 - If the rule is not found in the implementation → flag (possible undeclared scope)
 ```
 
 3. For each acceptance item with `affects.dependencies`:
 ```
-- Grep for each declared dependency in the implementation
+- Search for each declared dependency in the implementation
 - Is the dependency used? If not → flag
 ```
 
@@ -192,7 +192,7 @@ For each acceptance item in the target spec:
 ```
 - Identify the old code paths from the spec (or from the replacement nature of the change)
 - Verify old code files/directories no longer exist
-- Grep for remaining references to:
+- Search for remaining references to:
     - Old function names
     - Old import paths
     - Old configuration keys
@@ -248,7 +248,7 @@ For each acceptance item in the target spec:
 
 ### Divergence resolution
 
-When any item reports MISMATCH, classify each mismatch into one of four directions. **Present findings to the user — do not decide automatically.**
+When any item reports MISMATCH, classify each mismatch into one of four directions. **Present findings to the user — do not decide automatically. However, the agent MUST provide a reasoned suggestion based on the signal layer and review layer below.**
 
 | Classification | Meaning | Next step |
 |---|---|---|
@@ -258,17 +258,109 @@ When any item reports MISMATCH, classify each mismatch into one of four directio
 | **blocked** | Mismatch depends on external input or unresolved decisions. | User unblocks → re-run verify |
 
 **Execution:**
-```
+
 For each MISMATCH item:
-1. Report the specific structural discrepancy (file:line, code snippet, spec reference)
-2. Analyze the root cause:
-   - Does the spec describe something the code lacks? → spec_ahead
-   - Does the code do something the spec doesn't describe? → code_ahead
-   - Are both present but inconsistent (e.g., wrong parameter name)? → classify by intent
-3. Present to user with the example pattern:
-   "Item `{id}`: spec says X but code does Y. Is the spec outdated (code_ahead) or code incomplete (spec_ahead)?"
-4. Record the user's verdict and the agreed next step
+1. **Classify** — determine the direction (code_ahead / spec_ahead / needs_design / blocked)
+2. **Signal layer** — collect metadata evidence (see below)
+3. **Review layer** — read spec and code content to analyze design intent (see below)
+4. **Present** — show mismatch evidence, signal layer, review layer, and agent's suggested direction
+5. **Record** — the user's verdict and the agreed next step
+
+---
+
+#### Signal Layer
+
+Collect metadata evidence to inform the suggestion. Each evidence item has a weight; the agent sums weighted evidence on both sides to determine confidence.
+
+| Evidence | Favors fixing | How to get | Weight |
+|----------|--------------|-----------|--------|
+| Spec is **stable** (approved) | Code (spec is contract) | Check spec file path contains `stable/` | Strong |
+| Spec is **candidate** (WIP) | Spec (code is evolving) | Check spec file path contains `candidate/` | Strong |
+| Validate cache is fresh | Code (spec was recently checked) | Check `validate_result.md` timestamp vs file hashes | Strong |
+| Code has tests for the behavior | Spec (behavior is intentional) | Search test files for related assertions | Strong |
+| Spec modified after code | Code (spec reflects latest thinking) | Query version control for the file's last modification timestamp | Moderate |
+| Code modified after spec | Spec (code evolved past spec) | Query version control for the file's last modification timestamp | Moderate |
+| Code behavior referenced by other modules | Spec (other code depends on it) | Search for function calls / type usage | Weak |
+
+**Confidence:**
 ```
+fix_code_score = strong_code_fix * 2 + moderate_code_fix + weak_code_fix
+fix_spec_score = strong_spec_fix * 2 + moderate_spec_fix + weak_spec_fix
+delta = |fix_code_score - fix_spec_score|
+
+confidence = high   if delta >= 3
+confidence = medium if delta >= 1
+confidence = low    otherwise (conflicting signals)
+```
+
+**If version control is not available:** skip timestamp evidence. Confidence capped at medium.
+
+**If no test files found:** skip test evidence. Do not infer "no tests" as evidence for anything.
+
+---
+
+#### Review Layer
+
+For each MISMATCH, the agent MUST read beyond the item itself to understand design intent. This is content-level analysis, not metadata counting.
+
+**Scope — read:**
+
+1. **Spec context** — the section/group containing the acceptance item, including sibling items, shared definitions (error codes, types, enums, data models), and rationale in section headers. If the item spans sections, read the entire spec file.
+
+2. **Code context** — the implementation function body where the mismatch occurs, surrounding logic, related helper functions, and callers. Read enough to understand why the code behaves the way it does.
+
+3. **Tests** — if test files exist for the relevant code module, read their assertions for the mismatched behavior. Test assertions are strong signals of intent.
+
+**Analysis protocol:**
+
+1. Extract intent from spec — what is the spec trying to achieve? Is the requirement internally consistent with sibling items?
+2. Extract intent from code — why does the code behave differently? Is there a pattern or principle behind the code's approach?
+3. Reconcile — which version better serves the overall design? Is one version clearly wrong (bug, typo, oversight)?
+4. Edge cases — does one version handle edge cases that the other misses?
+
+**Output:** reasoned judgment with confidence level.
+
+**When to skip the review layer:**
+
+| Condition | Action |
+|-----------|--------|
+| Structural-only mismatch (signature, type name) | Signal layer sufficient |
+| Trivial mismatch (typo, whitespace) | Signal layer sufficient |
+| CANNOT_DETERMINE | Review layer required (signal has no data) |
+| Conflicting signals (low confidence) | Review layer recommended |
+
+---
+
+#### Presentation format
+
+For each MISMATCH item, present in the following structure:
+
+```
+───────────────────────────────────────────────────
+Item: {id}
+Mismatch: spec says {X}, code does {Y}
+───────────────────────────────────────────────────
+
+[REVIEW]
+  ├─ Spec context: {what spec section says, design intent}
+  ├─ Code context: {how code handles it, why}
+  ├─ Analysis: {reasoning chain}
+  └─ Judgment: {direction} (confidence: high/medium/low)
+
+[SIGNAL] (condensed)
+  ├─ Spec: {stable/candidate} — favors fix {code/spec}
+  ├─ Timestamps: spec {date}, code {date} — favors fix {code/spec}
+  └─ Tests: {yes/no} — favors fix {code/spec}
+
+Suggested direction: {code_ahead | spec_ahead | needs_design}
+  {1-sentence rationale from review layer}
+───────────────────────────────────────────────────
+Do you agree, or do you see it differently?
+(agree / disagree → specify your direction)
+───────────────────────────────────────────────────
+```
+
+The signal layer is always shown in condensed form (3-4 lines). The review layer is the primary reasoning. If signal and review conflict, highlight the conflict explicitly.
 
 ### Stable-only mode
 

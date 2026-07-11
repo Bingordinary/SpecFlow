@@ -29,8 +29,10 @@ Unit frontmatter records identity, layer, version, `unit_refs`, and `rule_refs`.
 
 Rules carry shared constraints.
 
-- `g_rule_` rules are global and apply to every current-layer unit.
-- `b_rule_` rules apply only to units that explicitly list them in `rule_refs`.
+Rules carry rule_scope in frontmatter — `rule_scope: global` or `rule_scope: bound` — which takes precedence. The id prefix (`g_rule_` for global, `b_rule_` for bound) is the fallback indicator.
+
+- `g_rule_` / `rule_scope: global` → repository-wide rule, applies to every current-layer unit.
+- `b_rule_` / `rule_scope: bound` → applies only to units that explicitly list them in `rule_refs`.
 
 Bound rule consumers are derived from current-layer unit `rule_refs`; rule files must not store consumer lists.
 

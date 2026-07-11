@@ -22,3 +22,11 @@ The implementation no longer matches recorded stable truth:
 
 1. Check whether the issue is `fix_required` (concrete repair possible in the candidate) or `blocked` (requires user input)
 2. If blocked: stop and present the question to the user
+
+## 5. User disagrees with divergence suggestion
+
+When the user disagrees with the agent's suggested direction (code_ahead / spec_ahead / needs_design) during divergence resolution:
+
+1. Record the user's stated direction as the verdict.
+2. Do not argue or re-suggest — the user has more context.
+3. Proceed with the agreed next step per the direction table in `verify_checklist.md` Step 6.

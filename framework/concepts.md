@@ -36,7 +36,7 @@ When code, stable spec, and candidate spec disagree, their authority is not equa
 ## specflowctl Location
 
 ==ATOM_BEGIN:specflowctl_location==
-specflowctl is not on PATH. Its binary is at `specflow/tooling/bin/specflowctl-<os>-<arch>`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
+specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. In the `installed_project` layout (deployed to a parent project), `<tooling-root>` is `specflow/tooling`. In the `source_repo` layout (the specFlow framework repository itself), it is `tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
 ==ATOM_END:specflowctl_location==
 
 ## Workflow
@@ -57,7 +57,7 @@ The user can use explicit triggers at any time:
 |---------|-----------------|
 | `spec_validate {unit}` | Read-only subagent with 9-point validate checklist. See `framework/validate_checklist.md`. |
 | `spec_verify {unit}` | Read-only subagent with 6-step verify checklist. See `framework/verify_checklist.md`. |
-| `spec_promote {unit}` | Runs validate then verify. If both pass: `specflowctl promote --unit {unit}`. If fails: stop, report. |
+| `spec_promote {unit}` | 3-step promote workflow with post-promote body reference cleanup. See `framework/promote_workflow.md`. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
 
@@ -116,16 +116,15 @@ This table maps the three boolean state dimensions to the exact disclosure text 
 
 ### 4. Promote (only gate)
 
-`specflowctl promote --unit <name>` is the only operation that writes to stable. Before promoting, the CLI independently checks cache freshness:
+The detailed promote workflow is defined in `framework/promote_workflow.md` (3 steps: optional agent pre-check, `specflowctl promote`, and post-promote body reference cleanup).
 
-1. **Check validate cache** — The CLI reads `docs/specs/_validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), it rejects promote with guidance to re-run `spec_validate`.
-2. **Check verify cache** — The CLI reads `docs/specs/_validation/unit/{name}/verify_result.md`. If missing or stale, it rejects promote with guidance to re-run `spec_verify`.
-3. **Both fresh** → Format validation + copy candidate → stable.
-4. **After promote succeeds** → Both cache files are deleted.
+Key rules that override the checklist:
 
-**Agent-side pre-check (optional):** Before calling `specflowctl promote`, the agent may optionally read the cache files to report freshness status to the user. This is redundant with the CLI's own enforcement but provides transparency. The agent can safely skip this step and call `specflowctl promote --unit <name>` directly — the CLI will reject with clear guidance if caches are missing or stale.
+1. `specflowctl promote --unit <name>` is the only operation that writes to stable.
+2. The CLI independently checks cache freshness before promoting.
+3. After promote succeeds, the agent must run Step 3 of the checklist: scan the promoted stable spec body for `c_unit_` and `docs/specs/units/candidate/` file references that would become dangling, and update them to their stable equivalents.
 
-The CLI `specflowctl promote --unit <name>` also validates format (frontmatter, required fields, reference integrity) and copies candidate files to stable. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, ensuring the field matches the target directory.
+`specflowctl promote` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
 
 **Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, the agent forks from stable: copies `s_unit_<name>.md` (and its appendices) back to the candidate layer as `c_unit_<name>.md`. See [Truth Hierarchy](#truth-hierarchy).
 
@@ -144,8 +143,8 @@ Validate and verify are quality gates. They write cache files (`_validation/`) b
 **HARD RULE 3: Validate and Verify Check Quality, Promote Writes**
 `validate` and `verify` check quality and report findings. They are read-only — they do not modify files or advance state. Only `promote` writes to stable. Commands like `next`, `rule`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
 
-**HARD RULE 3a: Never Skip Divergence Resolution**
-When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct.
+**HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
+When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the signal layer and review layer analysis (see `verify_checklist.md` Step 6) and provide a reasoned suggestion. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
 
 **HARD RULE 4: Stop When Unclear**
 Stop and ask when the target unit is unclear, the required spec or framework file cannot be found, or the next workflow step cannot be determined. Do not guess or proceed with incomplete information.
@@ -158,7 +157,7 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, then validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
 | `spec_validate {name}` (agent trigger) | Read-only subagent with validate checklist. Writes cache on PASS. See `framework/validate_checklist.md`. | User says "spec_validate" or confirms agent suggestion |
 | `spec_verify {name}` (agent trigger) | Read-only subagent with verify checklist. Writes cache on ALIGNED. See `framework/verify_checklist.md`. | User says "spec_verify" or confirms agent suggestion |
-| `spec_promote {name}` (agent trigger) | Checks cache freshness → if stale, suggests re-run validate/verify → if fresh, calls promote | User says "spec_promote" or confirms agent suggestion |
+| `spec_promote {name}` (agent trigger) | 3-step promote workflow per `framework/promote_workflow.md`, including post-promote body reference cleanup | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |

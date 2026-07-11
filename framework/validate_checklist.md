@@ -6,7 +6,7 @@ When an agent executes `spec_validate {unit}`, it uses the 9 checks defined in t
 
 ## Execution Rules
 
-- **Subagent permissions:** ALLOWED: Read, Grep, Glob. FORBIDDEN: Write, Edit, Bash, Task.
+- **Subagent permissions:** may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents.
 - Each check reports **PASS** or **FAIL** with a reason.
 - On FAIL, the agent must identify **which information sources contradict each other** (e.g., "spec body describes auto-retry logic but no acceptance item covers it"). The fix is recorded in the FAIL reason.
 - Resolution types:

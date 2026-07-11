@@ -32,13 +32,12 @@ This flow is valid only when a rule already exists (either global or bound share
 Before any write, read:
 
 1. `framework/spec_writing_guide.md`
-2. `framework/governance/impact_sync.md`
-3. `framework/governance/rules/rule_sync.md`
-4. the target unit current-layer main Spec
-5. the target rule file
-6. any currently bound rule file that may be replaced by this binding
-7. every current-layer unit main Spec needed to derive the repository-wide bound shared rule consumer set for each touched rule from `rule_refs`
-8. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may affect a repository-wide default rule
+2. `framework/governance/rules/rule_sync.md` (routes fallback to `framework/governance/impact_sync.md`)
+3. the target unit current-layer main Spec
+4. the target rule file
+5. any currently bound rule file that may be replaced by this binding
+6. every current-layer unit main Spec needed to derive the repository-wide bound shared rule consumer set for each touched rule from `rule_refs`
+7. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may affect a repository-wide default rule
 
 ==ATOM_BEGIN:shared_footer==
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.

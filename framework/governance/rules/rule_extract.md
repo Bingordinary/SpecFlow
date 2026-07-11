@@ -32,13 +32,12 @@ This flow is only valid when a shared constraint already exists within one or mo
 Before any write, read:
 
 1. `framework/spec_writing_guide.md`
-2. `framework/governance/rules/rule_sync.md`
-3. `framework/governance/impact_sync.md`
-4. every named source unit's current-layer main Spec
-5. every current-layer unit main Spec needed to determine whether that unit already carries, duplicates, or consumes the target truth
-6. every relevant existing rule file that may overlap the target truth
-7. `docs/specs/repository_mapping.md` when a new rule id is created or the rule object map may change
-8. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may become a repository-wide default rule
+2. `framework/governance/rules/rule_sync.md` (routes fallback to `framework/governance/impact_sync.md`)
+3. every named source unit's current-layer main Spec
+4. every current-layer unit main Spec needed to determine whether that unit already carries, duplicates, or consumes the target truth
+5. every relevant existing rule file that may overlap the target truth
+6. `docs/specs/repository_mapping.md` when a new rule id is created or the rule object map may change
+7. `docs/specs/rules/stable/s_g_rule_repository_baseline.md` when the request may become a repository-wide default rule
 
 ==ATOM_BEGIN:shared_footer==
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
