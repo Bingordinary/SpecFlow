@@ -57,6 +57,12 @@ Unit and rule follow the same validate→verify→promote pipeline, but each ste
 specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. In the `installed_project` layout (deployed to a parent project), `<tooling-root>` is `specflow/tooling`. In the `source_repo` layout (the specFlow framework repository itself), it is `tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
 ==ATOM_END:specflowctl_location==
 
+## Framework Path
+
+==ATOM_BEGIN:framework_path==
+Framework documentation files are referenced with the `framework/` prefix (e.g. `framework/operations/update.md`). In the `installed_project` layout (deployed to a parent project), these files are located at `specflow/framework/`. In the `source_repo` layout (the SpecFlow framework repository itself), they are at `framework/` relative to the repo root. When the agent cannot find a file at the bare `framework/` path, retry under `specflow/framework/` instead.
+==ATOM_END:framework_path==
+
 ## Workflow
 
 ### 1. Discover

@@ -31,7 +31,8 @@ framework/_atoms/
 ├── rules/
 │   └── shared_footer.md         # Rule governance shared footer
 └── misc/
-    └── layout_note.md           # Layout-aware path note for rule files
+    ├── layout_note.md           # Layout-aware path note for rule files
+    └── framework_path.md        # Framework path resolution reference
 ```
 
 ## How Target Files Reference Atoms
