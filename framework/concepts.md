@@ -206,7 +206,7 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |
-| `spec_flow_update` (agent trigger) | Full update: pull framework, update binaries & hooks, check document format | User says "spec_flow_update" |
+| `spec_flow_update` (agent trigger) | Full update: pull framework, update binaries & hooks, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
 | `specflowctl validate` | Validate candidate spec structure (7 checks) or file write permissions | Human maintainer or agent |
 
 Project truth inputs: `docs/specs/`.
