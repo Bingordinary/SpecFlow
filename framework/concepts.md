@@ -2,6 +2,42 @@
 
 This project uses SpecFlow to manage design documents. SpecFlow maintains spec documents that record accepted design, behavior, boundaries, and shared rules. These documents serve as the consensus protocol between the user and the agent — the user reviews spec documents to confirm intent, and the agent reads spec documents to understand design intent across sessions.
 
+## Spec Workflow
+
+Every spec document follows a five-step loop:
+
+**Fork → Edit → Validate → Verify → Promote**
+
+| Step | What happens | Entry condition | Exit condition |
+|-------|-------------|----------------|---------------|
+| **Fork** | Copy stable spec to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `c_unit_<name>.md`. |
+| **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
+| **Validate** | Check candidate design quality against checklist. | Agent triggered by `spec_validate`. | All checks pass. |
+| **Verify** | Check candidate vs code alignment. | Agent triggered by `spec_verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
+| **Promote** | Replace stable with the validated+verified candidate. | User confirms `spec_promote`. | New stable spec at `s_unit_<name>.md`; candidate files removed. |
+
+After promote, the new stable becomes the fork source for the next iteration — the cycle repeats.
+
+### State by File Existence
+
+There is no status metadata in the files. The file system itself is the state signal:
+
+| Stable exists | Candidate exists | What it means | What the agent does |
+|:---:|:---:|---|---|
+| No | No | No design recorded for this unit. | Create `c_unit_<name>.md` from scratch. |
+| Yes | No | Accepted design exists, no changes in progress. | Fork from stable (copy to candidate layer) before editing. |
+| Yes | Yes | Changes are in progress. | Edit the existing candidate; stable is unchanged until promote. |
+| No | Yes | *(transient — promotes only from candidate to stable, so stable always ends up existing)* | Proceed to promote when ready. |
+
+### The Two Layers
+
+| Layer | Prefix | Directory | Purpose |
+|-------|--------|-----------|---------|
+| **Stable** | `s_unit_<name>.md` | `docs/specs/units/stable/` | Accepted recorded truth. **Never edit directly.** Only created by promote. |
+| **Candidate** | `c_unit_<name>.md` | `docs/specs/units/candidate/` | Working draft. Created by fork or from scratch. The only layer the agent edits. |
+
+The relationship is versioned: a candidate is always a proposed next version of its corresponding stable (or the first version if no stable exists).
+
 ## Core Principle
 
 **File existence is state.** No state machine, no status table, no lifecycle phases. Candidate file exists = being edited. No candidate file = not being edited.
@@ -45,7 +81,7 @@ The agent automatically detects the target type from its name:
 
 Unit and rule follow the same validate→verify→promote pipeline, but each step executes different internal checks appropriate to the target type:
 
-| Phase | Unit executes | Rule executes |
+| Step | Unit executes | Rule executes |
 |-------|--------------|--------------|
 | validate | 9-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule format & integrity checklist (`rule_validate_checklist.md`) |
 | verify | 6-step spec-vs-code alignment check (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
@@ -71,7 +107,12 @@ Run `specflowctl next --unit <name>` to discover the unit's candidate and stable
 
 ### 2. Edit and implement (default mode)
 
-Update the candidate spec and code. No gate before this step. Read first, then write.
+**Fork prerequisite — before editing, determine the candidate state:**
+- **Candidate exists** → edit the existing candidate spec directly.
+- **No candidate, stable exists** → **fork from stable:** copy `s_unit_<name>.md` (and its appendices) from `docs/specs/units/stable/` to `docs/specs/units/candidate/` as `c_unit_<name>.md`, update frontmatter (`layer: stable` → `layer: candidate`, increment version), then edit the candidate. The stable spec is never edited directly except through the promote workflow.
+- **No candidate, no stable** → brand-new design. Create `c_unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
+
+After the fork (if applicable), update the candidate spec and code. No gate before editing. Read first, then write.
 
 ### 3. Validate, verify, promote (triggered by user)
 
@@ -176,7 +217,7 @@ Key rules that override the checklist:
 
 `specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then runs release-version logic to update all consuming candidate units' `rule_refs` from the old version to the new version. After promote succeeds, the candidate rule file is deleted.
 
-**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, the agent forks from stable: copies `s_unit_<name>.md` (and its appendices) back to the candidate layer as `c_unit_<name>.md`. See [Truth Hierarchy](#truth-hierarchy).
+**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. See [Truth Hierarchy](#truth-hierarchy).
 
 ## HARD RULES
 

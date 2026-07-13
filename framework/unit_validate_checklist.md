@@ -64,6 +64,8 @@ Summary: ...
 
 **Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
 
+**Communication note:** When suggesting Check 1 to a user, describe it as "structural integrity — verifies file structure and reference existence without evaluating design quality."
+
 ---
 
 ## Check 2 — Design soundness

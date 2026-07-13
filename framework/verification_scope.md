@@ -147,8 +147,14 @@ Scoped validate uses **git working directory changes** on the spec file to deter
    - Check 1 is prerequisite for all others — run Check 1 first if it changed or if its status is unknown
    - Other checks have no mutual dependency — run in any order
 4. If multiple spec areas changed, run all corresponding checks
-5. If changes cannot be mapped to any check, run Check 1 (safety default)
-6. If no spec file changes exist, report and ask user if they want full
+
+### Edge cases
+
+| Condition | Behavior |
+|-----------|----------|
+| Changes cannot be mapped to any check | Run Check 1 (safety default) |
+| No spec file changes exist (file is tracked but unmodified) | Report no changes found. Offer options: `{unit}:full` for full validation, `{unit}:check-1` (structural integrity — file format gate), or `{unit}:{keyword}` for a specific check. |
+| Spec file is new/untracked (no git history) | Cannot auto-map. Suggest running check-1 (structural integrity) as a format gate — "verifies the file's required fields and all referenced file paths exist; no design evaluation". After check-1 passes, ask if user wants full validation. |
 
 ### Why not rule validate
 
@@ -213,6 +219,15 @@ Cross-check: 3/3 PASS
 ---
 Full validation passed.
 ```
+
+## Check Communication to Users
+
+When the agent needs to suggest checks to the user (edge cases, option proposals, clarifying dialogues):
+
+1. **Use names + purpose, not just numbers** — e.g., "check-1 (structural integrity) — verifies file format and reference existence"
+2. **Explain relevance** — why this check matters in the current situation
+3. **List options clearly** — each option on its own line with number, name, and purpose
+4. **No agent-internal jargon** — avoid terms like "git-aware mapping", "cross-check prerequisite", or "3-way cross-reference"; use plain language
 
 ## Cache Interaction
 
