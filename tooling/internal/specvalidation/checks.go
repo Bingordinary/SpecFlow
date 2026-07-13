@@ -155,6 +155,29 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 		}
 	}
 
+	// Validate not_runnable_yet values (must be "yes" or "no" per spec_writing_guide.md)
+	itemLines := strings.Split(itemSection, "\n")
+	var invalidValues []string
+	for _, line := range itemLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "not_runnable_yet:") {
+			parts := strings.SplitN(trimmed, ":", 2)
+			if len(parts) == 2 {
+				value := strings.TrimSpace(parts[1])
+				if value != "yes" && value != "no" {
+					invalidValues = append(invalidValues, fmt.Sprintf("%q", value))
+				}
+			}
+		}
+	}
+	if len(invalidValues) > 0 {
+		return CheckResult{
+			Name:    "Acceptance items",
+			Status:  Fail,
+			Details: fmt.Sprintf("invalid not_runnable_yet value(s): %s; must be 'yes' or 'no'", strings.Join(invalidValues, ", ")),
+		}
+	}
+
 	return CheckResult{
 		Name:    "Acceptance items",
 		Status:  Pass,

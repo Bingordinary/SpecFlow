@@ -244,15 +244,22 @@ For each acceptance item in the target spec:
 - If all items are not_runnable_yet → report: "All acceptance items marked not_runnable_yet — verify cannot confirm alignment"
 - If some items are not_runnable_yet:
     - List them
+    - For each item, verify not_runnable_yet_reason is present
+    - If missing → flag as concern: "Item {id} has not_runnable_yet: yes but no not_runnable_yet_reason"
+    - If reason is present, does it reference external evidence?
+      (e.g. issue/PR link, dependent system documentation, pending integration entry point)
+    - If not → flag as concern: "Item {id} reason is self-attested — no external evidence"
     - Does the remaining runnable set provide meaningful coverage?
     - If not → flag as concern
 ```
 
-**PASS:** No undocumented behavioral changes detected; not_runnable_yet items are reasonable
+**PASS:** No undocumented behavioral changes detected; not_runnable_yet items have documented reasons
 
 **FAIL (code_ahead):** Undocumented behavioral changes found in code
 
 **Quality concern:** All or most items are not_runnable_yet; runnable coverage is insufficient
+
+**Quality concern (reasoning):** One or more not_runnable_yet items are missing not_runnable_yet_reason or lack external evidence
 
 **Check method:** Implementation code × spec body — reverse cross-reference (code-to-spec direction)
 

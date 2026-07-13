@@ -28,16 +28,26 @@ Summary: ...
 
 ## Step 1 — Agent pre-check (optional)
 
-**Purpose:** Optionally check cache freshness and report to the user before calling promote. This step is redundant with the CLI's own enforcement but provides transparency.
+**Purpose:** Optionally check cache freshness and review `not_runnable_yet` items before promote. Cache check is redundant with the CLI's own enforcement but provides transparency. The `not_runnable_yet` review catches items that may have become runnable since the last verify cycle.
 
 **Execution steps:**
 
 1. Read `docs/specs/_validation/unit/{name}/validate_result.md` if it exists
 2. Read `docs/specs/_validation/unit/{name}/verify_result.md` if it exists
 3. Report freshness status to the user if reporting would be useful
+4. **not_runnable_yet review:**
+   - Read the candidate spec at `docs/specs/units/candidate/c_unit_{name}.md`
+   - Scan acceptance items for `not_runnable_yet: yes`
+   - For each item found, assess:
+     - Is `not_runnable_yet_reason` present and substantive?
+     - Is there a credible path or timeline for flipping to `no`?
+     - If the same item was already `not_runnable_yet` in the stable predecessor (check git history for the previous stable spec), flag it as a concern — it has persisted across promote cycles
+   - Report findings to the user
 
-**PASS:** Freshness information reported (or step skipped)
+**PASS:** Freshness information reported; no unresolved not_runnable_yet concerns (or step skipped)
 **FAIL:** Not applicable — this step is optional and cannot fail
+
+**Quality concern:** One or more not_runnable_yet items persist from the previous stable spec; user attention recommended before promote
 
 ---
 
