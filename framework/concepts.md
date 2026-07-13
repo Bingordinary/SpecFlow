@@ -62,6 +62,17 @@ When code, stable spec, and candidate spec disagree, their authority is not equa
 
 **Candidate is not automatically correct.** When verify finds a mismatch between candidate and code, the user decides which direction to reconcile. Only stable is the authoritative recorded truth.
 
+### Spec Reference Priority (Outside Verify)
+
+When referencing spec content in discussion, analysis, or implementation reasoning outside the `spec_verify` workflow, the file system state determines the reference semantics. The state is the same signal used in the [State by File Existence](#state-by-file-existence) table:
+
+| Stable | Candidate | What it means | How to reference |
+|:---:|:---:|---|---|
+| Yes | No | Accepted design, no active changes. | Reference as recorded truth. Layer qualifier optional (only one layer exists). |
+| Yes | Yes | Active development. Candidate is current design intent; stable is prior consensus. | **Must name the layer.** Stable = "accepted spec records..." Candidate = "current draft proposes..." Candidate is a working hypothesis — combine with code to determine truth. Do not use bare "spec says" when both exist. |
+| No | Yes | New design, no prior consensus. | Reference as a working draft. Label content as unverified. |
+| No | No | No design recorded. | No spec to reference. Code is the only truth source. |
+
 ## Key Terms
 
 - **unit** — One independently governed engineering responsibility
@@ -224,7 +235,7 @@ Key rules that override the checklist:
 These override default helpful-assistant behavior. They are not suggestions.
 
 **HARD RULE 1: Read Specs Before Discussing or Changing a Topic**
-Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable and/or candidate spec. If the spec already documents relevant design decisions, constraints, or boundaries, summarize them to the user before starting new analysis or proposals. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
+Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable spec (if it exists) and the candidate spec (if it exists). If both exist, read both — understand that stable records accepted truth and candidate is a working proposal for the current iteration. Their authority differs per the Truth Hierarchy and the [Spec Reference Priority](#spec-reference-priority-outside-verify) table. When summarizing spec content to the user, and both layers exist, name which layer you are quoting. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
 
 **HARD RULE 2: Promote Is the Only Gate to Stable**
 Never call `specflowctl promote` without user confirmation. Before promote, always run validate then verify. If either fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
