@@ -41,12 +41,12 @@ Verify result: ALIGNED | MISMATCH
 Target: candidate | stable
 Items:
   - {item.id}: ALIGNED | MISMATCH | CANNOT_DETERMINE — code references
-    Direction: (only if MISMATCH) code_ahead | spec_ahead | needs_design
+    Direction: (only if MISMATCH) spec_gap | code_gap | needs_design
     Resolution: update_candidate | implement_code | redesign | blocked
 Scope: ALIGNED | MISMATCH — findings
 Integrity: PASS | FAIL — findings
 Divergence summary: (only if any MISMATCH)
-  - {item.id}: code_ahead | spec_ahead | needs_design — description
+  - {item.id}: spec_gap | code_gap | needs_design — description
     User verdict: ...
     Next step: ...
 Summary: ...
@@ -82,16 +82,16 @@ IF declaration exists in spec AND matching implementation found:
   - Verify structural consistency (signatures match, field names match, types match)
   - Report ALIGNED with code reference (file:line)
 IF declaration exists in spec BUT no matching implementation found:
-  - Report spec_ahead — spec describes something code doesn't have
+  - Report code_gap — spec describes something code doesn't have
 IF declaration exists in code BUT not in spec:
-  - Report code_ahead — code has something spec doesn't describe
+  - Report spec_gap — code has something spec doesn't describe
 ```
 
 **PASS (ALIGNED):** All spec body declarations have structurally consistent implementations
 
-**FAIL (spec_ahead):** Spec describes structures not found in code → code is incomplete
+**FAIL (code_gap):** Spec describes structures not found in code → code is incomplete
 
-**FAIL (code_ahead):** Code has structures not described in spec → spec is stale
+**FAIL (spec_gap):** Code has structures not described in spec → spec is stale
 
 **Check method:** Spec body × implementation code — bidirectional structural cross-reference
 
@@ -137,7 +137,7 @@ For each acceptance item in the target spec:
 {item.id}: MISMATCH
   - Spec pass_condition: "returns 201"
   - Implementation: handler at src/api/user.go:42 returns 200
-  - Direction: spec_ahead
+  - Direction: code_gap
 
 {item.id}: CANNOT_DETERMINE
   - pass_condition: "handles 1000 concurrent requests"
@@ -224,7 +224,7 @@ For each acceptance item in the target spec:
 
 ## Step 5 — Implementation integrity
 
-**Purpose:** Detect code behaviors not declared in the spec (code_ahead) and assess the impact of `not_runnable_yet` items.
+**Purpose:** Detect code behaviors not declared in the spec (spec_gap) and assess the impact of `not_runnable_yet` items.
 
 **Execution steps:**
 
@@ -235,7 +235,7 @@ For each acceptance item in the target spec:
 - For each undocumented behavior:
     - Is it a supporting implementation detail (e.g., helper function, logging)?
     - Or is it a behavioral change not declared in the spec (e.g., add caching, new API endpoint, new error handling path)?
-    - If behavioral → report as code_ahead
+    - If behavioral → report as spec_gap
 ```
 
 2. **not_runnable_yet assessment:**
@@ -255,7 +255,7 @@ For each acceptance item in the target spec:
 
 **PASS:** No undocumented behavioral changes detected; not_runnable_yet items have documented reasons
 
-**FAIL (code_ahead):** Undocumented behavioral changes found in code
+**FAIL (spec_gap):** Undocumented behavioral changes found in code
 
 **Quality concern:** All or most items are not_runnable_yet; runnable coverage is insufficient
 
@@ -273,15 +273,15 @@ When any item reports MISMATCH, classify each mismatch into one of four directio
 
 | Classification | Meaning | Next step |
 |---|---|---|
-| **code_ahead** | Code has behavior the spec doesn't describe. The candidate spec is stale. | Update candidate spec → re-run validate → re-run verify |
-| **spec_ahead** | Spec describes behavior the code doesn't satisfy. Code is incomplete. | Implement code → re-run verify |
+| **spec_gap** | Code has behavior the spec doesn't describe. The candidate spec is stale. | Update candidate spec → re-run validate → re-run verify |
+| **code_gap** | Spec describes behavior the code doesn't satisfy. Code is incomplete. | Implement code → re-run verify |
 | **needs_design** | Neither spec nor code matches a coherent design. Needs rethinking. | Redesign candidate → validate → verify |
 | **blocked** | Mismatch depends on external input or unresolved decisions. | User unblocks → re-run verify |
 
 **Execution:**
 
 For each MISMATCH item:
-1. **Classify** — determine the direction (code_ahead / spec_ahead / needs_design / blocked)
+1. **Classify** — determine the direction (spec_gap / code_gap / needs_design / blocked)
 2. **Signal layer** — collect metadata evidence (see below)
 3. **Review layer** — read spec and code content to analyze design intent (see below)
 4. **Present** — show mismatch evidence, signal layer, review layer, and agent's suggested direction
@@ -373,7 +373,7 @@ Mismatch: spec says {X}, code does {Y}
   ├─ Timestamps: spec {date}, code {date} — favors fix {code/spec}
   └─ Tests: {yes/no} — favors fix {code/spec}
 
-Suggested direction: {code_ahead | spec_ahead | needs_design}
+Suggested direction: {spec_gap | code_gap | needs_design}
   {1-sentence rationale from review layer}
 ───────────────────────────────────────────────────
 Do you agree, or do you see it differently?
