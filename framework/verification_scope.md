@@ -67,7 +67,7 @@ Scoped verify uses **git working directory changes** to determine what to verify
 2. Read the spec and identify all content (body sections, acceptance entries, etc.) that **reference** the changed files:
    - Explicit references: `affects.files`, `implementation_surface`, file paths in body text
    - Implicit references: feature/module names that correspond to known file paths
-3. Verify the identified content using the full verify process (all 6 steps)
+3. Verify the identified content using the full verify process (all 7 steps)
 4. If multiple content areas match, verify them in natural spec order
 5. **Cache recording:** record the first matching item's ID as `scoped_item` in the cache. The body summary describes the full scope. This ensures a representative ID is available for cache status disclosure even when multiple areas are verified.
 
@@ -187,6 +187,9 @@ This is not a full verification. Run `spec_verify user_auth:full` for complete v
 Mode: full
 Verify result: ALIGNED
 Cross-check: 5/5 PASS
+Coverage:
+  - items_with_deterministic_evidence: 10/10
+  - items_reading_only: 0
 
 Summary: all spec content is aligned. No cross-check contradictions found.
 ```

@@ -95,7 +95,7 @@ Unit and rule follow the same validate→verify→promote pipeline, but each ste
 | Step | Unit executes | Rule executes |
 |-------|--------------|--------------|
 | validate | 9-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule format & integrity checklist (`rule_validate_checklist.md`) |
-| verify | 6-step spec-vs-code alignment check (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
+| verify | 7-step spec-vs-code alignment check (6 analysis + 1 confidence) (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
 | promote | candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
 
 ## specflowctl Location
@@ -132,7 +132,7 @@ The user can use explicit triggers at any time:
 | Trigger | What agent does |
 |---------|-----------------|
 | `spec_validate {target}` | Read-only subagent. Unit: 9-point validate checklist (`unit_validate_checklist.md`). Rule: 7-point rule validate checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. |
-| `spec_verify {target}` | Read-only subagent. Unit: 6-step spec-vs-code verify checklist (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. |
+| `spec_verify {target}` | Read-only subagent. Unit: 7-step spec-vs-code verify checklist (6 analysis + 1 confidence) (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. |
 | `spec_promote {target}` | 3-step promote workflow. Unit: candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
@@ -246,7 +246,7 @@ Validate and verify are quality gates. They write cache files (`_validation/`) b
 `validate` and `verify` check quality and report findings. They are read-only — they do not modify files or advance state. Only `promote` writes to stable. Commands like `next`, `rule`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
-When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the signal layer and review layer analysis (see `unit_verify_checklist.md` Step 6) and provide a reasoned suggestion. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
+When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the signal layer and review layer analysis (see `unit_verify_checklist.md` Step 7) and provide a reasoned suggestion. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
 
 **HARD RULE 4: Stop When Unclear**
 Stop and ask when the target unit is unclear, the required spec or framework file cannot be found, or the next workflow step cannot be determined. Do not guess or proceed with incomplete information.
@@ -259,7 +259,7 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. | Agent or human maintainer |
 | `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 9-point checklist (`unit_validate_checklist.md`). Rule: 7-point checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 6-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
+| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 7-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
 | `spec_promote {target}` (agent trigger) | 3-step promote workflow. Unit: archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |

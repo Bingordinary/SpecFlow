@@ -29,7 +29,7 @@ When the user disagrees with the agent's suggested direction (code_gap / spec_ga
 
 1. Record the user's stated direction as the verdict.
 2. Do not argue or re-suggest — the user has more context.
-3. Proceed with the agreed next step per the direction table in `unit_verify_checklist.md` Step 6.
+3. Proceed with the agreed next step per the direction table in `unit_verify_checklist.md` Step 7.
 
 ## 6. Rule Operation Unsafe or Blocked
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `spec_verify {unit}`, it uses the 6 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
+When an agent executes `spec_verify {unit}`, it uses the 7 steps defined in this file (6 analysis + 1 confidence assessment). This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
 
 ## Mode Selection
 
@@ -10,9 +10,9 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_verify {unit}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content (all 6 steps). See `framework/verification_scope.md` §Scoped Verify for detailed logic. |
+| `spec_verify {unit}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content (all 7 steps). See `framework/verification_scope.md` §Scoped Verify for detailed logic. |
 | `spec_verify {unit}:{keyword}` | scoped | Match keyword to spec content by title, feature name, or structure → verify that content |
-| `spec_verify {unit}:full` | full | Verify all spec content (all 6 steps, batch by spec structure) + cross-check |
+| `spec_verify {unit}:full` | full | Verify all spec content (all 7 steps, batch by spec structure) + cross-check |
 
 **Output:** prefix with `Mode: scoped` or `Mode: full` and describe what was checked in natural language.
 
@@ -21,6 +21,10 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 ## Core Principle
 
 Verify is a **static structural alignment check** — it compares what the spec describes against what the code implements, using static file inspection (reading file content, searching text by pattern, locating files by name pattern) and read-only repository history queries. It cannot run code, call APIs, or capture runtime output. The "evidence" in verify is **code references**: file paths, line numbers, and code snippets proving structural existence and consistency.
+
+**Adversarial stance:** verification starts from the assumption that the spec is NOT aligned with the code. Every ALIGNED claim must cite a deterministic check (grep, file existence, line count) — "I read the code and it looks correct" is not sufficient evidence for ALIGNED. Claims without deterministic evidence must be reported as CANNOT_DETERMINE.
+
+After completing all analysis steps, the agent must report coverage confidence (see §Output Format Coverage).
 
 ## Target Selection
 
@@ -45,6 +49,9 @@ Items:
     Resolution: update_candidate | implement_code | redesign | blocked
 Scope: ALIGNED | MISMATCH — findings
 Integrity: PASS | FAIL — findings
+Coverage:
+  - items_with_deterministic_evidence: N/M
+  - items_reading_only: N
 Divergence summary: (only if any MISMATCH)
   - {item.id}: spec_gap | code_gap | needs_design — description
     User verdict: ...
@@ -126,13 +133,31 @@ For each acceptance item in the target spec:
    - Does the response type include the expected fields?
    - Are the error types defined and used in error paths?
 
-4. Report per item with code-level evidence (file:line, code snippet):
+4. For each verifiable assertion, report the grep command or file
+   check used as evidence. Every ALIGNED claim must include a specific
+   deterministic check:
+
+   ✅ ALIGNED (with deterministic evidence):
+     grep -n "return 201" user.go
+     → line 42: w.WriteHeader(http.StatusCreated)
+     → handler returns 201 (confirmed by grep command)
+
+   ❌ Insufficient — no grep command cited, reading only:
+     MUST be reported as CANNOT_DETERMINE
+
+5. If an assertion cannot be verified with a deterministic command
+   (e.g., "error message is user-friendly"), report as CANNOT_DETERMINE.
+
+   {item.id}: CANNOT_DETERMINE
+     - pass_condition: "error message is user-friendly"
+     - Reason: requires human judgment, no deterministic grep available
+
+Per-item report format:
 
 ```
 {item.id}: ALIGNED
-  - Handler CreateUser at src/api/user.go:42 returns 201
-  - Response struct UserResponse at src/api/user.go:15 includes field `id` and `created_at`
-  - Error path at src/api/user.go:55 handles ErrDuplicateEmail
+  - evidence: grep -n "201" src/api/user.go → line 42
+  - deterministic: true
 
 {item.id}: MISMATCH
   - Spec pass_condition: "returns 201"
@@ -265,7 +290,49 @@ For each acceptance item in the target spec:
 
 ---
 
-## Step 6 — Divergence resolution and stable-only mode
+## Step 6 — Stub & Placeholder Scan
+
+**Purpose:** Systematically scan implementation files for known "not done" patterns. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders.
+
+**Execution steps:**
+
+1. Collect all implementation files referenced in `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
+
+2. For each file, run these commands and record findings:
+
+   a. Stub/empty patterns:
+   ```bash
+   grep -n "return null\|return \[\]\|\bplaceholder\b\|not.*implement" <file>
+   ```
+
+   b. Debt markers (TODO, FIXME, XXX):
+   ```bash
+   grep -n "TODO\|FIXME\|XXX\|HACK" <file>
+   ```
+
+   c. Empty handler bodies:
+   ```bash
+   grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
+   ```
+
+3. Per-file result:
+   ```
+   {file}: CLEAN | STUB_FOUND
+     - line 5: // TODO: connect to database (debt_marker)
+     - line 12: return Response.json({}) (empty_response)
+   ```
+
+4. Any stub finding is a MISMATCH. Direction is **code_gap** — code has placeholder where real implementation is expected.
+
+**PASS:** No stubs or placeholders found
+
+**FAIL (STUB_FOUND):** One or more files contain stub patterns
+
+**Check method:** grep — deterministic, outputs are identical across runs
+
+---
+
+## Step 7 — Divergence resolution and stable-only mode
 
 ### Divergence resolution
 
@@ -388,7 +455,7 @@ The signal layer is always shown in condensed form (3-4 lines). The review layer
 When no candidate spec exists (verify against stable):
 
 ```
-1. Run Steps 1-5 against stable spec
+1. Run Steps 1-6 against stable spec
 2. If all ALIGNED → report ALIGNED. No further action.
 3. If any MISMATCH:
    - The implementation has drifted from recorded stable truth
