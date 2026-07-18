@@ -22,7 +22,6 @@ var appendixUnitPattern = regexp.MustCompile(`^[cs]_unit_([A-Za-z0-9_-]+)_.*\.md
 
 func BuildSnapshot(repoRoot string) Snapshot {
 	repoRoot, _ = filepath.Abs(repoRoot)
-	mapping := loadRepositoryMapping(repoRoot)
 	docs, docDiagnostics := loadTruthDocs(repoRoot)
 
 	docByPath := map[string]markdownDoc{}
@@ -34,10 +33,9 @@ func BuildSnapshot(repoRoot string) Snapshot {
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Project: ProjectInfo{
 			RepoRoot:         repoRoot,
-			MappingFile:      "docs/specs/repository_mapping.md",
 			RuleBaselineFile: "docs/specs/rules/stable/s_g_rule_repository_baseline.md",
 		},
-		Diagnostics: append(mapping.Diagnostics, docDiagnostics...),
+		Diagnostics: docDiagnostics,
 	}
 
 	builder := newGraphBuilder()
@@ -51,7 +49,6 @@ func BuildSnapshot(repoRoot string) Snapshot {
 			sourceSet[key] = ref
 		}
 	}
-	addSource(SourceRef{Path: "docs/specs/repository_mapping.md", Label: "Repository Mapping"})
 	addSource(SourceRef{Path: "docs/specs/rules/stable/s_g_rule_repository_baseline.md", Label: "Global Rules"})
 
 	for _, doc := range docs {
@@ -60,76 +57,22 @@ func BuildSnapshot(repoRoot string) Snapshot {
 
 	builder.addNode(GraphNode{ID: "rule:baseline", Kind: "rule", Label: "Global Rules", Group: "rule", Source: ptr(SourceRef{Path: "docs/specs/rules/stable/s_g_rule_repository_baseline.md"})})
 
-	// Phase 1: Unit objects from mapping registry entries
+	// Phase 1: Build objects from filesystem spec files
+	// First collect all unit and rule objects from their spec file frontmatter
 	seenIDs := map[string]bool{}
-	for _, entry := range mapping.Registry {
-		if entry.Kind != "unit" || seenIDs["unit:"+entry.ID] {
-			continue
-		}
-		seenIDs["unit:"+entry.ID] = true
-
-		candPath := "docs/specs/units/candidate/c_unit_" + entry.ID + ".md"
-		stablePath := "docs/specs/units/stable/s_unit_" + entry.ID + ".md"
-
-		object := ObjectView{
-			ID:                  entry.ID,
-			Kind:                "unit",
-			Label:               entry.ID,
-			Responsibility:      entry.Responsibility,
-			HasCandidate:        docExists(docByPath, candPath),
-			HasStable:           docExists(docByPath, stablePath),
-			TruthPaths:          entry.SpecFiles,
-			ImplementationPaths: entry.ImplementationPaths,
-			Sources:             []SourceRef{{Path: "docs/specs/repository_mapping.md", Label: "Repository Mapping"}},
-		}
-		if object.HasCandidate {
-			object.Layer = "candidate"
-		} else if object.HasStable {
-			object.Layer = "stable"
-		}
-
-		for _, truth := range object.TruthPaths {
-			doc, ok := docByPath[truth.Path]
-			if !ok {
-				continue
-			}
-			if object.Version == "" {
-				object.Version = doc.Frontmatter.Scalars["version"]
-			}
-			object.RuleRefs = appendUnique(object.RuleRefs, extractRuleIDsFromFrontmatter(doc.Frontmatter)...)
-			object.UnitRefs = appendUnique(object.UnitRefs, extractUnitIDsFromFrontmatter(doc.Frontmatter)...)
-		}
-		sort.Strings(object.RuleRefs)
-		sort.Strings(object.UnitRefs)
-
-		snapshot.Objects = append(snapshot.Objects, object)
-		snapshot.Project.UnitCount++
-	}
-
-	// Phase 2: Rule objects from mapping + doc frontmatter
-	sharedObjects := buildSharedObjects(mapping, docs)
-	snapshot.Project.RuleCount = len(sharedObjects)
-	for _, object := range sharedObjects {
-		seenIDs[object.Kind+":"+object.ID] = true
-		snapshot.Objects = append(snapshot.Objects, object)
-	}
-
-	// Phase 3: Unmapped filesystem objects (spec files not covered by mapping or shared rules)
-	// Collect all doc references per object, then build with layer info from file paths
-	type docRef struct {
-		title string
-		path  string
-		isCand bool
-		isStable bool
-		doc    markdownDoc
-	}
-	unmappedDocs := map[string]*struct {
+	docSets := map[string]*struct {
 		Kind   string
 		Doc    markdownDoc
-		Refs   []docRef
+		Refs   []struct {
+			title string
+			path  string
+			isCand bool
+			isStable bool
+			doc    markdownDoc
+		}
 	}{}
 	for _, doc := range docs {
-		if isAppendixPath(doc.RelPath) || doc.RelPath == "docs/specs/repository_mapping.md" {
+		if isAppendixPath(doc.RelPath) {
 			continue
 		}
 		id := ""
@@ -145,20 +88,29 @@ func BuildSnapshot(repoRoot string) Snapshot {
 		if kind == "" || id == "" {
 			continue
 		}
-		if seenIDs[kind+":"+id] {
-			continue
-		}
 		isCand := strings.Contains(doc.RelPath, "/candidate/")
 		isStable := strings.Contains(doc.RelPath, "/stable/")
 		key := kind + ":" + id
-		if _, ok := unmappedDocs[key]; !ok {
-			unmappedDocs[key] = &struct {
+		if _, ok := docSets[key]; !ok {
+			docSets[key] = &struct {
 				Kind   string
 				Doc    markdownDoc
-				Refs   []docRef
+				Refs   []struct {
+					title string
+					path  string
+					isCand bool
+					isStable bool
+					doc    markdownDoc
+				}
 			}{Kind: kind, Doc: doc}
 		}
-		unmappedDocs[key].Refs = append(unmappedDocs[key].Refs, docRef{
+		docSets[key].Refs = append(docSets[key].Refs, struct {
+			title string
+			path  string
+			isCand bool
+			isStable bool
+			doc    markdownDoc
+		}{
 			title:    doc.Title,
 			path:     doc.RelPath,
 			isCand:   isCand,
@@ -166,7 +118,7 @@ func BuildSnapshot(repoRoot string) Snapshot {
 			doc:      doc,
 		})
 	}
-	for key, ud := range unmappedDocs {
+	for key, ds := range docSets {
 		parts := strings.SplitN(key, ":", 2)
 		kind := parts[0]
 		id := parts[1]
@@ -177,7 +129,7 @@ func BuildSnapshot(repoRoot string) Snapshot {
 			Kind:  kind,
 			Label: id,
 		}
-		for _, ref := range ud.Refs {
+		for _, ref := range ds.Refs {
 			if ref.isCand {
 				object.HasCandidate = true
 			}
@@ -192,15 +144,17 @@ func BuildSnapshot(repoRoot string) Snapshot {
 		} else if object.HasStable {
 			object.Layer = "stable"
 		}
-		object.Version = ud.Doc.Frontmatter.Scalars["version"]
-		object.RuleRefs = extractRuleIDsFromFrontmatter(ud.Doc.Frontmatter)
-		object.UnitRefs = extractUnitIDsFromFrontmatter(ud.Doc.Frontmatter)
+		object.Version = ds.Doc.Frontmatter.Scalars["version"]
+		object.RuleRefs = extractRuleIDsFromFrontmatter(ds.Doc.Frontmatter)
+		object.UnitRefs = extractUnitIDsFromFrontmatter(ds.Doc.Frontmatter)
 		sort.Strings(object.RuleRefs)
 		sort.Strings(object.UnitRefs)
 
 		snapshot.Objects = append(snapshot.Objects, object)
 		if kind == "unit" {
 			snapshot.Project.UnitCount++
+		} else if kind == "rule" {
+			snapshot.Project.RuleCount++
 		}
 	}
 
@@ -292,7 +246,7 @@ func BuildSnapshot(repoRoot string) Snapshot {
 	}
 
 	snapshot.Project.TruthFileCount = len(docs)
-	snapshot.Registry = buildRegistryItems(repoRoot, mapping, docs, snapshot.Objects)
+	snapshot.Registry = buildRegistryItems(docs, snapshot.Objects)
 	snapshot.Nodes = builder.nodes()
 	snapshot.Edges = builder.edges()
 	snapshot.Sources = sortedSources(sourceSet)
@@ -472,74 +426,8 @@ func boundObjectsByRuleID(objects []ObjectView) map[string][]string {
 	return result
 }
 
-func buildSharedObjects(mapping repositoryMapping, docs []markdownDoc) []ObjectView {
-	objects := map[string]ObjectView{}
-	for id, shared := range mapping.Rules {
-		objects[id] = ObjectView{
-			ID:             id,
-			Kind:           "rule",
-			Label:          id,
-			Responsibility: shared.Responsibility,
-			TruthPaths:     shared.TruthPaths,
-			Sources:        append([]SourceRef{{Path: "docs/specs/repository_mapping.md", Label: "Repository Mapping"}}, shared.TruthPaths...),
-		}
-	}
-	for _, doc := range docs {
-		id := doc.Frontmatter.Scalars["rule_id"]
-		if id == "" || strings.HasPrefix(id, "g_rule_") {
-			continue
-		}
-		object := objects[id]
-		object.ID = id
-		object.Kind = "rule"
-		object.Label = id
-		object.Layer = doc.Frontmatter.Scalars["layer"]
-		object.Version = doc.Frontmatter.Scalars["rule_version"]
-		object.HasCandidate = strings.Contains(doc.RelPath, "/candidate/")
-		object.HasStable = strings.Contains(doc.RelPath, "/stable/")
-		object.TruthPaths = appendSourceUnique(object.TruthPaths, SourceRef{Path: doc.RelPath, Label: doc.Title})
-		object.Sources = appendSourceUnique(object.Sources, SourceRef{Path: doc.RelPath, Label: doc.Title})
-		objects[id] = object
-	}
-	result := make([]ObjectView, 0, len(objects))
-	for _, object := range objects {
-		result = append(result, object)
-	}
-	sortObjects(result)
-	return result
-}
-
-func buildRegistryItems(repoRoot string, mapping repositoryMapping, docs []markdownDoc, objects []ObjectView) []RegistryItem {
+func buildRegistryItems(docs []markdownDoc, objects []ObjectView) []RegistryItem {
 	items := map[string]*RegistryItem{}
-	ensure := func(kind, id string) *RegistryItem {
-		key := kind + ":" + id
-		if item, ok := items[key]; ok {
-			return item
-		}
-		item := &RegistryItem{ID: id, Kind: kind, Label: id}
-		items[key] = item
-		return item
-	}
-
-	for _, entry := range mapping.Registry {
-		item := ensure(entry.Kind, entry.ID)
-		item.RuleScope = inferredRuleScope(entry.ID, "")
-		item.RegistrationState = entry.RegistrationState
-		item.MappingRegistered = true
-		item.MappingSource = ptr(entry.Source)
-		item.TruthSources = appendSourceUnique(item.TruthSources, entry.SpecFiles...)
-		item.ImplementationPaths = appendSourceUnique(item.ImplementationPaths, entry.ImplementationPaths...)
-		item.ImplementationRegistered = len(item.ImplementationPaths) > 0
-		item.Sources = appendSourceUnique(item.Sources, entry.Source)
-		item.Sources = appendSourceUnique(item.Sources, entry.SpecFiles...)
-		if entry.RegistrationState == "landed" {
-			for _, implementationPath := range entry.ImplementationPaths {
-				if !registeredImplementationPathExists(repoRoot, implementationPath.Path) {
-					item.Issues = appendUnique(item.Issues, "missing implementation path: "+implementationPath.Path)
-				}
-			}
-		}
-	}
 
 	for _, doc := range docs {
 		if isAppendixPath(doc.RelPath) {
@@ -558,18 +446,15 @@ func buildRegistryItems(repoRoot string, mapping repositoryMapping, docs []markd
 		if kind == "" || id == "" {
 			continue
 		}
-		item, exists := items[kind+":"+id]
+		key := kind + ":" + id
+		item, exists := items[key]
 		if !exists {
-			continue
+			item = &RegistryItem{ID: id, Kind: kind, Label: id}
+			items[key] = item
 		}
 		ref := SourceRef{Path: doc.RelPath, Label: doc.Title}
-		if !item.MappingRegistered {
-			item.TruthSources = appendSourceUnique(item.TruthSources, ref)
-			item.Sources = appendSourceUnique(item.Sources, ref)
-		}
-		if sourceListContainsPath(item.TruthSources, doc.RelPath) {
-			item.TruthRegistered = true
-		}
+		item.TruthSources = appendSourceUnique(item.TruthSources, ref)
+		item.Sources = appendSourceUnique(item.Sources, ref)
 		switch kind {
 		case "unit":
 			item.RuleRefs = appendUnique(item.RuleRefs, extractRuleIDsFromFrontmatter(doc.Frontmatter)...)
@@ -583,7 +468,6 @@ func buildRegistryItems(repoRoot string, mapping repositoryMapping, docs []markd
 	for _, item := range items {
 		item.RuleRefs = sortedStrings(item.RuleRefs)
 		item.UnitRefs = sortedStrings(item.UnitRefs)
-		item.Result = registryItemResult(item)
 		result = append(result, *item)
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -593,39 +477,6 @@ func buildRegistryItems(repoRoot string, mapping repositoryMapping, docs []markd
 		return result[i].ID < result[j].ID
 	})
 	return result
-}
-
-func registryItemResult(item *RegistryItem) string {
-	if !item.MappingRegistered && item.TruthRegistered {
-		return "unregistered_file"
-	}
-	if item.MappingRegistered {
-		if item.RegistrationState == "landed" && item.ImplementationRegistered {
-			return "landed"
-		}
-		if item.RegistrationState == "planned" {
-			return "planned"
-		}
-	}
-	return "missing_file"
-}
-
-func registeredImplementationPathExists(repoRoot, relPath string) bool {
-	relPath = strings.TrimSpace(filepath.ToSlash(relPath))
-	if relPath == "" || relPath == "none" {
-		return false
-	}
-	if strings.HasSuffix(relPath, "/**") {
-		base := strings.TrimSuffix(relPath, "/**")
-		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(base)))
-		return err == nil && info.IsDir()
-	}
-	if strings.ContainsAny(relPath, "*?[") {
-		matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
-		return err == nil && len(matches) > 0
-	}
-	_, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
-	return err == nil
 }
 
 func sourceListContainsPath(refs []SourceRef, relPath string) bool {
@@ -762,9 +613,6 @@ func normalizeSnapshotSlices(snapshot *Snapshot) {
 		item := &snapshot.Registry[idx]
 		if item.TruthSources == nil {
 			item.TruthSources = []SourceRef{}
-		}
-		if item.ImplementationPaths == nil {
-			item.ImplementationPaths = []SourceRef{}
 		}
 		if item.RuleRefs == nil {
 			item.RuleRefs = []string{}

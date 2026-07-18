@@ -1,6 +1,6 @@
 # Impact Sync
 
-Impact sync reconciles downstream units after unit, rule, global rule, or repository mapping truth changes.
+Impact sync reconciles downstream units after unit, rule, or global rule truth changes.
 
 It owns consumer discovery and freshness classification for affected units.
 
@@ -11,7 +11,7 @@ Run impact sync when:
 1. a stable unit version changes and another current-layer unit references the prior version.
 2. a rule is created, changed, promoted, retired, renamed, merged, split, or rebound.
 3. a stable global rule changes or gains an explicit exception.
-4. repository mapping changes path ownership, object registration, implementation path registration, or support-surface boundaries used by current truth.
+4. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter.
 5. a governance flow cannot prove that downstream unit truth remains current.
 
 ## Inputs
@@ -19,16 +19,15 @@ Run impact sync when:
 Use the smallest durable truth that can prove affected consumers:
 
 1. changed rule or global rule truth.
-2. changed repository mapping entries.
-3. promoted stable unit reference and release version.
-4. current-layer unit frontmatter and dependency fields.
+2. promoted stable unit reference and release version.
+3. current-layer unit frontmatter and dependency fields.
 
 
 Do not infer consumers from implementation directories alone.
 
 ## Consumer Discovery
 
-When `impact_sync` is called from `rule_sync` via the Rule Sync Handoff path (see below), it must accept the pre-computed affected-unit set as authoritative. The handoff input fields are: `invalidating_rule_refs` (rule refs whose truth changed), `affected_candidate_units` (candidate-layer unit names with invalidated evidence), `affected_stable_units` (stable-layer unit names with invalidated evidence), and `stable_landing_exceptions` (stable units that are landing targets and excluded from invalidation). `impact_sync` must not re-derive consumers from `rule_refs` in that case, because `rule_sync` already computed the affected set from the execution-local inputs that the caller proved. Independent consumer re-derivation is required only when `impact_sync` is triggered directly by a non-rule change (repository mapping update, stable unit version change, or governance-flow fallback).
+When `impact_sync` is called from `rule_sync` via the Rule Sync Handoff path (see below), it must accept the pre-computed affected-unit set as authoritative. The handoff input fields are: `invalidating_rule_refs` (rule refs whose truth changed), `affected_candidate_units` (candidate-layer unit names with invalidated evidence), `affected_stable_units` (stable-layer unit names with invalidated evidence), and `stable_landing_exceptions` (stable units that are landing targets and excluded from invalidation). `impact_sync` must not re-derive consumers from `rule_refs` in that case, because `rule_sync` already computed the affected set from the execution-local inputs that the caller proved. Independent consumer re-derivation is required only when `impact_sync` is triggered directly by a non-rule change (stable unit version change or governance-flow fallback).
 
 Rule consumers are derived from current-layer unit frontmatter:
 
@@ -38,7 +37,7 @@ Rule consumers are derived from current-layer unit frontmatter:
 
 Stable unit dependency consumers are derived from current-layer dependency fields and release-version references.
 
-Repository mapping consumers are derived from object, implementation path, and support-surface registrations that overlap the changed mapping entry.
+
 
 ## Fallback Reason Classification
 

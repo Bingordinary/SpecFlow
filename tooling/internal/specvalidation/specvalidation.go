@@ -1,13 +1,12 @@
 // Package specvalidation validates candidate spec structure.
-// It implements the 7 checks derived from the old unit_check lifecycle:
+// It implements checks derived from the unit_check lifecycle:
 //
 //  1. Frontmatter completeness
 //  2. Acceptance items format
 //  3. Anchor integrity (affects.files paths exist)
 //  4. Reference integrity (unit_refs/rule_refs files exist)
 //  5. Appendix files exist
-//  6. Repository mapping entry
-//  7. Version/ref consistency
+//  6. Version/ref consistency
 package specvalidation
 
 import (
@@ -57,7 +56,6 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkAnchors(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkReferences(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
-	r.Checks = append(r.Checks, checkRepositoryMapping(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkVersionConsistency(repoRoot, unitName))
 
 	r.Passed = true

@@ -243,7 +243,7 @@ The compatibility check may judge only:
 
 1. required file presence for current project-instance entry points
 2. required section, table, field, frontmatter, and binding shape
-3. agreement between project-instance object references and the layout-selected repository mapping file and current framework path rules
+3. agreement between project-instance object references and current framework path rules
 4. appendix frontmatter and path agreement for owner, layer, and file-prefix shape, without judging the appendix's business content
 
 The compatibility check must not judge:
@@ -256,7 +256,7 @@ The compatibility check must not judge:
 
 If the project-instance compatibility check finds old file shape, missing required references, or invalid binding format, it is a `spec_flow_review` finding because the framework cannot safely operate on the current project instance.
 If the compatibility check finds an appendix whose owner, layer, or path prefix disagrees with the current framework path rules, it is a `spec_flow_review` finding because current framework commands cannot safely consume that project instance.
-If the discovered concern is only about the truth content being wrong, incomplete, or undesirable as business truth, report that it is outside this check and route it to the owning command, repository-mapping flow, or design review.
+If the discovered concern is only about the truth content being wrong, incomplete, or undesirable as business truth, report that it is outside this check and route it to the owning command or design review.
 
 ### 2.11 Project-Instance Migration Closure
 
@@ -397,7 +397,6 @@ The default scope includes:
    - `<framework-root>/concepts.md`
    - `<framework-root>/guidance/*/SKILL.md`
 4. template-side project-instance bootstrap contracts
-   - `<template-root>/docs/specs/repository_mapping.md`
    - `<template-root>/docs/specs/rules/stable/s_g_rule_repository_baseline.md`
 5. tooling contract and tooling source
    - `<framework-root>/tooling_execution_policy.md`
@@ -412,19 +411,18 @@ Default scope excludes project-instance truth files under `docs/specs/` from bus
 
 Files excluded from business-truth review include:
 
-1. `docs/specs/repository_mapping.md`
-2. `docs/specs/rules/stable/s_g_rule_repository_baseline.md`
-3. `docs/specs/units/**`
-4. `docs/specs/rules/**`
-5. `docs/specs/_governance_review/**`
+1. `docs/specs/rules/stable/s_g_rule_repository_baseline.md`
+2. `docs/specs/units/**`
+3. `docs/specs/rules/**`
+4. `docs/specs/_governance_review/**`
 
-Those files may be reviewed for business-truth correctness only when the user explicitly narrows `spec_flow_review` to project-instance state, or when a command, repository-mapping flow, or rule-governance flow consumes them under its own policy.
+Those files may be reviewed for business-truth correctness only when the user explicitly narrows `spec_flow_review` to project-instance state, or when a command or rule-governance flow consumes them under its own policy.
 
 Default full-scope `spec_flow_review` must still perform the compatibility check from Section 2.10.
 This check is narrow and does not turn `docs/specs/` into default business-truth review scope.
 
 Compatibility input is template bootstrap compatibility under `<template-root>/docs/specs/**`.
-It must not require real project-instance `docs/specs/repository_mapping.md` or project truth files.
+It must not require real project-instance project truth files.
 
 `docs/specs/_governance_review/**` is not part of the compatibility input fingerprint.
 The active full-scope run-state file is governed by the run-state procedure in Section 6, because including that file in its own slice fingerprint would create self-referential stale state.
@@ -435,7 +433,7 @@ Default scope must explicitly cover:
 2. the rule-governance rule set — at minimum `rule_validate_checklist.md`, `rule_verify_checklist.md`, and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected content), rule-governance files, and review policy files
-5. the project-instance compatibility check — at minimum the layout-selected repository mapping, global rule, and formal truth compatibility inputs, limited by Section 2.10
+5. the project-instance compatibility check — at minimum the layout-selected global rule and formal truth compatibility inputs, limited by Section 2.10
 6. the project-instance migration flow — at minimum `operations/migration.md`
 
 If any one of those six coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
@@ -466,7 +464,7 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies the three commands (next, review, promote) have defined input, output, and failure behavior per Section 2.4
    - verifies project-instance migration routing and guidance entry behavior
 4. `truth_and_implementation_gates`
-   - reviews `spec_writing_guide.md`, `core/repository_mapping.md`, and `concepts.md`
+   - reviews `spec_writing_guide.md` and `concepts.md`
    - verifies truth ownership and candidate entry rules
 5. `shared_governance`
    - reviews `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md`
@@ -476,9 +474,9 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies impact handling and governance-review run-state boundaries
 7. `project_instance_contract_compatibility`
    - reviews the current project-instance files under `docs/specs/` only for format and contract compatibility with current framework rules
-   - reviews `core/repository_mapping.md` and `spec_writing_guide.md` as the owner contracts for object family, reference format, and rule binding format
+   - reviews `spec_writing_guide.md` as the owner contract for object family, reference format, and rule binding format
    - reviews `operations/migration.md` as the migration owner for project-instance shape drift discovered by this slice
-   - verifies repository mapping shape, appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
+   - verifies appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`
     - reviews hook configuration files: `specflow/hooks/hooks.json`
@@ -501,7 +499,7 @@ Cross-convergence slices review whether locally correct rules still compose into
 1. `command_to_process_convergence`
    - verifies the three commands (next, review, promote) converge with process closure rules from Section 2.3
 2. `truth_to_implementation_convergence`
-   - verifies truth writeback, repository mapping, implementation gates, and candidate entry rules converge
+   - verifies truth writeback, implementation gates, and candidate entry rules converge
 3. `shared_to_impact_convergence`
    - verifies rule-governance changes correctly converge with impact reconciliation
 4. `hook_to_review_convergence`

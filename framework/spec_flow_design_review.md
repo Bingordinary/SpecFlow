@@ -45,7 +45,6 @@ That default scope includes:
    - `governance/review_scope.md`
    - `concepts.md`
    - `operations/migration.md`
-   - `core/repository_mapping.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
     - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline
@@ -74,7 +73,6 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `governance/review_scope.md`
    - `concepts.md`
    - `operations/migration.md`
-   - `core/repository_mapping.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
     - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline

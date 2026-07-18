@@ -18,7 +18,7 @@ The output is a discussion-stage scope decision. It becomes durable only after c
 3. Identify whether the first useful proof is a local capability result, a trigger-to-outcome flow, a rule, a stable g_ rule, or a structure/ownership decision.
 4. Recommend the smallest version that can prove the user-facing goal.
 5. State what is explicitly out of scope for this round.
-6. If multiple formal owners are plausible, stop and route through repository mapping or the relevant specFlow boundary rule instead of guessing.
+6. If multiple formal owners are plausible, stop and route through the relevant specFlow boundary rule instead of guessing.
 7. Do not ask the user to choose an internal owner name when the real missing input is the desired outcome, local boundary, or success criterion.
 
 ## Output Shape

@@ -54,7 +54,6 @@ func TestInitCreatesValidRunState(t *testing.T) {
 
 	for _, input := range []string{
 		"framework/core/object_model.md",
-		"framework/core/repository_mapping.md",
 		"framework/spec_writing_guide.md",
 		"framework/concepts.md",
 	} {
@@ -123,7 +122,6 @@ func TestInitCreatesSourceRepoRunState(t *testing.T) {
 	}
 	for _, input := range []string{
 		"framework/core/object_model.md",
-		"framework/core/repository_mapping.md",
 		"framework/spec_writing_guide.md",
 	} {
 		if !containsString(compatSlice.InputFiles, input) {
@@ -754,7 +752,7 @@ func TestRefreshMarksTruthGateStaleWhenImplementationGateChanges(t *testing.T) {
 	setSliceStatus(t, &state, "truth_and_implementation_gates", slicePassed)
 	setSliceStatus(t, &state, "truth_to_implementation_convergence", slicePassed)
 	mustWrite(t, file, renderState(mustConfig(t, FlowSpecFlowReview), state))
-	mustWrite(t, filepath.Join(repoRoot, "framework/core/repository_mapping.md"), "# repository mapping changed\n")
+	mustWrite(t, filepath.Join(repoRoot, "framework/core/object_model.md"), "# object model changed\n")
 
 	result, err := Refresh(repoRoot, FlowSpecFlowReview, file, now.Add(time.Hour))
 	if err != nil {
@@ -901,24 +899,14 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	}
 	for _, input := range []string{
 		"framework/core/object_model.md",
-		"framework/core/repository_mapping.md",
 		"framework/spec_writing_guide.md",
 	} {
 		if !containsString(slice.InputFiles, input) {
 			t.Fatalf("expected project compatibility contract input %s, got %+v", input, slice.InputFiles)
 		}
 	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/repository_mapping.md") {
-		t.Fatalf("expected repository mapping input, got %+v", slice.InputFiles)
-	}
 	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md") {
 		t.Fatalf("expected global rules input, got %+v", slice.InputFiles)
-	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/repository_mapping.md") {
-		t.Fatalf("expected repository mapping template input, got %+v", slice.InputFiles)
-	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md") {
-		t.Fatalf("expected global rule template input, got %+v", slice.InputFiles)
 	}
 	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/c_unit_demo.md") {
 		t.Fatalf("expected current project truth file input, got %+v", slice.InputFiles)
@@ -1161,7 +1149,6 @@ func createReviewRunRepo(t *testing.T) string {
 	}
 	for _, relPath := range []string{
 		"framework/core/object_model.md",
-		"framework/core/repository_mapping.md",
 		"framework/rule_validate_checklist.md",
 		"framework/rule_verify_checklist.md",
 		"framework/rule_promote_workflow.md",
@@ -1186,7 +1173,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"templates/docs/specs/_stable_verify_result/README.md",
 		"templates/docs/specs/_governance_review/README.md",
 		"templates/docs/specs/_independent_evaluation/README.md",
-		"templates/docs/specs/repository_mapping.md",
 		"templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md",
 			"templates/docs/specs/units/candidate/c_unit_demo.md",
 		"templates/AGENTS.md",

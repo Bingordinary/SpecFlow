@@ -38,8 +38,7 @@ type Result struct {
 //  2. Validate frontmatter fields
 //  3. Validate acceptance items
 //  4. Find candidate appendix files
-//  5. Check repository_mapping.md entry
-//  6. Copy candidate files to stable
+//  5. Copy candidate files to stable
 func Promote(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -95,17 +94,6 @@ func Promote(repoRoot, unitName string) *Result {
 	for _, m := range matches {
 		rel, _ := filepath.Rel(repoRoot, m)
 		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", rel))
-	}
-
-	// Step 5: Check repository_mapping.md
-	mappingPath := filepath.Join(repoRoot, "docs/specs/repository_mapping.md")
-	if _, err := os.Stat(mappingPath); os.IsNotExist(err) {
-		r.Issues = append(r.Issues, "repository_mapping.md not found")
-	} else {
-		mappingData, _ := os.ReadFile(mappingPath)
-		if !strings.Contains(string(mappingData), unitName) {
-			r.Issues = append(r.Issues, fmt.Sprintf("Unit '%s' not found in repository_mapping.md", unitName))
-		}
 	}
 
 	if len(r.Issues) > 0 {

@@ -33,22 +33,6 @@ func createMinimalCandidate(t *testing.T, repoRoot, unitName string) string {
 	return path
 }
 
-// createRepositoryMapping writes a repository_mapping.md file containing a line
-// for unitName.
-func createRepositoryMapping(t *testing.T, repoRoot, unitName string) string {
-	t.Helper()
-	dir := filepath.Join(repoRoot, "docs/specs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "repository_mapping.md")
-	content := unitName + ": src/\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // writeCandidate writes arbitrary content as the candidate spec for unitName.
 func writeCandidate(t *testing.T, repoRoot, unitName, content string) {
 	t.Helper()
@@ -319,38 +303,7 @@ func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Check 6: Repository mapping
-// ---------------------------------------------------------------------------
-
-func TestCheckRepositoryMapping_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
-	createRepositoryMapping(t, repoRoot, "test_unit")
-	result := checkRepositoryMapping(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckRepositoryMapping_MissingFileFail(t *testing.T) {
-	repoRoot := t.TempDir()
-	// No repository_mapping.md at all
-	result := checkRepositoryMapping(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatal("expected FAIL for missing mapping file")
-	}
-}
-
-func TestCheckRepositoryMapping_UnitNotFoundFail(t *testing.T) {
-	repoRoot := t.TempDir()
-	createRepositoryMapping(t, repoRoot, "other_unit") // mapping has other_unit, not test_unit
-	result := checkRepositoryMapping(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatal("expected FAIL for unit not in mapping")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Check 7: Version consistency
+// Check 6: Version consistency
 // ---------------------------------------------------------------------------
 
 func TestCheckVersionConsistency_PassNoVersionRefs(t *testing.T) {
@@ -423,7 +376,6 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 			"    verification_method: review\n"+
 			"    pass_condition: ok\n"+
 			"    not_runnable_yet: no\n")
-	createRepositoryMapping(t, repoRoot, unitName)
 }
 
 func TestValidateCandidate_IntegrationPass(t *testing.T) {
@@ -439,8 +391,8 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 7 {
-		t.Fatalf("expected 7 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 6 {
+		t.Fatalf("expected 6 checks, got %d", len(result.Checks))
 	}
 }
 
@@ -468,7 +420,7 @@ func TestFormatResult_Output(t *testing.T) {
 		}
 	}
 
-	// Verify all 7 checks appear in output
+	// Verify all checks appear in output
 	for _, c := range result.Checks {
 		if !strings.Contains(output, c.Name) {
 			t.Fatalf("expected check name %q in output", c.Name)
@@ -476,32 +428,17 @@ func TestFormatResult_Output(t *testing.T) {
 	}
 }
 
-func TestValidateCandidate_FailOutput(t *testing.T) {
+func TestValidateCandidate_PassOutput(t *testing.T) {
 	repoRoot := t.TempDir()
-	// Full candidate but no repository mapping — check 6 will fail
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs: none\nrule_refs: none\n---\n"+
-			"acceptance_item_set:\n"+
-			"  - id: item_1\n"+
-			"    description: an item\n"+
-			"    verification_type: manual\n"+
-			"    verification_surface: docs/\n"+
-			"    implementation_surface: src/\n"+
-			"    verification_method: review\n"+
-			"    pass_condition: ok\n"+
-			"    not_runnable_yet: no\n")
+	createFullCandidate(t, repoRoot, "test_unit")
 
 	result := ValidateCandidate(repoRoot, "test_unit")
-	if result.Passed {
-		t.Fatal("expected FAIL for missing repository mapping")
+	if !result.Passed {
+		t.Fatal("expected PASS for valid full candidate")
 	}
 
 	output := FormatResult(result)
-	if !strings.Contains(output, "FAIL") {
-		t.Fatal("expected FAIL in output")
-	}
-	if !strings.Contains(output, "Repository mapping") {
-		t.Fatal("expected 'Repository mapping' in output")
+	if !strings.Contains(output, "PASS") {
+		t.Fatal("expected PASS in output")
 	}
 }

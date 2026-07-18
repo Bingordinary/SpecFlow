@@ -11,9 +11,7 @@ func TestCheckValidate(t *testing.T) {
 
 	// Create minimal candidate spec
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
 	os.MkdirAll(candidateDir, 0755)
-	os.MkdirAll(mappingDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "c_unit_test.md")
 	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
@@ -21,17 +19,7 @@ func TestCheckValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mappingPath := filepath.Join(mappingDir, "repository_mapping.md")
-	mappingContent := "test: src/\n"
-	if err := os.WriteFile(mappingPath, []byte(mappingContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	specHash, err := fileHash(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mappingHash, err := fileHash(mappingPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +28,7 @@ func TestCheckValidate(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:" + specHash + "\n  - path: docs/specs/repository_mapping.md\n    hash: sha256:" + mappingHash + "\n---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:" + specHash + "\n---\nAll checks passed.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,9 +46,7 @@ func TestCheckValidateStale(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
 	os.MkdirAll(candidateDir, 0755)
-	os.MkdirAll(mappingDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "c_unit_test.md")
 	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
@@ -68,17 +54,11 @@ func TestCheckValidateStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mappingPath := filepath.Join(mappingDir, "repository_mapping.md")
-	mappingContent := "test: src/\n"
-	if err := os.WriteFile(mappingPath, []byte(mappingContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Write cache with WRONG hash (deliberately stale)
-	staleCache := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n  - path: docs/specs/repository_mapping.md\n    hash: sha256:1111111111111111111111111111111111111111111111111111111111111111\n---\n"
+	staleCache := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(staleCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -136,9 +116,7 @@ func TestCheckValidateScoped(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
 	os.MkdirAll(candidateDir, 0755)
-	os.MkdirAll(mappingDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "c_unit_test.md")
 	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
@@ -146,20 +124,13 @@ func TestCheckValidateScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mappingPath := filepath.Join(mappingDir, "repository_mapping.md")
-	mappingContent := "test: src/\n"
-	if err := os.WriteFile(mappingPath, []byte(mappingContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	specHash, _ := fileHash(specPath)
-	mappingHash, _ := fileHash(mappingPath)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Scoped cache: pass but mode=scoped, scoped_check=1
-	cacheContent := "---\ncommand: validate\nunit: test\nmode: scoped\nscoped_check: \"1\"\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:" + specHash + "\n  - path: docs/specs/repository_mapping.md\n    hash: sha256:" + mappingHash + "\n---\nCheck 1 passed.\n"
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: scoped\nscoped_check: \"1\"\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/c_unit_test.md\n    hash: sha256:" + specHash + "\n---\nCheck 1 passed.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}

@@ -34,7 +34,6 @@ After hooks are up to date and binaries are current, check the following files a
 
 | Check | What to verify |
 |-------|---------------|
-| `docs/specs/repository_mapping.md` | Table header matches expected format. `kind` is `unit` or `rule`. `registration_state` is `planned` or `landed`. |
 | Candidate spec files | For each `docs/specs/units/candidate/c_unit_*.md`: `id`, `layer`, `version`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
 | Stable spec files | For each `docs/specs/units/stable/s_unit_*.md`: required frontmatter fields present. Compare against `spec_writing_guide.md`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/<prefix>_<unit>_<name>.md`. |

@@ -20,7 +20,6 @@ type UnitInfo struct {
 	Appendices     []string
 	RuleRefs       []string
 	RelatedUnits   []string
-	MappingPresent bool
 }
 
 // DiscoverUnit reads the file system to discover a unit's file state.
@@ -53,11 +52,6 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 	for _, m := range stableMatches {
 		rel, _ := filepath.Rel(repoRoot, m)
 		info.Appendices = append(info.Appendices, rel)
-	}
-
-	mappingPath := filepath.Join(repoRoot, "docs/specs/repository_mapping.md")
-	if _, err := os.Stat(mappingPath); err == nil {
-		info.MappingPresent = true
 	}
 
 	specPath, err := specpaths.ObjectMainSpecFileRef("unit", "candidate", unitName)
@@ -128,10 +122,6 @@ func FormatInfo(info *UnitInfo) string {
 		for _, u := range info.RelatedUnits {
 			fmt.Fprintf(&buf, "  - %s\n", u)
 		}
-	}
-
-	if !info.MappingPresent {
-		buf.WriteString("\nNote: repository_mapping.md not found\n")
 	}
 
 	return buf.String()

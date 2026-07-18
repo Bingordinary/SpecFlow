@@ -74,7 +74,6 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 	t.Helper()
 	for _, relPath := range []string{
 		"framework/core/object_model.md",
-		"framework/core/repository_mapping.md",
 		"framework/rule_validate_checklist.md",
 		"framework/rule_verify_checklist.md",
 		"framework/rule_promote_workflow.md",
@@ -108,7 +107,6 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"templates/docs/specs/_stable_verify_result/README.md",
 		"templates/docs/specs/_governance_review/README.md",
 		"templates/docs/specs/_independent_evaluation/README.md",
-		"templates/docs/specs/repository_mapping.md",
 		"templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",

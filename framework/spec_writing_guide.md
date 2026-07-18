@@ -115,7 +115,6 @@ When creating a new rule:
    - `unbound_retention_owner: <flow name>`
 8. If the bound shared rule has formal current consumers, remove any `unbound_retention` fields.
 9. Do not write consumer lists or `bound_objects` into the rule file.
-10. Update `docs/specs/repository_mapping.md` when the rule object map changes.
 
 ### 5.2 Rule Extraction (Unit → Rule)
 
@@ -278,13 +277,12 @@ Rule files must not store consumer lists. `bound_objects` is not the source of r
 ## 10. Dependency Order
 
 ```text
-repository_mapping → unit → rule
+unit → rule
 stable global rule → unit and rule
 rule → unit
 unit → unit through stable-only unit_refs
 ```
 
-1. repository mapping decides path ownership
-2. unit truth owns behavior responsibility
-3. rule truth owns reusable constraints
-4. unit-to-unit dependency is explicit and stable-only
+1. unit truth owns behavior responsibility
+2. rule truth owns reusable constraints
+3. unit-to-unit dependency is explicit and stable-only

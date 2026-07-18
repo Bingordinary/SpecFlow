@@ -76,7 +76,6 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
 	templateProjectInstanceFiles := []string{
-		scope.TemplatePath("docs/specs/repository_mapping.md"),
 		scope.TemplatePath("docs/specs/rules/stable/s_g_rule_repository_baseline.md"),
 	}
 	toolingContractFiles := []string{
@@ -166,7 +165,6 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
-		scope.FrameworkPath("core/repository_mapping.md"),
 		scope.FrameworkPath("operations/migration.md"),
 		scope.FrameworkPath("spec_writing_guide.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
@@ -196,7 +194,6 @@ func collectAgentOperabilityFiles(scope SpecFlowScope, guidanceSkillFiles, ruleF
 	files := []string{
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
-		scope.FrameworkPath("core/repository_mapping.md"),
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
 		scope.FrameworkPath("rule_validate_checklist.md"),

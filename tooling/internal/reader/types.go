@@ -14,7 +14,6 @@ type Snapshot struct {
 
 type ProjectInfo struct {
 	RepoRoot         string `json:"repo_root"`
-	MappingFile      string `json:"mapping_file"`
 	RuleBaselineFile string `json:"rule_baseline_file"`
 	UnitCount        int    `json:"unit_count"`
 	RuleCount        int    `json:"rule_count"`
@@ -38,22 +37,15 @@ type ObjectView struct {
 }
 
 type RegistryItem struct {
-	ID                       string      `json:"id"`
-	Kind                     string      `json:"kind"`
-	Label                    string      `json:"label"`
-	Result                   string      `json:"result"`
-	RuleScope                string      `json:"rule_scope,omitempty"`
-	RegistrationState        string      `json:"registration_state,omitempty"`
-	MappingRegistered        bool        `json:"mapping_registered"`
-	TruthRegistered          bool        `json:"truth_registered"`
-	ImplementationRegistered bool        `json:"implementation_registered"`
-	MappingSource            *SourceRef  `json:"mapping_source,omitempty"`
-	TruthSources             []SourceRef `json:"truth_sources"`
-	ImplementationPaths      []SourceRef `json:"implementation_paths"`
-	RuleRefs                 []string    `json:"rule_refs"`
-	UnitRefs                 []string    `json:"unit_refs"`
-	Issues                   []string    `json:"issues"`
-	Sources                  []SourceRef `json:"sources"`
+	ID             string      `json:"id"`
+	Kind           string      `json:"kind"`
+	Label          string      `json:"label"`
+	RuleScope      string      `json:"rule_scope,omitempty"`
+	TruthSources   []SourceRef `json:"truth_sources"`
+	RuleRefs       []string    `json:"rule_refs"`
+	UnitRefs       []string    `json:"unit_refs"`
+	Issues         []string    `json:"issues"`
+	Sources        []SourceRef `json:"sources"`
 }
 
 type GraphNode struct {

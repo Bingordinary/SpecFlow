@@ -108,21 +108,8 @@ Appendix content for test.
 		t.Fatal(err)
 	}
 
-	// Create repository_mapping.md
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
-	os.MkdirAll(mappingDir, 0755)
-	mappingContent := `| kind | id | registration_state | implementation_paths | spec_files | responsibility |
-|-----|----|-------------------|---------------------|------------|---------------|
-| unit | test_unit | planned | none | docs/specs/units/candidate/c_unit_test_unit.md | Test unit |
-`
-	mappingPath := filepath.Join(mappingDir, "repository_mapping.md")
-	if err := os.WriteFile(mappingPath, []byte(mappingContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
-	mappingHash := computeHash(mappingPath)
 	appendixHash := computeHash(appendixPath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
@@ -135,13 +122,11 @@ timestamp: "2026-06-30T10:00:00Z"
 files:
   - path: docs/specs/units/candidate/c_unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/repository_mapping.md
-    hash: sha256:%s
   - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
     hash: sha256:%s
 ---
 Validate passed.
-`, specHash, mappingHash, appendixHash)
+`, specHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -156,13 +141,11 @@ timestamp: "2026-06-30T11:00:00Z"
 files:
   - path: docs/specs/units/candidate/c_unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/repository_mapping.md
-    hash: sha256:%s
   - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
     hash: sha256:%s
 ---
 Verify passed.
-`, specHash, mappingHash, appendixHash)
+`, specHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -260,14 +243,6 @@ acceptance_item_set:
 `
 	specPath := filepath.Join(candidateDir, "c_unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create repository_mapping.md
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
-	os.MkdirAll(mappingDir, 0755)
-	mappingContent := "test_unit: src/\n"
-	if err := os.WriteFile(filepath.Join(mappingDir, "repository_mapping.md"), []byte(mappingContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 

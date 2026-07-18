@@ -36,15 +36,6 @@ rule_refs: none
 	os.WriteFile(filepath.Join(candidateDir, "c_unit_auth.md"), []byte(candidateContent), 0644)
 	os.WriteFile(filepath.Join(stableDir, "s_unit_auth.md"), []byte(stableContent), 0644)
 
-	// Create mapping for mapping-based discovery
-	mappingDir := filepath.Join(repoRoot, "docs/specs")
-	mappingContent := `## 2. Object Registry
-| kind | id | registration_state | implementation_paths | spec_files | responsibility |
-|------|----|-------------------|---------------------|------------|---------------|
-| unit | auth | planned | none | docs/specs/units/candidate/c_unit_auth.md | Auth unit |
-`
-	os.WriteFile(filepath.Join(mappingDir, "repository_mapping.md"), []byte(mappingContent), 0644)
-
 	snapshot := BuildSnapshot(repoRoot)
 
 	if len(snapshot.Objects) == 0 {
@@ -73,9 +64,6 @@ rule_refs: none
 
 	if snapshot.Project.UnitCount < 1 {
 		t.Error("expected UnitCount >= 1")
-	}
-	if snapshot.Project.MappingFile == "" {
-		t.Error("expected MappingFile to be set")
 	}
 }
 

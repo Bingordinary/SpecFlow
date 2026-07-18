@@ -4,11 +4,10 @@ This file defines the durable specFlow object model used by active entry files.
 
 ## Object Families
 
-specFlow has three formal object families:
+specFlow has two formal object families:
 
 1. `unit` - one independently governed engineering responsibility.
 2. `rule` - a reusable shared constraint.
-3. `repository_mapping` - the durable registry for path and object ownership.
 
 `scenario` is not a supported formal object type.
 
@@ -36,8 +35,6 @@ Rules carry rule_scope in frontmatter — `rule_scope: global` or `rule_scope: b
 
 Bound rule consumers are derived from current-layer unit `rule_refs`; rule files must not store consumer lists.
 
-## Repository Mapping
 
-`docs/specs/repository_mapping.md` maps formal objects to implementation paths and ownership responsibilities. Path ownership must be read from this file when it matters; agents must not infer ownership from directory shape alone.
 
 

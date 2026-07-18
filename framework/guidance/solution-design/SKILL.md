@@ -40,6 +40,6 @@ The design is still discussion-stage material. Only the approved direction writt
 ## Boundaries
 
 1. Do not preserve multiple unresolved options in candidate truth as if they were all current behavior.
-2. Do not choose a Rule, global rule, or repository mapping owner by directory shape alone.
+2. Do not choose a Rule or global rule owner by directory shape alone.
 3. Do not begin implementation from a selected option until formal truth writeback and the required command gates have passed.
 4. Do not ask the user to choose internal command names or object-family names when the design choice can be framed as a user-facing behavior, scope, or verification decision.

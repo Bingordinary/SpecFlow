@@ -33,7 +33,7 @@
 | row_id | status | score | evidence |
 |---|---|---|---|
 | q1 | completed | 4 | Mechanism solves real spec-implementation alignment problem in LLM-assisted development. Problem is explicit, not self-created. | framework/concepts.md, framework/spec_writing_guide.md |
-| q2 | completed | 4 | Unit/rule boundaries follow real work shape. Ownership is explicit via repository mapping. | framework/core/repository_mapping.md, framework/spec_writing_guide.md |
+| q2 | completed | 4 | Unit/rule boundaries follow real work shape. Ownership is derived from unit/rule frontmatter and filesystem paths. | framework/spec_writing_guide.md, framework/core/object_model.md |
 | q3 | completed | 4 | Process steps (next, validate, verify, promote) correspond to real information changes. Order reduces uncertainty. | framework/concepts.md |
 | q4 | completed | 3 | Promote-as-only-gate creates real downstream gain: no promotion without validated design and verified implementation. | framework/concepts.md |
 | q5 | completed | 3 | Design rewards real clarification and surfaces uncertainty. | framework/concepts.md, framework/spec_writing_guide.md |
@@ -58,7 +58,7 @@
 | Q | Score | Basis | Evidence |
 |---|---|---|---|
 | 1 | 4 | Mechanism solves real spec-implementation alignment. | framework/concepts.md |
-| 2 | 4 | Unit/rule boundaries follow real work. | framework/core/repository_mapping.md |
+| 2 | 4 | Unit/rule boundaries follow real work. | framework/spec_writing_guide.md, framework/core/object_model.md |
 | 3 | 4 | Process steps next→validate→verify→promote are necessary and ordered. | framework/concepts.md |
 | 4 | 3 | Promote gate creates real downstream gain. | framework/concepts.md |
 | 5 | 3 | Design rewards real clarification. | framework/concepts.md |

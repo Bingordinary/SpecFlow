@@ -134,7 +134,7 @@ It must not edit files, advance governance state, or store semantic conclusions 
    - check whether a file path may be written under current governance constraints
    - `validate write --path <path>` checks the executor's write permission for the given path
 16. `validate candidate --unit UNIT`
-   - validate candidate spec structure (7 checks: frontmatter, acceptance items, anchor integrity, references, appendices, repository mapping, version consistency)
+    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
 
 ## Reader Command Surface
 

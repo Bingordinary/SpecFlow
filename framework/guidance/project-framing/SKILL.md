@@ -17,7 +17,7 @@ The goal is to clarify the original problem, not to design implementation. The o
 2. Translate the user's wording into ordinary-language goal, actor, desired outcome, and success meaning before naming internal specFlow owners.
 3. Ask one focused question at a time when user intent cannot be discovered from repository truth.
    - phrase the question in user-goal language
-   - do not ask the user to choose `unit`, `rule`, stable `g_` rule, or `repository_mapping`
+   - do not ask the user to choose `unit`, `rule`, or stable `g_` rule
 4. Clarify these minimum facts:
    - target user or actor
    - problem or need
@@ -42,5 +42,5 @@ Report the framing result in plain language:
 ## Boundaries
 
 1. Do not keep confirmed behavior only in chat once it will constrain implementation.
-2. Do not create a new unit by naming alone; repository mapping and governance routing still decide formal ownership.
+2. Do not create a new unit by naming alone; governance routing still decides formal ownership.
 3. Do not write implementation plans from this skill.

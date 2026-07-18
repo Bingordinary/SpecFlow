@@ -20,11 +20,6 @@ func specPath(repoRoot, unitName string) string {
 	return filepath.Join(repoRoot, ref)
 }
 
-// mappingPath is a shorthand for the repository mapping file path.
-func mappingPath(repoRoot string) string {
-	return filepath.Join(repoRoot, specpaths.RepositoryMappingFileRef)
-}
-
 // ------------------------------------------------------------
 // Check 1: Frontmatter completeness
 // ------------------------------------------------------------
@@ -385,34 +380,7 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 6: Repository mapping entry
-// ------------------------------------------------------------
-func checkRepositoryMapping(repoRoot, unitName string) CheckResult {
-	mp := mappingPath(repoRoot)
-
-	data, err := os.ReadFile(mp)
-	if err != nil {
-		return CheckResult{
-			Name:    "Repository mapping",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot read repository_mapping.md: %v", err),
-		}
-	}
-
-	content := string(data)
-	if !strings.Contains(content, unitName) {
-		return CheckResult{
-			Name:    "Repository mapping",
-			Status:  Fail,
-			Details: fmt.Sprintf("unit %q not found in repository_mapping.md", unitName),
-		}
-	}
-
-	return CheckResult{Name: "Repository mapping", Status: Pass}
-}
-
-// ------------------------------------------------------------
-// Check 7: Version/ref consistency
+// Check 6: Version/ref consistency
 // ------------------------------------------------------------
 func checkVersionConsistency(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)

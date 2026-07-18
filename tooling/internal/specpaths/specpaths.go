@@ -8,7 +8,6 @@ const (
 	StableDir                = ModulesRootDir + "/stable"
 	CandidateAppendixDir     = CandidateDir + "/appendix"
 	StableAppendixDir        = StableDir + "/appendix"
-	RepositoryMappingFileRef = "docs/specs/repository_mapping.md"
 )
 
 func MainSpecFileRef(layer, unit string) (string, error) {

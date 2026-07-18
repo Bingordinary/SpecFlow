@@ -91,9 +91,9 @@ const TRANSLATIONS = {
         nav: "对象"
       },
       registry: {
-        title: "结构映射",
-        summary: "查看 unit 和 rule 是否已经写入 repository_mapping，以及 unit 有没有可用实施路径。",
-        nav: "映射结果"
+        title: "结构登记",
+        summary: "查看已从 Spec 文件发现的 unit 和 rule 对象及其引用关系。",
+        nav: "结构登记"
       }
     },
 
@@ -124,21 +124,9 @@ const TRANSLATIONS = {
     },
 
     registry: {
-      boardHeading: "结构映射面板",
-      boardDescription: "查看每个对象是否已经写入 repository_mapping，以及是否已经声明实施路径，避免执行时才发现映射缺口。",
-      knownUnits: "已知单元",
-      missingMapping: "未写入 repository_mapping",
-      mappedWithoutPath: "已映射但无实施路径",
-      mappedWithPath: "已映射且有实施路径",
-      missingMappingHeading: "未写入 repository_mapping",
-      missingMappingDescription: "这些对象已经出现在状态或 Spec 文件里，但还没有进入项目结构映射，执行前需要先补清归属。",
-      mappedNoPathHeading: "已映射，但没有可用实施路径",
-      mappedNoPathDescription: "这些对象已经进入项目结构映射，但还没有声明实施路径，或者声明的路径在当前仓库里不存在。",
-      mappedWithPathHeading: "已映射，且已有实施路径",
-      mappedWithPathDescription: "这些对象已经进入项目结构映射，并且有可用实施路径。",
-      result: "映射状态",
-      mapping: "repository_mapping",
-      status: "状态登记",
+      boardHeading: "结构登记面板",
+      boardDescription: "查看每个从 Spec 文件发现的 unit 和 rule 对象。",
+      result: "来源",
       truth: "Spec 文档",
       implementation: "实施路径",
       objectLabel: "对象",
@@ -176,8 +164,7 @@ const TRANSLATIONS = {
       noPlanned: "没有已映射但无实施路径的对象。",
       noLanded: "没有已映射且有实施路径的对象。",
       noProblems: "没有映射问题。",
-      unmappedAttention: "未进入 repository_mapping",
-      mappedAttention: "已纳入 repository_mapping",
+
       ruleScope: {
         global: "全局规则",
         bound: "绑定规则",
@@ -308,7 +295,7 @@ const TRANSLATIONS = {
       project_root: "仓库目录",
       project_path: "路径",
       project_area: "实现区域",
-      repository_mapping: "项目结构文件",
+
       status_index: "状态索引",
       rule: "全局规则",
       truth_file: "Spec 文档"
@@ -379,15 +366,14 @@ const TRANSLATIONS = {
       },
       specflow: {
         title: "SpecFlow",
-        summary: "Shows governance layers: how global rules, repository mapping, status index, rules, units, and Spec documents are organized.",
+        summary: "Shows governance layers: how global rules, status index, rules, units, and Spec documents are organized.",
         nav: "Objects"
       },
       registry: {
-        title: "Structure Mapping",
-        summary: "Shows whether units and rules are recorded in repository_mapping and whether units have usable implementation paths.",
-        nav: "Mapping results"
-      }
-    },
+        title: "Object Registry",
+        summary: "Shows units and rules discovered from Spec files and their reference relationships.",
+        nav: "Registry"
+      },
 
     counts: {
       unit: "{count} units",
@@ -416,21 +402,9 @@ const TRANSLATIONS = {
     },
 
     registry: {
-      boardHeading: "Structure Mapping Panel",
-      boardDescription: "Shows whether each object is recorded in repository_mapping and whether it already declares implementation paths, so mapping gaps are visible before execution.",
-      knownUnits: "Known units",
-      missingMapping: "Not in repository_mapping",
-      mappedWithoutPath: "Mapped without paths",
-      mappedWithPath: "Mapped with paths",
-      missingMappingHeading: "Not in repository_mapping",
-      missingMappingDescription: "These objects appear in status or Spec files, but are not recorded in repository_mapping yet. Their ownership should be clarified before execution.",
-      mappedNoPathHeading: "Mapped, but no usable implementation path",
-      mappedNoPathDescription: "These objects are recorded in repository_mapping, but either have no implementation path or point to a path that does not exist in this repository.",
-      mappedWithPathHeading: "Mapped with implementation paths",
-      mappedWithPathDescription: "These objects are recorded in repository_mapping and have usable implementation paths.",
-      result: "Mapping state",
-      mapping: "repository_mapping",
-      status: "Status registration",
+      boardHeading: "Object Registry",
+      boardDescription: "Shows each unit and rule object discovered from Spec files.",
+      result: "Source",
       truth: "Spec files",
       implementation: "Implementation paths",
       objectLabel: "Object",
@@ -468,8 +442,7 @@ const TRANSLATIONS = {
       noPlanned: "No mapped objects without implementation paths.",
       noLanded: "No mapped objects with implementation paths.",
       noProblems: "No mapping problems.",
-      unmappedAttention: "Not in repository_mapping",
-      mappedAttention: "In repository_mapping",
+
       ruleScope: {
         global: "Global rule",
         bound: "Bound rule",
@@ -600,7 +573,7 @@ const TRANSLATIONS = {
       project_root: "Repository directory",
       project_path: "Path",
       project_area: "Implementation area",
-      repository_mapping: "Repository mapping file",
+
       status_index: "Status index",
       rule: "Global rules",
       truth_file: "Spec document"
@@ -1329,9 +1302,7 @@ function graphForSpecflowView() {
   };
 
   addNode({ id: "rule:baseline", kind: "rule", label: t("kind.rule"), group: "rule", source: { path: snapshot.project.rule_baseline_file } });
-  addNode({ id: "support:repository_mapping", kind: "repository_mapping", label: t("kind.repository_mapping"), group: "support", source: { path: snapshot.project.mapping_file } });
   addNode({ id: "support:status", kind: "status_index", label: t("kind.status_index"), group: "support", source: { path: snapshot.project.status_file } });
-  addEdge({ id: "rule:baseline->support:repository_mapping", from: "rule:baseline", to: "support:repository_mapping", kind: "constrains", label: "constrains", source: { path: snapshot.project.rule_baseline_file } });
 
   list(snapshot.objects).forEach((object) => {
     const objectID = objectNodeID(object);
@@ -1342,7 +1313,6 @@ function graphForSpecflowView() {
       group: object.kind === "rule" ? "rule" : object.kind,
       source: firstSourceRef(object.sources)
     });
-    addEdge({ id: `support:repository_mapping->${objectID}`, from: "support:repository_mapping", to: objectID, kind: "declares", label: "declares", source: { path: snapshot.project.mapping_file } });
     if (object.kind === "unit") {
       addEdge({ id: `support:status->${objectID}`, from: "support:status", to: objectID, kind: "tracks_state", label: "tracks state", source: { path: snapshot.project.status_file } });
     }
@@ -1592,10 +1562,7 @@ function registryItems() {
 }
 
 function registryResultOrder(result) {
-  if (registryProblemResult(result)) return 0;
-  if (result === "planned") return 1;
-  if (result === "landed") return 2;
-  return 3;
+  return 0;
 }
 
 function registryNodeID(item) {
@@ -1609,9 +1576,6 @@ function registryItemByID(itemID) {
 function renderRegistryNav() {
   const items = registryItems();
   const sections = [
-    { key: "problem", items: items.filter((item) => registryProblemResult(item.result)) },
-    { key: "planned", items: items.filter((item) => item.result === "planned") },
-    { key: "landed", items: items.filter((item) => item.result === "landed") },
     { key: "unit", items: items.filter((item) => item.kind === "unit") },
     { key: "rule", items: items.filter((item) => item.kind === "rule") }
   ].filter((section) => section.items.length > 0);
@@ -1665,9 +1629,6 @@ function renderRegistryNavSection(sectionKey, items) {
 
 function renderRegistryBoard() {
   const items = registryItems();
-  const missingMappingItems = items.filter((item) => item.result === "unregistered_file");
-  const mappedNoPathItems = items.filter((item) => item.result === "planned" || item.result === "missing_file" || item.result === "invalid_registry_row");
-  const mappedWithPathItems = items.filter((item) => item.result === "landed");
   graphView.innerHTML = `
     <section class="registry-board">
       <section class="registry-section">
@@ -1676,26 +1637,15 @@ function renderRegistryBoard() {
             <h3>${escapeHTML(t("registry.boardHeading"))}</h3>
             <p>${escapeHTML(t("registry.boardDescription"))}</p>
           </div>
-          ${renderSourceButton(snapshot.project.mapping_file, t("registry.mappingSource"))}
         </div>
-        ${renderRegistryMetrics(items, missingMappingItems, mappedNoPathItems, mappedWithPathItems)}
-        ${renderRegistrySection(t("registry.missingMappingHeading"), t("registry.missingMappingDescription"), missingMappingItems, t("registry.noMissingMapping"))}
-        ${renderRegistrySection(t("registry.mappedNoPathHeading"), t("registry.mappedNoPathDescription"), mappedNoPathItems, t("registry.noMappedNoPath"))}
-        ${renderRegistrySection(t("registry.mappedWithPathHeading"), t("registry.mappedWithPathDescription"), mappedWithPathItems, t("registry.noMappedWithPath"))}
+        ${renderRegistrySection(t("registry.boardHeading"), "", items, t("registry.noMissingMapping"))}
       </section>
     </section>
   `;
   bindRegistryBoardLinks();
 }
 
-function renderRegistryMetrics(items, missingMappingItems, mappedNoPathItems, mappedWithPathItems) {
-  const knownUnits = items.filter((item) => item.kind === "unit").length;
-  const metrics = [
-    { value: knownUnits, label: t("registry.knownUnits") },
-    { value: missingMappingItems.length, label: t("registry.missingMapping") },
-    { value: mappedNoPathItems.length, label: t("registry.mappedWithoutPath") },
-    { value: mappedWithPathItems.length, label: t("registry.mappedWithPath") }
-  ];
+function renderRegistryMetrics(items) {
   return `
     <div class="metric-grid registry-metric-grid">
       ${metrics.map((metric) => `
@@ -1730,19 +1680,15 @@ function renderRegistryTable(items) {
         <colgroup>
           <col style="width:70px">
           <col style="width:140px">
-          <col style="width:120px">
           <col style="min-width:280px;width:auto">
-          <col style="width:130px">
           <col>
         </colgroup>
         <thead>
           <tr>
             <th>${escapeHTML(t("inspector.fields.type"))}</th>
             <th>${escapeHTML(t("registry.objectLabel"))}</th>
-            <th>${escapeHTML(t("registry.result"))}</th>
-            <th>${escapeHTML(t("registry.implementation"))}</th>
+            <th>${escapeHTML(t("registry.truth"))}</th>
             <th>${escapeHTML(t("registry.relation"))}</th>
-            <th>${escapeHTML(t("registry.attention"))}</th>
           </tr>
         </thead>
         <tbody>${items.map(renderRegistryRow).join("")}</tbody>
@@ -1753,13 +1699,11 @@ function renderRegistryTable(items) {
 
 function renderRegistryRow(item) {
   return `
-    <tr class="registry-row ${escapeAttr(item.result || "gap")}">
+    <tr class="registry-row">
       <td>${renderRegistryKindBadge(item)}</td>
       <td><button class="table-object" type="button" data-registry="${escapeAttr(registryNodeID(item))}">${escapeHTML(item.label || item.id)}</button></td>
-      <td>${renderRegistryResult(item.result)}</td>
-      <td>${renderRegistryImplementationPaths(item)}</td>
+      <td>${escapeHTML(registryTruthSummary(item))}</td>
       <td>${escapeHTML(registryRefSummary(item))}</td>
-      <td>${escapeHTML(registryAttentionSummary(item))}</td>
     </tr>
   `;
 }
@@ -1770,24 +1714,8 @@ function renderRegistryResult(result) {
 }
 
 function registryResultLabel(result) {
-  switch (result) {
-    case "planned":
-      return t("registry.planned");
-    case "landed":
-      return t("registry.landed");
-    case "missing_file":
-      return t("registry.missingFile");
-    case "unregistered_file":
-      return t("registry.unregisteredFile");
-    case "invalid_registry_row":
-      return t("registry.invalidRegistryRow");
-    default:
-      return result || t("registry.invalidRegistryRow");
-  }
-}
-
-function registryProblemResult(result) {
-  return result === "missing_file" || result === "unregistered_file" || result === "invalid_registry_row";
+  if (!result) return "";
+  return result;
 }
 
 function renderRegistryPresence(registered, source) {
@@ -1797,16 +1725,6 @@ function renderRegistryPresence(registered, source) {
     return `<button class="flag ${className} source-flag" type="button" data-source="${escapeAttr(source.path)}">${escapeHTML(label)}</button>`;
   }
   return `<span class="flag ${className}">${escapeHTML(label)}</span>`;
-}
-
-function renderRegistryMappingPresence(item) {
-  if (item.kind === "rule") {
-    if (item.mapping_registered && item.mapping_source && item.mapping_source.path) {
-      return `<button class="flag flag-yes source-flag" type="button" data-source="${escapeAttr(item.mapping_source.path)}" ${item.mapping_source.line ? `data-source-line="${escapeAttr(item.mapping_source.line)}"` : ""}>${escapeHTML(t("registry.declared"))}</button>`;
-    }
-    return `<span class="flag">${escapeHTML(t("registry.optional"))}</span>`;
-  }
-  return renderRegistryPresence(item.mapping_registered, item.mapping_source);
 }
 
 function renderRegistryStatusPresence(item) {
@@ -1830,22 +1748,13 @@ function registryRefSummary(item) {
   return parts.length > 0 ? parts.join(" · ") : t("fallback.none");
 }
 
-function registryImplementationSummary(item) {
-  const count = list(item.implementation_paths).length;
-  return count > 0 ? t("counts.paths", { count }) : t("registry.no");
-}
-
 function registryEvidenceSummary(item) {
   const parts = [];
   if (item.status_registered) parts.push(t("registry.status"));
-  if (item.truth_registered) {
+  if (list(item.truth_sources).length > 0) {
     const truthCount = list(item.truth_sources).length;
     parts.push(truthCount > 1 ? t("counts.truth", { count: truthCount }) : t("registry.truth"));
   }
-  if (item.kind === "unit" && list(item.implementation_paths).length > 0) {
-    parts.push(t("counts.paths", { count: list(item.implementation_paths).length }));
-  }
-  if (item.mapping_registered) parts.push(t("registry.mapping"));
   return parts.length > 0 ? parts.join(" · ") : t("fallback.none");
 }
 
@@ -1854,13 +1763,6 @@ function registryTruthSummary(item) {
   if (count === 0) return t("registry.no");
   if (count === 1) return list(item.truth_sources)[0].path || t("registry.truth");
   return t("counts.truth", { count });
-}
-
-function registryImplementationPathSummary(item) {
-  const paths = list(item.implementation_paths).map((ref) => ref.path).filter(Boolean);
-  if (paths.length === 0) return t("fallback.none");
-  if (paths.length === 1) return paths[0];
-  return t("counts.paths", { count: paths.length });
 }
 
 function renderRegistryImplementationPaths(item) {
@@ -1886,13 +1788,6 @@ function renderRegistryImplementationPaths(item) {
 function registryIssueSummary(item) {
   const issues = list(item.issues);
   return issues.length > 0 ? issues.join("; ") : t("registry.noIssues");
-}
-
-function registryAttentionSummary(item) {
-  const issues = list(item.issues);
-  if (issues.length > 0) return issues.join("; ");
-  if (item.result === "planned") return t("registry.planned");
-  return t("registry.landed");
 }
 
 function bindRegistryBoardLinks() {
@@ -2245,9 +2140,7 @@ function reviewRelationGroups(item) {
     .filter((ref) => isStableReference(ref))
     .map((ref) => ref.path);
   if (stable.length > 0) groups.push({ label: t("review.relation.stable"), items: stable, linkable: true });
-  if (snapshot.project.mapping_file) {
-    groups.push({ label: t("review.relation.mapping"), items: [snapshot.project.mapping_file], linkable: true });
-  }
+
   if (snapshot.project.rule_baseline_file) {
     groups.push({ label: t("review.relation.system"), items: [snapshot.project.rule_baseline_file], linkable: true });
   }
@@ -2518,11 +2411,7 @@ function renderRegistryDetail(item) {
     <h2>${escapeHTML(item.label || item.id)}</h2>
     <dl class="detail-grid">
       <dt>${escapeHTML(t("inspector.fields.type"))}</dt><dd class="detail-kind">${renderRegistryKindBadge(item)}<span>${escapeHTML(registryKindText(item))}</span></dd>
-      <dt>${escapeHTML(t("registry.result"))}</dt><dd>${renderRegistryResult(item.result)}</dd>
-      <dt>${escapeHTML(t("registry.mapping"))}</dt><dd>${renderRegistryMappingPresence(item)}</dd>
-      <dt>${escapeHTML(t("registry.status"))}</dt><dd>${renderRegistryStatusPresence(item)}</dd>
-      <dt>${escapeHTML(t("registry.truth"))}</dt><dd>${renderRegistryPresence(item.truth_registered, firstSourceRef(item.truth_sources))}</dd>
-      <dt>${escapeHTML(t("registry.implementation"))}</dt><dd>${escapeHTML(registryImplementationSummary(item))}</dd>
+      <dt>${escapeHTML(t("registry.truth"))}</dt><dd>${renderRegistryPresence(list(item.truth_sources).length > 0, firstSourceRef(item.truth_sources))}</dd>
     </dl>
     <section class="review-detail-section">
       <h2>${escapeHTML(t("registry.sourceChain"))}</h2>
@@ -2531,7 +2420,6 @@ function renderRegistryDetail(item) {
     ${renderTextChips(t("registry.unitRefs"), item.unit_refs)}
     ${renderTextChips(t("registry.ruleRefs"), item.rule_refs)}
     ${renderTextChips(t("registry.boundObjects"), item.bound_objects)}
-    ${renderImplementationPathGroup(t("registry.implementation"), item.implementation_paths)}
     ${renderRegistryIssues(item)}
   `;
   bindInspectorLinks();
@@ -2540,9 +2428,6 @@ function renderRegistryDetail(item) {
 
 function renderRegistrySourceChain(item) {
   const groups = [];
-  if (item.mapping_source && item.mapping_source.path) {
-    groups.push({ label: t("registry.mappingSource"), refs: [item.mapping_source] });
-  }
   if (item.status_source && item.status_source.path) {
     groups.push({ label: t("registry.statusSource"), refs: [item.status_source] });
   }
@@ -2752,7 +2637,7 @@ function renderImplementationPathGroup(title, refs) {
 
 function sourceForImplementationRef(ref) {
   if (!ref) return null;
-  const sourcePath = ref.label && isReadableOriginalPath(ref.label) ? ref.label : snapshot.project.mapping_file;
+  const sourcePath = ref.label && isReadableOriginalPath(ref.label) ? ref.label : null;
   if (!sourcePath) return null;
   return { path: sourcePath, line: ref.line || 0, label: ref.path || sourcePath };
 }

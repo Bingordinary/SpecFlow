@@ -13,7 +13,6 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/install"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repositorymapping"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulesync"
@@ -64,9 +63,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runRule(args[1:], stdout, stderr)
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
-	case "repository-mapping":
-		fmt.Fprintln(stderr, "Warning: 'repository-mapping' is deprecated and may be removed in a future version")
-		return runRepositoryMapping(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -347,45 +343,6 @@ func runBuildRelease(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func runRepositoryMapping(args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 {
-		writeRepositoryMappingUsage(stderr)
-		return errors.New("missing repository-mapping subcommand")
-	}
-
-	switch args[0] {
-	case "validate":
-		fs := flag.NewFlagSet("repository-mapping validate", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-
-		result, err := repositorymapping.Validate(mustAbs(*repoRoot))
-		if err != nil {
-			return err
-		}
-
-		if result.Valid() {
-			fmt.Fprintln(stdout, "Repository mapping is valid.")
-			return nil
-		}
-
-		fmt.Fprintf(stdout, "Repository mapping is invalid. issues=%d\n", len(result.Diagnostics))
-		for _, diagnostic := range result.Diagnostics {
-			fmt.Fprintf(stdout, "- %s\n", diagnostic)
-		}
-		return errors.New("repository mapping validation failed")
-	case "-h", "--help", "help":
-		writeRepositoryMappingUsage(stdout)
-		return nil
-	default:
-		writeRepositoryMappingUsage(stderr)
-		return fmt.Errorf("unknown repository-mapping subcommand %q", args[0])
-	}
-}
-
 func runReview(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		writeReviewUsage(stderr)
@@ -644,13 +601,8 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  rule       Execute rule-impact reconciliation helpers")
 	fmt.Fprintln(w, "  validate   Validate candidate spec structure or file write permissions")
-	fmt.Fprintln(w, "  repository-mapping (deprecated) Validate docs/specs/repository_mapping.md")
 }
 
-func writeRepositoryMappingUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl repository-mapping validate [--repo-root PATH]")
-}
 func writeReviewUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl review collect-default-scope --flow spec_flow_review|spec_flow_design_review [--repo-root PATH]")

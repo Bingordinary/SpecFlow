@@ -760,7 +760,6 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("core/object_model.md"),
-					scope.FrameworkPath("core/repository_mapping.md"),
 					scope.FrameworkPath("spec_writing_guide.md"),
 					scope.FrameworkPath("concepts.md"),
 				})
@@ -791,7 +790,6 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("core/object_model.md"),
-					scope.FrameworkPath("core/repository_mapping.md"),
 					scope.FrameworkPath("spec_writing_guide.md"),
 					scope.FrameworkPath("operations/migration.md"),
 				}, scope.RuleGovernanceFiles, scope.TemplateProjectInstanceFiles, scope.ProjectInstanceCompatibilityFiles)
@@ -833,7 +831,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "truth_to_implementation_convergence",
 			SliceType:      "cross_convergence",
-			ReviewQuestion: "Do truth gates, repository mapping, and candidate entry rules converge before code changes.",
+			ReviewQuestion: "Do truth gates and candidate entry rules converge before code changes.",
 			DependsOn:      []string{"truth_and_implementation_gates", "concept_and_command_policy"},
 			InputFiles:     reviewDependencyFiles("truth_and_implementation_gates", "concept_and_command_policy"),
 		},
