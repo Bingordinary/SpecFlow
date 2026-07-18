@@ -130,41 +130,36 @@ If a plausible critical flaw is identified that the spec does not address → FA
 
 ## Check 4 — Intent consistency
 
-**Purpose:** The `candidate_intent` field and its related fields (`repair_basis`, `source_basis`, `evidence_appendix_ref`) must form a coherent whole.
+**Purpose:** The candidate's intent is inferred from structural signals, not declared in frontmatter. This check verifies that the inferred intent is internally consistent.
 
 **Execution steps:**
 
 ```
-IF candidate_intent is present in frontmatter:         ← skipped for unit_new (no candidate_intent)
+IF Repair Scope section exists in spec body:
+  - The candidate is a repair (inferred from Repair Scope section presence)
+  - evidence_appendix_ref must be ABSENT or none
+    (repairs restore behavior from a previous stable version, not from code observation)
+  - Detailed repair integrity is verified in Check 7
 
-  IF candidate_intent == "change":
-    - repair_basis must be ABSENT (change may not claim repair)
-    - source_basis must exist and be consistent with the design's relationship to existing code
-        - behavior depends on existing implementation → existing_implementation or mixed
-        - behavior replaces existing without using it as truth → replacement
-        - completely new design → new_design
-
-  IF candidate_intent == "repair":
-    - repair_basis must be PRESENT, formatted as s_unit_{unit}@<version>
-    - source_basis must be new_design
-    - evidence_appendix_ref must be none
-    - Repair Scope section must exist (details validated in Check 7)
-
-IF source_basis == "existing_implementation" OR "mixed":
-    - evidence_appendix_ref must be PRESENT and not none
-
-IF source_basis == "replacement":
-    - evidence_appendix_ref may be none
-    - At least one acceptance item must satisfy:
-        verification_type == inspectable
-        AND evidence_requirements includes old_code_deleted and no_remaining_refs
+IF Repair Scope section does NOT exist in spec body:
+  - The candidate is a change or new design
+  - IF evidence_appendix_ref is PRESENT and not none:
+      → The design is based on observed implementation (evidence-driven)
+      → The appendix content must record actually observed implementation behavior
+         (semantic consistency verified in Check 6)
+  - IF evidence_appendix_ref is ABSENT or none:
+      → The design is design-driven (new concept or replacement)
+      → IF any acceptance item has verification_type == inspectable
+           AND evidence_requirements includes old_code_deleted and no_remaining_refs:
+           → This candidate is a replacement
+           → Verify old code retirement separately (unit_verify_checklist Step 4)
 ```
 
-**PASS:** All intent fields form a coherent whole
+**PASS:** Inferred intent is internally consistent
 
-**FAIL:** Contradiction found (e.g., repair without repair_basis, or existing_implementation without evidence_appendix_ref) → fix_required
+**FAIL:** Contradiction found (e.g., repair section with evidence appendix) → fix_required
 
-**Check method:** Four-field cross-reference (candidate_intent × repair_basis × source_basis × evidence_appendix_ref)
+**Check method:** Structural inference (Repair Scope × evidence_appendix_ref × acceptance items)
 
 ---
 
@@ -201,7 +196,7 @@ IF source_basis == "replacement":
 
 ## Check 6 — Affects-source validity
 
-**Purpose:** Each acceptance item's `affects` declarations must be consistent with the spec's formal references. Evidence appendix content must be consistent with the claimed `source_basis`.
+**Purpose:** Each acceptance item's `affects` declarations must be consistent with the spec's formal references. Evidence appendix content must be structurally sound and semantically meaningful.
 
 **Execution steps:**
 
@@ -228,31 +223,31 @@ affects.appendices:
 2. If `evidence_appendix_ref` is not `none`:
 ```
 - Read the referenced appendix file
-- Its content must be semantically consistent with the declared source_basis:
-    - existing_implementation → appendix must record actually observed implementation behavior
-    - mixed → appendix must clearly distinguish which parts are existing and which are new design
-- Appendix content must not be only background, motivation, principles, or patch notes
-  (must be directly readable truth about the current design)
-- If content contradicts the declared source_basis → FAIL (fix_required)
+- Its content must record actually observed implementation behavior
+  (not only background, motivation, principles, or patch notes)
+- If the appendix describes existing implementation behavior mixed with new design parts,
+  it must clearly distinguish which parts are existing and which are new
+- If content is only background or patch notes → FAIL (fix_required)
 ```
 
 **PASS:** All affects declarations are valid, evidence appendix is semantically consistent
 
 **FAIL:** Reference inconsistency or appendix content contradicts declaration (fix_required)
 
-**Check method:** affects.* × frontmatter refs cross-reference + source_basis × appendix content semantic cross-reference
+**Check method:** affects.* × frontmatter refs cross-reference + appendix content semantic assessment
 
 ---
 
 ## Check 7 — Replacement/repair integrity
 
-**Purpose:** Candidates with specific intents must satisfy additional quality rules.
+**Purpose:** Candidates with specific intents must satisfy additional quality rules. Intent is inferred from structural signals (Repair Scope section, acceptance items).
 
 **Execution steps:**
 
-**IF candidate_intent == "repair":**
+**IF Repair Scope section exists in spec body:**
 ```
-1. Must have a Repair Scope section containing:
+1. The Repair Scope section must contain:
+   - Repair target version (e.g., "Repair Target: s_unit_{unit}@<version>")
    - List of acceptance item IDs being restored
    - Observed deviations from expected behavior
    - Expected implementation-side changes
@@ -262,25 +257,24 @@ affects.appendices:
    - Must not modify field definitions
    - Must not modify ownership boundaries
    - Must not modify state machine semantics
-   If any of the above is violated → FAIL (recommend switching to change intent)
-3. Does the repair candidate actually restore the behavior of the repair_basis version?
-   - Read the stable spec at repair_basis version (from git history or tag)
+   If any of the above is violated → FAIL (recommend switching to change)
+3. Does the repair candidate actually restore the behavior of the target version?
+   - Read the stable spec at the repair target version (from git history or tag)
    - Verify the candidate's behavior matches that version's stable spec
 ```
 
-**IF source_basis == "replacement":**
+**IF any acceptance item has verification_type == inspectable**
+   **AND evidence_requirements includes old_code_deleted and no_remaining_refs:**
 ```
-1. At least one acceptance item must have verification_type == inspectable
-2. That item's evidence_requirements must include:
-   - old_code_deleted
-   - no_remaining_refs
+1. These items confirm the candidate is a replacement
+2. Retirement verification is performed in unit_verify_checklist Step 4
 ```
 
 **PASS:** Intent-specific integrity requirements satisfied
 
 **FAIL:** Rule violation (fix_required) or repair exceeds permissible scope (recommend change instead)
 
-**Check method:** Intent × acceptance item format cross-reference + stable version comparison
+**Check method:** Structural inference × acceptance item format cross-reference + stable version comparison
 
 ---
 

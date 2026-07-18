@@ -137,7 +137,7 @@ Scoped validate uses **git working directory changes** on the spec file to deter
    - Frontmatter fields (id, layer, version, refs, appendix paths) → Check 1 (Structural integrity)
    - Design rationale, protocol definitions, data contracts → Check 2 (Design soundness)
    - Scope, non-goals, boundaries → Check 3 (Scope integrity)
-   - candidate_intent, repair_basis, source_basis, evidence_appendix → Check 4 (Intent consistency)
+   - evidence_appendix_ref, Repair Scope section, acceptance item evidence_requirements → Check 4 (Intent consistency)
    - Acceptance item set, pass_conditions → Check 5 (Acceptance coverage)
    - affects references, evidence appendix → Check 6 (Affects-source validity)
    - Replacement/repair scope → Check 7 (Replacement/repair integrity)

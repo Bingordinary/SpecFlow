@@ -226,7 +226,7 @@ Per-item report format:
 
 **Execution steps:**
 
-1. Check if the candidate's `source_basis` is `replacement`. If not, skip this step.
+1. Check if any acceptance item has `verification_type == inspectable` AND `evidence_requirements` includes `old_code_deleted` and `no_remaining_refs`. If not, skip this step.
 2. If `replacement`, for each acceptance item with `verification_type: inspectable` and `evidence_requirements` containing `old_code_deleted` and `no_remaining_refs`:
 ```
 - Identify the old code paths from the spec (or from the replacement nature of the change)

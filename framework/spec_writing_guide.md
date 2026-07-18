@@ -54,6 +54,8 @@ rule_refs:
   - s_b_rule_example@1.0.0
 ```
 
+`evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `c_unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
+
 ## 3. Unit Dependencies
 
 `unit_refs` means the current unit depends on the referenced stable unit's formal behavior.
