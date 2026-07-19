@@ -177,6 +177,15 @@ Per-item report format:
 
 **Check method:** Acceptance item pass_condition × implementation code — assertion-level structural cross-reference
 
+**Test design sub-check (for verification_type: testable items only):**
+
+For each acceptance item with `verification_type: testable`, apply the `framework/test_decomposition_standard.md` standard as a baseline to identify significantly implied but missing test scenarios:
+
+1. **Step 1 (happy path):** Does a test exist that exercises the primary success scenario? If the pass_condition describes a success outcome and no test covers it → MISMATCH (possible untested core behavior)
+2. **Steps 2-4 (input variants, business rules, dependency failure):** Does the description or pass_condition strongly imply a scenario (e.g. "register" implies "email already exists", "create order" implies "invalid product ID") that has no corresponding test? If a reasonable developer would expect a test for that scenario and none exists → MISMATCH
+
+This sub-check is **not** an exhaustive coverage audit. It flags obvious omissions. A single acceptance item may produce zero, one, or several test scenarios depending on its content. If the implementation is in a language or framework where tests are not written in the expected location, report CANNOT_DETERMINE instead of MISMATCH.
+
 ---
 
 ## Step 3 — Scope accuracy

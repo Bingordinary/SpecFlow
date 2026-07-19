@@ -204,6 +204,8 @@ acceptance_item_set:
 When `verification_type` is `inspectable`, the `evidence_requirements` should specify what inspection evidence is needed (e.g. `old_code_deleted`, `no_remaining_refs`).
 When `verification_type` is `reviewable`, human review is the primary verification method; `evidence_requirements` may include `human_review_pass`.
 
+When `verification_type` is `testable`, the acceptance item's `description` and `pass_condition` should be designed so they can be decomposed into a set of unit test scenarios. See `framework/test_decomposition_standard.md` for the decomposition methodology.
+
 The acceptance item ids are used by process evidence. Changing ids invalidates existing process files.
 
 ## 7. Appendix Files
