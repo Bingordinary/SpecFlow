@@ -9,11 +9,11 @@ function Show-Usage {
     [Console]::Error.WriteLine(@"
 Usage: update_tooling_binaries.ps1
 
-Download and install the specflowctl and specflow-reader binaries for the
-current platform that match the current tooling source fingerprint.
+Download and install the specflowctl binary for the
+current platform that matches the current tooling source fingerprint.
 
-The script checks whether the local binaries already match the expected
-fingerprint. If they are missing or stale, it downloads fresh binaries
+The script checks whether the local binary already matches the expected
+fingerprint. If it is missing or stale, it downloads a fresh binary
 from the matching GitHub Release.
 "@)
 }
@@ -116,8 +116,7 @@ function Read-BinaryFingerprint {
 function Test-Checksums {
     param(
         [string]$Directory,
-        [string]$CtlName,
-        [string]$ReaderName
+        [string]$CtlName
     )
 
     $sumsPath = Join-Path $Directory "SHA256SUMS"
@@ -132,16 +131,16 @@ function Test-Checksums {
             continue
         }
         $name = $parts[1].Trim()
-        if ($name -eq $CtlName -or $name -eq $ReaderName) {
+        if ($name -eq $CtlName) {
             $expected[$name] = $parts[0].Trim().ToLowerInvariant()
         }
     }
 
-    if (-not $expected.ContainsKey($CtlName) -or -not $expected.ContainsKey($ReaderName)) {
+    if (-not $expected.ContainsKey($CtlName)) {
         return $false
     }
 
-    foreach ($name in @($CtlName, $ReaderName)) {
+    foreach ($name in @($CtlName)) {
         $path = Join-Path $Directory $name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             return $false
@@ -159,21 +158,15 @@ function Test-NeedsDownload {
     param(
         [string]$ExpectedFingerprint,
         [string]$CtlPath,
-        [string]$ReaderPath,
         [string]$BinDir,
-        [string]$CtlName,
-        [string]$ReaderName
+        [string]$CtlName
     )
 
     $ctlFingerprint = Read-BinaryFingerprint $CtlPath
-    $readerFingerprint = Read-BinaryFingerprint $ReaderPath
     if ($ctlFingerprint -ne $ExpectedFingerprint) {
         return $true
     }
-    if ($readerFingerprint -ne $ExpectedFingerprint) {
-        return $true
-    }
-    if (-not (Test-Checksums $BinDir $CtlName $ReaderName)) {
+    if (-not (Test-Checksums $BinDir $CtlName)) {
         return $true
     }
 
@@ -199,12 +192,10 @@ try {
     $tag = "specflow-tooling-$shortFingerprint"
     $suffix = Get-PlatformSuffix
     $ctlName = "specflowctl-$suffix"
-    $readerName = "specflow-reader-$suffix"
     $ctlPath = Join-Path $binDir $ctlName
-    $readerPath = Join-Path $binDir $readerName
 
-    if (-not (Test-NeedsDownload $fingerprint $ctlPath $readerPath $binDir $ctlName $readerName)) {
-        Write-Host "Local binaries already match $tag."
+    if (-not (Test-NeedsDownload $fingerprint $ctlPath $binDir $ctlName)) {
+        Write-Host "Local binary already matches $tag."
         exit 0
     }
 
@@ -217,26 +208,24 @@ try {
     New-Item -ItemType Directory -Path $downloadDir | Out-Null
     $base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
 
-    Write-Host "Downloading $tag binaries for $suffix..."
+    Write-Host "Downloading $tag binary for $suffix..."
     Invoke-WebRequest -Uri "$base/$ctlName" -OutFile (Join-Path $downloadDir $ctlName)
-    Invoke-WebRequest -Uri "$base/$readerName" -OutFile (Join-Path $downloadDir $readerName)
     Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile (Join-Path $downloadDir "SHA256SUMS")
 
-    if (-not (Test-Checksums $downloadDir $ctlName $readerName)) {
-        throw "Downloaded files failed checksum verification."
+    if (-not (Test-Checksums $downloadDir $ctlName)) {
+        throw "Downloaded file failed checksum verification."
     }
 
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     Move-Item -LiteralPath (Join-Path $downloadDir $ctlName) -Destination $ctlPath -Force
-    Move-Item -LiteralPath (Join-Path $downloadDir $readerName) -Destination $readerPath -Force
     Move-Item -LiteralPath (Join-Path $downloadDir "SHA256SUMS") -Destination (Join-Path $binDir "SHA256SUMS") -Force
 
     # chmod is only meaningful on Unix-like systems — skip on Windows
     if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        Invoke-CheckedNative "chmod" @("+x", $ctlPath, $readerPath)
+        Invoke-CheckedNative "chmod" @("+x", $ctlPath)
     }
 
-    Write-Host "Installed $ctlName, $readerName, and SHA256SUMS from $tag."
+    Write-Host "Installed $ctlName and SHA256SUMS from $tag."
 }
 finally {
     if ($null -ne $downloadDir) {

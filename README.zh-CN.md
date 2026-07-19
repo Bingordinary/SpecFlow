@@ -11,7 +11,7 @@
 
 [English](./README.md) · **简体中文**
 
-[接入仓库](#接入仓库) · [快速开始](#快速开始) · [核心概念](#核心概念) · [命令](#命令) · [工作流程](#工作流程) · [Reader](#reader-看进度)
+[接入仓库](#接入仓库) · [快速开始](#快速开始) · [核心概念](#核心概念) · [命令](#命令) · [工作流程](#工作流程)
 
 ---
 
@@ -66,7 +66,7 @@ irm https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts
 
 1. 把这个仓库 clone 到 `./specflow`
 2. 把 `specflow/` 写入 `.gitignore`
-3. 安装当前平台需要的 `specflowctl`、`specflow-reader` 和 `SHA256SUMS`
+3. 安装当前平台需要的 `specflowctl` 和 `SHA256SUMS`
 4. 执行 `specflowctl init`（安装框架文件和平台 hooks）
 
 之后平台 hooks 会在每次 agent session 启动时自动注入 specFlow 规则。不再需要手动维护入口文件。
@@ -200,16 +200,6 @@ Agent 也会在合适时机主动建议："需要跑 validate 吗？"、"需要�
 ### 什么时候退回自然语言
 
 自然语言是兜底。当你不确定该用哪个触发词、工作跨越多个 unit、或想让 agent 先探索再做决定时使用。
-
-## Reader 看进度
-
-`specflow-reader` 是一个只读的本地视图，用来查看项目当前状态。在项目根目录启动：
-
-```bash
-<specflow-reader-binary> --repo-root . --addr 127.0.0.1:17863
-```
-
-Reader 能回答当前有哪些 unit 和 rule 对象、哪些已有正式真相、Spec 怎么连接。详见 [tooling/README.md](./tooling/README.md)。
 
 ## 什么情况下不适合
 

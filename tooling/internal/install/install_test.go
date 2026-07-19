@@ -61,54 +61,9 @@ func TestDoctorFailsForStaleBinary(t *testing.T) {
 	if !strings.Contains(joined, "STALE specflow/tooling/bin/"+buildrelease.CurrentBinaryName()) {
 		t.Fatalf("expected stale binary failure, got %v", result.Failures)
 	}
-	if !strings.Contains(joined, "STALE specflow/tooling/bin/"+buildrelease.CurrentReaderBinaryName()) {
-		t.Fatalf("expected stale reader binary failure, got %v", result.Failures)
-	}
 }
 
-func TestDoctorFailsWhenReaderWebAssetIsMissing(t *testing.T) {
-	repoRoot := t.TempDir()
-	liveFingerprint := setupDoctorRepo(t, repoRoot)
-	writeFingerprintProbeBinary(t, repoRoot, liveFingerprint)
-	if err := os.Remove(filepath.Join(repoRoot, "specflow/tooling/reader/web/app.js")); err != nil {
-		t.Fatalf("Remove(app.js) failed: %v", err)
-	}
 
-	result, err := Doctor(repoRoot)
-	if err != nil {
-		t.Fatalf("Doctor returned unexpected error: %v", err)
-	}
-
-	joined := strings.Join(result.Failures, "\n")
-	if !strings.Contains(joined, "MISSING specflow/tooling/reader/web/app.js") {
-		t.Fatalf("expected missing reader web asset failure, got %v", result.Failures)
-	}
-}
-
-func TestDoctorReportsSourceRepoReaderPath(t *testing.T) {
-	repoRoot := t.TempDir()
-	setupDoctorRepoAt(t, repoRoot, "", "tooling")
-	if err := os.Remove(filepath.Join(repoRoot, "tooling/reader/web/app.js")); err != nil {
-		t.Fatalf("Remove(app.js) failed: %v", err)
-	}
-
-	result, err := Doctor(repoRoot)
-	if err != nil {
-		t.Fatalf("Doctor returned unexpected error: %v", err)
-	}
-
-	joined := strings.Join(result.Failures, "\n")
-	if !strings.Contains(joined, "MISSING tooling/reader/web/app.js") {
-		t.Fatalf("expected source-repo reader asset failure, got %v", result.Failures)
-	}
-	if strings.Contains(joined, "MISSING specflow/tooling/reader/web/app.js") {
-		t.Fatalf("doctor resolved the installed reader path in a source repo: %v", result.Failures)
-	}
-	if strings.Contains(joined, "MISSING docs/") {
-		t.Fatalf("doctor checked installed-project destinations in a source repo: %v", result.Failures)
-	}
-
-}
 
 func setupDoctorRepo(t *testing.T, repoRoot string) string {
 	t.Helper()
@@ -124,13 +79,7 @@ func setupDoctorRepoAt(t *testing.T, repoRoot, contentRoot, toolingRoot string) 
 	mustWriteFile(t, filepath.Join(repoRoot, "AGENTS.md"), "host\n==SPECFLOW:BEGIN==\nmanaged\n==SPECFLOW:END==\n")
 	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "go.mod"), "module github.com/Bingordinary/SpecFlow/specflow/tooling\n\ngo 1.22.2\n")
 	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "cmd/specflowctl/main.go"), "package main\n\nfunc main() {}\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "cmd/specflow-reader/main.go"), "package main\n\nfunc main() {}\n")
 	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "internal/demo/demo.go"), "package demo\n\nfunc Value() string { return \"demo\" }\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "reader/web/index.html"), "<!doctype html>\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "reader/web/styles.css"), "body { color: #111; }\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "reader/web/app.js"), "console.log('demo');\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "reader/web/cytoscape.min.js"), "window.cytoscape = function() {};\n")
-	mustWriteFile(t, filepath.Join(repoRoot, filepath.FromSlash(toolingRoot), "reader/web/mermaid.min.js"), "window.mermaid = { initialize() {}, run() {} };\n")
 
 	return setupDoctorRepoLiveFingerprint(t, repoRoot)
 }
@@ -163,7 +112,6 @@ func writeFingerprintProbeBinary(t *testing.T, repoRoot, fingerprint string) {
 	}
 	script := "#!/usr/bin/env bash\nif [[ \"$1\" == \"" + toolingfreshness.HiddenBuildFingerprintCommand + "\" ]]; then\n  printf '%s\\n' \"" + fingerprint + "\"\n  exit 0\nfi\nexit 0\n"
 	mustWriteExecutableFile(t, filepath.Join(repoRoot, "specflow/tooling/bin", buildrelease.CurrentBinaryName()), script)
-	mustWriteExecutableFile(t, filepath.Join(repoRoot, "specflow/tooling/bin", buildrelease.CurrentReaderBinaryName()), script)
 }
 
 func TestCheckProjectInitPassesWhenProjectFilesPresent(t *testing.T) {

@@ -1,6 +1,5 @@
 tooling/bin/
 tooling/specflowctl
-tooling/specflow-reader
 tooling/*.test
 tooling/*.test.exe
 AGENTS.md
@@ -16,4 +15,4 @@ _governance_review/requests/
 _governance_review/specflowctl
 _governance_review/project/tooling/bin/
 _governance_review/project/tooling/specflowctl
-_governance_review/project/tooling/specflow-reader
+

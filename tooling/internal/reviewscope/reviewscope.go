@@ -113,13 +113,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	if len(toolingScriptFiles) == 0 {
 		return scope, fmt.Errorf("default tooling script files are incomplete")
 	}
-	toolingRuntimeFiles, err := walkRelativeFiles(repoRoot, scope.ToolingPath("reader/web"), "")
-	if err != nil {
-		return scope, err
-	}
-	if len(toolingRuntimeFiles) == 0 {
-		return scope, fmt.Errorf("default tooling runtime files are incomplete")
-	}
+	toolingRuntimeFiles := []string{}
 
 	required := append([]string{}, ruleFiles...)
 	required = append(required, minimumGuidanceSkillFiles...)

@@ -11,7 +11,7 @@
 
 **English** · [简体中文](./README.zh-CN.md)
 
-[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [Core Concepts](#core-concepts) · [Commands](#commands) · [Workflow](#workflow) · [Reader](#reader)
+[Add To Your Repository](#add-to-your-repository) · [Quick Start](#quick-start) · [Core Concepts](#core-concepts) · [Commands](#commands) · [Workflow](#workflow)
 
 ---
 
@@ -69,7 +69,7 @@ The installer does:
 
 1. clone this repository into `./specflow`
 2. add `specflow/` to `.gitignore`
-3. install the current platform's `specflowctl`, `specflow-reader`, and `SHA256SUMS`
+3. install the current platform's `specflowctl` and `SHA256SUMS`
 4. run `specflowctl init` (installs framework files and platform hooks)
 
 After this, platform hooks will automatically inject specFlow rules into your agent's context on session start. No entry file maintenance is needed.
@@ -104,7 +104,7 @@ Windows PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull for `specflow/`, computes the current tooling fingerprint, and installs the current platform's `specflowctl`, `specflow-reader`, and `SHA256SUMS` when needed.
+The script runs a fast-forward pull for `specflow/`, computes the current tooling fingerprint, and installs the current platform's `specflowctl` and `SHA256SUMS` when needed.
 
 ## Quick Start
 
@@ -205,16 +205,6 @@ The agent also proactively suggests these at natural transition points: "Shall I
 Natural language is the fallback. Use it when you are unsure which trigger to use, the request spans multiple units, or you want the agent to explore before deciding.
 
 Describe your goal in plain language. The agent reads repository truth and proposes the next action.
-
-## Reader
-
-`specflow-reader` is a read-only local view for inspecting project state. Start it from the repo root:
-
-```bash
-<specflow-reader-binary> --repo-root . --addr 127.0.0.1:17863
-```
-
-Reader answers: which unit and rule objects exist, which have accepted truth, and how Specs connect. See [tooling/README.md](./tooling/README.md) for details.
 
 ## When It May Be Too Heavy
 

@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE}/tooling/bin"
-          sha256sum specflowctl-* specflow-reader-* > SHA256SUMS
+          sha256sum specflowctl-* > SHA256SUMS
 
       - name: Create GitHub Release
         env:
@@ -52,5 +52,4 @@ jobs:
             --title "${GITHUB_REF_NAME}" \
             --notes "SpecFlow tooling release ${GITHUB_REF_NAME}. Tooling fingerprint: ${fingerprint}." \
             tooling/bin/specflowctl-* \
-            tooling/bin/specflow-reader-* \
             tooling/bin/SHA256SUMS

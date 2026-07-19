@@ -789,7 +789,7 @@ The output must report at least:
 9. the rule-governance coverage result
 10. the guidance-skill coverage result
 11. the impact-reconciliation coverage result
-12. the tooling coverage result, including reader runtime coverage
+12. the tooling coverage result
 13. the project-instance compatibility and migration-flow result
 14. the agent-operability result, including local slice results and path-walk result
 15. the supporting layer result:

@@ -45,7 +45,7 @@ PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull, computes the current tooling fingerprint, and downloads the current platform's `specflowctl`, `specflow-reader`, and `SHA256SUMS` only when the local binaries are missing, stale, or missing checksums.
+The script runs a fast-forward pull, computes the current tooling fingerprint, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums.
 
 Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag:
 
@@ -85,10 +85,6 @@ The tooling layer must not:
 `impact_sync` is a governance concept first.
 The current CLI exposes only the deterministic pieces already justified by rules.
 For shared-change reconciliation, the current mechanical entry remains `rule sync-impact`, but that entry must first compute `rule_sync` scope and exceptions and only then hand the fixed downstream object set to internal `impact_sync`.
-
-`specflow-reader` is a read-only local view over current truth files.
-It may parse `docs/specs/**`, build an in-memory graph, serve local HTML from `<tooling-root>/reader/web`, and refresh that view when truth files change.
-It must not edit files, advance governance state, or store semantic conclusions outside process memory.
 
 ## Current Command Surface
 
@@ -135,45 +131,6 @@ It must not edit files, advance governance state, or store semantic conclusions 
    - `validate write --path <path>` checks the executor's write permission for the given path
 16. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
-
-## Reader Command Surface
-
-`specflow-reader` is a separate binary from `specflowctl`.
-It starts one local reader server directly and has no public subcommands:
-
-```bash
-cd specflow/tooling/bin
-./specflow-reader-linux-amd64 --addr 127.0.0.1:17863
-```
-
-Rules:
-
-1. running `specflow-reader` starts a local HTTP server and prints the URL.
-2. the reader does not open a browser automatically.
-3. when `--repo-root` is omitted, it defaults to `../../..` from the current working directory.
-4. the server reads front-end files from `<tooling-root>/reader/web`.
-5. the server reads current project truth from `docs/specs/**`.
-6. each `/api/snapshot` request rebuilds the displayed snapshot from disk before returning data.
-7. the server does not watch files and does not expose a server-sent event stream.
-8. `/api/source` may return source text only from allowed truth and support files under the requested repository root.
-9. `/api/source-diff` returns diff hunks between the candidate and stable versions of a Spec document. Request parameter: `path` (repo-relative path to the Spec file). Returns a list of hunks with added/removed lines. Implemented at `/tooling/internal/reader/server.go` and consumed by the front-end diff panel.
-10. the hidden build-fingerprint query command is reserved for freshness checks.
-11. the snapshot includes candidate and stable spec metadata from the current truth files.
-
-Reader front-end rules:
-
-1. `<tooling-root>/reader/web` is the only runtime source for reader HTML, CSS, and JavaScript.
-2. `specflow-reader` does not embed a fallback copy of the front-end.
-3. editing front-end files does not require rebuilding `specflow-reader`; refresh the browser after the file change.
-4. `doctor` reports missing required reader front-end files as installation failures.
-5. the reader front-end supports Chinese and English interface text.
-6. language switching affects only reader-owned UI text.
-7. Spec document source text, file paths, object IDs, command names, and version values are displayed as source data and must not be translated by the front-end.
-8. the selected reader language may be stored in browser-local state and must not be written into project files.
-9. the front-end refresh button requests a new snapshot immediately.
-10. the front-end also polls `/api/snapshot` on a fixed interval so open pages converge to the latest disk state without relying on filesystem events.
-11. the Markdown document panel builds an in-memory side guide from the source document's Markdown headings, lets the reader open or close that guide locally, and uses it only for scrolling inside the currently opened document.
-12. the Spec View front-end view shows current candidate main Specs and candidate appendices as candidate truth, shows stable baseline truth separately for active candidate units, and shows current stable main Specs plus stable rule Specs from the existing snapshot; it must not create a new review state or write any page conclusion back to project files.
 
 ## Review Run-State Commands
 
@@ -229,8 +186,6 @@ The default `spec_flow_review` tooling review input set is:
 1. the framework tooling policy and this README
 2. the current tooling source input set listed below
 3. the tooling helper script input set listed below
-4. reader runtime files under `<tooling-root>/reader/web/**`
-
 The current tooling source input set is:
 
 1. `<tooling-root>/cmd/**/*.go`
@@ -248,14 +203,13 @@ The tooling helper script input set is every regular file under:
 This includes install, pull-with-release, push-with-release, build-release, and tooling-fingerprint scripts.
 
 The manifest is included because it controls which framework-managed and project-managed files `init` and `doctor` inspect or write.
-Reader front-end files under `<tooling-root>/reader/web/**` are runtime files, not binary freshness inputs.
 Tooling helper scripts are review inputs because they rebuild or select binaries for the installed tooling source.
 They are not binary freshness inputs unless they change compiled binary behavior.
 
 ## Usage Examples
 
 Run ordinary governance commands from the repository root using the matching platform binary under `specflow/tooling/bin/`.
-For normal use, download the matching `specflowctl-*` and `specflow-reader-*` files from the GitHub Release for the installed tooling fingerprint.
+For normal use, download the matching `specflowctl-*` files from the GitHub Release for the installed tooling fingerprint.
 For local tooling development, rebuild them with `build-release`.
 
 When developing the tooling itself, do not assume that ordinary commands may run through `go run`.
@@ -271,7 +225,6 @@ Examples:
 
 ```bash
 ./specflow/tooling/bin/specflowctl-linux-amd64 doctor
-./specflow/tooling/bin/specflow-reader-linux-amd64 --repo-root . --addr 127.0.0.1:17863
 ./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_review
 ./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_design_review
 ./specflow/tooling/bin/specflowctl-linux-amd64 review run-init --flow spec_flow_review

@@ -101,14 +101,6 @@ Writeback rule:
 2. tooling must not invent a new durable output container on its own
 3. execution-local caller parameters may narrow scope, but they must not redefine the governance meaning of the action
 
-Read-only reader rule:
-
-1. a local reader may read `docs/specs/**` and other declared support-surface truth inputs to build an in-memory view
-2. a local reader may expose that in-memory view through a local HTTP server
-3. a local reader must not write project files, create process files, or store semantic conclusions outside process memory
-4. every displayed project-state conclusion must remain traceable to the source file path that produced it
-5. missing or unparseable input must be reported as a diagnostic instead of being repaired or semantically guessed by tooling
-
 ## 5. Forbidden Semantic Judgment
 
 Governance tooling must not perform semantic judgment that belongs to rule documents, governance review, or runtime reasoning.
@@ -157,15 +149,11 @@ The required tooling-contract document set is:
    - `<tooling-root>/go.sum` when it exists
 4. the tooling helper script files:
    - all regular files under `<tooling-root>/scripts/**`
-5. the runtime reader web files:
-   - `<tooling-root>/reader/web/**`
-
 Default `spec_flow_review` must not issue `pass` when any of the following is true:
 
 1. a tooling function is present but does not satisfy the necessity contract
 2. tooling performs forbidden semantic judgment
 3. tooling source and tooling-governing documents disagree about what the tooling is responsible for
-4. the review output did not explicitly report tooling coverage and result, including reader runtime coverage when reader web files exist
 
 ## 7. Compiled Tooling Freshness
 

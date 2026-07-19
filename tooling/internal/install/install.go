@@ -131,7 +131,6 @@ func Doctor(repoRoot string) (DoctorResult, error) {
 	}
 
 	checkBinary(repoRoot, layout, &result)
-	checkReaderWeb(repoRoot, layout, &result)
 	return result, nil
 }
 
@@ -175,7 +174,6 @@ func copyFile(source, dest string) error {
 
 func checkBinary(repoRoot string, layout specflowlayout.Layout, result *DoctorResult) {
 	checkOneBinary(repoRoot, specflowlayout.Relative(layout.ToolingRoot, filepath.ToSlash(filepath.Join("bin", buildrelease.CurrentBinaryName()))), result)
-	checkOneBinary(repoRoot, specflowlayout.Relative(layout.ToolingRoot, filepath.ToSlash(filepath.Join("bin", buildrelease.CurrentReaderBinaryName()))), result)
 }
 
 func checkOneBinary(repoRoot, relPath string, result *DoctorResult) {
@@ -207,27 +205,6 @@ func checkOneBinary(repoRoot, relPath string, result *DoctorResult) {
 			shortFingerprint(builtFingerprint),
 			shortFingerprint(liveFingerprint),
 		))
-	}
-}
-
-func checkReaderWeb(repoRoot string, layout specflowlayout.Layout, result *DoctorResult) {
-	for _, asset := range []string{
-		"index.html",
-		"styles.css",
-		"app.js",
-		"cytoscape.min.js",
-		"mermaid.min.js",
-	} {
-		relPath := specflowlayout.Relative(layout.ToolingRoot, filepath.ToSlash(filepath.Join("reader", "web", asset)))
-		path := filepath.Join(repoRoot, filepath.FromSlash(relPath))
-		info, err := os.Stat(path)
-		if err != nil {
-			result.Failures = append(result.Failures, fmt.Sprintf("MISSING %s", relPath))
-			continue
-		}
-		if info.IsDir() {
-			result.Failures = append(result.Failures, fmt.Sprintf("INVALID %s is a directory", relPath))
-		}
 	}
 }
 

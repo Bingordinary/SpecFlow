@@ -30,18 +30,7 @@ var DefaultTargets = []Target{
 }
 
 func BinaryName(goos, goarch string) string {
-	return ToolBinaryName("specflowctl", goos, goarch)
-}
-
-func ReaderBinaryName(goos, goarch string) string {
-	return ToolBinaryName("specflow-reader", goos, goarch)
-}
-
-func ToolBinaryName(base, goos, goarch string) string {
 	name := fmt.Sprintf("specflowctl-%s-%s", goos, goarch)
-	if base != "specflowctl" {
-		name = fmt.Sprintf("%s-%s-%s", base, goos, goarch)
-	}
 	if goos == "windows" {
 		return name + ".exe"
 	}
@@ -50,10 +39,6 @@ func ToolBinaryName(base, goos, goarch string) string {
 
 func CurrentBinaryName() string {
 	return BinaryName(runtime.GOOS, runtime.GOARCH)
-}
-
-func CurrentReaderBinaryName() string {
-	return ReaderBinaryName(runtime.GOOS, runtime.GOARCH)
 }
 
 func BuildAll(repoRoot string, targets []Target) (BuildResult, error) {
@@ -81,30 +66,22 @@ func BuildAll(repoRoot string, targets []Target) (BuildResult, error) {
 
 	result := BuildResult{Targets: make([]string, 0, len(targets))}
 	for _, target := range targets {
-		builds := []struct {
-			outputName  string
-			packagePath string
-		}{
-			{outputName: BinaryName(target.GOOS, target.GOARCH), packagePath: "./cmd/specflowctl"},
-			{outputName: ReaderBinaryName(target.GOOS, target.GOARCH), packagePath: "./cmd/specflow-reader"},
+		outputName := BinaryName(target.GOOS, target.GOARCH)
+		outputPath := filepath.Join(binDir, outputName)
+		ldflags := ldflagsForFingerprint(fingerprint)
+		cmd := exec.Command("go", buildCommandArgs(ldflags, outputPath, "./cmd/specflowctl")...)
+		cmd.Dir = filepath.Join(repoRoot, filepath.FromSlash(layout.ToolingRoot))
+		cmd.Env = append(os.Environ(),
+			"GOOS="+target.GOOS,
+			"GOARCH="+target.GOARCH,
+			"CGO_ENABLED=0",
+			"GOCACHE="+cacheDir,
+			"GOMODCACHE="+modCacheDir,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return result, fmt.Errorf("build %s/%s failed: %v: %s", target.GOOS, target.GOARCH, err, string(output))
 		}
-		for _, build := range builds {
-			outputPath := filepath.Join(binDir, build.outputName)
-			ldflags := ldflagsForFingerprint(fingerprint)
-			cmd := exec.Command("go", buildCommandArgs(ldflags, outputPath, build.packagePath)...)
-			cmd.Dir = filepath.Join(repoRoot, filepath.FromSlash(layout.ToolingRoot))
-			cmd.Env = append(os.Environ(),
-				"GOOS="+target.GOOS,
-				"GOARCH="+target.GOARCH,
-				"CGO_ENABLED=0",
-				"GOCACHE="+cacheDir,
-				"GOMODCACHE="+modCacheDir,
-			)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return result, fmt.Errorf("build %s/%s %s failed: %v: %s", target.GOOS, target.GOARCH, build.packagePath, err, string(output))
-			}
-			result.Targets = append(result.Targets, specflowlayout.Relative(binRelative, build.outputName))
-		}
+		result.Targets = append(result.Targets, specflowlayout.Relative(binRelative, outputName))
 	}
 
 	return result, nil

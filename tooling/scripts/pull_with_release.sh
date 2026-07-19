@@ -7,8 +7,7 @@ Usage: pull_with_release.sh
 
 Pull the current SpecFlow branch from origin.
 Then run update_tooling_binaries.sh to make sure the current platform's
-specflowctl and specflow-reader binaries match the pulled tooling source
-fingerprint.
+specflowctl binary matches the pulled tooling source fingerprint.
 USAGE
 }
 

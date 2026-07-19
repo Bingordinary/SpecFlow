@@ -5,11 +5,11 @@ usage() {
   cat >&2 <<'USAGE'
 Usage: update_tooling_binaries.sh
 
-Download and install the specflowctl and specflow-reader binaries for the
-current platform that match the current tooling source fingerprint.
+Download and install the specflowctl binary for the
+current platform that matches the current tooling source fingerprint.
 
-The script checks whether the local binaries already match the expected
-fingerprint. If they are missing or stale, it downloads fresh binaries
+The script checks whether the local binary already matches the expected
+fingerprint. If it is missing or stale, it downloads a fresh binary
 from the matching GitHub Release.
 USAGE
 }
@@ -82,15 +82,14 @@ read_binary_fingerprint() {
 verify_checksums() {
   local dir="$1"
   local ctl_name="$2"
-  local reader_name="$3"
   local current_sums status
   current_sums="$(mktemp)"
 
-  awk -v ctl="${ctl_name}" -v reader="${reader_name}" \
-    '$2 == ctl || $2 == reader { print }' \
+  awk -v ctl="${ctl_name}" \
+    '$2 == ctl { print }' \
     "${dir}/SHA256SUMS" >"${current_sums}"
-  if [[ "$(wc -l <"${current_sums}" | tr -d ' ')" != "2" ]]; then
-    echo "Error: SHA256SUMS does not contain both current platform binaries." >&2
+  if [[ "$(wc -l <"${current_sums}" | tr -d ' ')" != "1" ]]; then
+    echo "Error: SHA256SUMS does not contain the current platform binary." >&2
     rm -f "${current_sums}"
     return 1
   fi
@@ -126,18 +125,15 @@ verify_checksums() {
 needs_download() {
   local expected_fingerprint="$1"
   local ctl_binary="$2"
-  local reader_binary="$3"
-  local ctl_fingerprint reader_fingerprint
+  local ctl_fingerprint
 
   ctl_fingerprint="$(read_binary_fingerprint "${ctl_binary}" || true)"
-  reader_fingerprint="$(read_binary_fingerprint "${reader_binary}" || true)"
 
   [[ "${ctl_fingerprint}" == "${expected_fingerprint}" ]] || return 0
-  [[ "${reader_fingerprint}" == "${expected_fingerprint}" ]] || return 0
   [[ -f "${BIN_DIR}/SHA256SUMS" ]] || return 0
 
   verify_checksums "${BIN_DIR}" \
-    "$(basename "${ctl_binary}")" "$(basename "${reader_binary}")" \
+    "$(basename "${ctl_binary}")" \
     >/dev/null || return 0
 
   return 1
@@ -154,12 +150,10 @@ short_fingerprint="${fingerprint:0:12}"
 tag="specflow-tooling-${short_fingerprint}"
 suffix="$(platform_suffix)"
 ctl_name="specflowctl-${suffix}"
-reader_name="specflow-reader-${suffix}"
 ctl_path="${BIN_DIR}/${ctl_name}"
-reader_path="${BIN_DIR}/${reader_name}"
 
-if ! needs_download "${fingerprint}" "${ctl_path}" "${reader_path}"; then
-  echo "Local binaries already match ${tag}."
+if ! needs_download "${fingerprint}" "${ctl_path}"; then
+  echo "Local binary already matches ${tag}."
   exit 0
 fi
 
@@ -172,17 +166,15 @@ fi
 download_dir="$(mktemp -d)"
 base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
 
-echo "Downloading ${tag} binaries for ${suffix}..."
+echo "Downloading ${tag} binary for ${suffix}..."
 curl -fL -o "${download_dir}/${ctl_name}" "${base}/${ctl_name}"
-curl -fL -o "${download_dir}/${reader_name}" "${base}/${reader_name}"
 curl -fL -o "${download_dir}/SHA256SUMS" "${base}/SHA256SUMS"
 
-verify_checksums "${download_dir}" "${ctl_name}" "${reader_name}"
+verify_checksums "${download_dir}" "${ctl_name}"
 
 mkdir -p "${BIN_DIR}"
 mv "${download_dir}/${ctl_name}" "${ctl_path}"
-mv "${download_dir}/${reader_name}" "${reader_path}"
 mv "${download_dir}/SHA256SUMS" "${BIN_DIR}/SHA256SUMS"
-chmod +x "${ctl_path}" "${reader_path}"
+chmod +x "${ctl_path}"
 
-echo "Installed ${ctl_name}, ${reader_name}, and SHA256SUMS from ${tag}."
+echo "Installed ${ctl_name} and SHA256SUMS from ${tag}."

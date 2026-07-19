@@ -117,11 +117,6 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"tooling/internal/demo/demo.go",
 		"tooling/go.mod",
 		"tooling/manifest.tsv",
-		"tooling/reader/web/index.html",
-		"tooling/reader/web/styles.css",
-		"tooling/reader/web/app.js",
-		"tooling/reader/web/cytoscape.min.js",
-		"tooling/reader/web/mermaid.min.js",
 	} {
 		mustWrite(t, filepath.Join(repoRoot, relPath), "# "+filepath.Base(relPath)+"\n")
 	}
