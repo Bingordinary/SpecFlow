@@ -12,7 +12,7 @@ Before executing, read `framework/verification_scope.md` to determine the curren
 |---------|------|-----------------|
 | `spec_validate {unit}` | scoped (default) | Git-aware: `git diff HEAD` on spec file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
 | `spec_validate {unit}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "coverage" → Check 5) |
+| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "coverage" → Check 5a, "drift" → Check 5c, "conflict" → Check 5d) |
 | `spec_validate {unit}:full` | full | All 9 checks + cross-check (see `framework/verification_scope.md` §Cross-check for details) |
 
 **Output:** prefix the result with `Mode: scoped` or `Mode: full` and the specific scope (e.g., `Scope: check-1 (structural integrity)`). For scoped results, append a note: "This is not a full validation. Only check {n} was executed. Run `spec_validate {unit}:full` for complete validation."
@@ -34,7 +34,11 @@ Validate result: PASS | FAIL (fix_required | blocked)
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
 4. Intent consistency: PASS | FAIL — reason
-5. Acceptance coverage: PASS | FAIL — reason
+5. Acceptance coverage & correctness: PASS | FAIL — reason
+  5a. Coverage completeness: PASS | FAIL — reason
+  5b. Content alignment: PASS | FAIL — reason
+  5c. Change drift: PASS | WARNING | FAIL — reason
+  5d. Internal consistency: PASS | FAIL — reason
 6. Affects-source validity: PASS | FAIL — reason
 7. Replacement/repair integrity: PASS | FAIL — reason
 8. Cross-unit consistency: PASS | FAIL — reason
@@ -163,34 +167,134 @@ IF Repair Scope section does NOT exist in spec body:
 
 ---
 
-## Check 5 — Acceptance coverage
+## Check 5 — Acceptance coverage & correctness
 
-**Purpose:** The behaviors described in the spec body and the acceptance items must cover each other bidirectionally.
+**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), stay current as the body evolves (5c), and contain no internal contradictions (5d).
 
 **Execution steps:**
 
-**Forward coverage (spec body → acceptance items):**
+### Sub-check 5a — Coverage completeness
+
+**Purpose:** Every key behavior in the spec body must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Enhanced from the original forward coverage check.
+
+**Execution steps:**
+
 1. Extract all key behaviors from the spec body (main flow, protocols, error handling, state transitions, etc.)
-2. Does each key behavior have at least one corresponding acceptance item?
-3. If a behavior is described but has no acceptance item → flag (possible untested behavior)
+2. For each behavior, verify at least one acceptance item covers it
+3. For each covered behavior, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
+4. If a behavior has no acceptance item → flag (possible untested behavior)
 
-**Reverse coverage (acceptance items → spec body):**
-4. Is each acceptance item's `pass_condition` specific and verifiable?
-   - PASS: "Returns HTTP 201 with id and created_at in response body" — specific
-   - FAIL: "Behavior works normally" — not verifiable
-   - FAIL: "Demo behavior passes the declared checks" — circular reference
-5. Can each acceptance item be traced to a behavior described in the spec body?
-6. If an acceptance item describes behavior not found in the spec body → flag (possible undocumented scope leak)
+**PASS:** All behaviors have corresponding items with appropriate surface fields
 
-**Coverage completeness:**
-7. Do all acceptance items' pass_conditions, taken together, prove the design goal is met?
-   - If critical verification points are missing (e.g., only happy path tested, no error path) → flag
+**FAIL:** Uncovered behavior or surface type mismatch (fix_required)
 
-**PASS:** Bidirectional coverage verified, all pass_conditions are verifiable
+**Mode:**
+| Mode | Scope |
+|---|---|
+| Scoped | Only body sections changed in `git diff HEAD` |
+| Full | Entire spec body |
 
-**FAIL:** Uncovered behavior or orphaned acceptance item (fix_required); design goal cannot be verified → blocked (needs user confirmation on whether acceptance criteria meet the goal)
+**Check method:** Spec body × acceptance item set unidirectional cross-reference (body → items)
 
-**Check method:** Spec body × acceptance item set bidirectional cross-reference
+---
+
+### Sub-check 5b — Content alignment (NEW)
+
+**Purpose:** For each behavior–item pair, detect semantic contradictions between the spec body description and the item's `pass_condition`. This catches body edits that invalidate item content — whether from recent changes or historical drift.
+
+**Execution steps:**
+
+1. For each behavior in the spec body, identify its corresponding acceptance item(s)
+2. Read both the body description text and the item's `pass_condition` text
+3. Apply natural language reasoning to identify semantic contradictions:
+
+| Contradiction type | Body says | Item says |
+|---|---|---|
+| Value conflict | "timeout: 30s" | "respond within 5s" |
+| Behavior conflict | "login accepts email+password" | "return error when password provided" |
+| Scope conflict | "supports OAuth and API Key" | "only validates API Key" |
+| Direction conflict | "increment counter" | "decrement counter" |
+
+4. For each contradiction, report with **exact quotes** from both sources and a reasoning statement
+
+**PASS:** No contradictions found
+
+**FAIL:** One or more contradictions found, with quoted evidence (fix_required)
+
+**Mode:**
+| Mode | Scope |
+|---|---|
+| Scoped | Only body sections changed in `git diff HEAD`, and their corresponding items |
+| Full | All behavior–item pairs |
+
+**Check method:** Spec body × acceptance item pass_condition — semantic cross-reference with quoted evidence
+
+---
+
+### Sub-check 5c — Change drift detection (NEW)
+
+**Purpose:** Detect when spec body sections were modified but their corresponding acceptance items were not updated proportionally. This serves as a real-time warning for "forgot to update item" scenarios. It is an auxiliary layer to 5b — 5b catches the resulting contradiction regardless, while 5c catches it at edit time.
+
+**Execution steps:**
+
+#### Scoped mode:
+1. Run `git diff HEAD` on the spec file
+2. Identify which body sections were modified (additions, changes, deletions)
+3. For each modified section, find the corresponding acceptance item ID(s)
+4. Check if those item(s) were also modified in the same diff
+5. If body section changed but item did not → WARNING with diff evidence
+
+#### Full mode:
+1. If a stable predecessor spec exists, compare current body against stable version
+2. Identify body sections that differ significantly
+3. Check if corresponding items also differ
+4. If body differs but item unchanged → WARNING
+
+**PASS:** No drift detected (all modified body sections have corresponding item changes)
+
+**WARNING:** Potential drift found — body changed but items unchanged. Report with diff excerpts. Resolution: review item and update if needed.
+
+**Output level is WARNING, not FAIL.** Not all body changes require item changes (e.g., formatting, comments, clarification). The agent reports drift as potential issues for human review.
+
+**Mode:**
+| Mode | Baseline |
+|---|---|
+| Scoped | `git diff HEAD` against working tree |
+| Full | Stable predecessor spec (if exists); skip if no predecessor |
+
+**Check method:** Git diff × acceptance item modification check — temporal cross-reference
+
+---
+
+### Sub-check 5d — Internal consistency (NEW)
+
+**Purpose:** Detect contradictions between acceptance items within the same spec. Two items targeting the same verification surface must not describe contradictory requirements.
+
+**Execution steps:**
+
+1. **Group by `verification_surface`:** items sharing the same surface are likely checking the same endpoint/module
+   - Compare their `pass_condition` texts for contradictions
+   - Example: item A says "returns 201", item B says "returns 200" for same API → conflict
+
+2. **Group by `affects.files`:** items referencing the same implementation file
+   - Check if their behavioral descriptions conflict
+   - Example: item A says "write requires auth", item B says "write is public" → conflict
+
+3. **Cross-item value/assumption check:**
+   - Detect obvious numeric contradictions (one says <100ms latency, another says <5s for same operation)
+   - Detect logical contradictions (one says "enabled by default", another says "opt-in only")
+
+**PASS:** No conflicts found
+
+**FAIL:** One or more conflicts found, with quoted evidence from both items (fix_required)
+
+**Mode:**
+| Mode | Scope |
+|---|---|
+| Scoped | Only items changed in `git diff HEAD` (check new/modified items against all existing items) |
+| Full | All items against all items |
+
+**Check method:** Cross-item cross-reference by verification_surface and affects.files
 
 ---
 

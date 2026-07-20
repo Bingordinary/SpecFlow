@@ -138,7 +138,11 @@ Scoped validate uses **git working directory changes** on the spec file to deter
    - Design rationale, protocol definitions, data contracts → Check 2 (Design soundness)
    - Scope, non-goals, boundaries → Check 3 (Scope integrity)
    - evidence_appendix_ref, Repair Scope section, acceptance item evidence_requirements → Check 4 (Intent consistency)
-   - Acceptance item set, pass_conditions → Check 5 (Acceptance coverage)
+   - Body behavior sections (main flow, protocols, error handling, state transitions) → Check 5 (5a + 5b + 5c)
+   - Acceptance item set structure (new/deleted items, pass_condition changes) → Check 5 (5b + 5d + 5c)
+   - Both body and items changed → Check 5 (5a + 5b + 5c + 5d)
+   - Frontmatter / structure only → Skip Check 5 (not a behavior area change)
+   - No git diff (new spec, no git history) → Fall back to full Check 5 after Check 1 passes
    - affects references, evidence appendix → Check 6 (Affects-source validity)
    - Replacement/repair scope → Check 7 (Replacement/repair integrity)
    - Unit refs, cross-unit contracts → Check 8 (Cross-unit consistency)
