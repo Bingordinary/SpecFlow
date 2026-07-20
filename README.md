@@ -15,6 +15,8 @@
 
 ---
 
+> ⚠️ **Experimental** — specFlow is still evolving. Fork it and adapt it to how **you** work. Don't treat it as a template — expect things to change.
+
 `specFlow` makes AI-assisted development feel like engineering again: instead of letting requirements dissolve into chat logs, code diffs, and personal memory, it gives every governed unit a current truth and a clear path from idea to verified change. Humans and agents can move fast together while the repository still knows what is true, what is changing, and what is ready to ship.
 
 ## What Problem It Solves
