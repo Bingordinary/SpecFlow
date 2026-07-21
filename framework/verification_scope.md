@@ -29,7 +29,7 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 | `spec_validate {target}` | scoped | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
 | `spec_validate {target}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3) |
-| `spec_validate {target}:full` | full | All checks + cross-check |
+| `spec_validate {target}:full` | full | All checks + cross-check (unit only — rules have no cross-check) |
 
 ### Verify
 
@@ -46,7 +46,7 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 | `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {rule}:{keyword}` | scoped | Matches keyword to a check name |
-| `spec_validate {rule}:full` | full | All 7 checks |
+| `spec_validate {rule}:full` | full | All 8 checks (7 metadata + 1 body quality) |
 | `spec_verify {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
 | `spec_verify {rule}:full` | full | All 3 steps |
 

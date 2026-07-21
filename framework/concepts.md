@@ -94,7 +94,7 @@ Unit and rule follow the same validate→verify→promote pipeline, but each ste
 
 | Step | Unit executes | Rule executes |
 |-------|--------------|--------------|
-| validate | 8-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule format & integrity checklist (`rule_validate_checklist.md`) |
+| validate | 8-point unit design checklist (`unit_validate_checklist.md`) | 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`) |
 | verify | 7-step spec-vs-code alignment check (6 analysis + 1 confidence) (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
 | promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
 
@@ -123,6 +123,8 @@ Run `specflowctl next --unit <name>` to discover the unit's candidate and stable
 - **No candidate, stable exists** → **fork from stable:** copy `s_unit_<name>.md` (and its appendices) from `docs/specs/units/stable/` to `docs/specs/units/candidate/` as `c_unit_<name>.md`, update frontmatter (`layer: stable` → `layer: candidate`, increment version), then edit the candidate. The stable spec is never edited directly except through the promote workflow.
 - **No candidate, no stable** → brand-new design. Create `c_unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
 
+**Rule fork — same logic applies to rules:** if a stable rule file exists at `docs/specs/rules/stable/{rule_id}.md` and no candidate exists, fork from stable: copy it to `docs/specs/rules/candidate/{rule_id}.md`, update `layer` from `stable` to `candidate`, and increment `rule_version`. For brand-new rules (no stable file), create the candidate rule file from scratch following `framework/spec_writing_guide.md` §5.
+
 After the fork (if applicable), update the candidate spec and code. No gate before editing. Read first, then write.
 
 ### 3. Validate, verify, promote (triggered by user)
@@ -131,7 +133,7 @@ The user can use explicit triggers at any time:
 
 | Trigger | What agent does |
 |---------|-----------------|
-| `spec_validate {target}` | Read-only subagent. Unit: 8-point validate checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 7-point rule validate checklist (`rule_validate_checklist.md`), `:full` for all 7 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. |
+| `spec_validate {target}` | Read-only subagent. Unit: 8-point validate checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. |
 | `spec_verify {target}` | Read-only subagent. Unit: 7-step spec-vs-code verify checklist (6 analysis + 1 confidence) (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. Rule: 3-step consumer alignment check (`rule_verify_checklist.md`), `:full` for all 3 steps. Auto-detects type from target name. Default: scoped (git-aware — matches changed files to content). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. |
 | `spec_promote {target}` | 2-step promote workflow. Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
@@ -243,7 +245,7 @@ Never call `specflowctl promote` without user confirmation. Before promote, alwa
 Validate and verify are quality gates. They write cache files (`_validation/`) but never spec or stable files. If validate or verify fails, the agent MUST NOT proceed to promote.
 
 **HARD RULE 3: Validate and Verify Check Quality, Promote Writes**
-`validate` and `verify` check quality and report findings. They are read-only — they do not modify files or advance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
+`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`_validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
 When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the first-principles divergence analysis (see `unit_verify_checklist.md` Step 7), which launches a sub-agent per mismatch to analyze spec intent vs code intent using first-principles reasoning. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
@@ -257,10 +259,11 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 |---------|-------------|-------------|
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
-| `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. | Agent or human maintainer |
-| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 7-point checklist (`rule_validate_checklist.md`), `:full` for all 7 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. Rule: 3-step consumer alignment (`rule_verify_checklist.md`), `:full` for all 3 steps. Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
-| `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
+| `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. Rules may declare a `promotion_owner_unit` in frontmatter — see `framework/spec_writing_guide.md` §5. | Agent or human maintainer |
+| `specflowctl review run-*` | Governance review run-state management. Subcommands: `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
+| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_validate" or confirms agent suggestion |
+| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. Rule: 3-step consumer alignment (`rule_verify_checklist.md`), `:full` for all 3 steps. Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. On MISMATCH: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_verify" or confirms agent suggestion |
+| `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run validate/verify before retrying. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |

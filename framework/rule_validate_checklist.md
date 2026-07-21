@@ -1,6 +1,6 @@
 # Rule Validate Checklist
 
-`rule_validate` is the rule-equivalent of `spec_validate`. It checks rule design quality.
+`rule_validate` is the rule-equivalent of `spec_validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
 Agent runs this when `spec_validate {target}` is called and the target has a `g_rule_` or `b_rule_` prefix.
 
 **Result:** PASS writes `docs/specs/_validation/rule/{id}/validate_result.md`.
@@ -15,7 +15,7 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 | `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` on rule file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {rule}:{keyword}` | scoped | Match keyword to check name |
-| `spec_validate {rule}:full` | full | All 7 checks |
+| `spec_validate {rule}:full` | full | All 8 checks |
 
 ## Execution Rules
 
@@ -96,3 +96,25 @@ If any of the three fields is missing → FAIL.
 If the rule has current consumers: verify `unbound_retention` and its related fields are NOT present. If they are present → FAIL.
 
 **Consumer discovery method:** search for `rule_refs` containing this `rule_id` in unit spec files under `docs/specs/units/`, or run `specflowctl rule consumers --rule-id {rule_id}` (read-only).
+
+### Check 8 — Rule Body Quality
+
+**Purpose:** Evaluate whether the rule's body content (constraint definition, exceptions, scope) is internally consistent and clearly stated. Unlike Checks 1-7 (metadata structural validity), this check evaluates the rule's written content.
+
+**Execution steps:**
+
+1. **Constraint clarity:** read the rule file body and identify the core constraint statement. Verify it is unambiguous — a reader can determine what behavior is required, prohibited, or permitted without guessing.
+
+2. **Exception consistency:** read all exception clauses or scope limitations in the body. Verify no exception effectively nullifies the constraint (e.g., a rule saying "all APIs must use HTTPS" with an exception "except when HTTP is used"). If an exception contradicts the constraint → FAIL.
+
+3. **Verifiability:** assess whether the constraint can be verified through static code inspection or spec_verify. A rule like "be intuitive" is not verifiable — flag as WARNING. A rule like "all API handlers must validate input before processing" is verifiable — PASS.
+
+4. **Self-contradiction scan:** scan the body for statements that conflict with each other (e.g., "versions must be in semver format" in one paragraph, "versions are integers" in another). If found → FAIL.
+
+**PASS:** Rule body is clear, internally consistent, and verifiable.
+
+**WARNING:** Constraint is too vague to verify mechanically (step 3 only). WARNING does not affect the overall validate result — a validate with no FAIL checks passes, cache is written, and the WARNING is recorded in the result body.
+
+**FAIL:** Contradictory exceptions, self-contradicting statements, or constraint nullified by exceptions.
+
+**Check method:** Content reasoning — the agent reads and evaluates rule prose.
