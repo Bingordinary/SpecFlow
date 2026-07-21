@@ -105,7 +105,10 @@ func sourceFilesUnder(repoRoot, toolingRoot, relDir, suffix string) ([]sourceInp
 		if info.IsDir() {
 			return nil
 		}
-		if suffix != "" && !strings.HasSuffix(info.Name(), suffix) {
+		if 	suffix != "" && !strings.HasSuffix(info.Name(), suffix) {
+			return nil
+		}
+		if strings.HasSuffix(info.Name(), "_test.go") {
 			return nil
 		}
 		repoRel, err := filepath.Rel(repoRoot, path)

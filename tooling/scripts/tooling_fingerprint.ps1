@@ -19,6 +19,7 @@ function Add-GoTree {
     }
 
     Get-ChildItem -LiteralPath $absoluteRoot -Recurse -File -Filter "*.go" | ForEach-Object {
+        if ($_.Name -like '*_test.go') { return }
         $relativePath = $_.FullName.Substring($toolingRoot.Length + 1).Replace('\', '/')
         $records.Add($relativePath)
     }

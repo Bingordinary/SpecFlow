@@ -44,6 +44,9 @@ add_go_tree() {
   fi
 
   find "${abs_root}" -type f -name '*.go' | while IFS= read -r abs_path; do
+    case "$(basename "${abs_path}")" in
+      *_test.go) continue ;;
+    esac
     printf '%s\n' "${abs_path#"${TOOLING_ROOT}/"}"
   done >>"${FILE_LIST}"
 }
