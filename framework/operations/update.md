@@ -30,6 +30,8 @@ If the command fails (non-zero exit or script not found), report the error outpu
 
 ### Step 2: Check Project Document Format
 
+> **Note:** `spec_flow_update` is a detect-only flow — it checks format compliance and reports findings but does not automatically repair structural drift. Repairs are performed manually by the agent or user following the reported recommendations. This avoids semantic judgment by tooling (per `framework/tooling_execution_policy.md` §5).
+
 After hooks are up to date and binaries are current, check the following files against the format in `framework/spec_writing_guide.md`:
 
 | Check | What to verify |

@@ -26,7 +26,7 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 ### Step 1 — Consumer Rule Ref Check (candidate only)
 
-1. Run `specflowctl rule consumers --rule-id {id}` to discover all units referencing this rule
+1. Search for `rule_refs` containing this `rule_id` in unit spec files under `docs/specs/units/`, or run `specflowctl rule consumers --rule-id {id}` to discover all units referencing this rule
 2. For each consumer, check its active layer:
    - **Candidate**: verify the consumer's `rule_refs` contain a bare ref matching this rule. If the ref uses old `@version` format, flag as DRIFTED.
    - **Stable**: **skip** — stable units are frozen truth.

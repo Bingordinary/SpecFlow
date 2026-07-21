@@ -9,10 +9,9 @@ It owns consumer discovery and freshness classification for affected units.
 Run impact sync when:
 
 1. a stable unit version changes and another current-layer unit references the prior version.
- 2. a rule is created, changed, promoted, retired, renamed, merged, split, or rebound. (Non-promote rule edits defer invalidation to promote time — see Rule Change Impact below.)
-3. a stable global rule changes or gains an explicit exception.
-4. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter.
-5. a governance flow cannot prove that downstream unit truth remains current.
+2. a stable global rule changes or gains an explicit exception.
+3. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
+4. a governance flow cannot prove that downstream unit truth remains current.
 
 ## Inputs
 
@@ -21,6 +20,7 @@ Use the smallest durable truth that can prove affected consumers:
 1. changed rule or global rule truth.
 2. promoted stable unit reference and release version.
 3. current-layer unit frontmatter and dependency fields.
+4. when triggered by a no-change governance uncertainty (Trigger 5): the current truth snapshot and the governance flow's certainty boundaries.
 
 
 Do not infer consumers from implementation directories alone.
@@ -79,7 +79,7 @@ When `impact_sync` is triggered by a non-rule change, consumer discovery uses:
 
 | Condition | Description | Next Action |
 |-----------|-------------|-------------|
-| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`rule sync-impact` CLI, `rule release-version`, or direct governance trigger). |
+| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`rule sync-impact` CLI, `rule release-version`, or `spec_flow_update` for non-rule migration scenarios). |
 | **No affected units** | Consumer discovery found zero affected units. | Close with no further action. Report `affected_units: none`. |
 
 ## Output Contract
