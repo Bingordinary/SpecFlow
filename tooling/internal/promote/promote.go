@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulesync"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 // VersionChangeType describes the kind of version change between candidate and stable.
@@ -85,6 +86,52 @@ func Promote(repoRoot, unitName string) *Result {
 	// Step 3: Check acceptance items exist
 	if !strings.Contains(content, "acceptance_item_set:") && !strings.Contains(content, "acceptance_item_set") {
 		r.Issues = append(r.Issues, "No acceptance items found (acceptance_item_set is required)")
+	}
+
+	// Step 3b: Check unit_refs don't point to unpromoted candidate-only files
+	if fm["unit_refs"] != "" && !strings.EqualFold(fm["unit_refs"], "none") {
+		refs := specpaths.ParseRefList(fm["unit_refs"])
+		for _, ref := range refs {
+			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
+			if ref == "" || ref == unitName {
+				continue
+			}
+			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", ref))
+			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", ref))
+			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
+				if _, err := os.Stat(candidatePath); err == nil {
+					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' exists only in candidate layer — promote it first", ref))
+				} else {
+					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' does not exist in stable or candidate", ref))
+				}
+			}
+		}
+	}
+
+	// Step 3c: Check rule_refs don't point to unpromoted candidate-only files
+	if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+		refs := specpaths.ParseRefList(fm["rule_refs"])
+		for _, ref := range refs {
+			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
+			if ref == "" {
+				continue
+			}
+			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ref))
+			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ref))
+			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
+				if _, err := os.Stat(candidatePath); err == nil {
+					r.Issues = append(r.Issues, fmt.Sprintf("rule_refs target '%s' exists only in candidate layer — promote it first", ref))
+				} else {
+					r.Issues = append(r.Issues, fmt.Sprintf("rule_refs target '%s' does not exist in stable or candidate", ref))
+				}
+			}
+		}
+	}
+
+	// Step 3d: Scan body for candidate-layer path references
+	_, body, _ := specpaths.ParseFrontmatterFields(content)
+	if body != "" && strings.Contains(body, "docs/specs/units/candidate/") {
+		r.Actions = append(r.Actions, "WARNING: body contains candidate-layer path references (docs/specs/units/candidate/) — verify they are correct after promote")
 	}
 
 	// Step 4: Check appendix files

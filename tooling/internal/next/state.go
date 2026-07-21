@@ -57,6 +57,24 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 	specPath, err := specpaths.ObjectMainSpecFileRef("unit", "candidate", unitName)
 	if err == nil {
 		info.RelatedUnits = discoverRelatedUnits(repoRoot, unitName, specPath)
+		// Read rule_refs from candidate spec frontmatter
+		fullPath := filepath.Join(repoRoot, specPath)
+		if data, readErr := os.ReadFile(fullPath); readErr == nil {
+			fm := specpaths.ReadFrontmatterStringMap(string(data))
+			if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+				info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
+			}
+		}
+	} else if info.HasStable {
+		// Fall back to stable spec
+		stablePath := fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName)
+		fullPath := filepath.Join(repoRoot, stablePath)
+		if data, readErr := os.ReadFile(fullPath); readErr == nil {
+			fm := specpaths.ReadFrontmatterStringMap(string(data))
+			if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+				info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
+			}
+		}
 	}
 
 	return info, nil
@@ -112,6 +130,13 @@ func FormatInfo(info *UnitInfo) string {
 		buf.WriteString("Appendices:\n")
 		for _, a := range info.Appendices {
 			fmt.Fprintf(&buf, "  - %s\n", a)
+		}
+	}
+
+	if len(info.RuleRefs) > 0 {
+		buf.WriteString("Rule refs:\n")
+		for _, r := range info.RuleRefs {
+			fmt.Fprintf(&buf, "  - %s\n", r)
 		}
 	}
 
