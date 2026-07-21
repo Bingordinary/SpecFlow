@@ -16,9 +16,9 @@ This skill is a bridge into existing specFlow routing. It does not create a new 
 1. Identify which approved conclusions affect behavior, boundary, acceptance, rule truth, or global rules.
 2. Restate the approved conclusion as current truth content, not as a transcript of the discussion.
 3. Write only current approved truth into the proper candidate, appendix, Rule, or global rule proposal path.
-5. Do not copy design discussion history, rejected options, or patch-note language into candidate truth.
-6. After writeback, route to the smallest legal next step.
-7. If the approved conclusion describes a larger development chain, write only the durable truth owned by the selected target and rerun routing from current repository truth for the next step.
+4. Do not copy design discussion history, rejected options, or patch-note language into candidate truth.
+5. After writeback, route to the smallest legal next step.
+6. If the approved conclusion describes a larger development chain, write only the durable truth owned by the selected target and rerun routing from current repository truth for the next step.
 
 ## Output Shape
 

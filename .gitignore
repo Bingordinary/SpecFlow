@@ -5,6 +5,7 @@ tooling/*.test.exe
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+REVIEW_EXPERIENCE_RULES.md
 /docs/
 .tmp/
 .claude/

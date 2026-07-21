@@ -687,7 +687,7 @@ The minimum required fields are:
 
 Additional rules:
 
-1. `severity` must satisfy the shared explanation baseline from `severity_policy.md`
+1. `severity` must satisfy the shared explanation baseline from `<framework-root>/severity_policy.md`
 2. `severity` explains design harm; it does not replace the fixed score model
 3. `score` explains current design quality; it does not replace explicit blocking judgment
 4. `P0` and `P1` are normally blocking; `P2` and `P3` are normally non-blocking unless the finding explains why the current review must stop

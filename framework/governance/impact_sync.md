@@ -9,7 +9,7 @@ It owns consumer discovery and freshness classification for affected units.
 Run impact sync when:
 
 1. a stable unit version changes and another current-layer unit references the prior version.
-2. a rule is created, changed, promoted, retired, renamed, merged, split, or rebound.
+ 2. a rule is created, changed, promoted, retired, renamed, merged, split, or rebound. (Non-promote rule edits defer invalidation to promote time — see Rule Change Impact below.)
 3. a stable global rule changes or gains an explicit exception.
 4. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter.
 5. a governance flow cannot prove that downstream unit truth remains current.
@@ -27,7 +27,9 @@ Do not infer consumers from implementation directories alone.
 
 ## Consumer Discovery
 
-When `impact_sync` is called from `rule_sync` via the Rule Sync Handoff path (see below), it must accept the pre-computed affected-unit set as authoritative. The handoff input fields are: `invalidating_rule_refs` (rule refs whose truth changed), `affected_candidate_units` (candidate-layer unit names with invalidated evidence), `affected_stable_units` (stable-layer unit names with invalidated evidence), and `stable_landing_exceptions` (stable units that are landing targets and excluded from invalidation). `impact_sync` must not re-derive consumers from `rule_refs` in that case, because `rule_sync` already computed the affected set from the execution-local inputs that the caller proved. Independent consumer re-derivation is required only when `impact_sync` is triggered directly by a non-rule change (stable unit version change or governance-flow fallback).
+Rule change impact is self-contained and does not route through `impact_sync`. `specflowctl promote --rule` handles consumer forking and rule_ref updates internally for MAJOR changes (see `rule_promote_workflow.md`). For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5; cache staleness is detected at promote time.
+
+The consumer discovery rules below apply only when `impact_sync` is triggered by a non-rule change (stable unit version change or governance-flow fallback).
 
 Rule consumers are derived from current-layer unit frontmatter:
 
@@ -60,7 +62,7 @@ agent-internal routing decisions:
 
 When classification is uncertain, use the earliest proven invalidated layer and its canonical reason code.
 
-## Rule Sync Handoff
+## Rule Change Impact
 
 Rule impact is handled directly — `specflowctl promote --rule` cascades MAJOR changes by forking stable consumers and updating candidate rule_refs (see `rule_promote_workflow.md`).
 
@@ -77,7 +79,7 @@ When `impact_sync` is triggered by a non-rule change, consumer discovery uses:
 
 | Condition | Description | Next Action |
 |-----------|-------------|-------------|
-| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`rule_sync`, or direct governance trigger). |
+| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`rule sync-impact` CLI, `rule release-version`, or direct governance trigger). |
 | **No affected units** | Consumer discovery found zero affected units. | Close with no further action. Report `affected_units: none`. |
 
 ## Output Contract
