@@ -30,7 +30,7 @@ Before executing, read `framework/verification_scope.md` to determine the curren
 
 ```
 Validate result: PASS | FAIL (fix_required | blocked)
-1. Structural integrity: PASS | FAIL — reason
+1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
 4. Intent consistency: PASS | FAIL — reason
@@ -61,8 +61,17 @@ Summary: ...
 4. Verify all `unit_refs` point to existing spec files (format `{name}@version`). Resolve by searching candidate directory first (`c_unit_{name}.md`), then fall back to stable (`s_unit_{name}.md`).
 5. Verify all `rule_refs` point to existing rule files (global or bound)
 6. Verify any appendix files referenced in the spec body exist at the expected path
+7. **Prose-path hygiene check (WARNING):** Verify that prose sections (Description, Responsibility, and any other narrative sections) do not contain code file paths:
+   - Scan narrative text for strings matching source-code file path patterns (backtick-enclosed or bare strings containing `/` and a source-code file extension like `.go`, `.ts`, `.py`, `.js`, `.java`, `.rs`, `.cs`)
+   - Exclusions:
+     - Structured fields: `implementation_surface`, `affects.files` (intentional)
+     - Spec/governance system paths: `docs/specs/`, `framework/` (describe the spec system itself)
+     - File paths inside code-block examples serving as illustrations
+   - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
 
 **PASS:** All format constraints satisfied
+
+**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a spec/governance path reference
 
 **FAIL:** Any missing field or reference to a non-existent file (fix_required)
 

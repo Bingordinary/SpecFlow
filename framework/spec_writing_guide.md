@@ -287,3 +287,14 @@ unit → unit through unit_refs
 1. unit truth owns behavior responsibility
 2. rule truth owns reusable constraints
 3. unit-to-unit dependency is explicit and stable-only
+
+## 11. Prose Content Rules
+
+Spec body prose sections (Description, Responsibility, and any user-defined narrative sections) must not contain code file paths.
+
+All code file path references must be expressed exclusively through the structured fields `implementation_surface` and `affects.files` in the acceptance item set.
+
+This rule does not apply to:
+- Spec/governance system paths (e.g., `docs/specs/units/`, `framework/`)
+- File paths in code-block examples that serve as illustrations rather than navigation
+- Structured field values (`implementation_surface`, `affects.files`)
