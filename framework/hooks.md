@@ -32,7 +32,6 @@ The `session-start` script detects the target platform from environment variable
 |----------|-----------|---------------|
 | Claude Code | `CLAUDE_PLUGIN_ROOT` set AND `COPILOT_CLI` not set | `{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "..." } }` |
 | OpenCode | OpenCode plugin (see below) | Message transform via JS plugin |
-| Gemini CLI or no plugin platform | No platform-specific variable detected | `{ "additionalContext": "..." }` |
 
 ==ATOM_BEGIN:specflowctl_location==
 specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. In the `installed_project` layout (deployed to a parent project), `<tooling-root>` is `specflow/tooling`. In the `source_repo` layout (the specFlow framework repository itself), it is `tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
@@ -46,7 +45,7 @@ Each platform requires a hook configuration JSON file that registers `session-st
 |------|-----------|----------|---------|
 | `hooks/hooks.json` | `hooks/hooks.json` | Claude Code | `"${CLAUDE_PLUGIN_ROOT}/specflow/hooks/run-hook.cmd" session-start` |
 
-Claude Code discovers hooks by convention at `{pluginRoot}/hooks/hooks.json`.
+Claude Code discovers hooks by convention at `${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json`.
 
 ### Platform Plugin Registration
 

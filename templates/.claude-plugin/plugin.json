@@ -1,6 +1,5 @@
 {
   "name": "specflow",
-  "displayName": "SpecFlow",
-  "description": "SpecFlow design governance: spec-driven development workflow for LLM-assisted projects",
-  "version": "1.0.0"
+  "description": "SpecFlow governance hooks for design document management",
+  "hooks": "hooks/hooks.json"
 }

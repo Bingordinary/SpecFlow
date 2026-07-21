@@ -23,8 +23,6 @@ session_context="<SPECFLOW_CONCEPTS>\nThis project uses SpecFlow to manage desig
 
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
   printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
-else
-  printf '{\n  "additionalContext": "%s"\n}\n' "$session_context"
 fi
 
 exit 0
