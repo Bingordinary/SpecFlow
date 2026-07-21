@@ -34,19 +34,9 @@ type Result struct {
 	RetargetedUnits              []string
 	BoundObjectsOnlyRuleFileRefs []string
 	ModuleResults                []ModuleResult
-	BoundObjectDrifts            []BoundObjectDrift
 }
 
 type ModuleResult = impactsync.ModuleResult
-
-type BoundObjectDrift struct {
-	RuleID                string
-	FileRef               string
-	VersionRef            string
-	DeclaredObjects       []string
-	ActualObjects         []string
-	BoundObjectsOnlyDelta bool
-}
 
 type moduleBinding struct {
 	ID            string
@@ -62,23 +52,7 @@ type sharedFile struct {
 	FileRef            string
 	VersionRef         string
 	RuleVersion        string
-	BoundObjects       []string
 	PromotionOwnerUnit string
-}
-
-type ReconcileBoundModulesOptions struct {
-	Modules  []string
-	RuleRefs []string
-	RuleIDs  []string
-}
-
-type ReconcileBoundModulesResult struct {
-	ScopedModules  []string
-	ScopedRuleRefs []string
-	ScopedRuleIDs  []string
-	TouchedFiles   []string
-	UpdatedFiles   []string
-	UnchangedFiles []string
 }
 
 func SyncImpact(repoRoot string, options Options) (Result, error) {
@@ -223,58 +197,6 @@ func validateDeletedRuleRefs(deletedRuleRefs []string, sharedFilesByRef map[stri
 	return nil
 }
 
-func ReconcileBoundModules(repoRoot string, options ReconcileBoundModulesOptions) (ReconcileBoundModulesResult, error) {
-	return ReconcileBoundModulesResult{}, fmt.Errorf("rule reconcile-bound-objects is no longer supported; derive consumers from current-layer rule_refs")
-}
-
-func reconcileBoundModulesDeprecated(repoRoot string, options ReconcileBoundModulesOptions) (ReconcileBoundModulesResult, error) {
-	return ReconcileBoundModules(repoRoot, options)
-}
-
-func collectBoundObjectDrifts(sharedFilesByRef map[string]sharedFile, actualBoundObjectsByRef map[string][]string, boundObjectsOnlyFileRefs map[string]bool) ([]BoundObjectDrift, error) {
-	refs := make([]string, 0, len(sharedFilesByRef))
-	for ref := range sharedFilesByRef {
-		refs = append(refs, ref)
-	}
-	sort.Strings(refs)
-
-	drifts := []BoundObjectDrift{}
-	for _, ref := range refs {
-		shared := sharedFilesByRef[ref]
-		actual := normalizeStrings(actualBoundObjectsByRef[ref])
-		declared := normalizeStrings(shared.BoundObjects)
-		if sameStringSlice(actual, declared) {
-			continue
-		}
-		drifts = append(drifts, BoundObjectDrift{
-			RuleID:                shared.RuleID,
-			FileRef:               shared.FileRef,
-			VersionRef:            shared.VersionRef,
-			DeclaredObjects:       declared,
-			ActualObjects:         actual,
-			BoundObjectsOnlyDelta: boundObjectsOnlyFileRefs[shared.FileRef],
-		})
-	}
-	return drifts, nil
-}
-
-func collectActualBoundObjectsByRef(repoRoot string, actualUnitsByRef map[string][]string) (map[string][]string, error) {
-	result := map[string][]string{}
-	appendTypedRefs := func(versionRef, objectType string, objects []string) {
-		for _, object := range objects {
-			result[versionRef] = append(result[versionRef], typedBoundObjectRef(objectType, object))
-		}
-	}
-
-	for versionRef, units := range actualUnitsByRef {
-		appendTypedRefs(versionRef, "unit", units)
-	}
-	for versionRef := range result {
-		result[versionRef] = normalizeStrings(result[versionRef])
-	}
-	return result, nil
-}
-
 func loadSharedFiles(repoRoot string) (map[string]sharedFile, error) {
 	result := map[string]sharedFile{}
 	for _, root := range []struct {
@@ -327,14 +249,6 @@ func buildSharedFilesByID(sharedFilesByRef map[string]sharedFile) map[string][]s
 		sort.Slice(result[sharedID], func(i, j int) bool {
 			return result[sharedID][i].VersionRef < result[sharedID][j].VersionRef
 		})
-	}
-	return result
-}
-
-func buildSharedFilesByFileRef(sharedFilesByRef map[string]sharedFile) map[string]sharedFile {
-	result := make(map[string]sharedFile, len(sharedFilesByRef))
-	for _, shared := range sharedFilesByRef {
-		result[shared.FileRef] = shared
 	}
 	return result
 }
@@ -554,33 +468,6 @@ func sortedKeys(scope map[string]bool) []string {
 	return result
 }
 
-func buildScopeSharedFiles(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, sharedFilesByID map[string][]sharedFile, options ReconcileBoundModulesOptions) []string {
-	scope := map[string]bool{}
-	for _, module := range options.Modules {
-		for _, ref := range moduleBindings[module].RuleRefs {
-			if shared, ok := sharedFilesByRef[ref]; ok {
-				scope[shared.FileRef] = true
-			}
-		}
-	}
-	for _, ref := range options.RuleRefs {
-		if shared, ok := sharedFilesByRef[ref]; ok {
-			scope[shared.FileRef] = true
-		}
-	}
-	for _, sharedID := range options.RuleIDs {
-		for _, shared := range sharedFilesByID[sharedID] {
-			scope[shared.FileRef] = true
-		}
-	}
-	result := make([]string, 0, len(scope))
-	for fileRef := range scope {
-		result = append(result, fileRef)
-	}
-	sort.Strings(result)
-	return result
-}
-
 func selectedRuleRefsForObject(objectRefs, scopedRefs, scopedIDs []string, sharedFilesByRef map[string]sharedFile, sharedFilesByID map[string][]sharedFile) ([]string, error) {
 	refSet := map[string]bool{}
 	for _, ref := range scopedRefs {
@@ -610,10 +497,6 @@ func selectedRuleRefsForObject(objectRefs, scopedRefs, scopedIDs []string, share
 
 func filterInvalidatingRuleRefs(selectedRefs []string, sharedFilesByRef map[string]sharedFile, boundObjectsOnlyFileRefs map[string]bool) []string {
 	return normalizeStrings(selectedRefs)
-}
-
-func allowedSharedSnapshotMismatchFileRefs(selectedRefs []string, sharedFilesByRef map[string]sharedFile, boundObjectsOnlyFileRefs map[string]bool) []string {
-	return nil
 }
 
 func subtractStringSet(values []string, excluded map[string]bool) []string {
@@ -710,94 +593,6 @@ func parseSharedFile(relPath, content string) (sharedFile, error) {
 		return sharedFile{}, fmt.Errorf("%s: missing rule_id, layer, or rule_version", relPath)
 	}
 	return shared, nil
-}
-
-func rewriteSharedBoundObjects(repoRoot, fileRef string, boundObjects []string) error {
-	path := filepath.Join(repoRoot, filepath.FromSlash(fileRef))
-	contentBytes, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", fileRef, err)
-	}
-	content := strings.ReplaceAll(string(contentBytes), "\r\n", "\n")
-	hadTrailingNewline := strings.HasSuffix(content, "\n")
-	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return fmt.Errorf("%s: missing frontmatter start marker", fileRef)
-	}
-	endIdx := -1
-	for idx := 1; idx < len(lines); idx++ {
-		if strings.TrimSpace(lines[idx]) == "---" {
-			endIdx = idx
-			break
-		}
-	}
-	if endIdx == -1 {
-		return fmt.Errorf("%s: missing frontmatter end marker", fileRef)
-	}
-
-	boundLines := []string{"bound_objects: none"}
-	if len(boundObjects) > 0 {
-		boundLines = []string{"bound_objects:"}
-		for _, boundObject := range normalizeStrings(boundObjects) {
-			boundLines = append(boundLines, fmt.Sprintf("  - %s", boundObject))
-		}
-	}
-
-	frontmatter := []string{"---"}
-	inserted := false
-	skipping := false
-	for _, line := range lines[1:endIdx] {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "bound_objects:") {
-			frontmatter = append(frontmatter, boundLines...)
-			inserted = true
-			skipping = true
-			continue
-		}
-		if skipping {
-			if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || trimmed == "" {
-				continue
-			}
-			skipping = false
-		}
-		frontmatter = append(frontmatter, line)
-	}
-	if !inserted {
-		frontmatter = append(frontmatter, boundLines...)
-	}
-	frontmatter = append(frontmatter, "---")
-	rewritten := strings.Join(append(frontmatter, lines[endIdx+1:]...), "\n")
-	if hadTrailingNewline {
-		rewritten += "\n"
-	}
-	if err := os.WriteFile(path, []byte(rewritten), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", fileRef, err)
-	}
-	return nil
-}
-
-func normalizeTypedBoundObjectRef(raw string) (string, error) {
-	raw = strings.TrimSpace(strings.Trim(raw, "`"))
-	if raw == "" {
-		return "", fmt.Errorf("bound_objects contains an empty item")
-	}
-	objectType, object, ok := strings.Cut(raw, ":")
-	if !ok {
-		return "", fmt.Errorf("bound_objects item %q must use typed ref syntax <object_type>:<object>", raw)
-	}
-	objectType = strings.TrimSpace(objectType)
-	object = strings.TrimSpace(object)
-	if objectType != "unit" {
-		return "", fmt.Errorf("bound_objects item %q uses unsupported object type %q", raw, objectType)
-	}
-	if object == "" {
-		return "", fmt.Errorf("bound_objects item %q has an empty object id", raw)
-	}
-	return typedBoundObjectRef(objectType, object), nil
-}
-
-func typedBoundObjectRef(objectType, object string) string {
-	return fmt.Sprintf("%s:%s", strings.TrimSpace(objectType), strings.TrimSpace(object))
 }
 
 func readUnitRuleRefs(repoRoot string, unit unitdiscovery.UnitInfo) ([]string, error) {
