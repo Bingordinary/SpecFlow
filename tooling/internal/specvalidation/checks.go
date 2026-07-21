@@ -300,15 +300,23 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 			if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
 				refName = ref[:atIdx]
 			}
-			if strings.HasPrefix(refName, "s_unit_") {
-				fileName := fmt.Sprintf("%s.md", refName)
-				fullPath := filepath.Join(repoRoot, "docs/specs/units/stable", fileName)
-				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-					missingRefs = append(missingRefs, ref)
-				}
-			} else {
-				missingRefs = append(missingRefs, fmt.Sprintf("%s (unexpected format, expected s_unit_ prefix)", ref))
+
+			if strings.HasPrefix(refName, "s_unit_") || strings.HasPrefix(refName, "c_unit_") {
+				missingRefs = append(missingRefs, fmt.Sprintf("%s (old format: remove s_/c_ prefix, use bare unit name)", ref))
+				continue
 			}
+
+			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("c_unit_%s.md", refName))
+			if _, err := os.Stat(candidatePath); err == nil {
+				continue
+			}
+
+			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("s_unit_%s.md", refName))
+			if _, err := os.Stat(stablePath); err == nil {
+				continue
+			}
+
+			missingRefs = append(missingRefs, ref)
 		}
 	}
 
@@ -320,15 +328,23 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 			if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
 				refName = ref[:atIdx]
 			}
-			if strings.HasPrefix(refName, "s_") {
-				fileName := fmt.Sprintf("%s.md", refName)
-				fullPath := filepath.Join(repoRoot, "docs/specs/rules/stable", fileName)
-				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-					missingRefs = append(missingRefs, ref)
-				}
-			} else {
+
+			if strings.HasPrefix(refName, "s_") || strings.HasPrefix(refName, "c_") {
+				missingRefs = append(missingRefs, fmt.Sprintf("%s (old format: remove s_/c_ prefix, use rule ref without layer prefix)", ref))
 				continue
 			}
+
+			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("c_%s.md", refName))
+			if _, err := os.Stat(candidatePath); err == nil {
+				continue
+			}
+
+			stablePath := filepath.Join(repoRoot, "docs/specs/rules/stable", fmt.Sprintf("s_%s.md", refName))
+			if _, err := os.Stat(stablePath); err == nil {
+				continue
+			}
+
+			missingRefs = append(missingRefs, ref)
 		}
 	}
 
@@ -412,18 +428,20 @@ func checkVersionConsistency(repoRoot, unitName string) CheckResult {
 				continue
 			}
 
-			if strings.HasPrefix(refName, "s_unit_") {
-				targetFile := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("%s.md", refName))
-				targetData, err := os.ReadFile(targetFile)
+			targetFile := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("c_unit_%s.md", refName))
+			targetData, err := os.ReadFile(targetFile)
+			if err != nil {
+				targetFile = filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("s_unit_%s.md", refName))
+				targetData, err = os.ReadFile(targetFile)
 				if err != nil {
-					versionMismatches = append(versionMismatches, fmt.Sprintf("%s: cannot read target", ref))
+					versionMismatches = append(versionMismatches, fmt.Sprintf("%s: cannot read target spec", ref))
 					continue
 				}
-				targetFM := specpaths.ReadFrontmatterStringMap(string(targetData))
-				actualVersion := strings.TrimSpace(targetFM["version"])
-				if actualVersion != expectedVersion {
-					versionMismatches = append(versionMismatches, fmt.Sprintf("%s: expected version %q, target has %q", refName, expectedVersion, actualVersion))
-				}
+			}
+			targetFM := specpaths.ReadFrontmatterStringMap(string(targetData))
+			actualVersion := strings.TrimSpace(targetFM["version"])
+			if actualVersion != expectedVersion {
+				versionMismatches = append(versionMismatches, fmt.Sprintf("%s: expected version %q, target has %q", refName, expectedVersion, actualVersion))
 			}
 		}
 	}

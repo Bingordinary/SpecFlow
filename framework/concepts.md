@@ -96,7 +96,7 @@ Unit and rule follow the same validate→verify→promote pipeline, but each ste
 |-------|--------------|--------------|
 | validate | 9-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule format & integrity checklist (`rule_validate_checklist.md`) |
 | verify | 7-step spec-vs-code alignment check (6 analysis + 1 confidence) (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
-| promote | candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
+| promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
 
 ## specflowctl Location
 
@@ -133,7 +133,7 @@ The user can use explicit triggers at any time:
 |---------|-----------------|
 | `spec_validate {target}` | Read-only subagent. Unit: 9-point validate checklist (`unit_validate_checklist.md`). Rule: 7-point rule validate checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. |
 | `spec_verify {target}` | Read-only subagent. Unit: 7-step spec-vs-code verify checklist (6 analysis + 1 confidence) (`unit_verify_checklist.md`). Rule: 3-step consumer alignment check (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. |
-| `spec_promote {target}` | 3-step promote workflow. Unit: candidate→stable archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
+| `spec_promote {target}` | 2-step promote workflow. Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
 
@@ -216,13 +216,13 @@ The scope mode (scoped vs full) affects disclosure wording. If the fresh cache i
 
 ### 4. Promote (only gate)
 
-The detailed promote workflow is defined in `framework/unit_promote_workflow.md` (unit) and `framework/rule_promote_workflow.md` (rule). Both follow 3 steps: optional agent pre-check, `specflowctl promote`, and post-promote body reference cleanup.
+The detailed promote workflow is defined in `framework/unit_promote_workflow.md` (unit) and `framework/rule_promote_workflow.md` (rule). Both follow 2 steps: optional agent pre-check and `specflowctl promote`.
 
 Key rules that override the checklist:
 
 1. `specflowctl promote --unit <name>` and `specflowctl promote --rule <id>` are the only operations that write to stable.
 2. Unit promote: the CLI independently checks cache freshness before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
-3. After promote succeeds, the agent must run Step 3 of the checklist: scan the promoted stable spec body for dangling references and update them to their stable equivalents.
+3. After promote succeeds, the agent must NOT modify the promoted stable spec. Body text references are maintained as-is because they use concept names (e.g. `auth`) rather than layer-prefixed file names.
 
 `specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
 
@@ -260,7 +260,7 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, runs release-version to update consumer refs. | Agent or human maintainer |
 | `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 9-point checklist (`unit_validate_checklist.md`). Rule: 7-point checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: scoped (Check 1). Add `:check-{n}` or `:{keyword}` for specific check, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on PASS. | User says "spec_validate" or confirms agent suggestion |
 | `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 7-step spec-vs-code alignment (`unit_verify_checklist.md`). Rule: 3-step consumer alignment (`rule_verify_checklist.md`). Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content, `:full` for all + cross-check. See `framework/verification_scope.md`. Writes cache on ALIGNED. | User says "spec_verify" or confirms agent suggestion |
-| `spec_promote {target}` (agent trigger) | 3-step promote workflow. Unit: archive + body ref cleanup (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
+| `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |

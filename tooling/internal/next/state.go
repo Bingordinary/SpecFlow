@@ -80,8 +80,6 @@ func discoverRelatedUnits(repoRoot, unitName, specPath string) []string {
 			rest = strings.TrimSpace(rest)
 			for _, ref := range strings.Split(rest, ",") {
 				ref = strings.TrimSpace(ref)
-				ref = strings.TrimPrefix(ref, "s_unit_")
-				ref = strings.TrimPrefix(ref, "c_unit_")
 				ref = strings.Split(ref, "@")[0]
 				if ref != "" && ref != unitName && !seen[ref] {
 					seen[ref] = true

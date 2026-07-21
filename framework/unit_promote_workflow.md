@@ -7,12 +7,11 @@ When an agent executes `spec_promote {unit}`, it follows the 3 steps defined in 
 ## Execution Rules
 
 - **Subagent permissions before promote:** may inspect file content. Must NOT modify files before `specflowctl promote` runs.
-- **Subagent permissions after promote:** may inspect file content, modify the promoted stable spec directly for Step 3 cleanup only (candidate-layer reference normalization). Must NOT change behavioral content, acceptance criteria, or structural truth.
+- **Subagent permissions after promote:** must NOT modify files.
 - Each step reports **PASS** or **FAIL** with a reason.
 - Resolution types:
   - **fix_required** — A concrete repair can be made.
   - **blocked** — Requires user input (unclear intent, external dependency). Stop and ask.
-- Post-promote stable spec modifications (Step 3) are explicitly authorized here. They are not a bypass of the promote gate — they occur after promote has already completed and only normalize references that would otherwise be dangling.
 
 ## Output Format
 
@@ -20,7 +19,6 @@ When an agent executes `spec_promote {unit}`, it follows the 3 steps defined in 
 Promote result: PASS | FAIL
 1. Agent pre-check (optional): PASS | FAIL — reason
 2. specflowctl promote: PASS | FAIL — reason
-3. Body reference cleanup: PASS | SKIP — reason
 Summary: ...
 ```
 
@@ -72,30 +70,6 @@ Summary: ...
 
 ---
 
-## Step 3 — Post-promote body reference cleanup
-
-**Purpose:** The promote CLI mechanically transforms filenames and frontmatter but cannot safely rewrite body text (distinguishing file references from prose requires semantic judgment). This step closes that gap by having the agent review and normalize candidate-layer file references in the promoted stable spec.
-
-**Why this exists:** The promote CLI renames appendix files (`c_unit_`→`s_unit_`) and updates the `layer` frontmatter field, but body content is copied verbatim. If the candidate spec contained literal file references such as `c_unit_auth` or `docs/specs/units/candidate/`, those references become dangling in the stable layer. A blind mechanical `c_unit_`→`s_unit_` replacement in body text would be unsafe because the same string pattern may appear in prose that is not a file reference. The agent must use semantic judgment to distinguish the two cases.
-
-**Execution steps:**
-
-1. Read the newly created stable spec at `docs/specs/units/stable/s_unit_{name}.md`
-2. Scan body text for candidate-layer reference patterns:
-   - `c_unit_` prefix (e.g. `c_unit_auth`, `c_unit_foo_config`)
-   - `docs/specs/units/candidate/` path prefix
-   - `docs/specs/rules/candidate/` path prefix
-3. For each match, determine whether it is a **file reference** or **prose content**:
-   - File reference: refers to a unit, rule, or appendix file that was renamed from `c_` prefix to `s_` prefix during promote. These should be updated to the stable equivalent.
-   - Prose content: uses the `c_unit_` or `candidate` pattern as prose (e.g. "the c_unit_ naming convention", "candidate approaches were evaluated"). These must remain unchanged.
-4. If any file references are found, update them in the stable spec:
-   - `c_unit_` → `s_unit_` for unit/rule/appendix file references
-   - `docs/specs/units/candidate/` → `docs/specs/units/stable/` for path references
-   - `docs/specs/rules/candidate/` → `docs/specs/rules/stable/` for path references
-5. No re-validate or re-verify is required — behavioral content has not changed.
-
-**PASS:** No dangling candidate-layer file references found, or all found references have been updated
-**SKIP:** No candidate-layer references found in body text
 
 ---
 

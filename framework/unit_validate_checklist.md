@@ -58,7 +58,7 @@ Summary: ...
 1. Read `docs/specs/units/candidate/c_unit_{unit}.md`
 2. Verify required frontmatter fields: `id`, `layer` (must be `"candidate"`), `version`, `unit_refs`, `rule_refs`
 3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `not_runnable_yet`
-4. Verify all `unit_refs` point to existing stable spec files (format `s_unit_{name}@version`)
+4. Verify all `unit_refs` point to existing spec files (format `{name}@version`). Resolve by searching candidate directory first (`c_unit_{name}.md`), then fall back to stable (`s_unit_{name}.md`).
 5. Verify all `rule_refs` point to existing rule files (global or bound)
 6. Verify any appendix files referenced in the spec body exist at the expected path
 
@@ -351,7 +351,7 @@ affects.appendices:
 **IF Repair Scope section exists in spec body:**
 ```
 1. The Repair Scope section must contain:
-   - Repair target version (e.g., "Repair Target: s_unit_{unit}@<version>")
+   - Repair target version (e.g., "Repair Target: {unit}@<version>")
    - List of acceptance item IDs being restored
    - Observed deviations from expected behavior
    - Expected implementation-side changes
@@ -388,10 +388,10 @@ affects.appendices:
 
 **Execution steps:**
 
-1. From `unit_refs`, get the list of dependency units
+1. From `unit_refs`, get the list of dependency units (format `{name}@version`, resolved candidate-first per Check 1)
 2. For each dependency unit:
-   - If a candidate spec exists, read it and check for conflicting statements about shared protocols, data formats, or behavior
-   - Read the stable spec and check whether this candidate changes any contract that the stable spec depends on
+   - Candidate spec takes priority — read it and check for conflicting statements about shared protocols, data formats, or behavior
+   - Also read the stable spec and check whether this candidate changes any contract that the stable spec depends on
 3. Specific checks:
 ```
    - Are API signatures compatible across all related units?

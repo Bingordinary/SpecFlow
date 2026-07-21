@@ -257,21 +257,41 @@ func TestCheckReferences_PassNone(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_MissingStableRefFail(t *testing.T) {
+func TestCheckReferences_MissingRefFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
-	// s_unit_auth.md does not exist in stable
+			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
+	// auth does not exist in candidate or stable
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatal("expected FAIL for missing stable unit ref")
+		t.Fatal("expected FAIL for missing unit ref")
 	}
 }
 
-func TestCheckReferences_ExistingRefPass(t *testing.T) {
+func TestCheckReferences_CandidateRefPass(t *testing.T) {
 	repoRoot := t.TempDir()
-	// Create the referenced stable unit
+	// Create the referenced candidate unit (candidate-first resolution)
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "c_unit_auth.md"),
+		[]byte("---\nid: auth\nlayer: candidate\nversion: 0.1.0\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
+	result := checkReferences(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for candidate ref, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckReferences_StableRefPass(t *testing.T) {
+	repoRoot := t.TempDir()
+	// Create the referenced stable unit (no candidate, fallback to stable)
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
@@ -282,10 +302,24 @@ func TestCheckReferences_ExistingRefPass(t *testing.T) {
 	}
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
+			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
-		t.Fatalf("expected PASS for existing ref, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected PASS for stable ref, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckReferences_OldFormatRejected(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
+	result := checkReferences(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatal("expected FAIL for old s_unit_ prefix format")
+	}
+	if !strings.Contains(result.Details, "old format") {
+		t.Fatalf("expected error about old format, got: %s", result.Details)
 	}
 }
 
@@ -329,7 +363,7 @@ func TestCheckVersionConsistency_MismatchFail(t *testing.T) {
 	// Candidate references auth@0.1.0 (wrong version)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
+			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for version mismatch")
@@ -350,7 +384,7 @@ func TestCheckVersionConsistency_MatchPass(t *testing.T) {
 	// Candidate references auth@0.1.0 (correct)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
+			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for matching version, got %s: %s", result.Status, result.Details)

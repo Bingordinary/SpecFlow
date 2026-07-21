@@ -34,10 +34,10 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 ### Step 2 — Consumer Body Version Reference Scan
 
 1. For each consumer identified in Step 1, scan the unit spec body text
-2. Find any direct references to the rule version (e.g., `s_b_rule_x@0.3.0` in prose, path references, or code blocks)
+2. Find any direct references to the rule version (e.g., `b_rule_x@0.3.0` in prose, path references, or code blocks)
 3. Classify each reference:
-   - **active ref** — a reference that determines behavior or intent (e.g., "This component must follow s_b_rule_x@0.3.0")
-   - **historical ref** — a reference that describes past state (e.g., "Previously used s_b_rule_x@0.3.0, now migrated to 0.4.0")
+   - **active ref** — a reference that determines behavior or intent (e.g., "This component must follow b_rule_x@0.3.0")
+   - **historical ref** — a reference that describes past state (e.g., "Previously used b_rule_x@0.3.0, now migrated to 0.4.0")
 4. If any active ref points to a version other than the current stable version → flag the consumer as DRIFTED
 
 ### Step 3 — Semantic Consumer Alignment Check

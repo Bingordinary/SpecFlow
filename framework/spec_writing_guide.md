@@ -40,33 +40,32 @@ unit_refs: none
 rule_refs: none
 ```
 
-`unit_refs` may also be a YAML list of stable unit refs:
+`unit_refs` may also be a YAML list of unit refs:
 
 ```yaml
 unit_refs:
-  - s_unit_agent@0.6.0
+  - agent@0.6.0
 ```
 
-`rule_refs` may also be a YAML list of exact rule refs:
+`rule_refs` may also be a YAML list of rule refs:
 
 ```yaml
 rule_refs:
-  - s_b_rule_example@1.0.0
+  - b_rule_example@1.0.0
 ```
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `c_unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
 ## 3. Unit Dependencies
 
-`unit_refs` means the current unit depends on the referenced stable unit's formal behavior.
+`unit_refs` means the current unit depends on the referenced unit's formal behavior.
 
 It does not mean:
 
 1. the current unit may edit the referenced unit
 2. the referenced unit is part of the current unit's ownership
-3. the dependency can point to a candidate unit
 
-If the body says the unit relies on another unit's official behavior, `unit_refs` must list that stable unit ref.
+If the body says the unit relies on another unit's official behavior, `unit_refs` must list that unit ref.
 
 ## 4. Rule References
 
@@ -78,7 +77,7 @@ Rules:
 
 1. `rule_refs` must be in frontmatter
 2. no formal `rule_refs` list should be duplicated in the body
-3. refs must use exact layer and version
+3. refs must use exact version
 4. refs must be sorted lexically when written as a list
 5. `rule_refs: none` means the unit binds no bound shared rule
 
@@ -282,7 +281,7 @@ Rule files must not store consumer lists. `bound_objects` is not the source of r
 unit → rule
 stable global rule → unit and rule
 rule → unit
-unit → unit through stable-only unit_refs
+unit → unit through unit_refs
 ```
 
 1. unit truth owns behavior responsibility

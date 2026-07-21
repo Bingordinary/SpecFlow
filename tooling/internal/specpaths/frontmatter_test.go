@@ -7,7 +7,7 @@ func TestReadFrontmatter_InlineList(t *testing.T) {
 id: test
 layer: candidate
 version: 0.1.0
-unit_refs: [s_unit_auth@0.1.0, s_unit_billing@0.2.0]
+unit_refs: [auth@0.1.0, billing@0.2.0]
 rule_refs: none
 ---
 `
@@ -21,7 +21,7 @@ rule_refs: none
 	if fm["version"] != "0.1.0" {
 		t.Fatalf("expected version=0.1.0, got %q", fm["version"])
 	}
-	if fm["unit_refs"] != "[s_unit_auth@0.1.0, s_unit_billing@0.2.0]" {
+	if fm["unit_refs"] != "[auth@0.1.0, billing@0.2.0]" {
 		t.Fatalf("expected unit_refs list, got %q", fm["unit_refs"])
 	}
 	if fm["rule_refs"] != "none" {
@@ -35,8 +35,8 @@ id: test
 layer: candidate
 version: 0.1.0
 unit_refs:
-  - s_unit_auth@0.1.0
-  - s_unit_billing@0.2.0
+  - auth@0.1.0
+  - billing@0.2.0
 rule_refs: none
 ---
 `
@@ -44,7 +44,7 @@ rule_refs: none
 	if fm["id"] != "test" {
 		t.Fatalf("expected id=test, got %q", fm["id"])
 	}
-	if fm["unit_refs"] != "[s_unit_auth@0.1.0, s_unit_billing@0.2.0]" {
+	if fm["unit_refs"] != "[auth@0.1.0, billing@0.2.0]" {
 		t.Fatalf("expected block-style unit_refs to be parsed as inline list, got %q", fm["unit_refs"])
 	}
 	if fm["rule_refs"] != "none" {
@@ -58,13 +58,13 @@ id: test
 layer: candidate
 version: 0.1.0
 unit_refs:
-  - s_unit_auth@0.1.0
+  - auth@0.1.0
 rule_refs: none
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
-	if fm["unit_refs"] != "[s_unit_auth@0.1.0]" {
-		t.Fatalf("expected single-item block-style list [s_unit_auth@0.1.0], got %q", fm["unit_refs"])
+	if fm["unit_refs"] != "[auth@0.1.0]" {
+		t.Fatalf("expected single-item block-style list [auth@0.1.0], got %q", fm["unit_refs"])
 	}
 }
 
@@ -74,17 +74,17 @@ id: test
 layer: candidate
 version: 0.1.0
 unit_refs:
-  - s_unit_auth
+  - auth
 rule_refs:
-  - s_rule_x
+  - b_rule_x
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
-	if fm["unit_refs"] != "[s_unit_auth]" {
-		t.Fatalf("expected unit_refs=[s_unit_auth], got %q", fm["unit_refs"])
+	if fm["unit_refs"] != "[auth]" {
+		t.Fatalf("expected unit_refs=[auth], got %q", fm["unit_refs"])
 	}
-	if fm["rule_refs"] != "[s_rule_x]" {
-		t.Fatalf("expected rule_refs=[s_rule_x], got %q", fm["rule_refs"])
+	if fm["rule_refs"] != "[b_rule_x]" {
+		t.Fatalf("expected rule_refs=[b_rule_x], got %q", fm["rule_refs"])
 	}
 }
 
