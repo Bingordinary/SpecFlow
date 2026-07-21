@@ -387,125 +387,15 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 
 	switch args[0] {
 	case "collect-default-scope":
-		fs := flag.NewFlagSet("review collect-default-scope", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		flow := fs.String("flow", "", "review flow")
-
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if err := requireReviewFlow(*flow, stderr); err != nil {
-			return err
-		}
-
-		return writeReviewScope(stdout, mustAbs(*repoRoot), *flow)
+		return runReviewCollectDefaultScope(args[1:], stdout, stderr)
 	case "run-init":
-		fs := flag.NewFlagSet("review run-init", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		flow := fs.String("flow", "", "review flow")
-
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if err := requireReviewFlow(*flow, stderr); err != nil {
-			return err
-		}
-		result, err := reviewrun.Init(mustAbs(*repoRoot), *flow, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		if result.Created {
-			fmt.Fprintf(stdout, "Review run-state created: %s\n", result.File)
-			if len(result.DeletedFiles) > 0 {
-				fmt.Fprintf(stdout, "Deleted run-state files (%d):\n", len(result.DeletedFiles))
-				for _, deleted := range result.DeletedFiles {
-					fmt.Fprintf(stdout, "- %s | reason=%s\n", deleted.File, deleted.Reason)
-				}
-			}
-			return nil
-		}
-		fmt.Fprintf(stdout, "Review run-state reused: %s\n", result.File)
-		return nil
+		return runReviewRunInit(args[1:], stdout, stderr)
 	case "run-validate":
-		fs := flag.NewFlagSet("review run-validate", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		flow := fs.String("flow", "", "review flow")
-
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if err := requireReviewFlow(*flow, stderr); err != nil {
-			return err
-		}
-		absRepoRoot := mustAbs(*repoRoot)
-		file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
-		if err != nil {
-			return err
-		}
-		result := reviewrun.ValidateFile(absRepoRoot, *flow, file, time.Now().UTC())
-		if result.Valid {
-			fmt.Fprintf(stdout, "Review run-state is valid: %s\n", result.File)
-			return nil
-		}
-		fmt.Fprintf(stdout, "Review run-state is invalid: %s\n", result.File)
-		for _, diagnostic := range result.Diagnostics {
-			fmt.Fprintf(stdout, "- %s\n", diagnostic)
-		}
-		return errors.New("review run-state validation failed")
+		return runReviewRunValidate(args[1:], stdout, stderr)
 	case "run-refresh":
-		fs := flag.NewFlagSet("review run-refresh", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		flow := fs.String("flow", "", "review flow")
-
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if err := requireReviewFlow(*flow, stderr); err != nil {
-			return err
-		}
-		absRepoRoot := mustAbs(*repoRoot)
-		file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
-		if err != nil {
-			return err
-		}
-		result, err := reviewrun.Refresh(absRepoRoot, *flow, file, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Review run-state refreshed: %s\n", result.File)
-		fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
-		writeList(stdout, "Changed fingerprint slices", result.ChangedSlices)
-		writeList(stdout, "Stale slices", result.StaleSlices)
-		writeList(stdout, "Missing inputs", result.MissingInputs)
-		return nil
+		return runReviewRunRefresh(args[1:], stdout, stderr)
 	case "run-touch":
-		fs := flag.NewFlagSet("review run-touch", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		flow := fs.String("flow", "", "review flow")
-
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if err := requireReviewFlow(*flow, stderr); err != nil {
-			return err
-		}
-		absRepoRoot := mustAbs(*repoRoot)
-		file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
-		if err != nil {
-			return err
-		}
-		result, err := reviewrun.Touch(absRepoRoot, *flow, file, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Review run-state touched: %s\n", result.File)
-		fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
-		return nil
+		return runReviewRunTouch(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		writeReviewUsage(stdout)
 		return nil
@@ -513,6 +403,135 @@ func runReview(args []string, stdout, stderr io.Writer) error {
 		writeReviewUsage(stderr)
 		return fmt.Errorf("unknown review subcommand %q", args[0])
 	}
+}
+
+func runReviewCollectDefaultScope(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("review collect-default-scope", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	flow := fs.String("flow", "", "review flow")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireReviewFlow(*flow, stderr); err != nil {
+		return err
+	}
+	return writeReviewScope(stdout, mustAbs(*repoRoot), *flow)
+}
+
+func runReviewRunInit(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("review run-init", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	flow := fs.String("flow", "", "review flow")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireReviewFlow(*flow, stderr); err != nil {
+		return err
+	}
+	result, err := reviewrun.Init(mustAbs(*repoRoot), *flow, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if result.Created {
+		fmt.Fprintf(stdout, "Review run-state created: %s\n", result.File)
+		if len(result.DeletedFiles) > 0 {
+			fmt.Fprintf(stdout, "Deleted run-state files (%d):\n", len(result.DeletedFiles))
+			for _, deleted := range result.DeletedFiles {
+				fmt.Fprintf(stdout, "- %s | reason=%s\n", deleted.File, deleted.Reason)
+			}
+		}
+		return nil
+	}
+	fmt.Fprintf(stdout, "Review run-state reused: %s\n", result.File)
+	return nil
+}
+
+func runReviewRunValidate(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("review run-validate", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	flow := fs.String("flow", "", "review flow")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireReviewFlow(*flow, stderr); err != nil {
+		return err
+	}
+	absRepoRoot := mustAbs(*repoRoot)
+	file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
+	if err != nil {
+		return err
+	}
+	result := reviewrun.ValidateFile(absRepoRoot, *flow, file, time.Now().UTC())
+	if result.Valid {
+		fmt.Fprintf(stdout, "Review run-state is valid: %s\n", result.File)
+		return nil
+	}
+	fmt.Fprintf(stdout, "Review run-state is invalid: %s\n", result.File)
+	for _, diagnostic := range result.Diagnostics {
+		fmt.Fprintf(stdout, "- %s\n", diagnostic)
+	}
+	return errors.New("review run-state validation failed")
+}
+
+func runReviewRunRefresh(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("review run-refresh", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	flow := fs.String("flow", "", "review flow")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireReviewFlow(*flow, stderr); err != nil {
+		return err
+	}
+	absRepoRoot := mustAbs(*repoRoot)
+	file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
+	if err != nil {
+		return err
+	}
+	result, err := reviewrun.Refresh(absRepoRoot, *flow, file, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Review run-state refreshed: %s\n", result.File)
+	fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
+	writeList(stdout, "Changed fingerprint slices", result.ChangedSlices)
+	writeList(stdout, "Stale slices", result.StaleSlices)
+	writeList(stdout, "Missing inputs", result.MissingInputs)
+	return nil
+}
+
+func runReviewRunTouch(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("review run-touch", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	flow := fs.String("flow", "", "review flow")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireReviewFlow(*flow, stderr); err != nil {
+		return err
+	}
+	absRepoRoot := mustAbs(*repoRoot)
+	file, err := reviewrun.FixedRunStateFile(absRepoRoot, *flow)
+	if err != nil {
+		return err
+	}
+	result, err := reviewrun.Touch(absRepoRoot, *flow, file, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Review run-state touched: %s\n", result.File)
+	fmt.Fprintf(stdout, "last_updated_at: %s\n", result.LastUpdatedAtUTC)
+	return nil
 }
 func runRule(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -522,99 +541,11 @@ func runRule(args []string, stdout, stderr io.Writer) error {
 
 	switch args[0] {
 	case "sync-impact":
-		fs := flag.NewFlagSet("rule sync-impact", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		modules := fs.String("units", "", "comma-separated formal units")
-		ruleRefs := fs.String("rule-refs", "", "comma-separated rule version refs")
-		ruleIDs := fs.String("rule-ids", "", "comma-separated rule ids")
-		deletedRuleRefs := fs.String("deleted-rule-refs", "", "comma-separated terminal deleted rule version refs that must have no current consumers")
-		stableLandingUnit := fs.String("stable-landing-unit", "", "formal unit whose same-round stable landing should not invalidate itself")
-		stableLandingRuleRefs := fs.String("stable-landing-rule-refs", "", "comma-separated exact rule refs written by the same-round stable landing")
-		retargetedUnits := fs.String("retargeted-units", "", "comma-separated candidate units retargeted to same-round stable landing rule refs")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-
-		result, err := rulesync.SyncImpact(mustAbs(*repoRoot), rulesync.Options{
-			Modules:               parseCSV(*modules),
-			RuleRefs:              parseCSV(*ruleRefs),
-			RuleIDs:               parseCSV(*ruleIDs),
-			DeletedRuleRefs:       parseCSV(*deletedRuleRefs),
-			StableLandingModule:   strings.TrimSpace(*stableLandingUnit),
-			StableLandingRuleRefs: parseCSV(*stableLandingRuleRefs),
-			RetargetedUnits:       parseCSV(*retargetedUnits),
-		})
-		if err != nil {
-			return err
-		}
-
-		writeList(stdout, "Scoped units", result.ScopedModules)
-		writeList(stdout, "Scoped rule refs", result.ScopedRuleRefs)
-		writeList(stdout, "Scoped rule ids", result.ScopedRuleIDs)
-		writeList(stdout, "Deleted rule refs verified no-impact", result.DeletedRuleRefs)
-		fmt.Fprintf(stdout, "Stable landing unit: %s\n", noneIfEmpty(result.StableLandingModule))
-		writeList(stdout, "Stable landing rule refs", result.StableLandingRuleRefs)
-		writeList(stdout, "Retargeted units", result.RetargetedUnits)
-		fmt.Fprintf(stdout, "Unit results (%d):\n", len(result.ModuleResults))
-		if len(result.ModuleResults) == 0 {
-			fmt.Fprintln(stdout, "- none")
-		}
-		for _, item := range result.ModuleResults {
-			fmt.Fprintf(stdout, "- %s | layer=%s | outcome=%s | reason=%s\n", item.Module, item.ActiveLayer, item.Outcome, noneIfEmpty(item.FallbackReasonCode))
-			for _, diagnostic := range item.Diagnostics {
-				fmt.Fprintf(stdout, "  diagnostic: %s\n", diagnostic)
-			}
-		}
-		return nil
+		return runRuleSyncImpact(args[1:], stdout, stderr)
 	case "consumers":
-		fs := flag.NewFlagSet("rule consumers", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		ruleID := fs.String("rule-id", "", "rule id")
-		ruleRef := fs.String("rule-ref", "", "exact rule version ref")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		result, err := rulesync.Consumers(mustAbs(*repoRoot), rulesync.ConsumerOptions{
-			RuleID:  *ruleID,
-			RuleRef: *ruleRef,
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Rule id: %s\n", noneIfEmpty(result.RuleID))
-		fmt.Fprintf(stdout, "Rule ref: %s\n", noneIfEmpty(result.RuleRef))
-		fmt.Fprintf(stdout, "Consumers (%d):\n", len(result.Consumers))
-		if len(result.Consumers) == 0 {
-			fmt.Fprintln(stdout, "- none")
-		}
-		for _, consumer := range result.Consumers {
-			fmt.Fprintf(stdout, "- %s:%s | layer=%s | file=%s | refs=%s\n", consumer.ObjectType, consumer.Object, consumer.ActiveLayer, consumer.FileRef, strings.Join(defaultListValue(consumer.RuleRefs), ", "))
-		}
-		return nil
+		return runRuleConsumers(args[1:], stdout, stderr)
 	case "release-version":
-		fs := flag.NewFlagSet("rule release-version", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		repoRoot := fs.String("repo-root", ".", "repository root")
-		ruleID := fs.String("rule-id", "", "rule id")
-		fromRef := fs.String("from-ref", "", "old stable rule version ref")
-		toRef := fs.String("to-ref", "", "new stable rule version ref")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		result, err := rulesync.ReleaseVersion(mustAbs(*repoRoot), rulesync.ReleaseVersionOptions{
-			RuleID:  *ruleID,
-			FromRef: *fromRef,
-			ToRef:   *toRef,
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Released rule version: %s from %s to %s\n", result.RuleID, result.FromRef, result.ToRef)
-		writeList(stdout, "Candidate units updated", result.CandidateUpdated)
-		writeList(stdout, "Synced units", result.Sync.ScopedModules)
-		return nil
+		return runRuleReleaseVersion(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		writeRuleUsage(stdout)
 		return nil
@@ -622,6 +553,106 @@ func runRule(args []string, stdout, stderr io.Writer) error {
 		writeRuleUsage(stderr)
 		return fmt.Errorf("unknown rule subcommand %q", args[0])
 	}
+}
+
+func runRuleSyncImpact(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("rule sync-impact", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	modules := fs.String("units", "", "comma-separated formal units")
+	ruleRefs := fs.String("rule-refs", "", "comma-separated rule version refs")
+	ruleIDs := fs.String("rule-ids", "", "comma-separated rule ids")
+	deletedRuleRefs := fs.String("deleted-rule-refs", "", "comma-separated terminal deleted rule version refs that must have no current consumers")
+	stableLandingUnit := fs.String("stable-landing-unit", "", "formal unit whose same-round stable landing should not invalidate itself")
+	stableLandingRuleRefs := fs.String("stable-landing-rule-refs", "", "comma-separated exact rule refs written by the same-round stable landing")
+	retargetedUnits := fs.String("retargeted-units", "", "comma-separated candidate units retargeted to same-round stable landing rule refs")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	result, err := rulesync.SyncImpact(mustAbs(*repoRoot), rulesync.Options{
+		Modules:               parseCSV(*modules),
+		RuleRefs:              parseCSV(*ruleRefs),
+		RuleIDs:               parseCSV(*ruleIDs),
+		DeletedRuleRefs:       parseCSV(*deletedRuleRefs),
+		StableLandingModule:   strings.TrimSpace(*stableLandingUnit),
+		StableLandingRuleRefs: parseCSV(*stableLandingRuleRefs),
+		RetargetedUnits:       parseCSV(*retargetedUnits),
+	})
+	if err != nil {
+		return err
+	}
+
+	writeList(stdout, "Scoped units", result.ScopedModules)
+	writeList(stdout, "Scoped rule refs", result.ScopedRuleRefs)
+	writeList(stdout, "Scoped rule ids", result.ScopedRuleIDs)
+	writeList(stdout, "Deleted rule refs verified no-impact", result.DeletedRuleRefs)
+	fmt.Fprintf(stdout, "Stable landing unit: %s\n", noneIfEmpty(result.StableLandingModule))
+	writeList(stdout, "Stable landing rule refs", result.StableLandingRuleRefs)
+	writeList(stdout, "Retargeted units", result.RetargetedUnits)
+	fmt.Fprintf(stdout, "Unit results (%d):\n", len(result.ModuleResults))
+	if len(result.ModuleResults) == 0 {
+		fmt.Fprintln(stdout, "- none")
+	}
+	for _, item := range result.ModuleResults {
+		fmt.Fprintf(stdout, "- %s | layer=%s | outcome=%s | reason=%s\n", item.Module, item.ActiveLayer, item.Outcome, noneIfEmpty(item.FallbackReasonCode))
+		for _, diagnostic := range item.Diagnostics {
+			fmt.Fprintf(stdout, "  diagnostic: %s\n", diagnostic)
+		}
+	}
+	return nil
+}
+
+func runRuleConsumers(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("rule consumers", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	ruleID := fs.String("rule-id", "", "rule id")
+	ruleRef := fs.String("rule-ref", "", "exact rule version ref")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	result, err := rulesync.Consumers(mustAbs(*repoRoot), rulesync.ConsumerOptions{
+		RuleID:  *ruleID,
+		RuleRef: *ruleRef,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Rule id: %s\n", noneIfEmpty(result.RuleID))
+	fmt.Fprintf(stdout, "Rule ref: %s\n", noneIfEmpty(result.RuleRef))
+	fmt.Fprintf(stdout, "Consumers (%d):\n", len(result.Consumers))
+	if len(result.Consumers) == 0 {
+		fmt.Fprintln(stdout, "- none")
+	}
+	for _, consumer := range result.Consumers {
+		fmt.Fprintf(stdout, "- %s:%s | layer=%s | file=%s | refs=%s\n", consumer.ObjectType, consumer.Object, consumer.ActiveLayer, consumer.FileRef, strings.Join(defaultListValue(consumer.RuleRefs), ", "))
+	}
+	return nil
+}
+
+func runRuleReleaseVersion(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("rule release-version", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	ruleID := fs.String("rule-id", "", "rule id")
+	fromRef := fs.String("from-ref", "", "old stable rule version ref")
+	toRef := fs.String("to-ref", "", "new stable rule version ref")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	result, err := rulesync.ReleaseVersion(mustAbs(*repoRoot), rulesync.ReleaseVersionOptions{
+		RuleID:  *ruleID,
+		FromRef: *fromRef,
+		ToRef:   *toRef,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Released rule version: %s from %s to %s\n", result.RuleID, result.FromRef, result.ToRef)
+	writeList(stdout, "Candidate units updated", result.CandidateUpdated)
+	writeList(stdout, "Synced units", result.Sync.ScopedModules)
+	return nil
 }
 func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")

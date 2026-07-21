@@ -101,7 +101,7 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	// Step 6: Copy candidate files to stable
+	// Step 5: Copy candidate files to stable
 	// Copy appendices first so that a failure leaves the main spec untouched.
 	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
 	_ = os.MkdirAll(stableAppendixDir, 0755)
@@ -463,18 +463,6 @@ func FormatRuleResult(r *RuleResult) string {
 
 // isVersionGreater checks if v1 > v2 using MAJOR.MINOR.PATCH comparison.
 func isVersionGreater(v1, v2 string) bool {
-	parseVersion := func(v string) (int, int, int, bool) {
-		parts := strings.Split(v, ".")
-		if len(parts) != 3 {
-			return 0, 0, 0, false
-		}
-		major := 0
-		minor := 0
-		patch := 0
-		_, err := fmt.Sscanf(v, "%d.%d.%d", &major, &minor, &patch)
-		return major, minor, patch, err == nil
-	}
-
 	m1, n1, p1, ok1 := parseVersion(v1)
 	m2, n2, p2, ok2 := parseVersion(v2)
 	if !ok1 || !ok2 {

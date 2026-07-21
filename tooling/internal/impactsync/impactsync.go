@@ -1,7 +1,5 @@
 package impactsync
 
-import ()
-
 // ModuleBinding describes a module's governance state relevant to impact sync.
 type ModuleBinding struct {
 	Module        string

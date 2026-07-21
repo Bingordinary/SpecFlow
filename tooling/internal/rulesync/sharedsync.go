@@ -10,6 +10,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/impactsync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulebinding"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulerefs"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/unitdiscovery"
 )
 
@@ -554,47 +555,22 @@ func parseSharedFile(relPath, content string) (sharedFile, error) {
 	if hasBoundObjects {
 		return sharedFile{}, fmt.Errorf("%s: bound_objects is forbidden; derive consumers from current-layer rule_refs", relPath)
 	}
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return sharedFile{}, fmt.Errorf("%s: missing frontmatter start marker", relPath)
-	}
-	endIdx := -1
-	for idx := 1; idx < len(lines); idx++ {
-		if strings.TrimSpace(lines[idx]) == "---" {
-			endIdx = idx
-			break
-		}
-	}
-	if endIdx == -1 {
-		return sharedFile{}, fmt.Errorf("%s: missing frontmatter end marker", relPath)
+
+	fm, _, err := specpaths.ParseFrontmatterFields(content)
+	if err != nil {
+		return sharedFile{}, fmt.Errorf("%s: %w", relPath, err)
 	}
 
 	shared := sharedFile{FileRef: relPath}
-	for _, line := range lines[1:endIdx] {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		switch key {
-		case "rule_id":
-			shared.RuleID = value
-		case "rule_scope":
-			shared.RuleScope = value
-		case "layer":
-			shared.Layer = value
-		case "rule_version":
-			shared.RuleVersion = value
-			shared.VersionRef = fmt.Sprintf("%s@%s", strings.TrimSuffix(filepath.Base(relPath), ".md"), value)
-		case "promotion_owner_unit":
-			shared.PromotionOwnerUnit = value
-		}
+	shared.RuleID = strings.TrimSpace(fm["rule_id"])
+	shared.RuleScope = strings.TrimSpace(fm["rule_scope"])
+	shared.Layer = strings.TrimSpace(fm["layer"])
+	shared.RuleVersion = strings.TrimSpace(fm["rule_version"])
+	if shared.RuleVersion != "" {
+		shared.VersionRef = fmt.Sprintf("%s@%s", strings.TrimSuffix(filepath.Base(relPath), ".md"), shared.RuleVersion)
 	}
+	shared.PromotionOwnerUnit = strings.TrimSpace(fm["promotion_owner_unit"])
+
 	if shared.RuleID == "" || shared.Layer == "" || shared.VersionRef == "" {
 		return sharedFile{}, fmt.Errorf("%s: missing rule_id, layer, or rule_version", relPath)
 	}
@@ -615,37 +591,6 @@ func readUnitRuleRefs(repoRoot string, unit unitdiscovery.UnitInfo) ([]string, e
 		return nil, err
 	}
 	return normalizeStrings(refs), nil
-}
-
-func parseFrontmatter(content string) (map[string]string, string, error) {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, "", fmt.Errorf("missing frontmatter start marker")
-	}
-	endIdx := -1
-	for idx := 1; idx < len(lines); idx++ {
-		if strings.TrimSpace(lines[idx]) == "---" {
-			endIdx = idx
-			break
-		}
-	}
-	if endIdx == -1 {
-		return nil, "", fmt.Errorf("missing frontmatter end marker")
-	}
-
-	values := map[string]string{}
-	for _, line := range lines[1:endIdx] {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		values[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-	}
-	return values, strings.Join(lines[endIdx+1:], "\n"), nil
 }
 
 func parseRuleRefs(body string) ([]string, bool, error) {

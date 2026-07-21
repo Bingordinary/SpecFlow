@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulerefs"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 type ResolvedRef struct {
@@ -145,32 +146,6 @@ func ruleFileRef(prefix, layer string) string {
 }
 
 func parseFrontmatter(content string) (map[string]string, error) {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, fmt.Errorf("missing frontmatter start marker")
-	}
-	endIdx := -1
-	for idx := 1; idx < len(lines); idx++ {
-		if strings.TrimSpace(lines[idx]) == "---" {
-			endIdx = idx
-			break
-		}
-	}
-	if endIdx == -1 {
-		return nil, fmt.Errorf("missing frontmatter end marker")
-	}
-
-	values := map[string]string{}
-	for _, line := range lines[1:endIdx] {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		values[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-	}
-	return values, nil
+	fm, _, err := specpaths.ParseFrontmatterFields(content)
+	return fm, err
 }

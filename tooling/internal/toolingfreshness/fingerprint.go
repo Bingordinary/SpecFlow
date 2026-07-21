@@ -1,7 +1,6 @@
 package toolingfreshness
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specflowlayout"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 var fingerprintRoots = []string{
@@ -153,7 +153,7 @@ func LiveFingerprint(repoRoot string) (string, []string, error) {
 }
 
 func normalizeFingerprintContent(content []byte) []byte {
-	return bytes.ReplaceAll(content, []byte{'\r'}, nil)
+	return []byte(specpaths.NormalizeText(string(content)))
 }
 
 func dedupeSortedInputs(items []sourceInput) []sourceInput {
