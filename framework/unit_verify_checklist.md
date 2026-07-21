@@ -28,7 +28,7 @@ After completing all analysis steps, the agent must report coverage confidence (
 
 ## Target Selection
 
-- If a candidate spec exists → verify code against **candidate** (the current working proposal). Mismatches trigger divergence resolution.
+- If a candidate spec exists → verify code against **candidate** (the current working proposal). Mismatches trigger first-principles divergence analysis (Step 7).
 - If no candidate exists but a stable spec does → verify code against **stable** (check if current implementation still conforms to recorded truth). Do not enter divergence resolution — instead, recommend a `unit_fork`.
 
 ## Execution Rules
@@ -45,15 +45,13 @@ Verify result: ALIGNED | MISMATCH
 Target: candidate | stable
 Items:
   - {item.id}: ALIGNED | MISMATCH | CANNOT_DETERMINE — code references
-    Direction: (only if MISMATCH) spec_gap | code_gap | needs_design
-    Resolution: update_candidate | implement_code | redesign | blocked
 Scope: ALIGNED | MISMATCH — findings
 Integrity: PASS | FAIL — findings
 Coverage:
   - items_with_deterministic_evidence: N/M
   - items_reading_only: N
-Divergence summary: (only if any MISMATCH)
-  - {item.id}: spec_gap | code_gap | needs_design — description
+First-principles divergence analysis: (only if any MISMATCH)
+  - {item.id}: {suggested direction} — {rationale}
     User verdict: ...
     Next step: ...
 Summary: ...
@@ -89,16 +87,14 @@ IF declaration exists in spec AND matching implementation found:
   - Verify structural consistency (signatures match, field names match, types match)
   - Report ALIGNED with code reference (file:line)
 IF declaration exists in spec BUT no matching implementation found:
-  - Report code_gap — spec describes something code doesn't have
+  - Report MISMATCH — spec describes something code doesn't have (do not classify yet)
 IF declaration exists in code BUT not in spec:
-  - Report spec_gap — code has something spec doesn't describe
+  - Report MISMATCH — code has something spec doesn't describe (do not classify yet)
 ```
 
 **PASS (ALIGNED):** All spec body declarations have structurally consistent implementations
 
-**FAIL (code_gap):** Spec describes structures not found in code → code is incomplete
-
-**FAIL (spec_gap):** Code has structures not described in spec → spec is stale
+**FAIL (MISMATCH):** Structural differences found between spec and code — defer classification to Step 7
 
 **Check method:** Spec body × implementation code — bidirectional structural cross-reference
 
@@ -162,7 +158,6 @@ Per-item report format:
 {item.id}: MISMATCH
   - Spec pass_condition: "returns 201"
   - Implementation: handler at src/api/user.go:42 returns 200
-  - Direction: code_gap
 
 {item.id}: CANNOT_DETERMINE
   - pass_condition: "handles 1000 concurrent requests"
@@ -171,7 +166,7 @@ Per-item report format:
 
 **PASS (ALIGNED):** All items have structurally consistent implementations
 
-**FAIL (MISMATCH):** One or more items have structural inconsistencies
+**FAIL (MISMATCH):** One or more items have structural inconsistencies — defer classification to Step 7
 
 **CANNOT_DETERMINE:** Items that require runtime verification — note them for human review
 
@@ -181,8 +176,8 @@ Per-item report format:
 
 For each acceptance item with `verification_type: testable`, apply the `framework/test_decomposition_standard.md` standard as a baseline to identify significantly implied but missing test scenarios:
 
-1. **Step 1 (happy path):** Does a test exist that exercises the primary success scenario? If the pass_condition describes a success outcome and no test covers it → MISMATCH (possible untested core behavior)
-2. **Steps 2-4 (input variants, business rules, dependency failure):** Does the description or pass_condition strongly imply a scenario (e.g. "register" implies "email already exists", "create order" implies "invalid product ID") that has no corresponding test? If a reasonable developer would expect a test for that scenario and none exists → MISMATCH
+1. **Step 1 (happy path):** Does a test exist that exercises the primary success scenario? If the pass_condition describes a success outcome and no test covers it → CONCERN (possible untested core behavior)
+2. **Steps 2-4 (input variants, business rules, dependency failure):** Does the description or pass_condition strongly imply a scenario (e.g. "register" implies "email already exists", "create order" implies "invalid product ID") that has no corresponding test? If a reasonable developer would expect a test for that scenario and none exists → CONCERN
 
 This sub-check is **not** an exhaustive coverage audit. It flags obvious omissions. A single acceptance item may produce zero, one, or several test scenarios depending on its content. If the implementation is in a language or framework where tests are not written in the expected location, report CANNOT_DETERMINE instead of MISMATCH.
 
@@ -223,7 +218,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 **PASS:** All affects declarations are accurate and complete
 
-**FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found
+**FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found — defer classification to Step 7
 
 **Check method:** affects.* declarations × actual implementation — triple cross-reference (files, rules, dependencies)
 
@@ -258,7 +253,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 ## Step 5 — Implementation integrity
 
-**Purpose:** Detect code behaviors not declared in the spec (spec_gap) and assess the impact of `not_runnable_yet` items.
+**Purpose:** Detect code behaviors not declared in the spec and assess the impact of `not_runnable_yet` items. Do not classify yet — defer to Step 7.
 
 **Execution steps:**
 
@@ -269,7 +264,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 - For each undocumented behavior:
     - Is it a supporting implementation detail (e.g., helper function, logging)?
     - Or is it a behavioral change not declared in the spec (e.g., add caching, new API endpoint, new error handling path)?
-    - If behavioral → report as spec_gap
+    - If behavioral → report as MISMATCH with evidence (do not classify yet — defer to Step 7)
 ```
 
 2. **not_runnable_yet assessment:**
@@ -289,7 +284,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 **PASS:** No undocumented behavioral changes detected; not_runnable_yet items have documented reasons
 
-**FAIL (spec_gap):** Undocumented behavioral changes found in code
+**FAIL (MISMATCH):** Undocumented behavioral changes found in code — defer classification to Step 7
 
 **Quality concern:** All or most items are not_runnable_yet; runnable coverage is insufficient
 
@@ -331,133 +326,159 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
      - line 12: return Response.json({}) (empty_response)
    ```
 
-4. Any stub finding is a MISMATCH. Direction is **code_gap** — code has placeholder where real implementation is expected.
+4. Any stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
 
 **PASS:** No stubs or placeholders found
 
-**FAIL (STUB_FOUND):** One or more files contain stub patterns
+**FAIL (MISMATCH):** One or more files contain stub patterns — defer classification to Step 7
 
 **Check method:** grep — deterministic, outputs are identical across runs
 
 ---
 
-## Step 7 — Divergence resolution and stable-only mode
+## Step 7 — First-principles divergence analysis
 
-### Divergence resolution
+**Purpose:** When Steps 1-6 detect mismatches, determine the root cause and correct direction using first-principles reasoning — not presence-based heuristics. Each mismatch gets independent analysis via a dedicated sub-agent.
 
-When any item reports MISMATCH, classify each mismatch into one of four directions. **Present findings to the user — do not decide automatically. However, the agent MUST provide a reasoned suggestion based on the signal layer and review layer below.**
+### How it works
 
-| Classification | Meaning | Next step |
-|---|---|---|
-| **spec_gap** | Code has behavior the spec doesn't describe. The candidate spec is stale. | Update candidate spec → re-run validate → re-run verify |
-| **code_gap** | Spec describes behavior the code doesn't satisfy. Code is incomplete. | Implement code → re-run verify |
-| **needs_design** | Neither spec nor code matches a coherent design. Needs rethinking. | Redesign candidate → validate → verify |
-| **blocked** | Mismatch depends on external input or unresolved decisions. | User unblocks → re-run verify |
+For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-agent**. Each sub-agent analyzes one mismatch independently, without cross-contamination from other items.
 
-**Execution:**
+> **Full mode note:** In full mode, Steps 1-6 are distributed across batching sub-agents. Those are detection-only — they do not classify. After all batching sub-agents return, the main agent launches one analysis sub-agent per mismatch for Step 7. Analysis sub-agents are separate from batching sub-agents.
 
-For each MISMATCH item:
-1. **Classify** — determine the direction (spec_gap / code_gap / needs_design / blocked)
-2. **Signal layer** — collect metadata evidence (see below)
-3. **Review layer** — read spec and code content to analyze design intent (see below)
-4. **Present** — show mismatch evidence, signal layer, review layer, and agent's suggested direction
-5. **Record** — the user's verdict and the agreed next step
+### Sub-agent protocol
 
----
+**Input provided by main agent:**
 
-#### Signal Layer
+| Field | Description |
+|-------|-------------|
+| Item ID | Identifier from the spec |
+| Mismatch type | structural / acceptance / scope / stub / undocumented_behavior |
+| Spec content | Exact spec text (section, pass_condition, or declaration) with file path and line |
+| Code content | Exact code that differs, with file path and line |
+| Context scope | Instructions on what to read beyond the mismatch point |
 
-Collect metadata evidence to inform the suggestion. Each evidence item has a weight; the agent sums weighted evidence on both sides to determine confidence.
+**Context scope — the sub-agent MUST read:**
 
-| Evidence | Favors fixing | How to get | Weight |
-|----------|--------------|-----------|--------|
-| Spec is **stable** (approved) | Code (spec is contract) | Check spec file path contains `stable/` | Strong |
-| Spec is **candidate** (WIP) | Spec (code is evolving) | Check spec file path contains `candidate/` | Strong |
-| Validate cache is fresh | Code (spec was recently checked) | Check `validate_result.md` timestamp vs file hashes | Strong |
-| Code has tests for the behavior | Spec (behavior is intentional) | Search test files for related assertions | Strong |
-| Spec modified after code | Code (spec reflects latest thinking) | Query version control for the file's last modification timestamp | Moderate |
-| Code modified after spec | Spec (code evolved past spec) | Query version control for the file's last modification timestamp | Moderate |
-| Code behavior referenced by other modules | Spec (other code depends on it) | Search for function calls / type usage | Weak |
+| Context | What to read |
+|---------|-------------|
+| Spec context | The section/group containing the item, sibling items, shared definitions (error codes, types, enums, data models), and rationale in section headers |
+| Code context | The implementation function body where the mismatch occurs, surrounding logic, related helpers, and callers |
+| Tests | If test files exist for the relevant code module, read their assertions for the mismatched behavior |
 
-**Confidence:**
+**Analysis instruction (first-principles framework):**
+
+The sub-agent follows this reasoning chain. Each step must be answered explicitly before moving to the next:
+
 ```
-fix_code_score = strong_code_fix * 2 + moderate_code_fix + weak_code_fix
-fix_spec_score = strong_spec_fix * 2 + moderate_spec_fix + weak_spec_fix
-delta = |fix_code_score - fix_spec_score|
+1. What is the system supposed to do at this point?
+   - Read spec context (section, sibling items, shared definitions, rationale)
+   - Extract the design intent — what problem is this declaration trying to solve?
 
-confidence = high   if delta >= 3
-confidence = medium if delta >= 1
-confidence = low    otherwise (conflicting signals)
+2. What does the code actually do?
+   - Read code context (function body, surrounding logic, callers, related helpers)
+   - Extract the code's intent — why does it behave this way?
+
+3. Compare intents:
+   - Do spec and code agree on the goal but differ on implementation?
+   - Do they disagree on the goal itself?
+   - Is one side clearly wrong (typo, dead code, outdated reference)?
+   - Does one side handle edge cases the other misses?
+
+4. Root cause analysis (choose the best fit):
+   - Code is incomplete — spec intent is clear, code hasn't caught up
+   - Spec is stale — code has evolved, spec wasn't updated
+   - Design divergence — both sides made different valid trade-offs
+   - Accident — bug, typo, copy-paste error
+   - External dependency — blocked on something outside this unit
+
+5. Recommend direction:
+   - spec_gap: code's behavior is correct, spec needs updating
+   - code_gap: spec's intent is correct, code needs updating
+   - needs_design: neither side is clearly right — the design itself needs rethinking
+   - blocked: the mismatch depends on an external input or unresolved decision
+
+6. Confidence:
+   - high: clear evidence supports one direction
+   - medium: evidence leans one way but not definitive
+   - low: conflicting signals, cannot determine with confidence
 ```
 
-**If version control is not available:** skip timestamp evidence. Confidence capped at medium.
+**Signal layer (metadata evidence):**
 
-**If no test files found:** skip test evidence. Do not infer "no tests" as evidence for anything.
+The sub-agent MAY also collect the following metadata to support its reasoning. Each evidence item has a weight — the sub-agent sums weighted evidence to determine confidence if needed:
 
----
+| Evidence | Favors fixing | Weight |
+|----------|--------------|--------|
+| Spec is **stable** (approved) | Code (spec is contract) | Strong |
+| Spec is **candidate** (WIP) | Spec (code is evolving) | Strong |
+| Validate cache is fresh | Code (spec was recently checked) | Strong |
+| Code has tests for the behavior | Spec (behavior is intentional) | Strong |
+| Spec modified after code | Code (spec reflects latest thinking) | Moderate |
+| Code modified after spec | Spec (code evolved past spec) | Moderate |
+| Code behavior referenced by other modules | Spec (other code depends on it) | Weak |
 
-#### Review Layer
+If version control is available, query `git log` for file timestamps. If no test files exist, skip test evidence. Do not infer "no tests" as evidence for anything.
 
-For each MISMATCH, the agent MUST read beyond the item itself to understand design intent. This is content-level analysis, not metadata counting.
+The signal layer is supplementary — it does not override first-principles reasoning. Its primary use is to provide confidence context when the content-level analysis alone cannot reach high confidence.
 
-**Scope — read:**
+**Output format:**
 
-1. **Spec context** — the section/group containing the acceptance item, including sibling items, shared definitions (error codes, types, enums, data models), and rationale in section headers. If the item spans sections, read the entire spec file.
+```
+Item: {id}
+────────────────────────────────────
+Spec intent: {what the spec is trying to achieve, with context}
+Code intent: {what the code does and why}
+Comparison: {goal agreement? implementation difference? edge case handling?}
+Root cause: {incomplete | stale | divergence | accident | blocked}
+Suggested direction: {spec_gap | code_gap | needs_design | blocked}
+Confidence: {high | medium | low}
+Rationale: {2-3 sentence first-principles reasoning chain}
+Signal layer: {condensed metadata summary, if collected}
+```
 
-2. **Code context** — the implementation function body where the mismatch occurs, surrounding logic, related helper functions, and callers. Read enough to understand why the code behaves the way it does.
+**Constraints:**
 
-3. **Tests** — if test files exist for the relevant code module, read their assertions for the mismatched behavior. Test assertions are strong signals of intent.
+- Read-only: MUST NOT modify files
+- Independent: each mismatch is analyzed separately, without reference to other mismatches
+- If version control history is available, MAY query `git log` for the relevant files. If not available, skip timestamp evidence — confidence capped at medium.
 
-**Analysis protocol:**
+### Main agent collection
 
-1. Extract intent from spec — what is the spec trying to achieve? Is the requirement internally consistent with sibling items?
-2. Extract intent from code — why does the code behave differently? Is there a pattern or principle behind the code's approach?
-3. Reconcile — which version better serves the overall design? Is one version clearly wrong (bug, typo, oversight)?
-4. Edge cases — does one version handle edge cases that the other misses?
+After all sub-agents return:
 
-**Output:** reasoned judgment with confidence level.
+1. Collect all analysis results
+2. Present to user in the consolidated format below
+3. Record user verdict per item
+4. On user agreement, record the agreed next step per the direction table
 
-**When to skip the review layer:**
+| Direction | Meaning | Next step |
+|-----------|---------|-----------|
+| **spec_gap** | Code's behavior is correct, spec needs updating | Update candidate spec → re-run validate → re-run verify |
+| **code_gap** | Spec's intent is correct, code needs updating | Implement code → re-run verify |
+| **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → validate → verify |
+| **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → re-run verify |
 
-| Condition | Action |
-|-----------|--------|
-| Structural-only mismatch (signature, type name) | Signal layer sufficient |
-| Trivial mismatch (typo, whitespace) | Signal layer sufficient |
-| CANNOT_DETERMINE | Review layer required (signal has no data) |
-| Conflicting signals (low confidence) | Review layer recommended |
-
----
-
-#### Presentation format
-
-For each MISMATCH item, present in the following structure:
+### Presentation format
 
 ```
 ───────────────────────────────────────────────────
-Item: {id}
+Item: {item.id}
 Mismatch: spec says {X}, code does {Y}
 ───────────────────────────────────────────────────
 
-[REVIEW]
-  ├─ Spec context: {what spec section says, design intent}
-  ├─ Code context: {how code handles it, why}
-  ├─ Analysis: {reasoning chain}
-  └─ Judgment: {direction} (confidence: high/medium/low)
-
-[SIGNAL] (condensed)
-  ├─ Spec: {stable/candidate} — favors fix {code/spec}
-  ├─ Timestamps: spec {date}, code {date} — favors fix {code/spec}
-  └─ Tests: {yes/no} — favors fix {code/spec}
-
-Suggested direction: {spec_gap | code_gap | needs_design}
-  {1-sentence rationale from review layer}
+Spec intent: {spec context}
+Code intent: {code context}
+Root cause: {finding}
+Suggested direction: {spec_gap | code_gap | needs_design | blocked} (confidence: {level})
+Rationale: {reasoning chain}
 ───────────────────────────────────────────────────
-Do you agree, or do you see it differently?
+Do you agree with this analysis, or do you see it differently?
 (agree / disagree → specify your direction)
 ───────────────────────────────────────────────────
 ```
 
-The signal layer is always shown in condensed form (3-4 lines). The review layer is the primary reasoning. If signal and review conflict, highlight the conflict explicitly.
+If multiple mismatches exist, present them in spec order, one after another.
 
 ### Stable-only mode
 
@@ -468,7 +489,7 @@ When no candidate spec exists (verify against stable):
 2. If all ALIGNED → report ALIGNED. No further action.
 3. If any MISMATCH:
    - The implementation has drifted from recorded stable truth
-   - Do NOT enter divergence resolution
+   - Do NOT enter divergence resolution (cannot modify stable spec directly)
    - Report the drift and recommend unit_fork:
      "Current implementation diverges from stable spec at {details}.
      Recommend creating a candidate round (unit_fork) to reconcile the difference."

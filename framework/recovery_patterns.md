@@ -25,7 +25,7 @@ The implementation no longer matches recorded stable truth:
 
 ## 5. User disagrees with divergence suggestion
 
-When the user disagrees with the agent's suggested direction (code_gap / spec_gap / needs_design) during divergence resolution:
+When the user disagrees with the agent's suggested direction (code_gap / spec_gap / needs_design / blocked) during divergence resolution:
 
 1. Record the user's stated direction as the verdict.
 2. Do not argue or re-suggest — the user has more context.
