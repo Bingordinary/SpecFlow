@@ -2,7 +2,9 @@
 // and spec_verify results. Cache files are written by the agent (not the CLI)
 // and read by specflowctl promote to confirm that validate/verify are still fresh.
 //
-// Cache files live under docs/specs/_validation/unit/{name}/ and record:
+// Cache files for units live under docs/specs/_validation/unit/{name}/.
+// Cache files for rules live under docs/specs/_validation/rule/{id}/.
+// They record:
 //   - Which files were checked (paths + SHA-256 hashes)
 //   - Whether the check passed (pass / aligned)
 //   - When the check was run
@@ -46,16 +48,26 @@ type cacheFileEntry struct {
 
 // CheckValidate reads and validates the validate cache for the given unit.
 func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, unitName, "validate", "validate_result.md", []string{"pass"})
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"})
 }
 
 // CheckVerify reads and validates the verify cache for the given unit.
 func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, unitName, "verify", "verify_result.md", []string{"aligned"})
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"aligned"})
 }
 
-// DeleteCache removes a specific cache file (validate or verify) for the given unit.
-func DeleteCache(repoRoot, unitName, command string) error {
+// CheckRuleValidate reads and validates the validate cache for the given rule.
+func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})
+}
+
+// CheckRuleVerify reads and validates the verify cache for the given rule.
+func CheckRuleVerify(repoRoot, ruleID string) (CheckResult, error) {
+	return checkCache(repoRoot, "rule", ruleID, "verify", "verify_result.md", []string{"aligned"})
+}
+
+// deleteCache removes a specific cache file (validate or verify) for the given target.
+func deleteCache(repoRoot, targetKind, targetName, command string) error {
 	var fileName string
 	switch command {
 	case "validate":
@@ -66,11 +78,16 @@ func DeleteCache(repoRoot, unitName, command string) error {
 		return fmt.Errorf("unknown cache command %q", command)
 	}
 
-	cachePath := cacheFilePath(repoRoot, unitName, fileName)
+	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return nil // already gone
 	}
 	return os.Remove(cachePath)
+}
+
+// DeleteCache removes a specific cache file (validate or verify) for the given unit.
+func DeleteCache(repoRoot, unitName, command string) error {
+	return deleteCache(repoRoot, "unit", unitName, command)
 }
 
 // DeleteAll removes both validate and verify caches for the given unit.
@@ -81,12 +98,25 @@ func DeleteAll(repoRoot, unitName string) error {
 	return DeleteCache(repoRoot, unitName, "verify")
 }
 
+// DeleteRuleCache removes a specific cache file (validate or verify) for the given rule.
+func DeleteRuleCache(repoRoot, ruleID, command string) error {
+	return deleteCache(repoRoot, "rule", ruleID, command)
+}
+
+// DeleteAllRuleCache removes both validate and verify caches for the given rule.
+func DeleteAllRuleCache(repoRoot, ruleID string) error {
+	if err := DeleteRuleCache(repoRoot, ruleID, "validate"); err != nil {
+		return err
+	}
+	return DeleteRuleCache(repoRoot, ruleID, "verify")
+}
+
 // ------------------------------------------------------------
 // Internal
 // ------------------------------------------------------------
 
-func checkCache(repoRoot, unitName, command, fileName string, validResults []string) (CheckResult, error) {
-	cachePath := cacheFilePath(repoRoot, unitName, fileName)
+func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string) (CheckResult, error) {
+	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
 
 	// Check existence
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
@@ -291,8 +321,9 @@ func fileHash(path string) (string, error) {
 }
 
 // cacheFilePath builds the absolute path to a cache file.
-func cacheFilePath(repoRoot, unitName, fileName string) string {
-	return filepath.Join(repoRoot, "docs/specs/_validation/unit", unitName, fileName)
+// targetKind is "unit" or "rule".
+func cacheFilePath(repoRoot, targetKind, targetName, fileName string) string {
+	return filepath.Join(repoRoot, "docs/specs/_validation", targetKind, targetName, fileName)
 }
 
 func relPath(repoRoot, absPath string) string {

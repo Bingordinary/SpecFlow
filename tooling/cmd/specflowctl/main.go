@@ -116,7 +116,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if ruleID != "" {
-		return runRulePromote(absRoot, ruleID, stdout)
+		return runRulePromote(absRoot, ruleID, stdout, stderr)
 	}
 
 	// Unit promote path
@@ -167,15 +167,51 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func runRulePromote(absRoot, ruleID string, stdout io.Writer) error {
+func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
+	// Check validate cache freshness
+	validateResult, err := validationcache.CheckRuleValidate(absRoot, ruleID)
+	if err != nil {
+		return fmt.Errorf("validate cache error: %w", err)
+	}
+	if !validateResult.Fresh {
+		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintln(stdout, "Run spec_validate for this rule first, then retry promote.")
+		return errors.New("validate cache check failed")
+	}
+	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
+	fmt.Fprintln(stdout, "")
+
+	// Check verify cache freshness
+	verifyResult, err := validationcache.CheckRuleVerify(absRoot, ruleID)
+	if err != nil {
+		return fmt.Errorf("verify cache error: %w", err)
+	}
+	if !verifyResult.Fresh {
+		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintln(stdout, "Run spec_verify for this rule first, then retry promote.")
+		return errors.New("verify cache check failed")
+	}
+	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
+	fmt.Fprintln(stdout, "")
+
 	result := promote.PromoteRule(absRoot, ruleID)
-	_, err := fmt.Fprint(stdout, promote.FormatRuleResult(result))
+	_, err = fmt.Fprint(stdout, promote.FormatRuleResult(result))
 	if err != nil {
 		return err
 	}
 	if !result.Passed {
 		return errors.New("promote failed")
 	}
+
+	// Clean up cache on successful promote
+	if delErr := validationcache.DeleteAllRuleCache(absRoot, ruleID); delErr != nil {
+		fmt.Fprintf(stderr, "Warning: failed to delete validation cache: %v\n", delErr)
+	} else {
+		fmt.Fprintln(stdout, "Validation cache cleared.")
+	}
+
 	return nil
 }
 

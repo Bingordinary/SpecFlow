@@ -69,9 +69,12 @@ The tooling layer may:
 4. rebuild
 5. compare
 6. cleanup
-7. sync
-8. render read-only local views
-9. maintain mechanical review run-state fields
+7. preflight
+8. transition
+9. sync
+10. render read-only local views
+11. maintain mechanical review run-state fields
+12. relation calculation
 
 The tooling layer must not:
 
@@ -84,7 +87,7 @@ The tooling layer must not:
 
 `impact_sync` is a governance concept first.
 The current CLI exposes only the deterministic pieces already justified by rules.
-For shared-change reconciliation, the current mechanical entry remains `rule sync-impact`, but that entry must first compute `rule_sync` scope and exceptions and only then hand the fixed downstream object set to internal `impact_sync`.
+For shared-change reconciliation, the current entry is `rule sync-impact`. It computes scope from the caller-provided rule refs, IDs, and deleted refs, then passes the resolved scope to the internal impact sync for fallback classification.
 
 ## Current Command Surface
 
@@ -98,12 +101,13 @@ For shared-change reconciliation, the current mechanical entry remains `rule syn
    - update hook files and check the specFlow binary version
 5. `next`
    - discover a unit's files and dependencies
-   - `next --unit <name> [--explain]`: outputs candidate/stable spec files, appendix files, rule refs, and related units
-   - `--explain` additionally inlines the current spec format rules
+   - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, and related units
    - this is a render action: read-only, does not modify any project file
 6. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
-   - `promote --unit <name>`: runs format checks, required-field validation, and reference integrity
+   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `spec_validate`)
+   - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, runs release-version to update consumer refs; independently checks validate+verify cache freshness before promoting
+   - the tool independently checks validate+verify cache freshness before promoting (both `--unit` and `--rule`); if either cache is missing, stale, or scoped, promote is rejected with guidance to re-run the appropriate step
    - this is the only write gate
 7. `review collect-default-scope --flow <review_flow>`
    - collect the deterministic default scope for the explicit review flow

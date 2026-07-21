@@ -202,6 +202,119 @@ func TestDeleteCache(t *testing.T) {
 	}
 }
 
+func TestCheckRuleValidate(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Create minimal candidate rule file
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	os.MkdirAll(ruleDir, 0755)
+
+	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
+	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ruleHash, err := fileHash(rulePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create cache dir under rule path
+	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll checks passed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckRuleValidate(repoRoot, "b_rule_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh, got: %s", result.Reason)
+	}
+}
+
+func TestCheckRuleValidateStale(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	os.MkdirAll(ruleDir, 0755)
+
+	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
+	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Write cache with WRONG hash (deliberately stale)
+	staleCache := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(staleCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckRuleValidate(repoRoot, "b_rule_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected stale cache, got fresh")
+	}
+}
+
+func TestCheckRuleVerify(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	os.MkdirAll(ruleDir, 0755)
+
+	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
+	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ruleHash, _ := fileHash(rulePath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: verify\nunit: b_rule_test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll items aligned.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckRuleVerify(repoRoot, "b_rule_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh, got: %s", result.Reason)
+	}
+}
+
+func TestDeleteRuleCache(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	os.MkdirAll(cacheDir, 0755)
+
+	vPath := filepath.Join(cacheDir, "validate_result.md")
+	os.WriteFile(vPath, []byte("---\ncommand: validate\nresult: pass\n---\n"), 0644)
+
+	if err := DeleteRuleCache(repoRoot, "b_rule_test", "validate"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(vPath); !os.IsNotExist(err) {
+		t.Fatal("cache file should be deleted")
+	}
+}
+
 // TestNormalizeConsistency verifies that the hash computed by fileHash
 // is deterministic and matches the expected normalization.
 func TestNormalizeConsistency(t *testing.T) {
