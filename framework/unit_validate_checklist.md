@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `spec_validate {unit}`, it uses the 9 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
+When an agent executes `spec_validate {unit}`, it uses the 8 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
 
 ## Mode Selection
 
@@ -13,7 +13,7 @@ Before executing, read `framework/verification_scope.md` to determine the curren
 | `spec_validate {unit}` | scoped (default) | Git-aware: `git diff HEAD` on spec file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
 | `spec_validate {unit}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "coverage" → Check 5a, "drift" → Check 5c, "conflict" → Check 5d) |
-| `spec_validate {unit}:full` | full | All 9 checks + cross-check (see `framework/verification_scope.md` §Cross-check for details) |
+| `spec_validate {unit}:full` | full | All 8 checks + cross-check (see `framework/verification_scope.md` §Cross-check for details) |
 
 **Output:** prefix the result with `Mode: scoped` or `Mode: full` and the specific scope (e.g., `Scope: check-1 (structural integrity)`). For scoped results, append a note: "This is not a full validation. Only check {n} was executed. Run `spec_validate {unit}:full` for complete validation."
 
@@ -33,16 +33,15 @@ Validate result: PASS | FAIL (fix_required | blocked)
 1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
-4. Intent consistency: PASS | FAIL — reason
+4. Evidence-driven vs design-driven consistency: PASS | FAIL — reason
 5. Acceptance coverage & correctness: PASS | FAIL — reason
   5a. Coverage completeness: PASS | FAIL — reason
   5b. Content alignment: PASS | FAIL — reason
   5c. Change drift: PASS | WARNING | FAIL — reason
   5d. Internal consistency: PASS | FAIL — reason
 6. Affects-source validity: PASS | FAIL — reason
-7. Replacement/repair integrity: PASS | FAIL — reason
-8. Cross-unit consistency: PASS | FAIL — reason
-9. Constraint alignment: PASS | FAIL — reason
+7. Cross-unit consistency: PASS | FAIL — reason
+8. Constraint alignment: PASS | FAIL — reason
 Resolution: fix_required | blocked — next step
 Summary: ...
 ```
@@ -141,38 +140,31 @@ If a plausible critical flaw is identified that the spec does not address → FA
 
 ---
 
-## Check 4 — Intent consistency
+## Check 4 — Evidence-driven vs design-driven consistency
 
-**Purpose:** The candidate's intent is inferred from structural signals, not declared in frontmatter. This check verifies that the inferred intent is internally consistent.
+**Purpose:** Verify consistency between `evidence_appendix_ref` and the spec body. If an evidence appendix is declared, it must contain observed implementation behavior; if absent, the design must be self-contained or declarative of its replacement nature.
 
 **Execution steps:**
 
 ```
-IF Repair Scope section exists in spec body:
-  - The candidate is a repair (inferred from Repair Scope section presence)
-  - evidence_appendix_ref must be ABSENT or none
-    (repairs restore behavior from a previous stable version, not from code observation)
-  - Detailed repair integrity is verified in Check 7
+IF evidence_appendix_ref is PRESENT and not none:
+  → The design is based on observed implementation (evidence-driven)
+  → The appendix content must record actually observed implementation behavior
+     (semantic consistency verified in Check 6)
 
-IF Repair Scope section does NOT exist in spec body:
-  - The candidate is a change or new design
-  - IF evidence_appendix_ref is PRESENT and not none:
-      → The design is based on observed implementation (evidence-driven)
-      → The appendix content must record actually observed implementation behavior
-         (semantic consistency verified in Check 6)
-  - IF evidence_appendix_ref is ABSENT or none:
-      → The design is design-driven (new concept or replacement)
-      → IF any acceptance item has verification_type == inspectable
-           AND evidence_requirements includes old_code_deleted and no_remaining_refs:
-           → This candidate is a replacement
-           → Verify old code retirement separately (unit_verify_checklist Step 4)
+IF evidence_appendix_ref is ABSENT or none:
+  → The design is design-driven (new concept or pure design change)
+  → IF any acceptance item has verification_type == inspectable
+       AND evidence_requirements includes old_code_deleted and no_remaining_refs:
+       → This candidate is a replacement
+       → Verify old code retirement separately (unit_verify_checklist Step 4)
 ```
 
-**PASS:** Inferred intent is internally consistent
+**PASS:** evidence_appendix_ref is consistent with the spec body
 
-**FAIL:** Contradiction found (e.g., repair section with evidence appendix) → fix_required
+**FAIL:** Contradiction found (fix_required)
 
-**Check method:** Structural inference (Repair Scope × evidence_appendix_ref × acceptance items)
+**Check method:** evidence_appendix_ref × acceptance item attributes
 
 ---
 
@@ -351,47 +343,7 @@ affects.appendices:
 
 ---
 
-## Check 7 — Replacement/repair integrity
-
-**Purpose:** Candidates with specific intents must satisfy additional quality rules. Intent is inferred from structural signals (Repair Scope section, acceptance items).
-
-**Execution steps:**
-
-**IF Repair Scope section exists in spec body:**
-```
-1. The Repair Scope section must contain:
-   - Repair target version (e.g., "Repair Target: {unit}@<version>")
-   - List of acceptance item IDs being restored
-   - Observed deviations from expected behavior
-   - Expected implementation-side changes
-   - Required verification evidence
-2. Repair Scope must not redefine behavior truth:
-   - Must not modify protocol contracts
-   - Must not modify field definitions
-   - Must not modify ownership boundaries
-   - Must not modify state machine semantics
-   If any of the above is violated → FAIL (recommend switching to change)
-3. Does the repair candidate actually restore the behavior of the target version?
-   - Read the stable spec at the repair target version (from git history or tag)
-   - Verify the candidate's behavior matches that version's stable spec
-```
-
-**IF any acceptance item has verification_type == inspectable**
-   **AND evidence_requirements includes old_code_deleted and no_remaining_refs:**
-```
-1. These items confirm the candidate is a replacement
-2. Retirement verification is performed in unit_verify_checklist Step 4
-```
-
-**PASS:** Intent-specific integrity requirements satisfied
-
-**FAIL:** Rule violation (fix_required) or repair exceeds permissible scope (recommend change instead)
-
-**Check method:** Structural inference × acceptance item format cross-reference + stable version comparison
-
----
-
-## Check 8 — Cross-unit consistency
+## Check 7 — Cross-unit consistency
 
 **Purpose:** The candidate spec must not contradict related units (candidates and stables). Unacknowledged contract changes must be flagged.
 
@@ -419,7 +371,7 @@ affects.appendices:
 
 ---
 
-## Check 9 — Constraint alignment
+## Check 8 — Constraint alignment
 
 **Purpose:** The candidate design must not violate global constraints or bound rules.
 

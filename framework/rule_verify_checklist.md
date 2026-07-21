@@ -13,7 +13,7 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_verify {rule}` | scoped (default) | Step 1 only — consumer ref version check (cheapest, most common drift) |
+| `spec_verify {rule}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content |
 | `spec_verify {rule}:full` | full | All 3 steps |
 
 ## Execution Rules

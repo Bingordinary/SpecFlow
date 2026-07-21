@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `spec_promote {unit}`, it follows the 3 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at promote time, not proactively.
+When an agent executes `spec_promote {unit}`, it follows the 2 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at promote time, not proactively.
 
 ## Execution Rules
 

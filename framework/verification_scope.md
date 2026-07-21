@@ -43,11 +43,12 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `spec_verify {rule}` | scoped | Step 1 only (consumer ref version check) |
-| `spec_verify {rule}:full` | full | All 3 steps |
-| `spec_validate {rule}` | scoped | Check 1 only (frontmatter completeness) |
+| `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
+| `spec_validate {rule}:{keyword}` | scoped | Matches keyword to a check name |
 | `spec_validate {rule}:full` | full | All 7 checks |
+| `spec_verify {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
+| `spec_verify {rule}:full` | full | All 3 steps |
 
 ### `:{keyword}` parsing rules
 
@@ -120,13 +121,13 @@ Checks for consistency across different parts of the spec:
 
 ### Validate cross-check
 
-After all 9 checks pass individually:
+After all 8 checks pass individually:
 
 | Check | What it looks for |
 |-------|------------------|
-| Design × Constraints | Does the design (Check 2) respect the system constraints (Check 9)? |
+| Design × Constraints | Does the design (Check 2) respect the system constraints (Check 8)? |
 | Coverage × Scope | Does the acceptance coverage (Check 5) actually prove the declared scope (Check 3)? |
-| Cross-unit cohesion | Do individual unit decisions (Check 8) align with the combined design intent? |
+| Cross-unit cohesion | Do individual unit decisions (Check 7) align with the combined design intent? |
 
 **Output:** same as verify cross-check — per-check PASS or specific finding.
 
@@ -141,16 +142,15 @@ Scoped validate uses **git working directory changes** on the spec file to deter
    - Frontmatter fields (id, layer, version, refs, appendix paths) → Check 1 (Structural integrity)
    - Design rationale, protocol definitions, data contracts → Check 2 (Design soundness)
    - Scope, non-goals, boundaries → Check 3 (Scope integrity)
-   - evidence_appendix_ref, Repair Scope section, acceptance item evidence_requirements → Check 4 (Intent consistency)
+   - evidence_appendix_ref, acceptance item evidence_requirements → Check 4 (Evidence-driven vs design-driven consistency)
    - Body behavior sections (main flow, protocols, error handling, state transitions) → Check 5 (5a + 5b + 5c)
    - Acceptance item set structure (new/deleted items, pass_condition changes) → Check 5 (5b + 5d + 5c)
    - Both body and items changed → Check 5 (5a + 5b + 5c + 5d)
    - Frontmatter / structure only → Skip Check 5 (not a behavior area change)
    - No git diff (new spec, no git history) → Fall back to full Check 5 after Check 1 passes
    - affects references, evidence appendix → Check 6 (Affects-source validity)
-   - Replacement/repair scope → Check 7 (Replacement/repair integrity)
-   - Unit refs, cross-unit contracts → Check 8 (Cross-unit consistency)
-   - System constraints, rule refs → Check 9 (Constraint alignment)
+   - Unit refs, cross-unit contracts → Check 7 (Cross-unit consistency)
+   - System constraints, rule refs → Check 8 (Constraint alignment)
 3. **Dependency handling:** if the mapped check(s) require prerequisites, verify them first. Specifically:
    - Check 1 is prerequisite for all others — run Check 1 first if it changed or if its status is unknown
    - Other checks have no mutual dependency — run in any order
@@ -166,13 +166,9 @@ Scoped validate uses **git working directory changes** on the spec file to deter
 
 > **Cache:** When scoped validate auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
 
-### Why not rule validate
-
-Rule files are small and mechanical (frontmatter + constraint text). Context is never an issue. Rule validate scoped defaults to Check 1 (frontmatter completeness).
-
 ## Full Validate
 
-All 9 checks, executed sequentially in their numbered order, followed by the cross-check.
+All 8 checks, executed sequentially in their numbered order, followed by the cross-check.
 
 ## Output Format
 

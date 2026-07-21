@@ -12,10 +12,10 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_validate {rule}` | scoped (default) | Check 1 only — frontmatter completeness |
+| `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` on rule file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {rule}:{keyword}` | scoped | Match keyword to check name |
-| `spec_validate {rule}:full` | full | All 7 checks + cross-check |
+| `spec_validate {rule}:full` | full | All 7 checks |
 
 ## Execution Rules
 
@@ -94,3 +94,5 @@ If the rule is a bound shared rule (`b_rule_`) AND has no current consumers: ver
 If any of the three fields is missing → FAIL.
 
 If the rule has current consumers: verify `unbound_retention` and its related fields are NOT present. If they are present → FAIL.
+
+**Consumer discovery method:** search for `rule_refs` containing this `rule_id` in unit spec files under `docs/specs/units/`, or run `specflowctl rule consumers --rule-id {rule_id}` (read-only).
