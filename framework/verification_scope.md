@@ -10,6 +10,8 @@ Introduce two modes — `scoped` and `full` — for both validate and verify. `s
 
 This mirrors the `scoped_review` / `deep_audit` distinction from `framework/governance/review_scope.md`, adapted for the different semantics of validate and verify.
 
+> **Note on git fallback divergence:** `review_scope.md` handles "no git working changes" by shifting to `git log -1` as the scoped diff base. Verify and validate cannot follow this pattern because spec content can be edited by the agent without git changes (new untracked files, in-memory edits). Falling back to full mode is the only safe scoped-free behavior in these cases.
+
 ## Principles
 
 1. **Default scoped** — the agent runs the smallest useful subset by default. The user gets fast, focused feedback.
@@ -76,8 +78,10 @@ Scoped verify uses **git working directory changes** to determine what to verify
 | Condition | Behavior |
 |-----------|----------|
 | No git changes, scoped cache fresh | Report "files unchanged, scoped result still valid". Offer full or specific keyword. |
-| No git changes, no cache | Ask user: "No recent code changes. Want full verification (`spec_verify {unit}:full`), or specify some content by keyword?" |
+| No git changes, no cache | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
 | Changed files don't match any spec content | Report "changed files not referenced in spec". Suggest user run full or add spec references. |
+
+> **Cache:** When scoped verify auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
 
 ## Full Verify
 
@@ -157,8 +161,10 @@ Scoped validate uses **git working directory changes** on the spec file to deter
 | Condition | Behavior |
 |-----------|----------|
 | Changes cannot be mapped to any check | Run Check 1 (safety default) |
-| No spec file changes exist (file is tracked but unmodified) | Report no changes found. Offer options: `{unit}:full` for full validation, `{unit}:check-1` (structural integrity — file format gate), or `{unit}:{keyword}` for a specific check. |
-| Spec file is new/untracked (no git history) | Cannot auto-map. Suggest running check-1 (structural integrity) as a format gate — "verifies the file's required fields and all referenced file paths exist; no design evaluation". After check-1 passes, ask if user wants full validation. |
+| No spec file changes exist (file is tracked but unmodified) | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
+| Spec file is new/untracked (no git history) | Fall back to full mode automatically (Check 1 runs first as prerequisite for all others). Output prefix: `Mode: full (fallback — new/untracked file, no git history for scoped)`. |
+
+> **Cache:** When scoped validate auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
 
 ### Why not rule validate
 

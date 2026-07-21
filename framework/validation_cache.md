@@ -69,6 +69,7 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 | `spec_verify {unit}:{keyword}` (matches item) ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{matched id}"`, hashes |
 | `spec_verify {unit}:full` ALIGNED | Write `verify_result.md` with `mode: full`, hashes of all read files |
 | `spec_verify` MISMATCH | Delete `verify_result.md` if it exists |
+| Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
 
 ### Cache lifecycle
 
