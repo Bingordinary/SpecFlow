@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var refPattern = regexp.MustCompile(`^[a-z]_[a-z]_[a-z0-9_]+@[0-9]+\.[0-9]+\.[0-9]+$`)
+var refPattern = regexp.MustCompile(`^[a-z]_[a-z]_[a-z0-9_]+$`)
 
 type document struct {
 	lines     []string

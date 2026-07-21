@@ -76,7 +76,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
 	templateProjectInstanceFiles := []string{
-		scope.TemplatePath("docs/specs/rules/stable/s_g_rule_repository_baseline.md"),
+		scope.TemplatePath("docs/specs/rules/stable/g_rule_repository_baseline.md"),
 	}
 	toolingContractFiles := []string{
 		scope.FrameworkPath("tooling_execution_policy.md"),

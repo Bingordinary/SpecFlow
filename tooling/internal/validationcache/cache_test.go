@@ -209,7 +209,7 @@ func TestCheckRuleValidate(t *testing.T) {
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	os.MkdirAll(ruleDir, 0755)
 
-	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
 	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestCheckRuleValidate(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll checks passed.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestCheckRuleValidateStale(t *testing.T) {
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	os.MkdirAll(ruleDir, 0755)
 
-	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
 	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestCheckRuleValidateStale(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Write cache with WRONG hash (deliberately stale)
-	staleCache := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n"
+	staleCache := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/b_rule_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(staleCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestCheckRuleVerify(t *testing.T) {
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	os.MkdirAll(ruleDir, 0755)
 
-	rulePath := filepath.Join(ruleDir, "c_b_rule_test.md")
+	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
 	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
@@ -285,7 +285,7 @@ func TestCheckRuleVerify(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: verify\nunit: b_rule_test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/c_b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll items aligned.\n"
+	cacheContent := "---\ncommand: verify\nunit: b_rule_test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll items aligned.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}

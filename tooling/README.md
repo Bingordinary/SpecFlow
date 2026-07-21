@@ -238,11 +238,11 @@ Examples:
 ./specflow/tooling/bin/specflowctl-linux-amd64 review run-touch --flow spec_flow_design_review
 ./specflow/tooling/bin/specflowctl-linux-amd64 next --unit ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 promote --unit ai
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs c_b_rule_app_config_topology@0.2.0 --units ai
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --deleted-rule-refs c_b_rule_unused@0.1.0
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs c_b_rule_runtime_model@0.3.0,s_b_rule_runtime_model@0.3.0 --stable-landing-unit skill --stable-landing-rule-refs s_b_rule_runtime_model@0.3.0 --retargeted-units agent
-./specflow/tooling/bin/specflowctl-linux-amd64 rule consumers --rule-ref s_b_rule_runtime_model@0.4.0
-./specflow/tooling/bin/specflowctl-linux-amd64 rule release-version --rule-id b_rule_runtime_model --from-ref s_b_rule_runtime_model@0.3.0 --to-ref s_b_rule_runtime_model@0.4.0
+./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs b_rule_app_config_topology@0.2.0 --units ai
+./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --deleted-rule-refs b_rule_unused@0.1.0
+./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs b_rule_runtime_model@0.3.0 --stable-landing-unit skill --stable-landing-rule-refs b_rule_runtime_model@0.3.0 --retargeted-units agent
+./specflow/tooling/bin/specflowctl-linux-amd64 rule consumers --rule-ref b_rule_runtime_model@0.4.0
+./specflow/tooling/bin/specflowctl-linux-amd64 rule release-version --rule-id b_rule_runtime_model --from-ref b_rule_runtime_model@0.3.0 --to-ref b_rule_runtime_model@0.4.0
 ```
 
 ## Freshness Rule

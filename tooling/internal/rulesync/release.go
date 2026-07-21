@@ -89,7 +89,7 @@ func Consumers(repoRoot string, options ConsumerOptions) (ConsumerResult, error)
 		matchedRefs := []string{}
 		for _, ref := range refs {
 			if ruleRef != "" {
-				if ref == ruleRef {
+				if bareRuleName(ref) == bareRuleName(ruleRef) {
 					matchedRefs = append(matchedRefs, ref)
 				}
 				continue
@@ -97,6 +97,13 @@ func Consumers(repoRoot string, options ConsumerOptions) (ConsumerResult, error)
 			shared, ok := sharedFilesByRef[ref]
 			if ok && shared.RuleID == ruleID {
 				matchedRefs = append(matchedRefs, ref)
+				continue
+			}
+			for key, s := range sharedFilesByRef {
+				if bareRuleName(ref) == bareRuleName(key) && s.RuleID == ruleID {
+					matchedRefs = append(matchedRefs, ref)
+					break
+				}
 			}
 		}
 		if len(matchedRefs) == 0 {
@@ -151,7 +158,11 @@ func ReleaseVersion(repoRoot string, options ReleaseVersionOptions) (ReleaseVers
 	if err != nil {
 		return ReleaseVersionResult{}, err
 	}
-	if !strings.HasPrefix(fromPrefix, "s_") {
+	fromShared, ok := sharedFilesByRef[normalized.FromRef]
+	if !ok {
+		return ReleaseVersionResult{}, fmt.Errorf("from-ref %q is not present under docs/specs/rules/", normalized.FromRef)
+	}
+	if fromShared.Layer != "stable" {
 		return ReleaseVersionResult{}, fmt.Errorf("from-ref %q must point to a stable-layer rule ref", normalized.FromRef)
 	}
 	if fromPrefix != toPrefix {
@@ -209,10 +220,12 @@ func replaceRuleRef(refs []string, fromRef, toRef string) ([]string, bool) {
 	changed := false
 	next := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if ref == fromRef {
-			next = append(next, toRef)
-			changed = true
-			continue
+		if bareRuleName(ref) == bareRuleName(fromRef) {
+			if strings.Contains(ref, "@") {
+				next = append(next, toRef)
+				changed = true
+				continue
+			}
 		}
 		next = append(next, ref)
 	}
@@ -227,15 +240,18 @@ func replaceRuleRef(refs []string, fromRef, toRef string) ([]string, bool) {
 }
 
 func ruleRefPrefix(ref string) (string, error) {
-	normalized, err := rulerefs.NormalizeRuleRefs([]string{ref})
-	if err != nil {
-		return "", err
-	}
-	parts := strings.SplitN(normalized[0], "@", 2)
-	if len(parts) != 2 {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
 		return "", fmt.Errorf("invalid rule ref %q", ref)
 	}
+	parts := strings.SplitN(ref, "@", 2)
 	return parts[0], nil
+}
+
+func bareRuleName(ref string) string {
+	ref = strings.TrimSpace(ref)
+	parts := strings.SplitN(ref, "@", 2)
+	return parts[0]
 }
 
 func bumpPatchVersion(version string) (string, error) {

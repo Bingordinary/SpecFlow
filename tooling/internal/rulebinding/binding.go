@@ -20,26 +20,40 @@ type ResolvedRef struct {
 }
 
 func ResolveRef(repoRoot, moduleLayer, ref string) (ResolvedRef, error) {
-	versionRef := strings.TrimSpace(ref)
-	prefix, expectedVersion, err := splitVersionRef(versionRef)
+	prefix, _, err := splitVersionRef(ref)
 	if err != nil {
 		return ResolvedRef{}, err
 	}
 
-	layer, err := layerFromPrefix(prefix)
-	if err != nil {
-		return ResolvedRef{}, err
-	}
-	if moduleLayer == "stable" && layer != "stable" {
-		return ResolvedRef{}, fmt.Errorf("stable-layer object binding must use an s_ rule ref, got %q", versionRef)
+	var layer string
+	var fileRef string
+	var content string
+
+	if moduleLayer == "stable" {
+		layer = "stable"
+		fileRef = ruleFileRef(prefix, layer)
+		contentBytes, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(fileRef)))
+		if err != nil {
+			return ResolvedRef{}, fmt.Errorf("rule %s not found in stable: %w", prefix, err)
+		}
+		content = string(contentBytes)
+	} else {
+		fileRef = ruleFileRef(prefix, "candidate")
+		contentBytes, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(fileRef)))
+		if err == nil {
+			layer = "candidate"
+			content = string(contentBytes)
+		} else {
+			fileRef = ruleFileRef(prefix, "stable")
+			contentBytes, err = os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(fileRef)))
+			if err != nil {
+				return ResolvedRef{}, fmt.Errorf("rule %s not found in candidate or stable", prefix)
+			}
+			layer = "stable"
+			content = string(contentBytes)
+		}
 	}
 
-	fileRef := ruleFileRef(prefix, layer)
-	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(fileRef)))
-	if err != nil {
-		return ResolvedRef{}, fmt.Errorf("read rule %s: %w", fileRef, err)
-	}
-	content := string(contentBytes)
 	hasBoundObjects, err := rulerefs.HasRuleBoundObjects(fileRef, content)
 	if err != nil {
 		return ResolvedRef{}, err
@@ -52,7 +66,6 @@ func ResolveRef(repoRoot, moduleLayer, ref string) (ResolvedRef, error) {
 	if err != nil {
 		return ResolvedRef{}, fmt.Errorf("%s: %w", fileRef, err)
 	}
-
 	ruleID := strings.TrimSpace(frontmatter["rule_id"])
 	ruleScope := strings.TrimSpace(frontmatter["rule_scope"])
 	actualLayer := strings.TrimSpace(frontmatter["layer"])
@@ -66,15 +79,12 @@ func ResolveRef(repoRoot, moduleLayer, ref string) (ResolvedRef, error) {
 	if actualLayer != layer {
 		return ResolvedRef{}, fmt.Errorf("%s: frontmatter.layer=%s does not match bound layer %s", fileRef, actualLayer, layer)
 	}
-	if actualVersion != expectedVersion {
-		return ResolvedRef{}, fmt.Errorf("%s: bound version %q does not match frontmatter rule_version %q", fileRef, expectedVersion, actualVersion)
-	}
 	if err := ValidatePromotionOwnerUnit(repoRoot, fileRef, actualLayer, strings.TrimSpace(frontmatter["promotion_owner_unit"])); err != nil {
 		return ResolvedRef{}, err
 	}
 
 	return ResolvedRef{
-		VersionRef:  versionRef,
+		VersionRef:  prefix,
 		FileRef:     fileRef,
 		Layer:       actualLayer,
 		RuleID:      ruleID,
@@ -93,7 +103,7 @@ func ValidatePromotionOwnerUnit(repoRoot, fileRef, layer, promotionOwnerUnit str
 		return nil
 	}
 
-	stableSiblingRef := "docs/specs/rules/stable/s_" + strings.TrimPrefix(filepath.Base(fileRef), "c_")
+	stableSiblingRef := filepath.Join("docs/specs/rules/stable", filepath.Base(fileRef))
 	_, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(stableSiblingRef)))
 	hasStableSibling := err == nil
 	if err != nil && !os.IsNotExist(err) {
@@ -120,27 +130,14 @@ func ValidatePromotionOwnerUnit(repoRoot, fileRef, layer, promotionOwnerUnit str
 }
 
 func splitVersionRef(ref string) (string, string, error) {
-	parts := strings.SplitN(ref, "@", 2)
-	if len(parts) != 2 {
+	ref = strings.TrimSpace(ref)
+	if strings.Contains(ref, "@") {
+		return "", "", fmt.Errorf("rule ref %q must not include a version number; use bare rule name", ref)
+	}
+	if ref == "" {
 		return "", "", fmt.Errorf("invalid rule ref %q", ref)
 	}
-	prefix := strings.TrimSpace(parts[0])
-	version := strings.TrimSpace(parts[1])
-	if prefix == "" || version == "" {
-		return "", "", fmt.Errorf("invalid rule ref %q", ref)
-	}
-	return prefix, version, nil
-}
-
-func layerFromPrefix(prefix string) (string, error) {
-	switch {
-	case strings.HasPrefix(prefix, "c_"):
-		return "candidate", nil
-	case strings.HasPrefix(prefix, "s_"):
-		return "stable", nil
-	default:
-		return "", fmt.Errorf("invalid rule ref prefix %q", prefix)
-	}
+	return ref, "", nil
 }
 
 func ruleFileRef(prefix, layer string) string {

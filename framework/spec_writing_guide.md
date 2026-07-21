@@ -23,8 +23,8 @@ Rule Specs:
 
 | kind | layer | path |
 |---|---|---|
-| rule | stable | `docs/specs/rules/stable/s_{g_or_b}_rule_{id}.md` |
-| rule | candidate | `docs/specs/rules/candidate/c_{g_or_b}_rule_{id}.md` |
+| rule | stable | `docs/specs/rules/stable/{g_or_b}_rule_{id}.md` |
+| rule | candidate | `docs/specs/rules/candidate/{g_or_b}_rule_{id}.md` |
 
 `docs/specs/scenarios/**` is not a supported formal Spec path.
 
@@ -44,15 +44,17 @@ rule_refs: none
 
 ```yaml
 unit_refs:
-  - agent@0.6.0
+  - agent
 ```
 
 `rule_refs` may also be a YAML list of rule refs:
 
 ```yaml
 rule_refs:
-  - b_rule_example@1.0.0
+  - b_rule_example
 ```
+
+Refs are bare rule names; the ref resolves to the current version.
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `c_unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
@@ -77,7 +79,7 @@ Rules:
 
 1. `rule_refs` must be in frontmatter
 2. no formal `rule_refs` list should be duplicated in the body
-3. refs must use exact version
+3. refs are bare rule names; the ref resolves to the current version
 4. refs must be sorted lexically when written as a list
 5. `rule_refs: none` means the unit binds no bound shared rule
 
@@ -107,7 +109,7 @@ When creating a new rule:
 3. Choose the smallest stable rule boundary. One rule file must carry one coherent shared constraint.
 4. A brand-new candidate rule starts at `rule_version: 0.1.0`.
 5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs` and choose exactly one valid `promotion_owner_unit`.
-6. Create the candidate rule file at `docs/specs/rules/candidate/c_{rule_id}.md`.
+6. Create the candidate rule file at `docs/specs/rules/candidate/{rule_id}.md`.
 7. If the bound shared rule has no formal current consumers after this write, keep it only when the file explicitly records:
    - `unbound_retention: intentional`
    - `unbound_retention_reason: <why this rule is intentionally independent now>`

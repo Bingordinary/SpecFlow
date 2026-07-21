@@ -53,22 +53,22 @@ When both are present, `rule_scope` in frontmatter takes precedence (per `spec_w
 
 ### Check 3 — File Path Consistency
 
-Verify the rule file is in the correct directory and uses the correct prefix:
+Verify the rule file is in the correct directory:
 
-| layer | Directory | File prefix |
-|-------|-----------|-------------|
-| `candidate` | `docs/specs/rules/candidate/` | `c_` |
-| `stable` | `docs/specs/rules/stable/` | `s_` |
+| layer | Directory |
+|-------|-----------|
+| `candidate` | `docs/specs/rules/candidate/` |
+| `stable` | `docs/specs/rules/stable/` |
 
-File prefix must also match scope: `c_g_rule_`/`s_g_rule_` for global, `c_b_rule_`/`s_b_rule_` for bound.
+Filenames follow the pattern `{g_or_b}_rule_{id}.md` — `g_rule_` for global rules, `b_rule_` for bound rules.
 
-If path does not match the declared layer and ID prefix → FAIL.
+If path does not match the declared layer → FAIL.
 
 ### Check 4 — Version Semantics
 
 If this is a brand-new rule (no stable file exists): verify `rule_version` equals `0.1.0`.
 
-If a stable sibling exists (`docs/specs/rules/stable/s_{rule_id}.md`): read the stable file's frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
+If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read the stable file's frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
 
 ### Check 5 — `promotion_owner_unit` Correctness
 

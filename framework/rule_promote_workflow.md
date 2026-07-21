@@ -35,12 +35,12 @@ The agent may report cache state and version change type to help the user decide
 
 The CLI tool performs:
 
-1. **Check candidate exists** — `docs/specs/rules/candidate/c_{rule_id}.md`
+1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
 2. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
-3. **Detect current stable version** — reads `docs/specs/rules/stable/s_{rule_id}.md` frontmatter
+3. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
 4. **Version sanity** — candidate version > stable version
 5. **Determine version change type** — MAJOR vs MINOR vs PATCH
-6. **Copy candidate→stable** — layer transform (`c_`→`s_`, `layer: candidate`→`layer: stable`)
+6. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
 7. **If MAJOR**: fork all stable consumers to candidate, update all candidate consumer rule_refs
 8. **Delete candidate** — removes the candidate rule file
 
@@ -50,8 +50,8 @@ After the CLI succeeds, the agent must act based on the change type:
 
 **If MAJOR:**
 1. Read the `--rule` output to find forked units (`ForkedConsumers`) and updated consumers (`CandidateUpdated`)
-2. For each forked unit: the body may still reference the old rule version in prose. Agent scans and updates active references
-3. For each updated candidate consumer: same scan for old version references in body text
+2. For each forked unit: the body may still reference the rule with an old `@version` format in prose. Agent scans and updates to bare refs
+3. For each updated candidate consumer: same scan for old `@version` references in body text
 4. Report to the user:
    - Which stable units were forked to candidate (need re-validation)
    - Which candidate units had their rule_refs updated
@@ -68,5 +68,5 @@ After the CLI succeeds, the agent must act based on the change type:
 | Stable rule file | Contains new version | Contains new version |
 | Candidate rule file | Deleted | Deleted |
 | Stable consumers | Forked to candidate | Unchanged (still stable) |
-| Candidate consumer refs | Updated to new version | Unchanged (compatible) |
+| Candidate consumer refs | Unchanged (bare refs; version is implicit) | Unchanged (compatible) |
 | Next step | Re-validate forked units | Done |

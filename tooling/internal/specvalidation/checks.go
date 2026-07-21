@@ -329,17 +329,12 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 				refName = ref[:atIdx]
 			}
 
-			if strings.HasPrefix(refName, "s_") || strings.HasPrefix(refName, "c_") {
-				missingRefs = append(missingRefs, fmt.Sprintf("%s (old format: remove s_/c_ prefix, use rule ref without layer prefix)", ref))
-				continue
-			}
-
-			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("c_%s.md", refName))
+			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("%s.md", refName))
 			if _, err := os.Stat(candidatePath); err == nil {
 				continue
 			}
 
-			stablePath := filepath.Join(repoRoot, "docs/specs/rules/stable", fmt.Sprintf("s_%s.md", refName))
+			stablePath := filepath.Join(repoRoot, "docs/specs/rules/stable", fmt.Sprintf("%s.md", refName))
 			if _, err := os.Stat(stablePath); err == nil {
 				continue
 			}

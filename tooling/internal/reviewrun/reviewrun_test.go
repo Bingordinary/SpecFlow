@@ -905,7 +905,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 			t.Fatalf("expected project compatibility contract input %s, got %+v", input, slice.InputFiles)
 		}
 	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md") {
+	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/g_rule_repository_baseline.md") {
 		t.Fatalf("expected global rules input, got %+v", slice.InputFiles)
 	}
 	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/c_unit_demo.md") {
@@ -1140,7 +1140,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"templates/docs/specs/_stable_verify_result/README.md",
 		"templates/docs/specs/_governance_review/README.md",
 		"templates/docs/specs/_independent_evaluation/README.md",
-		"templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md",
+		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 			"templates/docs/specs/units/candidate/c_unit_demo.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",

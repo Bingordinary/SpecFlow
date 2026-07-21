@@ -708,10 +708,10 @@ func requireReviewFlow(flow string, stderr io.Writer) error {
 
 func writeRuleUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl rule sync-impact (--rule-refs c_b_rule_x@0.1.0 | --rule-ids b_rule_x | --deleted-rule-refs c_b_rule_x@0.1.0) [--units unit_a,unit_b] [--stable-landing-unit unit_a --stable-landing-rule-refs s_b_rule_x@1.0.0] [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule sync-impact --rule-refs c_b_rule_x@0.1.0,s_b_rule_x@0.1.0 --stable-landing-unit unit_a --stable-landing-rule-refs s_b_rule_x@0.1.0 --retargeted-units unit_b [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule consumers (--rule-id b_rule_x | --rule-ref s_b_rule_x@1.0.0) [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule release-version --rule-id b_rule_x --from-ref s_b_rule_x@0.3.0 --to-ref s_b_rule_x@0.4.0 [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl rule sync-impact (--rule-refs b_rule_x@0.1.0 | --rule-ids b_rule_x | --deleted-rule-refs b_rule_x@0.1.0) [--units unit_a,unit_b] [--stable-landing-unit unit_a --stable-landing-rule-refs b_rule_x@1.0.0] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl rule sync-impact --rule-refs b_rule_x@0.1.0 --stable-landing-unit unit_a --stable-landing-rule-refs b_rule_x@0.1.0 --retargeted-units unit_b [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl rule consumers (--rule-id b_rule_x | --rule-ref b_rule_x@1.0.0) [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl rule release-version --rule-id b_rule_x --from-ref b_rule_x@0.3.0 --to-ref b_rule_x@0.4.0 [--repo-root PATH]")
 }
 func writeList(w io.Writer, title string, items []string) {
 	fmt.Fprintf(w, "%s (%d):\n", title, len(items))

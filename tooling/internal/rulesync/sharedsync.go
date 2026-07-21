@@ -387,10 +387,7 @@ func isStableGlobalRule(shared sharedFile) bool {
 	if shared.RuleScope == "global" {
 		return true
 	}
-	if strings.HasPrefix(shared.RuleID, "g_rule_") {
-		return true
-	}
-	return strings.HasPrefix(shared.VersionRef, "s_g_rule_")
+	return strings.HasPrefix(shared.RuleID, "g_rule_")
 }
 
 func validateRetargetedUnits(moduleBindings map[string]moduleBinding, sharedFilesByRef map[string]sharedFile, options Options) (map[string]bool, error) {
@@ -471,7 +468,7 @@ func sortedKeys(scope map[string]bool) []string {
 func selectedRuleRefsForObject(objectRefs, scopedRefs, scopedIDs []string, sharedFilesByRef map[string]sharedFile, sharedFilesByID map[string][]sharedFile) ([]string, error) {
 	refSet := map[string]bool{}
 	for _, ref := range scopedRefs {
-		refSet[ref] = true
+		refSet[bareRuleName(ref)] = true
 	}
 	idSet := map[string]bool{}
 	for _, sharedID := range scopedIDs {
@@ -480,11 +477,20 @@ func selectedRuleRefsForObject(objectRefs, scopedRefs, scopedIDs []string, share
 
 	result := []string{}
 	for _, ref := range objectRefs {
-		if refSet[ref] {
+		if refSet[bareRuleName(ref)] {
 			result = append(result, ref)
 			continue
 		}
 		shared, ok := sharedFilesByRef[ref]
+		if !ok {
+			for key, s := range sharedFilesByRef {
+				if bareRuleName(key) == bareRuleName(ref) {
+					shared = s
+					ok = true
+					break
+				}
+			}
+		}
 		if ok && idSet[shared.RuleID] {
 			if len(sharedFilesByID[shared.RuleID]) > 1 {
 				return nil, fmt.Errorf("cannot determine affected downstream objects safely for rule id %q because multiple current shared layers exist", shared.RuleID)

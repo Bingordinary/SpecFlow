@@ -202,16 +202,16 @@ type RuleResult struct {
 func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
 
-	candidateRule := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/c_%s.md", ruleID))
-	stableRule := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/stable/s_%s.md", ruleID))
+	candidateRule := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))
+	stableRule := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID))
 
 	// Step 1: Check candidate rule exists
 	if _, err := os.Stat(candidateRule); os.IsNotExist(err) {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate rule not found: docs/specs/rules/candidate/c_%s.md", ruleID))
+		r.Issues = append(r.Issues, fmt.Sprintf("Candidate rule not found: docs/specs/rules/candidate/%s.md", ruleID))
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Found candidate rule: docs/specs/rules/candidate/c_%s.md", ruleID))
+	r.Actions = append(r.Actions, fmt.Sprintf("Found candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 
 	// Step 2: Read and validate frontmatter
 	data, err := os.ReadFile(candidateRule)
@@ -295,7 +295,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/c_%s.md -> docs/specs/rules/stable/s_%s.md", ruleID, ruleID))
+	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 
 	// Step 7: Handle cascade for MAJOR changes
 	if r.ChangeType == ChangeMajor && stableVersion != "" {
@@ -323,8 +323,8 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		}
 
 		// 7c: Update all candidate consumer rule_refs
-		fromRef := fmt.Sprintf("s_%s@%s", ruleID, stableVersion)
-		toRef := fmt.Sprintf("s_%s@%s", ruleID, candidateVersion)
+		fromRef := fmt.Sprintf("%s@%s", ruleID, stableVersion)
+		toRef := fmt.Sprintf("%s@%s", ruleID, candidateVersion)
 
 		releaseResult, err := rulesync.ReleaseVersion(repoRoot, rulesync.ReleaseVersionOptions{
 			RuleID:  ruleID,
@@ -344,9 +344,9 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 
 	// Step 8: Delete candidate rule file
 	if err := os.Remove(candidateRule); err != nil {
-		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate rule: c_%s.md", ruleID))
+		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate rule: %s.md", ruleID))
 	} else {
-		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/c_%s.md", ruleID))
+		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 	}
 
 	r.Passed = true

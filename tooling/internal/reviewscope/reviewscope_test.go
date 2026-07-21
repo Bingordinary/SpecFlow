@@ -107,7 +107,7 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"templates/docs/specs/_stable_verify_result/README.md",
 		"templates/docs/specs/_governance_review/README.md",
 		"templates/docs/specs/_independent_evaluation/README.md",
-		"templates/docs/specs/rules/stable/s_g_rule_repository_baseline.md",
+		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",
 		"templates/CLAUDE.md",

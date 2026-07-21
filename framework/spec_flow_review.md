@@ -397,7 +397,7 @@ The default scope includes:
    - `<framework-root>/concepts.md`
    - `<framework-root>/guidance/*/SKILL.md`
 4. template-side project-instance bootstrap contracts
-   - `<template-root>/docs/specs/rules/stable/s_g_rule_repository_baseline.md`
+   - `<template-root>/docs/specs/rules/stable/g_rule_repository_baseline.md`
 5. tooling contract and tooling source
    - `<framework-root>/tooling_execution_policy.md`
    - `<tooling-root>/README.md`
@@ -411,7 +411,7 @@ Default scope excludes project-instance truth files under `docs/specs/` from bus
 
 Files excluded from business-truth review include:
 
-1. `docs/specs/rules/stable/s_g_rule_repository_baseline.md`
+1. `docs/specs/rules/stable/g_rule_repository_baseline.md`
 2. `docs/specs/units/**`
 3. `docs/specs/rules/**`
 4. `docs/specs/_governance_review/**`

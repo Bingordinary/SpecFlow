@@ -24,21 +24,19 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 ## Procedure
 
-### Step 1 — Consumer Rule Ref Version Check (candidate only)
+### Step 1 — Consumer Rule Ref Check (candidate only)
 
 1. Run `specflowctl rule consumers --rule-id {id}` to discover all units referencing this rule
 2. For each consumer, check its active layer:
-   - **Candidate**: verify the ref version matches the current rule stable version. Flag mismatch as DRIFTED.
-   - **Stable**: **skip** — stable units are frozen truth. They are not expected to track the latest rule version.
+   - **Candidate**: verify the consumer's `rule_refs` contain a bare ref matching this rule. If the ref uses old `@version` format, flag as DRIFTED.
+   - **Stable**: **skip** — stable units are frozen truth.
 
-### Step 2 — Consumer Body Version Reference Scan
+### Step 2 — Consumer Body Reference Scan
 
 1. For each consumer identified in Step 1, scan the unit spec body text
-2. Find any direct references to the rule version (e.g., `b_rule_x@0.3.0` in prose, path references, or code blocks)
-3. Classify each reference:
-   - **active ref** — a reference that determines behavior or intent (e.g., "This component must follow b_rule_x@0.3.0")
-   - **historical ref** — a reference that describes past state (e.g., "Previously used b_rule_x@0.3.0, now migrated to 0.4.0")
-4. If any active ref points to a version other than the current stable version → flag the consumer as DRIFTED
+2. Find any direct references to the rule by name in prose, path references, or code blocks
+3. Check for any lingering `@version` suffix (e.g., `b_rule_x@0.3.0`). If an active ref uses `@version` format, the version may be stale — flag the consumer as DRIFTED
+4. Bare refs (e.g., `b_rule_x`) are current by design; no version drift is possible
 
 ### Step 3 — Semantic Consumer Alignment Check
 
@@ -63,5 +61,5 @@ Do NOT perform deep semantic analysis. This check catches only clear, surface-le
 
 When MISMATCH, the agent must report:
 - Which consumers are drifted, and at which step
-- The specific contradiction (wrong version ref, active ref drift, semantic contradiction)
+- The specific contradiction (old `@version` format, semantic contradiction)
 - A suggestion for remediation

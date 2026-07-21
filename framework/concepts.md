@@ -226,7 +226,7 @@ Key rules that override the checklist:
 
 `specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
 
-`specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then runs release-version logic to update all consuming candidate units' `rule_refs` from the old version to the new version. After promote succeeds, the candidate rule file is deleted.
+`specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then runs release-version logic to bump any remaining `@version`-format refs (backward compat) in consuming candidate units; bare refs are unchanged. After promote succeeds, the candidate rule file is deleted.
 
 **Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. See [Truth Hierarchy](#truth-hierarchy).
 
