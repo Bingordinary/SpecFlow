@@ -767,7 +767,23 @@ For full-scope review:
 9. produce findings ordered by governance risk
    - every real finding must use the fixed finding contract from Section 8.2
    - do not collapse a real finding into a one-line conclusion with no repair guidance
-10. issue the final result only after all required baseline and dynamic slices are closed
+10. validate each candidate finding before final conclusion:
+    - for every candidate finding with severity P0-P2, the reviewer must
+      read at least one governance file that governs the same mechanism
+      as the finding (beyond the finding's source slice input_files) to
+      verify the finding represents a real governance mechanism issue in
+      the full governance context
+    - a finding that only appears valid within a single slice's local
+      context but dissolves under broader cross-file verification must be
+      demoted to a note
+    - severity P3 findings and notes are exempt from this
+      validation step
+    - if a validated finding is demoted and was the sole basis
+      for a slice's `blocked` status, that slice must be re-reviewed and
+      updated to `passed` or remain `blocked` with an updated blocked_reason
+    - validated findings that survive cross-file verification proceed to
+      step 11 for final conclusion
+11. issue the final result only after all required baseline and dynamic slices are closed
 
 For ordinary scoped review, use `framework/governance/review_scope.md` instead of this full-scope slice procedure.
 Ordinary scoped review must not use the full-scope run-state file, baseline slice table, dynamic slice table, or this final `pass | blocked` conclusion contract.
@@ -911,6 +927,17 @@ Additional rules:
 5. do not replace `recommended fix` with a vague statement such as "should be aligned" or "needs cleanup"
 6. if more than one plausible repair exists and the review cannot justify one minimal correct fix, the finding must say that the repair path is still unresolved and the review must not present a guessed fix as settled
 7. when no real finding exists, the output must say so explicitly instead of omitting the finding section
+
+### 8.3 Notes
+
+A **note** is a governance artifact produced when a candidate finding is demoted (see Section 7 step 10). Notes are non-binding observations that carry no severity or blocking status. They are recorded for traceability but must not affect slice or run status.
+
+Every note must record:
+1. the original finding's file ref and slice context
+2. a one-line reason for demotion
+3. `artifact_type: note`
+
+Notes require no background, impact, or recommended fix sections. A finding demoted to a note ceases to be a finding; it must not appear in the final findings list.
 
 ## 9. Non-Goals
 
