@@ -83,7 +83,7 @@ When referencing spec content in discussion, analysis, or implementation reasoni
 ### Automatic Target Type Detection
 
 `spec_validate`, `spec_verify`, and `spec_promote` work for both units and rules.
-The agent automatically detects the target type using a two-stage process.
+The agent automatically detects the target type using a three-stage process.
 
 **Stage 1 — Physical file check.** Must complete both steps before deciding.
 
@@ -106,6 +106,17 @@ Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/
 |---------------|-------------|---------|
 | Name without prefix (`auth`, `user_service`) | Unit | `spec_validate auth` |
 | Name with `g_rule_` or `b_rule_` prefix | Rule | `spec_validate b_rule_auth` |
+
+**Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target.
+
+When Stage 2 classifies a no-prefix target as Unit, the agent looks for its unit files (`Glob "docs/specs/units/candidate/c_unit_{target}.md"` and `Glob "docs/specs/units/stable/s_unit_{target}.md"`). If **neither** candidate nor stable unit files exist, do not report "does not exist" yet. Instead:
+
+Run `Glob "docs/specs/rules/candidate/*.md"` and `Glob "docs/specs/rules/stable/*.md"`. Scan all filenames for one whose name contains the target (e.g., `b_rule_runtime_model.md` contains `runtime_model`).
+
+| Result | Action |
+|---|---|
+| Matching rule file found | Type = Rule. Resolve full `rule_id` from the matched filename (e.g., `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). Proceed with the rule pipeline. |
+| No matching rule file found | Report: target does not exist. |
 
 Unit and rule follow the same validate→verify→promote pipeline, but each step executes different internal checks appropriate to the target type:
 
