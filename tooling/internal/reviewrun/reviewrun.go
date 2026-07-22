@@ -749,7 +749,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("concepts.md"),
-					scope.FrameworkPath("operations/migration.md"),
+					scope.FrameworkPath("operations/update.md"),
 				}, scope.GuidanceSkillFiles)
 			},
 		},
@@ -791,7 +791,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 				return union([]string{
 					scope.FrameworkPath("core/object_model.md"),
 					scope.FrameworkPath("spec_writing_guide.md"),
-					scope.FrameworkPath("operations/migration.md"),
+					scope.FrameworkPath("operations/update.md"),
 				}, scope.RuleGovernanceFiles, scope.TemplateProjectInstanceFiles, scope.ProjectInstanceCompatibilityFiles)
 			},
 		},

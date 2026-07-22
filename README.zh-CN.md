@@ -169,7 +169,6 @@ Agent：[运行 specflowctl promote...]
 | `specflowctl promote --unit <name>` | 格式校验 + candidate→stable 并清理 candidate 文件（唯一门控） |
 | `specflowctl init` | 安装框架文件和平台 hooks |
 | `specflowctl doctor` | 诊断项目配置 |
-| `specflowctl migrate` | 更新 hook 文件 + 检查工具版本 |
 | `specflowctl validate` | 校验文件写入权限 |
 
 ### Agent 触发词（对 agent 说）

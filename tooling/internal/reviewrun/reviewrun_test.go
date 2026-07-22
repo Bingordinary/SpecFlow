@@ -46,7 +46,7 @@ func TestInitCreatesValidRunState(t *testing.T) {
 	if !containsString(routingSlice.InputFiles, "framework/concepts.md") {
 		t.Fatalf("expected concepts.md in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
-	if !containsString(routingSlice.InputFiles, "framework/operations/migration.md") {
+	if !containsString(routingSlice.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
 
@@ -245,7 +245,7 @@ func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	if !containsString(designFoundation.InputFiles, "framework/rule_validate_checklist.md") {
 		t.Fatalf("expected rule validate checklist in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
-	if !containsString(designFoundation.InputFiles, "framework/operations/migration.md") {
+	if !containsString(designFoundation.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
 	if !containsString(designFoundation.InputFiles, "framework/concepts.md") {
@@ -911,7 +911,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/c_unit_demo.md") {
 		t.Fatalf("expected current project truth file input, got %+v", slice.InputFiles)
 	}
-	if !containsString(slice.InputFiles, "framework/operations/migration.md") {
+	if !containsString(slice.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy input for project-instance migration compatibility, got %+v", slice.InputFiles)
 	}
 	if containsString(slice.InputFiles, "templates/docs/specs/_governance_review/spec_flow_review.md") {
@@ -1122,7 +1122,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/governance/impact_sync.md",
 		"framework/governance/review.md",
 		"framework/governance/review_scope.md",
-		"framework/operations/migration.md",
+		"framework/operations/update.md",
 		"framework/guidance/using-specflow-guidance/SKILL.md",
 		"framework/guidance/project-framing/SKILL.md",
 		"framework/guidance/scope-cutting/SKILL.md",

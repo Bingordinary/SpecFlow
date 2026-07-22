@@ -245,7 +245,7 @@ Never call `specflowctl promote` without user confirmation. Before promote, alwa
 Validate and verify are quality gates. They write cache files (`_validation/`) but never spec or stable files. If validate or verify fails, the agent MUST NOT proceed to promote.
 
 **HARD RULE 3: Validate and Verify Check Quality, Promote Writes**
-`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`_validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init`, `migrate` are for discovery and maintenance and do not check quality.
+`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`_validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
 When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the first-principles divergence analysis (see `unit_verify_checklist.md` Step 7), which launches a sub-agent per mismatch to analyze spec intent vs code intent using first-principles reasoning. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.
@@ -266,8 +266,7 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run validate/verify before retrying. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
-| `specflowctl migrate` (deprecated) | Update hook files and check tooling version — use `spec_flow_update` instead | Agent or human (fallback) |
-| `spec_flow_update` (agent trigger) | Full update: pull framework, update binaries & hooks, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
+| `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
 | `specflowctl validate` | Validate candidate spec structure (7 checks) or file write permissions | Human maintainer or agent |
 
 Project truth inputs: `docs/specs/`.

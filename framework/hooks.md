@@ -39,7 +39,7 @@ specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os
 
 ### Hook Configuration Files
 
-Each platform requires a hook configuration JSON file that registers `session-start` as a SessionStart event trigger. These files are installed by `specflowctl install` / `specflowctl migrate`:
+Each platform requires a hook configuration JSON file that registers `session-start` as a SessionStart event trigger. These files are installed by `specflowctl install`:
 
 | File | Install To | Platform | Command |
 |------|-----------|----------|---------|

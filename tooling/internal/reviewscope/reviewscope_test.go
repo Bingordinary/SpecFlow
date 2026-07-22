@@ -80,7 +80,7 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"framework/governance/impact_sync.md",
 		"framework/governance/review.md",
 		"framework/governance/review_scope.md",
-		"framework/operations/migration.md",
+		"framework/operations/update.md",
 		"framework/spec_flow_review.md",
 		"framework/spec_flow_design_review.md",
 		"framework/spec_writing_guide.md",

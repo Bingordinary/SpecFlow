@@ -159,7 +159,7 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
-		scope.FrameworkPath("operations/migration.md"),
+		scope.FrameworkPath("operations/update.md"),
 		scope.FrameworkPath("spec_writing_guide.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
@@ -193,7 +193,7 @@ func collectAgentOperabilityFiles(scope SpecFlowScope, guidanceSkillFiles, ruleF
 		scope.FrameworkPath("rule_validate_checklist.md"),
 		scope.FrameworkPath("rule_verify_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
-		scope.FrameworkPath("operations/migration.md"),
+		scope.FrameworkPath("operations/update.md"),
 		scope.FrameworkPath("severity_policy.md"),
 		scope.FrameworkPath("spec_flow_design_review.md"),
 		scope.FrameworkPath("spec_flow_review.md"),

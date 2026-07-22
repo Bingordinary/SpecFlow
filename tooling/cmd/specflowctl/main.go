@@ -51,8 +51,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runDoctor(args[1:], stdout, stderr)
 	case "build-release":
 		return runBuildRelease(args[1:], stdout, stderr)
-	case "migrate":
-		return runMigrate(args[1:], stdout, stderr)
 	case "next":
 		return runNext(args[1:], stdout, stderr)
 	case "promote":
@@ -212,72 +210,6 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Validation cache cleared.")
 	}
 
-	return nil
-}
-
-func runMigrate(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	repoRootPtr := fs.String("repo-root", ".", "repository root")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	absRoot, err := filepath.Abs(*repoRootPtr)
-	if err != nil {
-		return fmt.Errorf("resolve repo root: %w", err)
-	}
-
-	fmt.Fprintln(stdout, "=== SpecFlow Migration ===")
-	fmt.Fprintln(stdout, "")
-
-	// Step 1: Update hook files
-	fmt.Fprintln(stdout, "Step 1: Updating hook files...")
-	hooksResult, err := install.InstallHooks(absRoot)
-	if err != nil {
-		fmt.Fprintf(stderr, "  FAILED: %v\n", err)
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run 'specflowctl init --force' to retry hook installation.")
-		return err
-	}
-	if hooksResult.Copied > 0 {
-		fmt.Fprintf(stdout, "  Updated %d hook file(s). Restart your agent session to load new hooks.\n", hooksResult.Copied)
-	} else {
-		fmt.Fprintln(stdout, "  Hook files are up to date.")
-	}
-	fmt.Fprintln(stdout, "")
-
-	// Step 2: Check binary version
-	fmt.Fprintln(stdout, "Step 2: Checking specFlow binary...")
-	doctorResult, err := install.Doctor(absRoot)
-	if err != nil {
-		fmt.Fprintf(stdout, "  WARNING: doctor check failed: %v\n", err)
-	}
-	passed := true
-	for _, failure := range doctorResult.Failures {
-		if strings.Contains(failure, "MISSING") || strings.Contains(failure, "STALE") {
-			fmt.Fprintf(stdout, "  %s\n", failure)
-			passed = false
-		}
-	}
-	if passed {
-		fmt.Fprintln(stdout, "  specFlow binary is up to date.")
-	} else {
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run 'specflowctl build-release' to rebuild binaries, or reinstall specFlow.")
-	}
-	fmt.Fprintln(stdout, "")
-
-	// Summary
-	fmt.Fprintln(stdout, "=== Migration Complete ===")
-	if hooksResult.Copied > 0 {
-		fmt.Fprintln(stdout, "Hook files were updated. Please restart your agent session.")
-	}
-	if hooksResult.Copied == 0 && passed {
-		fmt.Fprintln(stdout, "All checks passed. No updates needed.")
-	}
-	fmt.Fprintln(stdout, "")
-	fmt.Fprintln(stdout, "Next step: run spec_flow_update in your agent session to check project document format.")
 	return nil
 }
 
@@ -660,7 +592,6 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  init       Install specFlow framework files and platform hooks")
-	fmt.Fprintln(w, "  migrate    Update hook files and check tooling version")
 	fmt.Fprintln(w, "  doctor     Check installed specFlow structure")
 	fmt.Fprintln(w, "  build-release Build platform binaries into <tooling-root>/bin")
 	fmt.Fprintln(w, "  next       Discover unit files, specs, rules, and dependencies")

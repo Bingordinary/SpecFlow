@@ -434,7 +434,7 @@ Default scope must explicitly cover:
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected content), rule-governance files, and review policy files
 5. the project-instance compatibility check — at minimum the layout-selected global rule and formal truth compatibility inputs, limited by Section 2.10
-6. the project-instance migration flow — at minimum `operations/migration.md`
+6. the project-instance migration flow — at minimum `operations/update.md`
 
 If any one of those six coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
 
@@ -460,7 +460,7 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `spec_flow_review.md`, `spec_flow_design_review.md`, `governance/review.md`, `governance/review_scope.md`, and `severity_policy.md`
    - verifies review entry meaning, output contracts, finding contracts, and stop behavior
 3. `concept_and_command_policy`
-   - reviews `concepts.md`, `operations/migration.md`, and `guidance/*/SKILL.md`
+   - reviews `concepts.md`, `operations/update.md`, and `guidance/*/SKILL.md`
    - verifies the three commands (next, review, promote) have defined input, output, and failure behavior per Section 2.4
    - verifies project-instance migration routing and guidance entry behavior
 4. `truth_and_implementation_gates`
@@ -475,7 +475,7 @@ Local slices review one owner area for internal closure, side effects, contract 
 7. `project_instance_contract_compatibility`
    - reviews the current project-instance files under `docs/specs/` only for format and contract compatibility with current framework rules
    - reviews `spec_writing_guide.md` as the owner contract for object family, reference format, and rule binding format
-   - reviews `operations/migration.md` as the migration owner for project-instance shape drift discovered by this slice
+   - reviews `operations/update.md` as the migration owner for project-instance shape drift discovered by this slice
    - verifies appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`

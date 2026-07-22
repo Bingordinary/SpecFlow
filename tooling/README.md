@@ -97,9 +97,7 @@ For shared-change reconciliation, the current entry is `rule sync-impact`. It co
    - inspect installation and binary freshness health
 3. `build-release`
    - rebuild cross-platform binaries
-4. `migrate`
-   - update hook files and check the specFlow binary version
-5. `next`
+4. `next`
    - discover a unit's files and dependencies
    - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, and related units
    - this is a render action: read-only, does not modify any project file
