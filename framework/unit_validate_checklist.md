@@ -57,7 +57,7 @@ Summary: ...
 1. Read `docs/specs/units/candidate/c_unit_{unit}.md`
 2. Verify required frontmatter fields: `id`, `layer` (must be `"candidate"`), `version`, `unit_refs`, `rule_refs`
 3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `not_runnable_yet`
-4. Verify all `unit_refs` point to existing spec files (format `{name}@version`). Resolve by searching candidate directory first (`c_unit_{name}.md`), then fall back to stable (`s_unit_{name}.md`).
+4. Verify all `unit_refs` point to existing spec files (bare name, e.g. `agent`). Resolve by searching candidate directory first (`c_unit_{name}.md`), then fall back to stable (`s_unit_{name}.md`).
 5. Verify all `rule_refs` point to existing rule files (global or bound)
 6. Verify any appendix files referenced in the spec body exist at the expected path
 7. **Prose-path hygiene check (WARNING):** Verify that prose sections (Description, Responsibility, and any other narrative sections) do not contain code file paths:

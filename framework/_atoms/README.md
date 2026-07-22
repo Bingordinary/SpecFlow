@@ -8,8 +8,7 @@ target files via deterministic scripts.
 ## Why Atoms Exist
 
 The specFlow governance framework has documented procedural content that must appear in
-multiple files simultaneously (Section 2.12 self-containment requirement). Examples include
-rule governance shared footer (6 rule files).
+multiple files simultaneously (Section 2.12 self-containment requirement).
 
 Without atoms, updating any shared content requires editing every affected file manually —
 a maintenance risk that has already produced documented drift (see `spec_flow_review:full`
@@ -28,11 +27,9 @@ framework/_atoms/
 ├── manifest.txt                 # Atom registry (atom_id → source → targets)
 ├── generate.sh                  # Generation script
 ├── verify.sh                    # Verification script
-├── rules/
-│   └── shared_footer.md         # Rule governance shared footer
 └── misc/
-    ├── layout_note.md           # Layout-aware path note for rule files
-    └── framework_path.md        # Framework path resolution reference
+    ├── framework_path.md        # Framework path resolution reference
+    └── specflowctl_location.md  # Tooling path reference
 ```
 
 ## How Target Files Reference Atoms
