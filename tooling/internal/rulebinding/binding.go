@@ -80,10 +80,6 @@ func ResolveRef(repoRoot, moduleLayer, ref string) (ResolvedRef, error) {
 	if actualLayer != layer {
 		return ResolvedRef{}, fmt.Errorf("%s: frontmatter.layer=%s does not match bound layer %s", fileRef, actualLayer, layer)
 	}
-	if err := ValidatePromotionOwnerUnit(repoRoot, fileRef, actualLayer, strings.TrimSpace(frontmatter["promotion_owner_unit"])); err != nil {
-		return ResolvedRef{}, err
-	}
-
 	return ResolvedRef{
 		VersionRef:  prefix,
 		FileRef:     fileRef,
@@ -93,41 +89,6 @@ func ResolveRef(repoRoot, moduleLayer, ref string) (ResolvedRef, error) {
 		RuleVersion: actualVersion,
 		Content:     content,
 	}, nil
-}
-
-func ValidatePromotionOwnerUnit(repoRoot, fileRef, layer, promotionOwnerUnit string) error {
-	owner := strings.TrimSpace(promotionOwnerUnit)
-	if layer != "candidate" {
-		if owner != "" {
-			return fmt.Errorf("%s: promotion_owner_unit is allowed only on candidate-layer rule files with a stable sibling", fileRef)
-		}
-		return nil
-	}
-
-	stableSiblingRef := filepath.Join("docs/specs/rules/stable", filepath.Base(fileRef))
-	_, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(stableSiblingRef)))
-	hasStableSibling := err == nil
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("stat %s: %w", stableSiblingRef, err)
-	}
-	if !hasStableSibling {
-		if owner != "" {
-			return fmt.Errorf("%s: promotion_owner_unit must not be recorded when no stable-layer sibling exists", fileRef)
-		}
-		return nil
-	}
-	if owner == "" {
-		return fmt.Errorf("%s: missing promotion_owner_unit for candidate-layer rule file with stable sibling %s", fileRef, stableSiblingRef)
-	}
-	// Check that the unit exists as a formal spec file (file existence is state)
-	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", owner))
-	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", owner))
-	if _, err := os.Stat(stablePath); os.IsNotExist(err) {
-		if _, err := os.Stat(candidatePath); os.IsNotExist(err) {
-			return fmt.Errorf("%s: promotion_owner_unit %q has no spec file in stable or candidate", fileRef, owner)
-		}
-	}
-	return nil
 }
 
 func splitVersionRef(ref string) (string, string, error) {

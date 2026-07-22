@@ -70,11 +70,11 @@ If this is a brand-new rule (no stable file exists): verify `rule_version` equal
 
 If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read the stable file's frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
 
-### Check 5 — `promotion_owner_unit` Correctness
+### Check 5 — `promotion_owner_unit` (optional documentation field)
 
-If the candidate rule has a stable sibling: verify exactly one `promotion_owner_unit` field is present in the candidate frontmatter, and the value is a valid unit name (exists in `docs/specs/units/`).
+`promotion_owner_unit` is an optional documentation field with no effect on tooling behavior. This check produces no execution failure.
 
-If the candidate rule has no stable sibling: verify `promotion_owner_unit` is NOT present. If it is present → FAIL.
+→ WARNING if present but the value does not name a unit that exists in `docs/specs/units/`.
 
 ### Check 6 — Prohibited Fields
 
@@ -95,7 +95,7 @@ If any of the three fields is missing → FAIL.
 
 If the rule has current consumers: verify `unbound_retention` and its related fields are NOT present. If they are present → FAIL.
 
-**Consumer discovery method:** search for `rule_refs` containing this `rule_id` in unit spec files under `docs/specs/units/`, or run `specflowctl rule consumers --rule-id {rule_id}` (read-only).
+**Consumer discovery method:** search for `rule_refs` containing this `rule_id` in unit spec files under `docs/specs/units/`.
 
 ### Check 8 — Rule Body Quality
 

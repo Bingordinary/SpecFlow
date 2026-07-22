@@ -27,7 +27,7 @@ Do not infer consumers from implementation directories alone.
 
 ## Consumer Discovery
 
-Rule change impact is self-contained and does not route through `impact_sync`. `specflowctl promote --rule` handles consumer forking and rule_ref updates internally for MAJOR changes (see `rule_promote_workflow.md`). For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5; cache staleness is detected at promote time.
+Rule change impact is self-contained and does not route through `impact_sync`. For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5; cache staleness is detected at promote time.
 
 The consumer discovery rules below apply only when `impact_sync` is triggered by a non-rule change (stable unit version change or governance-flow fallback).
 
@@ -37,7 +37,7 @@ Rule consumers are derived from current-layer unit frontmatter:
 2. `b_rule_` files apply only to units whose `rule_refs` include that rule.
 3. rule files must not store consumer lists.
 
-Stable unit dependency consumers are derived from current-layer dependency fields and release-version references.
+Stable unit dependency consumers are derived from current-layer dependency fields.
 
 
 
@@ -64,7 +64,7 @@ When classification is uncertain, use the earliest proven invalidated layer and 
 
 ## Rule Change Impact
 
-Rule impact is handled directly — `specflowctl promote --rule` cascades MAJOR changes by forking stable consumers and updating candidate rule_refs (see `rule_promote_workflow.md`).
+Rule impact is handled directly by the agent — `specflowctl promote --rule` simply promotes the rule file; the agent assesses and handles consumer impact per `rule_promote_workflow.md`.
 
 For non-promote rule edits (creation, extraction, bindings): the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5. Cache staleness is detected at promote time.
 
@@ -79,7 +79,7 @@ When `impact_sync` is triggered by a non-rule change, consumer discovery uses:
 
 | Condition | Description | Next Action |
 |-----------|-------------|-------------|
-| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`rule sync-impact` CLI, `rule release-version`, or `spec_flow_update` for non-rule migration scenarios). |
+| **Normal completion** | Fallback routing applied to all affected units. All consumer discovery, freshness classification, and fallback routing steps are complete. | Return control to the caller (`spec_flow_update` for non-rule migration scenarios). |
 | **No affected units** | Consumer discovery found zero affected units. | Close with no further action. Report `affected_units: none`. |
 
 ## Output Contract

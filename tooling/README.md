@@ -85,10 +85,6 @@ The tooling layer must not:
 5. become a second semantic source of truth
 6. write reader-derived conclusions back into project files
 
-`impact_sync` is a governance concept first.
-The current CLI exposes only the deterministic pieces already justified by rules.
-For shared-change reconciliation, the current entry is `rule sync-impact`. It computes scope from the caller-provided rule refs, IDs, and deleted refs, then passes the resolved scope to the internal impact sync for fallback classification.
-
 ## Current Command Surface
 
 1. `init`
@@ -104,7 +100,7 @@ For shared-change reconciliation, the current entry is `rule sync-impact`. It co
 6. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `spec_validate`)
-   - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, runs release-version to update consumer refs; independently checks validate+verify cache freshness before promoting
+   - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. Independently checks validate+verify cache freshness before promoting
    - the tool independently checks validate+verify cache freshness before promoting (both `--unit` and `--rule`); if either cache is missing, stale, or scoped, promote is rejected with guidance to re-run the appropriate step
    - this is the only write gate
 7. `review collect-default-scope --flow <review_flow>`
@@ -117,21 +113,10 @@ For shared-change reconciliation, the current entry is `rule sync-impact`. It co
    - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
 11. `review run-touch --flow <review_flow>`
    - refresh only `last_updated_at`
-12. `rule sync-impact`
-   - compute rule-specific scope, resolve rule-only exceptions into generic impact input, then execute deterministic downstream fallback for the fixed affected objects through internal `impact_sync`
-   - when a rule-governance topology round deleted an exact Rule ref only after proving it has no current-layer unit consumers, the caller may pass that ref through `--deleted-rule-refs`; the command verifies the ref is absent from rule files and current-layer unit `rule_refs`, then reports a no-impact result with no unit fallback
-   - when stable landing self-exemption is needed, the caller must pass both `--stable-landing-unit` and exact `--stable-landing-rule-refs`
-   - when the same stable landing round retargeted candidate units to those stable landing rule refs, the caller must pass those units through `--retargeted-units` and must select both the old candidate Rule refs and the new stable Rule refs through exact `--rule-refs`
-   - the caller may narrow the derived unit subset with `--units`, but at least one rule trigger input must still be provided through `--rule-refs`, `--rule-ids`, or `--deleted-rule-refs`; retargeted stable landing requires exact `--rule-refs`
-13. `rule consumers`
-   - read current-layer `unit` frontmatter `rule_refs` and print the consumers for one `rule_id` or exact `rule_ref`
-14. `rule release-version`
-   - publish an already-existing stable Rule version by retargeting current-layer consumers from `--from-ref` to `--to-ref`
-   - candidate current-layer objects are rewritten directly
-15. `validate write`
-   - check whether a file path may be written under current governance constraints
-   - `validate write --path <path>` checks the executor's write permission for the given path
-16. `validate candidate --unit UNIT`
+12. `validate write`
+    - check whether a file path may be written under current governance constraints
+    - `validate write --path <path>` checks the executor's write permission for the given path
+13. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
 
 ## Review Run-State Commands
@@ -236,11 +221,6 @@ Examples:
 ./specflow/tooling/bin/specflowctl-linux-amd64 review run-touch --flow spec_flow_design_review
 ./specflow/tooling/bin/specflowctl-linux-amd64 next --unit ai
 ./specflow/tooling/bin/specflowctl-linux-amd64 promote --unit ai
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs b_rule_app_config_topology@0.2.0 --units ai
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --deleted-rule-refs b_rule_unused@0.1.0
-./specflow/tooling/bin/specflowctl-linux-amd64 rule sync-impact --rule-refs b_rule_runtime_model@0.3.0 --stable-landing-unit skill --stable-landing-rule-refs b_rule_runtime_model@0.3.0 --retargeted-units agent
-./specflow/tooling/bin/specflowctl-linux-amd64 rule consumers --rule-ref b_rule_runtime_model@0.4.0
-./specflow/tooling/bin/specflowctl-linux-amd64 rule release-version --rule-id b_rule_runtime_model --from-ref b_rule_runtime_model@0.3.0 --to-ref b_rule_runtime_model@0.4.0
 ```
 
 ## Freshness Rule

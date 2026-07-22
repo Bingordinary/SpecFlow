@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulesync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -227,13 +226,11 @@ func versionChangeType(candidateVersion, stableVersion string) VersionChangeType
 
 // RuleResult describes the outcome of a rule promote operation.
 type RuleResult struct {
-	RuleID           string
-	Passed           bool
-	Issues           []string
-	Actions          []string
-	CandidateUpdated []string
-	ForkedUnits      []string
-	ChangeType       VersionChangeType
+	RuleID     string
+	Passed     bool
+	Issues     []string
+	Actions    []string
+	ChangeType VersionChangeType
 }
 
 // PromoteRule runs the promote flow for the given rule.
@@ -244,8 +241,7 @@ type RuleResult struct {
 //  4. Version sanity check (candidate version > stable version)
 //  5. Determine version change type (MAJOR/MINOR/PATCH/none)
 //  6. Copy candidate to stable with layer transform
-//  7. If MAJOR: fork all stable consumers to candidate, update all candidate consumer rule_refs
-//  8. Delete candidate rule file
+//  7. Delete candidate rule file
 func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
 
@@ -327,11 +323,11 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r.ChangeType = versionChangeType(candidateVersion, stableVersion)
 	switch r.ChangeType {
 	case ChangeMajor:
-		r.Actions = append(r.Actions, "MAJOR change detected — breaking constraint change, will cascade to consumers")
+		r.Actions = append(r.Actions, "MAJOR change detected")
 	case ChangeMinor:
-		r.Actions = append(r.Actions, "MINOR change detected — compatible extension, no consumer cascade needed")
+		r.Actions = append(r.Actions, "MINOR change detected")
 	case ChangePatch:
-		r.Actions = append(r.Actions, "PATCH change detected — wording clarification, no consumer cascade needed")
+		r.Actions = append(r.Actions, "PATCH change detected")
 	case ChangeNone:
 		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
 	}
@@ -344,52 +340,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 
-	// Step 7: Handle cascade for MAJOR changes
-	if r.ChangeType == ChangeMajor && stableVersion != "" {
-		// 7a: Discover consumers
-		consumerResult, err := rulesync.Consumers(repoRoot, rulesync.ConsumerOptions{RuleID: ruleID})
-		if err != nil {
-			r.Issues = append(r.Issues, fmt.Sprintf("Failed to discover consumers: %v", err))
-			r.Passed = false
-			return r
-		}
-
-		// 7b: Fork stable consumers back to candidate
-		for _, consumer := range consumerResult.Consumers {
-			if consumer.ActiveLayer == "stable" {
-				forked, forkErr := forkUnitFromStable(repoRoot, consumer.Object)
-				if forkErr != nil {
-					r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not fork consumer %s: %v", consumer.Object, forkErr))
-					continue
-				}
-				r.ForkedUnits = append(r.ForkedUnits, consumer.Object)
-				for _, action := range forked {
-					r.Actions = append(r.Actions, action)
-				}
-			}
-		}
-
-		// 7c: Update all candidate consumer rule_refs
-		fromRef := fmt.Sprintf("%s@%s", ruleID, stableVersion)
-		toRef := fmt.Sprintf("%s@%s", ruleID, candidateVersion)
-
-		releaseResult, err := rulesync.ReleaseVersion(repoRoot, rulesync.ReleaseVersionOptions{
-			RuleID:  ruleID,
-			FromRef: fromRef,
-			ToRef:   toRef,
-		})
-		if err != nil {
-			r.Issues = append(r.Issues, fmt.Sprintf("Release version failed: %v", err))
-			r.Passed = false
-			return r
-		}
-		r.CandidateUpdated = releaseResult.CandidateUpdated
-		for _, updated := range releaseResult.CandidateUpdated {
-			r.Actions = append(r.Actions, fmt.Sprintf("Updated consumer: %s", updated))
-		}
-	}
-
-	// Step 8: Delete candidate rule file
+	// Step 7: Delete candidate rule file
 	if err := os.Remove(candidateRule); err != nil {
 		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate rule: %s.md", ruleID))
 	} else {
@@ -398,54 +349,6 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 
 	r.Passed = true
 	return r
-}
-
-// forkUnitFromStable copies a stable unit spec (and its appendices) back to the
-// candidate layer, transforming layer from stable to candidate. This is the
-// reverse of promote — it creates a candidate from a stable spec.
-// It returns a list of action descriptions. If the candidate already exists,
-// it is not overwritten.
-func forkUnitFromStable(repoRoot, unitName string) ([]string, error) {
-	var actions []string
-
-	stableSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName))
-	candidateSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", unitName))
-
-	// Check stable spec exists
-	if _, err := os.Stat(stableSpec); os.IsNotExist(err) {
-		return actions, fmt.Errorf("stable spec not found: docs/specs/units/stable/s_unit_%s.md", unitName)
-	}
-
-	// Don't overwrite existing candidate
-	if _, err := os.Stat(candidateSpec); err == nil {
-		actions = append(actions, fmt.Sprintf("Candidate already exists — skipped fork: c_unit_%s.md", unitName))
-		return actions, nil
-	}
-
-	// Fork appendices
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	appendixPattern := fmt.Sprintf("s_unit_%s_*.md", unitName)
-	appendixMatches, _ := filepath.Glob(filepath.Join(stableAppendixDir, appendixPattern))
-
-	candidateAppendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	_ = os.MkdirAll(candidateAppendixDir, 0755)
-
-	for _, m := range appendixMatches {
-		candidateName := strings.Replace(filepath.Base(m), "s_unit_", "c_unit_", 1)
-		dest := filepath.Join(candidateAppendixDir, candidateName)
-		if err := copyWithLayerTransformReverse(m, dest); err != nil {
-			return actions, fmt.Errorf("failed to fork appendix %s: %w", filepath.Base(m), err)
-		}
-		actions = append(actions, fmt.Sprintf("Forked appendix: docs/specs/units/stable/appendix/%s -> docs/specs/units/candidate/appendix/%s", filepath.Base(m), candidateName))
-	}
-
-	// Fork main spec
-	if err := copyWithLayerTransformReverse(stableSpec, candidateSpec); err != nil {
-		return actions, fmt.Errorf("failed to fork spec: %w", err)
-	}
-	actions = append(actions, fmt.Sprintf("Forked: docs/specs/units/stable/s_unit_%s.md -> docs/specs/units/candidate/c_unit_%s.md", unitName, unitName))
-
-	return actions, nil
 }
 
 // FormatRuleResult formats the rule promote result as readable output.
@@ -476,26 +379,10 @@ func FormatRuleResult(r *RuleResult) string {
 		buf.WriteString("\n")
 	}
 
-	if len(r.ForkedUnits) > 0 {
-		buf.WriteString("Forked consumers (MAJOR change — forked back to candidate):\n")
-		for _, u := range r.ForkedUnits {
-			fmt.Fprintf(&buf, "  - %s\n", u)
-		}
-		buf.WriteString("\n")
-	}
-
-	if len(r.CandidateUpdated) > 0 {
-		buf.WriteString("Updated consumer rule_refs:\n")
-		for _, u := range r.CandidateUpdated {
-			fmt.Fprintf(&buf, "  - %s\n", u)
-		}
-		buf.WriteString("\n")
-	}
-
 	if r.Passed {
 		switch r.ChangeType {
 		case ChangeMajor:
-			buf.WriteString("MAJOR: Rule promoted. Stable consumers forked to candidate. Re-validate and re-promote them.\n")
+			buf.WriteString("MAJOR: Rule promoted. Agent should verify consumer impact.\n")
 		case ChangeMinor, ChangePatch:
 			buf.WriteString("Compatible change: Rule promoted. No consumer impact.\n")
 		default:

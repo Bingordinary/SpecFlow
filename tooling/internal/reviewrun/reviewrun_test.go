@@ -1150,7 +1150,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"tooling/cmd/specflowctl/main.go",
 		"tooling/internal/demo/demo.go",
 		"tooling/internal/processcleanup/processcleanup.go",
-		"tooling/internal/rulesync/release.go",
 		"tooling/go.mod",
 		"tooling/manifest.tsv",
 	} {

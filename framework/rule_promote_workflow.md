@@ -14,7 +14,7 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 
 | Change type | Meaning | Consumer impact |
 |-------------|---------|----------------|
-| **MAJOR** (x.0.0) | Breaking constraint change | All stable consumers are auto-forked to candidate. Update their rule_refs. Re-validate and re-promote them. |
+| **MAJOR** (x.0.0) | Breaking constraint change | Agent should identify affected units and update them. No automatic cascade. |
 | **MINOR** (0.x.0) | Compatible extension | No consumer impact. Rule promoted without cascading. |
 | **PATCH** (0.0.x) | Wording clarification | No consumer impact. Rule promoted without cascading. |
 | None | Brand new rule (no previous stable) | No consumers exist yet. Rule promoted to stable. |
@@ -28,7 +28,7 @@ The agent may report cache state and version change type to help the user decide
 | Situation | What to say |
 |-----------|-------------|
 | MINOR/PATCH change, both caches fresh | "Compatible change. Rule validate and consumer check have passed. Ready for promotion — no consumers will be affected." |
-| MAJOR change, both caches fresh | "Breaking change. Rule validate and consumer check have passed. Ready for promotion — all stable consumers will be forked to candidate for re-validation." |
+| MAJOR change, both caches fresh | "Breaking change. Rule validate and consumer check have passed. Ready for promotion — verify consumer impact after promote." |
 | Caches stale/missing | "Cache is missing or expired. Run rule_validate (and rule_verify) first." |
 
 ### Step 2 — Run `specflowctl promote --rule <id>`
@@ -41,21 +41,16 @@ The CLI tool performs:
 4. **Version sanity** — candidate version > stable version
 5. **Determine version change type** — MAJOR vs MINOR vs PATCH
 6. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
-7. **If MAJOR**: fork all stable consumers to candidate, update all candidate consumer rule_refs
-8. **Delete candidate** — removes the candidate rule file
+7. **Delete candidate** — removes the candidate rule file
 
-### Step 3 — Post-promote Body Reference Cleanup
+### Step 3 — Post-promote Consumer Impact
 
 After the CLI succeeds, the agent must act based on the change type:
 
 **If MAJOR:**
-1. Read the `--rule` output to find forked units (`ForkedConsumers`) and updated consumers (`CandidateUpdated`)
-2. For each forked unit: the body may still reference the rule with an old `@version` format in prose. Agent scans and updates to bare refs
-3. For each updated candidate consumer: same scan for old `@version` references in body text
-4. Report to the user:
-   - Which stable units were forked to candidate (need re-validation)
-   - Which candidate units had their rule_refs updated
-   - Suggest running `spec_validate` then `spec_verify` on each forked unit
+1. Identify affected consumer units by searching for `rule_refs` containing the rule ID in `docs/specs/units/`
+2. The agent should update affected units as needed and report to the user
+3. Suggest running `spec_validate` then `spec_verify` on each affected unit
 
 **If MINOR/PATCH:**
 1. No consumer changes needed
@@ -67,6 +62,5 @@ After the CLI succeeds, the agent must act based on the change type:
 |--------|-------|-------------|
 | Stable rule file | Contains new version | Contains new version |
 | Candidate rule file | Deleted | Deleted |
-| Stable consumers | Forked to candidate | Unchanged (still stable) |
-| Candidate consumer refs | Unchanged (bare refs; version is implicit) | Unchanged (compatible) |
-| Next step | Re-validate forked units | Done |
+| Consumer impact | Agent must verify | None |
+| Next step | Agent identifies affected units and validates | Done |

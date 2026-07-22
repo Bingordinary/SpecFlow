@@ -15,7 +15,6 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulesync"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -466,125 +465,8 @@ func runReviewRunTouch(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 func runRule(args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 {
-		writeRuleUsage(stderr)
-		return errors.New("missing rule subcommand")
-	}
-
-	switch args[0] {
-	case "sync-impact":
-		return runRuleSyncImpact(args[1:], stdout, stderr)
-	case "consumers":
-		return runRuleConsumers(args[1:], stdout, stderr)
-	case "release-version":
-		return runRuleReleaseVersion(args[1:], stdout, stderr)
-	case "-h", "--help", "help":
-		writeRuleUsage(stdout)
-		return nil
-	default:
-		writeRuleUsage(stderr)
-		return fmt.Errorf("unknown rule subcommand %q", args[0])
-	}
-}
-
-func runRuleSyncImpact(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("rule sync-impact", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	repoRoot := fs.String("repo-root", ".", "repository root")
-	modules := fs.String("units", "", "comma-separated formal units")
-	ruleRefs := fs.String("rule-refs", "", "comma-separated rule version refs")
-	ruleIDs := fs.String("rule-ids", "", "comma-separated rule ids")
-	deletedRuleRefs := fs.String("deleted-rule-refs", "", "comma-separated terminal deleted rule version refs that must have no current consumers")
-	stableLandingUnit := fs.String("stable-landing-unit", "", "formal unit whose same-round stable landing should not invalidate itself")
-	stableLandingRuleRefs := fs.String("stable-landing-rule-refs", "", "comma-separated exact rule refs written by the same-round stable landing")
-	retargetedUnits := fs.String("retargeted-units", "", "comma-separated candidate units retargeted to same-round stable landing rule refs")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	result, err := rulesync.SyncImpact(mustAbs(*repoRoot), rulesync.Options{
-		Modules:               parseCSV(*modules),
-		RuleRefs:              parseCSV(*ruleRefs),
-		RuleIDs:               parseCSV(*ruleIDs),
-		DeletedRuleRefs:       parseCSV(*deletedRuleRefs),
-		StableLandingModule:   strings.TrimSpace(*stableLandingUnit),
-		StableLandingRuleRefs: parseCSV(*stableLandingRuleRefs),
-		RetargetedUnits:       parseCSV(*retargetedUnits),
-	})
-	if err != nil {
-		return err
-	}
-
-	writeList(stdout, "Scoped units", result.ScopedModules)
-	writeList(stdout, "Scoped rule refs", result.ScopedRuleRefs)
-	writeList(stdout, "Scoped rule ids", result.ScopedRuleIDs)
-	writeList(stdout, "Deleted rule refs verified no-impact", result.DeletedRuleRefs)
-	fmt.Fprintf(stdout, "Stable landing unit: %s\n", noneIfEmpty(result.StableLandingModule))
-	writeList(stdout, "Stable landing rule refs", result.StableLandingRuleRefs)
-	writeList(stdout, "Retargeted units", result.RetargetedUnits)
-	fmt.Fprintf(stdout, "Unit results (%d):\n", len(result.ModuleResults))
-	if len(result.ModuleResults) == 0 {
-		fmt.Fprintln(stdout, "- none")
-	}
-	for _, item := range result.ModuleResults {
-		fmt.Fprintf(stdout, "- %s | layer=%s | outcome=%s | reason=%s\n", item.Module, item.ActiveLayer, item.Outcome, noneIfEmpty(item.FallbackReasonCode))
-		for _, diagnostic := range item.Diagnostics {
-			fmt.Fprintf(stdout, "  diagnostic: %s\n", diagnostic)
-		}
-	}
-	return nil
-}
-
-func runRuleConsumers(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("rule consumers", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	repoRoot := fs.String("repo-root", ".", "repository root")
-	ruleID := fs.String("rule-id", "", "rule id")
-	ruleRef := fs.String("rule-ref", "", "exact rule version ref")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	result, err := rulesync.Consumers(mustAbs(*repoRoot), rulesync.ConsumerOptions{
-		RuleID:  *ruleID,
-		RuleRef: *ruleRef,
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "Rule id: %s\n", noneIfEmpty(result.RuleID))
-	fmt.Fprintf(stdout, "Rule ref: %s\n", noneIfEmpty(result.RuleRef))
-	fmt.Fprintf(stdout, "Consumers (%d):\n", len(result.Consumers))
-	if len(result.Consumers) == 0 {
-		fmt.Fprintln(stdout, "- none")
-	}
-	for _, consumer := range result.Consumers {
-		fmt.Fprintf(stdout, "- %s:%s | layer=%s | file=%s | refs=%s\n", consumer.ObjectType, consumer.Object, consumer.ActiveLayer, consumer.FileRef, strings.Join(defaultListValue(consumer.RuleRefs), ", "))
-	}
-	return nil
-}
-
-func runRuleReleaseVersion(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("rule release-version", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	repoRoot := fs.String("repo-root", ".", "repository root")
-	ruleID := fs.String("rule-id", "", "rule id")
-	fromRef := fs.String("from-ref", "", "old stable rule version ref")
-	toRef := fs.String("to-ref", "", "new stable rule version ref")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	result, err := rulesync.ReleaseVersion(mustAbs(*repoRoot), rulesync.ReleaseVersionOptions{
-		RuleID:  *ruleID,
-		FromRef: *fromRef,
-		ToRef:   *toRef,
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "Released rule version: %s from %s to %s\n", result.RuleID, result.FromRef, result.ToRef)
-	writeList(stdout, "Candidate units updated", result.CandidateUpdated)
-	writeList(stdout, "Synced units", result.Sync.ScopedModules)
-	return nil
+	fmt.Fprintf(stderr, "'rule' subcommands are no longer supported in this version of specFlow\n")
+	return errors.New("removed command")
 }
 func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
@@ -597,7 +479,6 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  next       Discover unit files, specs, rules, and dependencies")
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
-	fmt.Fprintln(w, "  rule       Execute rule-impact reconciliation helpers")
 	fmt.Fprintln(w, "  validate   Validate candidate spec structure or file write permissions")
 }
 
@@ -668,13 +549,6 @@ func requireReviewFlow(flow string, stderr io.Writer) error {
 	return fmt.Errorf("unsupported review flow %q", flow)
 }
 
-func writeRuleUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl rule sync-impact (--rule-refs b_rule_x@0.1.0 | --rule-ids b_rule_x | --deleted-rule-refs b_rule_x@0.1.0) [--units unit_a,unit_b] [--stable-landing-unit unit_a --stable-landing-rule-refs b_rule_x@1.0.0] [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule sync-impact --rule-refs b_rule_x@0.1.0 --stable-landing-unit unit_a --stable-landing-rule-refs b_rule_x@0.1.0 --retargeted-units unit_b [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule consumers (--rule-id b_rule_x | --rule-ref b_rule_x@1.0.0) [--repo-root PATH]")
-	fmt.Fprintln(w, "  specflowctl rule release-version --rule-id b_rule_x --from-ref b_rule_x@0.3.0 --to-ref b_rule_x@0.4.0 [--repo-root PATH]")
-}
 func writeList(w io.Writer, title string, items []string) {
 	fmt.Fprintf(w, "%s (%d):\n", title, len(items))
 	if len(items) == 0 {

@@ -96,7 +96,7 @@ layer: stable|candidate
 rule_version: x.y.z
 ```
 
-`promotion_owner_unit` may be present when one unit owns the promotion decision.
+`promotion_owner_unit` is an optional documentation field. It may be present to indicate which unit owns the promotion decision, but it has no effect on tooling behavior.
 
 `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist.
 
@@ -108,7 +108,7 @@ When creating a new rule:
 2. Check that the same formal rule truth is not already present in another rule file or duplicated as unit-local truth.
 3. Choose the smallest stable rule boundary. One rule file must carry one coherent shared constraint.
 4. A brand-new candidate rule starts at `rule_version: 0.1.0`.
-5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs` and choose exactly one valid `promotion_owner_unit`.
+5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs`.
 6. Create the candidate rule file at `docs/specs/rules/candidate/{rule_id}.md`.
 7. If the bound shared rule has no formal current consumers after this write, keep it only when the file explicitly records:
    - `unbound_retention: intentional`
@@ -126,7 +126,7 @@ When extracting existing unit-local formal truth into a rule:
 3. Build the complete involved-unit set from current repository truth.
 4. If any writeback-required unit is currently stable, stop and create a candidate fork first.
 5. Create or update the target candidate rule file. If this is the first file for a new rule object, write `rule_version: 0.1.0`.
-6. If the target rule has a stable sibling, write exactly one `promotion_owner_unit`.
+6. `promotion_owner_unit` may be written as an optional documentation field if desired.
 7. Rewrite each source candidate unit so the extracted truth no longer remains as duplicated unit-local formal truth.
 8. Update each affected candidate unit's `rule_refs` and body explanation.
 9. Do not write consumer lists or `bound_objects` into any rule file.
