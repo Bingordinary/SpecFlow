@@ -47,8 +47,8 @@ That default scope includes:
    - `operations/update.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-    - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline
- 2. process rules
+    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
+  2. process rules
     - `concepts.md` (the candidate-to-promote process)
     - `spec_writing_guide.md`
     - `governance/impact_sync.md`
@@ -75,7 +75,7 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `operations/update.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-    - `rule_validate_checklist.md`, `rule_verify_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/verify/promote pipeline
+    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
     - `governance/impact_sync.md`
 2. `process_and_gate_design`
    - `concepts.md` (the candidate-to-promote process design)

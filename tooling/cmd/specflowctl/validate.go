@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulevalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
@@ -61,6 +62,28 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 		}
 		if !result.Passed {
 			return fmt.Errorf("validate candidate failed")
+		}
+		return nil
+	case "rule":
+		fs := flag.NewFlagSet("validate rule", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		repoRoot := fs.String("repo-root", ".", "repository root")
+		ruleID := fs.String("id", "", "rule id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*ruleID) == "" {
+			writeValidateUsage(stderr)
+			return errors.New("--id is required")
+		}
+
+		result := rulevalidation.ValidateRule(mustAbs(*repoRoot), *ruleID)
+		_, err := fmt.Fprint(stdout, rulevalidation.FormatResult(result))
+		if err != nil {
+			return err
+		}
+		if !result.Passed {
+			return fmt.Errorf("validate rule failed")
 		}
 		return nil
 	case "-h", "--help", "help":
@@ -144,6 +167,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl validate write --path PATH [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl validate candidate --unit UNIT [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl validate rule --id RULE_ID [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate write checks if a file path is in an allowed write zone.")
 	fmt.Fprintln(w, "")
@@ -155,8 +179,20 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  5. Appendix files")
 	fmt.Fprintln(w, "  6. Version/ref consistency")
 	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Validate rule runs mechanical checks on a candidate rule:")
+	fmt.Fprintln(w, "  1. Frontmatter completeness")
+	fmt.Fprintln(w, "  2. ID/Scope consistency")
+	fmt.Fprintln(w, "  3. File path consistency")
+	fmt.Fprintln(w, "  4. Version semantics")
+	fmt.Fprintln(w, "  5. promotion_owner_unit (warning)")
+	fmt.Fprintln(w, "  6. Prohibited fields")
+	fmt.Fprintln(w, "  7. unbound_retention correctness")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Check 8 (Rule Body Quality) is agent-only and not covered by this command.")
+	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --path PATH     File path to validate (required for 'write')")
 	fmt.Fprintln(w, "  --unit UNIT     Unit name (required for 'candidate')")
+	fmt.Fprintln(w, "  --id RULE_ID    Rule id (required for 'rule')")
 	fmt.Fprintln(w, "  --repo-root PATH Repository root directory (default: current directory)")
 }

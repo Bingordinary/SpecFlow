@@ -60,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runRule(args[1:], stdout, stderr)
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
+	case "consumers":
+		return runConsumers(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -165,7 +167,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 }
 
 func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
-	// Check validate cache freshness
+	// Check validate cache freshness only (rule verify has been removed — see framework/concepts.md)
 	validateResult, err := validationcache.CheckRuleValidate(absRoot, ruleID)
 	if err != nil {
 		return fmt.Errorf("validate cache error: %w", err)
@@ -179,20 +181,6 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	// Check verify cache freshness
-	verifyResult, err := validationcache.CheckRuleVerify(absRoot, ruleID)
-	if err != nil {
-		return fmt.Errorf("verify cache error: %w", err)
-	}
-	if !verifyResult.Fresh {
-		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run spec_verify for this rule first, then retry promote.")
-		return errors.New("verify cache check failed")
-	}
-	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
-	fmt.Fprintln(stdout, "")
-
 	result := promote.PromoteRule(absRoot, ruleID)
 	_, err = fmt.Fprint(stdout, promote.FormatRuleResult(result))
 	if err != nil {
@@ -203,7 +191,7 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	}
 
 	// Clean up cache on successful promote
-	if delErr := validationcache.DeleteAllRuleCache(absRoot, ruleID); delErr != nil {
+	if delErr := validationcache.DeleteRuleCache(absRoot, ruleID, "validate"); delErr != nil {
 		fmt.Fprintf(stderr, "Warning: failed to delete validation cache: %v\n", delErr)
 	} else {
 		fmt.Fprintln(stdout, "Validation cache cleared.")
@@ -479,7 +467,8 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  next       Discover unit files, specs, rules, and dependencies")
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
-	fmt.Fprintln(w, "  validate   Validate candidate spec structure or file write permissions")
+	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
+	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }
 
 func writeReviewUsage(w io.Writer) {

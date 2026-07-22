@@ -118,12 +118,12 @@ Run `Glob "docs/specs/rules/candidate/*.md"` and `Glob "docs/specs/rules/stable/
 | Matching rule file found | Type = Rule. Resolve full `rule_id` from the matched filename (e.g., `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). Proceed with the rule pipeline. |
 | No matching rule file found | Report: target does not exist. |
 
-Unit and rule follow the same validate→verify→promote pipeline, but each step executes different internal checks appropriate to the target type:
+Unit and rule follow the validate→promote pipeline, but each has different internal checks:
 
 | Step | Unit executes | Rule executes |
 |-------|--------------|--------------|
 | validate | 8-point unit design checklist (`unit_validate_checklist.md`) | 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`) |
-| verify | 7-step spec-vs-code alignment check (6 analysis + 1 confidence) (`unit_verify_checklist.md`) | 3-step consumer alignment check (`rule_verify_checklist.md`) |
+| verify | 7-step spec-vs-code alignment check (`unit_verify_checklist.md`) | Removed — rule does not need verify. Consumer alignment is the consuming unit's responsibility. Impact analysis (consumer discovery) is a separate mechanism. |
 | promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
 
 ## specflowctl Location
@@ -162,7 +162,7 @@ The user can use explicit triggers at any time:
 | Trigger | What agent does |
 |---------|-----------------|
 | `spec_validate {target}` | Read-only subagent. Unit: 8-point validate checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. |
-| `spec_verify {target}` | Read-only subagent. Unit: 7-step spec-vs-code verify checklist (6 analysis + 1 confidence) (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. Rule: 3-step consumer alignment check (`rule_verify_checklist.md`), `:full` for all 3 steps. Auto-detects type from target name. Default: scoped (git-aware — matches changed files to content). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. |
+| `spec_verify {target}` | Read-only subagent. Unit only: 7-step spec-vs-code verify checklist (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run `spec_validate {rule}` instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. |
 | `spec_promote {target}` | 2-step promote workflow. Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
@@ -290,11 +290,12 @@ Stop and ask when the target unit is unclear, the required spec or framework fil
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §5. | Agent or human maintainer |
 | `specflowctl review run-*` | Governance review run-state management. Subcommands: `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
 | `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. Rule: 3-step consumer alignment (`rule_verify_checklist.md`), `:full` for all 3 steps. Auto-detects type from target name. Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. On MISMATCH: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_verify" or confirms agent suggestion |
+| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit only: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run spec_validate for the rule instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. On MISMATCH: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_verify" or confirms agent suggestion |
 | `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run validate/verify before retrying. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
-| `specflowctl validate` | Validate candidate spec structure (7 checks) or file write permissions | Human maintainer or agent |
+| `specflowctl consumers --rule <id>` | List all units that reference the given rule in their rule_refs. Empty output = no consumers. | Agent for impact analysis |
+| `specflowctl validate` | Validate candidate spec structure (7 checks), rule validation (7 mechanical checks), or file write permissions | Human maintainer or agent |
 
 Project truth inputs: `docs/specs/`.

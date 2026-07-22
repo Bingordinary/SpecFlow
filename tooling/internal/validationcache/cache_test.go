@@ -271,31 +271,12 @@ func TestCheckRuleValidateStale(t *testing.T) {
 func TestCheckRuleVerify(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
-	os.MkdirAll(ruleDir, 0755)
-
-	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
-	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
-	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	ruleHash, _ := fileHash(rulePath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
-	os.MkdirAll(cacheDir, 0755)
-
-	cacheContent := "---\ncommand: verify\nunit: b_rule_test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll items aligned.\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	result, err := CheckRuleVerify(repoRoot, "b_rule_test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fresh {
-		t.Fatalf("expected fresh, got: %s", result.Reason)
+	if result.Fresh {
+		t.Fatal("expected not fresh (rule verify is deprecated), got fresh")
 	}
 }
 

@@ -2,7 +2,7 @@
 
 ## Problem
 
-`spec_validate` and `spec_verify` operate on the **entire** spec unit (or rule) against the **entire** relevant codebase. When either side is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
+`spec_validate` operates on a spec unit or rule, and `spec_verify` operates on a spec unit — both against the **entire** relevant codebase. When either side is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
 
 ## Solution
 
@@ -39,7 +39,7 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 | `spec_verify {unit}:{keyword}` | scoped | Matches keyword to spec content (section title, feature name, etc.) → verify that content |
 | `spec_verify {unit}:full` | full | Verify all spec content + cross-check |
 
-### Rule
+### Rule (validate only, verify removed)
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
@@ -47,8 +47,8 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {rule}:{keyword}` | scoped | Matches keyword to a check name |
 | `spec_validate {rule}:full` | full | All 8 checks (7 metadata + 1 body quality) |
-| `spec_verify {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
-| `spec_verify {rule}:full` | full | All 3 steps |
+
+> `spec_verify` on a Rule target has been removed. If the user says `spec_verify {rule}`, report: "Rule verify has been removed. Run `spec_validate {rule}` instead." See `framework/concepts.md` for context.
 
 ### `:{keyword}` parsing rules
 

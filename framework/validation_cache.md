@@ -16,7 +16,7 @@ This file is referenced by `framework/concepts.md` §3.
 ### Rule
 
 - `docs/specs/_validation/rule/{id}/validate_result.md`
-- `docs/specs/_validation/rule/{id}/verify_result.md`
+- (Rule verify cache has been removed — rule does not need verify)
 
 ## Format
 
@@ -93,7 +93,7 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 1. **Mode check** — if `mode` is `scoped` (not `full`), the cache is rejected with scope detail: "cache is scoped (check {n} | item: {id}), run full verification before promoting."
 2. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected with guidance.
 
-`specflowctl promote --rule <id>` enforces cache freshness the same way as unit promote — reads both validate and verify cache, rejects if missing, stale, or scoped.
+`specflowctl promote --rule <id>` enforces cache freshness — reads the validate cache, rejects if missing, stale, or scoped. Rule verify cache is no longer required (rule verify has been removed).
 
 ## Important
 

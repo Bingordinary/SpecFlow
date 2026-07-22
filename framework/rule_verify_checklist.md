@@ -1,6 +1,13 @@
-# Rule Verify Checklist
+# Rule Verify Checklist (Deprecated)
 
-`rule_verify` is the rule-equivalent of `spec_verify`. Instead of checking spec-vs-code alignment (rules have no implementation code), it checks consumer alignment — whether all units that reference this rule are still consistent with it.
+> **DEPRECATED:** Rule verify has been removed from the rule lifecycle.
+> Rule does not need verify — consumer alignment is the responsibility of each consuming unit's validate.
+> Impact analysis (discovering which units reference a rule) is a separate mechanism, not verify.
+> See `framework/concepts.md` for the current pipeline design.
+>
+> This file is retained for reference only. Agents must not execute `rule_verify`.
+
+`rule_verify` was previously the rule-equivalent of `spec_verify`. It checked consumer alignment — whether all units that reference this rule are still consistent with it.
 
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 

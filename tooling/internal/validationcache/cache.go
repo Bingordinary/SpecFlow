@@ -61,9 +61,13 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})
 }
 
-// CheckRuleVerify reads and validates the verify cache for the given rule.
+// CheckRuleVerify is deprecated — rule verify has been removed.
+// It always returns not-fresh with a deprecation message.
 func CheckRuleVerify(repoRoot, ruleID string) (CheckResult, error) {
-	return checkCache(repoRoot, "rule", ruleID, "verify", "verify_result.md", []string{"aligned"})
+	return CheckResult{
+		Fresh:  false,
+		Reason: "rule verify has been removed (see framework/concepts.md); only rule validate is required for promote",
+	}, nil
 }
 
 // deleteCache removes a specific cache file (validate or verify) for the given target.
@@ -103,12 +107,10 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 	return deleteCache(repoRoot, "rule", ruleID, command)
 }
 
-// DeleteAllRuleCache removes both validate and verify caches for the given rule.
+// DeleteAllRuleCache removes the validate cache for the given rule.
+// (Rule verify cache is no longer used.)
 func DeleteAllRuleCache(repoRoot, ruleID string) error {
-	if err := DeleteRuleCache(repoRoot, ruleID, "validate"); err != nil {
-		return err
-	}
-	return DeleteRuleCache(repoRoot, ruleID, "verify")
+	return DeleteRuleCache(repoRoot, ruleID, "validate")
 }
 
 // ------------------------------------------------------------

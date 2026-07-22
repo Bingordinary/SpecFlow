@@ -2,9 +2,13 @@ package rulerefs
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 var refPattern = regexp.MustCompile(`^[a-z]_[a-z]_[a-z0-9_]+$`)
@@ -380,6 +384,68 @@ func markdownFieldKey(trimmed string) (string, bool) {
 		return "", false
 	}
 	return key, true
+}
+
+// FindRuleConsumers searches all unit spec files under docs/specs/units/
+// for rule_refs containing the given ruleID. Returns the list of unit names.
+func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
+	var consumers []string
+	seen := map[string]bool{}
+
+	searchDirs := []string{
+		filepath.Join(repoRoot, specpaths.CandidateDir),
+		filepath.Join(repoRoot, specpaths.StableDir),
+	}
+
+	for _, dir := range searchDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("read dir %s: %w", dir, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if !strings.HasPrefix(entry.Name(), "c_unit_") && !strings.HasPrefix(entry.Name(), "s_unit_") {
+				continue
+			}
+			if !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			fm := specpaths.ReadFrontmatterStringMap(string(content))
+			refsRaw := fm["rule_refs"]
+			if refsRaw == "" || strings.EqualFold(refsRaw, "none") {
+				continue
+			}
+			refs := specpaths.ParseRefList(refsRaw)
+			for _, ref := range refs {
+				refName := ref
+				if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
+					refName = ref[:atIdx]
+				}
+				if refName == ruleID && !seen[refName] {
+					// Extract unit name from filename
+					unitName := entry.Name()
+					unitName = strings.TrimPrefix(unitName, "c_unit_")
+					unitName = strings.TrimPrefix(unitName, "s_unit_")
+					unitName = strings.TrimSuffix(unitName, ".md")
+					if !seen[unitName] {
+						consumers = append(consumers, unitName)
+						seen[unitName] = true
+					}
+				}
+			}
+		}
+	}
+
+	return consumers, nil
 }
 
 func numeric(s string) bool {

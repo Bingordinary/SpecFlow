@@ -71,7 +71,6 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	}
 	ruleFiles := []string{
 		scope.FrameworkPath("rule_validate_checklist.md"),
-		scope.FrameworkPath("rule_verify_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
@@ -155,7 +154,6 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
 		scope.FrameworkPath("rule_validate_checklist.md"),
-		scope.FrameworkPath("rule_verify_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
@@ -191,7 +189,6 @@ func collectAgentOperabilityFiles(scope SpecFlowScope, guidanceSkillFiles, ruleF
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
 		scope.FrameworkPath("rule_validate_checklist.md"),
-		scope.FrameworkPath("rule_verify_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("operations/update.md"),
 		scope.FrameworkPath("severity_policy.md"),

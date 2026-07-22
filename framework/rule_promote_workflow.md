@@ -7,7 +7,7 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 ## HARD RULES
 
 1. Never call `specflowctl promote --rule <id>` without user confirmation
-2. Before promote, always run `rule_validate` then `rule_verify`. If either fails, stop and report
+2. Before promote, always run `rule_validate`. If it fails, stop and report
 3. The agent does not decide when to promote — it suggests, the user confirms
 
 ## Version Change Behavior
@@ -27,9 +27,9 @@ The agent may report cache state and version change type to help the user decide
 
 | Situation | What to say |
 |-----------|-------------|
-| MINOR/PATCH change, both caches fresh | "Compatible change. Rule validate and consumer check have passed. Ready for promotion — no consumers will be affected." |
-| MAJOR change, both caches fresh | "Breaking change. Rule validate and consumer check have passed. Ready for promotion — verify consumer impact after promote." |
-| Caches stale/missing | "Cache is missing or expired. Run rule_validate (and rule_verify) first." |
+| MINOR/PATCH change, cache fresh | "Compatible change. Rule validate has passed. Ready for promotion — no consumers will be affected." |
+| MAJOR change, cache fresh | "Breaking change. Rule validate has passed. Ready for promotion — verify consumer impact after promote." |
+| Cache stale/missing | "Cache is missing or expired. Run rule_validate first." |
 
 ### Step 2 — Run `specflowctl promote --rule <id>`
 
@@ -48,7 +48,7 @@ The CLI tool performs:
 After the CLI succeeds, the agent must act based on the change type:
 
 **If MAJOR:**
-1. Identify affected consumer units by searching for `rule_refs` containing the rule ID in `docs/specs/units/`
+1. Identify affected consumer units by running `specflowctl consumers --rule <id>` or searching for `rule_refs` containing the rule ID in `docs/specs/units/`
 2. The agent should update affected units as needed and report to the user
 3. Suggest running `spec_validate` then `spec_verify` on each affected unit
 
