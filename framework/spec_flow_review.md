@@ -703,7 +703,7 @@ For each file in `input_files`:
 1. file paths must be repository-relative paths rendered with `/`
 2. file paths must be sorted lexicographically before hashing
 3. read the full file text
-4. normalize the text (strip trailing whitespace from each line, replace all line endings with `\n`, remove trailing empty lines)
+4. normalize the text per the canonical hash algorithm defined in `framework/validation_cache.md` §Hash Algorithm
 5. compute `sha256` of the normalized UTF-8 bytes
 6. render the file hash as lowercase hexadecimal
 
