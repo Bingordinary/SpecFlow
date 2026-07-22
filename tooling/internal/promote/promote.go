@@ -42,16 +42,16 @@ type Result struct {
 func Promote(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
-	candidateSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", unitName))
-	stableSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName))
+	candidateSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	stableSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 
 	// Step 1: Check candidate spec exists
 	if _, err := os.Stat(candidateSpec); os.IsNotExist(err) {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate spec not found: docs/specs/units/candidate/c_unit_%s.md", unitName))
+		r.Issues = append(r.Issues, fmt.Sprintf("Candidate spec not found: docs/specs/units/candidate/unit_%s.md", unitName))
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Found candidate spec: docs/specs/units/candidate/c_unit_%s.md", unitName))
+	r.Actions = append(r.Actions, fmt.Sprintf("Found candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
 
 	// Step 2: Read and validate frontmatter
 	data, err := os.ReadFile(candidateSpec)
@@ -95,8 +95,8 @@ func Promote(repoRoot, unitName string) *Result {
 			if ref == "" || ref == unitName {
 				continue
 			}
-			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", ref))
-			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", ref))
+			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", ref))
+			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", ref))
 			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
 				if _, err := os.Stat(candidatePath); err == nil {
 					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' exists only in candidate layer — promote it first", ref))
@@ -135,7 +135,7 @@ func Promote(repoRoot, unitName string) *Result {
 
 	// Step 4: Check appendix files
 	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	pattern := fmt.Sprintf("c_unit_%s_*.md", unitName)
+	pattern := fmt.Sprintf("unit_%s_*.md", unitName)
 	matches, _ := filepath.Glob(filepath.Join(appendixDir, pattern))
 	for _, m := range matches {
 		rel, _ := filepath.Rel(repoRoot, m)
@@ -153,8 +153,7 @@ func Promote(repoRoot, unitName string) *Result {
 	_ = os.MkdirAll(stableAppendixDir, 0755)
 
 	for _, m := range matches {
-		stableName := strings.Replace(filepath.Base(m), "c_unit_", "s_unit_", 1)
-		dest := filepath.Join(stableAppendixDir, stableName)
+		dest := filepath.Join(stableAppendixDir, filepath.Base(m))
 		if err := copyWithLayerTransform(m, dest); err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
 			r.Passed = false
@@ -170,7 +169,7 @@ func Promote(repoRoot, unitName string) *Result {
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/c_unit_%s.md -> docs/specs/units/stable/s_unit_%s.md", unitName, unitName))
+	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
 
 	// Step 7: Remove candidate files so file existence remains an unambiguous state signal.
 	// "Candidate file exists = being edited" — after promote, no editing is in progress.
@@ -182,9 +181,9 @@ func Promote(repoRoot, unitName string) *Result {
 		}
 	}
 	if err := os.Remove(candidateSpec); err != nil {
-		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate spec: c_unit_%s.md", unitName))
+		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate spec: unit_%s.md", unitName))
 	} else {
-		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/c_unit_%s.md", unitName))
+		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
 	}
 
 	r.Passed = true

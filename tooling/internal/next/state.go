@@ -26,21 +26,21 @@ type UnitInfo struct {
 func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 	info := &UnitInfo{Name: unitName}
 
-	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", unitName))
-	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName))
+	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 
 	if _, err := os.Stat(candidatePath); err == nil {
 		info.HasCandidate = true
-		info.CandidateSpec = fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", unitName)
+		info.CandidateSpec = fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName)
 	}
 
 	if _, err := os.Stat(stablePath); err == nil {
 		info.HasStable = true
-		info.StableSpec = fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName)
+		info.StableSpec = fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
 	}
 
 	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	pattern := fmt.Sprintf("c_unit_%s_*.md", unitName)
+	pattern := fmt.Sprintf("unit_%s_*.md", unitName)
 	matches, _ := filepath.Glob(filepath.Join(appendixDir, pattern))
 	for _, m := range matches {
 		rel, _ := filepath.Rel(repoRoot, m)
@@ -67,7 +67,7 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 		}
 	} else if info.HasStable {
 		// Fall back to stable spec
-		stablePath := fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName)
+		stablePath := fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
 		fullPath := filepath.Join(repoRoot, stablePath)
 		if data, readErr := os.ReadFile(fullPath); readErr == nil {
 			fm := specpaths.ReadFrontmatterStringMap(string(data))

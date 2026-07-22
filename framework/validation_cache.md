@@ -33,7 +33,7 @@ result: pass                 # pass | aligned | blocked | mismatch
 target: candidate            # (verify only) candidate | stable
 timestamp: "2026-06-30T10:00:00Z"
 files:
-  - path: docs/specs/units/candidate/c_unit_user_auth.md
+  - path: docs/specs/units/candidate/unit_user_auth.md
     hash: sha256:abc123...
   - path: src/auth/login.go
     hash: sha256:def456...

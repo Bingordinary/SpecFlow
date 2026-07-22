@@ -409,7 +409,7 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 			if entry.IsDir() {
 				continue
 			}
-			if !strings.HasPrefix(entry.Name(), "c_unit_") && !strings.HasPrefix(entry.Name(), "s_unit_") {
+			if !strings.HasPrefix(entry.Name(), "unit_") {
 				continue
 			}
 			if !strings.HasSuffix(entry.Name(), ".md") {
@@ -432,10 +432,7 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 				}
 				if refName == ruleID && !seen[refName] {
 					// Extract unit name from filename
-					unitName := entry.Name()
-					unitName = strings.TrimPrefix(unitName, "c_unit_")
-					unitName = strings.TrimPrefix(unitName, "s_unit_")
-					unitName = strings.TrimSuffix(unitName, ".md")
+					unitName := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "unit_"), ".md")
 					if !seen[unitName] {
 						consumers = append(consumers, unitName)
 						seen[unitName] = true

@@ -124,7 +124,7 @@ spec_promote {unit}                 →  先 validate 再 verify，通过后 pro
 ```
 你：给 auth 加一个 rate limiter。
 Agent：没有找到 candidate spec，先了解一下设计...
-  [创建 docs/specs/units/candidate/c_unit_auth_rate_limit.md]
+  [创建 docs/specs/units/candidate/unit_auth_rate_limit.md]
   [实现代码]
   要 promote 到 stable 吗？
 你：先跑一下 validate。

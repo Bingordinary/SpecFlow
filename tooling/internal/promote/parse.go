@@ -91,36 +91,8 @@ func transformLayerInFrontmatter(content, fromLayer, toLayer string) string {
 			continue
 		}
 
-		// Transform evidence_appendix_ref field — rename c_unit_ to s_unit_
-		// when promoting (candidate→stable) or reverse on fork (stable→candidate).
-		if strings.HasPrefix(trimmed, "evidence_appendix_ref:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				rawVal := strings.TrimSpace(parts[1])
-				oldPrefix := "c_unit_"
-				newPrefix := "s_unit_"
-				if fromLayer == "stable" {
-					oldPrefix = "s_unit_"
-					newPrefix = "c_unit_"
-				}
-				newVal := strings.Replace(rawVal, oldPrefix, newPrefix, 1)
-				if newVal != rawVal {
-					leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-					trimmedVal := strings.TrimSpace(rawVal)
-					quote := ""
-					if len(trimmedVal) >= 2 {
-						if trimmedVal[0] == '"' && trimmedVal[len(trimmedVal)-1] == '"' {
-							quote = "\""
-						} else if trimmedVal[0] == '\'' && trimmedVal[len(trimmedVal)-1] == '\'' {
-							quote = "'"
-						}
-					}
-					strippedNew := strings.Trim(strings.TrimSpace(newVal), "\"'")
-					lines[i] = leading + "evidence_appendix_ref: " + quote + strippedNew + quote
-				}
-			}
-			continue
-		}
+		// evidence_appendix_ref field no longer needs prefix transform
+		// since unit filenames don't encode layer.
 	}
 
 	return strings.Join(lines, "\n")

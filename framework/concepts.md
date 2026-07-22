@@ -10,11 +10,11 @@ Every spec document follows a five-step loop:
 
 | Step | What happens | Entry condition | Exit condition |
 |-------|-------------|----------------|---------------|
-| **Fork** | Copy stable spec to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `c_unit_<name>.md`. |
+| **Fork** | Copy stable spec to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
 | **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
 | **Validate** | Check candidate design quality against checklist. | Agent triggered by `spec_validate`. | All checks pass. |
 | **Verify** | Check candidate vs code alignment. | Agent triggered by `spec_verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
-| **Promote** | Replace stable with the validated+verified candidate. | User confirms `spec_promote`. | New stable spec at `s_unit_<name>.md`; candidate files removed. |
+| **Promote** | Replace stable with the validated+verified candidate. | User confirms `spec_promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
 
 After promote, the new stable becomes the fork source for the next iteration — the cycle repeats.
 
@@ -24,7 +24,7 @@ There is no status metadata in the files. The file system itself is the state si
 
 | Stable exists | Candidate exists | What it means | What the agent does |
 |:---:|:---:|---|---|
-| No | No | No design recorded for this unit. | Create `c_unit_<name>.md` from scratch. |
+| No | No | No design recorded for this unit. | Create `unit_<name>.md` from scratch. |
 | Yes | No | Accepted design exists, no changes in progress. | Fork from stable (copy to candidate layer) before editing. |
 | Yes | Yes | Changes are in progress. | Edit the existing candidate; stable is unchanged until promote. |
 | No | Yes | *(transient — promotes only from candidate to stable, so stable always ends up existing)* | Proceed to promote when ready. |
@@ -33,8 +33,8 @@ There is no status metadata in the files. The file system itself is the state si
 
 | Layer | Prefix | Directory | Purpose |
 |-------|--------|-----------|---------|
-| **Stable** | `s_unit_<name>.md` | `docs/specs/units/stable/` | Accepted recorded truth. **Never edit directly.** Only created by promote. |
-| **Candidate** | `c_unit_<name>.md` | `docs/specs/units/candidate/` | Working draft. Created by fork or from scratch. The only layer the agent edits. |
+| **Stable** | `unit_<name>.md` | `docs/specs/units/stable/` | Accepted recorded truth. **Never edit directly.** Only created by promote. |
+| **Candidate** | `unit_<name>.md` | `docs/specs/units/candidate/` | Working draft. Created by fork or from scratch. The only layer the agent edits. |
 
 The relationship is versioned: a candidate is always a proposed next version of its corresponding stable (or the first version if no stable exists).
 
@@ -87,7 +87,7 @@ The agent automatically detects the target type using a three-stage process.
 
 **Stage 1 — Physical file check.** Must complete both steps before deciding.
 
-Step 1: Glob for unit candidate files — run `Glob "docs/specs/units/candidate/c_unit_{target}.md"`.
+Step 1: Glob for unit candidate files — run `Glob "docs/specs/units/candidate/unit_{target}.md"`.
 
 Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/g_rule_{target}.md"` and `Glob "docs/specs/rules/candidate/b_rule_{target}.md"` (both `g_rule_` and `b_rule_` prefixes).
 
@@ -109,7 +109,7 @@ Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/
 
 **Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target.
 
-When Stage 2 classifies a no-prefix target as Unit, the agent looks for its unit files (`Glob "docs/specs/units/candidate/c_unit_{target}.md"` and `Glob "docs/specs/units/stable/s_unit_{target}.md"`). If **neither** candidate nor stable unit files exist, do not report "does not exist" yet. Instead:
+When Stage 2 classifies a no-prefix target as Unit, the agent looks for its unit files (`Glob "docs/specs/units/candidate/unit_{target}.md"` and `Glob "docs/specs/units/stable/unit_{target}.md"`). If **neither** candidate nor stable unit files exist, do not report "does not exist" yet. Instead:
 
 Run `Glob "docs/specs/rules/candidate/*.md"` and `Glob "docs/specs/rules/stable/*.md"`. Scan all filenames for one whose name contains the target (e.g., `b_rule_runtime_model.md` contains `runtime_model`).
 
@@ -148,8 +148,8 @@ Run `specflowctl next --unit <name>` to discover the unit's candidate and stable
 
 **Fork prerequisite — before editing, determine the candidate state:**
 - **Candidate exists** → edit the existing candidate spec directly.
-- **No candidate, stable exists** → **fork from stable:** copy `s_unit_<name>.md` (and its appendices) from `docs/specs/units/stable/` to `docs/specs/units/candidate/` as `c_unit_<name>.md`, update frontmatter (`layer: stable` → `layer: candidate`, increment version), then edit the candidate. The stable spec is never edited directly except through the promote workflow.
-- **No candidate, no stable** → brand-new design. Create `c_unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
+- **No candidate, stable exists** → **fork from stable:** copy `unit_<name>.md` from `docs/specs/units/stable/` to `docs/specs/units/candidate/`, update frontmatter (`layer: stable` → `layer: candidate`, increment version), then edit the candidate. The stable spec is never edited directly except through the promote workflow.
+- **No candidate, no stable** → brand-new design. Create `unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
 
 **Rule fork — same logic applies to rules:** if a stable rule file exists at `docs/specs/rules/stable/{rule_id}.md` and no candidate exists, fork from stable: copy it to `docs/specs/rules/candidate/{rule_id}.md`, update `layer` from `stable` to `candidate`, and increment `rule_version`. For brand-new rules (no stable file), create the candidate rule file from scratch following `framework/spec_writing_guide.md` §5.
 
@@ -254,7 +254,7 @@ Key rules that override the checklist:
 2. Unit promote: the CLI independently checks cache freshness before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
 3. After promote succeeds, the agent must NOT modify the promoted stable spec. Body text references are maintained as-is because they use concept names (e.g. `auth`) rather than layer-prefixed file names.
 
-`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`, and renames appendix files from `c_unit_` to `s_unit_` prefix. After promote succeeds, candidate cache files are deleted.
+`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`. Appendix filenames are preserved since they no longer encode layer. After promote succeeds, candidate cache files are deleted.
 
 `specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then deletes the candidate rule file. Consumer impact assessment is the agent's responsibility.
 

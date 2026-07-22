@@ -13,7 +13,7 @@ func TestNextDiscoversCandidateSpec(t *testing.T) {
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
-	os.WriteFile(filepath.Join(candidateDir, "c_unit_demo.md"), []byte("# Demo\n"), 0644)
+	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte("# Demo\n"), 0644)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -26,7 +26,7 @@ func TestNextDiscoversCandidateSpec(t *testing.T) {
 	if !strings.Contains(output, "Candidate: true") {
 		t.Errorf("expected 'Candidate: true' in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "c_unit_demo.md") {
+	if !strings.Contains(output, "unit_demo.md") {
 		t.Errorf("expected candidate filename in output, got:\n%s", output)
 	}
 }

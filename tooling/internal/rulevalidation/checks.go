@@ -278,8 +278,8 @@ func checkPromotionOwner(repoRoot, ruleID string) CheckResult {
 		}
 	}
 
-	unitCandidate := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("c_unit_%s.md", owner))
-	unitStable := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("s_unit_%s.md", owner))
+	unitCandidate := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", owner))
+	unitStable := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", owner))
 
 	if _, err := os.Stat(unitCandidate); err == nil {
 		return CheckResult{Name: "promotion_owner_unit", Status: Pass, Details: fmt.Sprintf("references unit %s (candidate)", owner)}

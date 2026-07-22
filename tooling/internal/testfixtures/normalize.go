@@ -24,8 +24,7 @@ func isMainSpecPath(path string) bool {
 		return false
 	}
 	base := filepath.Base(path)
-	return (strings.Contains(path, "docs/specs/units/candidate/") && strings.HasPrefix(base, "c_unit_")) ||
-		(strings.Contains(path, "docs/specs/units/stable/") && strings.HasPrefix(base, "s_unit_"))
+	return strings.Contains(path, "docs/specs/units/") && strings.HasPrefix(base, "unit_")
 }
 
 func normalizeMainSpec(content string) string {

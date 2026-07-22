@@ -908,7 +908,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/g_rule_repository_baseline.md") {
 		t.Fatalf("expected global rules input, got %+v", slice.InputFiles)
 	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/c_unit_demo.md") {
+	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/unit_demo.md") {
 		t.Fatalf("expected current project truth file input, got %+v", slice.InputFiles)
 	}
 	if !containsString(slice.InputFiles, "framework/operations/update.md") {
@@ -917,7 +917,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	if containsString(slice.InputFiles, "templates/docs/specs/_governance_review/spec_flow_review.md") {
 		t.Fatalf("expected active review run state outside compatibility fingerprint, got %+v", slice.InputFiles)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "templates/docs/specs/units/candidate/c_unit_demo.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(repoRoot, "templates/docs/specs/units/candidate/unit_demo.md")); err != nil {
 		t.Fatalf("expected fixture project truth file: %v", err)
 	}
 }
@@ -1140,7 +1140,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"templates/docs/specs/_governance_review/README.md",
 		"templates/docs/specs/_independent_evaluation/README.md",
 		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
-			"templates/docs/specs/units/candidate/c_unit_demo.md",
+			"templates/docs/specs/units/candidate/unit_demo.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",
 		"templates/CLAUDE.md",

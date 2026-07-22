@@ -34,7 +34,7 @@ Summary: ...
 2. Read `docs/specs/_validation/unit/{name}/verify_result.md` if it exists
 3. Report freshness status to the user if reporting would be useful
 4. **not_runnable_yet review:**
-   - Read the candidate spec at `docs/specs/units/candidate/c_unit_{name}.md`
+   - Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
    - Scan acceptance items for `not_runnable_yet: yes`
    - For each item found, assess:
      - Is `not_runnable_yet_reason` present and substantive?
@@ -62,7 +62,7 @@ Summary: ...
    c. Both fresh → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
    - Transforms the `layer` frontmatter field from `candidate` to `stable`
-   - Renames appendix files from `c_unit_` prefix to `s_unit_` prefix
+   - Appendix filenames are preserved since they no longer encode layer
    - Deletes candidate cache files after success
 
 **PASS:** `specflowctl promote --unit <name>` exits with code 0, all files copied and candidate cleaned up

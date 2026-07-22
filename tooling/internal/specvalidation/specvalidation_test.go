@@ -19,7 +19,7 @@ func createMinimalCandidate(t *testing.T, repoRoot, unitName string) string {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "c_unit_"+unitName+".md")
+	path := filepath.Join(dir, "unit_"+unitName+".md")
 	content := "---\n" +
 		"id: " + unitName + "\n" +
 		"layer: candidate\n" +
@@ -40,7 +40,7 @@ func writeCandidate(t *testing.T, repoRoot, unitName, content string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "c_unit_"+unitName+".md")
+	path := filepath.Join(dir, "unit_"+unitName+".md")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestCheckReferences_CandidateRefPass(t *testing.T) {
 	if err := os.MkdirAll(candidateDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(candidateDir, "c_unit_auth.md"),
+	if err := os.WriteFile(filepath.Join(candidateDir, "unit_auth.md"),
 		[]byte("---\nid: auth\nlayer: candidate\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestCheckReferences_StableRefPass(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stableDir, "s_unit_auth.md"),
+	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
 		[]byte("---\nid: auth\nlayer: stable\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -309,17 +309,17 @@ func TestCheckReferences_StableRefPass(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_OldFormatRejected(t *testing.T) {
+func TestCheckReferences_RefNotFoundFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
-			"unit_refs:\n  - s_unit_auth@0.1.0\nrule_refs: none\n---\n")
+			"unit_refs:\n  - nonexistent_unit\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatal("expected FAIL for old s_unit_ prefix format")
+		t.Fatal("expected FAIL for nonexistent ref")
 	}
-	if !strings.Contains(result.Details, "old format") {
-		t.Fatalf("expected error about old format, got: %s", result.Details)
+	if !strings.Contains(result.Details, "not found") {
+		t.Fatalf("expected error about not found, got: %s", result.Details)
 	}
 }
 
@@ -356,7 +356,7 @@ func TestCheckVersionConsistency_MismatchFail(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stableDir, "s_unit_auth.md"),
+	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
 		[]byte("---\nid: auth\nlayer: stable\nversion: 0.2.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestCheckVersionConsistency_MatchPass(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stableDir, "s_unit_auth.md"),
+	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
 		[]byte("---\nid: auth\nlayer: stable\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}

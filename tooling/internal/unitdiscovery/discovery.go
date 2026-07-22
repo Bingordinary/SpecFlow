@@ -32,14 +32,14 @@ func DiscoverUnits(repoRoot string) ([]UnitInfo, error) {
 	byID := map[string]*UnitInfo{}
 
 	// Scan stable units
-	stablePattern := filepath.Join(repoRoot, "docs/specs/units/stable/s_unit_*.md")
+	stablePattern := filepath.Join(repoRoot, "docs/specs/units/stable/unit_*.md")
 	stableMatches, err := filepath.Glob(stablePattern)
 	if err != nil {
 		return nil, fmt.Errorf("scan stable units: %w", err)
 	}
 	for _, absPath := range stableMatches {
 		base := filepath.Base(absPath)
-		id := strings.TrimPrefix(base, "s_unit_")
+		id := strings.TrimPrefix(base, "unit_")
 		id = strings.TrimSuffix(id, ".md")
 		if id == "" || id == base {
 			continue
@@ -51,14 +51,14 @@ func DiscoverUnits(repoRoot string) ([]UnitInfo, error) {
 	}
 
 	// Scan candidate units
-	candidatePattern := filepath.Join(repoRoot, "docs/specs/units/candidate/c_unit_*.md")
+	candidatePattern := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_*.md")
 	candidateMatches, err := filepath.Glob(candidatePattern)
 	if err != nil {
 		return nil, fmt.Errorf("scan candidate units: %w", err)
 	}
 	for _, absPath := range candidateMatches {
 		base := filepath.Base(absPath)
-		id := strings.TrimPrefix(base, "c_unit_")
+		id := strings.TrimPrefix(base, "unit_")
 		id = strings.TrimSuffix(id, ".md")
 		if id == "" || id == base {
 			continue
@@ -82,14 +82,14 @@ func DiscoverUnits(repoRoot string) ([]UnitInfo, error) {
 
 // DiscoverUnitLayers returns which layers a specific unit has files for.
 func DiscoverUnitLayers(repoRoot, unitName string) (hasStable, hasCandidate bool, err error) {
-	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/s_unit_%s.md", unitName))
+	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 	if _, err := os.Stat(stablePath); err == nil {
 		hasStable = true
 	} else if !os.IsNotExist(err) {
 		return false, false, fmt.Errorf("stat stable spec for %s: %w", unitName, err)
 	}
 
-	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/c_unit_%s.md", unitName))
+	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 	if _, err := os.Stat(candidatePath); err == nil {
 		hasCandidate = true
 	} else if !os.IsNotExist(err) {

@@ -23,9 +23,9 @@ func ObjectMainSpecFileRef(objectType, layer, object string) (string, error) {
 	case "unit":
 		switch layer {
 		case "candidate":
-			return fmt.Sprintf("%s/c_unit_%s.md", CandidateDir, object), nil
+			return fmt.Sprintf("%s/unit_%s.md", CandidateDir, object), nil
 		case "stable":
-			return fmt.Sprintf("%s/s_unit_%s.md", StableDir, object), nil
+			return fmt.Sprintf("%s/unit_%s.md", StableDir, object), nil
 		}
 	case "rule":
 		switch layer {
@@ -66,13 +66,13 @@ func AppendixDir(layer string) (string, error) {
 }
 
 func CandidateAppendixGlob(unit string) string {
-	return fmt.Sprintf("%s/c_unit_%s_*.md", CandidateAppendixDir, unit)
+	return fmt.Sprintf("%s/unit_%s_*.md", CandidateAppendixDir, unit)
 }
 
 func ObjectCandidateAppendixGlob(objectType, object string) (string, error) {
 	switch objectType {
 	case "unit":
-		return fmt.Sprintf("%s/c_unit_%s_*.md", CandidateAppendixDir, object), nil
+		return fmt.Sprintf("%s/unit_%s_*.md", CandidateAppendixDir, object), nil
 	default:
 		return "", fmt.Errorf("unsupported object type %q", objectType)
 	}

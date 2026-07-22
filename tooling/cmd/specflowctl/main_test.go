@@ -87,7 +87,7 @@ acceptance_item_set:
 	    pass_condition: passes
 	    not_runnable_yet: no
 `
-	specPath := filepath.Join(candidateDir, "c_unit_test_unit.md")
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ layer: candidate
 ---
 Appendix content for test.
 `
-	appendixPath := filepath.Join(appendixDir, "c_unit_test_unit_helper.md")
+	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
 	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -120,9 +120,9 @@ unit: test_unit
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 files:
-  - path: docs/specs/units/candidate/c_unit_test_unit.md
+  - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
 ---
 Validate passed.
@@ -139,9 +139,9 @@ result: aligned
 target: candidate
 timestamp: "2026-06-30T11:00:00Z"
 files:
-  - path: docs/specs/units/candidate/c_unit_test_unit.md
+  - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/c_unit_test_unit_helper.md
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
 ---
 Verify passed.
@@ -165,7 +165,7 @@ Verify passed.
 	}
 
 	// Check stable file was created
-	stablePath := filepath.Join(repoRoot, "docs/specs/units/stable/s_unit_test_unit.md")
+	stablePath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
 	if _, err := os.Stat(stablePath); os.IsNotExist(err) {
 		t.Fatal("stable spec was not created after promote")
 	}
@@ -191,7 +191,7 @@ Verify passed.
 	}
 
 	// Verify stable appendix was created after promote
-	stableAppendixPath := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/s_unit_test_unit_helper.md")
+	stableAppendixPath := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/unit_test_unit_helper.md")
 	if _, err := os.Stat(stableAppendixPath); os.IsNotExist(err) {
 		t.Fatal("stable appendix was not created after promote")
 	}
@@ -241,7 +241,7 @@ acceptance_item_set:
     pass_condition: passes
     not_runnable_yet: no
 `
-	specPath := filepath.Join(candidateDir, "c_unit_test_unit.md")
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}

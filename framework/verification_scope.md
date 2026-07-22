@@ -180,7 +180,7 @@ Verify result: ALIGNED
 Content checked:
   - POST /login — login.go, token.go
 Files checked:
-  - docs/specs/units/candidate/c_unit_user_auth.md (sha256:abc...)
+  - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
   - src/api/login.go (sha256:def...)
 ---
 Scoped result: spec content related to changed files is aligned.
@@ -209,7 +209,7 @@ Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
   - check-3 (scope integrity): PASS — mapped from change
 Files checked:
-  - docs/specs/units/candidate/c_unit_user_auth.md (sha256:abc...)
+  - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
 ---
 Scoped result: scope integrity PASS.
 This is not a full validation. Other checks were not run.

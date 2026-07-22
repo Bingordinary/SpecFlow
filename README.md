@@ -127,7 +127,7 @@ Example session:
 ```
 You: Let's add a rate limiter to auth.
 Agent: I don't see a candidate spec for this. Let me understand the design...
-  [creates docs/specs/units/candidate/c_unit_auth_rate_limit.md]
+  [creates docs/specs/units/candidate/unit_auth_rate_limit.md]
   [implements code]
   Ready to promote to stable?
 You: Run validate first.

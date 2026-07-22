@@ -16,8 +16,8 @@ Unit main Specs:
 
 | kind | layer | path |
 |---|---|---|
-| unit | stable | `docs/specs/units/stable/s_unit_{id}.md` |
-| unit | candidate | `docs/specs/units/candidate/c_unit_{id}.md` |
+| unit | stable | `docs/specs/units/stable/unit_{id}.md` |
+| unit | candidate | `docs/specs/units/candidate/unit_{id}.md` |
 
 Rule Specs:
 
@@ -56,7 +56,7 @@ rule_refs:
 
 Refs are bare rule names; the ref resolves to the current version.
 
-`evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `c_unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
+`evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
 ## 3. Unit Dependencies
 
@@ -223,11 +223,11 @@ Each unit appendix must:
 2. declare `unit: {unit}` in frontmatter
 3. declare `layer: stable|candidate` in frontmatter
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `s_unit_{unit}_{name}.md` must have a corresponding candidate appendix `c_unit_{unit}_{name}.md`.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
-- Candidate: `docs/specs/units/candidate/appendix/c_unit_{unit}_{name}.md`
-- Stable: `docs/specs/units/stable/appendix/s_unit_{unit}_{name}.md`
+- Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
+- Stable: `docs/specs/units/stable/appendix/unit_{unit}_{name}.md`
 The candidate may have additional candidate appendices.
 
 An appendix file may carry an optional `status` field in its frontmatter:

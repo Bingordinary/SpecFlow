@@ -10,7 +10,7 @@ import (
 )
 
 // specPath is a shorthand for specpaths.MainSpecFileRef("candidate", unitName).
-// It produces docs/specs/units/candidate/c_unit_<unitName>.md.
+// It produces docs/specs/units/candidate/unit_<unitName>.md.
 func specPath(repoRoot, unitName string) string {
 	ref, err := specpaths.MainSpecFileRef("candidate", unitName)
 	if err != nil {
@@ -301,17 +301,12 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 				refName = ref[:atIdx]
 			}
 
-			if strings.HasPrefix(refName, "s_unit_") || strings.HasPrefix(refName, "c_unit_") {
-				missingRefs = append(missingRefs, fmt.Sprintf("%s (old format: remove s_/c_ prefix, use bare unit name)", ref))
-				continue
-			}
-
-			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("c_unit_%s.md", refName))
+			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", refName))
 			if _, err := os.Stat(candidatePath); err == nil {
 				continue
 			}
 
-			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("s_unit_%s.md", refName))
+			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", refName))
 			if _, err := os.Stat(stablePath); err == nil {
 				continue
 			}
@@ -423,10 +418,10 @@ func checkVersionConsistency(repoRoot, unitName string) CheckResult {
 				continue
 			}
 
-			targetFile := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("c_unit_%s.md", refName))
+			targetFile := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", refName))
 			targetData, err := os.ReadFile(targetFile)
 			if err != nil {
-				targetFile = filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("s_unit_%s.md", refName))
+				targetFile = filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", refName))
 				targetData, err = os.ReadFile(targetFile)
 				if err != nil {
 					versionMismatches = append(versionMismatches, fmt.Sprintf("%s: cannot read target spec", ref))
