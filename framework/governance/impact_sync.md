@@ -9,9 +9,8 @@ It owns consumer discovery and freshness classification for affected units.
 Run impact sync when:
 
 1. a stable unit version changes and another current-layer unit references the prior version.
-2. a stable global rule changes or gains an explicit exception.
-3. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
-4. a governance flow cannot prove that downstream unit truth remains current.
+2. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
+3. a governance flow cannot prove that downstream unit truth remains current.
 
 ## Inputs
 
@@ -20,7 +19,7 @@ Use the smallest durable truth that can prove affected consumers:
 1. changed rule or global rule truth.
 2. promoted stable unit reference and release version.
 3. current-layer unit frontmatter and dependency fields.
-4. when triggered by a no-change governance uncertainty (Trigger 5): the current truth snapshot and the governance flow's certainty boundaries.
+4. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
 
 
 Do not infer consumers from implementation directories alone.
