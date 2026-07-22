@@ -2,7 +2,7 @@
 
 `rule_verify` is the rule-equivalent of `spec_verify`. Instead of checking spec-vs-code alignment (rules have no implementation code), it checks consumer alignment — whether all units that reference this rule are still consistent with it.
 
-Agent runs this when `spec_verify {target}` is called and the target has a `g_rule_` or `b_rule_` prefix.
+Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
 **Result:** ALIGNED writes `docs/specs/_validation/rule/{id}/verify_result.md`.
 MISMATCH does not write cache. The agent reports which consumers have drifted and how.

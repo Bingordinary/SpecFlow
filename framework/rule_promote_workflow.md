@@ -2,7 +2,7 @@
 
 `rule_promote` is the rule-equivalent of `spec_promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
 
-Agent runs this when `spec_promote {target}` is called and the target has a `g_rule_` or `b_rule_` prefix.
+Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
 ## HARD RULES
 

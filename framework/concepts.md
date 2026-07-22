@@ -83,7 +83,20 @@ When referencing spec content in discussion, analysis, or implementation reasoni
 ### Automatic Target Type Detection
 
 `spec_validate`, `spec_verify`, and `spec_promote` work for both units and rules.
-The agent automatically detects the target type from its name:
+The agent automatically detects the target type using a two-stage process:
+
+**Stage 1 — Physical file check.** Check all categories for `{target}` simultaneously:
+
+| Type | Search paths |
+|------|-------------|
+| Unit | `docs/specs/units/candidate/c_unit_{target}.md` or `docs/specs/units/stable/s_unit_{target}.md` |
+| Rule | `docs/specs/rules/candidate/g_rule_{target}.md`, `docs/specs/rules/candidate/b_rule_{target}.md`, `docs/specs/rules/stable/g_rule_{target}.md`, or `docs/specs/rules/stable/b_rule_{target}.md` |
+
+- If found in exactly one type → use that type. For rules, resolve the full `rule_id` from the matched filename (e.g., `runtime_model` → `b_rule_runtime_model`).
+- If found in both Unit and Rule → ambiguous. Ask the user for clarification, listing the found files.
+- If not found at all → fall through to Stage 2.
+
+**Stage 2 — Prefix fallback (new target).** If no physical file exists, use the name prefix to determine the intended type for a new spec:
 
 | Target format | Detected as | Example |
 |---------------|-------------|---------|

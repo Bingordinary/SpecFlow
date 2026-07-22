@@ -1,7 +1,7 @@
 # Rule Validate Checklist
 
 `rule_validate` is the rule-equivalent of `spec_validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
-Agent runs this when `spec_validate {target}` is called and the target has a `g_rule_` or `b_rule_` prefix.
+Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
 **Result:** PASS writes `docs/specs/_validation/rule/{id}/validate_result.md`.
 FAIL does not write cache. The agent reports which checks failed and why.
