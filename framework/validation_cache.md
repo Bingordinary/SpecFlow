@@ -98,3 +98,17 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 ## Important
 
 Cache is never refreshed automatically. Only the agent writing a new cache after a fresh validate/verify changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical hash check.
+
+## Cache File Access Strategy
+
+When you need to read a cache file, use this ordered strategy:
+
+1. **Explicit path (preferred):** construct the full known path
+   `docs/specs/_validation/{kind}/{name}/{file}` and read it directly.
+   This is the most reliable method and works in any agent environment.
+
+2. **Fallback search:** if the exact path is unknown, search for the file.
+   Note that some search tools may not descend into directories starting
+   with `_`. If the search returns no results despite knowing the file
+   exists, scope the search explicitly to `docs/specs/_validation/`
+   (rather than searching from a broader root).
