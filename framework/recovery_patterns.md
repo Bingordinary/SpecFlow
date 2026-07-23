@@ -43,3 +43,15 @@ When a rule operation cannot proceed safely (ambiguous, combines multiple action
 2. **Raise a clarification checkpoint** when the requested meaning is unclear — ask the user for specifics before proceeding
 3. **Raise a decision checkpoint** when the user must choose between two valid approaches
 4. **Raise a prerequisite checkpoint** when a legal upstream action must happen before the rule change (e.g., a consuming unit must be forked to candidate before its binding can change)
+
+## 7. File-not-found false negative
+
+Pattern-based search (directory-wide or wildcard search) results are
+agent-dependent — an empty result does not guarantee the file is absent.
+
+1. When the workflow provides an exact path, always use **direct path access**
+   to read or check the file, rather than searching with a pattern
+2. If pattern-based search returns empty but a file is expected at a known
+   path, fall back to direct path access for the specific file to confirm
+3. Only proceed with the normal "file missing" procedure after direct path
+   access confirms the file does not exist
