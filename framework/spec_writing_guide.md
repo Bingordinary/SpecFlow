@@ -171,7 +171,7 @@ acceptance_item_set:
     implementation_surface: AgentCore/internal/demo
     verification_method: Go test for demo behavior.
     pass_condition: Demo behavior passes the declared checks.
-    not_runnable_yet: no
+    runnable: yes
     evidence_requirements:               # minimum evidence required for this item
       - automated_test_pass
     affects:                             # scope that verify must check globally
@@ -193,8 +193,8 @@ acceptance_item_set:
 | `implementation_surface` | yes | Implementation code surface path |
 | `verification_method` | yes | How to verify (e.g. "Go test for demo behavior") |
 | `pass_condition` | yes | What constitutes a pass |
-| `not_runnable_yet` | yes | `yes` or `no` |
-| `not_runnable_yet_reason` | recommended | Reason the item is not yet runnable; required when `not_runnable_yet: yes` |
+| `runnable` | yes | `yes` or `no` |
+| `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
 | `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name); used in `acceptance_behavior_fingerprint` calculation |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
 | `affects.files` | recommended | Implementation files that must be verified as part of this item's scope |

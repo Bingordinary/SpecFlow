@@ -117,7 +117,7 @@ func TestCheckAcceptanceItems_Pass(t *testing.T) {
 			"    implementation_surface: src/\n"+
 			"    verification_method: visual inspection\n"+
 			"    pass_condition: ok\n"+
-			"    not_runnable_yet: no\n")
+			"    runnable: yes\n")
 	result := checkAcceptanceItems(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
@@ -172,10 +172,10 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
 			"    pass_condition: ok\n"+
-			"    not_runnable_yet: true\n")
+			"    runnable: true\n")
 	result := checkAcceptanceItems(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatal("expected FAIL for invalid not_runnable_yet value (true)")
+		t.Fatal("expected FAIL for invalid runnable value (true)")
 	}
 }
 
@@ -212,7 +212,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
 			"    pass_condition: ok\n"+
-			"    not_runnable_yet: no\n"+
+			"    runnable: yes\n"+
 			"    affects:\n"+
 			"      files:\n"+
 			"        - src/handler.go\n")
@@ -234,7 +234,7 @@ func TestCheckAnchors_MissingFileFail(t *testing.T) {
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
 			"    pass_condition: ok\n"+
-			"    not_runnable_yet: no\n"+
+			"    runnable: yes\n"+
 			"    affects:\n"+
 			"      files:\n"+
 			"        - src/nonexistent.go\n")
@@ -409,7 +409,7 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 			"    implementation_surface: src/\n"+
 			"    verification_method: review\n"+
 			"    pass_condition: ok\n"+
-			"    not_runnable_yet: no\n")
+			"    runnable: yes\n")
 }
 
 func TestValidateCandidate_IntegrationPass(t *testing.T) {

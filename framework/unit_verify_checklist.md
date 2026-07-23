@@ -255,7 +255,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 ## Step 5 — Implementation integrity
 
-**Purpose:** Detect code behaviors not declared in the spec and assess the impact of `not_runnable_yet` items. Do not classify yet — defer to Step 7.
+**Purpose:** Detect code behaviors not declared in the spec and assess the impact of non-runnable items. Do not classify yet — defer to Step 7.
 
 **Execution steps:**
 
@@ -269,14 +269,14 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
     - If behavioral → report as MISMATCH with evidence (do not classify yet — defer to Step 7)
 ```
 
-2. **not_runnable_yet assessment:**
+2. **Non-runnable assessment:**
 ```
-- Count acceptance items with not_runnable_yet: yes
-- If all items are not_runnable_yet → report: "All acceptance items marked not_runnable_yet — verify cannot confirm alignment"
-- If some items are not_runnable_yet:
+- Count acceptance items with runnable: no
+- If all items are runnable: no → report: "All acceptance items marked runnable: no — verify cannot confirm alignment"
+- If some items are runnable: no:
     - List them
-    - For each item, verify not_runnable_yet_reason is present
-    - If missing → flag as concern: "Item {id} has not_runnable_yet: yes but no not_runnable_yet_reason"
+    - For each item, verify not_runnable_reason is present
+    - If missing → flag as concern: "Item {id} has runnable: no but no not_runnable_reason"
     - If reason is present, does it reference external evidence?
       (e.g. issue/PR link, dependent system documentation, pending integration entry point)
     - If not → flag as concern: "Item {id} reason is self-attested — no external evidence"
@@ -284,13 +284,13 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
     - If not → flag as concern
 ```
 
-**PASS:** No undocumented behavioral changes detected; not_runnable_yet items have documented reasons
+**PASS:** No undocumented behavioral changes detected; non-runnable items have documented reasons
 
 **FAIL (MISMATCH):** Undocumented behavioral changes found in code — defer classification to Step 7
 
-**Quality concern:** All or most items are not_runnable_yet; runnable coverage is insufficient
+**Quality concern:** All or most items are non-runnable; runnable coverage is insufficient
 
-**Quality concern (reasoning):** One or more not_runnable_yet items are missing not_runnable_yet_reason or lack external evidence
+**Quality concern (reasoning):** One or more non-runnable items are missing not_runnable_reason or lack external evidence
 
 **Check method:** Implementation code × spec body — reverse cross-reference (code-to-spec direction)
 

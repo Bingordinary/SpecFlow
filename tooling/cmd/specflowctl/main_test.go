@@ -85,7 +85,7 @@ acceptance_item_set:
 	    implementation_surface: internal
 	    verification_method: test
 	    pass_condition: passes
-	    not_runnable_yet: no
+	    runnable: yes
 `
 	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
@@ -239,7 +239,7 @@ acceptance_item_set:
     implementation_surface: internal
     verification_method: test
     pass_condition: passes
-    not_runnable_yet: no
+    runnable: yes
 `
 	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {

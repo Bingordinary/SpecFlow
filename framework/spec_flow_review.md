@@ -105,7 +105,7 @@ The three commands must each have clearly defined boundaries. The review must ve
 2. **review**: given a unit name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with categories (format, cross-spec consistency, acceptance item clarity) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work.
 
 3. **promote**: given a unit name, runs a 2-step process:
-   a. Agent pre-check (optional): reports cache freshness and not_runnable_yet status
+   a. Agent pre-check (optional): reports cache freshness and runnable status
    b. Archive step via `specflowctl promote`: independently validates cache freshness, validates format, copies candidate→stable, removes candidate files
     
    Validate and verify are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate or verify cache is stale. Promote must not archive if any check fails.
