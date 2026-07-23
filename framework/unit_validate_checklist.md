@@ -352,15 +352,16 @@ affects.appendices:
 1. From `unit_refs`, get the list of dependency units (format `{name}@version`, resolved candidate-first per Check 1)
 2. For each dependency unit:
    - Candidate spec takes priority — read it and check for conflicting statements about shared protocols, data formats, or behavior
-   - Also read the stable spec and check whether this candidate changes any contract that the stable spec depends on
+   - Also read the stable spec and check whether this candidate changes any contract that the stable spec depends on — skip the stable contract check if the dependency's candidate spec already reflects the change
 3. Specific checks:
 ```
    - Are API signatures compatible across all related units?
    - Are data formats (field names, types, enum values) consistent?
    - Is behavior semantics non-conflicting? (e.g., unit A assumes sync, unit B assumes async)
    - Does this candidate modify a contract that a dependency stable spec relies on?
-     If yes → must be explicitly declared in the spec body
-     If not declared → FAIL (blocked: needs user confirmation on downstream impact)
+     If yes, and the dependency's candidate spec does not already reflect the same change
+       → the change must be explicitly declared in this candidate's spec body
+       If not declared → FAIL (blocked: needs user confirmation on downstream impact)
 ```
 
 **PASS:** No contradictions across related units; acknowledged contract changes are declared
