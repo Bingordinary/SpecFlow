@@ -6,16 +6,18 @@ When an agent executes `spec_validate {unit}`, it uses the 8 checks defined in t
 
 ## Mode Selection
 
-Before executing, read `framework/verification_scope.md` to determine the current scope mode from the trigger phrase. The mode determines which subset of checks to run:
-
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_validate {unit}` | scoped (default) | Git-aware: `git diff HEAD` on spec file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
+| `spec_validate {unit}` | scoped (default) | git diff HEAD on spec file → map changes to check(s) → run with dependency handling. Check 1 is prerequisite. |
 | `spec_validate {unit}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "coverage" → Check 5a, "drift" → Check 5c, "conflict" → Check 5d) |
-| `spec_validate {unit}:full` | full | All 8 checks + cross-check (see `framework/verification_scope.md` §Cross-check for details) |
+| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3) |
+| `spec_validate {unit}:full` | full | All 8 checks + cross-check |
 
-**Output:** prefix the result with `Mode: scoped` or `Mode: full` and the specific scope (e.g., `Scope: check-1 (structural integrity)`). For scoped results, append a note: "This is not a full validation. Only check {n} was executed. Run `spec_validate {unit}:full` for complete validation."
+**Scoped mapping (changed content → check):** Frontmatter → 1. Design rationale → 2. Scope/non-goals → 3. evidence_appendix_ref → 4. Body behavior sections → 5a+5b+5c. Acceptance item structure → 5b+5d+5c. affects.* → 6. unit_refs → 7. rule_refs/constraints → 8. No diff match → safety default (Check 1).
+
+**Edge cases:** No spec file changes → auto fallback to full. New/untracked file → auto fallback to full. See `framework/verification_scope.md` §Scoped Validate and §Edge cases for full mapping detail.
+
+**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "Only check(s) {n} were executed. This is not a full validation. Run `spec_validate {unit}:full` for complete validation."
 
 ## Execution Rules
 

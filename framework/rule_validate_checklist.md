@@ -8,14 +8,16 @@ FAIL does not write cache. The agent reports which checks failed and why.
 
 ## Mode Selection
 
-Before executing, read `framework/verification_scope.md` to determine the scope mode:
-
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` on rule file → map changes to check(s) → run with dependency handling. See `framework/verification_scope.md` §Scoped Validate. |
+| `spec_validate {rule}` | scoped (default) | git diff HEAD on rule file → map changes to check(s) → run with dependency handling |
 | `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
 | `spec_validate {rule}:{keyword}` | scoped | Match keyword to check name |
 | `spec_validate {rule}:full` | full | All 8 checks |
+
+**Scoped mapping (changed content → check):** Frontmatter (rule_id, rule_scope, layer, rule_version) → Checks 1-4, 6, 7. Body content → Check 8. promotion_owner_unit → Check 5 (WARNING only). No diff match → safety default (Check 1).
+
+**Edge cases:** No rule file changes → auto fallback to full. New/untracked file → auto fallback to full. See `framework/verification_scope.md` §Scoped Validate and §Edge cases for full mapping detail.
 
 ## Execution Rules
 
