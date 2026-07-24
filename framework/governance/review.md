@@ -8,7 +8,7 @@ Ordinary `spec_flow_review` and governance review use `scoped_review` by default
 
 Read `framework/governance/review_scope.md` first. Review only the changed files, direct owner files, necessary boundary refs, and minimal convergence refs needed to answer the request.
 
-`scoped_review` does not use `_governance_review/` run-state, baseline slice tables, dynamic slice tables, or score-state tables by default.
+`scoped_review` does not use `meta/governance_review/` run-state, baseline slice tables, dynamic slice tables, or score-state tables by default.
 
 Plain exact `spec_flow_design_review` is not scoped.
 It always delegates to `framework/spec_flow_design_review.md` and runs the default full-scope design-baseline review.

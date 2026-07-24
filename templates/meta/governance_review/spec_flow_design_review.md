@@ -11,7 +11,7 @@
 | `tooling_root` | tooling/ |
 | `project_instance_compatibility` | template bootstrap compatibility |
 | `run_state_created` | new |
-| `run_state_path` | docs/specs/_governance_review/spec_flow_design_review.md |
+| `run_state_path` | meta/governance_review/spec_flow_design_review.md |
 | `created_at` | 2026-06-28T12:00:00Z |
 | `last_updated_at` | 2026-06-28T12:30:00Z |
 | `status` | closed_pass_with_optimization |

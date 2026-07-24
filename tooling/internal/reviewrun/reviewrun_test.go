@@ -114,12 +114,7 @@ func TestInitCreatesSourceRepoRunState(t *testing.T) {
 		}
 	}
 	compatSlice := findSlice(t, state, "project_instance_contract_compatibility")
-	if !containsString(compatSlice.InputFiles, "templates/docs/specs/_status.md") {
-		t.Fatalf("expected source compatibility to use template status, got %+v", compatSlice.InputFiles)
-	}
-	if containsString(compatSlice.InputFiles, "docs/specs/_status.md") {
-		t.Fatalf("source compatibility must not require project status, got %+v", compatSlice.InputFiles)
-	}
+
 	for _, input := range []string{
 		"framework/core/object_model.md",
 		"framework/spec_writing_guide.md",
@@ -214,7 +209,7 @@ func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	if !result.Created {
 		t.Fatalf("expected created run-state, got %+v", result)
 	}
-	if !strings.Contains(filepath.ToSlash(result.File), "docs/specs/_governance_review/spec_flow_design_review.md") {
+	if !strings.Contains(filepath.ToSlash(result.File), "meta/governance_review/spec_flow_design_review.md") {
 		t.Fatalf("expected design review run-state path, got %s", result.File)
 	}
 	content := mustRead(t, result.File)
@@ -837,7 +832,7 @@ func TestRefreshPropagatesStaleThroughDynamicCrossChain(t *testing.T) {
 
 func TestRefreshMarksMissingPassedInputStale(t *testing.T) {
 	repoRoot, file, now := createInitializedRun(t)
-	missingRel := "docs/specs/_governance_review/temp_missing_input.md"
+	missingRel := "docs/specs/meta/governance_review/temp_missing_input.md"
 	mustWrite(t, filepath.Join(repoRoot, filepath.FromSlash(missingRel)), "# temp input\n")
 	originalFingerprint, missing, err := computeFingerprint(repoRoot, []string{missingRel})
 	if err != nil {
@@ -894,9 +889,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	if slice.SliceType != "local" {
 		t.Fatalf("expected project instance compatibility to be local, got %s", slice.SliceType)
 	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/_status.md") {
-		t.Fatalf("expected project status input, got %+v", slice.InputFiles)
-	}
+
 	for _, input := range []string{
 		"framework/core/object_model.md",
 		"framework/spec_writing_guide.md",
@@ -914,7 +907,7 @@ func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
 	if !containsString(slice.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy input for project-instance migration compatibility, got %+v", slice.InputFiles)
 	}
-	if containsString(slice.InputFiles, "templates/docs/specs/_governance_review/spec_flow_review.md") {
+	if containsString(slice.InputFiles, "templates/docs/specs/meta/governance_review/spec_flow_review.md") {
 		t.Fatalf("expected active review run state outside compatibility fingerprint, got %+v", slice.InputFiles)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "templates/docs/specs/units/candidate/unit_demo.md")); err != nil {
@@ -942,9 +935,7 @@ func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) 
 		}
 	}
 	convergenceSlice := findSlice(t, state, "project_instance_to_framework_convergence")
-	if !containsString(convergenceSlice.InputFiles, "templates/docs/specs/_status.md") {
-		t.Fatalf("expected project status in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
-	}
+
 	if !containsString(convergenceSlice.InputFiles, "tooling/scripts/tooling_fingerprint.sh") {
 		t.Fatalf("expected shell fingerprint script in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
 	}
@@ -1132,13 +1123,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/_atoms/manifest.txt",
 		"framework/_atoms/generate.sh",
 		"framework/_atoms/verify.sh",
-		"templates/docs/specs/_status.md",
-		"templates/docs/specs/_check_work/README.md",
-		"templates/docs/specs/_check_result/README.md",
-		"templates/docs/specs/_verify_result/README.md",
-		"templates/docs/specs/_stable_verify_result/README.md",
-		"templates/docs/specs/_governance_review/README.md",
-		"templates/docs/specs/_independent_evaluation/README.md",
+		"templates/meta/governance_review/README.md",
 		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 			"templates/docs/specs/units/candidate/unit_demo.md",
 		"templates/AGENTS.md",

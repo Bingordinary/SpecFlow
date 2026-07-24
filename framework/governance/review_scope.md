@@ -24,7 +24,7 @@ Required inputs:
 
 When the user does not specify a review scope (no file paths, no changed files, no specific question), default to reviewing git working directory changes (`git diff` against HEAD). If no working directory changes exist, default to the most recent commit (`git log -1`). This default prevents unnecessary escalation to `deep_audit` and aligns with the expectation that a plain `spec_flow_review` entry checks current uncommitted work.
 
-It must not use `_governance_review/` run-state by default.
+It must not use `meta/governance_review/` run-state by default.
 It must not require baseline slice table, dynamic slice table, score-state table, or full-scope run-state startup.
 
 Output fields:
@@ -80,7 +80,7 @@ Use `deep_audit` only when the user explicitly requests exact `spec_flow_review:
 For mechanism correctness, deep audit is owned by `framework/spec_flow_review.md`.
 For design quality, plain `spec_flow_design_review` is already full-scope and is owned by `framework/spec_flow_design_review.md`.
 
-Deep audit may use `docs/specs/_governance_review/` run-state and existing `specflowctl review run-*` tooling.
+Deep audit may use `meta/governance_review/` run-state and existing `specflowctl review run-*` tooling.
 `spec_flow_design_review` uses that run-state tooling by default.
 
 Deep-audit tooling for exact `spec_flow_review:full` uses the `source_repo` layout:

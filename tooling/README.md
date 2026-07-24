@@ -135,8 +135,8 @@ Review run-state commands use the `source_repo` layout:
 They maintain only mechanical fields in:
 
 ```text
-docs/specs/_governance_review/spec_flow_review.md
-docs/specs/_governance_review/spec_flow_design_review.md
+meta/governance_review/spec_flow_review.md
+meta/governance_review/spec_flow_design_review.md
 ```
 
 Rules:

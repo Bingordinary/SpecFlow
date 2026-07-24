@@ -48,7 +48,7 @@ The relationship is versioned: a candidate is always a proposed next version of 
 | `docs/specs/units/candidate/` | Design currently being edited |
 | `docs/specs/rules/stable/` | Accepted shared rules |
 | `docs/specs/rules/candidate/` | Rules being edited |
-| `docs/specs/_validation/` | Validate/verify cache files at `docs/specs/_validation/unit/{name}/validate_result.md` and `docs/specs/_validation/unit/{name}/verify_result.md` (unit); `docs/specs/_validation/rule/{id}/validate_result.md` (rule). See `framework/validation_cache.md` for lifecycle details. |
+| `docs/specs/meta/validation/` | Validate/verify cache files at `docs/specs/meta/validation/unit/{name}/validate_result.md` and `docs/specs/meta/validation/unit/{name}/verify_result.md` (unit); `docs/specs/meta/validation/rule/{id}/validate_result.md` (rule). See `framework/validation_cache.md` for lifecycle details. |
 
 ### Truth Hierarchy
 
@@ -270,10 +270,10 @@ Before discussing, analyzing, or modifying any topic related to a unit, first re
 **HARD RULE 2: Promote Is the Only Gate to Stable**
 Never call `specflowctl promote` without user confirmation. Before promote, always run validate then verify. If either fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
 
-Validate and verify are quality gates. They write cache files (`_validation/`) but never spec or stable files. If validate or verify fails, the agent MUST NOT proceed to promote.
+Validate and verify are quality gates. They write cache files (`meta/validation/`) but never spec or stable files. If validate or verify fails, the agent MUST NOT proceed to promote.
 
 **HARD RULE 3: Validate and Verify Check Quality, Promote Writes**
-`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`_validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init` are for discovery and maintenance and do not check quality.
+`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`meta/validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
 When `verify` reports a MISMATCH, the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the first-principles divergence analysis (see `unit_verify_checklist.md` Step 7), which launches a sub-agent per mismatch to analyze spec intent vs code intent using first-principles reasoning. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides.

@@ -2,8 +2,8 @@
 // and spec_verify results. Cache files are written by the agent (not the CLI)
 // and read by specflowctl promote to confirm that validate/verify are still fresh.
 //
-// Cache files for units live under docs/specs/_validation/unit/{name}/.
-// Cache files for rules live under docs/specs/_validation/rule/{id}/.
+// Cache files for units live under docs/specs/meta/validation/unit/{name}/.
+// Cache files for rules live under docs/specs/meta/validation/rule/{id}/.
 // They record:
 //   - Which files were checked (paths + SHA-256 hashes)
 //   - Whether the check passed (pass / aligned)
@@ -325,7 +325,7 @@ func fileHash(path string) (string, error) {
 // cacheFilePath builds the absolute path to a cache file.
 // targetKind is "unit" or "rule".
 func cacheFilePath(repoRoot, targetKind, targetName, fileName string) string {
-	return filepath.Join(repoRoot, "docs/specs/_validation", targetKind, targetName, fileName)
+	return filepath.Join(repoRoot, "docs/specs/meta/validation", targetKind, targetName, fileName)
 }
 
 func relPath(repoRoot, absPath string) string {

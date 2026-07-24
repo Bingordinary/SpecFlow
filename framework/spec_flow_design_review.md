@@ -113,7 +113,7 @@ It records review progress, baseline slice status, dynamic risk slice status, sc
 The run-state path is:
 
 ```text
-docs/specs/_governance_review/spec_flow_design_review.md
+meta/governance_review/spec_flow_design_review.md
 ```
 
 `review_run_id` is a field inside the run-state file.
@@ -156,7 +156,7 @@ Rules:
    - non-blocking optimization content
    - hard-blocker judgment
    - final `pass | pass-with-optimization | blocked` conclusion
-5. the startup procedure must inspect only `docs/specs/_governance_review/spec_flow_design_review.md`
+5. the startup procedure must inspect only `meta/governance_review/spec_flow_design_review.md`
 6. if the fixed run-state file does not exist, the startup procedure must create a new run-state file and begin at `design_foundation`
 7. if the fixed run-state file is closed or structurally invalid, the startup procedure must delete it, report the deletion reason, create a new run-state file, and begin at `design_foundation`
 8. if the fixed run-state file is valid, open, and last updated no more than two hours before startup, the startup procedure may reuse it automatically; before review work continues, the executor must refresh fingerprints, mark stale slices, and resume from the recorded active slice
@@ -168,7 +168,7 @@ Rules:
 
 Design-review adoption rules:
 
-1. the state carrier for the default full-scope review is `docs/specs/_governance_review/spec_flow_design_review.md`
+1. the state carrier for the default full-scope review is `meta/governance_review/spec_flow_design_review.md`
 2. required run-state fields, baseline slice rows, dynamic risk slice rows, and score-state rows are defined in this file
 3. baseline slices are defined in Section 5.2
 4. dynamic risk slices are allowed only under Section 5.3

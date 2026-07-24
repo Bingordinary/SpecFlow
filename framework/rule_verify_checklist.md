@@ -11,7 +11,7 @@
 
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
-**Result:** ALIGNED writes `docs/specs/_validation/rule/{id}/verify_result.md`.
+**Result:** ALIGNED writes `docs/specs/meta/validation/rule/{id}/verify_result.md`.
 MISMATCH does not write cache. The agent reports which consumers have drifted and how.
 
 ## Mode Selection

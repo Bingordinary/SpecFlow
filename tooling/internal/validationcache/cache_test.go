@@ -25,7 +25,7 @@ func TestCheckValidate(t *testing.T) {
 	}
 
 	// Create cache dir
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n---\nAll checks passed.\n"
@@ -54,7 +54,7 @@ func TestCheckValidateStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Write cache with WRONG hash (deliberately stale)
@@ -95,7 +95,7 @@ func TestCheckVerify(t *testing.T) {
 	specHash, _ := fileHash(specPath)
 	srcHash, _ := fileHash(srcPath)
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	cacheContent := "---\ncommand: verify\nunit: test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nAll items aligned.\n"
@@ -126,7 +126,7 @@ func TestCheckValidateScoped(t *testing.T) {
 
 	specHash, _ := fileHash(specPath)
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Scoped cache: pass but mode=scoped, scoped_check=1
@@ -167,7 +167,7 @@ func TestCheckVerifyScoped(t *testing.T) {
 	specHash, _ := fileHash(specPath)
 	srcHash, _ := fileHash(srcPath)
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Scoped verify cache: aligned but mode=scoped, scoped_item=AUTH-AC-001
@@ -187,7 +187,7 @@ func TestCheckVerifyScoped(t *testing.T) {
 
 func TestDeleteCache(t *testing.T) {
 	repoRoot := t.TempDir()
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
 	vPath := filepath.Join(cacheDir, "validate_result.md")
@@ -221,7 +221,7 @@ func TestCheckRuleValidate(t *testing.T) {
 	}
 
 	// Create cache dir under rule path
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_test")
 	os.MkdirAll(cacheDir, 0755)
 
 	cacheContent := "---\ncommand: validate\nunit: b_rule_test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/b_rule_test.md\n    hash: sha256:" + ruleHash + "\n---\nAll checks passed.\n"
@@ -250,7 +250,7 @@ func TestCheckRuleValidateStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_test")
 	os.MkdirAll(cacheDir, 0755)
 
 	// Write cache with WRONG hash (deliberately stale)
@@ -282,7 +282,7 @@ func TestCheckRuleVerify(t *testing.T) {
 
 func TestDeleteRuleCache(t *testing.T) {
 	repoRoot := t.TempDir()
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/rule/b_rule_test")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_test")
 	os.MkdirAll(cacheDir, 0755)
 
 	vPath := filepath.Join(cacheDir, "validate_result.md")

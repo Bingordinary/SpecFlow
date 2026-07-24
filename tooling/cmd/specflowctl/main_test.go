@@ -111,7 +111,7 @@ Appendix content for test.
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
 	appendixHash := computeHash(appendixPath)
-	cacheDir := filepath.Join(repoRoot, "docs/specs/_validation/unit/test_unit")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 
 	validateCache := fmt.Sprintf(`---

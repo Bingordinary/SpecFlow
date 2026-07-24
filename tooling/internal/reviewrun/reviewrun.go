@@ -188,7 +188,7 @@ func configForFlow(flow string) (flowConfig, error) {
 	case FlowSpecFlowReview:
 		return flowConfig{
 			Flow:                FlowSpecFlowReview,
-			RunStatePath:        "docs/specs/_governance_review/spec_flow_review.md",
+			RunStatePath:        "meta/governance_review/spec_flow_review.md",
 			ScopeLabel:          "default_governance_baseline",
 			RunIDSuffix:         "default_governance_baseline",
 			Title:               "Spec Flow Review Run State",
@@ -203,7 +203,7 @@ func configForFlow(flow string) (flowConfig, error) {
 	case FlowSpecFlowDesignReview:
 		return flowConfig{
 			Flow:                FlowSpecFlowDesignReview,
-			RunStatePath:        "docs/specs/_governance_review/spec_flow_design_review.md",
+			RunStatePath:        "meta/governance_review/spec_flow_design_review.md",
 			ScopeLabel:          "default_design_baseline",
 			RunIDSuffix:         "default_design_baseline",
 			Title:               "Spec Flow Design Review Run State",

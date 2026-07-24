@@ -10,12 +10,12 @@ This file is referenced by `framework/concepts.md` §3.
 
 ### Unit
 
-- `docs/specs/_validation/unit/{name}/validate_result.md`
-- `docs/specs/_validation/unit/{name}/verify_result.md`
+- `docs/specs/meta/validation/unit/{name}/validate_result.md`
+- `docs/specs/meta/validation/unit/{name}/verify_result.md`
 
 ### Rule
 
-- `docs/specs/_validation/rule/{id}/validate_result.md`
+- `docs/specs/meta/validation/rule/{id}/validate_result.md`
 - (Rule verify cache has been removed — rule does not need verify)
 
 ## Format
@@ -104,11 +104,11 @@ Cache is never refreshed automatically. Only the agent writing a new cache after
 When you need to read a cache file, use this ordered strategy:
 
 1. **Explicit path (preferred):** construct the full known path
-   `docs/specs/_validation/{kind}/{name}/{file}` and read it directly.
+   `docs/specs/meta/validation/{kind}/{name}/{file}` and read it directly.
    This is the most reliable method and works in any agent environment.
 
 2. **Fallback search:** if the exact path is unknown, search for the file.
    Note that some search tools may not descend into directories starting
    with `_`. If the search returns no results despite knowing the file
-   exists, scope the search explicitly to `docs/specs/_validation/`
+   exists, scope the search explicitly to `docs/specs/meta/validation/`
    (rather than searching from a broader root).

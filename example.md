@@ -13,7 +13,7 @@ For `spec_flow_review` or ordinary governance review requests:
 2. Read `framework/governance/review_scope.md`.
 3. Default to `scoped_review`.
 
-Use `framework/spec_flow_review.md`, `_governance_review/` run-state files, baseline slice tables, or dynamic slice tables only for exact `spec_flow_review:full`.
+Use `framework/spec_flow_review.md`, `meta/governance_review/` run-state files, baseline slice tables, or dynamic slice tables only for exact `spec_flow_review:full`.
 
 For `spec_flow_design_review`:
 

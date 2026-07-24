@@ -36,7 +36,6 @@ Report:
 
 1. Candidate writeback is not the final review step—run `tooling/bin/specflowctl-<os>-<arch> promote` for final validation (substitute `<os>` and `<arch>` with your platform).
 2. Do not implement from chat-only design.
-3. Do not create `_plans/active`, `_verify_result`, or `_stable_verify_result`.
-4. Do not ask the user to choose internal rule-governance flow names.
-5. Do not treat a guidance conclusion as durable until it has been written into the required truth target.
-6. Do not claim the whole user goal is complete when only the first truth writeback step has landed.
+3. Do not ask the user to choose internal rule-governance flow names.
+4. Do not treat a guidance conclusion as durable until it has been written into the required truth target.
+5. Do not claim the whole user goal is complete when only the first truth writeback step has landed.

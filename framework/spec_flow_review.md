@@ -414,7 +414,7 @@ Files excluded from business-truth review include:
 1. `docs/specs/rules/stable/g_rule_repository_baseline.md`
 2. `docs/specs/units/**`
 3. `docs/specs/rules/**`
-4. `docs/specs/_governance_review/**`
+4. `meta/governance_review/**`
 
 Those files may be reviewed for business-truth correctness only when the user explicitly narrows `spec_flow_review` to project-instance state, or when a command or rule-governance flow consumes them under its own policy.
 
@@ -424,7 +424,7 @@ This check is narrow and does not turn `docs/specs/` into default business-truth
 Compatibility input is template bootstrap compatibility under `<template-root>/docs/specs/**`.
 It must not require real project-instance project truth files.
 
-`docs/specs/_governance_review/**` is not part of the compatibility input fingerprint.
+`meta/governance_review/**` is not part of the compatibility input fingerprint.
 The active full-scope run-state file is governed by the run-state procedure in Section 6, because including that file in its own slice fingerprint would create self-referential stale state.
 
 Default scope must explicitly cover:
@@ -556,7 +556,7 @@ It records review progress, slice inputs, stale status, findings, and resume pos
 The run-state path is:
 
 ```text
-docs/specs/_governance_review/spec_flow_review.md
+meta/governance_review/spec_flow_review.md
 ```
 
 `review_run_id` is a field inside the run-state file.
@@ -611,7 +611,7 @@ Rules:
 
 At the start of a full-scope review:
 
-1. inspect `docs/specs/_governance_review/spec_flow_review.md`
+1. inspect `meta/governance_review/spec_flow_review.md`
 2. if no unclosed run-state file exists, create a new run-state file and start at `scope_inventory`
 3. if one unclosed run-state file exists, run the basic validity check from Section 6.3
 4. if the basic validity check fails, delete the old run-state file, report the deletion reason, create a new run-state file, and start at `scope_inventory`

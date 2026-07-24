@@ -28,12 +28,7 @@ func TestCollectDefaultSpecFlowScopeSupportsSourceRepoLayout(t *testing.T) {
 	if containsString(scope.FrameworkGuidelineFiles, deletedCommandPolicyPath("framework")) {
 		t.Fatalf("deleted flat command owner must stay outside source scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
-	if !containsString(scope.ProjectInstanceCompatibilityFiles, "templates/docs/specs/_status.md") {
-		t.Fatalf("expected template status compatibility input, got %+v", scope.ProjectInstanceCompatibilityFiles)
-	}
-	if containsString(scope.ProjectInstanceCompatibilityFiles, "docs/specs/_status.md") {
-		t.Fatalf("source compatibility must not require project docs/specs, got %+v", scope.ProjectInstanceCompatibilityFiles)
-	}
+
 	if !containsString(scope.ToolingSourceFiles, "tooling/go.mod") {
 		t.Fatalf("expected local tooling source, got %+v", scope.ToolingSourceFiles)
 	}
@@ -96,16 +91,7 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"framework/_atoms/manifest.txt",
 		"framework/_atoms/generate.sh",
 		"framework/_atoms/verify.sh",
-		"templates/docs/specs/_status.md",
-		"templates/docs/specs/_check_result/README.md",
-		"templates/docs/specs/_check_work/README.md",
-		"templates/docs/specs/_plans/README.md",
-		"templates/docs/specs/_plans/draft/README.md",
-		"templates/docs/specs/_plans/active/README.md",
-		"templates/docs/specs/_verify_result/README.md",
-		"templates/docs/specs/_stable_verify_result/README.md",
-		"templates/docs/specs/_governance_review/README.md",
-		"templates/docs/specs/_independent_evaluation/README.md",
+		"templates/meta/governance_review/README.md",
 		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",

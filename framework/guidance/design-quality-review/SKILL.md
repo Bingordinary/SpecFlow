@@ -42,5 +42,4 @@ Also report:
 
 ## Boundaries
 
-1. Do not write `_check_result`.
-2. Do not treat this review as durable truth.
+1. Do not treat this review as durable truth.

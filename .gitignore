@@ -11,9 +11,5 @@ REVIEW_EXPERIENCE_RULES.md
 .claude/
 .opencode/
 reference/
-_governance_review/cards/
-_governance_review/requests/
-_governance_review/specflowctl
-_governance_review/project/tooling/bin/
-_governance_review/project/tooling/specflowctl
+/meta/
 

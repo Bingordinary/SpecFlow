@@ -30,8 +30,8 @@ Summary: ...
 
 **Execution steps:**
 
-1. Read `docs/specs/_validation/unit/{name}/validate_result.md` if it exists
-2. Read `docs/specs/_validation/unit/{name}/verify_result.md` if it exists
+1. Read `docs/specs/meta/validation/unit/{name}/validate_result.md` if it exists
+2. Read `docs/specs/meta/validation/unit/{name}/verify_result.md` if it exists
 3. Report freshness status to the user if reporting would be useful
 4. **Non-runnable review:**
    - Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
@@ -57,8 +57,8 @@ Summary: ...
 
 1. Run `specflowctl promote --unit <name>` from the repository root
 2. The CLI independently checks:
-   a. Validate cache — reads `docs/specs/_validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to re-run `spec_validate`.
-   b. Verify cache — reads `docs/specs/_validation/unit/{name}/verify_result.md`. If missing or stale, rejects promote with guidance to re-run `spec_verify`.
+   a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to re-run `spec_validate`.
+   b. Verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. If missing or stale, rejects promote with guidance to re-run `spec_verify`.
    c. Both fresh → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
    - Transforms the `layer` frontmatter field from `candidate` to `stable`
