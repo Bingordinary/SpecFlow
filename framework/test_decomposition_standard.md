@@ -8,6 +8,8 @@ It defines how to derive a set of unit test scenarios from a single acceptance i
 
 This standard is **language-agnostic**. It describes what to test, not how to write the test file structure.
 
+When `description` is already written in Gherkin-style Given/When/Then format, the four decomposition steps below serve as a completeness check rather than a generation process. Each scenario in the description maps to one or more test cases; the steps verify no category is missing.
+
 ## Decomposition Steps
 
 For each acceptance item, apply the following four steps in order.
@@ -86,6 +88,8 @@ Identify how the acceptance item should behave when each external dependency is 
 For each `verification_type: testable` acceptance item, apply Steps 1-4 as a mental checklist before writing tests. Not every step always produces test cases (e.g. an acceptance item with no external dependencies produces nothing for Step 4). The output is a list of test scenarios to implement.
 
 This is **guidance, not a hard rule** — skip steps when they do not apply.
+
+If the acceptance item's `description` already contains Gherkin-style scenarios, translate each Given/When/Then block directly into a test case. Then apply Steps 1-4 to verify coverage — if a step identifies a scenario type not present in the description, add it.
 
 ### Verify checking test design
 

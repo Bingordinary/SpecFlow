@@ -182,12 +182,14 @@ acceptance_item_set:
       dependencies: []
 ```
 
+> **Note for `testable` items:** When `verification_type` is `testable`, the `description` field must be written as a Gherkin-style Given/When/Then scenario set, not as a single prose sentence. See [§Gherkin-style Description Convention](#gherkin-style-description-convention) for the convention.
+
 ### Acceptance Item Fields
 
 | Field | Required | Description |
 |---|---|---|
 | `id` | yes | Unique identifier within the item set; used as primary key in process evidence |
-| `description` | yes | Plain-language description of this acceptance item |
+| `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
 | `implementation_surface` | yes | Implementation code surface path |
@@ -208,6 +210,49 @@ When `verification_type` is `reviewable`, human review is the primary verificati
 When `verification_type` is `testable`, the acceptance item's `description` and `pass_condition` should be designed so they can be decomposed into a set of unit test scenarios. See `framework/test_decomposition_standard.md` for the decomposition methodology.
 
 The acceptance item ids are used by process evidence. Changing ids invalidates existing process files.
+
+### Gherkin-style Description Convention
+
+This convention applies to acceptance items with `verification_type: testable`.
+
+#### Syntax
+
+The `description` field must contain one or more Gherkin-style behavior scenarios, each following the `Given` / `When` / `Then` pattern:
+
+| Element | Meaning |
+|---------|---------|
+| `Given` | Precondition — the initial state or context |
+| `When` | Action — the trigger or event |
+| `Then` | Expected outcome — the observable result |
+
+Multiple scenarios are separated by a blank line. Each scenario should cover one distinct variant (happy path, boundary case, or error path).
+
+The following `.feature` file syntax is **not** used: `Feature:`, `Scenario:`, `Scenario Outline:`, `Examples:` table, or `Background:`.
+
+#### Example
+
+```yaml
+  - id: auth.login
+    description: |
+      Given a registered user with email "user@example.com" and password "ValidP@ss1"
+      When the user sends a POST /api/login with correct email and password
+      Then the system returns 200 with a JWT token
+
+      Given a registered user with email "user@example.com" and password "ValidP@ss1"
+      When the user sends a POST /api/login with wrong password "WrongP@ss1"
+      Then the system returns 401 with error code "INVALID_CREDENTIALS"
+
+      Given no user exists with email "nonexistent@example.com"
+      When the user sends a POST /api/login with that email and any password
+      Then the system returns 404 with error code "USER_NOT_FOUND"
+    verification_type: testable
+    verification_surface: api
+    pass_condition: All three scenarios pass.
+```
+
+#### Relationship to Test Decomposition Standard
+
+When `description` is written in Gherkin style, the four-step analysis in `framework/test_decomposition_standard.md` shifts from a generation process to a completeness check: the scenarios are already decomposed; the standard's steps verify no category (happy path, invalid input, business conflict, dependency failure) is missing.
 
 ## 7. Appendix Files
 

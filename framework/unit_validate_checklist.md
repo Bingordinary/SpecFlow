@@ -301,6 +301,32 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ---
 
+### Sub-check 5e — Description format compliance
+
+**Purpose:** Verify that each acceptance item with `verification_type: testable` uses Gherkin-style Given/When/Then format in its `description`, as required by `framework/spec_writing_guide.md` §Gherkin-style Description Convention.
+
+**Execution steps:**
+
+1. For each acceptance item in scope:
+   - If `verification_type` is `testable`, read the `description` field
+2. Check that the description contains at least one `Given`…`When`…`Then` sequence (case-insensitive pattern: lines starting with `Given`, `When`, `Then` in order)
+3. Reject `.feature` file syntax (`Feature:`, `Scenario:`, `Scenario Outline:`, `Examples:`, `Background:`) — the Gherkin-style convention explicitly does not use these
+4. If any testable item lacks the Given/When/Then pattern → FAIL with item ID and quoted description
+
+**PASS:** All testable items use Gherkin-style description format
+
+**FAIL:** One or more testable items have non-compliant description format (fix_required)
+
+**Mode:**
+| Mode | Scope |
+|---|---|
+| Scoped | Only items changed in `git diff HEAD` |
+| Full | All items |
+
+**Check method:** Acceptance item description × verification_type — format pattern check
+
+---
+
 ## Check 6 — Affects-source validity
 
 **Purpose:** Each acceptance item's `affects` declarations must be consistent with the spec's formal references. Evidence appendix content must be structurally sound and semantically meaningful.
