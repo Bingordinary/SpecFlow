@@ -48,7 +48,7 @@ The relationship is versioned: a candidate is always a proposed next version of 
 | `docs/specs/units/candidate/` | Design currently being edited |
 | `docs/specs/rules/stable/` | Accepted shared rules |
 | `docs/specs/rules/candidate/` | Rules being edited |
-| `docs/specs/_validation/` | Validate/verify cache. See `framework/validation_cache.md`. |
+| `docs/specs/_validation/` | Validate/verify cache files at `docs/specs/_validation/unit/{name}/validate_result.md` and `docs/specs/_validation/unit/{name}/verify_result.md` (unit); `docs/specs/_validation/rule/{id}/validate_result.md` (rule). See `framework/validation_cache.md` for lifecycle details. |
 
 ### Truth Hierarchy
 
