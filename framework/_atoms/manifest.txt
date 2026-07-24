@@ -2,4 +2,5 @@
 # Lines starting with # are comments. Blank lines are ignored.
 
 specflowctl_location | misc/specflowctl_location.md | framework/concepts.md,framework/hooks.md
+resolution_protocol | guidance/resolution_protocol.md | framework/unit_verify_checklist.md,framework/unit_validate_checklist.md
 framework_path | misc/framework_path.md | framework/concepts.md

@@ -41,7 +41,7 @@ generate_atom() {
     return
   fi
 
-  # Read atom content (remove trailing blank line but preserve internal structure)
+  # Read atom content
   local atom_content
   atom_content=$(<"$source_file")
 
@@ -74,19 +74,28 @@ generate_atom() {
       continue
     fi
 
-    # Extract the part between markers in the target file (for comparison only)
-    local old_block
-    old_block=$(echo "$target_content" | sed -n "/^${begin_marker}$/,/^${end_marker}$/p")
+    # Escape markers for use as sed regex patterns
+    local escaped_begin escaped_end
+    escaped_begin=$(printf '%s' "$begin_marker" | sed -e 's/[][\.*^$()+{}?|/]/\\&/g')
+    escaped_end=$(printf '%s' "$end_marker" | sed -e 's/[][\.*^$()+{}?|/]/\\&/g')
 
-    # Build new target content: everything before marker + atom content + everything after marker
+    # Build new target content: lines before begin marker + begin marker + atom content + end marker + lines after end marker
+    local tmpfile
+    tmpfile=$(mktemp)
+    # Print lines before begin marker (excluding the marker line itself)
+    sed "/^${escaped_begin}$/q" "$target_file" | sed '$d' > "$tmpfile"
+    # Print begin marker
+    echo "$begin_marker" >> "$tmpfile"
+    # Print atom content
+    printf '%s\n' "$atom_content" >> "$tmpfile"
+    # Print end marker
+    echo "$end_marker" >> "$tmpfile"
+    # Print lines after end marker
+    sed "1,/^${escaped_end}$/d" "$target_file" >> "$tmpfile"
+
     local new_content
-    # Use awk for robust multi-line replacement
-    new_content=$(awk -v begin="$begin_marker" -v end="$end_marker" -v atom="$atom_content" '
-      BEGIN { in_block=0; printed_atom=0 }
-      $0 == begin { print $0; printf "%s\n", atom; in_block=1; printed_atom=1; next }
-      $0 == end   { if (in_block && printed_atom) { print $0; in_block=0; next } }
-      !in_block   { print $0 }
-    ' "$target_file")
+    new_content=$(<"$tmpfile")
+    rm -f "$tmpfile"
 
     if [ "$new_content" = "$target_content" ]; then
       log_verbose "UNCHANGED $target_rel ($atom_id)"

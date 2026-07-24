@@ -238,6 +238,22 @@ When the agent needs to suggest checks to the user (edge cases, option proposals
 3. **List options clearly** — each option on its own line with number, name, and purpose
 4. **No agent-internal jargon** — avoid terms like "git-aware mapping", "cross-check prerequisite", or "3-way cross-reference"; use plain language
 
+---
+
+## Resolution Protocol
+
+When validate or verify produces FAIL or MISMATCH findings, the agent follows a
+two-phase resolution protocol:
+
+1. **Summary** — present all findings in a consolidated view before entering any dialogue
+2. **Resolution** — offer the user a choice: one-by-one, batch, or skip
+
+The shared protocol is defined in `framework/_atoms/guidance/resolution_protocol.md`.
+File-specific format and details:
+
+- `framework/unit_verify_checklist.md` §Step 7 — verify summary format and direction table
+- `framework/unit_validate_checklist.md` §Resolution Protocol — validate summary format
+
 ## Cache Interaction
 
 ### Write rules
