@@ -549,9 +549,11 @@ When no candidate spec exists (verify against stable):
 
 ## Step 8 — Spec Review (optional final quality gate)
 
+**Entry condition:** `spec_verify` result is ALIGNED. If Steps 1-6 produced any MISMATCH, Step 8 is skipped — reviewing code quality is meaningless when the code direction does not match the spec. The verify output appends: "Spec review skipped: verify result is MISMATCH. Reconcile the mismatch first, then re-run verify which may include Step 8."
+
 **Purpose:** After all verify steps pass, optionally run a spec-aware code quality review to catch quality issues that the spec's design context would explain as intentional (or confirm as real problems).
 
-**When to execute:** Only when explicitly requested by the user or configured as the final step of verify. Not run automatically.
+**When to execute:** Only when explicitly requested by the user or configured as the final step of verify. Not run automatically. Executes only when entry condition (ALIGNED) is met.
 
 **Mode:** Inherits the current verify's mode — scoped or full.
 

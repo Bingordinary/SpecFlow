@@ -269,7 +269,7 @@ Key rules that override the checklist:
 
 ### 5. Spec Review (optional final quality gate, after verify, before promote)
 
-After `spec_verify` completes with ALIGNED, the user may optionally run `spec_review {unit}` as a final quality gate. `spec_review` performs a spec-aware code quality review — it inspects the code with the spec's design intent as context and suppresses findings that the spec explains.
+After `spec_verify` completes with ALIGNED, the user may optionally run `spec_review {unit}` as a final quality gate. If verify reports MISMATCH, spec_review is not meaningful — the code direction must first be reconciled before reviewing code quality. `spec_review` performs a spec-aware code quality review — it inspects the code with the spec's design intent as context and suppresses findings that the spec explains.
 
 When called as the final step of `spec_verify`, `spec_review` inherits verify's scope (scoped or full). See `framework/spec_review_checklist.md` and `framework/verification_scope.md` for detail.
 
