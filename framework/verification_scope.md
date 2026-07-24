@@ -39,6 +39,13 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 | `spec_verify {unit}:{keyword}` | scoped | Matches keyword to spec content (section title, feature name, etc.) → verify that content |
 | `spec_verify {unit}:full` | full | Verify all spec content + cross-check |
 
+### Spec Review
+
+| User says | Mode | What agent does |
+|-----------|------|-----------------|
+| `spec_review {unit}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to `affects.files` and `implementation_surface` → review those files with spec context |
+| `spec_review {unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` → review those files with spec context |
+
 ### Rule (validate only, verify removed)
 
 | User says | Mode | What agent does |
@@ -83,6 +90,33 @@ Scoped verify uses **git working directory changes** to determine what to verify
 | Changed files don't match any spec content | Report "changed files not referenced in spec". Suggest user run full or add spec references. |
 
 > **Cache:** When scoped verify auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
+
+## Scoped Review
+
+### Selection logic
+
+Scoped review uses **git working directory changes** to determine what to review:
+
+1. Run `git diff HEAD` (or `git diff --cached` if no working changes)
+2. Read the spec and identify files that **reference** the changed code:
+   - `affects.files` entries matching changed files
+   - `implementation_surface` entries matching changed files
+3. Review the identified files using the `spec_review_checklist.md` standard
+4. If multiple files match, review them in natural order
+
+### Edge cases
+
+| Condition | Behavior |
+|-----------|----------|
+| No git changes, scoped cache fresh | Report "files unchanged, scoped result still valid". Offer full review. |
+| No git changes, no cache | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
+| Changed files don't match any spec references | Report "changed files not referenced in spec". Suggest user run full review. |
+
+> **Cache:** When scoped review auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
+
+## Full Review
+
+Full mode reviews **all unit code** referenced in the candidate spec. The agent reads all files listed in `affects.files` and `implementation_surface` across all acceptance items, then reviews them using the `spec_review_checklist.md` standard. Cross-file findings (patterns visible only when examining multiple files together) are reported with all relevant file references.
 
 ## Full Verify
 

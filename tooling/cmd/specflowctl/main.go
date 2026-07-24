@@ -147,6 +147,20 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
 	fmt.Fprintln(stdout, "")
 
+	// Check review cache (optional gate — only blocks if blocking: true)
+	reviewResult, err := validationcache.CheckReview(absRoot, unitName)
+	if err != nil {
+		return fmt.Errorf("review cache error: %w", err)
+	}
+	if !reviewResult.Fresh {
+		fmt.Fprintf(stdout, "Review cache check: BLOCKED — %s\n", reviewResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintln(stdout, "Resolve the review findings before promoting.")
+		return errors.New("review cache check failed — P0/P1 findings block promote")
+	}
+	fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
+	fmt.Fprintln(stdout, "")
+
 	result := promote.Promote(absRoot, unitName)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))
 	if err != nil {
@@ -158,9 +172,9 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 
 	// Clean up cache on successful promote
 	if delErr := validationcache.DeleteAll(absRoot, unitName); delErr != nil {
-		fmt.Fprintf(stderr, "Warning: failed to delete validation cache: %v\n", delErr)
+		fmt.Fprintf(stderr, "Warning: failed to delete caches: %v\n", delErr)
 	} else {
-		fmt.Fprintln(stdout, "Validation cache cleared.")
+		fmt.Fprintln(stdout, "Validate, verify, and review caches cleared.")
 	}
 
 	return nil

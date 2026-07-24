@@ -330,3 +330,170 @@ func TestNormalizeConsistency(t *testing.T) {
 		t.Fatalf("missing trailing newline produced different hash: %s vs %s", hashNoNewline, hashWithNewline)
 	}
 }
+
+func TestCheckReviewNoCache(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh when no cache exists, got: %s", result.Reason)
+	}
+}
+
+func TestCheckReviewPass(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 1\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nNo P0/P1 findings.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh, got: %s", result.Reason)
+	}
+}
+
+func TestCheckReviewBlocking(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: fail\np0_count: 1\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: true\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nFound P0: null pointer.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (blocking review), got fresh")
+	}
+}
+
+func TestCheckReviewStale(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Stale hash: file content hash doesn't match what's in cache
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: pass\np0_count: 0\np1_count: 1\np2_count: 0\np3_count: 0\nblocking: true\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh (stale gate skipped), got: %s", result.Reason)
+	}
+}
+
+func TestCheckReviewScopedNonBlocking(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: review\nunit: test\nmode: scoped\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 1\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nScoped non-blocking review.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh (scoped non-blocking), got: %s", result.Reason)
+	}
+}
+
+func TestDeleteReviewCache(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	rPath := filepath.Join(cacheDir, "review_result.md")
+	os.WriteFile(rPath, []byte("---\ncommand: review\nresult: pass\n---\n"), 0644)
+
+	if err := DeleteCache(repoRoot, "test", "review"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(rPath); !os.IsNotExist(err) {
+		t.Fatal("review cache file should be deleted")
+	}
+}
+
+func TestDeleteAllWithReviewCache(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	for _, name := range []string{"validate_result.md", "verify_result.md", "review_result.md"} {
+		os.WriteFile(filepath.Join(cacheDir, name), []byte("---\n---\n"), 0644)
+	}
+
+	if err := DeleteAll(repoRoot, "test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"validate_result.md", "verify_result.md", "review_result.md"} {
+		path := filepath.Join(cacheDir, name)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s should be deleted after DeleteAll", name)
+		}
+	}
+}

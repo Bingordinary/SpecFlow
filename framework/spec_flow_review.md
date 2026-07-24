@@ -84,31 +84,34 @@ If one of those items is intentionally owned elsewhere, the file must link or na
 
 ### 2.3 Process Closure
 
-The three commands (next, review, promote) form a simple process. The review must verify:
+The commands (next, review/spec_validate, spec_review, promote) form a coherent process. The review must verify:
 
 1. each command has a defined purpose and does not overlap with the others
 2. `next` outputs enough information for the agent to start work
-3. `review` produces a structured output (issue list) that the agent can act on
-4. `promote` has a complete flow: review step → verify step → archive step
-5. promote's archive step deterministically copies candidate files to stable directories
-6. promote's review and verify steps are independent review sessions (subagent), not self-approval
-7. if promote fails (review or verify finds issues), the outcome is clearly communicated and no files are archived
+3. `review` (`spec_validate`) produces a structured output (per-checklist PASS/FAIL) that the agent can act on
+4. `spec_review` (optional final quality gate) produces P0-P3 graded findings
+5. `promote` has a complete flow: validate step → verify step → (optional review step) → archive step
+6. promote's archive step deterministically copies candidate files to stable directories
+7. promote's validate, verify, and review steps are independent sessions (subagent), not self-approval
+8. if promote fails (validate, verify, or review finds issues), the outcome is clearly communicated and no files are archived
 
 If a command is missing a required output, has undefined behavior for failure cases, or requires the executor to infer its purpose, the related slice must not be marked `passed`.
 
 ### 2.4 Command Completeness
 
-The three commands must each have clearly defined boundaries. The review must verify:
+Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **review**: given a unit name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with categories (format, cross-spec consistency, acceptance item clarity) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work.
+2. **review** (implemented as `spec_validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
 
-3. **promote**: given a unit name, runs a 2-step process:
+3. **spec_review** (optional final quality gate): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code.
+
+4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status
-   b. Archive step via `specflowctl promote`: independently validates cache freshness, validates format, copies candidate→stable, removes candidate files
+   b. CLI archive step via `specflowctl promote`: independently validates validate+verify cache freshness, optionally checks review cache, validates format, copies candidate→stable, removes candidate files
     
-   Validate and verify are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate or verify cache is stale. Promote must not archive if any check fails.
+   Validate and verify are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). `spec_review` is optional. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate or verify cache is stale, or if review cache is `blocking: true`. Promote must not archive if any check fails.
 
 Each command must have:
 1. a defined input (what parameters it accepts)

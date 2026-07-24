@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -37,6 +38,11 @@ type cacheFile struct {
 	ScopedItem  string `yaml:"scoped_item,omitempty"`
 	Result      string `yaml:"result"`
 	Target      string `yaml:"target,omitempty"`
+	Blocking    bool   `yaml:"blocking"`
+	P0Count     int    `yaml:"p0_count"`
+	P1Count     int    `yaml:"p1_count"`
+	P2Count     int    `yaml:"p2_count"`
+	P3Count     int    `yaml:"p3_count"`
 	Timestamp   string `yaml:"timestamp"`
 	Files       []cacheFileEntry
 }
@@ -61,6 +67,75 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})
 }
 
+// CheckReview reads and validates the review cache for the given unit.
+// Review is optional — no cache means no gate to block.
+// If cache exists with blocking: true, promote must be rejected.
+// If cache exists but is stale (hash mismatch), the gate is skipped.
+func CheckReview(repoRoot, unitName string) (CheckResult, error) {
+	cachePath := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
+
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		return CheckResult{
+			Fresh:  true,
+			Reason: "no review cache — optional gate, promote may proceed",
+		}, nil
+	}
+
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("cannot read review cache: %v", err),
+		}, nil
+	}
+
+	if cache.Command != "review" {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("review cache command is %q, expected 'review'", cache.Command),
+		}, nil
+	}
+
+	// Hash check: if cache is stale, skip the gate entirely
+	var mismatchedFiles []string
+	var missingFiles []string
+	for _, entry := range cache.Files {
+		fullPath := resolvePath(repoRoot, entry.Path)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			missingFiles = append(missingFiles, entry.Path)
+			continue
+		}
+		currentHash, err := fileHash(fullPath)
+		if err != nil {
+			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
+			continue
+		}
+		if currentHash != normalizeHash(entry.Hash) {
+			mismatchedFiles = append(mismatchedFiles, entry.Path)
+		}
+	}
+
+	if len(missingFiles) > 0 || len(mismatchedFiles) > 0 {
+		return CheckResult{
+			Fresh:  true,
+			Reason: "review cache stale (files changed) — gate skipped, promote may proceed",
+		}, nil
+	}
+
+	// Blocking check
+	if cache.Blocking {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("Review found %d P0 and %d P1 finding(s). Resolve before promoting.", cache.P0Count, cache.P1Count),
+		}, nil
+	}
+
+	return CheckResult{
+		Fresh:  true,
+		Reason: fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged) — does not block promote", cache.Result, len(cache.Files)),
+	}, nil
+}
+
 // CheckRuleVerify is deprecated — rule verify has been removed.
 // It always returns not-fresh with a deprecation message.
 func CheckRuleVerify(repoRoot, ruleID string) (CheckResult, error) {
@@ -70,7 +145,7 @@ func CheckRuleVerify(repoRoot, ruleID string) (CheckResult, error) {
 	}, nil
 }
 
-// deleteCache removes a specific cache file (validate or verify) for the given target.
+// deleteCache removes a specific cache file for the given target.
 func deleteCache(repoRoot, targetKind, targetName, command string) error {
 	var fileName string
 	switch command {
@@ -78,6 +153,8 @@ func deleteCache(repoRoot, targetKind, targetName, command string) error {
 		fileName = "validate_result.md"
 	case "verify":
 		fileName = "verify_result.md"
+	case "review":
+		fileName = "review_result.md"
 	default:
 		return fmt.Errorf("unknown cache command %q", command)
 	}
@@ -94,12 +171,15 @@ func DeleteCache(repoRoot, unitName, command string) error {
 	return deleteCache(repoRoot, "unit", unitName, command)
 }
 
-// DeleteAll removes both validate and verify caches for the given unit.
+// DeleteAll removes validate, verify, and review caches for the given unit.
 func DeleteAll(repoRoot, unitName string) error {
 	if err := DeleteCache(repoRoot, unitName, "validate"); err != nil {
 		return err
 	}
-	return DeleteCache(repoRoot, unitName, "verify")
+	if err := DeleteCache(repoRoot, unitName, "verify"); err != nil {
+		return err
+	}
+	return DeleteCache(repoRoot, unitName, "review")
 }
 
 // DeleteRuleCache removes a specific cache file (validate or verify) for the given rule.
@@ -302,6 +382,16 @@ func readCache(path string) (*cacheFile, error) {
 					cache.Result = value
 				case "target":
 					cache.Target = value
+				case "blocking":
+					cache.Blocking, _ = strconv.ParseBool(value)
+				case "p0_count":
+					cache.P0Count, _ = strconv.Atoi(value)
+				case "p1_count":
+					cache.P1Count, _ = strconv.Atoi(value)
+				case "p2_count":
+					cache.P2Count, _ = strconv.Atoi(value)
+				case "p3_count":
+					cache.P3Count, _ = strconv.Atoi(value)
 				case "timestamp":
 					cache.Timestamp = value
 				}
