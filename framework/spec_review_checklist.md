@@ -17,6 +17,8 @@ When an agent executes `spec_review {unit}`, it uses the spec-aware code quality
 
 **Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full review. Run `spec_review {unit}:full` for complete review."
 
+**Auto-trigger:** When `spec_review` runs automatically after `spec_verify` ALIGNED (see `unit_verify_checklist.md` Step 8), the mode is inherited from verify. Review behavior is identical to an explicit trigger with the same mode. If the user ran `spec_verify {unit}:full`, auto-review uses full mode; if scoped, auto-review uses scoped mode.
+
 **Cache:** see `framework/validation_cache.md` for format.
 
 ## Execution Rules

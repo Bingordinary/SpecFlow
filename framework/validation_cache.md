@@ -95,6 +95,8 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 | `spec_review {unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files |
 | `spec_review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts |
 | Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
+| `spec_verify` ALIGNED → auto-review runs | Write `verify_result.md` (ALIGNED) + `review_result.md` with inherited mode and file hashes |
+| `spec_verify` ALIGNED → auto-review FAIL (P0/P1 found) | Write `verify_result.md` (ALIGNED), then write `review_result.md` with `blocking: true`. Verify result is unaffected by review findings. |
 
 ### Cache lifecycle
 
