@@ -93,8 +93,12 @@ Summary: ...
 - For each major behavior described: does it demonstrably serve a stated goal? If a behavior cannot be traced to any goal → flag (possible over-engineering)
 - Reversely: is the goal achievable by implementing all described behaviors? If implementing everything still does not meet the goal → flag (design gap)
 - Check whether any behavior violates a stated non-goal (e.g., non-goal says "no multi-tenancy this round" but the behavior describes tenant isolation)
+- **Proportionality check:** Is the design complexity proportional to the stated goal? If the same goal could be achieved with significantly less design surface area → flag (possible over-engineering)
 
 **Step 2 — Design rationale review**
+- **Evidence-driven precondition:** Read the spec frontmatter's `evidence_appendix_ref` field.
+  - If `evidence_appendix_ref` is PRESENT and not `none` → the spec is evidence-driven (design records existing implementation). The code behavior itself constitutes the design rationale. **Skip** the rationale review below. Report "Step 2: N/A (evidence-driven — rationale is implicit in existing code)" and proceed to Step 3.
+  - If `evidence_appendix_ref` is ABSENT or `none` → the spec is design-driven. Execute the rationale review below.
 - Does the spec explain **why** each key design decision was made? (e.g., "chose event-driven architecture because async decoupling is required, not because it is popular")
 - If there are viable alternative approaches (sync vs async, push vs pull, strong vs eventual consistency), does the spec acknowledge them and explain why they were rejected?
 - If a design choice is non-obvious and no rationale is given → FAIL (fix_required: add design decision record)
@@ -113,7 +117,7 @@ Actively search for design flaws by considering:
 If a plausible critical flaw is identified that the spec does not address → FAIL (blocked: needs user judgment on whether this is a design gap or intentional)
 
 **Step 4 — Verdict**
-- PASS: goal-means aligned, rationale documented, no critical flaws found
+- PASS: goal-means aligned, rationale documented (or N/A when evidence-driven), no critical flaws found
 - FAIL: specific findings reported
 
 **Check method:** Content reasoning + adversarial analysis (the subagent makes active engineering judgments)
