@@ -597,24 +597,33 @@ When no candidate spec exists (verify against stable):
 
 **Entry condition:** `spec_verify` result is ALIGNED. If Steps 1-6 produced any MISMATCH, Step 8 is skipped — reviewing code quality is meaningless when the code direction does not match the spec. The verify output appends: "Spec review skipped: verify result is MISMATCH. Reconcile the mismatch first, then re-run verify which may include Step 8."
 
-**Purpose:** After all verify steps pass, optionally run a spec-aware code quality review to catch quality issues that the spec's design context would explain as intentional (or confirm as real problems).
+**Purpose:** After all verify steps pass, optionally run a spec-aware code quality review to catch quality issues that the spec's design context would explain as intentional (or confirm as real problems). Auto-review is conditional on review cache freshness — if a valid cache already exists, the review is skipped to avoid redundant work.
 
-**When to execute:** Automatically runs after `spec_verify` completes with ALIGNED. The user may also trigger `spec_review` independently at any time. Does not run when spec_verify result is MISMATCH.
+**When to execute:** Conditionally runs after `spec_verify` completes with ALIGNED, only when no fresh review cache exists (see Procedure step 1). The user may also trigger `spec_review` independently at any time — explicit trigger always runs regardless of cache state. Does not run when spec_verify result is MISMATCH.
 
 **Mode:** When auto-triggered: inherits verify's mode (scoped or full). When triggered independently: see `spec_review_checklist.md` for mode selection.
 
 **Procedure:**
 
-1. Read `framework/spec_review_checklist.md` for the review standard and execution rules
-2. Read the candidate spec (fallback to stable) for design context
-3. Review the code quality using the standard
-4. Append the review output to the verify result
+1. **Cache check** — Before running review, check `docs/specs/meta/validation/unit/{name}/review_result.md`:
+   - **If file does not exist:** cache MISS, proceed to step 2 (auto-review).
+   - **If file exists:** read frontmatter `files` list (paths and stored hashes). For each file in the list:
+     - Verify the file still exists on disk
+     - Recompute its SHA-256 using the algorithm in `framework/validation_cache.md` §Hash Algorithm
+     - Compare against the stored hash
+   - **All hashes match → cache FRESH:** skip review. Append to verify output: "Review cache fresh (files unchanged), skipping auto-review. Run `spec_review {unit}` explicitly to force a fresh review."
+   - **Any hash differs or file missing → cache STALE:** proceed to step 2 (auto-review).
+
+2. Read `framework/spec_review_checklist.md` for the review standard and execution rules
+3. Read the candidate spec (fallback to stable) for design context
+4. Review the code quality using the standard. Write findings to `review_result.md` body (see `framework/validation_cache.md` §Review cache for format)
+5. Append the review output to the verify result
 
 **Interaction with verify result:**
 
 - Review findings do not change verify's ALIGNED/MISMATCH result.
 - P0/P1 findings are appended as additional advisory information.
-- The review cache is written independently.
+- The review cache is written independently with full findings body.
 - **On spec_review subagent failure during auto-trigger:** the verify ALIGNED result stands independently. The review failure is reported to the user without modifying verify's outcome. The agent must not treat missing review cache as a promote blocker — `spec_promote` will independently check review cache freshness and report the gap.
 
 ==ATOM_BEGIN:spec_review_standard==

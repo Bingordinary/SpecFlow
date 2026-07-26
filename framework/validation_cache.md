@@ -51,7 +51,7 @@ Free-form summary of the result.
 command: review
 unit: user_auth
 mode: full                  # full | scoped
-result: pass                # pass | fail
+result: fail                # pass | fail
 p0_count: 0
 p1_count: 1
 p2_count: 2
@@ -63,6 +63,16 @@ files:
   - path: src/auth/login.go
     hash: sha256:def456...
 ---
+## Findings
+
+### P1 - src/auth/login.go:42 — Missing input validation on email field
+  The email field lacks input validation, potential XSS risk.
+  spec_context: Spec prioritizes shipping speed over input sanitization (accepted_tradeoff)
+  recommendation: Add input validation middleware
+
+### P2 - src/auth/config.go:88 — Hardcoded secret key
+  Secret key is hardcoded instead of using environment variable.
+  recommendation: Use os.Getenv() to load from environment
 ```
 
 ## Hash Algorithm
@@ -91,12 +101,12 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 | `spec_verify {unit}:{keyword}` (matches item) ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{matched id}"`, hashes |
 | `spec_verify {unit}:full` ALIGNED | Write `verify_result.md` with `mode: full`, hashes of all read files |
 | `spec_verify` MISMATCH | Delete `verify_result.md` if it exists |
-| `spec_review {unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, hashes of checked files |
-| `spec_review {unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files |
-| `spec_review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts |
+| `spec_review {unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, hashes of checked files, and findings body |
+| `spec_review {unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files, and findings body |
+| `spec_review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts and findings body |
 | Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
-| `spec_verify` ALIGNED → auto-review runs | Write `verify_result.md` (ALIGNED) + `review_result.md` with inherited mode and file hashes |
-| `spec_verify` ALIGNED → auto-review FAIL (P0/P1 found) | Write `verify_result.md` (ALIGNED), then write `review_result.md` with `blocking: true`. Verify result is unaffected by review findings. |
+| `spec_verify` ALIGNED → auto-review runs (cache miss/stale) | Write `verify_result.md` (ALIGNED) + `review_result.md` with inherited mode, file hashes, and findings body |
+| `spec_verify` ALIGNED → auto-review FAIL (P0/P1 found) | Write `verify_result.md` (ALIGNED), then write `review_result.md` with `blocking: true`, findings body. Verify result is unaffected by review findings. |
 
 ### Cache lifecycle
 
