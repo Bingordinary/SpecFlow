@@ -24,7 +24,7 @@ When an agent executes `spec_review {unit}`, it uses the spec-aware code quality
 ## Execution Rules
 
 - **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query git history. Must NOT modify files or execute commands that change state.
-- **Cross-check:** After collecting all findings, the agent validates each P0-P1 finding via targeted cross-file read before final output. See §7.
+- **Cross-check:** See §7.
 - Each finding reports P0-P3 severity with code references.
 - Suppressed findings are listed separately under "Suppressed by spec".
 
@@ -194,7 +194,7 @@ Each finding contains:
 
 ### 7.1 Purpose
 
-After collection, before output — validate that each P0-P1 finding holds in the full codebase and full document set, not just in the local review context.
+After collection, before output — validate that each finding holds in the full codebase and full document set, not just in the local review context.
 
 Both scoped and full mode need this:
 - **Scoped** — reviews only git-diff files; a changed file may call code outside the diff set. The agent cannot assume the callee lacks protections without reading it.
@@ -202,17 +202,12 @@ Both scoped and full mode need this:
 
 ### 7.2 Process
 
-1. **跨文件真实性验证** — For each P0-P1 finding whose issue asserts "X lacks Y capability" or "parameter Z may not be handled", read the callee/target implementation. If the target handles the concern (nil guard, empty-string path, idempotent close, etc.), the finding is a false positive.
+1. **跨文件真实性验证** — For each finding whose issue asserts "X lacks Y capability" or "parameter Z may not be handled", read the callee/target implementation. If the target handles the concern (nil guard, empty-string path, idempotent close, etc.), the finding is a false positive.
 
-2. **跨文档一致性验证** — For each P0-P1 finding that relies exclusively on the spec main body, check appendices and related documents for supplementary or overriding references. If the full document set resolves the issue, the finding is invalid.
+2. **跨文档一致性验证** — For each finding that relies exclusively on the spec main body, check appendices and related documents for supplementary or overriding references. If the full document set resolves the issue, the finding is invalid.
 
 3. **移除误报** — Findings that dissolve under cross-check are removed from output. Not demoted to notes — a false positive has no place in the review result.
 
-### 7.3 Exemptions
-
-- P2, P3 findings — exempt (do not block promote; validation cost outweighs benefit).
-- Findings already suppressed by spec (listed under "Suppressed by spec") — exempt.
-
-### 7.4 Complexity
+### 7.3 Complexity
 
 Lightweight: the main agent reads 1-2 target files per finding. No sub-agent re-launch or full re-review.
