@@ -25,6 +25,7 @@ When an agent executes `spec_review {unit}`, it uses the spec-aware code quality
 
 - **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query git history. Must NOT modify files or execute commands that change state.
 - **Cross-check:** See §7.
+- **Failure Behavior:** If subagent encounters an error (cannot read target files, target unit not found, review checklist missing), report "Review could not complete — <reason>". Do not write review cache. Advise resolving the issue before retrying. This is distinct from review findings — when the review runs and finds P0/P1 issues, the subagent completed normally (the output is PASS or FAIL per the gate rules below), not a subagent failure.
 - Each finding reports P0-P3 severity with code references.
 - Suppressed findings are listed separately under "Suppressed by spec".
 

@@ -287,8 +287,14 @@ When a governance file is an Agent-facing instruction file (operation policy tha
 A file fails self-containment when:
 
 1. the file contains an instruction that the Agent must follow to complete the current phase, but the instruction body is only available by reading a linked file
-2. the file requires the Agent to read N sequential linked files to obtain the set of essential phase instructions (chain reading)
+2. the file requires the Agent to read N sequential linked files to obtain the set of essential phase instructions for the current decision point (chain reading)
 3. the file uses a link as the primary delivery mechanism for a required action, allowed write, forbidden write, close condition, or gate requirement
+
+#### Chain Reading vs Progressive Disclosure
+
+A governance file does not fail self-containment when it delivers complete **phase-routing logic** inline while delegating phase-specific execution procedures to linked files. Phase-routing logic means the executor can determine what action to take next from the file alone, without reading a linked file. A link to a phase procedure is progressive disclosure — not chain reading — when the executor has already determined that this phase is the current action based on the entry file's routing logic.
+
+Chain reading exists only when the executor must follow a link to understand what the current instruction requires. If the executor can answer "what should I do now?" from the entry file, no chain reading has occurred. The sequence "read entry → determine next phase → read phase procedure" is progressive disclosure, not chain reading.
 
 Cross-file links are acceptable only for:
 
@@ -296,7 +302,7 @@ Cross-file links are acceptable only for:
 2. optional skill files that the Agent may choose to load
 3. data references (file paths to specs, truth, evidence) that the Agent needs to read as input — these are not instructions about what to do
 
-A review must find a self-containment finding when a governance file requires the Agent to follow a chain of two or more links to obtain essential phase instructions that should have been stated directly.
+A review must find a self-containment finding when a governance file requires the Agent to follow a chain of two or more links to obtain essential phase instructions for the current decision point that should have been stated directly.
 
 ### 2.13 Tool-Enforcement Boundary
 

@@ -76,4 +76,4 @@ Summary: ...
 
 ## Truth Semantics
 
-Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see the fork prerequisite in concepts.md §2 (Edit and implement).
+Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus in the Truth Hierarchy). The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see the fork prerequisite in concepts.md §2 (Edit and implement).

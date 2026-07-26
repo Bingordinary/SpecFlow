@@ -15,8 +15,8 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 | Change type | Meaning | Consumer impact |
 |-------------|---------|----------------|
 | **MAJOR** (x.0.0) | Breaking constraint change | Agent should identify affected units and update them. No automatic cascade. |
-| **MINOR** (0.x.0) | Compatible extension | No consumer impact. Rule promoted without cascading. |
-| **PATCH** (0.0.x) | Wording clarification | No consumer impact. Rule promoted without cascading. |
+| **MINOR** (0.x.0) | Compatible extension | Assess consumer impact per rule content. Typically none. |
+| **PATCH** (0.0.x) | Wording clarification | Assess consumer impact per rule content. Typically none. |
 | None | Brand new rule (no previous stable) | No consumers exist yet. Rule promoted to stable. |
 
 ## Workflow
@@ -27,7 +27,7 @@ The agent may report cache state and version change type to help the user decide
 
 | Situation | What to say |
 |-----------|-------------|
-| MINOR/PATCH change, cache fresh | "Compatible change. Rule validate has passed. Ready for promotion — no consumers will be affected." |
+| MINOR/PATCH change, cache fresh | "Compatible change. Rule validate has passed. Ready for promotion — assess consumer impact after promote (typically none)." |
 | MAJOR change, cache fresh | "Breaking change. Rule validate has passed. Ready for promotion — verify consumer impact after promote." |
 | Cache stale/missing | "Cache is missing or expired. Run rule_validate first." |
 
@@ -43,6 +43,9 @@ The CLI tool performs:
 6. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
 7. **Delete candidate** — removes the candidate rule file
 
+**PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
+**FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `rule_validate` before retrying. Do not attempt manual promotion.
+
 ### Step 3 — Post-promote Consumer Impact
 
 After the CLI succeeds, the agent must act based on the change type:
@@ -53,8 +56,8 @@ After the CLI succeeds, the agent must act based on the change type:
 3. Suggest running `spec_validate` then `spec_verify` on each affected unit
 
 **If MINOR/PATCH:**
-1. No consumer changes needed
-2. Report: "Compatible change promoted. No consumer impact."
+1. Assess consumer impact per rule content. Typically no impact — confirm and proceed.
+2. The tool output already includes the "Assess consumer impact per rule content" guidance. Report the tool output to the user.
 
 ## State After Promote
 
@@ -62,5 +65,5 @@ After the CLI succeeds, the agent must act based on the change type:
 |--------|-------|-------------|
 | Stable rule file | Contains new version | Contains new version |
 | Candidate rule file | Deleted | Deleted |
-| Consumer impact | Agent must verify | None |
+| Consumer impact | Agent must verify | Assess per rule content (typically none) |
 | Next step | Agent identifies affected units and validates | Done |

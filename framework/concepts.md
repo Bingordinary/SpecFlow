@@ -57,10 +57,10 @@ When code, stable spec, and candidate spec disagree, their authority is not equa
 | Level | Source | Status |
 |-------|--------|--------|
 | 1 — Ground truth | Running code | What the system actually does |
-| 2 — Recorded agreement | Stable spec | What the system should do (promoted candidate) |
-| 3 — Working draft | Candidate spec | Proposed evolution, **not truth** |
+| 2 — Current design intent | Candidate spec | What the current iteration proposes |
+| 3 — Prior consensus | Stable spec | What was previously accepted (superseded by candidate during active work) |
 
-**Candidate is not automatically correct.** When verify finds a mismatch between candidate and code, the user decides which direction to reconcile. Only stable is the authoritative recorded truth.
+**Candidate is the current design intent but not automatically correct.** When verify finds a mismatch between candidate and code, the user decides which direction to reconcile. Stable records the prior consensus for reference.
 
 ### Spec Reference Priority (Outside Verify)
 
@@ -77,8 +77,8 @@ When referencing spec content in discussion, analysis, or implementation reasoni
 
 - **unit** — One independently governed engineering responsibility
 - **rule** — A reusable shared constraint that multiple units may follow
-- **stable** — Accepted current project truth. The authoritative recorded design.
-- **candidate** — Proposed next project truth. A working draft, not truth on its own. Only stable is authoritative.
+- **stable** — Prior consensus. Superseded by candidate during active work.
+- **candidate** — Current design intent. Working draft, not automatically correct.
 
 ### Automatic Target Type Detection
 
@@ -265,7 +265,7 @@ Key rules that override the checklist:
 
 `specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then deletes the candidate rule file. Consumer impact assessment is the agent's responsibility.
 
-**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the stable spec becomes the new level-2 truth. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. See [Truth Hierarchy](#truth-hierarchy).
+**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus). The level-2 position (current design intent) is vacant because no candidate file exists; it will be recreated when someone forks to start a new editing round. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. See [Truth Hierarchy](#truth-hierarchy).
 
 ### 5. Spec Review (automatic final quality gate, after verify, before promote)
 
@@ -280,7 +280,7 @@ The review result is cached independently of the verify cache. P0/P1 findings bl
 These override default helpful-assistant behavior. They are not suggestions.
 
 **HARD RULE 1: Read Specs Before Discussing or Changing a Topic**
-Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable spec (if it exists) and the candidate spec (if it exists). If both exist, read both — understand that stable records accepted truth and candidate is a working proposal for the current iteration. Their authority differs per the Truth Hierarchy and the [Spec Reference Priority](#spec-reference-priority-outside-verify) table. When summarizing spec content to the user, and both layers exist, name which layer you are quoting. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
+Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable spec (if it exists) and the candidate spec (if it exists). If both exist, read both — understand that stable records prior consensus and candidate is the current design intent. Their authority differs per the Truth Hierarchy and the [Spec Reference Priority](#spec-reference-priority-outside-verify) table. When summarizing spec content to the user, and both layers exist, name which layer you are quoting. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
 
 **HARD RULE 2: Promote Is the Only Gate to Stable**
 Never call `specflowctl promote` without user confirmation. Before promote, always run validate then verify. If either fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
@@ -311,7 +311,7 @@ All fork operations (stable → candidate) must use `specflowctl fork --unit <na
 | `specflowctl review run-*` | Governance review run-state management. Subcommands: `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
 | `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_validate" or confirms agent suggestion |
 | `spec_verify {target}` (agent trigger) | Read-only subagent. Unit only: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run spec_validate for the rule instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED, then automatically triggers `spec_review` with same scope. On MISMATCH: deletes cache, reports findings — review is skipped. Agent must stop and not proceed to promote. | User says "spec_verify" or confirms agent suggestion |
-| `spec_review {target}` (agent trigger) | Read-only subagent. Spec-aware code quality review (`spec_review_checklist.md`). Reads the candidate spec for design context, then reviews code quality. Suppresses findings that the spec explains. P0/P1 block promote; P2/P3 advisory. Default: scoped (git-aware). `:full` for all unit code. Can be triggered explicitly by the user, or automatically after `spec_verify` ALIGNED. When auto-triggered, scope is inherited from verify. Writes cache on completion. See `framework/verification_scope.md`. | User says "spec_review" or confirms agent suggestion |
+| `spec_review {target}` (agent trigger) | Read-only subagent. Spec-aware code quality review (`spec_review_checklist.md`). Reads the candidate spec for design context, then reviews code quality. Suppresses findings that the spec explains. P0/P1 block promote; P2/P3 advisory. Default: scoped (git-aware). `:full` for all unit code. Can be triggered explicitly by the user, or automatically after `spec_verify` ALIGNED. When auto-triggered, scope is inherited from verify. Writes cache on completion. On FAIL (subagent error, target not found, checklist missing): reports error, does not write cache. Agent must not proceed to promote. See `framework/verification_scope.md`. | User says "spec_review" or confirms agent suggestion |
 | `spec_promote {target}` (agent trigger) | 2-step promote workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run validate/verify before retrying. | User says "spec_promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |

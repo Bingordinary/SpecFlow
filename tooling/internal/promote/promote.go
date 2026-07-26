@@ -381,9 +381,9 @@ func FormatRuleResult(r *RuleResult) string {
 	if r.Passed {
 		switch r.ChangeType {
 		case ChangeMajor:
-			buf.WriteString("MAJOR: Rule promoted. Agent should verify consumer impact.\n")
+			buf.WriteString("MAJOR: Rule promoted. Assess consumer impact per rule content.\n")
 		case ChangeMinor, ChangePatch:
-			buf.WriteString("Compatible change: Rule promoted. No consumer impact.\n")
+			buf.WriteString("Compatible change: Rule promoted. Assess consumer impact per rule content.\n")
 		default:
 			buf.WriteString("New rule promoted to stable.\n")
 		}

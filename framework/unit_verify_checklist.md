@@ -615,6 +615,7 @@ When no candidate spec exists (verify against stable):
 - Review findings do not change verify's ALIGNED/MISMATCH result.
 - P0/P1 findings are appended as additional advisory information.
 - The review cache is written independently.
+- **On spec_review subagent failure during auto-trigger:** the verify ALIGNED result stands independently. The review failure is reported to the user without modifying verify's outcome. The agent must not treat missing review cache as a promote blocker — `spec_promote` will independently check review cache freshness and report the gap.
 
 ==ATOM_BEGIN:spec_review_standard==
 # Spec Review Standard
