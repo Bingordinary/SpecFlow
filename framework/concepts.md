@@ -10,7 +10,7 @@ Every spec document follows a five-step loop:
 
 | Step | What happens | Entry condition | Exit condition |
 |-------|-------------|----------------|---------------|
-| **Fork** | Copy stable spec to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
+| **Fork** | Run `specflowctl fork --unit <name>` to copy stable spec + appendices to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
 | **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
 | **Validate** | Check candidate design quality against checklist. | Agent triggered by `spec_validate`. | All checks pass. |
 | **Verify** | Check candidate vs code alignment. | Agent triggered by `spec_verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
@@ -148,10 +148,10 @@ Run `specflowctl next --unit <name>` to discover the unit's candidate and stable
 
 **Fork prerequisite — before editing, determine the candidate state:**
 - **Candidate exists** → edit the existing candidate spec directly.
-- **No candidate, stable exists** → **fork from stable:** copy `unit_<name>.md` from `docs/specs/units/stable/` to `docs/specs/units/candidate/`, update frontmatter (`layer: stable` → `layer: candidate`, increment version), then edit the candidate. The stable spec is never edited directly except through the promote workflow.
+- **No candidate, stable exists** → **fork from stable:** run `specflowctl fork --unit <name>` from the repository root. This copies the unit spec and all associated appendix files to the candidate layer, updates frontmatter (`layer: stable → candidate`, increments version), and reports the complete fork manifest. This is the **only** allowed way to fork. Manual `cp` is not permitted.
 - **No candidate, no stable** → brand-new design. Create `unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
 
-**Rule fork — same logic applies to rules:** if a stable rule file exists at `docs/specs/rules/stable/{rule_id}.md` and no candidate exists, fork from stable: copy it to `docs/specs/rules/candidate/{rule_id}.md`, update `layer` from `stable` to `candidate`, and increment `rule_version`. For brand-new rules (no stable file), create the candidate rule file from scratch following `framework/spec_writing_guide.md` §5.
+**Rule fork — same logic applies to rules:** if a stable rule file exists at `docs/specs/rules/stable/{rule_id}.md` and no candidate exists, run `specflowctl fork --rule <rule_id>` to fork from stable. This updates `layer` from `stable` to `candidate` and increments `rule_version`. For brand-new rules (no stable file), create the candidate rule file from scratch following `framework/spec_writing_guide.md` §5.
 
 After the fork (if applicable), update the candidate spec and code. No gate before editing. Read first, then write.
 
@@ -296,10 +296,15 @@ When `verify` reports a MISMATCH, the agent MUST present the findings to the use
 **HARD RULE 4: Stop When Unclear**
 Stop and ask when the target unit is unclear, the required spec or framework file cannot be found, or the next workflow step cannot be determined. Do not guess or proceed with incomplete information.
 
+**HARD RULE 5: Fork Must Use `specflowctl fork`**
+All fork operations (stable → candidate) must use `specflowctl fork --unit <name>` or `specflowctl fork --rule <id>`. Manual `cp` of spec files is not permitted. This ensures appendix files are not missed and frontmatter is updated consistently.
+
 ## Commands Reference
 
 | Command | What it does | Who calls it |
 |---------|-------------|-------------|
+| `specflowctl fork --unit <name>` | Copy stable unit spec + appendices to candidate layer with layer transform and version bump. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
+| `specflowctl fork --rule <id>` | Copy stable rule to candidate layer with layer transform and version bump. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
 | `specflowctl promote --unit <name>` | Checks validate+verify cache freshness, validates format + copies candidate→stable. Rejects if cache stale. | Agent (after user confirmation, after validate+verify) |
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §5. | Agent or human maintainer |

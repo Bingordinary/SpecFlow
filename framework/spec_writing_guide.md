@@ -268,7 +268,7 @@ Each unit appendix must:
 2. declare `unit: {unit}` in frontmatter
 3. declare `layer: stable|candidate` in frontmatter
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`) and applies layer transforms consistently. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
 - Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`

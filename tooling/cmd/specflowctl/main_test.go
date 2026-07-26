@@ -217,6 +217,141 @@ Verify passed.
 	}
 }
 
+func TestForkFailsOnMissingUnit(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runFork([]string{"--repo-root", repoRoot}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing --unit flag")
+	}
+	output := stderr.String()
+	if !strings.Contains(output, "Usage:") {
+		t.Fatalf("expected usage in stderr, got: %s", output)
+	}
+}
+
+func TestForkUnit(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	os.MkdirAll(stableDir, 0755)
+	specContent := `---
+id: test_unit
+layer: stable
+version: 1.0.0
+unit_refs: none
+rule_refs: none
+---
+
+Test unit for fork testing.
+`
+	specPath := filepath.Join(stableDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	appendixDir := filepath.Join(stableDir, "appendix")
+	os.MkdirAll(appendixDir, 0755)
+	appendixContent := `---
+unit: test_unit
+layer: stable
+---
+Appendix for test.
+`
+	if err := os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_helper.md"), []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if err := runFork([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("fork failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "PASSED") {
+		t.Fatalf("expected PASSED result, got %s", output)
+	}
+	if !strings.Contains(output, "Forked:") {
+		t.Fatalf("expected forked action, got %s", output)
+	}
+	if !strings.Contains(output, "Forked appendix") {
+		t.Fatalf("expected appendix forked action, got %s", output)
+	}
+
+	candidateSpec := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_test_unit.md")
+	if _, err := os.Stat(candidateSpec); os.IsNotExist(err) {
+		t.Fatal("candidate spec was not created after fork")
+	}
+
+	candidateData, err := os.ReadFile(candidateSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(candidateData), "layer: candidate") {
+		t.Fatalf("expected layer: candidate, got:\n%s", string(candidateData))
+	}
+	if !strings.Contains(string(candidateData), "version: 1.0.1") {
+		t.Fatalf("expected version: 1.0.1, got:\n%s", string(candidateData))
+	}
+
+	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
+	if _, err := os.Stat(candidateAppendix); os.IsNotExist(err) {
+		t.Fatal("candidate appendix was not created after fork")
+	}
+
+	stableSpec := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
+	if _, err := os.Stat(stableSpec); os.IsNotExist(err) {
+		t.Fatal("stable spec should still exist after fork")
+	}
+}
+
+func TestForkRule(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	os.MkdirAll(stableDir, 0755)
+	ruleContent := `---
+rule_id: b_rule_auth
+rule_scope: bound
+layer: stable
+rule_version: 2.0.0
+---
+`
+	if err := os.WriteFile(filepath.Join(stableDir, "b_rule_auth.md"), []byte(ruleContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if err := runFork([]string{"--rule", "b_rule_auth", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("fork rule failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "PASSED") {
+		t.Fatalf("expected PASSED result, got %s", output)
+	}
+
+	candidateRule := filepath.Join(repoRoot, "docs/specs/rules/candidate/b_rule_auth.md")
+	if _, err := os.Stat(candidateRule); os.IsNotExist(err) {
+		t.Fatal("candidate rule was not created after fork")
+	}
+
+	candidateData, err := os.ReadFile(candidateRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(candidateData), "layer: candidate") {
+		t.Fatalf("expected layer: candidate, got:\n%s", string(candidateData))
+	}
+	if !strings.Contains(string(candidateData), "rule_version: 2.0.1") {
+		t.Fatalf("expected rule_version: 2.0.1, got:\n%s", string(candidateData))
+	}
+}
+
 func TestValidateCandidateFrontmatterDeprecated(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 

@@ -44,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case toolingfreshness.HiddenBuildFingerprintCommand:
 		fmt.Fprintln(stdout, toolingfreshness.PrintBuildFingerprint())
 		return nil
+	case "fork":
+		return runFork(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdout, stderr)
 	case "doctor":
@@ -475,6 +477,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  specflowctl <command> [subcommand] [flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  fork       Fork a stable spec/rule (and appendices) to candidate layer")
 	fmt.Fprintln(w, "  init       Install specFlow framework files and platform hooks")
 	fmt.Fprintln(w, "  doctor     Check installed specFlow structure")
 	fmt.Fprintln(w, "  build-release Build platform binaries into <tooling-root>/bin")
