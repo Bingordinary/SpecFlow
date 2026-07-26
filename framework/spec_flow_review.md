@@ -755,6 +755,12 @@ Blocked rules:
 2. while blocked, the next review action must be the repair path or re-review of affected slices
 3. a blocked run must not advance to final conclusion until all blocking findings are resolved and affected slices are re-reviewed
 
+### 6.7 Impact Sync Boundary
+
+impact_sync (see `framework/governance/impact_sync.md`) operates independently of this run-state.
+
+Governance-review slices may call impact_sync during execution, but its outputs (affected units, freshness flags) are ephemeral agent output, not run-state fields. The two mechanisms serve different purposes: impact_sync maintains downstream truth freshness; this run-state tracks mechanism-review progress. They do not share state.
+
 ## 7. Procedure
 
 For full-scope review:

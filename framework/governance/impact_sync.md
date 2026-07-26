@@ -89,6 +89,15 @@ After impact_sync completes, it produces:
 2. `affected_stable_units` — list of stable units and their applied fallback reason codes
 3. `freshness_review_required` — when set to `true`, at least one affected unit requires the caller to run deterministic freshness classification before fallback cleanup. When set to `false` or absent from the output, no freshness review is needed.
 
+## Relationship to Governance Review Run-State
+
+impact_sync operates independently of the governance-review run-state (`meta/governance_review/`).
+
+- impact_sync outputs are ephemeral — communicated as agent output to the caller (user or governance flow).
+- They are NOT written to `meta/governance_review/spec_flow_review.md` or any other run-state file.
+- A governance-review slice (e.g., `process_and_impact_state`) may call impact_sync as part of its execution. The slice's findings and status are recorded in the run-state; the impact_sync outputs themselves remain ephemeral.
+- The two mechanisms serve different purposes: impact_sync maintains downstream truth freshness; governance-review run-state tracks mechanism-review progress. They do not share state.
+
 ## Removed Scenario Lifecycle
 
 Requests that use `scenario_*`, `scenario_advance:{id}`, or `object-type=scenario` are not impact-sync work.

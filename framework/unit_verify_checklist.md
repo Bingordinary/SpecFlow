@@ -94,6 +94,26 @@ IF declaration exists in code BUT not in spec:
   - Report MISMATCH — code has something spec doesn't describe (do not classify yet)
 ```
 
+4. **Code surface reverse check** — after completing the spec→code search above, for each implementation file that was visited during steps 1-3, run an independent code→spec scan:
+
+```
+a. Extract all code-level structures from the file:
+   - Types, structs, interfaces (struct field names and types)
+   - Method receivers (which types have which methods)
+   - Public function declarations
+   - Public constants, variables, error sentinels
+
+b. For each extracted structure, check against the full spec:
+   - Does the spec body (protocols, data contracts, terminology, error codes) describe it?
+   - Is it referenced in any acceptance item's description or pass_condition?
+   - No spec correspondence → SURPLUS candidate
+     (do not classify — defer to Step 7)
+
+c. Reports:
+   - Zero surplus → "Code surface fully covered — no surplus at the file level"
+   - Surplus found → MISMATCH (type: surplus) with structure name, type, and file:line
+```
+
 **PASS (ALIGNED):** All spec body declarations have structurally consistent implementations
 
 **FAIL (MISMATCH):** Structural differences found between spec and code — defer classification to Step 7
@@ -255,20 +275,89 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 ---
 
-## Step 5 — Implementation integrity
+## Step 5 — Implementation integrity & surplus detection
 
-**Purpose:** Detect code behaviors not declared in the spec and assess the impact of non-runnable items. Do not classify yet — defer to Step 7.
+**Purpose:** Discover code designs not declared in the spec (code surplus) and assess non-runnable items. Do not classify surplus findings yet — defer to Step 7.
 
 **Execution steps:**
 
-1. **Undocumented behavior scan:**
+### Part A — Code surface surplus analysis
+
+This analysis operates at the **design surface** level — package structure, core types, entry points, cross-cutting mechanisms — not individual function signatures. The goal is to systematically discover code designs that exist but are not recorded in the spec.
+
+#### 1. Discover the code design surface
+
+Execute each step below in order and record findings:
+
 ```
-- Read the implementation files listed in affects.files across all acceptance items
-- Identify any functions, conditionals, or data flows that implement behavior not described in the spec body or acceptance items
-- For each undocumented behavior:
-    - Is it a supporting implementation detail (e.g., helper function, logging)?
-    - Or is it a behavioral change not declared in the spec (e.g., add caching, new API endpoint, new error handling path)?
-    - If behavioral → report as MISMATCH with evidence (do not classify yet — defer to Step 7)
+a. Read the directory structure
+   - List all packages/modules under the implementation_surface paths
+   - Infer each package's responsibility from package names, directory layout, and file organization
+
+b. Read each package's public interface
+   - What types/interfaces/structs does the package export?
+   - What are the main entry points (constructors, factory functions, handler registrations)?
+   - What are the core abstractions?
+
+c. Read initialization/boot code
+   - How are components wired together (main, init, bootstrap)?
+   - What gets registered at startup (routes, middleware, subscribers, scheduled tasks)?
+   - What cross-cutting mechanisms are initialized (cache pools, connection pools, rate limiters)?
+
+d. Trace cross-file data flow
+   - How do components communicate (direct call, events, message queue)?
+   - Are there event buses, middleware chains, pipelines not mentioned in the spec?
+   - Are there interception points (hooks, decorators, middleware) not described in the spec?
+
+e. Identify cross-cutting mechanisms
+   - Caching layer
+   - Retry logic
+   - Rate limiting
+   - Logging / observability
+   - Circuit breaker
+   - Background / scheduled tasks
+   - Feature flags
+```
+
+#### 2. Match against the spec surface
+
+```
+For each design construct discovered in step 1:
+- Does the spec body (protocol, architecture, responsibility sections) describe it?
+- Does any acceptance item's description or pass_condition imply it?
+- Is it referenced in the spec's terminology or data contracts?
+
+If a construct has no spec correspondence → record as surplus candidate.
+```
+
+#### 3. Filter: is it a real design decision or an implementation detail?
+
+```
+For each surplus candidate, determine:
+
+Is a real design decision (must report):
+- Has its own type/abstraction → yes
+- Other code depends on it → yes (has consumers, not dead code)
+- Has tests → strong signal it is intentional design
+- Can be independently described as a responsibility/mechanism → yes
+
+Is an implementation detail (ignore):
+- Merely a utility/helper function
+- No independent architectural significance
+- Does not change the system's responsibility boundaries
+```
+
+#### 4. Report
+
+```
+Zero surplus → "Code design surface fully covered by spec — no surplus"
+
+Surplus found → report each as MISMATCH (type: surplus) with:
+- Design description (what it is)
+- Code location (file and line)
+- Evidence (why judged as a real design decision)
+
+Do not classify the resolution direction — defer to Step 7.
 ```
 
 2. **Non-runnable assessment:**
@@ -286,15 +375,15 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
     - If not → flag as concern
 ```
 
-**PASS:** No undocumented behavioral changes detected; non-runnable items have documented reasons
+**PASS:** No surplus design found; non-runnable items have documented reasons
 
-**FAIL (MISMATCH):** Undocumented behavioral changes found in code — defer classification to Step 7
+**FAIL (MISMATCH):** Surplus design found — defer classification to Step 7
 
 **Quality concern:** All or most items are non-runnable; runnable coverage is insufficient
 
 **Quality concern (reasoning):** One or more non-runnable items are missing not_runnable_reason or lack external evidence
 
-**Check method:** Implementation code × spec body — reverse cross-reference (code-to-spec direction)
+**Check method:** Implementation code design surface × spec body — reverse cross-reference (code-to-spec design direction)
 
 ---
 
@@ -304,7 +393,7 @@ This sub-check is **not** an exhaustive coverage audit. It flags obvious omissio
 
 **Execution steps:**
 
-1. Collect all implementation files referenced in `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
+1. Collect all implementation files from `implementation_surface` paths and `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
 
 2. For each file, run these commands and record findings:
 
@@ -357,10 +446,15 @@ For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-
 | Field | Description |
 |-------|-------------|
 | Item ID | Identifier from the spec |
-| Mismatch type | structural / acceptance / scope / stub / undocumented_behavior |
+| Mismatch type | structural / acceptance / scope / stub / surplus |
 | Spec content | Exact spec text (section, pass_condition, or declaration) with file path and line |
 | Code content | Exact code that differs, with file path and line |
 | Context scope | Instructions on what to read beyond the mismatch point |
+
+For surplus mismatches, the first-principles analysis additionally evaluates:
+- Is this a genuine design decision that belongs in the spec? → **spec_gap**
+- Does this conflict with the spec's declared architecture or boundaries? → **boundary_violation**
+- Does this duplicate or replace something the spec already describes differently? → **coding_gap**
 
 **Context scope — the sub-agent MUST read:**
 
