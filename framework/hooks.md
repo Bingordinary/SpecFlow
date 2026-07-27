@@ -80,7 +80,7 @@ The full text of `framework/concepts.md` is injected. It must contain:
 1. **Core principle** — file existence is state (no state machine, no lifecycle phases)
 2. **Key terms** — unit, rule, stable, candidate
 3. **Workflow** — discover, edit, validate, verify, promote with agent suggestion flow
-4. **HARD RULES** — four immutable rules (read specs before implementation, promote is the only gate, no command is a gate except promote, stop when unclear)
+4. **HARD RULES** — six rules (read specs before discussing or changing a topic, promote is the only gate to stable, spec_validate and spec_verify check quality and spec_review gates promote, never decide divergence resolution alone, stop when unclear, fork must use specflowctl fork)
 5. **Commands reference** — all specFlow triggers and their effects
 6. **Validation and verification checklists** — structured criteria for subagent execution
 

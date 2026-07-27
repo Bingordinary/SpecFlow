@@ -85,7 +85,7 @@ Summary: ...
 2. The CLI independently checks:
    a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to re-run `spec_validate`.
    b. Verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. If missing or stale, rejects promote with guidance to re-run `spec_verify`.
-   c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. If present and `blocking: true` (P0/P1 findings exist), rejects promote with guidance: "Review found P0/P1 finding(s). Resolve before promoting." If missing, stale, or non-blocking, does not block promote.
+    c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. Must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If missing: "Review not completed. Run `spec_review {unit}:full` first." If scoped: "Review cache is scoped, run `spec_review {unit}:full` before promoting." If stale: "Review cache is stale. Run `spec_review {unit}:full` again." If blocking: "Review found P0/P1 finding(s). Resolve before promoting."
    d. All three checks pass → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
    - Transforms the `layer` frontmatter field from `candidate` to `stable`

@@ -388,6 +388,10 @@ func markdownFieldKey(trimmed string) (string, bool) {
 
 // FindRuleConsumers searches all unit spec files under docs/specs/units/
 // for rule_refs containing the given ruleID. Returns the list of unit names.
+//
+// Global rules (g_rule_*) apply to every current-layer unit per spec_writing_guide.md §4
+// and are not listed in individual unit's rule_refs. For global rules, this function
+// returns all current-layer unit names regardless of their rule_refs.
 func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	var consumers []string
 	seen := map[string]bool{}
@@ -395,6 +399,37 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	searchDirs := []string{
 		filepath.Join(repoRoot, specpaths.CandidateDir),
 		filepath.Join(repoRoot, specpaths.StableDir),
+	}
+
+	// Global rules apply to every current-layer unit by default
+	if strings.HasPrefix(ruleID, "g_rule_") {
+		for _, dir := range searchDirs {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, fmt.Errorf("read dir %s: %w", dir, err)
+			}
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				if !strings.HasPrefix(entry.Name(), "unit_") {
+					continue
+				}
+				if !strings.HasSuffix(entry.Name(), ".md") {
+					continue
+				}
+				unitName := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "unit_"), ".md")
+				if !seen[unitName] {
+					consumers = append(consumers, unitName)
+					seen[unitName] = true
+				}
+			}
+		}
+		sort.Strings(consumers)
+		return consumers, nil
 	}
 
 	for _, dir := range searchDirs {

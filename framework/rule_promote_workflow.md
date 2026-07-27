@@ -36,12 +36,13 @@ The agent may report cache state and version change type to help the user decide
 The CLI tool performs:
 
 1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
-2. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
-3. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
-4. **Version sanity** — candidate version > stable version
-5. **Determine version change type** — MAJOR vs MINOR vs PATCH
-6. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
-7. **Delete candidate** — removes the candidate rule file
+2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to run `spec_validate {rule}:full` first.
+3. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
+4. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
+5. **Version sanity** — candidate version > stable version
+6. **Determine version change type** — MAJOR vs MINOR vs PATCH
+7. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
+8. **Delete candidate** — removes the candidate rule file
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
 **FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `rule_validate` before retrying. Do not attempt manual promotion.

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 // VersionChangeType describes the kind of version change between candidate and stable.
@@ -235,12 +236,13 @@ type RuleResult struct {
 // PromoteRule runs the promote flow for the given rule.
 // Steps:
 //  1. Check candidate rule file exists
-//  2. Validate frontmatter fields (rule_id, rule_scope, layer, rule_version)
-//  3. Detect current stable version
-//  4. Version sanity check (candidate version > stable version)
-//  5. Determine version change type (MAJOR/MINOR/PATCH/none)
-//  6. Copy candidate to stable with layer transform
-//  7. Delete candidate rule file
+//  2. Check validate cache freshness
+//  3. Validate frontmatter fields (rule_id, rule_scope, layer, rule_version)
+//  4. Detect current stable version
+//  5. Version sanity check (candidate version > stable version)
+//  6. Determine version change type (MAJOR/MINOR/PATCH/none)
+//  7. Copy candidate to stable with layer transform
+//  8. Delete candidate rule file
 func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
 
@@ -255,7 +257,21 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Found candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 
-	// Step 2: Read and validate frontmatter
+	// Step 2: Check validate cache freshness
+	cacheResult, err := validationcache.CheckRuleValidate(repoRoot, ruleID)
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Cannot check validate cache: %v", err))
+		r.Passed = false
+		return r
+	}
+	if !cacheResult.Fresh {
+		r.Issues = append(r.Issues, fmt.Sprintf("Validate cache: %s. Run `spec_validate %s:full` before promoting.", cacheResult.Reason, ruleID))
+		r.Passed = false
+		return r
+	}
+	r.Actions = append(r.Actions, fmt.Sprintf("Validate cache: %s", cacheResult.Reason))
+
+	// Step 3: Read and validate frontmatter
 	data, err := os.ReadFile(candidateRule)
 	if err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Cannot read candidate rule: %v", err))
@@ -291,7 +307,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 
 	candidateVersion := fm["rule_version"]
 
-	// Step 3: Detect current stable version
+	// Step 4: Detect current stable version
 	stableVersion := ""
 	if _, err := os.Stat(stableRule); err == nil {
 		stableData, err := os.ReadFile(stableRule)
@@ -306,7 +322,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Actions = append(r.Actions, fmt.Sprintf("Candidate version: %s", candidateVersion))
 	}
 
-	// Step 4: Version sanity check
+	// Step 5: Version sanity check
 	if stableVersion != "" && candidateVersion == stableVersion {
 		r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s is same as stable version — bump the version", candidateVersion))
 		r.Passed = false
@@ -318,7 +334,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		return r
 	}
 
-	// Step 5: Determine version change type
+	// Step 6: Determine version change type
 	r.ChangeType = versionChangeType(candidateVersion, stableVersion)
 	switch r.ChangeType {
 	case ChangeMajor:
@@ -331,7 +347,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
 	}
 
-	// Step 6: Copy candidate to stable with layer transform
+	// Step 7: Copy candidate to stable with layer transform
 	if err := copyWithLayerTransform(candidateRule, stableRule); err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy rule: %v", err))
 		r.Passed = false
@@ -339,7 +355,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 
-	// Step 7: Delete candidate rule file
+	// Step 8: Delete candidate rule file
 	if err := os.Remove(candidateRule); err != nil {
 		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate rule: %s.md", ruleID))
 	} else {

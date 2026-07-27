@@ -45,7 +45,7 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 |-----------|------|-----------------|
 | `spec_review {unit}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to `affects.files` and `implementation_surface` → review those files with spec context |
 | `spec_review {unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context |
-| `spec_review {unit}` (auto after verify ALIGNED) | inherited | Inherits verify's mode (scoped or full). Behaves identically to an explicit trigger with the same mode. |
+
 
 ### Rule (validate only, verify removed)
 

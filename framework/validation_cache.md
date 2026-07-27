@@ -105,15 +105,14 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 | `spec_review {unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files, and findings body |
 | `spec_review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts and findings body |
 | Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
-| `spec_verify` ALIGNED → auto-review runs (cache miss/stale) | Write `verify_result.md` (ALIGNED) + `review_result.md` with inherited mode, file hashes, and findings body |
-| `spec_verify` ALIGNED → auto-review FAIL (P0/P1 found) | Write `verify_result.md` (ALIGNED), then write `review_result.md` with `blocking: true`, findings body. Verify result is unaffected by review findings. |
+
 
 ### Cache lifecycle
 
 | Event | Action |
 |-------|--------|
 | `specflowctl promote` succeeds | Delete `validate_result.md`, `verify_result.md`, and `review_result.md` |
-| `specflowctl promote` with review cache | When review cache exists and is `blocking: true`, promote is rejected with guidance: "Review found {N} P0/P1 finding(s). Resolve before promoting." |
+| `specflowctl promote` with review cache | When review cache is missing, stale, scoped, or `blocking: true`, promote is rejected with guidance. |
 | File content changes (hash mismatch) | Cache becomes stale — detected at promote time |
 | Scoped run when full cache exists | Does NOT downgrade full cache (see scoped-over-full rule below) |
 | Scoped run finds MISMATCH | Deletes cache even if full cache existed |
@@ -126,21 +125,22 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 
 ## Staleness Detection
 
-`specflowctl promote --unit <name>` reads both cache files and checks:
+`specflowctl promote --unit <name>` reads all three cache files and checks:
 
 1. **Mode check** — if `mode` is `scoped` (not `full`), the cache is rejected with scope detail: "cache is scoped (check {n} | item: {id}), run full verification before promoting."
 2. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected with guidance.
-3. **Review cache check (optional)** — if a `review_result.md` cache exists with `blocking: true`, promote is rejected. A missing, stale, or non-blocking review cache does not block promote.
+3. **Review cache check (required)** — `review_result.md` must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If any condition fails, promote is rejected with guidance.
 
 `specflowctl promote --rule <id>` enforces cache freshness — reads the validate cache, rejects if missing, stale, or scoped. Rule verify cache is no longer required (rule verify has been removed).
 
-### Review cache promote check
+### Review cache promote check (required gate)
 
-When a review cache exists at `docs/specs/meta/validation/unit/{name}/review_result.md`:
+The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is a hard prerequisite for promote. All conditions must pass:
 
-1. **Blocking check** — if `blocking: true`, promote is rejected: "Review found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting." A scoped review finding also blocks (P0/P1 are real regardless of scope).
-2. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and the review gate is skipped (the cache is treated as absent).
-3. **Scoped non-blocking cache** — if `mode: scoped` and `blocking: false`, the cache is informational only and does not satisfy promote. A full non-blocking cache is advisory but does not block promote.
+1. **Existence check** — if the file does not exist, promote is rejected: "Review not completed. Run `spec_review {unit}:full` first."
+2. **Mode check** — if `mode` is `scoped` (not `full`), promote is rejected: "Review cache is scoped, run `spec_review {unit}:full` before promoting."
+3. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected: "Review cache is stale. Run `spec_review {unit}:full` again."
+4. **Blocking check** — if `blocking: true`, promote is rejected: "Review found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting."
 
 ## Important
 

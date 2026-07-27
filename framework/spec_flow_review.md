@@ -89,8 +89,8 @@ The commands (next, review/spec_validate, spec_review, promote) form a coherent 
 1. each command has a defined purpose and does not overlap with the others
 2. `next` outputs enough information for the agent to start work
 3. `review` (`spec_validate`) produces a structured output (per-checklist PASS/FAIL) that the agent can act on
-4. `spec_review` (optional final quality gate) produces P0-P3 graded findings
-5. `promote` has a complete flow: validate step → verify step → (optional review step) → archive step
+4. `spec_review` (required final quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy promote
+5. `promote` has a complete flow: validate step → verify step → review step → archive step
 6. promote's archive step deterministically copies candidate files to stable directories
 7. promote's validate, verify, and review steps are independent sessions (subagent), not self-approval
 8. if promote fails (validate, verify, or review finds issues), the outcome is clearly communicated and no files are archived
@@ -105,14 +105,14 @@ Each command must have clearly defined boundaries. The review must verify:
 
 2. **review** (implemented as `spec_validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
 
-3. **spec_review** (optional final quality gate): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code.
+3. **spec_review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code. Review cache must exist, be full mode, and non-blocking to satisfy promote.
 
 4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status
    b. Agent-side body path pre-check (unit only): scans the candidate spec body for candidate-layer path references that would break after promote (candidate files are deleted). Structured field path occurrences (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `fix_required`. Narrative references require user judgment and `blocked` until resolved.
-   c. CLI archive step via `specflowctl promote`: independently validates validate+verify cache freshness, optionally checks review cache, validates format, copies candidate→stable, removes candidate files
+    c. CLI archive step via `specflowctl promote`: independently validates validate+verify+review cache freshness, validates format, copies candidate→stable, removes candidate files
     
-   Validate and verify are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). `spec_review` is optional. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate or verify cache is stale, or if review cache is `blocking: true`. Promote must not archive if any check fails.
+   Validate, verify, and review are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). Review cache is required for promote — must exist, be full mode, non-blocking, and fresh. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate, verify, or review cache is stale, missing, scoped, or blocking. Promote must not archive if any check fails.
 
 Each command must have:
 1. a defined input (what parameters it accepts)
@@ -378,6 +378,8 @@ Consumer-aware path validation requires all of the following:
 
 A pass claim for agent-operability review must not ignore unresolved consumer-path findings in deployable files. Each unresolved path that would fail at runtime is a real finding under this standard.
 
+Consumer-aware path validation under this section applies only when the deployable files under review are explicitly included in the review scope. In default source_repo layout review (Section 3), deployable hook and plugin artifacts are outside the default scope, and this section does not apply by default. When those files are included in a narrowed or installed-project review, each variant must be validated independently.
+
 ## 3. Default Scope
 
 This section applies only to explicit `deep_audit`.
@@ -437,6 +439,10 @@ It must not require real project-instance project truth files.
 `meta/governance_review/**` is not part of the compatibility input fingerprint.
 The active full-scope run-state file is governed by the run-state procedure in Section 6, because including that file in its own slice fingerprint would create self-referential stale state.
 
+### Scope Boundary for Deployable Artifacts
+
+The default scope covers governance documents and tooling source. Deployable artifacts that are installed into the parent project tree during setup (such as hook scripts, hook configuration files, and platform plugin registration files) are outside the default scope. These artifacts are installed-project concerns resolved at install time; their source paths differ from their deployment paths. The governance documents that describe them (such as `framework/hooks.md`) are inside the default scope, but the artifacts themselves are not.
+
 Default scope must explicitly cover:
 
 1. the concept and command rule set — at minimum `concepts.md` and `spec_writing_guide.md`
@@ -489,11 +495,11 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`
-    - reviews hook configuration files: `specflow/hooks/hooks.json`
-    - verifies `specflow/hooks/session-start` reads `framework/concepts.md` and produces correct platform-specific JSON output
-    - verifies every platform plugin (`.opencode/plugins/specflow.js`, etc.) resolves its hardcoded file paths correctly from the deployment context per Section 2.16
-    - verifies `framework/concepts.md` contains complete agent governance content (triggers, HARD RULES, commands reference)
+    - reviews `framework/hooks.md` for internal consistency of the hook system description
+    - verifies `framework/concepts.md` contains complete agent governance content (triggers, HARD RULES, commands reference, workflow)
+    - verifies the injected-content summary in `framework/hooks.md` agrees with actual `framework/concepts.md` content (no contract drift per Section 2.6)
     - reference: `framework/hooks.md` for the full verification checklist
+    - Deployable hook and plugin artifacts are outside the default scope per Section 3 (Scope Boundary for Deployable Artifacts). Consumer-aware path validation (Section 2.16) applies only when the review explicitly targets the installed-project layout.
  9. `tooling_execution`
    - reviews `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
    - verifies tooling necessity, allowed mechanical action surface, forbidden semantic judgment, freshness, and document/source agreement

@@ -24,6 +24,8 @@ func runConsumers(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "Usage: specflowctl consumers --rule RULE_ID [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Lists all units that reference the given rule in their rule_refs.")
+		fmt.Fprintln(stderr, "For global rules (g_rule_*): returns every current-layer unit.")
+		fmt.Fprintln(stderr, "For bound rules (b_rule_*): empty output means no consumers.")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Flags:")
 		fmt.Fprintln(stderr, "  --rule RULE_ID  Rule id to find consumers for (required)")
