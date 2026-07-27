@@ -210,3 +210,20 @@ Both scoped and full mode need this:
 ### 7.3 Complexity
 
 Lightweight: the main agent reads 1-2 target files per finding. No sub-agent re-launch or full re-review.
+
+---
+
+## 8. Write review cache (main agent)
+
+After cross-check (§7) completes:
+
+1. Compute gate result:
+   - P0 or P1 findings exist → `result: fail`, `blocking: true`
+   - Otherwise → `result: pass`, `blocking: false`
+
+2. Write `docs/specs/meta/validation/unit/{name}/review_result.md` per `framework/validation_cache.md` format:
+   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
+   - Include `mode: scoped|full`, severity counts, `blocking`, file hashes
+   - Include full findings body (cannot be omitted — required for promote gate detail)
+
+Review always writes cache regardless of pass/fail.

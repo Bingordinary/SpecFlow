@@ -590,5 +590,18 @@ When no candidate spec exists (verify against stable):
      Recommend creating a candidate round (unit_fork) to reconcile the difference."
 ```
 
+---
+
+## Step 8 — Write verify cache (main agent)
+
+After all 7 steps complete:
+
+- **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
+  - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
+  - Collect SHA-256 hashes of all files read during verification
+  - Write `verify_result.md` with `result: aligned`, `target: candidate|stable`, `mode: scoped|full`, file hashes
+
+- **If any MISMATCH:** delete existing `verify_result.md` if present. Do not write cache. Proceed to findings presentation.
+
 
 

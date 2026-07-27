@@ -120,3 +120,13 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 **FAIL:** Contradictory exceptions, self-contradicting statements, or constraint nullified by exceptions.
 
 **Check method:** Content reasoning — the agent reads and evaluates rule prose.
+
+---
+
+### Write cache
+
+After all 8 checks complete:
+
+- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: scoped|full`, `scoped_check: "{n}"` when scoped, file hashes.
+
+- **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache.

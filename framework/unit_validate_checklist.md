@@ -433,6 +433,19 @@ affects.appendices:
 
 ---
 
+## Step 9 — Write validate cache (main agent)
+
+After all 8 checks complete:
+
+- **If all PASS:** write validate cache per `framework/validation_cache.md` format:
+  - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
+  - Collect SHA-256 hashes of all files read during validation
+  - Write `validate_result.md` with `result: pass`, `mode: scoped|full`, `scoped_check: "{n}"` when scoped, file hashes
+
+- **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
+
+---
+
 ## Present Findings
 
 After all checks complete, present FAIL findings with their resolution type (fix_required / blocked) and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
