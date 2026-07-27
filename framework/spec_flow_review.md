@@ -109,7 +109,8 @@ Each command must have clearly defined boundaries. The review must verify:
 
 4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status
-   b. CLI archive step via `specflowctl promote`: independently validates validate+verify cache freshness, optionally checks review cache, validates format, copies candidate→stable, removes candidate files
+   b. Agent-side body path pre-check (unit only): scans the candidate spec body for candidate-layer path references that would break after promote (candidate files are deleted). Structured field path occurrences (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `fix_required`. Narrative references require user judgment and `blocked` until resolved.
+   c. CLI archive step via `specflowctl promote`: independently validates validate+verify cache freshness, optionally checks review cache, validates format, copies candidate→stable, removes candidate files
     
    Validate and verify are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). `spec_review` is optional. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate or verify cache is stale, or if review cache is `blocking: true`. Promote must not archive if any check fails.
 

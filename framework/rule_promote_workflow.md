@@ -46,7 +46,7 @@ The CLI tool performs:
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
 **FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `rule_validate` before retrying. Do not attempt manual promotion.
 
-### Step 3 — Post-promote Consumer Impact
+### Post-promote Consumer Impact
 
 After the CLI succeeds, the agent must act based on the change type:
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `spec_promote {unit}`, it follows the 2 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at promote time, not proactively.
+When an agent executes `spec_promote {unit}`, it follows the 3 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at promote time, not proactively.
 
 ## Execution Rules
 
@@ -18,7 +18,8 @@ When an agent executes `spec_promote {unit}`, it follows the 2 steps defined in 
 ```
 Promote result: PASS | FAIL
 1. Agent pre-check (optional): PASS | FAIL — reason
-2. specflowctl promote: PASS | FAIL — reason
+2. Body path check: PASS | FAIL — reason
+3. specflowctl promote: PASS | FAIL — reason
 Summary: ...
 ```
 
@@ -49,7 +50,32 @@ Summary: ...
 
 ---
 
-## Step 2 — Run specflowctl promote
+## Step 2 — Body path pre-check
+
+**Purpose:** Scan the candidate spec body for `docs/specs/units/candidate/` path references that will break after promote (candidate files are deleted). Per `framework/concepts.md` §4, body text should reference specs by concept name rather than layer-prefixed file paths — this step enforces that convention before promote.
+
+**Execution steps:**
+
+1. Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
+2. Parse the YAML frontmatter (`---...---`) to identify frontmatter boundaries
+3. Search the full file content for all occurrences of `docs/specs/units/candidate/`
+4. For each occurrence, classify into:
+   - **Structured field path** — Appears in `implementation_surface`, `affects.files`, `affects.appendices`, or `affects.dependencies` values. These are deterministic spec-to-spec references that must point to stable after promote. Per `framework/spec_writing_guide.md` §Acceptance Item Fields, `implementation_surface` is an "Implementation code surface path" — if it references a spec document path, use the stable layer path instead.
+   - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment.
+5. Report findings:
+   - List each matched line with line number and surrounding context
+   - Tag each match as `[structured]` or `[narrative]`
+   - For structured matches, suggest the correct stable replacement path
+
+**PASS:** No candidate-layer path references found in the file content.
+
+**FAIL (fix_required):** One or more structured field paths found. Report exact line numbers and matched paths. Inform the user and recommend editing the candidate spec to replace `candidate/` with `stable/` before re-running promote. The agent must NOT modify files during the promote workflow.
+
+**FAIL (blocked):** Narrative references found. These require user judgment — report each occurrence and ask the user whether each should be updated. Do not proceed to Step 3 until resolved.
+
+---
+
+## Step 3 — Run specflowctl promote
 
 **Purpose:** The CLI performs the mechanical candidate-to-stable transition. This is the only gate that writes to stable.
 
