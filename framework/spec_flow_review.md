@@ -28,7 +28,7 @@ That judgment belongs to `spec_flow_design_review`.
 
 1. **`spec_flow_review`** — the meta-governance command that reviews the framework mechanism itself (Sections 1, 2, 6-9, and the file as a whole). This is a developer command, not part of the user workflow. See `framework/governance/review.md` for routing.
 
-2. **`review`** — one of the three user workflow commands (next, review, promote) defined in Sections 2.3-2.4. This command reviews candidate spec quality and is implemented as `spec_validate`. It has no relation to `spec_flow_review`.
+2. **`review`** — one of the three user workflow commands (next, review, promote) defined in Sections 2.3-2.4. This command reviews candidate spec quality and is implemented as `validate`. It has no relation to `spec_flow_review`.
 
 When reading Sections 2.3-2.4, "review" refers to the user workflow command. Everywhere else, "review" or `spec_flow_review` refers to the meta-governance command.
 
@@ -84,12 +84,12 @@ If one of those items is intentionally owned elsewhere, the file must link or na
 
 ### 2.3 Process Closure
 
-The commands (next, review/spec_validate, spec_review, promote) form a coherent process. The review must verify:
+The commands (next, review/validate, review, promote) form a coherent process. The review must verify:
 
 1. each command has a defined purpose and does not overlap with the others
 2. `next` outputs enough information for the agent to start work
-3. `review` (`spec_validate`) produces a structured output (per-checklist PASS/FAIL) that the agent can act on
-4. `spec_review` (required final quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy promote
+3. `review` (`validate`) produces a structured output (per-checklist PASS/FAIL) that the agent can act on
+4. `review` (required final quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy promote
 5. `promote` has a complete flow: validate step → verify step → review step → archive step
 6. promote's archive step deterministically copies candidate files to stable directories
 7. promote's validate, verify, and review steps are independent sessions (subagent), not self-approval
@@ -103,9 +103,9 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **review** (implemented as `spec_validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
+2. **review** (implemented as `validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
 
-3. **spec_review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code. Review cache must exist, be full mode, and non-blocking to satisfy promote.
+3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code. Review cache must exist, be full mode, and non-blocking to satisfy promote.
 
 4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status
@@ -528,7 +528,7 @@ Cross-convergence slices review whether locally correct rules still compose into
 7. `project_instance_to_framework_convergence`
    - verifies the project-instance compatibility check and `spec_flow_update` compose with hook and tooling rules without judging business truth content
  8. `agent_operability_path_walk`
-    - walks representative execution paths starting from the hook-injected content (`framework/concepts.md`), through triggers (`spec_validate`, `spec_verify`, `spec_promote`), commands, and tooling rules
+    - walks representative execution paths starting from the hook-injected content (`framework/concepts.md`), through triggers (`validate`, `verify`, `promote`), commands, and tooling rules
     - verifies a new executor can proceed from the injected content to the correct first command without hidden context or prior `specFlow` knowledge
     - injection-to-command alignment under Section 2.8.1 must be explicitly reported for every walked path
     - verifies the injection chain for each supported platform per `framework/hooks.md`

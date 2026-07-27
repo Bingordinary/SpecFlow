@@ -38,7 +38,7 @@ Replace `<os>` and `<arch>` with the current platform (e.g. `linux-amd64`, `darw
 
 ## Verify
 
-After installation, hooks should be active. The agent will automatically load specFlow governance rules and recognize triggers such as `spec_validate`, `spec_verify`, and `spec_promote` on the next session start.
+After installation, hooks should be active. The agent will automatically load specFlow governance rules and recognize triggers such as `validate`, `verify`, and `promote` on the next session start.
 
 ## Update
 

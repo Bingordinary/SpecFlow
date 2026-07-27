@@ -265,7 +265,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		return r
 	}
 	if !cacheResult.Fresh {
-		r.Issues = append(r.Issues, fmt.Sprintf("Validate cache: %s. Run `spec_validate %s:full` before promoting.", cacheResult.Reason, ruleID))
+		r.Issues = append(r.Issues, fmt.Sprintf("Validate cache: %s. Run `validate@%s:full` before promoting.", cacheResult.Reason, ruleID))
 		r.Passed = false
 		return r
 	}

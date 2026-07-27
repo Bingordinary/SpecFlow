@@ -4,18 +4,18 @@ Common situations where the standard validate → verify → promote flow diverg
 
 ## 1. Code changed without updating candidate
 
-This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (quality check signal → run `spec_verify`), verify will detect the divergence and enter divergence resolution.
+This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (quality check signal → run `verify`), verify will detect the divergence and enter divergence resolution.
 
 ## 2. Candidate changed without implementing
 
 If the user changes the spec mid-implementation and then wants to check:
-1. Run `spec_validate` first (to confirm the new design is sound)
-2. Then run `spec_verify`
+1. Run `validate` first (to confirm the new design is sound)
+2. Then run `verify`
 
 ## 3. Stable and code have drifted (no candidate exists)
 
 The implementation no longer matches recorded stable truth:
-1. Run `spec_verify` in stable-only mode to see the gap
+1. Run `verify` in stable-only mode to see the gap
 2. If a gap exists, suggest creating a candidate fork to reconcile
 
 ## 4. Validate fails repeatedly

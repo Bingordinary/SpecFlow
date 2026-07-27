@@ -73,9 +73,9 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 
 | 触发词 | agent 做什么 |
 |--------|-------------|
-| `spec_validate {unit}` | 对 spec 执行结构化质量检查（只读，不改文件） |
-| `spec_verify {unit}` | 对实现执行结构化一致性检查（只读，不改文件） |
-| `spec_promote {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
+| `validate@ {unit}` | 对 spec 执行结构化质量检查（只读，不改文件） |
+| `verify@ {unit}` | 对实现执行结构化一致性检查（只读，不改文件） |
+| `promote@ {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
 
 Agent 也会在适当时候主动询问：*"需要跑 validate 吗？"* / *"要 promote 吗？"*
@@ -84,9 +84,9 @@ Agent 也会在适当时候主动询问：*"需要跑 validate 吗？"* / *"要 
 
 ```
 1. Agent 创建/编辑 candidate spec + 代码（没有门控）
-2. 你说 spec_validate → agent 检查 spec 质量
-3. 你说 spec_verify → agent 检查实现与 spec 是否一致
-4. 你说 spec_promote → 验证后 promote 到 stable
+2. 你说 validate@ → agent 检查 spec 质量
+3. 你说 verify@ → agent 检查实现与 spec 是否一致
+4. 你说 promote@ → 验证后 promote 到 stable
 5. 进入下一轮迭代...
 ```
 

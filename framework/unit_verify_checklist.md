@@ -2,21 +2,21 @@
 
 ## Overview
 
-When an agent executes `spec_verify {unit}`, it uses the 7 steps defined in this file (6 analysis + 1 confidence assessment). This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
+When an agent executes `verify@ {unit}`, it uses the 7 steps defined in this file (6 analysis + 1 confidence assessment). This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
 
 ## Mode Selection
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_verify {unit}` | scoped (default) | git diff HEAD → match changed files to spec content → verify that content (all 7 steps) |
-| `spec_verify {unit}:{keyword}` | scoped | Match keyword to spec content by title, feature name, or structure → verify that content |
-| `spec_verify {unit}:full` | full | Verify all spec content (all 7 steps, batch by spec structure) + cross-check |
+| `verify@ {unit}` | scoped (default) | git diff HEAD → match changed files to spec content → verify that content (all 7 steps) |
+| `verify@ {unit}:{keyword}` | scoped | Match keyword to spec content by title, feature name, or structure → verify that content |
+| `verify@ {unit}:full` | full | Verify all spec content (all 7 steps, batch by spec structure) + cross-check |
 
 **Scoped selection logic:** Run `git diff HEAD`. Identify spec content referencing changed files (`affects.files`, `implementation_surface`, body file paths). Verify identified content using all 7 steps. No match → report "changed files not referenced in spec" and suggest full run.
 
 **Edge cases:** No git changes, scoped cache fresh → report still valid. No git changes, no cache → auto fallback to full. See `framework/verification_scope.md` §Scoped Verify and §Edge cases for full detail.
 
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full verification. Run `spec_verify {unit}:full` for complete verification."
+**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full verification. Run `verify@ {unit}:full` for complete verification."
 
 **Cache:** see `framework/validation_cache.md` for format.
 

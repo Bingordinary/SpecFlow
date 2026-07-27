@@ -342,7 +342,7 @@ The check must judge these abstract capabilities:
 1. `startup_entry_control`
    - the hook-injected content (`framework/concepts.md`) acts as the first control point for governed work; the opening rules (key terms, triggers, HARD RULES) make the next action clear
 2. `first_owner_selection`
-   - before any specFlow action or repository mutation, `concepts.md` tells the executor how to choose the first owning file or trigger (`spec_validate`, `spec_verify`, `spec_promote`)
+   - before any specFlow action or repository mutation, `concepts.md` tells the executor how to choose the first owning file or trigger (`validate`, `verify`, `promote`)
 3. `owner_only_continuation`
    - after the first trigger routes the request, `concepts.md` requires the executor to follow only the routed operation or governance path
 4. `pre_action_permission_gate`

@@ -73,9 +73,9 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 
 | Trigger | What the agent does |
 |---------|---------------------|
-| `spec_validate {unit}` | Runs a structured quality check against the spec (read-only, no file changes) |
-| `spec_verify {unit}` | Runs a structured implementation check against the spec (read-only, no file changes) |
-| `spec_promote {unit}` | Runs validate then verify, then calls `specflowctl promote` if both pass |
+| `validate@ {unit}` | Runs a structured quality check against the spec (read-only, no file changes) |
+| `verify@ {unit}` | Runs a structured implementation check against the spec (read-only, no file changes) |
+| `promote@ {unit}` | Runs validate then verify, then calls `specflowctl promote` if both pass |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
 
 The agent also proactively suggests these at natural transition points: *"Shall I run validate?"* / *"Ready to promote?"*
@@ -84,9 +84,9 @@ The agent also proactively suggests these at natural transition points: *"Shall 
 
 ```
 1. Agent creates/edits candidate spec + code (no gate)
-2. You: spec_validate → agent checks spec quality
-3. You: spec_verify → agent checks implementation against spec
-4. You: spec_promote → validates, verifies, then promotes to stable
+2. You: validate@ → agent checks spec quality
+3. You: verify@ → agent checks implementation against spec
+4. You: promote@ → validates, verifies, then promotes to stable
 5. Next iteration...
 ```
 

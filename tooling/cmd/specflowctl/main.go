@@ -129,7 +129,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run spec_validate for this unit first, then retry promote.")
+		fmt.Fprintf(stdout, "Run `validate@%s` first, then retry promote.\n", unitName)
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
@@ -143,7 +143,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !verifyResult.Fresh {
 		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run spec_verify for this unit first, then retry promote.")
+		fmt.Fprintf(stdout, "Run `verify@%s` first, then retry promote.\n", unitName)
 		return errors.New("verify cache check failed")
 	}
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
@@ -191,7 +191,7 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run spec_validate for this rule first, then retry promote.")
+		fmt.Fprintf(stdout, "Run `validate@%s` first, then retry promote.\n", ruleID)
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)

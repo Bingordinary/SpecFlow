@@ -7,7 +7,7 @@
 >
 > This file is retained for reference only. Agents must not execute `rule_verify`.
 
-`rule_verify` was previously the rule-equivalent of `spec_verify`. It checked consumer alignment — whether all units that reference this rule are still consistent with it.
+`rule_verify` was previously the rule-equivalent of `verify`. It checked consumer alignment — whether all units that reference this rule are still consistent with it.
 
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
@@ -20,8 +20,8 @@ Before executing, read `framework/verification_scope.md` to determine the scope 
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_verify {rule}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content |
-| `spec_verify {rule}:full` | full | All 3 steps |
+| `verify@ {rule}` | scoped (default) | Git-aware: `git diff HEAD` → match changed files to spec content → verify that content |
+| `verify@ {rule}:full` | full | All 3 steps |
 
 ## Execution Rules
 
@@ -56,7 +56,7 @@ For each consumer, compare the rule's core constraint with the consumer's stated
    - Rule scope excludes area Y → consumer operates in area Y (without mentioning the exclusion)
 4. If an obvious contradiction exists → flag the consumer as DRIFTED
 
-Do NOT perform deep semantic analysis. This check catches only clear, surface-level contradictions. Deep analysis is the responsibility of `spec_validate` on individual units.
+Do NOT perform deep semantic analysis. This check catches only clear, surface-level contradictions. Deep analysis is the responsibility of `validate` on individual units.
 
 ## Result Classification
 

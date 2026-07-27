@@ -22,7 +22,7 @@ The injected content arrives as platform-specific JSON which the agent runtime l
 |------|------|
 | `hooks/session-start` | Shell script: reads `framework/concepts.md`, JSON-escapes it, wraps it in a governance preamble, and outputs platform-specific JSON. |
 | `hooks/run-hook.cmd` | Cross-platform polyglot wrapper (valid Windows batch + Unix shell). On Windows, finds Git Bash and delegates the hook script; on Unix, executes it directly. |
-| `framework/concepts.md` | The injected governance content. Contains key terms, workflow, trigger phrases (`spec_validate`, `spec_verify`, `spec_promote`), agent suggestion flow, HARD RULES, and commands reference. |
+| `framework/concepts.md` | The injected governance content. Contains key terms, workflow, trigger phrases (`validate`, `verify`, `promote`), agent suggestion flow, HARD RULES, and commands reference. |
 
 ## Platform Support
 
@@ -80,7 +80,7 @@ The full text of `framework/concepts.md` is injected. It must contain:
 1. **Core principle** — file existence is state (no state machine, no lifecycle phases)
 2. **Key terms** — unit, rule, stable, candidate
 3. **Workflow** — discover, edit, validate, verify, promote with agent suggestion flow
-4. **HARD RULES** — six rules (read specs before discussing or changing a topic, promote is the only gate to stable, spec_validate and spec_verify check quality and spec_review gates promote, never decide divergence resolution alone, stop when unclear, fork must use specflowctl fork)
+4. **HARD RULES** — six rules (read specs before discussing or changing a topic, promote is the only gate to stable, validate@ and verify@ check quality and review@ gates promote, never decide divergence resolution alone, stop when unclear, fork must use specflowctl fork)
 5. **Commands reference** — all specFlow triggers and their effects
 6. **Validation and verification checklists** — structured criteria for subagent execution
 

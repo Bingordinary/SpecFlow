@@ -1,5 +1,5 @@
-// Package validationcache provides cache-freshness checking for spec_validate
-// and spec_verify results. Cache files are written by the agent (not the CLI)
+// Package validationcache provides cache-freshness checking for validate@
+// and verify@results. Cache files are written by the agent (not the CLI)
 // and read by specflowctl promote to confirm that validate/verify are still fresh.
 //
 // Cache files for units live under docs/specs/meta/validation/unit/{name}/.
@@ -250,7 +250,7 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache is scoped%s, run `spec_%s %s:full` before promoting", command, scopeDetail, command, cache.Unit),
+			Reason: fmt.Sprintf("%s cache is scoped%s, run `%s@%s:full` before promoting", command, scopeDetail, command, cache.Unit),
 		}, nil
 	}
 
@@ -282,7 +282,7 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	if len(mismatchedFiles) > 0 {
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache stale: files have changed: %s. Run spec_%s again.", command, strings.Join(mismatchedFiles, ", "), command),
+			Reason: fmt.Sprintf("%s cache stale: files have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
 		}, nil
 	}
 

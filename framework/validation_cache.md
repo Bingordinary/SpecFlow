@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Cache files record the result and file content hashes of the last `spec_validate` or `spec_verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?"
+Cache files record the result and file content hashes of the last `validate` or `verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?"
 
 This file is referenced by `framework/concepts.md` §3.
 
@@ -93,17 +93,17 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 
 | Event | Action |
 |-------|--------|
-| `spec_validate {unit}` scoped PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "1"`, hashes of checked files |
-| `spec_validate {unit}:check-{n}` PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "{n}"`, hashes |
-| `spec_validate {unit}:full` PASS | Write `validate_result.md` with `mode: full`, hashes of all read files |
-| `spec_validate` FAIL / blocked | Delete `validate_result.md` if it exists |
-| `spec_verify {unit}` scoped ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{representative id}"` (first matching item for git-aware mode), hashes |
-| `spec_verify {unit}:{keyword}` (matches item) ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{matched id}"`, hashes |
-| `spec_verify {unit}:full` ALIGNED | Write `verify_result.md` with `mode: full`, hashes of all read files |
-| `spec_verify` MISMATCH | Delete `verify_result.md` if it exists |
-| `spec_review {unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, hashes of checked files, and findings body |
-| `spec_review {unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files, and findings body |
-| `spec_review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts and findings body |
+| `validate@{unit}` scoped PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "1"`, hashes of checked files |
+| `validate@{unit}:check-{n}` PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "{n}"`, hashes |
+| `validate@{unit}:full` PASS | Write `validate_result.md` with `mode: full`, hashes of all read files |
+| `validate` FAIL / blocked | Delete `validate_result.md` if it exists |
+| `verify@{unit}` scoped ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{representative id}"` (first matching item for git-aware mode), hashes |
+| `verify@{unit}:{keyword}` (matches item) ALIGNED | Write `verify_result.md` with `mode: scoped`, `scoped_item: "{matched id}"`, hashes |
+| `verify@{unit}:full` ALIGNED | Write `verify_result.md` with `mode: full`, hashes of all read files |
+| `verify` MISMATCH | Delete `verify_result.md` if it exists |
+| `review@{unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, hashes of checked files, and findings body |
+| `review@{unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files, and findings body |
+| `review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts and findings body |
 | Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
 
 
@@ -137,9 +137,9 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 
 The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is a hard prerequisite for promote. All conditions must pass:
 
-1. **Existence check** — if the file does not exist, promote is rejected: "Review not completed. Run `spec_review {unit}:full` first."
-2. **Mode check** — if `mode` is `scoped` (not `full`), promote is rejected: "Review cache is scoped, run `spec_review {unit}:full` before promoting."
-3. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected: "Review cache is stale. Run `spec_review {unit}:full` again."
+1. **Existence check** — if the file does not exist, promote is rejected: "Review not completed. Run `review@{unit}:full` first."
+2. **Mode check** — if `mode` is `scoped` (not `full`), promote is rejected: "Review cache is scoped, run `review@{unit}:full` before promoting."
+3. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected: "Review cache is stale. Run `review@{unit}:full` again."
 4. **Blocking check** — if `blocking: true`, promote is rejected: "Review found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting."
 
 ## Important

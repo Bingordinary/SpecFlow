@@ -24,7 +24,7 @@ By default it governs:
 
 1. `spec_flow_review`
 2. `spec_flow_design_review`
-3. `spec_review` — uses the P0-P3 code review severity definitions below
+3. `review` — uses the P0-P3 code review severity definitions below
 
 It may also be reused by other governance flows if those flows explicitly say so.
 
@@ -162,18 +162,18 @@ This file does not:
 
 ## 9. Code Review Severity Extension
 
-`spec_review` uses the same P0-P3 scale with code-review-specific definitions.
+`review` uses the same P0-P3 scale with code-review-specific definitions.
 
 ==ATOM_BEGIN:spec_review_standard==
 # Spec Review Standard
 
 ## 1. Core Principle
 
-`spec_review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
+`review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
 
 It does NOT do:
-- `spec_validate` work (checking spec quality)
-- `spec_verify` work (checking spec-code alignment)
+- `validate` work (checking spec quality)
+- `verify` work (checking spec-code alignment)
 
 ## 2. Pre-review Setup
 

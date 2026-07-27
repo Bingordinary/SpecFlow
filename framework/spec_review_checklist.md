@@ -2,20 +2,20 @@
 
 ## Overview
 
-When an agent executes `spec_review {unit}`, it uses the spec-aware code quality review defined in this file. This file is referenced by `framework/concepts.md` — the agent reads this file at review time, not proactively.
+When an agent executes `review@{unit}`, it uses the spec-aware code quality review defined in this file. This file is referenced by `framework/concepts.md` — the agent reads this file at review time, not proactively.
 
 ## Mode Selection
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_review {unit}` | scoped (default) | git diff HEAD → match changed files to `affects.files` and `implementation_surface` → review those files using the standard defined below |
-| `spec_review {unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files using the standard defined below |
+| `review@{unit}` | scoped (default) | git diff HEAD → match changed files to `affects.files` and `implementation_surface` → review those files using the standard defined below |
+| `review@{unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files using the standard defined below |
 
 **Scoped selection logic:** Run `git diff HEAD`. Identify files matching `affects.files` or `implementation_surface` in the candidate spec. Review identified files using the standard below. No match → report "changed files not referenced in spec" and suggest full run.
 
 **Edge cases:** No git changes, scoped cache fresh → report still valid. No git changes, no cache → auto fallback to full.
 
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full review. Run `spec_review {unit}:full` for complete review."
+**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full review. Run `review@{unit}:full` for complete review."
 
 **Cache:** see `framework/validation_cache.md` for format.
 
@@ -68,11 +68,11 @@ For promote gate: only `:full` mode cache with PASS result satisfies the promote
 
 ## 1. Core Principle
 
-`spec_review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
+`review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
 
 It does NOT do:
-- `spec_validate` work (checking spec quality)
-- `spec_verify` work (checking spec-code alignment)
+- `validate` work (checking spec quality)
+- `verify` work (checking spec-code alignment)
 
 ## 2. Pre-review Setup
 

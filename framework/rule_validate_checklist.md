@@ -1,6 +1,6 @@
 # Rule Validate Checklist
 
-`rule_validate` is the rule-equivalent of `spec_validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
+`rule_validate` is the rule-equivalent of `validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
 **Result:** PASS writes `docs/specs/meta/validation/rule/{id}/validate_result.md`.
@@ -10,10 +10,10 @@ FAIL does not write cache. The agent reports which checks failed and why.
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_validate {rule}` | scoped (default) | git diff HEAD on rule file → map changes to check(s) → run with dependency handling |
-| `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {rule}:{keyword}` | scoped | Match keyword to check name |
-| `spec_validate {rule}:full` | full | All 8 checks |
+| `validate@ {rule}` | scoped (default) | git diff HEAD on rule file → map changes to check(s) → run with dependency handling |
+| `validate@ {rule}:check-{n}` | scoped | Single check `{n}` only |
+| `validate@ {rule}:{keyword}` | scoped | Match keyword to check name |
+| `validate@ {rule}:full` | full | All 8 checks |
 
 **Scoped mapping (changed content → check):** Frontmatter (rule_id, rule_scope, layer, rule_version) → Checks 1-4, 6, 7. Body content → Check 8. promotion_owner_unit → Check 5 (WARNING only). No diff match → safety default (Check 1).
 
@@ -109,7 +109,7 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 
 2. **Exception consistency:** read all exception clauses or scope limitations in the body. Verify no exception effectively nullifies the constraint (e.g., a rule saying "all APIs must use HTTPS" with an exception "except when HTTP is used"). If an exception contradicts the constraint → FAIL.
 
-3. **Verifiability:** assess whether the constraint can be verified through static code inspection or spec_verify. A rule like "be intuitive" is not verifiable — flag as WARNING. A rule like "all API handlers must validate input before processing" is verifiable — PASS.
+3. **Verifiability:** assess whether the constraint can be verified through static code inspection or verify. A rule like "be intuitive" is not verifiable — flag as WARNING. A rule like "all API handlers must validate input before processing" is verifiable — PASS.
 
 4. **Self-contradiction scan:** scan the body for statements that conflict with each other (e.g., "versions must be in semver format" in one paragraph, "versions are integers" in another). If found → FAIL.
 

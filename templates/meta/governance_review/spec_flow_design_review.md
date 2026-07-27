@@ -48,7 +48,7 @@
 | Capability | Status | Evidence |
 |---|---|---|
 | `startup_entry_control` | passed | framework/concepts.md opens with key terms and workflow. |
-| `first_owner_selection` | passed | Concepts.md defines spec_validate/spec_verify/spec_promote entry points. |
+| `first_owner_selection` | passed | Concepts.md defines validate@/verify@/promote@ entry points. |
 | `pre_action_permission_gate` | passed | HARD RULE 1: Read specs before discussing or changing a topic. |
 | `hard_stop_clarity` | passed | HARD RULE 2: Never promote without validate+verify pass. |
 | `owner_reachability` | passed | Concepts.md exposes commands: next, promote, validate, doctor, init. |

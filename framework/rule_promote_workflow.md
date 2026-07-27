@@ -1,6 +1,6 @@
 # Rule Promote Workflow
 
-`rule_promote` is the rule-equivalent of `spec_promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
+`rule_promote` is the rule-equivalent of `promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
 
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
@@ -36,7 +36,7 @@ The agent may report cache state and version change type to help the user decide
 The CLI tool performs:
 
 1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
-2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to run `spec_validate {rule}:full` first.
+2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to run `validate@{rule}:full` first.
 3. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
 4. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
 5. **Version sanity** — candidate version > stable version
@@ -54,7 +54,7 @@ After the CLI succeeds, the agent must act based on the change type:
 **If MAJOR:**
 1. Identify affected consumer units by running `specflowctl consumers --rule <id>` or searching for `rule_refs` containing the rule ID in `docs/specs/units/`
 2. The agent should update affected units as needed and report to the user
-3. Suggest running `spec_validate` then `spec_verify` on each affected unit
+3. Suggest running `validate` then `verify` on each affected unit
 
 **If MINOR/PATCH:**
 1. Assess consumer impact per rule content. Typically no impact — confirm and proceed.

@@ -2,11 +2,11 @@
 
 ## 1. Core Principle
 
-`spec_review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
+`review` audits code quality. Its single difference from ordinary code review: for every potential finding, it checks the spec for a design rationale. If the spec explains why the code is written that way, the finding is suppressed.
 
 It does NOT do:
-- `spec_validate` work (checking spec quality)
-- `spec_verify` work (checking spec-code alignment)
+- `validate` work (checking spec quality)
+- `verify` work (checking spec-code alignment)
 
 ## 2. Pre-review Setup
 

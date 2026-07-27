@@ -2,22 +2,22 @@
 
 ## Overview
 
-When an agent executes `spec_validate {unit}`, it uses the 8 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
+When an agent executes `validate@ {unit}`, it uses the 8 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
 
 ## Mode Selection
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `spec_validate {unit}` | scoped (default) | git diff HEAD on spec file → map changes to check(s) → run with dependency handling. Check 1 is prerequisite. |
-| `spec_validate {unit}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3) |
-| `spec_validate {unit}:full` | full | All 8 checks + cross-check |
+| `validate@ {unit}` | scoped (default) | git diff HEAD on spec file → map changes to check(s) → run with dependency handling. Check 1 is prerequisite. |
+| `validate@ {unit}:check-{n}` | scoped | Single check `{n}` only |
+| `validate@ {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3) |
+| `validate@ {unit}:full` | full | All 8 checks + cross-check |
 
 **Scoped mapping (changed content → check):** Frontmatter → 1. Design rationale → 2. Scope/non-goals → 3. evidence_appendix_ref → 4. Body behavior sections → 5a+5b+5c. Acceptance item structure → 5b+5d+5c. affects.* → 6. unit_refs → 7. rule_refs/constraints → 8. No diff match → safety default (Check 1).
 
 **Edge cases:** No spec file changes → auto fallback to full. New/untracked file → auto fallback to full. See `framework/verification_scope.md` §Scoped Validate and §Edge cases for full mapping detail.
 
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "Only check(s) {n} were executed. This is not a full validation. Run `spec_validate {unit}:full` for complete validation."
+**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "Only check(s) {n} were executed. This is not a full validation. Run `validate@ {unit}:full` for complete validation."
 
 ## Execution Rules
 

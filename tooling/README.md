@@ -99,7 +99,7 @@ The tooling layer must not:
    - this is a render action: read-only, does not modify any project file
 6. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
-   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `spec_validate`). The tool independently checks validate+verify cache freshness before promoting; if either cache is missing, stale, or scoped, promote is rejected with guidance to re-run the appropriate step
+   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`). The tool independently checks validate+verify cache freshness before promoting; if either cache is missing, stale, or scoped, promote is rejected with guidance to re-run the appropriate step
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics; the validate-before-promote requirement is enforced by agent HARD RULE 2 (see `framework/rule_promote_workflow.md`)
    - this is the only write gate
 7. `review collect-default-scope --flow <review_flow>`

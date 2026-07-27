@@ -12,9 +12,9 @@ Every spec document follows a five-step loop:
 |-------|-------------|----------------|---------------|
 | **Fork** | Run `specflowctl fork --unit <name>` to copy stable spec + appendices to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
 | **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
-| **Validate** | Check candidate design quality against checklist. | Agent triggered by `spec_validate`. | All checks pass. |
-| **Verify** | Check candidate vs code alignment. | Agent triggered by `spec_verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
-| **Promote** | Replace stable with the validated+verified candidate. | User confirms `spec_promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
+| **Validate** | Check candidate design quality against checklist. | Agent triggered by `validate`. | All checks pass. |
+| **Verify** | Check candidate vs code alignment. | Agent triggered by `verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
+| **Promote** | Replace stable with the validated+verified candidate. | User confirms `promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
 
 After promote, the new stable becomes the fork source for the next iteration — the cycle repeats.
 
@@ -64,7 +64,7 @@ When code, stable spec, and candidate spec disagree, their authority is not equa
 
 ### Spec Reference Priority (Outside Verify)
 
-When referencing spec content in discussion, analysis, or implementation reasoning outside the `spec_verify` workflow, the file system state determines the reference semantics. The state is the same signal used in the [State by File Existence](#state-by-file-existence) table:
+When referencing spec content in discussion, analysis, or implementation reasoning outside the `verify` workflow, the file system state determines the reference semantics. The state is the same signal used in the [State by File Existence](#state-by-file-existence) table:
 
 | Stable | Candidate | What it means | How to reference |
 |:---:|:---:|---|---|
@@ -82,7 +82,7 @@ When referencing spec content in discussion, analysis, or implementation reasoni
 
 ### Automatic Target Type Detection
 
-`spec_validate`, `spec_verify`, and `spec_promote` work for both units and rules.
+`validate`, `verify`, and `promote` work for both units and rules.
 The agent automatically detects the target type using a three-stage process.
 
 **Stage 1 — Physical file check.** Must complete both steps before deciding.
@@ -104,8 +104,8 @@ Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/
 
 | Target format | Detected as | Example |
 |---------------|-------------|---------|
-| Name without prefix (`auth`, `user_service`) | Unit | `spec_validate auth` |
-| Name with `g_rule_` or `b_rule_` prefix | Rule | `spec_validate b_rule_auth` |
+| Name without prefix (`auth`, `user_service`) | Unit | `validate@auth` |
+| Name with `g_rule_` or `b_rule_` prefix | Rule | `validate@b_rule_auth` |
 
 **Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target.
 
@@ -161,9 +161,9 @@ The user can use explicit triggers at any time:
 
 | Trigger | What agent does |
 |---------|-----------------|
-| `spec_validate {target}` | Read-only subagent. Unit: 8-point validate checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. |
-| `spec_verify {target}` | Read-only subagent. Unit only: 7-step spec-vs-code verify checklist (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run `spec_validate {rule}` instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. |
-| `spec_promote {target}` | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
+| `validate@{target}` | Read-only subagent. Unit: 8-point validate checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. |
+| `verify@{target}` | Read-only subagent. Unit only: 7-step spec-vs-code verify checklist (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run `validate@{rule}` instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. |
+| `promote@{target}` | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
 
 **Cache lifecycle:** See `framework/validation_cache.md`.
 
@@ -173,16 +173,16 @@ If the user declines a suggestion, continue editing. Do not insist.
 
 ### 3.0. Agent suggestion rules
 
-**Default mode: assume editing.** When the user's request does not match an explicit trigger (`spec_validate`, `spec_verify`, `spec_promote`), the agent MUST assume the user is editing or iterating. Do not classify intent. Do not suggest spec operations. Do not disclose cache state.
+**Default mode: assume editing.** When the user's request does not match an explicit trigger (`validate`, `verify`, `promote`), the agent MUST assume the user is editing or iterating. Do not classify intent. Do not suggest spec operations. Do not disclose cache state.
 
 The agent only reacts to these concrete signals:
 
 | User signal | What the user likely wants | Agent action |
 |-------------|---------------------------|-------------|
 | **design**: "I want to design X", "let's design X", "I need a design for X" | Create or update the candidate spec | Default mode: assume editing. If no candidate exists, offer to start one. If candidate exists, begin editing. Do not suggest spec operations. |
-| **quality check**: "check this", "is it right?", "review the design", "validate", "verify" | Validate or verify the spec against the code | Clarify: "Did you mean **spec_validate** (check design quality) or **spec_verify** (verify implementation)?" Then disclose relevant cache state (see disclosure table below). |
-| **code review**: "review the code", "code review", "review quality" | Review code quality with spec awareness | Route to `spec_review`. Disclose review cache state. Review must pass before promote. |
-| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote the candidate to stable | Candidate exists → check validate+verify+review cache. All three fresh, full mode, and non-blocking (validate PASS, verify ALIGNED, review no P0/P1) → suggest `spec_promote`. Any cache missing/stale/scoped → "Pre-promote checks are not complete yet. I need to run those first. Shall I?" If review cache has P0/P1 findings, disclose: "Review found P0/P1 finding(s) — resolve before promoting." |
+| **quality check**: "check this", "is it right?", "review the design", "validate", "verify" | Validate or verify the spec against the code | Clarify: "Did you mean **validate** (check design quality) or **verify** (verify implementation)?" Then disclose relevant cache state (see disclosure table below). |
+| **code review**: "review the code", "code review", "review quality" | Review code quality with spec awareness | Route to `review`. Disclose review cache state. Review must pass before promote. |
+| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote the candidate to stable | Candidate exists → check validate+verify+review cache. All three fresh, full mode, and non-blocking (validate PASS, verify ALIGNED, review no P0/P1) → suggest `promote`. Any cache missing/stale/scoped → "Pre-promote checks are not complete yet. I need to run those first. Shall I?" If review cache has P0/P1 findings, disclose: "Review found P0/P1 finding(s) — resolve before promoting." |
 | **stuck**: "something is wrong", "it's broken", "I'm stuck" | Diagnose and recover | Diagnose first: is it a code bug, design flaw, or external blocker? See `framework/recovery_patterns.md`. |
 
 If none of these signals are present, continue with the conversation without suggesting spec operations.
@@ -212,7 +212,7 @@ When scoped cache exists, the agent should mention: "This is not a full check �
 
 This table maps the boolean state dimensions to the exact disclosure text and suggested action. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
 
-Review cache is required for promote: when the review cache is missing, stale, scoped, or `blocking: true`, the agent must disclose the gap before promote and advise running `spec_review {unit}:full`.
+Review cache is required for promote: when the review cache is missing, stale, scoped, or `blocking: true`, the agent must disclose the gap before promote and advise running `review@{unit}:full`.
 
 The scope mode (scoped vs full) affects disclosure wording. If the fresh cache is `mode: full`, use "all checks" / "all items" language. If scoped, specify which check or item was verified. Only `mode: full` caches satisfy the promote gate — scoped results are for iterative feedback only, and the disclosure text should reflect that.
 
@@ -221,13 +221,13 @@ The scope mode (scoped vs full) affects disclosure wording. If the fresh cache i
 | N | N/A | N/A | "No candidate spec exists" | "You can start writing a candidate spec to record your design." |
 | Y | N | N/A | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
 | Y | Y (full) | N | "Candidate exists, validate has passed all checks, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
-| Y | Y (scoped) | N | "Candidate exists, validate has passed for check-{n}, but other checks and verify are not done." | "You can continue updating, run a deeper validate check, or run `spec_validate {unit}:full` for complete validation." |
+| Y | Y (scoped) | N | "Candidate exists, validate has passed for check-{n}, but other checks and verify are not done." | "You can continue updating, run a deeper validate check, or run `validate@{unit}:full` for complete validation." |
 | Y | N | Y (full) | "Candidate exists, verify has passed all items, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
 | Y | N | Y (scoped) | "Candidate exists, verify has passed for item {id}, but other items are not verified and validate cache is expired." | "It is recommended to re-run validate and run complete verify." |
-| Y | Y (full) | Y (full) | "Candidate has passed validate (all checks) and verify (all items)." | "If review cache is missing, stale, scoped, or has P0/P1 findings, advise running `spec_review {unit}:full` before promote. Otherwise: 'If the design is finalized, you can promote it to stable.'" |
-| Y | Y (scoped) | Y (scoped) | "Candidate has scoped results only — check-{n} for validate, item {id} for verify." | "Run `spec_validate {unit}:full` and `spec_verify {unit}:full` before promoting." |
-| Y | Y (full) | Y (scoped) | "Candidate has full validate and scoped verify (item {id} only)." | "Run `spec_verify {unit}:full` for complete verification before promoting." |
-| Y | Y (scoped) | Y (full) | "Candidate has full verify and scoped validate (check-{n} only)." | "Run `spec_validate {unit}:full` for complete validation before promoting." |
+| Y | Y (full) | Y (full) | "Candidate has passed validate (all checks) and verify (all items)." | "If review cache is missing, stale, scoped, or has P0/P1 findings, advise running `review@{unit}:full` before promote. Otherwise: 'If the design is finalized, you can promote it to stable.'" |
+| Y | Y (scoped) | Y (scoped) | "Candidate has scoped results only — check-{n} for validate, item {id} for verify." | "Run `validate@{unit}:full` and `verify@{unit}:full` before promoting." |
+| Y | Y (full) | Y (scoped) | "Candidate has full validate and scoped verify (item {id} only)." | "Run `verify@{unit}:full` for complete verification before promoting." |
+| Y | Y (scoped) | Y (full) | "Candidate has full verify and scoped validate (check-{n} only)." | "Run `validate@{unit}:full` for complete validation before promoting." |
 
 **Example conversations:**
 
@@ -238,7 +238,7 @@ The scope mode (scoped vs full) affects disclosure wording. If the fresh cache i
 > Agent: "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
 
 > User: "It's done, promote this" (completion signal)
-> Agent: "Candidate exists, validate has passed all checks, verify has passed all items, and review has no P0/P1 findings. Ready to promote. Running `spec_promote user_auth`..."
+> Agent: "Candidate exists, validate has passed all checks, verify has passed all items, and review has no P0/P1 findings. Ready to promote. Running `promote@user_auth`..."
 
 **RED FLAGS — common agent mistakes**
 
@@ -261,7 +261,7 @@ Key rules that override the checklist:
 2. Unit promote: the CLI independently checks cache freshness before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
 3. After promote succeeds, the agent must NOT modify the promoted stable spec. Body text references are maintained as-is because they use concept names (e.g. `auth`) rather than layer-prefixed file names.
 
-`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `spec_validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`. Appendix filenames are preserved since they no longer encode layer. After promote succeeds, candidate cache files are deleted.
+`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`. Appendix filenames are preserved since they no longer encode layer. After promote succeeds, candidate cache files are deleted.
 
 `specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then deletes the candidate rule file. Consumer impact assessment is the agent's responsibility.
 
@@ -269,7 +269,7 @@ Key rules that override the checklist:
 
 ### 5. Spec Review (required quality gate, before promote)
 
-`spec_review` is a standalone spec-aware code quality review. It is NOT part of `spec_verify` — the user triggers it independently. `spec_review` inspects the code with the spec's design intent as context and suppresses findings that the spec explains.
+`review` is a standalone spec-aware code quality review. It is NOT part of `verify` — the user triggers it independently. `review` inspects the code with the spec's design intent as context and suppresses findings that the spec explains.
 
 The review result is cached independently. P0/P1 findings block promote regardless of mode; only `:full` mode cache satisfies the promote gate. See `framework/spec_review_checklist.md` and `framework/verification_scope.md` for detail.
 
@@ -281,11 +281,11 @@ These override default helpful-assistant behavior. They are not suggestions.
 Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable spec (if it exists) and the candidate spec (if it exists). If both exist, read both — understand that stable records prior consensus and candidate is the current design intent. Their authority differs per the Truth Hierarchy and the [Spec Reference Priority](#spec-reference-priority-outside-verify) table. When summarizing spec content to the user, and both layers exist, name which layer you are quoting. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
 
 **HARD RULE 2: Promote Is the Only Gate to Stable**
-Never call `specflowctl promote` without user confirmation. Before promote, always run spec_validate, spec_verify, and spec_review. If any fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
+Never call `specflowctl promote` without user confirmation. Before promote, always run validate, verify, and review. If any fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms.
 
-spec_validate, spec_verify, and spec_review are quality gates. They write cache files (`meta/validation/`) but never spec or stable files. If any quality gate fails, the agent MUST NOT proceed to promote.
+validate, verify, and review are quality gates. They write cache files (`meta/validation/`) but never spec or stable files. If any quality gate fails, the agent MUST NOT proceed to promote.
 
-**HARD RULE 3: spec_validate, spec_verify, and spec_review Check Quality, Promote Writes**
+**HARD RULE 3: validate, verify, and review Check Quality, Promote Writes**
 `validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`meta/validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `doctor`, `init` are for discovery and maintenance and do not check quality.
 
 **HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
@@ -307,10 +307,10 @@ All fork operations (stable → candidate) must use `specflowctl fork --unit <na
 | `specflowctl promote --unit <name>` | Checks validate+verify+review cache freshness, validates format + copies candidate→stable. Rejects if any cache stale, missing, scoped, or blocking. | Agent (after user confirmation, after validate+verify+review) |
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §5. | Agent or human maintainer |
 | `specflowctl review run-*` | Governance review run-state management. Subcommands: `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
-| `spec_validate {target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_validate" or confirms agent suggestion |
-| `spec_verify {target}` (agent trigger) | Read-only subagent. Unit only: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run spec_validate for the rule instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. On MISMATCH: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "spec_verify" or confirms agent suggestion |
-| `spec_review {target}` (agent trigger) | Read-only subagent. Spec-aware code quality review (`spec_review_checklist.md`). Reads the candidate spec for design context, then reviews code quality. Suppresses findings that the spec explains. P0/P1 block promote; P2/P3 advisory. Default: scoped (git-aware). `:full` for all unit code. Writes cache on completion with full findings body. On FAIL (subagent error, target not found, checklist missing): reports error, does not write cache. Agent must not proceed to promote. Review cache is required for promote — see `unit_promote_workflow.md`. See `framework/verification_scope.md`. | User says "spec_review" or confirms agent suggestion |
-| `spec_promote {target}` (agent trigger) | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run the failed quality gate (spec_validate, spec_verify, or spec_review) as indicated by the failure report before retrying. | User says "spec_promote" or confirms agent suggestion |
+| `validate@{target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`), `:full` for all 8 checks + cross-check. Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`), `:full` for all 8 checks. Auto-detects type from target name. Default: scoped (git-aware — maps git diff to relevant checks). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "validate" or confirms agent suggestion |
+| `verify@{target}` (agent trigger) | Read-only subagent. Unit only: 7-step spec-vs-code alignment (`unit_verify_checklist.md`), `:full` for all 7 steps + cross-check. If target is a Rule, report: "Rule verify has been removed. Run `validate@{rule}` for the rule instead." Default: scoped (git-aware). Add `:{keyword}` for specific content. See `framework/verification_scope.md`. Writes cache on ALIGNED. On MISMATCH: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "verify" or confirms agent suggestion |
+| `review@{target}` (agent trigger) | Read-only subagent. Spec-aware code quality review (`spec_review_checklist.md`). Reads the candidate spec for design context, then reviews code quality. Suppresses findings that the spec explains. P0/P1 block promote; P2/P3 advisory. Default: scoped (git-aware). `:full` for all unit code. Writes cache on completion with full findings body. On FAIL (subagent error, target not found, checklist missing): reports error, does not write cache. Agent must not proceed to promote. Review cache is required for promote — see `unit_promote_workflow.md`. See `framework/verification_scope.md`. | User says "review" or confirms agent suggestion |
+| `promote@{target}` (agent trigger) | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent must re-run the failed quality gate (validate, verify, or review) as indicated by the failure report before retrying. | User says "promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |

@@ -2,7 +2,7 @@
 
 ## Problem
 
-`spec_validate` operates on a spec unit or rule, and `spec_verify` operates on a spec unit — both against the **entire** relevant codebase. When either side is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
+`validate` operates on a spec unit or rule, and `verify` operates on a spec unit — both against the **entire** relevant codebase. When either side is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
 
 ## Solution
 
@@ -26,37 +26,37 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `spec_validate {target}` | scoped | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
-| `spec_validate {target}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3) |
-| `spec_validate {target}:full` | full | All checks + cross-check (unit only — rules have no cross-check) |
+| `validate@{target}` | scoped | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
+| `validate@{target}:check-{n}` | scoped | Single check `{n}` only |
+| `validate@{target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3) |
+| `validate@{target}:full` | full | All checks + cross-check (unit only — rules have no cross-check) |
 
 ### Verify
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `spec_verify {unit}` | scoped | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
-| `spec_verify {unit}:{keyword}` | scoped | Matches keyword to spec content (section title, feature name, etc.) → verify that content |
-| `spec_verify {unit}:full` | full | Verify all spec content + cross-check |
+| `verify@{unit}` | scoped | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
+| `verify@{unit}:{keyword}` | scoped | Matches keyword to spec content (section title, feature name, etc.) → verify that content |
+| `verify@{unit}:full` | full | Verify all spec content + cross-check |
 
 ### Spec Review
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `spec_review {unit}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to `affects.files` and `implementation_surface` → review those files with spec context |
-| `spec_review {unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context |
+| `review@{unit}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to `affects.files` and `implementation_surface` → review those files with spec context |
+| `review@{unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context |
 
 
 ### Rule (validate only, verify removed)
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `spec_validate {rule}` | scoped (default) | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
-| `spec_validate {rule}:check-{n}` | scoped | Single check `{n}` only |
-| `spec_validate {rule}:{keyword}` | scoped | Matches keyword to a check name |
-| `spec_validate {rule}:full` | full | All 8 checks (7 metadata + 1 body quality) |
+| `validate@{rule}` | scoped (default) | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
+| `validate@{rule}:check-{n}` | scoped | Single check `{n}` only |
+| `validate@{rule}:{keyword}` | scoped | Matches keyword to a check name |
+| `validate@{rule}:full` | full | All 8 checks (7 metadata + 1 body quality) |
 
-> `spec_verify` on a Rule target has been removed. If the user says `spec_verify {rule}`, report: "Rule verify has been removed. Run `spec_validate {rule}` instead." See `framework/concepts.md` for context.
+> `verify` on a Rule target has been removed. If the user says `verify@{rule}`, report: "Rule verify has been removed. Run `validate@{rule}` instead." See `framework/concepts.md` for context.
 
 ### `:{keyword}` parsing rules
 
@@ -219,7 +219,7 @@ Files checked:
   - src/api/login.go (sha256:def...)
 ---
 Scoped result: spec content related to changed files is aligned.
-This is not a full verification. Run `spec_verify user_auth:full` for complete verification.
+This is not a full verification. Run `verify@user_auth:full` for complete verification.
 ```
 
 ### Full result
@@ -248,7 +248,7 @@ Files checked:
 ---
 Scoped result: scope integrity PASS.
 This is not a full validation. Other checks were not run.
-Run `spec_validate user_auth:full` for complete validation.
+Run `validate@user_auth:full` for complete validation.
 ```
 
 ### Validate full
@@ -292,11 +292,11 @@ File-specific format and details:
 
 | Event | Mode | Cache action |
 |-------|------|-------------|
-| `spec_validate {unit}` | scoped | Write `mode: scoped`, `scoped_check: "{mapped check(s)}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
-| `spec_validate {unit}:full` | full | Write `mode: full` |
+| `validate@{unit}` | scoped | Write `mode: scoped`, `scoped_check: "{mapped check(s)}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
+| `validate@{unit}:full` | full | Write `mode: full` |
 | Any validate FAIL | — | Delete cache |
-| `spec_verify {unit}` | scoped | Write `mode: scoped` (scoped-over-full rule applies — does not overwrite existing full cache) |
-| `spec_verify {unit}:full` | full | Write `mode: full` |
+| `verify@{unit}` | scoped | Write `mode: scoped` (scoped-over-full rule applies — does not overwrite existing full cache) |
+| `verify@{unit}:full` | full | Write `mode: full` |
 | Any verify MISMATCH | — | Delete cache |
 
 ### Scoped-over-full rule
@@ -321,5 +321,5 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 | full verify cache fresh | "Verify passed all content" |
 
 When scoped cache exists, agent offers:
-- "Run `spec_verify {unit}:full` for complete verification"
+- "Run `verify@{unit}:full` for complete verification"
 - "Or specify a section to verify by keyword"
