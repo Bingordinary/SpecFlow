@@ -42,7 +42,7 @@ files:
 Free-form summary of the result.
 ```
 
-`mode: full` means all checks/steps were executed. `mode: scoped` means only a subset was checked (single check for validate, single item for verify). See `framework/verification_scope.md` for the full scoped vs full design.
+`mode: full` means all checks/steps were executed. `mode: scoped` means only a subset was checked (single check via `:check-{n}` for validate, single item for verify). See `framework/verification_scope.md` for the full scoped vs full design.
 
 ### Review cache
 
@@ -93,7 +93,7 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 
 | Event | Action |
 |-------|--------|
-| `validate@{unit}` scoped PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "1"`, hashes of checked files |
+| `validate@{unit}` full PASS | Write `validate_result.md` with `mode: full`, hashes of all read files |
 | `validate@{unit}:check-{n}` PASS | Write `validate_result.md` with `mode: scoped`, `scoped_check: "{n}"`, hashes |
 | `validate@{unit}:full` PASS | Write `validate_result.md` with `mode: full`, hashes of all read files |
 | `validate` FAIL / blocked | Delete `validate_result.md` if it exists |
@@ -119,7 +119,7 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 
 ### Scoped-over-full rule
 
-A `mode: full` cache is overwritten **only** by another full run. A scoped run does not downgrade a full cache to scoped — the full cache stays valid. This ensures that intermediate scoped checks during development do not invalidate an already-passed full verification needed for promote.
+A `mode: full` cache is overwritten **only** by another full run. A scoped run (from `:check-{n}`) does not downgrade a full cache to scoped — the full cache stays valid. This ensures that intermediate scoped checks during development do not invalidate an already-passed full verification needed for promote.
 
 **Exception:** If a scoped run finds a MISMATCH, it deletes the cache regardless of prior mode. A MISMATCH at any granularity means promote must not proceed.
 

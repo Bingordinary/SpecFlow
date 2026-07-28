@@ -10,14 +10,10 @@ FAIL does not write cache. The agent reports which checks failed and why.
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {rule}` | scoped (default) | git diff HEAD on rule file → map changes to check(s) → run with dependency handling |
-| `validate@ {rule}:check-{n}` | scoped | Single check `{n}` only |
-| `validate@ {rule}:{keyword}` | scoped | Match keyword to check name |
-| `validate@ {rule}:full` | full | All 8 checks |
-
-**Scoped mapping (changed content → check):** Frontmatter (rule_id, rule_scope, layer, rule_version) → Checks 1-4, 6, 7. Body content → Check 8. promotion_owner_unit → Check 5 (WARNING only). No diff match → safety default (Check 1).
-
-**Edge cases:** No rule file changes → auto fallback to full. New/untracked file → auto fallback to full. See `framework/verification_scope.md` §Scoped Validate and §Edge cases for full mapping detail.
+| `validate@ {rule}` | full (default) | All 8 checks. Quality checks are holistic — always runs full. |
+| `validate@ {rule}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
+| `validate@ {rule}:{keyword}` | scoped | Match keyword to check name. User explicitly chooses focus. |
+| `validate@ {rule}:full` | full | All 8 checks. Explicit equivalent of default. |
 
 ## Execution Rules
 
@@ -127,6 +123,6 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 
 After all 8 checks complete:
 
-- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: scoped|full`, `scoped_check: "{n}"` when scoped, file hashes.
+- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: full`, file hashes. Exception: when triggered by `:check-{n}` or `:{keyword}`, write `mode: scoped` with `scoped_check: "{n}"`.
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache.

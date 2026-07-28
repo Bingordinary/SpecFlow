@@ -2,23 +2,27 @@
 
 ## Problem
 
-`validate` operates on a spec unit or rule, and `verify` operates on a spec unit — both against the **entire** relevant codebase. When either side is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
+`verify` operates on a spec unit against the **entire** relevant codebase. When the codebase is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
+
+`validate` checks operate on document quality — they are holistic by nature. Evaluating design soundness (Check 2) requires reading the full design regardless of which section changed. Diff-driven reduction of checks would create blind spots, making partial results unreliable.
 
 ## Solution
 
-Introduce two modes — `scoped` and `full` — for both validate and verify. `scoped` is the default. `full` is an explicit choice.
+Introduce two modes — `scoped` and `full` — for verify and review. For validate, `full` is the default because quality checks are holistic. Scoped validate is available only through explicit `:check-{n}` or `:{keyword}` — the user chooses the focus area, not git diff.
 
-This mirrors the `scoped_review` / `deep_audit` distinction from `framework/governance/review_scope.md`, adapted for the different semantics of validate and verify.
+This mirrors the `scoped_review` / `deep_audit` distinction from `framework/governance/review_scope.md`, adapted for the different semantics of verify and validate.
 
-> **Note on git fallback divergence:** `review_scope.md` handles "no git working changes" by shifting to `git log -1` as the scoped diff base. Verify and validate cannot follow this pattern because spec content can be edited by the agent without git changes (new untracked files, in-memory edits). Falling back to full mode is the only safe scoped-free behavior in these cases.
+> **Note on git fallback divergence:** `review_scope.md` handles "no git working changes" by shifting to `git log -1` as the scoped diff base. Verify cannot follow this pattern because spec content can be edited by the agent without git changes (new untracked files, in-memory edits). Falling back to full mode is the only safe scoped-free behavior in these cases.
 
 ## Principles
 
-1. **Default scoped** — the agent runs the smallest useful subset by default. The user gets fast, focused feedback.
-2. **Explicit full** — `:full` suffix for comprehensive mode.
-3. **Transparent scope** — every scoped result explicitly states what was checked and warns that it is not a full result.
-4. **Promote gate** — only `full` results satisfy the promote gate. Scoped results are for iterative feedback, not final approval.
-5. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
+1. **Default full for validate** — validate checks are holistic quality evaluations. `validate@{target}` always runs all checks.
+2. **Default scoped for verify and review** — verify and review are external-mapping checks (spec↔code). The agent runs the smallest useful subset by default. The user gets fast, focused feedback.
+3. **Explicit full** — `:full` suffix for comprehensive mode on verify and review.
+4. **Explicit scoped for validate** — `:check-{n}` and `:{keyword}` allow the user to scope validate to a specific check. The user chooses the focus, not git diff.
+5. **Transparent scope** — every scoped result explicitly states what was checked and warns that it is not a full result.
+6. **Promote gate** — only `full` results satisfy the promote gate. Scoped results are for iterative feedback, not final approval.
+7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
 
 ## Syntax
 
@@ -26,10 +30,10 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `validate@{target}` | scoped | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
-| `validate@{target}:check-{n}` | scoped | Single check `{n}` only |
-| `validate@{target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3) |
-| `validate@{target}:full` | full | All checks + cross-check (unit only — rules have no cross-check) |
+| `validate@{target}` | full (default) | All 8 checks + cross-check (unit only — rules have no cross-check). Always runs full because quality checks are holistic. |
+| `validate@{target}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
+| `validate@{target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. |
+| `validate@{target}:full` | full | All checks + cross-check (unit only — rules have no cross-check). Explicit equivalent of default. |
 
 ### Verify
 
@@ -51,10 +55,10 @@ This mirrors the `scoped_review` / `deep_audit` distinction from `framework/gove
 
 | User says | Mode | What agent does |
 |-----------|------|-----------------|
-| `validate@{rule}` | scoped (default) | Git-aware: `git diff HEAD` → map spec changes to relevant check(s) → execute with dependency handling |
-| `validate@{rule}:check-{n}` | scoped | Single check `{n}` only |
-| `validate@{rule}:{keyword}` | scoped | Matches keyword to a check name |
-| `validate@{rule}:full` | full | All 8 checks (7 metadata + 1 body quality) |
+| `validate@{rule}` | full (default) | All 8 checks (7 metadata + 1 body quality). Always runs full because quality checks are holistic. |
+| `validate@{rule}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
+| `validate@{rule}:{keyword}` | scoped | Matches keyword to a check name. User explicitly chooses focus. |
+| `validate@{rule}:full` | full | All 8 checks (7 metadata + 1 body quality). Explicit equivalent of default. |
 
 > `verify` on a Rule target has been removed. If the user says `verify@{rule}`, report: "Rule verify has been removed. Run `validate@{rule}` instead." See `framework/concepts.md` for context.
 
@@ -168,42 +172,17 @@ After all 8 checks pass individually:
 
 ## Scoped Validate
 
-### Selection logic
+Validate does not support git-diff-driven scoped mode. Quality checks are holistic — running a subset based on which section changed creates blind spots.
 
-Scoped validate uses **git working directory changes** on the spec file to determine which check(s) to run:
+Scoped validate is available only through explicit user choice:
+- `validate@{target}:check-{n}` — run a single specific check
+- `validate@{target}:{keyword}` — run checks matching a keyword
 
-1. Run `git diff HEAD` on the unit's spec file
-2. Map the changed spec content to the relevant check(s):
-   - Frontmatter fields (id, layer, version, refs, appendix paths) → Check 1 (Structural integrity)
-   - Design rationale, protocol definitions, data contracts → Check 2 (Design soundness)
-   - Scope, non-goals, boundaries → Check 3 (Scope integrity)
-   - evidence_appendix_ref, acceptance item evidence_requirements → Check 4 (Evidence-driven vs design-driven consistency)
-   - Body behavior sections (main flow, protocols, error handling, state transitions) → Check 5 (5a + 5b + 5c)
-   - Acceptance item set structure (new/deleted items, pass_condition changes) → Check 5 (5b + 5d + 5c)
-   - Both body and items changed → Check 5 (5a + 5b + 5c + 5d)
-   - Frontmatter / structure only → Skip Check 5 (not a behavior area change)
-   - No git diff (new spec, no git history) → Fall back to full Check 5 after Check 1 passes
-   - affects references, evidence appendix → Check 6 (Affects-source validity)
-   - Unit refs, cross-unit contracts → Check 7 (Cross-unit consistency)
-   - System constraints, rule refs → Check 8 (Constraint alignment)
-3. **Dependency handling:** if the mapped check(s) require prerequisites, verify them first. Specifically:
-   - Check 1 is prerequisite for all others — run Check 1 first if it changed or if its status is unknown
-   - Other checks have no mutual dependency — run in any order
-4. If multiple spec areas changed, run all corresponding checks
-
-### Edge cases
-
-| Condition | Behavior |
-|-----------|----------|
-| Changes cannot be mapped to any check | Run Check 1 (safety default) |
-| No spec file changes exist (file is tracked but unmodified) | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
-| Spec file is new/untracked (no git history) | Fall back to full mode automatically (Check 1 runs first as prerequisite for all others). Output prefix: `Mode: full (fallback — new/untracked file, no git history for scoped)`. |
-
-> **Cache:** When scoped validate auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
+When the user explicitly scopes, the agent still reads the **full document** for context but only reports on the requested check(s).
 
 ## Full Validate
 
-All 8 checks, executed sequentially in their numbered order, followed by the cross-check.
+All 8 checks, executed sequentially in their numbered order, followed by the cross-check. This is the **default** mode for `validate@{target}`.
 
 ## Output Format
 
@@ -238,11 +217,11 @@ Summary: all spec content is aligned. No cross-check contradictions found.
 ### Validate scoped
 
 ```
-Mode: scoped (git-diff: scope section changed → check-3)
+Mode: scoped (user requested: check-3 — scope integrity)
 Validate result: PASS
 Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
-  - check-3 (scope integrity): PASS — mapped from change
+  - check-3 (scope integrity): PASS — user requested
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
 ---
@@ -292,7 +271,8 @@ File-specific format and details:
 
 | Event | Mode | Cache action |
 |-------|------|-------------|
-| `validate@{unit}` | scoped | Write `mode: scoped`, `scoped_check: "{mapped check(s)}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
+| `validate@{unit}` | full (default) | Write `mode: full` |
+| `validate@{unit}:check-{n}` | scoped | Write `mode: scoped`, `scoped_check: "{n}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
 | `validate@{unit}:full` | full | Write `mode: full` |
 | Any validate FAIL | — | Delete cache |
 | `verify@{unit}` | scoped | Write `mode: scoped` (scoped-over-full rule applies — does not overwrite existing full cache) |
@@ -315,7 +295,7 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 
 | Cache state | Disclosure |
 |-------------|-----------|
-| scoped validate cache fresh | "Validate passed for check(s) {n}, but not all checks were run" |
+| scoped validate cache fresh | "Validate passed for check(s) {n} (user requested scoped), but not all checks were run" |
 | scoped verify cache fresh | "Scoped verify passed for content related to recent changes" |
 | full validate cache fresh | "Validate passed all checks" |
 | full verify cache fresh | "Verify passed all content" |

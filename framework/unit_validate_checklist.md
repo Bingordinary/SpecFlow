@@ -8,14 +8,10 @@ When an agent executes `validate@ {unit}`, it uses the 8 checks defined in this 
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {unit}` | scoped (default) | git diff HEAD on spec file → map changes to check(s) → run with dependency handling. Check 1 is prerequisite. |
-| `validate@ {unit}:check-{n}` | scoped | Single check `{n}` only |
-| `validate@ {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3) |
-| `validate@ {unit}:full` | full | All 8 checks + cross-check |
-
-**Scoped mapping (changed content → check):** Frontmatter → 1. Design rationale → 2. Scope/non-goals → 3. evidence_appendix_ref → 4. Body behavior sections → 5a+5b+5c. Acceptance item structure → 5b+5d+5c. affects.* → 6. unit_refs → 7. rule_refs/constraints → 8. No diff match → safety default (Check 1).
-
-**Edge cases:** No spec file changes → auto fallback to full. New/untracked file → auto fallback to full. See `framework/verification_scope.md` §Scoped Validate and §Edge cases for full mapping detail.
+| `validate@ {unit}` | full (default) | All 8 checks + cross-check. Quality checks are holistic — always runs full. |
+| `validate@ {unit}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
+| `validate@ {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. |
+| `validate@ {unit}:full` | full | All 8 checks + cross-check. Explicit equivalent of default. |
 
 **Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "Only check(s) {n} were executed. This is not a full validation. Run `validate@ {unit}:full` for complete validation."
 
@@ -195,12 +191,6 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **FAIL:** Uncovered behavior or surface type mismatch (fix_required)
 
-**Mode:**
-| Mode | Scope |
-|---|---|
-| Scoped | Only body sections changed in `git diff HEAD` |
-| Full | Entire spec body |
-
 **Check method:** Spec body × acceptance item set unidirectional cross-reference (body → items)
 
 ---
@@ -228,12 +218,6 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **FAIL:** One or more contradictions found, with quoted evidence (fix_required)
 
-**Mode:**
-| Mode | Scope |
-|---|---|
-| Scoped | Only body sections changed in `git diff HEAD`, and their corresponding items |
-| Full | All behavior–item pairs |
-
 **Check method:** Spec body × acceptance item pass_condition — semantic cross-reference with quoted evidence
 
 ---
@@ -244,14 +228,6 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **Execution steps:**
 
-#### Scoped mode:
-1. Run `git diff HEAD` on the spec file
-2. Identify which body sections were modified (additions, changes, deletions)
-3. For each modified section, find the corresponding acceptance item ID(s)
-4. Check if those item(s) were also modified in the same diff
-5. If body section changed but item did not → WARNING with diff evidence
-
-#### Full mode:
 1. If a stable predecessor spec exists, compare current body against stable version
 2. Identify body sections that differ significantly
 3. Check if corresponding items also differ
@@ -263,11 +239,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **Output level is WARNING, not FAIL.** Not all body changes require item changes (e.g., formatting, comments, clarification). The agent reports drift as potential issues for human review.
 
-**Mode:**
-| Mode | Baseline |
-|---|---|
-| Scoped | `git diff HEAD` against working tree |
-| Full | Stable predecessor spec (if exists); skip if no predecessor |
+**Baseline:** Stable predecessor spec (if exists); skip if no predecessor
 
 **Check method:** Git diff × acceptance item modification check — temporal cross-reference
 
@@ -295,12 +267,6 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **FAIL:** One or more conflicts found, with quoted evidence from both items (fix_required)
 
-**Mode:**
-| Mode | Scope |
-|---|---|
-| Scoped | Only items changed in `git diff HEAD` (check new/modified items against all existing items) |
-| Full | All items against all items |
-
 **Check method:** Cross-item cross-reference by verification_surface and affects.files
 
 ---
@@ -320,12 +286,6 @@ IF evidence_appendix_ref is ABSENT or none:
 **PASS:** All testable items use Gherkin-style description format
 
 **FAIL:** One or more testable items have non-compliant description format (fix_required)
-
-**Mode:**
-| Mode | Scope |
-|---|---|
-| Scoped | Only items changed in `git diff HEAD` |
-| Full | All items |
 
 **Check method:** Acceptance item description × verification_type — format pattern check
 
@@ -440,7 +400,8 @@ After all 8 checks complete:
 - **If all PASS:** write validate cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
   - Collect SHA-256 hashes of all files read during validation
-  - Write `validate_result.md` with `result: pass`, `mode: scoped|full`, `scoped_check: "{n}"` when scoped, file hashes
+  - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes
+  - Exception: when triggered by `:check-{n}` or `:{keyword}`, write `mode: scoped` with `scoped_check: "{n}"`
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
 
