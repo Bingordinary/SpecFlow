@@ -93,9 +93,26 @@ If the acceptance item's `description` already contains Gherkin-style scenarios,
 
 ### Verify checking test design
 
+The verify step evaluates both **coverage completeness** (are tests missing?) and **test meaningfulness** (are existing tests genuine?). Both are defined in `framework/unit_verify_checklist.md` Step 2's Test Design Sub-check (Parts A and B).
+
+#### Part A — Coverage completeness (missing test detection)
+
 For each `verification_type: testable` acceptance item, the verify step uses this standard as the baseline to identify **significantly implied but missing** test scenarios:
 
-1. Does a test exist for Step 1 (happy path)? → if not, MISMATCH
-2. For Steps 2-4: does the `description` or `pass_condition` strongly imply a scenario that has no corresponding test? → if yes, MISMATCH
+1. Does a test exist for Step 1 (happy path)? → if not, CONCERN
+2. For Steps 2-4: does the `description` or `pass_condition` strongly imply a scenario that has no corresponding test? → if yes, CONCERN
 
-Verify does not check for exhaustive coverage of all possible inputs. It flags **obvious omissions** — scenarios that a reasonable developer would expect to exist given the acceptance item's content.
+Verify Part A does not check for exhaustive coverage of all possible inputs. It flags **obvious omissions** — scenarios that a reasonable developer would expect to exist given the acceptance item's content.
+
+#### Part B — Test meaningfulness (existing test quality)
+
+Existing tests may pass but lack genuine validation value. The verify step checks for ritual testing patterns:
+
+- **Mock density:** Are nearly all dependencies mocked (orchestration-only testing)?
+- **Assertion authenticity:** Do assertions actually verify the claimed behavior?
+- **Tautological assertions:** Are there assertions that always pass regardless of implementation?
+- **All-happy-path bias:** Do all existing tests only exercise success scenarios?
+- **Mock-through detection:** Does a test pass mock data through and assert it unchanged (exercising only the mock, not the implementation)?
+- **Naming signal:** Are test names semantically empty (auxiliary indicator)?
+
+These checks are language-agnostic. The verify agent self-identifies testing frameworks and assertion patterns from the test file content. See `framework/unit_verify_checklist.md` Step 2 Part B for full methodology.

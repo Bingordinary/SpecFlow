@@ -196,14 +196,176 @@ Per-item report format:
 
 **Test design sub-check (for verification_type: testable items only):**
 
-For each acceptance item with `verification_type: testable`, identify significantly implied but missing test scenarios:
+This sub-check has two parts: **A — coverage completeness** (tests exist for implied scenarios) and **B — test meaningfulness** (existing tests are genuine). The agent runs both parts and reports findings per acceptance item.
+
+**Language-agnostic approach:** The agent reads test files and self-identifies the testing framework (mock libraries, assertion libraries, test runner conventions) rather than relying on a hardcoded language list. When a test framework or assertion style is unfamiliar, the agent reports CANNOT_DETERMINE rather than guessing.
+
+---
+
+### Part A — Coverage completeness
+
+Identify significantly implied but missing test scenarios:
 
 1. **Happy path:** Does a test exist that exercises the primary success scenario? If the pass_condition describes a success outcome and no test covers it → CONCERN (possible untested core behavior)
 2. **Input variants, business rules, dependency failure:** Does the description or pass_condition strongly imply a scenario (e.g. "register" implies "email already exists", "create order" implies "invalid product ID") that has no corresponding test? If a reasonable developer would expect a test for that scenario and none exists → CONCERN
 
 Reference: `framework/test_decomposition_standard.md` provides decomposition methodology for deeper scenario discovery but is not required reading for this sub-check.
 
-This sub-check is **not** an exhaustive coverage audit. It flags obvious omissions. A single acceptance item may produce zero, one, or several test scenarios depending on its content. If the implementation is in a language or framework where tests are not written in the expected location, report CANNOT_DETERMINE instead of MISMATCH.
+Part A is **not** an exhaustive coverage audit. It flags obvious omissions. A single acceptance item may produce zero, one, or several test scenarios depending on its content. If the implementation is in a language or framework where tests are not written in the expected location, report CANNOT_DETERMINE.
+
+---
+
+### Part B — Test meaningfulness
+
+Existing tests are not automatically meaningful. This part checks whether the tests that *do* exist are structured as genuine validation — or are ritual tests that pass regardless of implementation correctness.
+
+**Execution steps:**
+
+For each acceptance item with `verification_type: testable`, locate the corresponding test files. For each test function found, apply the following checks:
+
+#### B1 — Mock density
+
+**Method:** Identify all import paths in the test file. Separate mock/stub/fake imports (e.g. `testify/mock`, `gomock`, `jest.mock`, `sinon`, `unittest.mock`, `pytest-mock`) from regular imports. Calculate the ratio.
+
+```
+mock_ratio = mock_imports / total_imports
+```
+
+**Language-agnostic detection:** Agent reads imports and identifies mock/stub/fake libraries by name convention and usage context rather than a hardcoded list. Libraries whose primary purpose is creating test doubles are counted as mocks.
+
+| Ratio | Report |
+|-------|--------|
+| < 80% | No concern |
+| ≥ 80% | CONCERN — "Mock density is {n}%. Most dependencies are mocked; only orchestration is exercised." |
+| 100% | CONCERN — "Every dependency is mocked. Test exercises wiring only, not real behavior." |
+
+Mock density above 80% is a **signal**, not a verdict. The agent uses it in combination with other Part B checks. A well-written test with 100% mocks that verifies interaction patterns (e.g. "did the service call repository with the correct transformed data") is meaningful. A test with 100% mocks that calls a function and asserts a tautology is not.
+
+#### B2 — Assertion authenticity
+
+**Method:** For each test function, agent reads the full body and evaluates whether assertions genuinely verify the outcome implied by the test name and acceptance item.
+
+Checklist per test function:
+- Does the test have at least one assertion?
+- Does the assertion target an actual output value (return value, state change, side effect) rather than a fixed/tautological expression?
+- If the test name describes an error scenario ("returns error when email exists"), does at least one assertion check the error (type, message, presence)?
+
+**Reports:**
+
+```
+{item.id}: CONCERN — Test "TestRegister_DuplicateEmail" describes a conflict scenario
+  but contains no error assertion. The test calls the register function but only
+  asserts NoError. The conflict logic is never verified.
+```
+
+**Signal usage:** A test missing a meaningful assertion for its stated purpose is a strong indicator of ritual testing. Even one such test per acceptance item warrants a CONCERN.
+
+#### B3 — Tautological assertions
+
+**Method:** Scan test functions for assertion patterns that always pass regardless of implementation state.
+
+**Language-agnostic detection:** Agent reads the assertion call and its arguments, then evaluates whether the assertion could fail under any reasonable code change. The agent does not use hardcoded patterns — it reasons about each assertion:
+
+- Is the asserted value an unconditional literal? (`assert.Equal(42, 42)` → always passes)
+- Is the asserted value the test infrastructure itself? (`assert.NotNil(t, t)` where one `t` is `*testing.T` → never nil)
+- Is the assertion checking a property that is guaranteed by the test setup rather than the implementation? (mock returns a fixed value, then the assertion checks that same fixed value without transformation)
+
+**Reports:**
+
+```
+{item.id}: CONCERN — Tautological assertion in TestRegister_Success
+  assert.Equal(42, 42) at line 23 — compares literal to literal, cannot fail
+
+{item.id}: CONCERN — Tautological assertion in TestGetUser
+  assert.NotNil(t) at line 45 — t is *testing.T, always non-nil in a running test
+```
+
+A single tautological assertion in a healthy test file may be accidental. Multiple tautological assertions across an acceptance item's tests → stronger signal of ritual testing.
+
+#### B4 — All-happy-path detection
+
+**Method:** After Part A has confirmed a happy path exists, count all test functions associated with the acceptance item. If every test exercises a success scenario and none exercises error/invalid/edge paths → CONCERN.
+
+This is distinct from Part A's check: Part A checks whether a *specific implied scenario* is missing. B4 checks the *overall profile* of existing tests — a complete lack of negative testing.
+
+```
+{item.id}: CONCERN — All {N} tests are happy-path only. No test exercises
+  validation rejection, business rule conflict, or dependency failure.
+```
+
+#### B5 — Mock-through detection
+
+**Method:** For each test function, agent traces the data flow across three points:
+
+1. **Mock setup:** What value does the mock return? (`mock.On("Create", ...).Return(User{ID: 1})`)
+2. **Function call:** How is the mocked value consumed? (`result := svc.Register(...)`)
+3. **Assertion:** What does the assertion check? (`assert.Equal(t, 1, result.ID)`)
+
+If the mock return value passes through the function without transformation, validation, or conditional logic, and the assertion checks the same (or derived) value → the test exercises only the mock, not the implementation.
+
+**Judgment criteria:**
+
+Agent evaluates whether a realistic implementation defect would cause this test to FAIL:
+
+```
+Would this test fail if the function body were replaced with a no-op / passthrough?
+  - Mock returns User{ID: 1}
+  - Function: return mock.Create(...)  (direct passthrough — no logic)
+  - Assertion: assert.Equal(t, 1, result.ID)
+  → Test passes. No implementation logic is exercised. → CONCERN
+
+Would this test fail if the validation logic were broken?
+  - Mock returns nil error
+  - Function: validates input, calls mock, transforms result
+  - Assertion: assert.Equal(t, "formatted_name", result.Name)
+  → Test fails if transformation breaks. Implementation logic is exercised. → No concern
+```
+
+**Reports:**
+
+```
+{item.id}: CONCERN — Test "TestRegister_Success" exercises mock passthrough only.
+  Mock returns User{ID: 1, Name: "a"}, service returns it unchanged,
+  assertion checks ID == 1. The test passes even if all business logic
+  is removed.
+```
+
+#### B6 — Test naming signal
+
+**Method:** Scan test function names for patterns that suggest lack of care:
+
+- Numbered names: `Test1`, `Test2`, `test_1` (sequential numbering without semantic meaning)
+- Generic handlers: `TestHandler`, `TestFunc`, `TestMethod`, `test_handler`
+- Vague names: `TestSomething`, `TestMisc`, `test_stuff`
+
+**This check is auxiliary only.** A single generically-named test is not a concern. But when B6 flags multiple tests AND other Part B checks (B1–B5) also signal concerns, the naming pattern strengthens the overall assessment.
+
+```
+{item.id}: CONCERN (low confidence) — Test functions "Test1", "Test2", "Test3"
+  found. Naming is sequential with no semantic information.
+```
+
+---
+
+### Part A/B integration
+
+Part A and Part B findings are reported together per acceptance item:
+
+```
+{item.id}: ALIGNED
+  - evidence: grep -n "201" src/api/user.go → line 42
+  - deterministic: true
+  Part A: No concerns
+  Part B:
+    - B1 Mock density: 60% — no concern
+    - B4 All happy path: CONCERN — 3 tests, all success scenarios, no error path
+```
+
+Part B findings are recorded under the item in the verify output as CONCERN-level annotations. They do not change the item-level verdict (ALIGNED / MISMATCH / CANNOT_DETERMINE).
+
+**Edge case:** If test files are not in a language the agent can parse with confidence, or if the test framework is unfamiliar, report CANNOT_DETERMINE for all Part B checks on that acceptance item. Do not guess.
+
+**Edge case:** If acceptance item has no tests at all, Part A flags the missing scenarios; Part B is skipped entirely (no tests to evaluate).
 
 ---
 

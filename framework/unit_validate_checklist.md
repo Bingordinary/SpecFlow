@@ -172,7 +172,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ## Check 5 — Acceptance coverage & correctness
 
-**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), stay current as the body evolves (5c), and contain no internal contradictions (5d).
+**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), stay current as the body evolves (5c), and contain no internal contradictions (5d). Acceptance items must also have falsifiable pass_conditions (5f), actionable descriptions (5g), and coupled pass_condition/description pairs that add value (5h).
 
 **Execution steps:**
 
@@ -290,6 +290,124 @@ IF evidence_appendix_ref is ABSENT or none:
 **Check method:** Acceptance item description × verification_type — format pattern check
 
 ---
+
+### Sub-check 5f — Falsifiability (NEW)
+
+**Purpose:** Every acceptance item's `pass_condition` must be falsifiable — there must exist a concrete, identifiable scenario where the implementation could fail it. An unfalsifiable pass_condition can be "satisfied" by any implementation, making the item meaningless as a quality gate.
+
+**Execution steps:**
+
+For each acceptance item:
+
+1. Read `pass_condition`
+2. Apply first-principles reasoning: "If the implementation were broken, would there be a way for this pass_condition to reveal it?"
+3. Identify a specific failure scenario that would cause the pass_condition to FAIL:
+   - Concrete: names a specific behavior change ("returns 200 instead of 201", "missing field X in response", "allows duplicate email registration")
+   - Observable: the failure could be detected by reading code or test output
+   - Distinct: the failure scenario is different from "the code doesn't exist" (that's structural, covered by Step 1)
+4. If agent cannot identify a concrete failure scenario → the item is unfalsifiable
+5. Write an explicit statement for each item: "This item would FAIL if [specific code behavior or condition] occurs."
+
+**Reports:**
+
+```
+{item.id}: PASS
+  - pass_condition: "Returns HTTP 201 with {id, email, created_at}"
+  - Would FAIL if: missing created_at field, returns 200, returns 500 on valid input
+
+{item.id}: FAIL — Unfalsifiable
+  - pass_condition: "registration works correctly"
+  - "works correctly" is a value judgment, not a verifiable condition.
+    No concrete code change would cause this specific condition to FAIL.
+  - fix_required: Replace with a specific, measurable pass_condition
+```
+
+**Edge cases:**
+- Pass conditions referring to external systems or runtime constraints that are not statically verifiable → not automatically unfalsifiable. Agent records them as CANNOT_DETERMINE in verify but does not fail validate.
+
+**PASS:** All items have an identifiable failure scenario
+
+**FAIL:** One or more items are unfalsifiable
+
+**Check method:** First-principles reasoning — agent must articulate a concrete failure mode and write an explicit "Would FAIL if" statement per item
+
+---
+
+### Sub-check 5g — Description actionability (NEW)
+
+**Purpose:** For `verification_type: testable` items, the `description` must contain enough detail to derive specific test scenarios. A vague description produces vague tests — or leaves the agent to invent scenarios that don't reflect the author's intent.
+
+**Execution steps:**
+
+1. For each acceptance item with `verification_type: testable`:
+   - Read `description`
+   - Judge whether it contains enough information to derive:
+     - Specific input values or conditions
+     - Expected output or state change
+     - At least one boundary or edge case
+2. If the description is a single vague sentence with no scenario breakdown → FAIL
+3. If the description is short but specific (e.g., "Returns 201 when valid email and password are provided") → PASS
+4. If the description is long but purely narrative with no testable specifics → FAIL
+
+**Reports:**
+
+```
+{item.id}: PASS
+  - description: "User registers with email and password. Returns 201 with {id, email, created_at}. Returns 409 if email exists."
+  - Verdict: Enough detail to derive happy path, conflict scenario
+
+{item.id}: FAIL — Description too vague for test derivation
+  - description: "User can register"
+  - Verdict: No inputs, no expected outputs, no conditions.
+  - fix_required: Expand description with Given/When/Then scenarios or specific pass conditions
+```
+
+**PASS:** All testable items have actionable descriptions
+
+**FAIL:** One or more testable items lack sufficient descriptive detail for test derivation
+
+**Check method:** Semantic assessment — agent judges whether description is specific enough to derive test inputs and expected outcomes
+
+---
+
+### Sub-check 5h — Pass condition / description coupling (NEW)
+
+**Purpose:** The `pass_condition` must add specific, verifiable constraints beyond what the `description` already communicates. If the pass_condition merely rephrases the description in vaguer or equivalent terms, it contributes no value and the acceptance item cannot be meaningfully verified.
+
+**Execution steps:**
+
+For each acceptance item:
+
+1. Read both `description` and `pass_condition`
+2. Compare them semantically:
+   - Does `pass_condition` reference specific values, status codes, field names, error types, state transitions, timeouts, or behavior variants that the `description` does not?
+   - Is the `pass_condition` more abstract or vague than the `description`?
+3. If the `pass_condition` is semantically equivalent to or vaguer than the `description` → FAIL
+
+**Examples:**
+
+```
+FAIL — pass_condition adds nothing:
+  description:  "User registers with email and password"
+  pass_condition: "registration completes successfully"
+  → "completes successfully" is a vague rephrase of "registers"
+
+PASS — pass_condition adds specific constraints:
+  description:  "User registers with email and password"
+  pass_condition: "Returns 201 with {id, email, created_at}. Returns 409 if email exists. Email field must be normalized to lowercase."
+  → Adds three verifiable constraints not present in description
+
+PASS — pass_condition provides complementary information:
+  description:  "System exports data as CSV"
+  pass_condition: "File is valid CSV: comma-separated, quoted strings, header row matches schema fields"
+  → Adds specific format criteria not in description
+```
+
+**PASS:** All pass_conditions add specific value beyond their descriptions
+
+**FAIL:** One or more pass_conditions are vague rephrasings of their descriptions
+
+**Check method:** Semantic cross-reference — agent compares information content of description vs pass_condition
 
 ## Check 6 — Affects-source validity
 
