@@ -373,9 +373,34 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 	}
 
 	var relPaths []string
+	var errs []string
 	for _, m := range matches {
 		rel, _ := filepath.Rel(repoRoot, m)
 		relPaths = append(relPaths, rel)
+
+		data, readErr := os.ReadFile(m)
+		if readErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: cannot read (%v)", rel, readErr))
+			continue
+		}
+		fm := specpaths.ReadFrontmatterStringMap(string(data))
+		if strings.EqualFold(strings.TrimSpace(fm["status"]), "exempt") {
+			continue
+		}
+		if strings.TrimSpace(fm["unit"]) != unitName {
+			errs = append(errs, fmt.Sprintf("%s: frontmatter unit=%q, expected %q", rel, fm["unit"], unitName))
+		}
+		if !strings.EqualFold(strings.TrimSpace(fm["layer"]), "candidate") {
+			errs = append(errs, fmt.Sprintf("%s: frontmatter layer=%q, expected 'candidate'", rel, fm["layer"]))
+		}
+	}
+
+	if len(errs) > 0 {
+		return CheckResult{
+			Name:    "Appendix files",
+			Status:  Fail,
+			Details: fmt.Sprintf("%d appendix file(s) found with errors: %s", len(matches), strings.Join(errs, "; ")),
+		}
 	}
 
 	return CheckResult{

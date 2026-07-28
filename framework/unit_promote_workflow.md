@@ -86,7 +86,8 @@ Summary: ...
    a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to re-run `validate`.
    b. Verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. If missing or stale, rejects promote with guidance to re-run `verify`.
     c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. Must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If missing: "Review not completed. Run `review@{unit}:full` first." If scoped: "Review cache is scoped, run `review@{unit}:full` before promoting." If stale: "Review cache is stale. Run `review@{unit}:full` again." If blocking: "Review found P0/P1 finding(s). Resolve before promoting."
-   d. All three checks pass → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
+    d. Appendix cache — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any appendix is missing, rejects promote with guidance to re-run `validate@{unit}:full`.
+   e. All four checks pass → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
    - Transforms the `layer` frontmatter field from `candidate` to `stable`
    - Appendix filenames are preserved since they no longer encode layer

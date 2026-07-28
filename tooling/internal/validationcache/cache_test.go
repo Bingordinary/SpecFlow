@@ -3,6 +3,7 @@ package validationcache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -265,6 +266,181 @@ func TestCheckRuleValidateStale(t *testing.T) {
 	}
 	if result.Fresh {
 		t.Fatal("expected stale cache, got fresh")
+	}
+}
+
+func TestCheckAppendicesInCache_AllInCachePass(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Create candidate spec
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	appendixDir := filepath.Join(candidateDir, "appendix")
+	os.MkdirAll(appendixDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create appendix files on disk
+	appendixPath1 := filepath.Join(appendixDir, "unit_test_api.md")
+	appendixContent1 := "---\nunit: test\nlayer: candidate\n---\n"
+	if err := os.WriteFile(appendixPath1, []byte(appendixContent1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	appendixHash1, _ := fileHash(appendixPath1)
+
+	appendixPath2 := filepath.Join(appendixDir, "unit_test_errors.md")
+	appendixContent2 := "---\nunit: test\nlayer: candidate\n---\n"
+	if err := os.WriteFile(appendixPath2, []byte(appendixContent2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	appendixHash2, _ := fileHash(appendixPath2)
+
+	// Create validate cache that includes both appendix files
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/appendix/unit_test_api.md\n    hash: sha256:" + appendixHash1 + "\n" +
+		"  - path: docs/specs/units/candidate/appendix/unit_test_errors.md\n    hash: sha256:" + appendixHash2 + "\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\nAll checks passed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckAppendicesInCache(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh, got: %s", result.Reason)
+	}
+}
+
+func TestCheckAppendicesInCache_MissingAppendixFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	appendixDir := filepath.Join(candidateDir, "appendix")
+	os.MkdirAll(appendixDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create appendix on disk but NOT in cache
+	appendixPath := filepath.Join(appendixDir, "unit_test_api.md")
+	appendixContent := "---\nunit: test\nlayer: candidate\n---\n"
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create validate cache WITHOUT the appendix entry
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\nAll checks passed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckAppendicesInCache(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (appendix missing from cache), got fresh")
+	}
+	if !strings.Contains(result.Reason, "not included") {
+		t.Fatalf("expected reason about missing appendix, got: %s", result.Reason)
+	}
+}
+
+func TestCheckAppendicesInCache_ExemptAppendixNotInCachePass(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	appendixDir := filepath.Join(candidateDir, "appendix")
+	os.MkdirAll(appendixDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create exempt appendix on disk but NOT in cache — should be allowed
+	appendixPath := filepath.Join(appendixDir, "unit_test_legacy.md")
+	appendixContent := "---\nunit: test\nlayer: candidate\nstatus: exempt\n---\n"
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\nAll checks passed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckAppendicesInCache(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh (exempt appendix skipped), got: %s", result.Reason)
+	}
+}
+
+func TestCheckAppendicesInCache_ValidateCacheNotPassFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Validate cache says "fail" — not a valid pass state
+	cacheContent := "---\ncommand: validate\nunit: test\nresult: fail\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\nValidate failed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckAppendicesInCache(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (validate cache result is not pass), got fresh")
+	}
+}
+
+func TestCheckAppendicesInCache_NoValidateCacheFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	result, err := CheckAppendicesInCache(repoRoot, "nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (no validate cache), got fresh")
+	}
+	if !strings.Contains(result.Reason, "cannot read validate cache") {
+		t.Fatalf("expected reason about missing cache, got: %s", result.Reason)
 	}
 }
 

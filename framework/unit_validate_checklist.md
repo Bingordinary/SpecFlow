@@ -4,6 +4,17 @@
 
 When an agent executes `validate@ {unit}`, it uses the 8 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
 
+## Prerequisite — Read all unit files
+
+Before executing any check, the agent must read the complete unit content:
+
+1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
+2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
+3. For each appendix, read its frontmatter. Skip files with `status: exempt`.
+4. Read the content of every non-exempt appendix file.
+
+The unit's complete spec is the union of the main spec and all non-exempt appendix files. All checks that follow operate on this union.
+
 ## Mode Selection
 
 | Trigger | Mode | What to execute |
@@ -52,7 +63,7 @@ Summary: ...
 
 **Execution steps:**
 
-1. Read `docs/specs/units/candidate/unit_{unit}.md`
+1. Read `docs/specs/units/candidate/unit_{unit}.md` and all non-exempt appendix files (see Prerequisite)
 2. Verify required frontmatter fields: `id`, `layer` (must be `"candidate"`), `version`, `unit_refs`, `rule_refs`
 3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `runnable`
 4. Verify all `unit_refs` point to existing spec files (bare name, e.g. `agent`). Resolve by searching candidate directory first (`unit_{name}.md`), then fall back to stable (`unit_{name}.md`).
@@ -65,6 +76,10 @@ Summary: ...
      - Spec/governance system paths: `docs/specs/`, `framework/` (describe the spec system itself)
      - File paths inside code-block examples serving as illustrations
    - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
+8. **Appendix frontmatter check:** For each non-exempt appendix file, verify:
+   - `unit` frontmatter field matches current unit name
+   - `layer` frontmatter field is `"candidate"`
+9. **Appendix path check:** Verify each appendix file's path matches the convention: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
 
 **PASS:** All format constraints satisfied
 
@@ -80,13 +95,13 @@ Summary: ...
 
 ## Check 2 — Design soundness
 
-**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented. The subagent must actively reason about the design, not passively verify documentation completeness.
+**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented. The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
 
 **Execution steps:**
 
 **Step 1 — Goal-means analysis**
-- Read the unit's goal and scope
-- For each major behavior described: does it demonstrably serve a stated goal? If a behavior cannot be traced to any goal → flag (possible over-engineering)
+- Read the unit's goal and scope from the main spec AND appendix files
+- For each major behavior described (in main spec or appendices): does it demonstrably serve a stated goal? If a behavior cannot be traced to any goal → flag (possible over-engineering)
 - Reversely: is the goal achievable by implementing all described behaviors? If implementing everything still does not meet the goal → flag (design gap)
 - Check whether any behavior violates a stated non-goal (e.g., non-goal says "no multi-tenancy this round" but the behavior describes tenant isolation)
 - **Proportionality check:** Is the design complexity proportional to the stated goal? If the same goal could be achieved with significantly less design surface area → flag (possible over-engineering)
@@ -100,7 +115,7 @@ Summary: ...
 - If a design choice is non-obvious and no rationale is given → FAIL (fix_required: add design decision record)
 
 **Step 3 — Adversarial analysis (red-team)**
-Actively search for design flaws by considering:
+Actively search for design flaws in both main spec and appendix content. Read appendix descriptions of API contracts, data formats, state machines, error handling, and include them in each attack angle:
 
 | Attack angle | Questions to ask |
 |---|---|
@@ -129,16 +144,17 @@ If a plausible critical flaw is identified that the spec does not address → FA
 1. Is the unit's goal and responsibility scope clearly stated?
 2. Are first-round non-goals and boundaries explicitly defined?
 3. Are dependencies, rule bindings, and ownership boundaries explicit?
-4. **Self-consistency check:**
+4. **Self-consistency check (main spec):**
    - Do the goals and described behaviors agree? (goal description scope matches behavior scope)
    - Do non-goals conflict with any described behavior? (non-goal says "not doing X" but behavior describes X)
    - Are the boundaries respected by the behavior descriptions? (e.g., boundary is "client-side validation only" but behavior describes server-side logic)
+5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (fix_required: move content to the correct unit or declare scope expansion)
 
-**PASS:** Scope is clear and self-consistent; no non-goal is violated
+**PASS:** Scope is clear and self-consistent; no non-goal is violated; appendix content stays within unit scope
 
-**FAIL:** Ambiguous scope, goal/non-goal contradiction, or boundary violation (fix_required)
+**FAIL:** Ambiguous scope, goal/non-goal contradiction, boundary violation, or out-of-scope appendix content (fix_required)
 
-**Check method:** Multi-field cross-reference (goal × non-goal × behaviors)
+**Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content)
 
 ---
 
@@ -178,7 +194,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ### Sub-check 5a — Coverage completeness
 
-**Purpose:** Every key behavior in the spec body must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Enhanced from the original forward coverage check.
+**Purpose:** Every key behavior in the spec body and appendices must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Enhanced from the original forward coverage check.
 
 **Execution steps:**
 
@@ -186,10 +202,13 @@ IF evidence_appendix_ref is ABSENT or none:
 2. For each behavior, verify at least one acceptance item covers it
 3. For each covered behavior, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 4. If a behavior has no acceptance item → flag (possible untested behavior)
+5. **Appendix behavior coverage check:** Extract all key behaviors, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes content that has no corresponding acceptance item → WARNING (possible orphan behavior — documented in appendix but not verified). If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
 
-**PASS:** All behaviors have corresponding items with appropriate surface fields
+**PASS:** All behaviors (main spec + appendices) have corresponding items with appropriate surface fields
 
-**FAIL:** Uncovered behavior or surface type mismatch (fix_required)
+**FAIL:** Uncovered behavior or surface type mismatch (fix_required); appendix-main spec contradiction (fix_required)
+
+**Check method:** Spec body + appendices × acceptance item set cross-reference (body → items)
 
 **Check method:** Spec body × acceptance item set unidirectional cross-reference (body → items)
 
@@ -445,9 +464,11 @@ affects.appendices:
 - If content is only background or patch notes → FAIL (fix_required)
 ```
 
-**PASS:** All affects declarations are valid, evidence appendix is semantically consistent
+3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (fix_required: update or remove the invalid path reference)
 
-**FAIL:** Reference inconsistency or appendix content contradicts declaration (fix_required)
+**PASS:** All affects declarations are valid, evidence appendix is semantically consistent, appendix file path references exist
+
+**FAIL:** Reference inconsistency, appendix content contradicts declaration, or appendix references non-existent file paths (fix_required)
 
 **Check method:** affects.* × frontmatter refs cross-reference + appendix content semantic assessment
 
@@ -473,6 +494,7 @@ affects.appendices:
        → the change must be explicitly declared in this candidate's spec body
        If not declared → FAIL (blocked: needs user confirmation on downstream impact)
 ```
+4. **Appendix cross-unit check:** Include appendix content (API contracts, data type definitions, error codes, state machines) in the cross-unit comparison. If an appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (fix_required: resolve the cross-unit inconsistency)
 
 **PASS:** No contradictions across related units; acknowledged contract changes are declared
 
@@ -502,10 +524,11 @@ affects.appendices:
    - Is every "must not" prohibition respected?
    - Is every "must" requirement satisfied?
 ```
+6. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (fix_required: align appendix content with constraints)
 
-**PASS:** Candidate is compatible with all constraints and bound rules
+**PASS:** Candidate (main spec + appendices) is compatible with all constraints and bound rules
 
-**FAIL:** Constraint or rule violation found (fix_required)
+**FAIL:** Constraint or rule violation found in main spec or appendices (fix_required)
 
 **Check method:** Candidate × system_constraints × bound rules three-way cross-reference
 
@@ -517,7 +540,10 @@ After all 8 checks complete:
 
 - **If all PASS:** write validate cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-  - Collect SHA-256 hashes of all files read during validation
+  - Collect SHA-256 hashes of all files read during validation, including:
+    - Main spec file
+    - Every non-exempt appendix file
+    - All referenced files (unit_refs, rule_refs, affects.files are already included)
   - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes
   - Exception: when triggered by `:check-{n}` or `:{keyword}`, write `mode: scoped` with `scoped_check: "{n}"`
 

@@ -4,6 +4,17 @@
 
 When an agent executes `verify@ {unit}`, it uses the 7 steps defined in this file (6 analysis + 1 confidence assessment). This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
 
+## Prerequisite — Read all unit files
+
+Before executing any verify step, the agent must read the complete unit spec:
+
+1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
+2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
+3. For each appendix, read its frontmatter. Skip files with `status: exempt`.
+4. Read the content of every non-exempt appendix file.
+
+The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
+
 ## Mode Selection
 
 | Trigger | Mode | What to execute |
@@ -63,14 +74,14 @@ Summary: ...
 
 ## Step 1 — Structural alignment
 
-**Purpose:** Cross-reference every static structure declared in the spec body against the actual implementation code. This catches missing interfaces, wrong signatures, and inconsistent data definitions that acceptance items alone might miss.
+**Purpose:** Cross-reference every static structure declared in the spec body and appendices against the actual implementation code. This catches missing interfaces, wrong signatures, and inconsistent data definitions that acceptance items alone might miss.
 
-**Why this exists:** Acceptance items describe "what to verify" but the spec body describes "how it's built." If a protocol definition or data structure in the body differs from what's implemented, verify must catch it — even if the acceptance items pass.
+**Why this exists:** Acceptance items describe "what to verify" but the spec (body + appendices) describes "how it's built." If a protocol definition or data structure in the spec differs from what's implemented, verify must catch it — even if the acceptance items pass.
 
 **Execution steps:**
 
-1. Read the full spec body (main flow, protocols, data contracts, error handling, state machines, appendices)
-2. Extract all statically verifiable structural declarations:
+1. Read the full spec body AND all non-exempt appendix files (main flow, protocols, data contracts, error handling, state machines, API definitions from appendices)
+2. Extract all statically verifiable structural declarations from both main spec and appendix content:
 
 | Declaration type | What to extract | How to verify in code |
 |---|---|---|
@@ -124,13 +135,13 @@ c. Reports:
 
 ## Step 2 — Acceptance alignment
 
-**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition.
+**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. For appendix content, cross-reference technical claims (API contracts, data type definitions, configuration keys) against code even if no acceptance item directly covers them.
 
 **Why this is achievable:** A pass_condition like "Returns HTTP 201 with id and created_at" can be verified by checking the handler code returns 201 status and includes those fields in the response struct. The subagent cannot verify the code *works correctly*, but it can verify the code *is structured correctly*.
 
 **Execution steps:**
 
-For each acceptance item in the target spec:
+For each acceptance item in the target spec, AND for each technical claim in appendix files:
 
 1. Read `implementation_surface`, `verification_surface`, and `affects.files` to locate the implementation
 2. Parse the `pass_condition` and extract specific verifiable assertions:
@@ -480,15 +491,16 @@ e. Identify cross-cutting mechanisms
    - Feature flags
 ```
 
-#### 2. Match against the spec surface
+#### 2. Match against the spec surface (main spec + appendices)
 
 ```
 For each design construct discovered in step 1:
 - Does the spec body (protocol, architecture, responsibility sections) describe it?
+- Does any appendix file describe it (API contracts, data types, component trees)?
 - Does any acceptance item's description or pass_condition imply it?
 - Is it referenced in the spec's terminology or data contracts?
 
-If a construct has no spec correspondence → record as surplus candidate.
+If a construct has no correspondence in either the main spec or any appendix → record as surplus candidate.
 ```
 
 #### 3. Filter: is it a real design decision or an implementation detail?
@@ -621,9 +633,10 @@ For surplus mismatches, the first-principles analysis additionally evaluates:
 
 | Context | What to read |
 |---------|-------------|
-| Spec context | The section/group containing the item, sibling items, shared definitions (error codes, types, enums, data models), and rationale in section headers |
+| Spec context | The section/group containing the item, sibling items, shared definitions (error codes, types, enums, data models), rationale in section headers, and relevant appendix sections |
 | Code context | The implementation function body where the mismatch occurs, surrounding logic, related helpers, and callers |
 | Tests | If test files exist for the relevant code module, read their assertions for the mismatched behavior |
+| Appendix context | If the mismatch involves an appendix claim, read the full appendix file to understand the claim's context and relationship to the main spec |
 
 **Analysis instruction (first-principles framework):**
 

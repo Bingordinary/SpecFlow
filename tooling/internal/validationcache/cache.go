@@ -62,6 +62,85 @@ func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"aligned"})
 }
 
+// CheckAppendicesInCache verifies that every non-exempt candidate appendix for
+// the given unit is listed in the validate_result.md cache file. This is a
+// mechanical promote gate — it ensures the agent included all appendix files
+// in the validation run. If an appendix exists on disk but is missing from
+// the cache's files list, the agent skipped it.
+func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
+	// 1. Read validate cache
+	cachePath := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err),
+		}, nil
+	}
+	if cache.Command != "validate" {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("cache command is %q, expected 'validate'", cache.Command),
+		}, nil
+	}
+	if cache.Result != "pass" {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("validate cache result is %q, expected 'pass'", cache.Result),
+		}, nil
+	}
+
+	// 2. Build set of cached file paths
+	cachedPaths := make(map[string]bool, len(cache.Files))
+	for _, entry := range cache.Files {
+		cachedPaths[filepath.ToSlash(entry.Path)] = true
+	}
+
+	// 3. Glob candidate appendix files
+	pattern := specpaths.CandidateAppendixGlob(unitName)
+	fullGlob := filepath.Join(repoRoot, filepath.FromSlash(pattern))
+	matches, err := filepath.Glob(fullGlob)
+	if err != nil {
+		return CheckResult{
+			Fresh:  true,
+			Reason: fmt.Sprintf("cannot glob appendix files: %v (gate skipped)", err),
+		}, nil
+	}
+
+	// 4. Check each non-exempt appendix
+	var missing []string
+	for _, m := range matches {
+		relPath, _ := filepath.Rel(repoRoot, m)
+		relPathSlash := filepath.ToSlash(relPath)
+
+		// Check status: skip exempt appendices
+		data, err := os.ReadFile(m)
+		if err == nil {
+			fm := specpaths.ReadFrontmatterStringMap(string(data))
+			if strings.EqualFold(strings.TrimSpace(fm["status"]), "exempt") {
+				continue
+			}
+		}
+
+		if !cachedPaths[relPathSlash] {
+			missing = append(missing, relPathSlash)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Fresh: false,
+			Reason: fmt.Sprintf("appendix file(s) not included in validation: %s. Run `validate@%s:full` again.",
+				strings.Join(missing, ", "), unitName),
+		}, nil
+	}
+
+	return CheckResult{
+		Fresh:  true,
+		Reason: fmt.Sprintf("all %d appendix file(s) are included in validate cache", len(matches)),
+	}, nil
+}
+
 // CheckRuleValidate reads and validates the validate cache for the given rule.
 func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})

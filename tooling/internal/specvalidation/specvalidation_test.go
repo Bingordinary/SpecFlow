@@ -324,8 +324,21 @@ func TestCheckReferences_RefNotFoundFail(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Check 5: Appendix files (always PASS — optional)
+// Check 5: Appendix files
 // ---------------------------------------------------------------------------
+
+func writeAppendix(t *testing.T, repoRoot, unitName, appendixName, frontmatter string) {
+	t.Helper()
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\n" + frontmatter + "\n---\n"
+	path := filepath.Join(appendixDir, "unit_" + unitName + "_" + appendixName + ".md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
 	repoRoot := t.TempDir()
@@ -333,6 +346,67 @@ func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for no appendices, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAppendices_CorrectFrontmatterPass(t *testing.T) {
+	repoRoot := t.TempDir()
+	createMinimalCandidate(t, repoRoot, "test_unit")
+	writeAppendix(t, repoRoot, "test_unit", "api",
+		"unit: test_unit\nlayer: candidate\n")
+	result := checkAppendices(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for correct frontmatter, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAppendices_WrongUnitFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	createMinimalCandidate(t, repoRoot, "test_unit")
+	writeAppendix(t, repoRoot, "test_unit", "api",
+		"unit: wrong_unit\nlayer: candidate\n")
+	result := checkAppendices(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for wrong unit, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "unit") {
+		t.Fatalf("expected error about unit mismatch, got: %s", result.Details)
+	}
+}
+
+func TestCheckAppendices_WrongLayerFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	createMinimalCandidate(t, repoRoot, "test_unit")
+	writeAppendix(t, repoRoot, "test_unit", "api",
+		"unit: test_unit\nlayer: stable\n")
+	result := checkAppendices(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for wrong layer, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "layer") {
+		t.Fatalf("expected error about layer mismatch, got: %s", result.Details)
+	}
+}
+
+func TestCheckAppendices_ExemptAppendixSkip(t *testing.T) {
+	repoRoot := t.TempDir()
+	createMinimalCandidate(t, repoRoot, "test_unit")
+	writeAppendix(t, repoRoot, "test_unit", "old",
+		"unit: test_unit\nlayer: candidate\nstatus: exempt\n")
+	result := checkAppendices(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for exempt appendix (skipped), got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
+	repoRoot := t.TempDir()
+	createMinimalCandidate(t, repoRoot, "test_unit")
+	writeAppendix(t, repoRoot, "test_unit", "old",
+		"unit: wrong_unit\nlayer: stable\nstatus: exempt\n")
+	result := checkAppendices(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for exempt appendix even with bad frontmatter (skip), got %s: %s", result.Status, result.Details)
 	}
 }
 

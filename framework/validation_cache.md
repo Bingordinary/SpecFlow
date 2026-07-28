@@ -125,11 +125,12 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run (
 
 ## Staleness Detection
 
-`specflowctl promote --unit <name>` reads all three cache files and checks:
+`specflowctl promote --unit <name>` reads the three cache files and the appendix cache, then checks:
 
 1. **Mode check** — if `mode` is `scoped` (not `full`), the cache is rejected with scope detail: "cache is scoped (check {n} | item: {id}), run full verification before promoting."
 2. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected with guidance.
 3. **Review cache check (required)** — `review_result.md` must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If any condition fails, promote is rejected with guidance.
+4. **Appendix cache check** — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any non-exempt appendix on disk is missing from the cache's file list, the appendix was not validated and promote is rejected with guidance to run `validate@{unit}:full`.
 
 `specflowctl promote --rule <id>` enforces cache freshness — reads the validate cache, rejects if missing, stale, or scoped. Rule verify cache is no longer required (rule verify has been removed).
 

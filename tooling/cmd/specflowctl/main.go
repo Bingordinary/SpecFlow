@@ -163,6 +163,20 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
 	fmt.Fprintln(stdout, "")
 
+	// Check appendix files are included in validate cache
+	appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
+	if err != nil {
+		return fmt.Errorf("appendix cache check error: %w", err)
+	}
+	if !appendixResult.Fresh {
+		fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s:full` first.\n", unitName)
+		return errors.New("appendix validation check failed")
+	}
+	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
+	fmt.Fprintln(stdout, "")
+
 	result := promote.Promote(absRoot, unitName)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))
 	if err != nil {

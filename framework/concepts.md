@@ -12,9 +12,9 @@ Every spec document follows a five-step loop:
 |-------|-------------|----------------|---------------|
 | **Fork** | Run `specflowctl fork --unit <name>` to copy stable spec + appendices to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
 | **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
-| **Validate** | Check candidate design quality against checklist. | Agent triggered by `validate`. | All checks pass. |
-| **Verify** | Check candidate vs code alignment. | Agent triggered by `verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
-| **Promote** | Replace stable with the validated+verified candidate. | User confirms `promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
+| **Validate** | Check candidate design quality against checklist. Appendix content is part of the unit's design and included in all checks. | Agent triggered by `validate`. | All checks pass. |
+| **Verify** | Check candidate vs code alignment. Appendix content is verified against code alongside the main spec. | Agent triggered by `verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
+| **Promote** | Replace stable with the validated+verified candidate. Checks that all appendix files were included in validation. | User confirms `promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
 
 After promote, the new stable becomes the fork source for the next iteration — the cycle repeats.
 
@@ -205,6 +205,8 @@ Before suggesting any action, communicate the current file state using concrete,
 | Review cache fresh (scoped) | "Review has passed for changed files — no P0 or P1 findings in the diff" |
 | Review cache with P0/P1 findings | "Review found {N} P0/P1 finding(s) — review blocks promote until resolved" |
 | Review cache missing/stale | "Review cache does not exist or is expired" |
+| Appendix validate check pass | "All appendix files are included in validation" |
+| Appendix validate check fail | "One or more appendix files were not validated — run `validate@{unit}:full` before promoting" |
 
 When scoped cache exists, the agent should mention: "This is not a full check — run `:full` for complete verification before promoting."
 
@@ -258,14 +260,14 @@ The detailed promote workflow is defined in `framework/unit_promote_workflow.md`
 Key rules that override the checklist:
 
 1. `specflowctl promote --unit <name>` and `specflowctl promote --rule <id>` are the only operations that write to stable.
-2. Unit promote: the CLI independently checks cache freshness before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
+2. Unit promote: the CLI independently checks cache freshness (validate, verify, review, and appendix) before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
 3. After promote succeeds, the agent must NOT modify the promoted stable spec. Body text references are maintained as-is because they use concept names (e.g. `auth`) rather than layer-prefixed file names.
 
-`specflowctl promote --unit <name>` validates format (frontmatter, required fields) and copies candidate files to stable. Reference integrity is checked by `validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`. Appendix filenames are preserved since they no longer encode layer. After promote succeeds, candidate cache files are deleted.
+`specflowctl promote --unit <name>` validates format (frontmatter, required fields), checks appendix validation coverage (every non-exempt appendix must be in the validate cache's file list), and copies candidate files to stable. Reference integrity is checked by `validate` before promote runs. During the copy, the tool automatically updates each file's frontmatter `layer` field from `candidate` to `stable`. Appendix filenames are preserved since they no longer encode layer. After promote succeeds, candidate cache files are deleted.
 
 `specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (with layer transform), then deletes the candidate rule file. Consumer impact assessment is the agent's responsibility.
 
-**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus). The level-2 position (current design intent) is vacant because no candidate file exists; it will be recreated when someone forks to start a new editing round. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. See [Truth Hierarchy](#truth-hierarchy).
+**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus). The level-2 position (current design intent) is vacant because no candidate file exists; it will be recreated when someone forks to start a new editing round. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. Before promoting, the CLI verifies that every non-exempt appendix file is listed in the validate cache's file list — ensuring all appendix content was checked. See [Truth Hierarchy](#truth-hierarchy).
 
 ### 5. Spec Review (required quality gate, before promote)
 
@@ -304,7 +306,7 @@ All fork operations (stable → candidate) must use `specflowctl fork --unit <na
 | `specflowctl fork --unit <name>` | Copy stable unit spec + appendices to candidate layer with layer transform and version bump. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
 | `specflowctl fork --rule <id>` | Copy stable rule to candidate layer with layer transform and version bump. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
 | `specflowctl next --unit <name>` | Discover unit files and dependencies. Fails if unit is not found or tool errors. | Agent |
-| `specflowctl promote --unit <name>` | Checks validate+verify+review cache freshness, validates format + copies candidate→stable. Rejects if any cache stale, missing, scoped, or blocking. | Agent (after user confirmation, after validate+verify+review) |
+| `specflowctl promote --unit <name>` | Checks validate+verify+review+appendix cache freshness, validates format + copies candidate→stable. Rejects if any cache stale, missing, scoped, or blocking. Also rejects if any non-exempt appendix file is missing from the validate cache. | Agent (after user confirmation, after validate+verify+review) |
 | `specflowctl promote --rule <id>` | Validates rule frontmatter, copies candidate rule→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §5. | Agent or human maintainer |
 | `specflowctl review run-*` | Governance review run-state management. Subcommands: `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
 | `validate@{target}` (agent trigger) | Read-only subagent. Unit: 8-point checklist (`unit_validate_checklist.md`). Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Default: full (always runs all checks + cross-check — quality checks are holistic). Add `:check-{n}` or `:{keyword}` for specific check. See `framework/verification_scope.md`. Writes cache on PASS. On FAIL: deletes cache, reports findings. Agent must stop and not proceed to promote. | User says "validate" or confirms agent suggestion |
