@@ -740,6 +740,8 @@ Code intent: {what the code does and why}
 Comparison: {goal agreement? implementation difference? edge case handling?}
 Root cause: {incomplete | stale | divergence | accident | blocked}
 Suggested direction: {spec_gap | code_gap | needs_design | blocked}
+Files involved: {spec and/or code file paths the suggested fix would touch}
+  - List every file the fix would modify; the main agent uses this for batch classification scope evaluation
 Severity: {P0 | P1 | P2 | P3}
   - Derive from the declaration's table row in Step 1 (severity if missing).
   - For surplus findings: determine by the construct's semantic role —
@@ -756,13 +758,54 @@ Signal layer: {condensed metadata summary, if collected}
 - Independent: each mismatch is analyzed separately, without reference to other mismatches
 - If version control history is available, MAY query `git log` for the relevant files. If not available, skip timestamp evidence — confidence capped at medium.
 
+### Batch classification (main agent)
+
+When MISMATCH items exist, the main agent classifies each finding into a **batch group** or a **decision group** before presenting. Classification aggregates fields the Step 7 sub-agents already returned (root cause, suggested direction, confidence, severity, files involved) — it adds no new analysis; for batch group candidates it only runs lightweight assertion re-verification (see Assertion re-verification below).
+
+**Activation threshold:** Batch grouping is enabled only when the total MISMATCH count ≥ 10 AND the batch group would contain ≥ 3 items. Below the threshold, present findings flat (§Summary format without grouping).
+
+**Batch group eligibility (ALL must hold):**
+
+A. **Direction is unambiguous:**
+   - Root cause is `accident` or `incomplete` (exclude `divergence`, `blocked`, `stale`)
+   - Suggested direction is a single value `code_gap` or `spec_gap` (exclude `needs_design` and any item whose direction is an "either/or" verdict)
+   - Confidence is `high`
+   - The correct behavior has an undisputed source: the spec states it explicitly (e.g., an error code table) or an existing correct pattern in the codebase (e.g., the same construct written correctly elsewhere). If confirming "what is correct" requires interpretation → exclude.
+
+B. **Small change scope:**
+   - Involves ≤ 3 files, all within the same change domain (all code, or all spec documents) — no cross-domain spec↔code linkage
+   - Change type ∈ {fix dead branch / wrong parameter, wire an existing but unconnected call, spec wording correction, add missing test}
+   - Exclude: new mechanisms, API / data-structure contract changes, items requiring core changes or exposing a core gap
+
+C. **No user decision needed:**
+   - The fix does not change currently-working behavior (it repairs a dead branch or a missing piece that never took effect)
+   - No boundary verdict, no "shrink spec vs change code" either/or
+
+Any item failing any criterion → decision group. **P0/P1 items always go to the decision group** — the batch group only contains P2/P3.
+
+==ATOM_BEGIN:batch_findings_mechanism==
+**Assertion re-verification:** After eligibility passes, the main agent re-verifies each batch group candidate's core assertion with 1-2 deterministic checks:
+- Sub-agent claims "X is missing" → confirm X is really absent from the cited location (read the file, check existence, or grep as appropriate)
+- Sub-agent claims "the cited source states X explicitly" → read the cited line, confirm X is really written there, without vague wording ("or", "suggested", alternatives)
+- Sub-agent claims "the correct pattern exists elsewhere" → confirm that reference really exists
+
+Re-verification failure → item moves to the decision group. This runs before execution because a post-execution check re-run cannot detect a wrong-direction fix — once the documents are made consistent, the re-run passes and the error is cemented.
+
+**Execution boundary:** Classification is presentation only — it is not an authorization to act. Nothing is implemented until the user explicitly agrees to the whole batch group. The user may approve the batch, release it without changes, or move individual items out to the decision group. Before confirming, the user may ask to expand any batch item (full analysis plus on-the-spot re-check); expanded items move to the decision group and are decided individually.
+
+**Batch group presentation note:** When batch grouping is active, add: "This grouping is a classification suggestion only — nothing is applied until you confirm. Each item shows its judgment basis; ask to expand any item if in doubt — expanded items move to the decision group."
+==ATOM_END:batch_findings_mechanism==
+
 ### Analysis collection
 
 After all sub-agents return:
 
 1. Collect all analysis results
-2. Present the consolidated findings summary (§Summary format)
-3. Present each finding with its suggested direction and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
+2. Classify findings per §Batch classification (skip when the activation threshold is not met)
+3. Present the consolidated findings summary (§Summary format)
+4. Wait for the user's decision per HARD RULE 3a:
+   - **Batch group:** one decision on the whole group per §Batch classification.
+   - **Decision group:** present each finding with its suggested direction and wait for the user's decision. Do not offer a structured resolution menu.
 
 ### Summary format
 
@@ -774,13 +817,26 @@ Target: candidate | stable
 Blocking mismatches: N  (severity P0/P1)
 Non-blocking mismatches: N  (severity P2/P3)
 Findings:
-  - {item.id}: spec says {X}, code does {Y}
-    → {suggested direction} (severity: P{n}, confidence: {level})
+  Batch group (N items) — direction resolved, suggested for batch handling:
+    - {item.id}: {one-line direction} (P{n}, based on: spec@file:line | code@file:line)
+    - ...
+  Decision group (M items) — decided one by one:
+    - {item.id}: spec says {X}, code does {Y}
+      → {suggested direction} (severity: P{n}, confidence: {level})
+    - ...
+────────────────────────────────────────────────────
+```
+
+When batch grouping is inactive (threshold not met), the Findings section uses the flat format:
+
+```
+Findings:
   - {item.id}: spec says {X}, code does {Y}
     → {suggested direction} (severity: P{n}, confidence: {level})
   ...
-────────────────────────────────────────────────────
 ```
+
+**Batch group presentation note:** The note text is defined in §Batch classification.
 
 ### Direction table
 
@@ -791,7 +847,9 @@ Findings:
 | **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → validate → verify | P0/P1 → BLOCK; P2/P3 → Allow |
 | **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
 
-After presenting the summary, present each finding with its suggested direction and stop. The user decides the next step per HARD RULE 3a. Do not offer a structured resolution menu.
+After presenting the summary:
+- If batch grouping is active: stop and wait for the user's decision on the batch group (approve / release / move items out) and on each decision-group finding. Nothing is implemented without explicit user agreement.
+- If batch grouping is inactive: present each finding with its suggested direction and stop. The user decides the next step per HARD RULE 3a. Do not offer a structured resolution menu.
 
 ### Stable-only mode
 
@@ -827,6 +885,3 @@ After all 7 steps complete, determine cache action based on the highest severity
     - Write `verify_result.md` with `result: mismatch`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
     - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
   - **Scoped run:** report findings only — do NOT write a cache. A scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. See `framework/validation_cache.md`.
-
-
-

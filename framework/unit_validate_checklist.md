@@ -553,7 +553,36 @@ After all 8 checks complete:
 
 ## Present Findings
 
-After all checks complete, present FAIL findings with their resolution type (fix_required / blocked) and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
+### Batch classification (validate)
+
+When FAIL items exist, the main agent classifies each finding into a **batch group** or a **decision group** before presenting. Classification uses each FAIL's resolution type (fix_required / blocked) and the check definition — it adds no new analysis; for batch group candidates it only runs lightweight assertion re-verification (see Assertion re-verification below).
+
+**Batch group eligibility:** A finding enters the batch group only if its fix is fully determined by an objective standard — no interpretation of design intent is required. The batch group is limited to these fix types:
+- Check 1: missing required frontmatter fields (standard: the required fields list)
+- Check 1: unit_refs / rule_refs / appendix references to non-existent files (standard: file existence)
+- Check 1: appendix path or naming not following the convention (standard: the path convention)
+- Check 5e: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
+
+All other FAIL findings — including 5f/5g/5h content rewrites, Checks 2/3/4/6/7/8, and every blocked item — go to the decision group. **Blocked items always go to the decision group.**
+
+No activation threshold: findings are aggregated at check level rather than presented flat per item, so splitting out the batch group adds constant cost and always reduces the decisions the user must make — there is no over-splitting scenario. The batch group is inherently limited by the fix-type list above.
+
+==ATOM_BEGIN:batch_findings_mechanism==
+**Assertion re-verification:** After eligibility passes, the main agent re-verifies each batch group candidate's core assertion with 1-2 deterministic checks:
+- Sub-agent claims "X is missing" → confirm X is really absent from the cited location (read the file, check existence, or grep as appropriate)
+- Sub-agent claims "the cited source states X explicitly" → read the cited line, confirm X is really written there, without vague wording ("or", "suggested", alternatives)
+- Sub-agent claims "the correct pattern exists elsewhere" → confirm that reference really exists
+
+Re-verification failure → item moves to the decision group. This runs before execution because a post-execution check re-run cannot detect a wrong-direction fix — once the documents are made consistent, the re-run passes and the error is cemented.
+
+**Execution boundary:** Classification is presentation only — it is not an authorization to act. Nothing is implemented until the user explicitly agrees to the whole batch group. The user may approve the batch, release it without changes, or move individual items out to the decision group. Before confirming, the user may ask to expand any batch item (full analysis plus on-the-spot re-check); expanded items move to the decision group and are decided individually.
+
+**Batch group presentation note:** When batch grouping is active, add: "This grouping is a classification suggestion only — nothing is applied until you confirm. Each item shows its judgment basis; ask to expand any item if in doubt — expanded items move to the decision group."
+==ATOM_END:batch_findings_mechanism==
+
+After classification, present the findings (§Summary format) and wait for the user's decision per HARD RULE 3a:
+- **Batch group:** one decision on the whole group per §Batch classification.
+- **Decision group:** present each finding with its resolution type (fix_required / blocked) and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
 
 ### Summary format
 
@@ -562,10 +591,21 @@ After all checks complete, present FAIL findings with their resolution type (fix
 Mode: scoped | full
 Validate result: FAIL
 Findings:
-  1. {check-name}: FAIL — {reason} (fix_required | blocked)
-  2. {check-name}: FAIL — {reason} (fix_required | blocked)
-  ...
+  Batch group (N items) — fix fully determined by an objective standard:
+    - {item}: {one-line fix} (based on: {standard reference})
+    ...
+  Decision group (M items) — need confirmation:
+    1. {check-name}: FAIL — {reason} (fix_required | blocked)
+    ...
 ────────────────────────────────────────────────────
+```
+
+When no finding qualifies for the batch group, present flat:
+
+```
+Findings:
+  1. {check-name}: FAIL — {reason} (fix_required | blocked)
+  ...
 ```
 
 ### Validate-specific notes

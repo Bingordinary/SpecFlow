@@ -35,9 +35,14 @@ Review result: PASS | FAIL
 Findings: N (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 
 Findings:
-  [{severity}] {location} — {issue}
-        spec_context: {design context, if any}
-        recommendation: {fix suggestion}
+  Batch group (N items) — fix does not change runtime behavior, suggested for batch handling:
+    - {location}: {one-line fix} (P3, based on: {evidence location})
+    ...
+  Decision group (M items) — decided one by one:
+    [{severity}] {location} — {issue}
+          spec_context: {design context, if any}
+          recommendation: {fix suggestion}
+    ...
 
 Suppressed by spec:
   {location} — {issue} → {suppression_reason}, {spec_ref}
@@ -48,6 +53,16 @@ Summary:
   P0: N | P1: N | P2: N | P3: N
 
 Gate: review {blocks|does not block} promote ({reason})
+```
+
+When batch grouping is inactive (threshold not met), the Findings section uses the flat format:
+
+```
+Findings:
+  [{severity}] {location} — {issue}
+        spec_context: {design context, if any}
+        recommendation: {fix suggestion}
+  ...
 ```
 
 **PASS:** No P0 or P1 findings exist.
@@ -213,9 +228,42 @@ Lightweight: the main agent reads 1-2 target files per finding. No sub-agent re-
 
 ---
 
+## Batch classification (review)
+
+When findings exist, the main agent classifies each finding into a **batch group** or a **decision group** before presentation. Classification runs after the cross-check (§7) — cross-check has already removed false positives; classification aggregates each finding's severity and recommendation, and for batch group candidates only runs lightweight assertion re-verification (see Assertion re-verification below).
+
+**Activation threshold:** Batch grouping is enabled only when the total finding count ≥ 10 AND the batch group would contain ≥ 3 items. Below the threshold, present findings flat (§Output Format without grouping).
+
+**Batch group eligibility (ALL must hold):**
+- Severity is P3 — P0/P1 are gate-level, P2 is a trade-off decision, all go to the decision group
+- Fix type ∈ {remove unused import / unused variable / dead code / commented-out block, update stale comment} — the fix does not change any runtime behavior
+- Recommendation is a single concrete action — no "or", "consider", "maybe" wording
+- Involves ≤ 3 files, all within the same change domain
+
+All other findings — P0/P1/P2, any refactoring-type fix (structure, duplication, coupling, naming), error/safety findings, TODO/debt markers — go to the decision group.
+
+==ATOM_BEGIN:batch_findings_mechanism==
+**Assertion re-verification:** After eligibility passes, the main agent re-verifies each batch group candidate's core assertion with 1-2 deterministic checks:
+- Sub-agent claims "X is missing" → confirm X is really absent from the cited location (read the file, check existence, or grep as appropriate)
+- Sub-agent claims "the cited source states X explicitly" → read the cited line, confirm X is really written there, without vague wording ("or", "suggested", alternatives)
+- Sub-agent claims "the correct pattern exists elsewhere" → confirm that reference really exists
+
+Re-verification failure → item moves to the decision group. This runs before execution because a post-execution check re-run cannot detect a wrong-direction fix — once the documents are made consistent, the re-run passes and the error is cemented.
+
+**Execution boundary:** Classification is presentation only — it is not an authorization to act. Nothing is implemented until the user explicitly agrees to the whole batch group. The user may approve the batch, release it without changes, or move individual items out to the decision group. Before confirming, the user may ask to expand any batch item (full analysis plus on-the-spot re-check); expanded items move to the decision group and are decided individually.
+
+**Batch group presentation note:** When batch grouping is active, add: "This grouping is a classification suggestion only — nothing is applied until you confirm. Each item shows its judgment basis; ask to expand any item if in doubt — expanded items move to the decision group."
+==ATOM_END:batch_findings_mechanism==
+
+After classification, present the findings (§Output Format) and wait for the user's decision per HARD RULE 3a:
+- **Batch group:** one decision on the whole group per §Batch classification.
+- **Decision group:** present each finding with its severity and recommendation and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
+
+---
+
 ## 8. Write review cache (main agent)
 
-After cross-check (§7) completes:
+After cross-check (§7) and batch classification (§Batch classification) complete:
 
 1. Compute gate result:
    - P0 or P1 findings exist → `result: fail`, `blocking: true`
@@ -227,3 +275,9 @@ After cross-check (§7) completes:
    - Include full findings body (cannot be omitted — required for promote gate detail)
 
 Review always writes cache regardless of pass/fail.
+
+**Cache record contract:** The cache records the file state read during the review run — it is independent of the user's decision outcome:
+
+- Collect file hashes from the files read during the review run (same collection point as verify Step 8)
+- Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
+- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — re-run `review@{unit}:full` before promote
