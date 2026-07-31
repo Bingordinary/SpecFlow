@@ -96,3 +96,14 @@ After migration, run the format compliance check against `framework/spec_writing
 | Rule files | For each rule file: `rule_id`, `rule_scope`, `layer`, `rule_version` present. Path matches convention. |
 
 Report each check as PASSED or FAILED with details. If any check fails and the cause is a missed migration, fix it. If the cause is unclear or requires business judgment, report it to the user.
+
+### Step 5: Impact classification
+
+After format verification, classify downstream impact on existing units:
+
+1. Determine whether Step 2 detected structural changes involving **path ownership, object registration, or support-surface boundaries** — i.e. boundary changes that cannot be resolved from unit or rule frontmatter. (To detect: check whether the framework diff includes structural path changes in `docs/specs/`, or whether any governance flow explicitly reports an unresolved boundary change.)
+2. If such boundary changes exist, run impact sync per `framework/governance/impact_sync.md` to perform consumer discovery and freshness classification for affected units.
+3. Report the impact sync output contract: `affected_candidate_units`, `affected_stable_units`, and `freshness_review_required`.
+4. If no such boundary changes exist, report that no affected units require classification and finish. Do not infer consumers from implementation directories alone.
+
+Do not invent business truth during impact classification — if a fallback decision requires business judgment, present it to the user and ask for input.

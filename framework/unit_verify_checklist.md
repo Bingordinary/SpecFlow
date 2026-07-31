@@ -468,7 +468,7 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
     - Old import paths
     - Old configuration keys
     - Old module/package names
-
+```
 
 **PASS:** Old code removed, no remaining references
 
