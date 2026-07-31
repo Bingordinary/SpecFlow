@@ -114,8 +114,6 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"tooling/scripts/pull_with_release.sh",
 		"tooling/scripts/push_with_release.ps1",
 		"tooling/scripts/push_with_release.sh",
-		"tooling/scripts/tooling_fingerprint.ps1",
-		"tooling/scripts/tooling_fingerprint.sh",
 		"tooling/scripts/update_tooling_binaries.ps1",
 		"tooling/scripts/update_tooling_binaries.sh",
 	} {

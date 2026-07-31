@@ -926,12 +926,6 @@ func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) 
 	state := mustParse(t, file)
 
 	toolingSlice := findSlice(t, state, "tooling_execution")
-	if !containsString(toolingSlice.InputFiles, "tooling/scripts/tooling_fingerprint.sh") {
-		t.Fatalf("expected shell fingerprint script in tooling execution input files, got %+v", toolingSlice.InputFiles)
-	}
-	if !containsString(toolingSlice.InputFiles, "tooling/scripts/tooling_fingerprint.ps1") {
-		t.Fatalf("expected PowerShell fingerprint script in tooling execution input files, got %+v", toolingSlice.InputFiles)
-	}
 	if !containsString(toolingSlice.InputFiles, "tooling/scripts/build_release.sh") {
 		t.Fatalf("expected build release script in tooling execution input files, got %+v", toolingSlice.InputFiles)
 	}
@@ -942,9 +936,6 @@ func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) 
 	}
 	convergenceSlice := findSlice(t, state, "project_instance_to_framework_convergence")
 
-	if !containsString(convergenceSlice.InputFiles, "tooling/scripts/tooling_fingerprint.sh") {
-		t.Fatalf("expected shell fingerprint script in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
-	}
 	if !containsString(convergenceSlice.InputFiles, "tooling/scripts/build_release.sh") {
 		t.Fatalf("expected build release script in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
 	}
@@ -1038,9 +1029,6 @@ func TestRefreshUpdatesBaselineInputFilesWhenScopeDefinitionChanges(t *testing.T
 
 	refreshed := mustParse(t, file)
 	scopeSlice := findSlice(t, refreshed, "scope_inventory")
-	if !containsString(scopeSlice.InputFiles, "tooling/scripts/tooling_fingerprint.sh") {
-		t.Fatalf("expected refreshed scope_inventory to include shell fingerprint script, got %+v", scopeSlice.InputFiles)
-	}
 	if !containsString(scopeSlice.InputFiles, "tooling/scripts/build_release.sh") {
 		t.Fatalf("expected refreshed scope_inventory to include build release script, got %+v", scopeSlice.InputFiles)
 	}
@@ -1048,9 +1036,6 @@ func TestRefreshUpdatesBaselineInputFilesWhenScopeDefinitionChanges(t *testing.T
 		t.Fatalf("expected refreshed scope_inventory to include install script, got %+v", scopeSlice.InputFiles)
 	}
 	toolingSlice := findSlice(t, refreshed, "tooling_execution")
-	if !containsString(toolingSlice.InputFiles, "tooling/scripts/tooling_fingerprint.ps1") {
-		t.Fatalf("expected refreshed tooling_execution to include PowerShell fingerprint script, got %+v", toolingSlice.InputFiles)
-	}
 	if !containsString(toolingSlice.InputFiles, "tooling/scripts/build_release.sh") {
 		t.Fatalf("expected refreshed tooling_execution to include build release script, got %+v", toolingSlice.InputFiles)
 	}
@@ -1154,8 +1139,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"tooling/scripts/pull_with_release.sh",
 		"tooling/scripts/push_with_release.ps1",
 		"tooling/scripts/push_with_release.sh",
-		"tooling/scripts/tooling_fingerprint.ps1",
-		"tooling/scripts/tooling_fingerprint.sh",
 	} {
 		mustWrite(t, filepath.Join(repoRoot, relPath), "# script\n")
 	}
@@ -1175,8 +1158,6 @@ func currentReviewToolingScriptFiles() []string {
 		"tooling/scripts/pull_with_release.sh",
 		"tooling/scripts/push_with_release.ps1",
 		"tooling/scripts/push_with_release.sh",
-		"tooling/scripts/tooling_fingerprint.ps1",
-		"tooling/scripts/tooling_fingerprint.sh",
 	}
 }
 

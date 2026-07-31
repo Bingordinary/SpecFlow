@@ -186,8 +186,11 @@ $downloadDir = $null
 try {
     Set-Location $repoRoot
 
-    $fingerprintScript = Join-Path $repoRoot "tooling/scripts/tooling_fingerprint.ps1"
-    $fingerprint = (& $fingerprintScript).Trim()
+    $fingerprintFile = Join-Path $repoRoot "tooling/fingerprint.txt"
+    if (-not (Test-Path -LiteralPath $fingerprintFile -PathType Leaf)) {
+        throw "tooling/fingerprint.txt is missing in this checkout. This version has no recorded fingerprint metadata — pull to a version that ships it first."
+    }
+    $fingerprint = (Get-Content -LiteralPath $fingerprintFile -Raw).Trim()
     $shortFingerprint = $fingerprint.Substring(0, 12)
     $tag = "specflow-tooling-$shortFingerprint"
     $suffix = Get-PlatformSuffix

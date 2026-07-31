@@ -75,18 +75,37 @@ try {
         throw "Git remote 'origin' is missing."
     }
 
-    Write-Host "Pushing $branch to origin..."
-    Invoke-CheckedNative "git" @("push", "-u", "origin", $branch)
-
     if ($branch -ne "main") {
+        Write-Host "Pushing $branch to origin..."
+        Invoke-CheckedNative "git" @("push", "-u", "origin", $branch)
         Write-Host "Current branch is $branch, not main."
         Write-Host "Release tag push is skipped."
         exit 0
     }
 
-    $fingerprintScript = Join-Path $repoRoot "tooling/scripts/tooling_fingerprint.ps1"
-    $fingerprint = (& $fingerprintScript -Short).Trim()
-    $tag = "specflow-tooling-$fingerprint"
+    Write-Host "Computing tooling source fingerprint..."
+    $toolingRoot = Join-Path $repoRoot "tooling"
+    Push-Location $toolingRoot
+    try {
+        $fingerprint = Invoke-CheckedOutput "go" @("run", "./cmd/specflowctl", "tooling-fingerprint", "--repo-root", $repoRoot)
+    }
+    finally {
+        Pop-Location
+    }
+    $shortFingerprint = $fingerprint.Substring(0, 12)
+
+    $fingerprintFile = Join-Path $toolingRoot "fingerprint.txt"
+    $recorded = if (Test-Path -LiteralPath $fingerprintFile -PathType Leaf) { (Get-Content -LiteralPath $fingerprintFile -Raw).Trim() } else { "" }
+    if ($recorded -ne $fingerprint) {
+        Set-Content -LiteralPath $fingerprintFile -Value $fingerprint -NoNewline
+        Invoke-CheckedNative "git" @("add", "tooling/fingerprint.txt")
+        Invoke-CheckedNative "git" @("commit", "-m", "chore(tooling): record tooling fingerprint $shortFingerprint")
+    }
+
+    Write-Host "Pushing $branch to origin..."
+    Invoke-CheckedNative "git" @("push", "-u", "origin", $branch)
+
+    $tag = "specflow-tooling-$shortFingerprint"
 
     & git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
     if ($LASTEXITCODE -eq 0) {

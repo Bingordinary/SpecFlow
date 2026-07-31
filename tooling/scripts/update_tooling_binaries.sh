@@ -145,7 +145,13 @@ if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
   echo "Warning: working tree has uncommitted changes." >&2
 fi
 
-fingerprint="$("${REPO_ROOT}/tooling/scripts/tooling_fingerprint.sh")"
+fingerprint_file="${REPO_ROOT}/tooling/fingerprint.txt"
+if [[ ! -f "${fingerprint_file}" ]]; then
+  echo "Error: tooling/fingerprint.txt is missing in this checkout." >&2
+  echo "This version has no recorded fingerprint metadata — pull to a version that ships it first." >&2
+  exit 1
+fi
+fingerprint="$(cat "${fingerprint_file}")"
 short_fingerprint="${fingerprint:0:12}"
 tag="specflow-tooling-${short_fingerprint}"
 suffix="$(platform_suffix)"

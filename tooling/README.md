@@ -45,7 +45,7 @@ PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull, computes the current tooling fingerprint, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums.
+The script runs a fast-forward pull, reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums.
 
 Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag:
 
@@ -99,7 +99,7 @@ The tooling layer must not:
    - this is a render action: read-only, does not modify any project file
 6. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
-   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, scoped, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must exist, be `full` mode, and be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
+   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, scoped, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must exist, be `full` mode, and be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing, stale, or scoped, promote is rejected with guidance to re-run `validate@{rule}:full`
    - this is the only write gate
 7. `review collect-default-scope --flow <review_flow>`
@@ -114,7 +114,7 @@ The tooling layer must not:
    - refresh only `last_updated_at`
 12. `validate write`
     - check whether a file path may be written under current governance constraints
-    - `validate write --path <path>` checks the executor's write permission for the given path
+    - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints
 13. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
 
@@ -186,11 +186,20 @@ The tooling helper script input set is every regular file under:
 <tooling-root>/scripts/**
 ```
 
-This includes install, pull-with-release, push-with-release, build-release, and tooling-fingerprint scripts.
+This includes install, pull-with-release, push-with-release, build-release, update-tooling-binaries, and version-check scripts.
 
 The manifest is included because it controls which framework-managed and project-managed files `init` and `doctor` inspect or write.
 Tooling helper scripts are review inputs because they rebuild or select binaries for the installed tooling source.
 They are not binary freshness inputs unless they change compiled binary behavior.
+
+## Tooling Fingerprint Distribution
+
+The tooling source fingerprint has a single authoritative implementation: `toolingfreshness.LiveFingerprint` (used by `build-release` to embed the fingerprint into release binaries). Release scripts do not recompute hashes themselves.
+
+- `specflowctl tooling-fingerprint [--short] [--repo-root PATH]` prints the live fingerprint of the current working tree.
+- `push_with_release.sh`/`.ps1` compute the fingerprint via `go run ./cmd/specflowctl tooling-fingerprint` (requires a Go toolchain on the machine running the push) and record it into `tooling/fingerprint.txt` as a release-metadata commit before tagging.
+- `tooling/fingerprint.txt` is tracked by git and ships with every checkout. It is not part of the tooling source input set above, so recording it never changes the fingerprint it records.
+- Consumer projects run `update_tooling_binaries.sh`/`.ps1`, which read `tooling/fingerprint.txt` and download the matching release binary from the `specflow-tooling-<short-fingerprint>` tag. No local hash computation is needed.
 
 ## Usage Examples
 
@@ -203,9 +212,10 @@ The freshness gate requires an embedded build fingerprint for ordinary governanc
 The supported `go run` recovery and inspection surface remains:
 
 1. `build-release`
-2. `doctor`
-3. `help`
-4. the internal build-fingerprint query command
+2. `tooling-fingerprint`
+3. `doctor`
+4. `help`
+5. the internal build-fingerprint query command
 
 Examples:
 
@@ -240,7 +250,8 @@ The normal user recovery path is to download the matching release binaries again
 The minimal stale-binary recovery and inspection surface remains:
 
 1. `build-release`
-2. `doctor`
-3. `help`
-4. the internal build-fingerprint query command
-5. `next` — these are read-only render actions that do not modify project files or advance governance state
+2. `tooling-fingerprint`
+3. `doctor`
+4. `help`
+5. the internal build-fingerprint query command
+6. `next` — these are read-only render actions that do not modify project files or advance governance state

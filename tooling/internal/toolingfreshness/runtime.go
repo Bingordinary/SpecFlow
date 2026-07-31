@@ -36,7 +36,16 @@ func CheckProcess(args []string, cwd string) error {
 	}
 	layout, err := specflowlayout.Resolve(repoRoot)
 	if errors.Is(err, specflowlayout.ErrNotFound) {
-		return nil
+		// A non-specFlow directory is only allowed to pass through when the
+		// repo root was not explicitly overridden by a caller argument.
+		// An explicitly provided --repo-root that does not resolve to a
+		// specFlow layout is rejected so the freshness gate cannot be
+		// bypassed by injecting a foreign path into the argument list.
+		cwdAbs, absErr := filepath.Abs(cwd)
+		if absErr != nil || sameDirectory(repoRoot, cwdAbs) {
+			return nil
+		}
+		return fmt.Errorf("--repo-root %q does not point to a specFlow project layout", repoRoot)
 	}
 	if err != nil {
 		return err
@@ -79,11 +88,23 @@ func ShouldBypass(args []string) bool {
 
 
 	switch args[0] {
-	case "-h", "--help", "help", "build-release", "doctor", "next", HiddenBuildFingerprintCommand:
+	case "-h", "--help", "help", "build-release", "tooling-fingerprint", "doctor", "next", HiddenBuildFingerprintCommand:
 		return true
 	default:
 		return false
 	}
+}
+
+// sameDirectory reports whether two paths refer to the same directory.
+// Symlinks are resolved through os.Stat/os.SameFile, which works across
+// platforms; a path that cannot be stat'd is compared by absolute path.
+func sameDirectory(a, b string) bool {
+	sa, errA := os.Stat(a)
+	sb, errB := os.Stat(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return os.SameFile(sa, sb)
 }
 
 func ResolveRepoRoot(args []string, cwd string) (string, error) {

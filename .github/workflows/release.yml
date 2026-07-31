@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fingerprint="$("${SPECFLOW_RELEASE_REPO_ROOT}/specflow/tooling/scripts/tooling_fingerprint.sh")"
+          fingerprint="$(cat "${SPECFLOW_RELEASE_REPO_ROOT}/specflow/tooling/fingerprint.txt")"
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \

@@ -60,11 +60,24 @@ if [[ -z "${remote_url}" ]]; then
   exit 1
 fi
 
+echo "Computing tooling source fingerprint..."
+fingerprint="$(cd "${REPO_ROOT}/tooling" && go run ./cmd/specflowctl tooling-fingerprint --repo-root "${REPO_ROOT}")"
+short_fingerprint="${fingerprint:0:12}"
+
+fingerprint_file="${REPO_ROOT}/tooling/fingerprint.txt"
+if [[ ! -f "${fingerprint_file}" ]] || [[ "$(cat "${fingerprint_file}")" != "${fingerprint}" ]]; then
+  printf '%s\n' "${fingerprint}" >"${fingerprint_file}"
+  git add tooling/fingerprint.txt
+  if ! git commit -m "chore(tooling): record tooling fingerprint ${short_fingerprint}"; then
+    echo "Error: failed to commit fingerprint metadata. Configure git user.name and user.email first." >&2
+    exit 1
+  fi
+fi
+
 echo "Pushing ${branch} to origin..."
 git push origin "${branch}"
 
-fingerprint="$("${REPO_ROOT}/tooling/scripts/tooling_fingerprint.sh" --short)"
-tag="specflow-tooling-${fingerprint}"
+tag="specflow-tooling-${short_fingerprint}"
 
 if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
   echo "Release tag already exists on origin: ${tag}"

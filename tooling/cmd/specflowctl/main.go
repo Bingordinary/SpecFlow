@@ -52,6 +52,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runDoctor(args[1:], stdout, stderr)
 	case "build-release":
 		return runBuildRelease(args[1:], stdout, stderr)
+	case "tooling-fingerprint":
+		return runToolingFingerprint(args[1:], stdout, stderr)
 	case "next":
 		return runNext(args[1:], stdout, stderr)
 	case "promote":
@@ -495,6 +497,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  init       Install specFlow framework files and platform hooks")
 	fmt.Fprintln(w, "  doctor     Check installed specFlow structure")
 	fmt.Fprintln(w, "  build-release Build platform binaries into <tooling-root>/bin")
+	fmt.Fprintln(w, "  tooling-fingerprint Print the live tooling source fingerprint")
 	fmt.Fprintln(w, "  next       Discover unit files, specs, rules, and dependencies")
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")

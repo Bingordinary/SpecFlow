@@ -2,7 +2,6 @@ package toolingfreshness
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -125,84 +124,6 @@ func TestLiveFingerprintNormalizesCRLFLineEndings(t *testing.T) {
 	}
 }
 
-func TestShellFingerprintScriptMatchesLiveFingerprint(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash is not available")
-	}
-	if err := exec.Command("bash", "-lc", "true").Run(); err != nil {
-		t.Skipf("bash is not usable in this environment: %v", err)
-	}
-
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-
-	want, _, err := LiveFingerprint(repoRoot)
-	if err != nil {
-		t.Fatalf("LiveFingerprint returned error: %v", err)
-	}
-
-	scriptPath := "tooling/scripts/tooling_fingerprint.sh"
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Dir = repoRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tooling_fingerprint.sh failed: %v\n%s", err, string(out))
-	}
-	if got := strings.TrimSpace(string(out)); got != want {
-		t.Fatalf("script fingerprint mismatch\ngot  %s\nwant %s", got, want)
-	}
-
-	shortCmd := exec.Command("bash", scriptPath, "--short")
-	shortCmd.Dir = repoRoot
-	shortOut, err := shortCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tooling_fingerprint.sh --short failed: %v\n%s", err, string(shortOut))
-	}
-	if got, want := strings.TrimSpace(string(shortOut)), want[:12]; got != want {
-		t.Fatalf("script short fingerprint mismatch\ngot  %s\nwant %s", got, want)
-	}
-}
-
-func TestPowerShellFingerprintScriptMatchesLiveFingerprint(t *testing.T) {
-	powershellPath, ok := findPowerShell()
-	if !ok {
-		t.Skip("PowerShell is not available")
-	}
-
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-
-	want, _, err := LiveFingerprint(repoRoot)
-	if err != nil {
-		t.Fatalf("LiveFingerprint returned error: %v", err)
-	}
-
-	scriptPath := filepath.Join("tooling", "scripts", "tooling_fingerprint.ps1")
-	cmd := exec.Command(powershellPath, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
-	cmd.Dir = repoRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tooling_fingerprint.ps1 failed: %v\n%s", err, string(out))
-	}
-	if got := strings.TrimSpace(string(out)); got != want {
-		t.Fatalf("PowerShell script fingerprint mismatch\ngot  %s\nwant %s", got, want)
-	}
-
-	shortCmd := exec.Command(powershellPath, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-Short")
-	shortCmd.Dir = repoRoot
-	shortOut, err := shortCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tooling_fingerprint.ps1 -Short failed: %v\n%s", err, string(shortOut))
-	}
-	if got, want := strings.TrimSpace(string(shortOut)), want[:12]; got != want {
-		t.Fatalf("PowerShell script short fingerprint mismatch\ngot  %s\nwant %s", got, want)
-	}
-}
-
 func writeToolingRepo(t *testing.T, repoRoot string) {
 	t.Helper()
 	writeToolingRepoAt(t, repoRoot, "specflow/tooling")
@@ -265,16 +186,6 @@ func convertFingerprintInputsToCRLF(t *testing.T, toolingRoot string) {
 			t.Fatalf("WriteFile(%s) failed: %v", path, err)
 		}
 	}
-}
-
-func findPowerShell() (string, bool) {
-	for _, name := range []string{"pwsh", "powershell.exe", "powershell"} {
-		path, err := exec.LookPath(name)
-		if err == nil {
-			return path, true
-		}
-	}
-	return "", false
 }
 
 func containsPath(paths []string, expected string) bool {
