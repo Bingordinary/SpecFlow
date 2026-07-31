@@ -26,20 +26,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-detect_layout() {
-  local repo_root="$1"
-  local parent_git_root
-
-  parent_git_root=$(cd "${repo_root}/.." && git rev-parse --show-toplevel 2>/dev/null || true)
-
-  if [[ -z "${parent_git_root}" ]]; then
-    echo "source_repo"
-    return 0
-  fi
-
-  echo "installed_project"
-  return 0
-}
+source "${SCRIPT_DIR}/common/layout.sh"
 
 cd "${REPO_ROOT}"
 

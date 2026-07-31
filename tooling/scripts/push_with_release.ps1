@@ -42,20 +42,6 @@ function Invoke-CheckedOutput {
     ($output -join "`n").Trim()
 }
 
-function Detect-Layout {
-    param(
-        [string]$RepoRoot
-    )
-
-    $parentDir = Split-Path -Parent $RepoRoot
-    $parentGitRoot = & git -C $parentDir rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($parentGitRoot)) {
-        return "source_repo"
-    }
-
-    return "installed_project"
-}
-
 if ($Help) {
     Show-Usage
     exit 0
@@ -63,6 +49,8 @@ if ($Help) {
 
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
+
+. (Join-Path $scriptDir "common/layout.ps1")
 
 try {
     Set-Location $repoRoot

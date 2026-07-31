@@ -40,36 +40,6 @@ function Invoke-CheckedOutput {
     ($output -join "`n").Trim()
 }
 
-function Detect-Layout {
-    param(
-        [string]$RepoRoot
-    )
-
-    $parentDir = Split-Path -Parent $RepoRoot
-    $parentGitRoot = & git -C $parentDir rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($parentGitRoot)) {
-        return "source_repo"
-    }
-
-    $gitignore = Join-Path $parentGitRoot ".gitignore"
-    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
-        $lines = Get-Content -LiteralPath $gitignore
-        if ($lines -contains "specflow/") {
-            return "installed_project"
-        }
-    }
-
-    $gitmodules = Join-Path $parentGitRoot ".gitmodules"
-    if (Test-Path -LiteralPath $gitmodules -PathType Leaf) {
-        $lines = Get-Content -LiteralPath $gitmodules
-        if ($lines -match '^\s*path\s*=\s*specflow\s*$') {
-            return "installed_project"
-        }
-    }
-
-    return "unknown_nested"
-}
-
 if ($Help) {
     Show-Usage
     exit 0
@@ -77,6 +47,8 @@ if ($Help) {
 
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
+
+. (Join-Path $scriptDir "common/layout.ps1")
 
 try {
     Set-Location $repoRoot
