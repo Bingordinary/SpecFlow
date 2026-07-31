@@ -101,8 +101,13 @@ type validateResult struct {
 	Path    string
 }
 
-func validateWrite(_ string, path string) validateResult {
+func validateWrite(repoRoot, path string) validateResult {
 	normalizedPath := filepath.ToSlash(filepath.Clean(path))
+	if filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(repoRoot, path); err == nil && !escapesRoot(rel) {
+			normalizedPath = filepath.ToSlash(rel)
+		}
+	}
 
 	// Deny pattern: framework files are never writable via validate
 	if strings.HasPrefix(normalizedPath, "framework/") {
@@ -155,6 +160,15 @@ func validateWrite(_ string, path string) validateResult {
 		Reason:  fmt.Sprintf("path %q is not governed by specFlow write restrictions", path),
 		Path:    path,
 	}
+}
+
+// escapesRoot reports whether a repository-relative path escapes the
+// repository root (e.g. ".." or "../other"). Paths that escape the root
+// are outside the specFlow write-zone contract and must keep the default
+// "not governed" result instead of being matched against write-zone prefixes.
+func escapesRoot(rel string) bool {
+	rel = filepath.Clean(rel)
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func writeValidateWriteResult(stdout io.Writer, result validateResult) {
