@@ -150,6 +150,31 @@ Verify passed.
 		t.Fatal(err)
 	}
 
+	// Create review cache (required gate: full mode, non-blocking, fresh)
+	reviewCache := fmt.Sprintf(`---
+command: review
+unit: test_unit
+mode: full
+result: pass
+p0_count: 0
+p1_count: 0
+p2_count: 0
+p3_count: 0
+blocking: false
+target: candidate
+timestamp: "2026-06-30T12:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+No P0/P1 findings.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -448,6 +473,31 @@ files:
 Non-blocking mismatches found.
 `, specHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create review cache (required gate: full mode, non-blocking, fresh)
+	reviewCache := fmt.Sprintf(`---
+command: review
+unit: test_unit
+mode: full
+result: pass
+p0_count: 0
+p1_count: 0
+p2_count: 0
+p3_count: 0
+blocking: false
+target: candidate
+timestamp: "2026-06-30T12:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+No P0/P1 findings.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
 		t.Fatal(err)
 	}
 

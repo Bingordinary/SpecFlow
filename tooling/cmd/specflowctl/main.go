@@ -149,16 +149,16 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	// Check review cache (optional gate — only blocks if blocking: true)
+	// Check review cache (required gate — must exist, be full mode, fresh, and non-blocking)
 	reviewResult, err := validationcache.CheckReview(absRoot, unitName)
 	if err != nil {
 		return fmt.Errorf("review cache error: %w", err)
 	}
 	if !reviewResult.Fresh {
-		fmt.Fprintf(stdout, "Review cache check: BLOCKED — %s\n", reviewResult.Reason)
+		fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Resolve the review findings before promoting.")
-		return errors.New("review cache check failed — P0/P1 findings block promote")
+		fmt.Fprintf(stdout, "Run `review@%s:full` first, then retry promote.\n", unitName)
+		return errors.New("review cache check failed")
 	}
 	fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
 	fmt.Fprintln(stdout, "")

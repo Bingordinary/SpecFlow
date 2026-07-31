@@ -152,16 +152,17 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 }
 
 // CheckReview reads and validates the review cache for the given unit.
-// Review is optional — no cache means no gate to block.
-// If cache exists with blocking: true, promote must be rejected.
-// If cache exists but is stale (hash mismatch), the gate is skipped.
+// The review cache is a required promote gate: it must exist, mode must be
+// "full", hashes must match, and it must not be blocking (P0/P1 findings).
+// If any condition fails, promote must be rejected with guidance.
 func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
 
+	// Existence check — review cache is required for promote
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return CheckResult{
-			Fresh:  true,
-			Reason: "no review cache — optional gate, promote may proceed",
+			Fresh:  false,
+			Reason: fmt.Sprintf("Review not completed. Run `review@%s:full` first.", unitName),
 		}, nil
 	}
 
@@ -180,7 +181,15 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 		}, nil
 	}
 
-	// Hash check: if cache is stale, skip the gate entirely
+	// Mode check — only full-mode caches satisfy the promote gate
+	if cache.Mode != "full" {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("Review cache is scoped, run `review@%s:full` before promoting.", unitName),
+		}, nil
+	}
+
+	// Hash check — stale caches cannot satisfy the promote gate
 	var mismatchedFiles []string
 	var missingFiles []string
 	for _, entry := range cache.Files {
@@ -201,12 +210,12 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 
 	if len(missingFiles) > 0 || len(mismatchedFiles) > 0 {
 		return CheckResult{
-			Fresh:  true,
-			Reason: "review cache stale (files changed) — gate skipped, promote may proceed",
+			Fresh:  false,
+			Reason: fmt.Sprintf("Review cache is stale. Run `review@%s:full` again.", unitName),
 		}, nil
 	}
 
-	// Blocking check
+	// Blocking check — P0/P1 findings block promote
 	if cache.Blocking {
 		return CheckResult{
 			Fresh:  false,
@@ -216,7 +225,7 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 
 	return CheckResult{
 		Fresh:  true,
-		Reason: fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged) — does not block promote", cache.Result, len(cache.Files)),
+		Reason: fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged)", cache.Result, len(cache.Files)),
 	}, nil
 }
 

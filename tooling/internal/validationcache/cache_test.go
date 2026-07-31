@@ -687,8 +687,11 @@ func TestCheckReviewNoCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fresh {
-		t.Fatalf("expected fresh when no cache exists, got: %s", result.Reason)
+	if result.Fresh {
+		t.Fatalf("expected not fresh when no review cache exists, got: %s", result.Reason)
+	}
+	if !strings.Contains(result.Reason, "Review not completed") {
+		t.Fatalf("expected 'Review not completed' message, got: %s", result.Reason)
 	}
 }
 
@@ -776,8 +779,11 @@ func TestCheckReviewStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fresh {
-		t.Fatalf("expected fresh (stale gate skipped), got: %s", result.Reason)
+	if result.Fresh {
+		t.Fatalf("expected not fresh (stale review cache), got: %s", result.Reason)
+	}
+	if !strings.Contains(result.Reason, "stale") {
+		t.Fatalf("expected stale message, got: %s", result.Reason)
 	}
 }
 
@@ -806,8 +812,11 @@ func TestCheckReviewScopedNonBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fresh {
-		t.Fatalf("expected fresh (scoped non-blocking), got: %s", result.Reason)
+	if result.Fresh {
+		t.Fatalf("expected not fresh (scoped review cache), got: %s", result.Reason)
+	}
+	if !strings.Contains(result.Reason, "scoped") {
+		t.Fatalf("expected scoped message, got: %s", result.Reason)
 	}
 }
 
