@@ -61,7 +61,7 @@ p0_count: 0
 p1_count: 1
 p2_count: 2
 p3_count: 0
-blocking: true              # true if P0 or P1 findings exist
+blocking: true              # required on every review cache: true if P0 or P1 findings exist
 target: candidate           # candidate | stable
 timestamp: "2026-06-30T10:00:00Z"
 files:
@@ -78,6 +78,29 @@ files:
 ### P2 - src/auth/config.go:88 — Hardcoded secret key
   Secret key is hardcoded instead of using environment variable.
   recommendation: Use os.Getenv() to load from environment
+```
+
+A PASS review cache follows the same shape with `result: pass`, `blocking: false`, and
+all severity counts at 0:
+
+```yaml
+---
+command: review
+unit: user_auth
+mode: full                  # full | scoped
+result: pass                # pass | fail
+p0_count: 0
+p1_count: 0
+p2_count: 0
+p3_count: 0
+blocking: false             # required on every review cache: false when no P0/P1 findings exist
+target: candidate           # candidate | stable
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: src/auth/login.go
+    hash: sha256:def456...
+---
+Review found no P0/P1 findings.
 ```
 
 ## Hash Algorithm
@@ -108,8 +131,8 @@ This is the same normalization used by `specflowctl review` input fingerprints. 
 | `verify` MISMATCH (any P0/P1) | Delete `verify_result.md` if it exists. Agent must stop, not proceed to promote |
 | `verify@{unit}:full` MISMATCH (all P2/P3) | Write `verify_result.md` with `result: mismatch`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `mode: full`, hashes of all read files. Promote may proceed |
 | `verify` scoped MISMATCH (all P2/P3) | Report findings only — do NOT write `verify_result.md`. A scoped run never writes a cache (a scoped cache cannot satisfy promote's mode gate, and it must not overwrite or downgrade an existing full cache) |
-| `review@{unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, hashes of checked files, and findings body |
-| `review@{unit}:full` PASS | Write `review_result.md` with `mode: full`, hashes of all read files, and findings body |
+| `review@{unit}` scoped PASS | Write `review_result.md` with `mode: scoped`, `blocking: false`, hashes of checked files, and findings body |
+| `review@{unit}:full` PASS | Write `review_result.md` with `mode: full`, `blocking: false`, hashes of all read files, and findings body |
 | `review` scoped or full FAIL (P0/P1 found) | Write `review_result.md` with `mode: {scoped|full}`, `blocking: true`, includes finding counts and findings body |
 | Scoped trigger falls back to full (edge case, see `framework/verification_scope.md` §Edge cases) PASS / ALIGNED | Write with `mode: full`, same as explicit `:full` run |
 
@@ -153,6 +176,9 @@ The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is
 2. **Mode check** — if `mode` is `scoped` (not `full`), promote is rejected: "Review cache is scoped, run `review@{unit}:full` before promoting."
 3. **Hash check** — re-computes SHA-256 hashes of every listed file and compares against stored hashes. If any hash differs or a file is missing, the cache is stale and promote is rejected: "Review cache is stale. Run `review@{unit}:full` again."
 4. **Blocking check** — if `blocking: true`, promote is rejected: "Review found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting."
+5. **Blocking declaration check** — `blocking` is a required field on every review cache. A cache without it fails closed (the gate cannot determine blocking status): promote is rejected: "review cache missing required field `blocking` — cannot determine blocking status".
+6. **Result value check** — `result` must be `pass` or `fail`. Any other value is rejected.
+7. **Consistency check** — `result: fail` must declare `blocking: true` and `result: pass` must declare `blocking: false`. A conflicting declaration is rejected: the cache was written incorrectly and its blocking status cannot be trusted.
 
 ## Important
 

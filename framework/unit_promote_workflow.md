@@ -34,7 +34,12 @@ Summary: ...
 1. Read `docs/specs/meta/validation/unit/{name}/validate_result.md` if it exists
 2. Read `docs/specs/meta/validation/unit/{name}/verify_result.md` if it exists
 3. Report freshness status to the user if reporting would be useful
-4. **Non-runnable review:**
+4. **Reference target check:**
+   - Read the candidate spec's `unit_refs` and `rule_refs` frontmatter fields
+   - For each referenced unit/rule, check whether a stable-layer file exists (`docs/specs/units/stable/unit_{ref}.md` / `docs/specs/rules/stable/{ref}.md`)
+   - A ref whose target exists only in the candidate layer (`docs/specs/units/candidate/` / `docs/specs/rules/candidate/`) will be rejected by `specflowctl promote` — the referenced unit/rule must be promoted first
+   - Report any such ref to the user before running promote
+5. **Non-runnable review:**
    - Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
    - Scan acceptance items for `runnable: no`
    - For each item found, assess:
@@ -85,9 +90,9 @@ Summary: ...
 2. The CLI independently checks:
    a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to re-run `validate`.
    b. Verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. If missing or stale, rejects promote with guidance to re-run `verify`. If blocking (P0/P1 findings), rejects promote — "Verify found N P0 and N P1 finding(s). Resolve before promoting." A full non-blocking mismatch cache (P2/P3 only) passes.
-    c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. Must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If missing: "Review not completed. Run `review@{unit}:full` first." If scoped: "Review cache is scoped, run `review@{unit}:full` before promoting." If stale: "Review cache is stale. Run `review@{unit}:full` again." If blocking: "Review found P0/P1 finding(s). Resolve before promoting."
+    c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. Must exist, mode must be `full`, must not be `blocking: true`, and hashes must match. If missing: "Review not completed. Run `review@{unit}:full` first." If scoped: "Review cache is scoped, run `review@{unit}:full` before promoting." If stale: "Review cache is stale. Run `review@{unit}:full` again." If blocking: "Review found P0/P1 finding(s). Resolve before promoting." The `blocking` field is required and must be consistent with `result` (`result: pass` → `blocking: false`, `result: fail` → `blocking: true`); a cache missing `blocking`, with an invalid `result` value, or with conflicting declarations fails closed and rejects promote.
     d. Appendix cache — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any appendix is missing, rejects promote with guidance to re-run `validate@{unit}:full`.
-   e. All four checks pass → format validation (frontmatter, required fields) + copy candidate files to stable + remove candidate files.
+   e. All four checks pass → format validation (frontmatter, required fields, and ref target check — `unit_refs`/`rule_refs` pointing only to candidate-layer files are rejected with "promote it first" guidance, since the referenced unit/rule must already be stable) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
    - Transforms the `layer` frontmatter field from `candidate` to `stable`
    - Appendix filenames are preserved since they no longer encode layer

@@ -820,6 +820,72 @@ func TestCheckReviewScopedNonBlocking(t *testing.T) {
 	}
 }
 
+func TestCheckReviewMissingBlockingField(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: fail\np0_count: 1\np1_count: 0\np2_count: 0\np3_count: 0\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nFound P0: null pointer.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (missing blocking field), got fresh")
+	}
+	if !strings.Contains(result.Reason, "blocking") {
+		t.Fatalf("expected reason to mention missing blocking field, got: %s", result.Reason)
+	}
+}
+
+func TestCheckReviewConflictingDeclaration(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: fail\np0_count: 1\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nFound P0: null pointer.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected not fresh (conflicting result/blocking declarations), got fresh")
+	}
+	if !strings.Contains(result.Reason, "conflicting") {
+		t.Fatalf("expected reason to mention conflicting declarations, got: %s", result.Reason)
+	}
+}
+
 func TestDeleteReviewCache(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")

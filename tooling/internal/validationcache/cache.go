@@ -215,6 +215,36 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 		}, nil
 	}
 
+	// Blocking declaration check — the gate must be able to determine the
+	// blocking status from an explicitly written `blocking` field. A cache
+	// without that field fails closed, matching the verify-cache path.
+	if !cache.blockingSeen {
+		return CheckResult{
+			Fresh:  false,
+			Reason: "review cache missing required field `blocking` — cannot determine blocking status",
+		}, nil
+	}
+
+	// Result value check — only the documented result values are valid
+	if cache.Result != "pass" && cache.Result != "fail" {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("review cache result is %q, expected 'pass' or 'fail'", cache.Result),
+		}, nil
+	}
+
+	// Consistency check — per spec_review_checklist.md, `result: fail`
+	// means P0/P1 findings exist (blocking: true) and `result: pass`
+	// means none exist (blocking: false). A conflicting declaration
+	// means the cache was written incorrectly and the gate cannot
+	// trust its blocking status.
+	if (cache.Result == "fail") != cache.Blocking {
+		return CheckResult{
+			Fresh:  false,
+			Reason: fmt.Sprintf("review cache has conflicting declarations: result %q, blocking %t", cache.Result, cache.Blocking),
+		}, nil
+	}
+
 	// Blocking check — P0/P1 findings block promote
 	if cache.Blocking {
 		return CheckResult{

@@ -82,7 +82,7 @@ The full text of `framework/concepts.md` is injected. It must contain:
 3. **Workflow** — discover, edit, validate, verify, promote with agent suggestion flow
 4. **HARD RULES** — six rules (read specs before discussing or changing a topic, promote is the only gate to stable, validate@ and verify@ check quality and review@ gates promote, never decide divergence resolution alone, stop when unclear, fork must use specflowctl fork)
 5. **Commands reference** — all specFlow triggers and their effects
-6. **Validation and verification checklists** — structured criteria for subagent execution
+6. **Checklist references** — pointers to the validate/verify/review checklists the agent reads when a trigger fires
 
 ## Verification Checklist
 
@@ -110,7 +110,7 @@ For each supported platform, the corresponding hook JSON file exists at the inst
 
 ### Injected Content Completeness
 
-- `framework/concepts.md` contains all essential governance instructions (triggers, HARD RULES, commands reference, workflow, key terms, validate/verify checklists)
+- `framework/concepts.md` contains all essential governance instructions (triggers, HARD RULES, commands reference, workflow, key terms, and checklist references)
 
 ### Platform-Specific Registration
 
