@@ -49,6 +49,9 @@ func TestInitCreatesValidRunState(t *testing.T) {
 	if !containsString(routingSlice.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
+	if !containsString(routingSlice.InputFiles, "framework/operations/version.md") {
+		t.Fatalf("expected version policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
+	}
 
 	truthSlice := findSlice(t, state, "truth_and_implementation_gates")
 
@@ -242,6 +245,9 @@ func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	}
 	if !containsString(designFoundation.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy in design foundation input files, got %+v", designFoundation.InputFiles)
+	}
+	if !containsString(designFoundation.InputFiles, "framework/operations/version.md") {
+		t.Fatalf("expected version policy in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
 	if !containsString(designFoundation.InputFiles, "framework/concepts.md") {
 		t.Fatalf("expected concepts.md in design foundation input files, got %+v", designFoundation.InputFiles)
@@ -1113,6 +1119,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/governance/review.md",
 		"framework/governance/review_scope.md",
 		"framework/operations/update.md",
+		"framework/operations/version.md",
 		"framework/guidance/using-specflow-guidance/SKILL.md",
 		"framework/guidance/project-framing/SKILL.md",
 		"framework/guidance/scope-cutting/SKILL.md",

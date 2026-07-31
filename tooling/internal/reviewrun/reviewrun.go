@@ -750,6 +750,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 				return union([]string{
 					scope.FrameworkPath("concepts.md"),
 					scope.FrameworkPath("operations/update.md"),
+					scope.FrameworkPath("operations/version.md"),
 				}, scope.GuidanceSkillFiles)
 			},
 		},

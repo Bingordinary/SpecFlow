@@ -77,6 +77,7 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 | `verify@ {unit}` | Runs a structured implementation check against the spec (read-only, no file changes) |
 | `promote@ {unit}` | Runs validate then verify, then calls `specflowctl promote` if both pass |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
+| `spec_flow_version` | Checks the installed specFlow version against the remote latest and reports whether the project is up to date |
 
 The agent also proactively suggests these at natural transition points: *"Shall I run validate?"* / *"Ready to promote?"*
 

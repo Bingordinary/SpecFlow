@@ -77,6 +77,7 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | `verify@ {unit}` | 对实现执行结构化一致性检查（只读，不改文件） |
 | `promote@ {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
+| `spec_flow_version` | 检查本地 specFlow 版本并对比远程最新版本，报告项目是否最新 |
 
 Agent 也会在适当时候主动询问：*"需要跑 validate 吗？"* / *"要 promote 吗？"*
 

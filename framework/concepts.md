@@ -316,6 +316,7 @@ All fork operations (stable → candidate) must use `specflowctl fork --unit <na
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
+| `spec_flow_version` (agent trigger) | Check the installed SpecFlow version against the remote latest and report whether the project is up to date. If behind, recommend running `spec_flow_update`. See `framework/operations/version.md` for full procedure. | User says "spec_flow_version" |
 | `specflowctl consumers --rule <id>` | List all units that reference the given rule in their rule_refs. For global rules (`g_rule_*`): returns every current-layer unit — global rules apply to all units by default and are not repeated in rule_refs. For bound rules (`b_rule_*`): empty output means no consumers. | Agent for impact analysis |
 | `specflowctl validate` | Validate candidate spec structure (7 checks), rule validation (7 mechanical checks), or file write permissions | Human maintainer or agent |
 
