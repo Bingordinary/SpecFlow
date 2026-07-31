@@ -166,10 +166,10 @@ Work traces not tracked by the spec.
 
 | Level | Definition | Characteristic | Example | Promote Gate |
 |-------|-----------|----------------|---------|-------------|
-| **P0** | Definitively causes production misbehavior | Determined from code structure alone, no runtime data needed | Null pointer dereference, deadlock, resource leak, race condition, incorrect lock usage, use-after-close | 🚫 Block |
-| **P1** | Inevitably causes maintenance pain or high-probability bugs | Latent but will surface over time | Silently swallowed exceptions, broken error propagation paths, large-scale logic duplication | 🚫 Block |
-| **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | ✅ Don't block |
-| **P3** | Style or clarity | Does not affect correctness, does not significantly harm maintainability | Unused import, minor naming inconsistency, stale comment | ✅ Don't block |
+| **P0** | Definitively causes production misbehavior | Determined from code structure alone, no runtime data needed | Null pointer dereference, deadlock, resource leak, race condition, incorrect lock usage, use-after-close | Block |
+| **P1** | Inevitably causes maintenance pain or high-probability bugs | Latent but will surface over time | Silently swallowed exceptions, broken error propagation paths, large-scale logic duplication | Block |
+| **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
+| **P3** | Style or clarity | Does not affect correctness, does not significantly harm maintainability | Unused import, minor naming inconsistency, stale comment | Don't block |
 
 P0/P1 findings block regardless of scoped or full mode. The only additional gate for promote is that the cache must come from a `:full` run.
 
@@ -201,11 +201,11 @@ Both scoped and full mode need this:
 
 ### 7.2 Process
 
-1. **跨文件真实性验证** — For each finding whose issue asserts "X lacks Y capability" or "parameter Z may not be handled", read the callee/target implementation. If the target handles the concern (nil guard, empty-string path, idempotent close, etc.), the finding is a false positive.
+1. **Cross-file authenticity check** — For each finding whose issue asserts "X lacks Y capability" or "parameter Z may not be handled", read the callee/target implementation. If the target handles the concern (nil guard, empty-string path, idempotent close, etc.), the finding is a false positive.
 
-2. **跨文档一致性验证** — For each finding that relies exclusively on the spec main body, check appendices and related documents for supplementary or overriding references. If the full document set resolves the issue, the finding is invalid.
+2. **Cross-document consistency check** — For each finding that relies exclusively on the spec main body, check appendices and related documents for supplementary or overriding references. If the full document set resolves the issue, the finding is invalid.
 
-3. **移除误报** — Findings that dissolve under cross-check are removed from output. Not demoted to notes — a false positive has no place in the review result.
+3. **Remove false positives** — Findings that dissolve under cross-check are removed from output. Not demoted to notes — a false positive has no place in the review result.
 
 ### 7.3 Complexity
 
