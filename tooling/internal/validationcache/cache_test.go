@@ -186,6 +186,179 @@ func TestCheckVerifyScoped(t *testing.T) {
 	}
 }
 
+func TestCheckVerifyNonBlockingMismatch(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(candidateDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Full-mode verify cache with only P2/P3 mismatches: non-blocking, must pass
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: false\np2_count: 1\np3_count: 2\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nNon-blocking mismatches found.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected non-blocking mismatch cache to be fresh, got: %s", result.Reason)
+	}
+}
+
+func TestCheckVerifyBlockingMismatch(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(candidateDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Full-mode verify cache with P0/P1 mismatches: blocking, must be rejected
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: true\np0_count: 1\np2_count: 1\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nBlocking mismatches found.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected blocking mismatch cache to be rejected, got fresh")
+	}
+	if !strings.Contains(result.Reason, "P0") || !strings.Contains(result.Reason, "P1") {
+		t.Fatalf("expected reason to mention P0/P1 findings, got: %s", result.Reason)
+	}
+}
+
+func TestCheckVerifyMissingBlockingField(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(candidateDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Mismatch cache without the blocking field: gate must fail closed.
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nMismatch found.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected mismatch cache without blocking field to be rejected, got fresh")
+	}
+	if !strings.Contains(result.Reason, "blocking") {
+		t.Fatalf("expected reason to mention missing blocking field, got: %s", result.Reason)
+	}
+}
+
+func TestCheckVerifyInvalidBlockingValue(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(candidateDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Mismatch cache with a malformed blocking value: gate must fail closed.
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: truee\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nMismatch found.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected mismatch cache with invalid blocking value to be rejected, got fresh")
+	}
+	if !strings.Contains(result.Reason, "invalid `blocking`") {
+		t.Fatalf("expected reason to mention invalid blocking value, got: %s", result.Reason)
+	}
+}
+
 func TestDeleteCache(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")

@@ -79,13 +79,13 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-	description: Test check passes.
-	    verification_type: testable
-	    verification_surface: internal
-	    implementation_surface: internal
-	    verification_method: test
-	    pass_condition: passes
-	    runnable: yes
+    description: Test check passes.
+    verification_type: testable
+    verification_surface: internal
+    implementation_surface: internal
+    verification_method: test
+    pass_condition: passes
+    runnable: yes
 `
 	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
@@ -349,6 +349,241 @@ rule_version: 2.0.0
 	}
 	if !strings.Contains(string(candidateData), "rule_version: 2.0.1") {
 		t.Fatalf("expected rule_version: 2.0.1, got:\n%s", string(candidateData))
+	}
+}
+
+func TestPromoteWithNonBlockingVerifyMismatch(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// Create a valid candidate spec
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	specContent := `---
+id: test_unit
+layer: candidate
+version: 1.0.0
+unit_refs: none
+rule_refs: none
+---
+
+## Description
+
+Test unit for promote testing.
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: test.check
+    description: Test check passes.
+    verification_type: testable
+    verification_surface: internal
+    implementation_surface: internal
+    verification_method: test
+    pass_condition: passes
+    runnable: yes
+`
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a candidate appendix file
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendixContent := `---
+unit: test_unit
+layer: candidate
+---
+Appendix content for test.
+`
+	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create validate cache with correct hashes
+	specHash := computeHash(specPath)
+	appendixHash := computeHash(appendixPath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
+	os.MkdirAll(cacheDir, 0755)
+
+	validateCache := fmt.Sprintf(`---
+command: validate
+unit: test_unit
+result: pass
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+Validate passed.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create verify cache with only P2/P3 mismatches: non-blocking, promote allowed
+	verifyCache := fmt.Sprintf(`---
+command: verify
+unit: test_unit
+mode: full
+result: mismatch
+target: candidate
+blocking: false
+p2_count: 1
+p3_count: 2
+timestamp: "2026-06-30T11:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+Non-blocking mismatches found.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("promote failed: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "PASSED") {
+		t.Fatalf("expected PASSED result, got %s", output)
+	}
+	if !strings.Contains(output, "Promoted:") {
+		t.Fatalf("expected promotion action, got %s", output)
+	}
+}
+
+func TestPromoteWithBlockingVerifyMismatch(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// Create a valid candidate spec
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	specContent := `---
+id: test_unit
+layer: candidate
+version: 1.0.0
+unit_refs: none
+rule_refs: none
+---
+
+## Description
+
+Test unit for promote testing.
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: test.check
+    description: Test check passes.
+    verification_type: testable
+    verification_surface: internal
+    implementation_surface: internal
+    verification_method: test
+    pass_condition: passes
+    runnable: yes
+`
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a candidate appendix file
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendixContent := `---
+unit: test_unit
+layer: candidate
+---
+Appendix content for test.
+`
+	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create validate cache with correct hashes
+	specHash := computeHash(specPath)
+	appendixHash := computeHash(appendixPath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
+	os.MkdirAll(cacheDir, 0755)
+
+	validateCache := fmt.Sprintf(`---
+command: validate
+unit: test_unit
+result: pass
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+Validate passed.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create verify cache with P0/P1 mismatches: blocking, promote must be rejected
+	verifyCache := fmt.Sprintf(`---
+command: verify
+unit: test_unit
+mode: full
+result: mismatch
+target: candidate
+blocking: true
+p0_count: 1
+p1_count: 0
+timestamp: "2026-06-30T11:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:%s
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+    hash: sha256:%s
+---
+Blocking mismatches found.
+`, specHash, appendixHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected promote to fail with blocking verify mismatch")
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "Verify cache check: FAIL") {
+		t.Fatalf("expected verify cache check FAIL, got %s", output)
+	}
+
+	// Candidate spec must not be promoted
+	if _, statErr := os.Stat(specPath); statErr != nil {
+		t.Fatalf("candidate spec should still exist, got: %v", statErr)
+	}
+	stablePath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
+	if _, statErr := os.Stat(stablePath); !os.IsNotExist(statErr) {
+		t.Fatal("stable spec should not exist after rejected promote")
 	}
 }
 

@@ -57,17 +57,19 @@ After completing all analysis steps, the agent must report coverage confidence (
 Verify result: ALIGNED | MISMATCH
 Target: candidate | stable
 Items:
-  - {item.id}: ALIGNED | MISMATCH | CANNOT_DETERMINE — code references
+  - {item.id}: ALIGNED | MISMATCH (severity: P0|P1|P2|P3) | CANNOT_DETERMINE — code references
 Scope: ALIGNED | MISMATCH — findings
 Integrity: PASS | FAIL — findings
 Coverage:
   - items_with_deterministic_evidence: N/M
   - items_reading_only: N
 First-principles divergence analysis: (only if any MISMATCH)
-  - {item.id}: {suggested direction} — {rationale}
+  - {item.id}: {suggested direction} (severity: P0|P1|P2|P3) — {rationale}
     User verdict: ...
     Next step: ...
-Summary: ...
+Summary:
+  - blocking_mismatches: N  (P0/P1 count)
+  - non_blocking_mismatches: N  (P2/P3 count)
 ```
 
 ---
@@ -83,26 +85,55 @@ Summary: ...
 1. Read the full spec body AND all non-exempt appendix files (main flow, protocols, data contracts, error handling, state machines, API definitions from appendices)
 2. Extract all statically verifiable structural declarations from both main spec and appendix content:
 
-| Declaration type | What to extract | How to verify in code |
-|---|---|---|
-| API endpoints / handlers | path, method, request/response types | Search for route registration, check handler function signature |
-| Function signatures | name, parameters, return types | Search for function definition, verify signature |
-| Data structures | struct/type definitions, field names, types, tags | Search for type definition, check fields and types |
-| Enums / constants | allowed values, string representations | Search for const/enum block, verify values exist |
-| Error codes / types | error type names, error messages | Search for error definition, check usage in error paths |
-| State machines | state values, transition triggers | Search for state type, switch/case blocks |
-| Configuration keys | key names, default values | Search for config struct or usage |
+| Declaration type | What to extract | How to verify in code | Semantic role | Match semantics | Severity if missing |
+|---|---|---|---|---|---|
+| API endpoints / handlers | path, method, request/response types | Search for route registration, check handler function signature | Contractual | Exact match | P0 |
+| Function signatures | name, parameters, return types | Search for function definition, verify signature | Contractual | Exact match | P0 |
+| Data structures | struct/type definitions, field names, types, tags | Search for type definition, check spec-declared fields exist in code | Descriptive | Subset match (spec ⊆ code) | P1 |
+| Enums / constants | allowed values, string representations | Search for const/enum block, verify values exist | Contractual | Exact match | P0 |
+| Error type names | error type identifiers, sentinel variables | Search for error definition, check usage in error paths | Contractual | Exact match | P0 |
+| Error messages | user-facing message strings | Search for message constants/format strings | Descriptive | Subset match (spec ⊆ code) | P2 |
+| State machines | state values, transition triggers | Search for state type, switch/case blocks | Contractual | Exact match | P0 |
+| Configuration keys | key names, default values | Search for config struct or usage | Descriptive | Subset match (spec ⊆ code) | P2 |
 
-3. For each declaration found in the spec, locate the corresponding implementation:
+The **Semantic role** column categorizes each declaration by its purpose in the spec:
+
+- **Contractual**: The declaration describes behavioral constraints the system must obey. Code must match exactly; any deviation affects functional correctness.
+- **Descriptive**: The declaration describes the minimum contract of the implementation. Code may provide more information without violating the contract.
+- **Annotative**: The declaration is auxiliary documentation (e.g., scope, rationale); inaccuracy does not affect functional correctness.
+
+The **Match semantics** column defines the comparison protocol between spec and code:
+
+- **Exact match**: Everything the spec declares must exist in code in exactly identical form. Any deviation (missing field, different signature) → MISMATCH, using the severity from the row.
+- **Subset match (spec ⊆ code)**: The spec describes the minimum contract for the declaration. Code must contain all spec-declared fields/values; extra code fields/values do not constitute a MISMATCH — record as a note. Match rule: spec ⊆ code.
+
+3. For each declaration found in the spec, locate the corresponding implementation. Use the **Match semantics** from the extraction table above to determine the correct outcome:
 
 ```
 IF declaration exists in spec AND matching implementation found:
-  - Verify structural consistency (signatures match, field names match, types match)
-  - Report ALIGNED with code reference (file:line)
+  - Read the declaration's row in the extraction table:
+
+    Exact match → Verify all spec-declared fields/signatures/values exist in code
+                  AND are identical.
+                  All match → ALIGNED.
+                  Any mismatch → MISMATCH (severity from table row).
+
+    Subset match → Verify all spec-declared fields/values exist in code.
+                   All exist → ALIGNED.
+                     (extra code fields do not constitute a MISMATCH —
+                      record as a note)
+                   Spec-declared fields missing from code → MISMATCH
+                     (severity from table row).
+
 IF declaration exists in spec BUT no matching implementation found:
-  - Report MISMATCH — spec describes something code doesn't have (do not classify yet)
-IF declaration exists in code BUT not in spec:
-  - Report MISMATCH — code has something spec doesn't describe (do not classify yet)
+  → MISMATCH (severity from table row)
+    — spec describes something code doesn't have.
+
+IF a complete declaration exists in code BUT has no correspondence
+   in any spec declaration:
+  → Do NOT report here. Defer to Step 5 (surplus detection).
+  → Exception: Subset match declarations whose spec-declared fields are all
+    present in code are ALIGNED (extra code fields are not surplus).
 ```
 
 4. **Code surface reverse check** — after completing the spec→code search above, for each implementation file that was visited during steps 1-3, run an independent code→spec scan:
@@ -148,13 +179,13 @@ For each acceptance item in the target spec, AND for each technical claim in app
 
 | pass_condition type | What to check in code | Verifiable? |
 |---|---|---|
-| "Returns HTTP {status}" | Handler returns that status code | ✅ Yes — search for status code in handler |
-| "Returns {field} in response" | Response struct has that field | ✅ Yes — check response type definition |
-| "Calls {function} when {condition}" | Function call exists in correct branch | ✅ Yes — read conditional block |
-| "Returns error when {condition}" | Error return in conditional path | ✅ Yes — read error handling path |
-| "Rate limit is {n} req/min" | Rate limiter configured with that value | ✅ Yes — read rate limiter config |
-| "{algorithm} produces correct result" | Function exists with algorithm | 🔶 Partial — structure exists, correctness not verifiable |
-| "System handles {n} concurrent users" | N/A without load testing | ❌ No — CANNOT_DETERMINE |
+| "Returns HTTP {status}" | Handler returns that status code | Yes — search for status code in handler |
+| "Returns {field} in response" | Response struct has that field | Yes — check response type definition |
+| "Calls {function} when {condition}" | Function call exists in correct branch | Yes — read conditional block |
+| "Returns error when {condition}" | Error return in conditional path | Yes — read error handling path |
+| "Rate limit is {n} req/min" | Rate limiter configured with that value | Yes — read rate limiter config |
+| "{algorithm} produces correct result" | Function exists with algorithm | Partial — structure exists, correctness not verifiable |
+| "System handles {n} concurrent users" | N/A without load testing | No — CANNOT_DETERMINE |
 
 3. For each verifiable assertion, locate the corresponding code and compare:
    - Does the handler exist at the expected path?
@@ -166,12 +197,12 @@ For each acceptance item in the target spec, AND for each technical claim in app
    check used as evidence. Every ALIGNED claim must include a specific
    deterministic check:
 
-   ✅ ALIGNED (with deterministic evidence):
+   ALIGNED (with deterministic evidence):
      grep -n "return 201" user.go
      → line 42: w.WriteHeader(http.StatusCreated)
      → handler returns 201 (confirmed by grep command)
 
-   ❌ Insufficient — no grep command cited, reading only:
+   Insufficient — no grep command cited, reading only:
      MUST be reported as CANNOT_DETERMINE
 
 5. If an assertion cannot be verified with a deterministic command
@@ -513,11 +544,16 @@ Is a real design decision (must report):
 - Other code depends on it → yes (has consumers, not dead code)
 - Has tests → strong signal it is intentional design
 - Can be independently described as a responsibility/mechanism → yes
+- Part of the public API surface (exported, cross-package boundary)
 
 Is an implementation detail (ignore):
 - Merely a utility/helper function
 - No independent architectural significance
 - Does not change the system's responsibility boundaries
+- Private/internal type with no external consumers
+- **Behavior is already covered by a Contractual declaration in the spec**
+  (e.g., EventSender interface is an internal realization of the
+  StateMachine already described in spec §3.3 — not surplus)
 ```
 
 #### 4. Report
@@ -704,6 +740,11 @@ Code intent: {what the code does and why}
 Comparison: {goal agreement? implementation difference? edge case handling?}
 Root cause: {incomplete | stale | divergence | accident | blocked}
 Suggested direction: {spec_gap | code_gap | needs_design | blocked}
+Severity: {P0 | P1 | P2 | P3}
+  - Derive from the declaration's table row in Step 1 (severity if missing).
+  - For surplus findings: determine by the construct's semantic role —
+    public API = P0/P1, internal implementation detail = P2.
+  - For scope findings (Step 3): annotative role → default P2.
 Confidence: {high | medium | low}
 Rationale: {2-3 sentence first-principles reasoning chain}
 Signal layer: {condensed metadata summary, if collected}
@@ -730,23 +771,25 @@ After all sub-agents return:
 Mode: scoped | full
 Verify result: MISMATCH
 Target: candidate | stable
+Blocking mismatches: N  (severity P0/P1)
+Non-blocking mismatches: N  (severity P2/P3)
 Findings:
   - {item.id}: spec says {X}, code does {Y}
-    → {suggested direction} (confidence: {level})
+    → {suggested direction} (severity: P{n}, confidence: {level})
   - {item.id}: spec says {X}, code does {Y}
-    → {suggested direction} (confidence: {level})
+    → {suggested direction} (severity: P{n}, confidence: {level})
   ...
 ────────────────────────────────────────────────────
 ```
 
 ### Direction table
 
-| Direction | Meaning | Next step |
-|-----------|---------|-----------|
-| **spec_gap** | Code's behavior is correct, spec needs updating | Update candidate spec → re-run validate → re-run verify |
-| **code_gap** | Spec's intent is correct, code needs updating | Implement code → re-run verify |
-| **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → validate → verify |
-| **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → re-run verify |
+| Direction | Meaning | Next step | Promote gate |
+|-----------|---------|-----------|:---:|
+| **spec_gap** | Code's behavior is correct, spec needs updating | Update candidate spec → re-run validate → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
+| **code_gap** | Spec's intent is correct, code needs updating | Implement code → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
+| **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → validate → verify | P0/P1 → BLOCK; P2/P3 → Allow |
+| **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
 
 After presenting the summary, present each finding with its suggested direction and stop. The user decides the next step per HARD RULE 3a. Do not offer a structured resolution menu.
 
@@ -769,14 +812,21 @@ When no candidate spec exists (verify against stable):
 
 ## Step 8 — Write verify cache (main agent)
 
-After all 7 steps complete:
+After all 7 steps complete, determine cache action based on the highest severity MISMATCH. The suggested direction (spec_gap / code_gap / needs_design / blocked) does not change the gate — blocking is determined by severity only.
 
 - **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
   - Collect SHA-256 hashes of all files read during verification
-  - Write `verify_result.md` with `result: aligned`, `target: candidate|stable`, `mode: scoped|full`, file hashes
+  - Write `verify_result.md` with `result: aligned`, `target: candidate|stable`, `mode: scoped|full`, `blocking: false`, file hashes
 
-- **If any MISMATCH:** delete existing `verify_result.md` if present. Do not write cache. Proceed to findings presentation.
+- **If any P0/P1 MISMATCH exists:** delete existing `verify_result.md` if present. Do not write cache. Report blocking findings. Agent must stop and not proceed to promote.
+
+- **If all mismatches are P2/P3 (non-blocking):**
+  - **Full run (`:full`):** write verify cache with `blocking: false`:
+    - Collect SHA-256 hashes of all files read during verification
+    - Write `verify_result.md` with `result: mismatch`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
+    - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
+  - **Scoped run:** report findings only — do NOT write a cache. A scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. See `framework/validation_cache.md`.
 
 
 

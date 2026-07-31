@@ -257,8 +257,10 @@ When the agent needs to suggest checks to the user (edge cases, option proposals
 ## Present Findings
 
 When validate or verify produces FAIL or MISMATCH findings, the agent presents
-the findings to the user and waits for a decision per HARD RULE 3a. No structured
-resolution menu is used.
+the findings to the user. P0/P1 verify MISMATCH stops the agent — it must not
+proceed to promote and waits for a decision per HARD RULE 3a. P2/P3 verify
+MISMATCH is non-blocking — the agent reports it and may continue (promote is
+not stopped). No structured resolution menu is used.
 
 File-specific format and details:
 
@@ -275,19 +277,24 @@ File-specific format and details:
 | `validate@{unit}:check-{n}` | scoped | Write `mode: scoped`, `scoped_check: "{n}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
 | `validate@{unit}:full` | full | Write `mode: full` |
 | Any validate FAIL | — | Delete cache |
-| `verify@{unit}` | scoped | Write `mode: scoped` (scoped-over-full rule applies — does not overwrite existing full cache) |
-| `verify@{unit}:full` | full | Write `mode: full` |
-| Any verify MISMATCH | — | Delete cache |
+| `verify@{unit}` | scoped | Write `mode: scoped`, `blocking: false` (scoped-over-full rule applies — does not overwrite existing full cache) |
+| `verify@{unit}:full` | full | Write `mode: full`, `blocking: false` |
+| `verify` MISMATCH (any P0/P1) | — | Delete cache. Agent must stop, not proceed to promote |
+| `verify@{unit}:full` MISMATCH (all P2/P3) | full | Write `mode: full`, `result: mismatch`, `blocking: false`, severity counts (`p0_count`...`p3_count`). Promote may proceed |
+| `verify` scoped MISMATCH (all P2/P3) | — | Report findings only — do NOT write cache |
 
 ### Scoped-over-full rule
 
 A `mode: full` cache is overwritten **only** by another full run. A scoped run does not downgrade a full cache to scoped — the full cache stays valid.
 
-**Exception:** If a scoped run finds MISMATCH, it deletes the cache regardless of prior mode.
+**Exception (blocking):** If a scoped run finds a P0 or P1 MISMATCH, it deletes the cache regardless of prior mode. P0/P1 at any granularity means promote must not proceed.
+
+**Exception (non-blocking):** If a scoped run finds only P2/P3 MISMATCH (no P0/P1), it reports the findings but does NOT write the cache — a scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. Only a `:full` P2/P3 mismatch run writes a cache, with `blocking: false` and severity counts. Promote may proceed on that full non-blocking cache.
 
 ## Relationship with Promote
 
-- `specflowctl promote --unit <name>` requires `mode: full` AND `result: aligned` in both validate and verify caches
+- `specflowctl promote --unit <name>` requires `mode: full` for both caches. The validate cache must have `result: pass`; the verify cache must have `result: aligned`, or `result: mismatch` with `blocking: false` (P2/P3 findings only — non-blocking mismatch passes the promote gate)
+- A verify cache with `result: mismatch` and `blocking: true` (P0/P1 findings) is rejected: "verify found N P0 and N P1 finding(s). Resolve before promoting."
 - Scoped caches are **ignored** by promote (rejected with guidance to run full)
 - No cache at all → promote rejected
 
@@ -299,6 +306,7 @@ A `mode: full` cache is overwritten **only** by another full run. A scoped run d
 | scoped verify cache fresh | "Scoped verify passed for content related to recent changes" |
 | full validate cache fresh | "Validate passed all checks" |
 | full verify cache fresh | "Verify passed all content" |
+| full verify cache fresh (result: mismatch, blocking: false) | "Verify found P2/P3 non-blocking mismatch(es) — promote may proceed" |
 
 When scoped cache exists, agent offers:
 - "Run `verify@{unit}:full` for complete verification"
