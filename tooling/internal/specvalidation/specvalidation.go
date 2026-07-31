@@ -47,7 +47,7 @@ type Result struct {
 	Checks     []CheckResult
 }
 
-// ValidateCandidate runs all 7 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 6 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
