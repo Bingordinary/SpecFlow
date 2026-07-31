@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fileops"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -31,6 +32,67 @@ type Result struct {
 	Passed  bool
 	Issues  []string
 	Actions []string
+}
+
+// stagedCopy is one file prepared for the atomic promote archive phase.
+type stagedCopy struct {
+	tmp string
+	dst string
+}
+
+// stageCopyWithLayerTransform copies src to a temporary file next to dst,
+// applying the candidate→stable layer transform. The final destination is
+// written only by commitStaged, so a failure anywhere in the staging phase
+// leaves the stable layer untouched.
+func stageCopyWithLayerTransform(src, dst string) (string, error) {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return "", err
+	}
+	transformed := fileops.TransformLayerInFrontmatter(string(data), "candidate", "stable")
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".sf-tmp-*")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write([]byte(transformed)); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+	// CreateTemp creates files with mode 0600; the promoted artifact must
+	// keep the source file's permissions (copy semantics).
+	if err := os.Chmod(tmpPath, srcInfo.Mode().Perm()); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+	return tmpPath, nil
+}
+
+func cleanupStaged(staged []stagedCopy) {
+	for _, s := range staged {
+		os.Remove(s.tmp)
+	}
+}
+
+func commitStaged(staged []stagedCopy) error {
+	for _, s := range staged {
+		if err := os.Rename(s.tmp, s.dst); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Promote runs the promote flow for the given unit.
@@ -148,25 +210,42 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	// Step 5: Copy candidate files to stable
-	// Copy appendices first so that a failure leaves the main spec untouched.
+	// Step 5: Copy candidate files to stable (two-phase commit)
+	// Phase 1 — stage every file to a temp file; a failure here leaves the
+	// stable layer untouched (no partial archive).
 	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	_ = os.MkdirAll(stableAppendixDir, 0755)
+	var staged []stagedCopy
 
 	for _, m := range matches {
 		dest := filepath.Join(stableAppendixDir, filepath.Base(m))
-		if err := copyWithLayerTransform(m, dest); err != nil {
-			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
+		tmp, err := stageCopyWithLayerTransform(m, dest)
+		if err != nil {
+			cleanupStaged(staged)
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage appendix: %v", err))
 			r.Passed = false
 			return r
 		}
+		staged = append(staged, stagedCopy{tmp: tmp, dst: dest})
 		rel, _ := filepath.Rel(repoRoot, dest)
 		r.Actions = append(r.Actions, fmt.Sprintf("Promoted appendix: %s", rel))
 	}
 
-	// Copy main spec last so it acts as the commit point.
-	if err := copyWithLayerTransform(candidateSpec, stableSpec); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy spec: %v", err))
+	// Stage the main spec last so it acts as the commit point.
+	tmpSpec, err := stageCopyWithLayerTransform(candidateSpec, stableSpec)
+	if err != nil {
+		cleanupStaged(staged)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage spec: %v", err))
+		r.Passed = false
+		return r
+	}
+	staged = append(staged, stagedCopy{tmp: tmpSpec, dst: stableSpec})
+
+	// Phase 2 — rename staged files into place (appendices first, then the
+	// main spec as the commit point). Failures before this phase never touch
+	// the stable layer: staging writes only temp files.
+	if err := commitStaged(staged); err != nil {
+		cleanupStaged(staged)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
 		r.Passed = false
 		return r
 	}
@@ -347,9 +426,16 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
 	}
 
-	// Step 7: Copy candidate to stable with layer transform
-	if err := copyWithLayerTransform(candidateRule, stableRule); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy rule: %v", err))
+	// Step 7: Copy candidate to stable with layer transform (staged, atomic)
+	tmp, err := stageCopyWithLayerTransform(candidateRule, stableRule)
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage rule: %v", err))
+		r.Passed = false
+		return r
+	}
+	if err := commitStaged([]stagedCopy{{tmp: tmp, dst: stableRule}}); err != nil {
+		os.Remove(tmp)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit rule: %v", err))
 		r.Passed = false
 		return r
 	}
