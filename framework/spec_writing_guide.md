@@ -254,6 +254,39 @@ The following `.feature` file syntax is **not** used: `Feature:`, `Scenario:`, `
 
 When `description` is written in Gherkin style, the four-step analysis in `framework/test_decomposition_standard.md` shifts from a generation process to a completeness check: the scenarios are already decomposed; the standard's steps verify no category (happy path, invalid input, business conflict, dependency failure) is missing.
 
+### Acceptance Item Granularity
+
+An acceptance item is the smallest contract unit that carries its own verification lifecycle: verify collects evidence per item id, and promote judges each item's pass/fail independently. Granularity is therefore determined by the verification lifecycle, not by counting behaviors.
+
+#### Three-layer structure
+
+| Layer | Definition | Carrier |
+|---|---|---|
+| Behavior domain | A semantic cluster of behavior variants around one behavior subject | One acceptance item |
+| Scenario | One variant of the domain (happy path, error path, boundary case) | One Given/When/Then block in `description` |
+| Test case | One executable check derived from a scenario | Output of `framework/test_decomposition_standard.md` |
+
+One acceptance item covers one behavior domain and contains the domain's complete scenario set (happy path + error paths + boundary cases) inside its `description`. Splitting scenarios of the same domain across items adds verification and evidence tracking overhead without adding information — the variants share the same behavior subject and the same verification route.
+
+#### Behavior domain judgment
+
+Two behavior variants belong to the same behavior domain if and only if all four conditions hold:
+
+1. They describe the same behavior subject (same endpoint, function, state machine, or flow entry point)
+2. They share the same `verification_surface`
+3. They share the same `implementation_surface`
+4. They share the same `verification_type`
+
+Splitting is legitimate when any condition fails. Examples:
+
+- Same endpoint, different `verification_type` (e.g. `testable` API behavior vs `inspectable` config check) — separate items
+- Same implementation file, different endpoints — separate items (different behavior subjects)
+- Same behavior subject, different error codes or edge cases — one item, multiple scenarios
+
+#### Relationship to validate
+
+`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains, and over-split detection reports items that satisfy all four conditions above as merge candidates. See `framework/unit_validate_checklist.md` §5a.
+
 ## 7. Appendix Files
 
 Appendix files are support truth for one unit.

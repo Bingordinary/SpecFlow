@@ -44,7 +44,7 @@ Validate result: PASS | FAIL (fix_required | blocked)
 3. Scope integrity: PASS | FAIL — reason
 4. Evidence-driven vs design-driven consistency: PASS | FAIL — reason
 5. Acceptance coverage & correctness: PASS | FAIL — reason
-  5a. Coverage completeness: PASS | FAIL — reason
+  5a. Coverage completeness: PASS | WARNING | FAIL — reason
   5b. Content alignment: PASS | FAIL — reason
   5c. Change drift: PASS | WARNING | FAIL — reason
   5d. Internal consistency: PASS | FAIL — reason
@@ -194,23 +194,25 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ### Sub-check 5a — Coverage completeness
 
-**Purpose:** Every key behavior in the spec body and appendices must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Enhanced from the original forward coverage check.
+**Purpose:** Every behavior domain in the spec body and appendices must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Granularity baseline: behavior domains as defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity — one item = one behavior domain with its full scenario set (happy path + error paths + boundary cases). Enhanced from the original forward coverage check to a bidirectional check.
 
 **Execution steps:**
 
-1. Extract all key behaviors from the spec body (main flow, protocols, error handling, state transitions, etc.)
-2. For each behavior, verify at least one acceptance item covers it
-3. For each covered behavior, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
-4. If a behavior has no acceptance item → flag (possible untested behavior)
-5. **Appendix behavior coverage check:** Extract all key behaviors, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes content that has no corresponding acceptance item → WARNING (possible orphan behavior — documented in appendix but not verified). If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
+1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5h (which requires `pass_condition` to carry constraints beyond `description`).
+2. Extract all behavior domains from the spec body (main flow, protocols, error handling, state transitions, etc.) at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain; do not split scenarios of the same domain into separate coverage requirements.
+3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
+4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
+5. If a behavior domain has no acceptance item → flag (possible untested behavior)
+6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes content that has no corresponding acceptance item → WARNING (possible orphan behavior — documented in appendix but not verified). If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
+7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
 
-**PASS:** All behaviors (main spec + appendices) have corresponding items with appropriate surface fields
+**PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; no merge candidates found
 
-**FAIL:** Uncovered behavior or surface type mismatch (fix_required); appendix-main spec contradiction (fix_required)
+**WARNING:** Orphan appendix behavior (documented but not verified) or merge candidates (over-split acceptance items)
 
-**Check method:** Spec body + appendices × acceptance item set cross-reference (body → items)
+**FAIL:** Uncovered behavior domain or surface type mismatch (fix_required); appendix-main spec contradiction (fix_required)
 
-**Check method:** Spec body × acceptance item set unidirectional cross-reference (body → items)
+**Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for over-splitting detection)
 
 ---
 
@@ -610,5 +612,5 @@ Findings:
 
 ### Validate-specific notes
 
-- **Cascade awareness:** fixing one check may affect others. After a fix is applied, inform the user: "Fix applied. Some remaining checks may be affected by this change."
+- **Re-validation rule:** After any fix is applied, re-run every check whose input includes the edited fields. Acceptance item edits (any field) affect the Check 5 family — re-run 5a/5b/5c/5d/5e/5f/5g/5h, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6. Edits to spec body prose or appendices affect 5a/5b/5c. The final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
 - **Blocked items** (resolution_type: blocked) require user input — skip to next finding without suggesting a fix.
