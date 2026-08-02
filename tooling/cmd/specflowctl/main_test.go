@@ -135,7 +135,7 @@ Validate passed.
 	verifyCache := fmt.Sprintf(`---
 command: verify
 unit: test_unit
-result: aligned
+result: pass
 target: candidate
 timestamp: "2026-06-30T11:00:00Z"
 files:
@@ -453,12 +453,12 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache with only P2/P3 mismatches: non-blocking, promote allowed
+	// Create verify cache with only P2/P3 findings: non-blocking, promote allowed
 	verifyCache := fmt.Sprintf(`---
 command: verify
 unit: test_unit
 mode: full
-result: mismatch
+result: pass
 target: candidate
 blocking: false
 p2_count: 1
@@ -470,7 +470,7 @@ files:
   - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
 ---
-Non-blocking mismatches found.
+Non-blocking findings found.
 `, specHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
@@ -592,12 +592,13 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache with P0/P1 mismatches: blocking, promote must be rejected
+	// Create verify cache with result: fail (P0/P1 findings — such a cache is
+	// never written by the agent, but promote must reject it if present)
 	verifyCache := fmt.Sprintf(`---
 command: verify
 unit: test_unit
 mode: full
-result: mismatch
+result: fail
 target: candidate
 blocking: true
 p0_count: 1
@@ -609,7 +610,7 @@ files:
   - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
 ---
-Blocking mismatches found.
+Blocking findings found.
 `, specHash, appendixHash)
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)

@@ -99,7 +99,7 @@ func TestCheckVerify(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: verify\nunit: test\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nAll items aligned.\n"
+	cacheContent := "---\ncommand: verify\nunit: test\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nAll items aligned.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestCheckVerifyScoped(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Scoped verify cache: aligned but mode=scoped, scoped_item=AUTH-AC-001
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: scoped\nscoped_item: AUTH-AC-001\nresult: aligned\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nItem AUTH-AC-001 aligned.\n"
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: scoped\nscoped_item: AUTH-AC-001\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nItem AUTH-AC-001 aligned.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestCheckVerifyScoped(t *testing.T) {
 	}
 }
 
-func TestCheckVerifyNonBlockingMismatch(t *testing.T) {
+func TestCheckVerifyNonBlockingFindings(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -212,8 +212,8 @@ func TestCheckVerifyNonBlockingMismatch(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// Full-mode verify cache with only P2/P3 mismatches: non-blocking, must pass
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: false\np2_count: 1\np3_count: 2\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nNon-blocking mismatches found.\n"
+	// Full-mode verify cache with only P2/P3 findings: non-blocking, must pass
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\np2_count: 1\np3_count: 2\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nNon-blocking findings found.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -223,11 +223,11 @@ func TestCheckVerifyNonBlockingMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !result.Fresh {
-		t.Fatalf("expected non-blocking mismatch cache to be fresh, got: %s", result.Reason)
+		t.Fatalf("expected non-blocking findings cache to be fresh, got: %s", result.Reason)
 	}
 }
 
-func TestCheckVerifyBlockingMismatch(t *testing.T) {
+func TestCheckVerifyFailResultRejected(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -253,8 +253,10 @@ func TestCheckVerifyBlockingMismatch(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// Full-mode verify cache with P0/P1 mismatches: blocking, must be rejected
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: true\np0_count: 1\np2_count: 1\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nBlocking mismatches found.\n"
+	// A verify cache written with result: fail (P0/P1 findings) is invalid —
+	// P0/P1 findings never write a cache, so any fail/mismatch value is
+	// rejected by the result vocabulary check.
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: fail\ntarget: candidate\nblocking: true\np0_count: 1\np2_count: 1\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nBlocking findings found.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -264,54 +266,10 @@ func TestCheckVerifyBlockingMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Fresh {
-		t.Fatal("expected blocking mismatch cache to be rejected, got fresh")
+		t.Fatal("expected fail-result verify cache to be rejected, got fresh")
 	}
-	if !strings.Contains(result.Reason, "P0") || !strings.Contains(result.Reason, "P1") {
-		t.Fatalf("expected reason to mention P0/P1 findings, got: %s", result.Reason)
-	}
-}
-
-func TestCheckVerifyMissingBlockingField(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	srcDir := filepath.Join(repoRoot, "src")
-	os.MkdirAll(candidateDir, 0755)
-	os.MkdirAll(srcDir, 0755)
-
-	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	srcPath := filepath.Join(srcDir, "handler.go")
-	srcContent := "package main\nfunc main() {}\n"
-	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	specHash, _ := fileHash(specPath)
-	srcHash, _ := fileHash(srcPath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-
-	// Mismatch cache without the blocking field: gate must fail closed.
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nMismatch found.\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := CheckVerify(repoRoot, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatal("expected mismatch cache without blocking field to be rejected, got fresh")
-	}
-	if !strings.Contains(result.Reason, "blocking") {
-		t.Fatalf("expected reason to mention missing blocking field, got: %s", result.Reason)
+	if !strings.Contains(result.Reason, "expected one of [pass]") {
+		t.Fatalf("expected reason to mention result vocabulary rejection, got: %s", result.Reason)
 	}
 }
 
@@ -341,8 +299,9 @@ func TestCheckVerifyInvalidBlockingValue(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// Mismatch cache with a malformed blocking value: gate must fail closed.
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: mismatch\ntarget: candidate\nblocking: truee\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nMismatch found.\n"
+	// Verify cache with a malformed blocking value: readCache parsing fails
+	// and the gate cannot read the cache.
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\nblocking: truee\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nVerified.\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}

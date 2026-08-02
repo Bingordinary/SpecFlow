@@ -6,7 +6,7 @@
 // Cache files for rules live under docs/specs/meta/validation/rule/{id}/.
 // They record:
 //   - Which files were checked (paths + SHA-256 hashes)
-//   - Whether the check passed (pass / aligned)
+//   - Whether the check passed (pass)
 //   - When the check was run
 //
 // specflowctl promote reads both caches, re-computes hashes, and rejects
@@ -55,16 +55,15 @@ type cacheFileEntry struct {
 
 // CheckValidate reads and validates the validate cache for the given unit.
 func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"}, false)
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"})
 }
 
 // CheckVerify reads and validates the verify cache for the given unit.
-// A verify cache with result "mismatch" is acceptable when blocking is false
-// (only P2/P3 findings) — non-blocking mismatches do not stop promote.
-// A verify cache with result "mismatch" and blocking true (P0/P1 findings)
-// is rejected.
+// A verify cache is valid only with result "pass". P0/P1 findings never
+// write a cache (the cache is deleted), and P2/P3 pending findings are
+// carried by the severity counts (blocking: false).
 func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"aligned"}, true)
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"})
 }
 
 // CheckAppendicesInCache verifies that every non-exempt candidate appendix for
@@ -148,7 +147,7 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 
 // CheckRuleValidate reads and validates the validate cache for the given rule.
 func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
-	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, false)
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})
 }
 
 // CheckReview reads and validates the review cache for the given unit.
@@ -320,7 +319,7 @@ func DeleteAllRuleCache(repoRoot, ruleID string) error {
 // Internal
 // ------------------------------------------------------------
 
-func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string, allowNonBlockingMismatch bool) (CheckResult, error) {
+func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
 
 	// Check existence
@@ -348,15 +347,6 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}, nil
 	}
 
-	// Blocking mismatch (P0/P1) is rejected with a clear message before the
-	// generic result check runs.
-	if allowNonBlockingMismatch && cache.Result == "mismatch" && cache.Blocking {
-		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("verify found %d P0 and %d P1 finding(s). Resolve before promoting.", cache.P0Count, cache.P1Count),
-		}, nil
-	}
-
 	// Validate result is acceptable
 	resultOk := false
 	for _, vr := range validResults {
@@ -364,19 +354,6 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 			resultOk = true
 			break
 		}
-	}
-	// Non-blocking mismatch (P2/P3 only) is acceptable for commands that
-	// allow it — the cache records the mismatches but does not stop promote.
-	// A mismatch cache without an explicit blocking field is rejected: the
-	// gate cannot determine blocking status and must fail closed.
-	if !resultOk && allowNonBlockingMismatch && cache.Result == "mismatch" && !cache.Blocking {
-		if !cache.blockingSeen {
-			return CheckResult{
-				Fresh:  false,
-				Reason: "verify cache missing required field `blocking` — cannot determine blocking status",
-			}, nil
-		}
-		resultOk = true
 	}
 	if !resultOk {
 		return CheckResult{

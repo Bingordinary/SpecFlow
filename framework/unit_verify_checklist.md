@@ -54,11 +54,11 @@ After completing all analysis steps, the agent must report coverage confidence (
 ## Output Format
 
 ```
-Verify result: ALIGNED | MISMATCH
+Verify result: PASS | FAIL      # FAIL = P0/P1 findings; PASS may carry P2/P3 pending items (see Step 8)
 Target: candidate | stable
 Items:
   - {item.id}: ALIGNED | MISMATCH (severity: P0|P1|P2|P3) | CANNOT_DETERMINE — code references
-Scope: ALIGNED | MISMATCH — findings
+Scope: PASS | FAIL — findings
 Integrity: PASS | FAIL — findings
 Coverage:
   - items_with_deterministic_evidence: N/M
@@ -812,7 +812,7 @@ After all sub-agents return:
 ```
 ────────────────────────────────────────────────────
 Mode: scoped | full
-Verify result: MISMATCH
+Verify result: PASS | FAIL   # P0/P1 → FAIL; all aligned or P2/P3 only → PASS (pending items in counts)
 Target: candidate | stable
 Blocking mismatches: N  (severity P0/P1)
 Non-blocking mismatches: N  (severity P2/P3)
@@ -853,7 +853,7 @@ Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `fram
 
 - **Spec-only fixes** (spec prose, acceptance items, affects fields): scoped selection maps spec-file edits to affected content per `framework/verification_scope.md` §Scoped Verify step 3 (spec files have no code reference — the mapping is direct: edited body sections → those chapters and their corresponding acceptance items; edited item fields → those items; edited appendix files → the chapters referencing them). Propose `verify@{unit}` (scoped — it reports the mapping) or `verify@{unit}:{keyword}` for a targeted re-check; the user may choose full.
 - **Code fixes**: propose `verify@{unit}` (scoped — matches the changed code files).
-- Until a re-check is triggered, do NOT claim the fix is verified — report "fixed, pending re-confirmation". A scoped re-check writes a `mode: scoped` cache only when ALIGNED (see Step 8); promote's mode gate rejects scoped caches (`framework/validation_cache.md`), so cache freshness is restored only by a user-triggered `verify@{unit}:full`.
+- Until a re-check is triggered, do NOT claim the fix is verified — report "fixed, pending re-confirmation". A scoped re-check writes a `mode: scoped` cache only when PASS (all items aligned, see Step 8); promote's mode gate rejects scoped caches (`framework/validation_cache.md`), so cache freshness is restored only by a user-triggered `verify@{unit}:full`.
 
 After presenting the summary:
 - If batch grouping is active: stop and wait for the user's decision on the batch group (approve / release / move items out) and on each decision-group finding. Nothing is implemented without explicit user agreement.
@@ -865,7 +865,7 @@ When no candidate spec exists (verify against stable):
 
 ```
 1. Run Steps 1-6 against stable spec
-2. If all ALIGNED → report ALIGNED. No further action.
+2. If all items are ALIGNED → report PASS. No further action.
 3. If any MISMATCH:
    - The implementation has drifted from recorded stable truth
    - Do not suggest spec modifications (cannot modify stable spec directly)
@@ -878,18 +878,18 @@ When no candidate spec exists (verify against stable):
 
 ## Step 8 — Write verify cache (main agent)
 
-After all 7 steps complete, determine cache action based on the highest severity MISMATCH. The suggested direction (spec_gap / code_gap / needs_design / blocked) does not change the gate — blocking is determined by severity only.
+After all 7 steps complete, determine cache action based on the highest severity MISMATCH (the finding-level verdict). The suggested direction (spec_gap / code_gap / needs_design / blocked) does not change the gate — blocking is determined by severity only. The cache `result` field uses the gate vocabulary: `pass` means no P0/P1 blocking findings; `fail` is reserved for the P0/P1 state, which never writes a cache (see below).
 
 - **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
   - Collect SHA-256 hashes of all files read during verification
-  - Write `verify_result.md` with `result: aligned`, `target: candidate|stable`, `mode: scoped|full`, `blocking: false`, file hashes
+  - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: scoped|full`, `blocking: false`, file hashes
 
-- **If any P0/P1 MISMATCH exists:** delete existing `verify_result.md` if present. Do not write cache. Report blocking findings. Agent must stop and not proceed to promote.
+- **If any P0/P1 MISMATCH exists (verify FAIL):** delete existing `verify_result.md` if present. Do not write cache — `result: fail` never appears in a verify cache. Report blocking findings. Agent must stop and not proceed to promote.
 
-- **If all mismatches are P2/P3 (non-blocking):**
+- **If all mismatches are P2/P3 (non-blocking, verify PASS):**
   - **Full run (`:full`):** write verify cache with `blocking: false`:
     - Collect SHA-256 hashes of all files read during verification
-    - Write `verify_result.md` with `result: mismatch`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
+    - Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
     - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
   - **Scoped run:** report findings only — do NOT write a cache. A scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. See `framework/validation_cache.md`.
