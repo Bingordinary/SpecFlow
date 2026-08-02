@@ -117,6 +117,7 @@ Appendix content for test.
 	validateCache := fmt.Sprintf(`---
 command: validate
 unit: test_unit
+mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 files:
@@ -135,6 +136,7 @@ Validate passed.
 	verifyCache := fmt.Sprintf(`---
 command: verify
 unit: test_unit
+mode: full
 result: pass
 target: candidate
 timestamp: "2026-06-30T11:00:00Z"
@@ -439,6 +441,7 @@ Appendix content for test.
 	validateCache := fmt.Sprintf(`---
 command: validate
 unit: test_unit
+mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 files:
@@ -578,6 +581,7 @@ Appendix content for test.
 	validateCache := fmt.Sprintf(`---
 command: validate
 unit: test_unit
+mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 files:

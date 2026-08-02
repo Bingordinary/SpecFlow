@@ -1,6 +1,7 @@
 package promote
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -151,5 +152,139 @@ func TestPromoteRuleSuccess(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ruleDir, "b_rule_test.md")); !os.IsNotExist(err) {
 		t.Fatal("candidate rule should be removed after promote")
+	}
+}
+
+func TestCommitStagedRollsBack(t *testing.T) {
+	dir := t.TempDir()
+
+	dst1 := filepath.Join(dir, "a.md")
+	if err := os.WriteFile(dst1, []byte("old-a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dst2 := filepath.Join(dir, "b.md")
+
+	tmp1 := filepath.Join(dir, "t1.md")
+	if err := os.WriteFile(tmp1, []byte("new-a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tmp2 := filepath.Join(dir, "t2.md")
+	if err := os.WriteFile(tmp2, []byte("new-b"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	staged := []stagedCopy{{tmp: tmp1, dst: dst1}, {tmp: tmp2, dst: dst2}}
+	commit := func(tmp, dst string) error {
+		if dst == dst2 {
+			return errors.New("injected commit failure")
+		}
+		return os.Rename(tmp, dst)
+	}
+
+	err := commitStagedWith(staged, commit)
+	if err == nil {
+		t.Fatal("expected commit failure to be returned")
+	}
+
+	content, err := os.ReadFile(dst1)
+	if err != nil {
+		t.Fatalf("dst1 must be restored after rollback: %v", err)
+	}
+	if string(content) != "old-a" {
+		t.Fatalf("dst1 not rolled back: got %q, want %q", content, "old-a")
+	}
+	if _, err := os.Stat(dst2); !os.IsNotExist(err) {
+		t.Fatal("dst2 must not exist after rollback (no original file)")
+	}
+	for _, p := range []string{tmp1, tmp2} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("staged temp file left behind after rollback: %s", p)
+		}
+	}
+	leftover, _ := filepath.Glob(filepath.Join(dir, ".sf-backup-*"))
+	if len(leftover) > 0 {
+		t.Fatalf("backup files left behind after rollback: %v", leftover)
+	}
+}
+
+func TestPromoteUnitCandidateRemovalFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directory simulation is not portable to Windows")
+	}
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+
+	candAppendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.Chmod(candAppendixDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(candAppendixDir, 0755)
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected promote to fail when candidate cleanup fails")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "failed to remove candidate appendix") {
+		t.Fatalf("expected candidate cleanup issue, got: %v", result.Issues)
+	}
+
+	// The stable layer is fully archived and the candidate spec is still in
+	// place, so a re-run completes the promote.
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/stable/unit_demo.md")); err != nil {
+		t.Fatalf("stable spec missing after cleanup failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")); err != nil {
+		t.Fatal("candidate spec must survive a cleanup failure so promote is re-runnable")
+	}
+
+	os.Chmod(candAppendixDir, 0755)
+	result2 := Promote(repoRoot, "demo")
+	if !result2.Passed {
+		t.Fatalf("expected re-run promote to pass, issues: %v", result2.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")); !os.IsNotExist(err) {
+		t.Fatal("candidate spec should be removed after the re-run")
+	}
+}
+
+func TestPromoteRuleCandidateRemovalFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directory simulation is not portable to Windows")
+	}
+	repoRoot := t.TempDir()
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rule := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_test.md"), []byte(rule), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeRuleValidateCache(t, repoRoot, "b_rule_test")
+
+	if err := os.Chmod(ruleDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(ruleDir, 0755)
+
+	result := PromoteRule(repoRoot, "b_rule_test")
+	if result.Passed {
+		t.Fatal("expected rule promote to fail when candidate cleanup fails")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "failed to remove candidate rule") {
+		t.Fatalf("expected candidate rule cleanup issue, got: %v", result.Issues)
+	}
+
+	// The stable rule is fully archived and the failure message names the
+	// recovery path (the rule version gate makes an automatic re-run
+	// impossible once the stable version equals the candidate version).
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/rules/stable/b_rule_test.md")); err != nil {
+		t.Fatalf("stable rule missing after cleanup failure: %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "delete docs/specs/rules/candidate/b_rule_test.md manually") {
+		t.Fatalf("expected manual cleanup guidance, got: %v", result.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(ruleDir, "b_rule_test.md")); err != nil {
+		t.Fatal("candidate rule must survive a cleanup failure")
 	}
 }

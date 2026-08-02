@@ -54,7 +54,7 @@ rule_refs:
   - b_rule_example
 ```
 
-Refs are bare rule names; the ref resolves to the current version.
+Refs are bare unit or rule names; the ref resolves to the current version.
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 

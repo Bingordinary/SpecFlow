@@ -97,25 +97,32 @@ The tooling layer must not:
    - discover a unit's files and dependencies
    - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, and related units
    - this is a render action: read-only, does not modify any project file
-6. `promote`
+5. `fork`
+   - copy a stable spec/rule (and appendix files for units) to the candidate layer with layer transform and version bump
+   - `fork --unit <name>` / `fork --rule <id>`: rejects if a candidate already exists or the stable source does not exist
+   - this is the only allowed fork path (see HARD RULE 5 in `framework/concepts.md`)
+6. `consumers`
+   - list units that reference a given rule in their `rule_refs`
+   - `consumers --rule <id>`: for global rules (`g_rule_*`) returns every current-layer unit; for bound rules (`b_rule_*`) returns only matching units (empty output means no consumers)
+7. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, scoped, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must exist, be `full` mode, and be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing, stale, or scoped, promote is rejected with guidance to re-run `validate@{rule}:full`
    - this is the only write gate
-7. `review collect-default-scope --flow <review_flow>`
+8. `review collect-default-scope --flow <review_flow>`
    - collect the deterministic default scope for the explicit review flow
-8. `review run-init --flow <review_flow>`
+9. `review run-init --flow <review_flow>`
    - create or reuse the full-scope run-state file for the explicit review flow
-9. `review run-validate --flow <review_flow>`
+10. `review run-validate --flow <review_flow>`
    - validate required run-state fields, timestamps, all fixed statuses including closed statuses, baseline slices, score state when present, and dynamic slice parent links
-10. `review run-refresh --flow <review_flow>`
+11. `review run-refresh --flow <review_flow>`
    - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
-11. `review run-touch --flow <review_flow>`
+12. `review run-touch --flow <review_flow>`
    - refresh only `last_updated_at`
-12. `validate write`
+13. `validate write`
     - check whether a file path may be written under current governance constraints
-    - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints
-13. `validate candidate --unit UNIT`
+    - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
+14. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
 
 ## Review Run-State Commands

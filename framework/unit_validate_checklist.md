@@ -482,7 +482,7 @@ affects.appendices:
 
 **Execution steps:**
 
-1. From `unit_refs`, get the list of dependency units (format `{name}@version`, resolved candidate-first per Check 1)
+1. From `unit_refs`, get the list of dependency units (bare names, resolved candidate-first per Check 1)
 2. For each dependency unit:
    - Candidate spec takes priority — read it and check for conflicting statements about shared protocols, data formats, or behavior
    - Also read the stable spec and check whether this candidate changes any contract that the stable spec depends on — skip the stable contract check if the dependency's candidate spec already reflects the change

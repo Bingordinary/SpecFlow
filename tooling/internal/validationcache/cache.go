@@ -362,17 +362,24 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}, nil
 	}
 
-	// Reject scoped mode — only full-mode caches satisfy the promote gate
-	if cache.Mode == "scoped" {
-		var scopeDetail string
-		if cache.ScopedCheck != "" {
-			scopeDetail = fmt.Sprintf(" (check %s only)", cache.ScopedCheck)
-		} else if cache.ScopedItem != "" {
-			scopeDetail = fmt.Sprintf(" (item: %s)", cache.ScopedItem)
+	// Reject non-full mode — only full-mode caches satisfy the promote gate.
+	// Fail closed: a missing or invalid mode value cannot prove a full run.
+	if cache.Mode != "full" {
+		if cache.Mode == "scoped" {
+			var scopeDetail string
+			if cache.ScopedCheck != "" {
+				scopeDetail = fmt.Sprintf(" (check %s only)", cache.ScopedCheck)
+			} else if cache.ScopedItem != "" {
+				scopeDetail = fmt.Sprintf(" (item: %s)", cache.ScopedItem)
+			}
+			return CheckResult{
+				Fresh:  false,
+				Reason: fmt.Sprintf("%s cache is scoped%s, run `%s@%s:full` before promoting", command, scopeDetail, command, cache.Unit),
+			}, nil
 		}
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache is scoped%s, run `%s@%s:full` before promoting", command, scopeDetail, command, cache.Unit),
+			Reason: fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s:full` before promoting", command, cache.Mode, command, cache.Unit),
 		}, nil
 	}
 

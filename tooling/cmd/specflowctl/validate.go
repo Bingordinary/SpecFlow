@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -102,9 +103,37 @@ type validateResult struct {
 }
 
 func validateWrite(repoRoot, path string) validateResult {
-	normalizedPath := filepath.ToSlash(filepath.Clean(path))
-	if filepath.IsAbs(path) {
-		if rel, err := filepath.Rel(repoRoot, path); err == nil && !escapesRoot(rel) {
+	// Resolve the path to its real filesystem location before zone matching:
+	// relative paths are resolved against the process working directory, so
+	// a relative path that resolves into a governed zone cannot fall through
+	// to the default allowed branch. If the working directory cannot be
+	// determined, fall back to matching the raw relative path.
+	if !filepath.IsAbs(path) {
+		if cwd, err := os.Getwd(); err == nil {
+			path = filepath.Join(cwd, path)
+		}
+	}
+	// Normalize symlinks so relative-path resolution (e.g. /var -> /private/var
+	// on macOS) does not break the repo-relative conversion below. Paths that
+	// do not exist yet keep their cleaned form.
+	resolvedRoot := repoRoot
+	if r, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		resolvedRoot = r
+	}
+	resolvedPath := path
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		resolvedPath = r
+	}
+	normalizedPath := filepath.ToSlash(filepath.Clean(resolvedPath))
+	if filepath.IsAbs(resolvedPath) {
+		rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+		if err != nil || escapesRoot(rel) {
+			// The path could not be symlink-resolved (e.g. it does not exist
+			// yet): retry against the un-resolved root so the prefix match
+			// stays consistent with the caller-provided repo root.
+			rel, err = filepath.Rel(repoRoot, filepath.Clean(path))
+		}
+		if err == nil && !escapesRoot(rel) {
 			normalizedPath = filepath.ToSlash(rel)
 		}
 	}

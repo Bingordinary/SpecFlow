@@ -87,12 +87,69 @@ func cleanupStaged(staged []stagedCopy) {
 }
 
 func commitStaged(staged []stagedCopy) error {
-	for _, s := range staged {
-		if err := os.Rename(s.tmp, s.dst); err != nil {
-			return err
+	return commitStagedWith(staged, os.Rename)
+}
+
+// backupEntry records one destination's pre-commit state during the archive
+// phase. backup is empty when the destination had no original file.
+type backupEntry struct {
+	backup string
+	dst    string
+}
+
+// commitStagedWith performs the archive phase with backup and rollback so a
+// mid-commit failure never leaves the stable layer partially archived:
+//
+//  1. backup — every destination that already exists is renamed to a
+//     `.sf-backup-*` temp name; a failure here restores the backups taken so far
+//  2. commit — each staged temp file is renamed into place via the commit
+//     function; a failure rolls back every committed destination (restore the
+//     backup when one exists, otherwise remove the newly written file) and
+//     cleans up the remaining temp files
+//  3. success — all backups are removed
+func commitStagedWith(staged []stagedCopy, commit func(tmp, dst string) error) error {
+	backups := make([]backupEntry, len(staged))
+
+	for i, s := range staged {
+		if _, err := os.Stat(s.dst); err == nil {
+			b := filepath.Join(filepath.Dir(s.dst), ".sf-backup-"+filepath.Base(s.dst))
+			if err := os.Rename(s.dst, b); err != nil {
+				restoreBackups(backups[:i])
+				return fmt.Errorf("backup %s: %w", s.dst, err)
+			}
+			backups[i] = backupEntry{backup: b, dst: s.dst}
+		} else {
+			backups[i] = backupEntry{dst: s.dst}
+		}
+	}
+
+	for i, s := range staged {
+		if err := commit(s.tmp, s.dst); err != nil {
+			restoreBackups(backups[:i])
+			cleanupStaged(staged[i:])
+			return fmt.Errorf("commit %s: %w", s.dst, err)
+		}
+	}
+
+	for _, b := range backups {
+		if b.backup != "" {
+			os.Remove(b.backup)
 		}
 	}
 	return nil
+}
+
+// restoreBackups reverts already-committed destinations to their original
+// content: files that had a backup are renamed back (replacing the newly
+// written file), files that had no original are removed.
+func restoreBackups(backups []backupEntry) {
+	for _, b := range backups {
+		if b.backup != "" {
+			os.Rename(b.backup, b.dst)
+		} else {
+			os.Remove(b.dst)
+		}
+	}
 }
 
 // Promote runs the promote flow for the given unit.
@@ -251,20 +308,25 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
 
-	// Step 7: Remove candidate files so file existence remains an unambiguous state signal.
-	// "Candidate file exists = being edited" — after promote, no editing is in progress.
+	// Step 7: Remove candidate files so file existence remains an unambiguous
+	// state signal. "Candidate file exists = being edited" — after promote, no
+	// editing is in progress. Appendices are removed first and the main spec
+	// last, so a cleanup failure always leaves the candidate spec in place and
+	// the promote can be safely re-run to completion.
 	for _, m := range matches {
 		if err := os.Remove(m); err != nil {
-			r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate appendix: %s", filepath.Base(m)))
-		} else {
-			r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate appendix: docs/specs/units/candidate/appendix/%s", filepath.Base(m)))
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate appendix: %s (%v)", filepath.Base(m), err))
+			r.Passed = false
+			return r
 		}
+		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate appendix: docs/specs/units/candidate/appendix/%s", filepath.Base(m)))
 	}
 	if err := os.Remove(candidateSpec); err != nil {
-		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate spec: unit_%s.md", unitName))
-	} else {
-		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
+		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate spec: unit_%s.md (%v)", unitName, err))
+		r.Passed = false
+		return r
 	}
+	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
 
 	r.Passed = true
 	return r
@@ -441,12 +503,15 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 
-	// Step 8: Delete candidate rule file
+	// Step 8: Delete candidate rule file. A cleanup failure keeps the candidate
+	// rule in place; the stable rule is already archived, so the failure
+	// reports the concrete recovery path instead of claiming success.
 	if err := os.Remove(candidateRule); err != nil {
-		r.Actions = append(r.Actions, fmt.Sprintf("Warning: could not remove candidate rule: %s.md", ruleID))
-	} else {
-		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
+		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate rule: %s.md (%v). The stable rule is already updated; delete docs/specs/rules/candidate/%s.md manually, or fork from stable to continue editing.", ruleID, err, ruleID))
+		r.Passed = false
+		return r
 	}
+	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 
 	r.Passed = true
 	return r
