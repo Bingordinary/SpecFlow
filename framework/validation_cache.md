@@ -184,6 +184,8 @@ The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is
 
 Cache is never refreshed automatically. Only the agent writing a new cache after a fresh validate/verify changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical hash check.
 
+**Cache serves the promote gate only.** During iteration, an expired cache is the normal state — fixes applied after a validate/verify/review run make the cache stale, and the agent must NOT re-run quality-gate commands to restore freshness. Executing validate, verify, or review (including re-runs after a fix) is user-triggered only (see HARD RULE 2 in `framework/concepts.md`); the agent may suggest a scoped re-check and waits for the user. The only way a cache becomes fresh again is a user-triggered validate/verify/review run.
+
 ## Cache File Access Strategy
 
 When you need to read a cache file, use this ordered strategy:

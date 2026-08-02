@@ -82,9 +82,10 @@ Scoped verify uses **git working directory changes** to determine what to verify
 2. Read the spec and identify all content (body sections, acceptance entries, etc.) that **reference** the changed files:
    - Explicit references: `affects.files`, `implementation_surface`, file paths in body text
    - Implicit references: feature/module names that correspond to known file paths
-3. Verify the identified content using the full verify process (all 7 steps)
-4. If multiple content areas match, verify them in natural spec order
-5. **Cache recording:** record the first matching item's ID as `scoped_item` in the cache. The body summary describes the full scope. This ensures a representative ID is available for cache status disclosure even when multiple areas are verified.
+3. **Spec-file changes:** if the changed files are the spec files themselves (main spec or appendices — not code), no code reference matches. Instead, map the edits to the affected content directly: edited body sections → those chapters and their corresponding acceptance items; edited acceptance item fields → those items; edited appendix files → the chapters referencing them. Report the mapping and note that the user can scope by keyword (`verify@{unit}:{keyword}`) for a targeted re-check.
+4. Verify the identified content using the full verify process (all 7 steps)
+5. If multiple content areas match, verify them in natural spec order
+6. **Cache recording:** record the first matching item's ID as `scoped_item` in the cache. The body summary describes the full scope. This ensures a representative ID is available for cache status disclosure even when multiple areas are verified.
 
 ### Edge cases
 
@@ -92,7 +93,7 @@ Scoped verify uses **git working directory changes** to determine what to verify
 |-----------|----------|
 | No git changes, scoped cache fresh | Report "files unchanged, scoped result still valid". Offer full or specific keyword. |
 | No git changes, no cache | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
-| Changed files don't match any spec content | Report "changed files not referenced in spec". Suggest user run full or add spec references. |
+| Changed files don't match any spec content | Report "changed files not referenced in spec". Suggest user run full or add spec references. (Spec-file-only changes are handled by the selection logic step 3 — not this row.) |
 
 > **Cache:** When scoped verify auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
 

@@ -842,10 +842,18 @@ Findings:
 
 | Direction | Meaning | Next step | Promote gate |
 |-----------|---------|-----------|:---:|
-| **spec_gap** | Code's behavior is correct, spec needs updating | Update candidate spec → re-run validate → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
-| **code_gap** | Spec's intent is correct, code needs updating | Implement code → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
-| **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → validate → verify | P0/P1 → BLOCK; P2/P3 → Allow |
-| **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → re-run verify | P0/P1 → BLOCK; P2/P3 → Allow |
+| **spec_gap** | Code's behavior is correct, spec needs updating | Update candidate spec → suggest re-running validate (affected checks) and verify (affected content); user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
+| **code_gap** | Spec's intent is correct, code needs updating | Implement code → suggest re-running verify (affected content); user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
+| **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → suggest validate then verify; user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
+| **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → suggest re-running verify; user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
+
+### Re-check after fixes
+
+Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). After a fix is applied, the agent must NOT re-run verify automatically. The agent proposes a scoped re-check with the concrete command and waits for the user to trigger it:
+
+- **Spec-only fixes** (spec prose, acceptance items, affects fields): scoped selection maps spec-file edits to affected content per `framework/verification_scope.md` §Scoped Verify step 3 (spec files have no code reference — the mapping is direct: edited body sections → those chapters and their corresponding acceptance items; edited item fields → those items; edited appendix files → the chapters referencing them). Propose `verify@{unit}` (scoped — it reports the mapping) or `verify@{unit}:{keyword}` for a targeted re-check; the user may choose full.
+- **Code fixes**: propose `verify@{unit}` (scoped — matches the changed code files).
+- Until a re-check is triggered, do NOT claim the fix is verified — report "fixed, pending re-confirmation". A scoped re-check writes a `mode: scoped` cache only when ALIGNED (see Step 8); promote's mode gate rejects scoped caches (`framework/validation_cache.md`), so cache freshness is restored only by a user-triggered `verify@{unit}:full`.
 
 After presenting the summary:
 - If batch grouping is active: stop and wait for the user's decision on the batch group (approve / release / move items out) and on each decision-group finding. Nothing is implemented without explicit user agreement.

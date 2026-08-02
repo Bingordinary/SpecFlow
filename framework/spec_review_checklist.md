@@ -280,4 +280,4 @@ Review always writes cache regardless of pass/fail.
 
 - Collect file hashes from the files read during the review run (same collection point as verify Step 8)
 - Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
-- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — re-run `review@{unit}:full` before promote
+- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent may propose a scoped re-review (`review@{unit}`) and waits for the user to trigger it; the `:full` re-run is triggered by the user when deciding to promote.
