@@ -46,8 +46,7 @@ Validate result: PASS | FAIL (fix_required | blocked)
 5. Acceptance coverage & correctness: PASS | FAIL — reason
   5a. Coverage completeness: PASS | WARNING | FAIL — reason
   5b. Content alignment: PASS | FAIL — reason
-  5c. Change drift: PASS | WARNING | FAIL — reason
-  5d. Internal consistency: PASS | FAIL — reason
+  5c. Internal consistency: PASS | FAIL — reason
 6. Affects-source validity: PASS | FAIL — reason
 7. Cross-unit consistency: PASS | FAIL — reason
 8. Constraint alignment: PASS | FAIL — reason
@@ -188,7 +187,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ## Check 5 — Acceptance coverage & correctness
 
-**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), stay current as the body evolves (5c), and contain no internal contradictions (5d). Acceptance items must also have falsifiable pass_conditions (5f), actionable descriptions (5g), and coupled pass_condition/description pairs that add value (5h).
+**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), and contain no internal contradictions (5c). Acceptance items must also have falsifiable pass_conditions (5e), actionable descriptions (5f), and coupled pass_condition/description pairs that add value (5g).
 
 **Execution steps:**
 
@@ -198,7 +197,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 **Execution steps:**
 
-1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5h (which requires `pass_condition` to carry constraints beyond `description`).
+1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5g (which requires `pass_condition` to carry constraints beyond `description`).
 2. Extract all behavior domains from the spec body (main flow, protocols, error handling, state transitions, etc.) at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain; do not split scenarios of the same domain into separate coverage requirements.
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
@@ -243,30 +242,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ---
 
-### Sub-check 5c — Change drift detection (NEW)
-
-**Purpose:** Detect when spec body sections were modified but their corresponding acceptance items were not updated proportionally. This serves as a real-time warning for "forgot to update item" scenarios. It is an auxiliary layer to 5b — 5b catches the resulting contradiction regardless, while 5c catches it at edit time.
-
-**Execution steps:**
-
-1. If a stable predecessor spec exists, compare current body against stable version
-2. Identify body sections that differ significantly
-3. Check if corresponding items also differ
-4. If body differs but item unchanged → WARNING
-
-**PASS:** No drift detected (all modified body sections have corresponding item changes)
-
-**WARNING:** Potential drift found — body changed but items unchanged. Report with diff excerpts. Resolution: review item and update if needed.
-
-**Output level is WARNING, not FAIL.** Not all body changes require item changes (e.g., formatting, comments, clarification). The agent reports drift as potential issues for human review.
-
-**Baseline:** Stable predecessor spec (if exists); skip if no predecessor
-
-**Check method:** Git diff × acceptance item modification check — temporal cross-reference
-
----
-
-### Sub-check 5d — Internal consistency (NEW)
+### Sub-check 5c — Internal consistency (NEW)
 
 **Purpose:** Detect contradictions between acceptance items within the same spec. Two items targeting the same verification surface must not describe contradictory requirements.
 
@@ -292,7 +268,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ---
 
-### Sub-check 5e — Description format compliance
+### Sub-check 5d — Description format compliance
 
 **Purpose:** Verify that each acceptance item with `verification_type: testable` uses Gherkin-style Given/When/Then format in its `description`, as required by `framework/spec_writing_guide.md` §Gherkin-style Description Convention.
 
@@ -312,7 +288,7 @@ IF evidence_appendix_ref is ABSENT or none:
 
 ---
 
-### Sub-check 5f — Falsifiability (NEW)
+### Sub-check 5e — Falsifiability (NEW)
 
 **Purpose:** Every acceptance item's `pass_condition` must be falsifiable — there must exist a concrete, identifiable scenario where the implementation could fail it. An unfalsifiable pass_condition can be "satisfied" by any implementation, making the item meaningless as a quality gate.
 
@@ -354,7 +330,7 @@ For each acceptance item:
 
 ---
 
-### Sub-check 5g — Description actionability (NEW)
+### Sub-check 5f — Description actionability (NEW)
 
 **Purpose:** For `verification_type: testable` items, the `description` must contain enough detail to derive specific test scenarios. A vague description produces vague tests — or leaves the agent to invent scenarios that don't reflect the author's intent.
 
@@ -391,7 +367,7 @@ For each acceptance item:
 
 ---
 
-### Sub-check 5h — Pass condition / description coupling (NEW)
+### Sub-check 5g — Pass condition / description coupling (NEW)
 
 **Purpose:** The `pass_condition` must add specific, verifiable constraints beyond what the `description` already communicates. If the pass_condition merely rephrases the description in vaguer or equivalent terms, it contributes no value and the acceptance item cannot be meaningfully verified.
 
@@ -563,9 +539,9 @@ When FAIL items exist, the main agent classifies each finding into a **batch gro
 - Check 1: missing required frontmatter fields (standard: the required fields list)
 - Check 1: unit_refs / rule_refs / appendix references to non-existent files (standard: file existence)
 - Check 1: appendix path or naming not following the convention (standard: the path convention)
-- Check 5e: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
+- Check 5d: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
 
-All other FAIL findings — including 5f/5g/5h content rewrites, Checks 2/3/4/6/7/8, and every blocked item — go to the decision group. **Blocked items always go to the decision group.**
+All other FAIL findings — including 5e/5f/5g content rewrites, Checks 2/3/4/6/7/8, and every blocked item — go to the decision group. **Blocked items always go to the decision group.**
 
 No activation threshold: findings are aggregated at check level rather than presented flat per item, so splitting out the batch group adds constant cost and always reduces the decisions the user must make — there is no over-splitting scenario. The batch group is inherently limited by the fix-type list above.
 
@@ -612,5 +588,5 @@ Findings:
 
 ### Validate-specific notes
 
-- **Re-validation rule:** After any fix is applied, the agent must NOT re-run validate automatically. Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). The agent proposes a scoped re-check with the concrete command and waits for the user to trigger it. Affected-check mapping: acceptance item edits (any field) affect the Check 5 family — suggest `validate@{unit}:check-5`, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6 — suggest `validate@{unit}:check-5` plus `validate@{unit}:check-6`; edits to spec body prose or appendices affect 5a/5b/5c — suggest `validate@{unit}:check-5`. Example suggestion: "Fixes applied. Suggest re-running `validate@{unit}:check-{n}` to confirm. Shall I run it?" Until a re-run is triggered, do NOT write a pass cache and do NOT claim the fix is verified — report "fixed, pending re-confirmation". When a re-run is triggered by the user, the final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
+- **Re-validation rule:** After any fix is applied, the agent must NOT re-run validate automatically. Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). The agent proposes a scoped re-check with the concrete command and waits for the user to trigger it. Affected-check mapping: acceptance item edits (any field) affect the Check 5 family — suggest `validate@{unit}:check-5`, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6 — suggest `validate@{unit}:check-5` plus `validate@{unit}:check-6`; edits to spec body prose or appendices affect 5a/5b — suggest `validate@{unit}:check-5`. Example suggestion: "Fixes applied. Suggest re-running `validate@{unit}:check-{n}` to confirm. Shall I run it?" Until a re-run is triggered, do NOT write a pass cache and do NOT claim the fix is verified — report "fixed, pending re-confirmation". When a re-run is triggered by the user, the final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
 - **Blocked items** (resolution_type: blocked) require user input — skip to next finding without suggesting a fix.
