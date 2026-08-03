@@ -39,6 +39,7 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 ```
 Validate result: PASS | FAIL (fix_required | blocked)
+Failed checks: N / Total findings: M
 1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
@@ -53,6 +54,24 @@ Validate result: PASS | FAIL (fix_required | blocked)
 Resolution: fix_required | blocked — next step
 Summary: ...
 ```
+
+**Counting rules:**
+- `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
+- `Total findings` is the total number of distinct findings across all FAIL checks. In scoped mode, only executed checks are counted.
+- The same counts are reused in the Present Findings summary (`Total findings` = batch group items + decision group items).
+
+**Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding as an indented numbered sub-line under the check line. Each sub-line carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, and its resolution type:
+
+```
+5a. Coverage completeness: FAIL — 3 findings
+  5a-1. {location} — {finding} (fix_required)
+  5a-2. {location} — {finding} (fix_required)
+  5a-3. {location} — {finding} (blocked)
+```
+
+A check with a single finding keeps the existing one-line reason format.
+
+When findings mix resolution types (within one check or across checks), the output `Resolution` line is `blocked` if any finding is `blocked` — a blocked finding stops the flow and requires user input per Execution Rules; otherwise it is `fix_required`.
 
 ---
 
@@ -568,6 +587,7 @@ After classification, present the findings (§Summary format) and wait for the u
 ────────────────────────────────────────────────────
 Mode: scoped | full
 Validate result: FAIL
+Failed checks: N / Total findings: M
 Findings:
   Batch group (N items) — fix fully determined by an objective standard:
     - {item}: {one-line fix} (based on: {standard reference})
@@ -578,9 +598,12 @@ Findings:
 ────────────────────────────────────────────────────
 ```
 
+`Total findings` equals the sum of batch group items and decision group items.
+
 When no finding qualifies for the batch group, present flat:
 
 ```
+Failed checks: N / Total findings: M
 Findings:
   1. {check-name}: FAIL — {reason} (fix_required | blocked)
   ...

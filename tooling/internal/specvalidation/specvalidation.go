@@ -75,10 +75,11 @@ func FormatResult(r *Result) string {
 	fmt.Fprintf(&buf, "Unit: %s\n", r.Unit)
 	fmt.Fprintf(&buf, "Validate result: ")
 	if r.Passed {
-		buf.WriteString("PASS\n\n")
+		buf.WriteString("PASS\n")
 	} else {
-		buf.WriteString("FAIL\n\n")
+		buf.WriteString("FAIL\n")
 	}
+	fmt.Fprintf(&buf, "Failed checks: %d\n\n", countFailed(r.Checks))
 
 	for _, c := range r.Checks {
 		fmt.Fprintf(&buf, "%d. %s: %s", indexOf(c, r.Checks)+1, c.Name, c.Status)
@@ -92,6 +93,16 @@ func FormatResult(r *Result) string {
 		buf.WriteString("\nFix the issues above and re-run validate.\n")
 	}
 	return buf.String()
+}
+
+func countFailed(checks []CheckResult) int {
+	count := 0
+	for _, c := range checks {
+		if c.Status == Fail {
+			count++
+		}
+	}
+	return count
 }
 
 func indexOf(c CheckResult, checks []CheckResult) int {

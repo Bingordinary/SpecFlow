@@ -526,6 +526,9 @@ func TestFormatResult_Output(t *testing.T) {
 		if !strings.Contains(output, "PASS") {
 			t.Fatal("expected PASS in output")
 		}
+		if !strings.Contains(output, "Failed checks: 0") {
+			t.Fatal("expected \"Failed checks: 0\" in output")
+		}
 	}
 
 	// Verify all checks appear in output
@@ -548,5 +551,25 @@ func TestValidateCandidate_PassOutput(t *testing.T) {
 	output := FormatResult(result)
 	if !strings.Contains(output, "PASS") {
 		t.Fatal("expected PASS in output")
+	}
+	if !strings.Contains(output, "Failed checks: 0") {
+		t.Fatal("expected \"Failed checks: 0\" in PASS output")
+	}
+}
+
+func TestFormatResult_FailedChecksCount(t *testing.T) {
+	result := &Result{
+		Unit:   "test_unit",
+		Passed: false,
+		Checks: []CheckResult{
+			{Name: "frontmatter", Status: Fail, Details: "missing id"},
+			{Name: "acceptance items", Status: Pass},
+			{Name: "anchors", Status: Fail, Details: "bad path"},
+		},
+	}
+
+	output := FormatResult(result)
+	if !strings.Contains(output, "Failed checks: 2") {
+		t.Fatalf("expected \"Failed checks: 2\" in output, got:\n%s", output)
 	}
 }

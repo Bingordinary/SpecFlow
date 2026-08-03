@@ -65,10 +65,11 @@ func FormatResult(r *RuleResult) string {
 	fmt.Fprintf(&buf, "Rule: %s\n", r.RuleID)
 	fmt.Fprintf(&buf, "Validate result: ")
 	if r.Passed {
-		buf.WriteString("PASS\n\n")
+		buf.WriteString("PASS\n")
 	} else {
-		buf.WriteString("FAIL\n\n")
+		buf.WriteString("FAIL\n")
 	}
+	fmt.Fprintf(&buf, "Failed checks: %d\n\n", countFailed(r.Checks))
 
 	for _, c := range r.Checks {
 		fmt.Fprintf(&buf, "%s: %s", c.Name, c.Status)
@@ -84,4 +85,14 @@ func FormatResult(r *RuleResult) string {
 		buf.WriteString("\nGo-level checks passed. Agent should complete Check 8 (Rule Body Quality) before writing cache.\n")
 	}
 	return buf.String()
+}
+
+func countFailed(checks []CheckResult) int {
+	count := 0
+	for _, c := range checks {
+		if c.Status == Fail {
+			count++
+		}
+	}
+	return count
 }
