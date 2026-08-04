@@ -109,11 +109,13 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 
 4. **Self-contradiction scan:** scan the body for statements that conflict with each other (e.g., "versions must be in semver format" in one paragraph, "versions are integers" in another). If found → FAIL.
 
+5. **Layer-prefix path check:** scan the rule body for layer-prefixed spec paths (`docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, `docs/specs/units/candidate/`, `docs/specs/units/stable/`, or the relative forms `candidate/`, `stable/`). Reference other rules and specs by `rule_id` or concept name instead — rule files do not encode layer, so the reference stays valid before and after promote. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active round. If found → FAIL with quoted path and line reference.
+
 **PASS:** Rule body is clear, internally consistent, and verifiable.
 
 **WARNING:** Constraint is too vague to verify mechanically (step 3 only). WARNING does not affect the overall validate result — a validate with no FAIL checks passes, cache is written, and the WARNING is recorded in the result body.
 
-**FAIL:** Contradictory exceptions, self-contradicting statements, or constraint nullified by exceptions.
+**FAIL:** Contradictory exceptions, self-contradicting statements, constraint nullified by exceptions, or layer-prefixed spec paths in the body.
 
 **Check method:** Content reasoning — the agent reads and evaluates rule prose.
 

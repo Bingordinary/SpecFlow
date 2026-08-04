@@ -57,16 +57,18 @@ Summary: ...
 
 ## Step 2 — Body path pre-check
 
-**Purpose:** Scan the candidate spec body for `docs/specs/units/candidate/` path references that will break after promote (candidate files are deleted). Per `framework/concepts.md` §4, body text should reference specs by concept name rather than layer-prefixed file paths — this step enforces that convention before promote.
+**Purpose:** Scan the candidate spec body for candidate-layer path references that will break after promote (candidate files are deleted). Per `framework/concepts.md` §4, body text should reference specs by concept name rather than layer-prefixed file paths. `validate` Check 1 step 10 already rejects layer-prefixed paths at validate time — this step is the last-resort gate for content that predates or bypassed that check.
 
 **Execution steps:**
 
 1. Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
 2. Parse the YAML frontmatter (`---...---`) to identify frontmatter boundaries
-3. Search the full file content for all occurrences of `docs/specs/units/candidate/`
+3. Search the full file content for all occurrences of:
+   - `docs/specs/units/candidate/` (absolute form)
+   - `candidate/` relative form with spec naming (e.g. `candidate/appendix/unit_{name}_...md`, `candidate/unit_{name}.md`)
 4. For each occurrence, classify into:
-   - **Structured field path** — Appears in `implementation_surface`, `affects.files`, `affects.appendices`, or `affects.dependencies` values. These are deterministic spec-to-spec references that must point to stable after promote. Per `framework/spec_writing_guide.md` §Acceptance Item Fields, `implementation_surface` is an "Implementation code surface path" — if it references a spec document path, use the stable layer path instead.
-   - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment.
+   - **Structured field path** — Appears in `implementation_surface`, `affects.files`, `affects.appendices`, or `affects.dependencies` values. These are deterministic spec-to-spec references that must point to stable after promote. Per `framework/spec_writing_guide.md` §Acceptance Item Fields, `implementation_surface` is an "Implementation code surface path" — if it references a spec document path, use the stable layer path instead. A candidate-layer spec path in a structured field is invalid.
+   - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment. Note: `validate` Check 1 step 10 rejects such references at validate time; if one reaches this step, the spec likely predates the rule or bypassed validate.
 5. Report findings:
    - List each matched line with line number and surrounding context
    - Tag each match as `[structured]` or `[narrative]`

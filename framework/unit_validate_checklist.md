@@ -91,19 +91,25 @@ When findings mix resolution types (within one check or across checks), the outp
    - Scan narrative text for strings matching source-code file path patterns (backtick-enclosed or bare strings containing `/` and a source-code file extension like `.go`, `.ts`, `.py`, `.js`, `.java`, `.rs`, `.cs`)
    - Exclusions:
      - Structured fields: `implementation_surface`, `affects.files` (intentional)
-     - Spec/governance system paths: `docs/specs/`, `framework/` (describe the spec system itself)
+     - Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — describe the governance system itself
      - File paths inside code-block examples serving as illustrations
    - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
 8. **Appendix frontmatter check:** For each non-exempt appendix file, verify:
    - `unit` frontmatter field matches current unit name
    - `layer` frontmatter field is `"candidate"`
 9. **Appendix path check:** Verify each appendix file's path matches the convention: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
+10. **Layer-prefix path check (FAIL):** Scan the main spec body and every non-exempt appendix for layer-prefixed spec paths that break after promote or mispoint during an active candidate round. Unlike step 7, there is no code-block exemption: paths inside code-block examples are flagged the same as prose.
+    - Absolute forms: `docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`
+    - Relative forms: `candidate/`, `stable/`
+    - Reference appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`) instead — appendix file names do not encode layer, so the reference stays valid before and after promote
+    - Structured field exemption: `implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies` values may contain a stable-layer spec path (it stays valid after promote); a candidate-layer spec path in any structured field is invalid (promote deletes candidate files)
+    - If layer-prefixed spec paths are found → FAIL with quoted path, section name, and line reference
 
 **PASS:** All format constraints satisfied
 
-**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a spec/governance path reference
+**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference
 
-**FAIL:** Any missing field or reference to a non-existent file (fix_required)
+**FAIL:** Any missing field, reference to a non-existent file, or layer-prefixed spec path in prose or structured fields (fix_required)
 
 **Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
 

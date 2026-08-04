@@ -308,6 +308,8 @@ All appendix files must use the `/appendix/` subdirectory under the layer direct
 - Stable: `docs/specs/units/stable/appendix/unit_{unit}_{name}.md`
 The candidate may have additional candidate appendices.
 
+**Body references:** The spec body references appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`), never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. See §11.
+
 An appendix file may carry an optional `status` field in its frontmatter:
 
 - `status: active` (default) — the appendix participates normally in governance validation and coverage checks.
@@ -372,9 +374,13 @@ unit → unit through unit_refs
 
 Spec body prose sections (Description, Responsibility, and any user-defined narrative sections) must not contain code file paths.
 
+This rule does not apply to:
+- Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — these describe the governance system itself
+- File paths in code-block examples that serve as illustrations rather than navigation
+
 All code file path references must be expressed exclusively through the structured fields `implementation_surface` and `affects.files` in the acceptance item set.
 
+Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, or the relative forms `candidate/`, `stable/`) — in prose or in code-block examples. Unlike code file paths, layer-prefixed spec paths break or mispoint in any context: candidate files are deleted on promote, and stable paths point to the prior-consensus layer during an active candidate round. Reference appendix files and other specs by concept name or file name instead (e.g. `unit_auth_account_token_claims`) — appendix file names do not encode layer, so the reference stays valid before and after promote.
+
 This rule does not apply to:
-- Spec/governance system paths (e.g., `docs/specs/units/`, `framework/`)
-- File paths in code-block examples that serve as illustrations rather than navigation
-- Structured field values (`implementation_surface`, `affects.files`)
+- Structured field values (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) — when a structured field references a spec document, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid
