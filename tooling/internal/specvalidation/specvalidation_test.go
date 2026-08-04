@@ -466,6 +466,126 @@ func TestCheckVersionConsistency_MatchPass(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Check 7: Body layer-path check
+// ---------------------------------------------------------------------------
+
+func TestCheckLayerPaths_Pass(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nThis unit depends on the token claims design of unit_auth_account_token_claims.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nSee docs/specs/units/candidate/unit_auth.md for details.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for absolute candidate unit path, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nApplies docs/specs/rules/candidate/g_rule_naming.md.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for absolute candidate rule path, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nSee candidate/unit_auth.md for details.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for relative candidate unit path, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nClaims structure: candidate/appendix/unit_auth_account_token_claims.md\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for relative candidate appendix path, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_CodePathNoFalsePositive(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nThe handler lives at src/candidate/handler.go.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for non-spec code path, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
+	// Stable-layer spec paths are legal in structured fields (they stay
+	// valid after promote) and are not mechanically distinguishable from
+	// prose by a string-level check — the agent checklist covers prose.
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"# Body\n\nSee docs/specs/units/stable/unit_payment.md.\n")
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for stable path (not in scope of mechanical check), got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_AppendixFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendix := "---\nunit: test_unit\nlayer: candidate\n---\n\nReferences candidate/unit_auth.md.\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for appendix body reference, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendix := "---\nunit: test_unit\nlayer: candidate\nstatus: exempt\n---\n\nReferences candidate/unit_auth.md.\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_exempt.md"), []byte(appendix), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for exempt appendix, got %s: %s", result.Status, result.Details)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Integration: ValidateCandidate end-to-end
 // ---------------------------------------------------------------------------
 
@@ -499,8 +619,8 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 6 {
-		t.Fatalf("expected 6 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 7 {
+		t.Fatalf("expected 7 checks, got %d", len(result.Checks))
 	}
 }
 

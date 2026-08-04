@@ -13,6 +13,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fileops"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -249,8 +250,10 @@ func Promote(repoRoot, unitName string) *Result {
 
 	// Step 3d: Scan body for candidate-layer path references
 	_, body, _ := specpaths.ParseFrontmatterFields(content)
-	if body != "" && strings.Contains(body, "docs/specs/units/candidate/") {
-		r.Actions = append(r.Actions, "WARNING: body contains candidate-layer path references (docs/specs/units/candidate/) — verify they are correct after promote")
+	if body != "" {
+		if refs := specvalidation.FindCandidateLayerPathRefs(body); len(refs) > 0 {
+			r.Actions = append(r.Actions, fmt.Sprintf("WARNING: body contains candidate-layer path references (%s) — verify they are correct after promote", strings.Join(refs, ", ")))
+		}
 	}
 
 	// Step 4: Check appendix files

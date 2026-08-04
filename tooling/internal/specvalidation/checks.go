@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -470,5 +471,98 @@ func checkVersionConsistency(repoRoot, unitName string) CheckResult {
 	}
 
 	return CheckResult{Name: "Version consistency", Status: Pass}
+}
+
+// ------------------------------------------------------------
+// Check 7: Body layer-path check
+// ------------------------------------------------------------
+//
+// Candidate-layer spec paths are invalid anywhere in the spec body:
+// the candidate layer is deleted on promote, so every such reference
+// breaks. Relative-form matches are restricted to spec file naming
+// (candidate/(appendix/)?(unit_|g_rule_|b_rule_)) so code paths like
+// src/candidate/ are not misreported. Stable-layer paths are not
+// checked here: they are legal in structured fields (spec document
+// references must point to stable), which a string-level check
+// cannot distinguish from prose.
+var (
+	layerAbsPatterns = []string{
+		"docs/specs/units/candidate/",
+		"docs/specs/rules/candidate/",
+	}
+	layerRelPattern = regexp.MustCompile(`candidate/(?:appendix/)?(?:unit_|g_rule_|b_rule_)[A-Za-z0-9_]+\.md`)
+)
+
+// FindCandidateLayerPathRefs returns the candidate-layer spec path
+// references found in content (absolute and relative forms). Used by
+// the promote workflow as a last-resort warning gate.
+func FindCandidateLayerPathRefs(content string) []string {
+	var refs []string
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		matched := false
+		for _, p := range layerAbsPatterns {
+			if strings.Contains(trimmed, p) {
+				refs = append(refs, p)
+				matched = true
+			}
+		}
+		if !matched {
+			if loc := layerRelPattern.FindStringIndex(trimmed); loc != nil {
+				refs = append(refs, trimmed[loc[0]:loc[1]])
+			}
+		}
+	}
+	return refs
+}
+
+func checkLayerPaths(repoRoot, unitName string) CheckResult {
+	var hits []string
+
+	scanContent := func(label, content string) {
+		for i, line := range strings.Split(content, "\n") {
+			for _, ref := range FindCandidateLayerPathRefs(line) {
+				hits = append(hits, fmt.Sprintf("%s line %d: contains %s", label, i+1, ref))
+			}
+		}
+	}
+
+	path := specPath(repoRoot, unitName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return CheckResult{
+			Name:    "Body layer-path check",
+			Status:  Fail,
+			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
+		}
+	}
+	scanContent(fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName), string(data))
+
+	appendixGlob := specpaths.CandidateAppendixGlob(unitName)
+	fullGlob := filepath.Join(repoRoot, filepath.FromSlash(appendixGlob))
+	if matches, err := filepath.Glob(fullGlob); err == nil {
+		for _, m := range matches {
+			appendixData, readErr := os.ReadFile(m)
+			if readErr != nil {
+				continue
+			}
+			fm := specpaths.ReadFrontmatterStringMap(string(appendixData))
+			if strings.EqualFold(strings.TrimSpace(fm["status"]), "exempt") {
+				continue
+			}
+			rel, _ := filepath.Rel(repoRoot, m)
+			scanContent(rel, string(appendixData))
+		}
+	}
+
+	if len(hits) > 0 {
+		return CheckResult{
+			Name:    "Body layer-path check",
+			Status:  Fail,
+			Details: fmt.Sprintf("candidate-layer spec path references in body (use concept names instead): %s", strings.Join(hits, "; ")),
+		}
+	}
+
+	return CheckResult{Name: "Body layer-path check", Status: Pass}
 }
 

@@ -79,6 +79,71 @@ func TestPromoteUnitSuccess(t *testing.T) {
 	}
 }
 
+func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
+	repoRoot := t.TempDir()
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	found := false
+	for _, a := range result.Actions {
+		if strings.Contains(a, "WARNING: body contains candidate-layer path references") && strings.Contains(a, "candidate/appendix/unit_demo_extra.md") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected relative-form candidate-layer path WARNING, actions: %v", result.Actions)
+	}
+}
+
+func TestPromoteUnitBodyAbsoluteLayerPathWarning(t *testing.T) {
+	repoRoot := t.TempDir()
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nSee docs/specs/units/candidate/unit_auth.md.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	found := false
+	for _, a := range result.Actions {
+		if strings.Contains(a, "WARNING: body contains candidate-layer path references") && strings.Contains(a, "docs/specs/units/candidate/") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected absolute-form candidate-layer path WARNING, actions: %v", result.Actions)
+	}
+}
+
+func TestPromoteUnitBodyCodePathNoWarning(t *testing.T) {
+	repoRoot := t.TempDir()
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nThe handler lives at src/candidate/handler.go.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	for _, a := range result.Actions {
+		if strings.Contains(a, "WARNING: body contains candidate-layer path references") {
+			t.Fatalf("unexpected layer-path WARNING for code path, actions: %v", result.Actions)
+		}
+	}
+}
+
 func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("read-only directory simulation is not portable to Windows")

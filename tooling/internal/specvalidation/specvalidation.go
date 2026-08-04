@@ -7,6 +7,7 @@
 //  4. Reference integrity (unit_refs/rule_refs files exist)
 //  5. Appendix files exist
 //  6. Version/ref consistency
+//  7. Body layer-path check (candidate-layer spec paths)
 package specvalidation
 
 import (
@@ -47,7 +48,7 @@ type Result struct {
 	Checks     []CheckResult
 }
 
-// ValidateCandidate runs all 6 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 7 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -57,6 +58,7 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkReferences(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkVersionConsistency(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {
