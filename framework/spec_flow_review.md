@@ -799,7 +799,18 @@ For full-scope review:
       context but dissolves under broader cross-file verification must be
       demoted to a note
     - severity P3 findings and notes are exempt from this
-      validation step
+      validation step and from the severity confirmation below
+      (they are reported as graded; a P3 finding that claims a
+      blocking status must first be re-graded through the
+      confirmation path)
+    - for every retained finding (P0-P2), confirm the severity per
+      `framework/severity_policy.md` §9 before final conclusion:
+      the reviewer must read at least one impact-surface file beyond the
+      finding's source slice that the severity claim depends on (the
+      governance file governing the affected mechanism, or the consumer
+      of the affected rule), verify the §9.3 boundary holds, and record
+      `confirmed` or `adjusted: {Px} → {Py}` with the evidence file and
+      reason per §9.4-9.6
     - if a validated finding is demoted and was the sole basis
       for a slice's `blocked` status, that slice must be re-reviewed and
       updated to `passed` or remain `blocked` with an updated blocked_reason
@@ -919,6 +930,8 @@ Every real finding must still contain these information items:
    - one short problem label
 2. severity
    - required for every real finding and must be one of `P0`, `P1`, `P2`, or `P3`
+   - must be confirmed per `framework/severity_policy.md` §9 before the final conclusion (Section 7 step 10); the confirmation record (`confirmed` or `adjusted`) is part of the finding's evidence
+   - P3 findings and notes exempted per Section 7 step 10 are reported as graded with no confirmation record (severity_policy.md §9.6)
 3. background
    - the minimum repository or rule context needed to understand why this finding matters
 4. what happened

@@ -61,6 +61,8 @@ Severity describes harm level; it does not replace explicit blocking status.
 `P0` and `P1` are normally blocking.
 `P2` and `P3` are normally non-blocking unless the finding explains why the current scope must stop.
 
+Every scoped finding's severity must be confirmed per `framework/severity_policy.md` §9 before the conclusion: read at least one boundary or owner ref beyond the finding's source inputs that the severity claim depends on (the owner file governing the affected mechanism, or the consumer of the affected rule), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with the evidence file and reason per §9.4-9.6. The confirmation record is part of the finding's `evidence`.
+
 The conclusion may be:
 
 ```text

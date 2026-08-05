@@ -801,9 +801,17 @@ Re-verification failure → item moves to the decision group. This runs before e
 After all sub-agents return:
 
 1. Collect all analysis results
-2. Classify findings per §Batch classification (skip when the activation threshold is not met)
-3. Present the consolidated findings summary (§Summary format)
-4. Wait for the user's decision per HARD RULE 3a:
+2. Confirm each retained finding's severity per `framework/severity_policy.md` §9 before the summary is presented and before Step 8 writes the cache (main agent):
+   - For every retained finding (P0-P3) with a judgment-based severity, including any produced by the full-mode cross-check, read at least one target file beyond the surface it was graded on that its impact claim depends on (a caller in a dependency unit, the callee implementation, or the appendix governing the affected behavior)
+   - Verify the severity boundary from `severity_policy.md` §9.3 holds against the read evidence
+   - Record per finding: `confirmed` — severity stays; `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason
+   - Evidence rules (§9.4): upgrade requires positive evidence read from the target; downgrade requires completed reading that confirms the protective path or contained impact; no evidence → keep the original severity; one level per adjustment, at most two iterations
+   - Deterministic severity mappings (e.g. Step 1 declaration table rows) are contract-decided and are not re-graded; every other retained finding with a severity grade — Step 7 grading, surplus, scope, and full-mode cross-check findings — is confirmed under this step
+   - Cross-check contradictions (full mode) are produced after collection; confirm their severities under these same rules before the summary is presented
+   - The severity records appear in the summary (§Summary format) so the trace shows the check ran
+3. Classify findings per §Batch classification (skip when the activation threshold is not met)
+4. Present the consolidated findings summary (§Summary format)
+5. Wait for the user's decision per HARD RULE 3a:
    - **Batch group:** one decision on the whole group per §Batch classification.
    - **Decision group:** present each finding with its suggested direction and wait for the user's decision. Do not offer a structured resolution menu.
 
@@ -816,6 +824,9 @@ Verify result: PASS | FAIL   # P0/P1 → FAIL; all aligned or P2/P3 only → PAS
 Target: candidate | stable
 Blocking mismatches: N  (severity P0/P1)
 Non-blocking mismatches: N  (severity P2/P3)
+Severity check:
+  confirmed: N | adjusted: N
+  - {item.id} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
 Findings:
   Batch group (N items) — direction resolved, suggested for batch handling:
     - {item.id}: {one-line direction} (P{n}, based on: spec@file:line | code@file:line)

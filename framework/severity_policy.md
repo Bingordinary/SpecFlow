@@ -160,7 +160,72 @@ This file does not:
 
 ---
 
-## 9. Code Review Severity Extension
+## 9. Severity Consistency Check
+
+### 9.1 Purpose
+
+Severity is assigned once during finding collection. This check re-validates each assigned severity from the global context before it takes effect (before cache write or final output), so a grading that only looks right inside the local review surface cannot silently pass.
+
+This check answers one question per finding:
+
+1. does the severity's implied impact claim hold against the full context the flow operates on?
+
+It is distinct from existence validation (cross-check). Existence validation decides whether the finding is real; this check decides whether the grading of a real finding is accurate.
+
+### 9.2 Scope
+
+This check applies to every flow whose severity grading is part of a finding contract, where the grading takes effect on a gate outcome, cache content, or the flow's final output. Each such flow defines where the check executes inside its own procedure file and references this section; that definition is the only adoption mechanism. Report-priority grading outside a finding contract (e.g. the `spec_flow_issues` triage severity) is not in scope.
+
+Flows that currently define an execution position:
+
+1. `spec_flow_review` — full-scope procedure step 10 (`framework/spec_flow_review.md`)
+2. `spec_flow_design_review` — procedure step 13 (`framework/spec_flow_design_review.md`)
+3. `review` — cross-check §7.4 (`framework/spec_review_checklist.md`)
+4. `verify` — Step 7 analysis collection (`framework/unit_verify_checklist.md`)
+5. `validate` — Check 2 Step 4 advisory findings only (`framework/unit_validate_checklist.md`)
+6. scoped review — conclusion stage (`framework/governance/review_scope.md`)
+
+The list is a record of current wiring, not the coverage definition. Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, evidence rules, and record contract.
+
+Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
+
+### 9.3 Severity Boundaries
+
+Each severity implies an impact claim. The check verifies the claim against read evidence:
+
+| Severity | Implied impact claim | What to verify from the global context | Claim fails when |
+|---|---|---|---|
+| P0 | The impact is determinable from code structure alone; no runtime data or inference is needed | The impact does not depend on runtime conditions; no protective path in the read target invalidates it | Impact requires runtime data or inference → downgrade to P1 |
+| P1 | The impact inevitably surfaces over time and threatens downstream work beyond the reviewed surface | The impact reaches real consumers or dependent units; the affected gate outcome is at risk | Impact reaches outside the reviewed surface and breaks an externally meaningful result → upgrade to P0; impact is local with no downstream consumer → downgrade to P2 |
+| P2 | The impact is real but does not touch correctness | The issue truly does not affect correctness | Issue affects correctness → upgrade to P1; issue is style-level only → downgrade to P3 |
+| P3 | The issue does not materially harm maintainability | The issue truly does not affect maintainability | Issue materially harms maintainability → upgrade to P2 |
+
+### 9.4 Evidence Rules
+
+1. **Upgrade requires positive evidence** — the checker must read concrete code or document content proving the impact is larger than graded. "Possible" or "might" reasoning never upgrades.
+2. **Downgrade requires completed reading** — the checker must finish reading the target file and confirm the protective path exists, the consumer is absent, or the impact is contained. "Not found" without reading never downgrades.
+3. **No evidence → keep the original severity.** The check confirms grading; it does not re-guess it.
+4. **One level per adjustment, at most two iterations.** After an adjustment, run the boundary check for the new severity once. The second result is final. A check must not keep moving a finding across levels.
+
+### 9.5 Execution Rules
+
+1. The checker is the main agent (or reviewer) that already holds the flow's global context; no new subagent is launched for this check.
+2. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
+3. The check runs after existence validation (cross-check) and before the cache write or final output, so adjusted severities determine blocking status and cache content.
+4. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
+
+### 9.6 Record Contract
+
+Every finding records one of:
+
+1. `confirmed` — severity stays after the boundary check
+2. `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason
+
+The record must appear in the flow's output (or cache findings body) so the review can trace that the check actually ran. A finding with no record is treated as unconfirmed, unless the flow's procedure file explicitly exempts its severity level from this check; an exempted finding is reported as graded with no confirmation record, and may not claim a blocking status without first being re-graded through the confirmation path.
+
+---
+
+## 10. Code Review Severity Extension
 
 `review` uses the same P0-P3 scale with code-review-specific definitions.
 

@@ -273,6 +273,7 @@ If any in-scope file cannot be assigned to a review block, do not issue `pass`.
 13. separate blocking findings from non-blocking optimizations
    - every real finding must use the fixed finding contract from Section 8.1
    - every non-blocking optimization must use the optimization contract from Section 8.2
+   - before the final conclusion, confirm every finding's severity per `framework/severity_policy.md` §9: read at least one impact-surface file beyond the slice that found it (the governance file governing the affected mechanism, or the consumer of the affected rule), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with the evidence file and reason per §9.4-9.6
 14. issue the final result only after baseline slices, dynamic risk slices, entry control chain check, hard-blocker review, routine-work path check when triggered, question scoring, group checks, weighted-score calculation, findings review, optimization review, and cross-block convergence are all complete
 
 ## 7. Scoring Model
@@ -673,6 +674,7 @@ The minimum required fields are:
 1. `title`
 2. `severity`
    - required for every real finding and must be one of `P0`, `P1`, `P2`, or `P3`
+   - must be confirmed per `framework/severity_policy.md` §9 before the final conclusion (Section 6 step 13); the confirmation record (`confirmed` or `adjusted`) is part of the finding's evidence
 3. `affected_questions`
    - the exact question numbers from Section 7.1 that this finding harms
 4. `score_impact`

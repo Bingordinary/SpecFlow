@@ -161,6 +161,8 @@ Assess only the design decisions the spec has actually recorded (design decision
 
 Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and do not block promote. If the spec records no design decisions (no architecture section, no design decision records, and no appendix design content) → report "Step 4: N/A (no recorded design decisions)" and proceed. This step must not invent architecture the spec does not record; it evaluates only what is written. Objective design defects remain Step 3's territory.
 
+Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5.2), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with evidence. Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
+
 **Step 5 — Verdict**
 - PASS: goal-means aligned, rationale documented (or N/A when evidence-driven), no critical flaws found
 - FAIL: specific findings reported
@@ -570,7 +572,7 @@ After all 8 checks complete:
 
 ## Present Findings
 
-Advisory findings from Check 2 Step 4 are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS.
+Advisory findings from Check 2 Step 4 are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each advisory finding carries its severity confirmation record (`confirmed` / `adjusted: {Px} → {Py}` + evidence) from Check 2 Step 4.
 
 ### Batch classification (validate)
 

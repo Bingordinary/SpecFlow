@@ -62,6 +62,10 @@ Summary:
   Suppressed by spec: N
   P0: N | P1: N | P2: N | P3: N
 
+Severity check (§7.4):
+  confirmed: N | adjusted: N
+  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
+
 Gate: review {blocks|does not block} promote ({reason})
 ```
 
@@ -252,6 +256,21 @@ Both scoped and full mode need this:
 ### 7.3 Complexity
 
 Lightweight: the main agent reads 1-2 target files per finding. No sub-agent re-launch or full re-review.
+
+### 7.4 Severity Consistency Check
+
+After the cross-check removes false positives, the main agent confirms each retained finding's severity before classification and cache write, per `framework/severity_policy.md` §9.
+
+For every retained finding (P0-P3):
+
+1. Read at least one target file beyond the reviewed surface that the finding's impact claim depends on (caller, callee, consumer, or the spec document governing the affected behavior)
+2. Verify the severity boundary from `severity_policy.md` §9.3 holds against the read evidence
+3. Record the result per finding:
+   - `confirmed` — severity stays
+   - `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason
+4. Recompute the gate result (P0/P1 presence) from the adjusted severities before §8 writes the cache
+
+Evidence rules: upgrade requires positive evidence read from the target; downgrade requires completed reading that confirms the protective path or contained impact; no evidence → keep the original severity; one level per adjustment, at most two iterations (§9.4). The severity records appear in the output's Severity check block (§Output Format) so the review trace shows the check ran.
 
 ---
 
