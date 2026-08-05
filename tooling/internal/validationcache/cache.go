@@ -34,8 +34,6 @@ type cacheFile struct {
 	Command      string `yaml:"command"`
 	Unit         string `yaml:"unit"`
 	Mode         string `yaml:"mode,omitempty"`
-	ScopedCheck  string `yaml:"scoped_check,omitempty"`
-	ScopedItem   string `yaml:"scoped_item,omitempty"`
 	Result       string `yaml:"result"`
 	Target       string `yaml:"target,omitempty"`
 	Blocking     bool   `yaml:"blocking"`
@@ -134,7 +132,7 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 	if len(missing) > 0 {
 		return CheckResult{
 			Fresh: false,
-			Reason: fmt.Sprintf("appendix file(s) not included in validation: %s. Run `validate@%s:full` again.",
+			Reason: fmt.Sprintf("appendix file(s) not included in validation: %s. Run `validate@%s` again.",
 				strings.Join(missing, ", "), unitName),
 		}, nil
 	}
@@ -161,7 +159,7 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("Review not completed. Run `review@%s:full` first.", unitName),
+			Reason: fmt.Sprintf("Review not completed. Run `review@%s` first.", unitName),
 		}, nil
 	}
 
@@ -184,7 +182,7 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	if cache.Mode != "full" {
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("Review cache is scoped, run `review@%s:full` before promoting.", unitName),
+			Reason: fmt.Sprintf("review cache mode is %q, expected 'full' — run `review@%s` before promoting", cache.Mode, unitName),
 		}, nil
 	}
 
@@ -210,7 +208,7 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	if len(missingFiles) > 0 || len(mismatchedFiles) > 0 {
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("Review cache is stale. Run `review@%s:full` again.", unitName),
+			Reason: fmt.Sprintf("Review cache is stale. Run `review@%s` again.", unitName),
 		}, nil
 	}
 
@@ -364,22 +362,12 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 
 	// Reject non-full mode — only full-mode caches satisfy the promote gate.
 	// Fail closed: a missing or invalid mode value cannot prove a full run.
+	// A cache exists only when the command ran in full mode (targeted runs
+	// do not write caches), so mode must always be "full".
 	if cache.Mode != "full" {
-		if cache.Mode == "scoped" {
-			var scopeDetail string
-			if cache.ScopedCheck != "" {
-				scopeDetail = fmt.Sprintf(" (check %s only)", cache.ScopedCheck)
-			} else if cache.ScopedItem != "" {
-				scopeDetail = fmt.Sprintf(" (item: %s)", cache.ScopedItem)
-			}
-			return CheckResult{
-				Fresh:  false,
-				Reason: fmt.Sprintf("%s cache is scoped%s, run `%s@%s:full` before promoting", command, scopeDetail, command, cache.Unit),
-			}, nil
-		}
 		return CheckResult{
 			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s:full` before promoting", command, cache.Mode, command, cache.Unit),
+			Reason: fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s` before promoting", command, cache.Mode, command, cache.Unit),
 		}, nil
 	}
 
@@ -503,10 +491,6 @@ func readCache(path string) (*cacheFile, error) {
 					cache.Unit = value
 				case "mode":
 					cache.Mode = value
-				case "scoped_check":
-					cache.ScopedCheck = value
-				case "scoped_item":
-					cache.ScopedItem = value
 				case "result":
 					cache.Result = value
 				case "target":

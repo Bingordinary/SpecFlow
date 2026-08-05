@@ -159,7 +159,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !reviewResult.Fresh {
 		fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "Run `review@%s:full` first, then retry promote.\n", unitName)
+		fmt.Fprintf(stdout, "Run `review@%s` first, then retry promote.\n", unitName)
 		return errors.New("review cache check failed")
 	}
 	fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
@@ -173,7 +173,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !appendixResult.Fresh {
 		fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s:full` first.\n", unitName)
+		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
 		return errors.New("appendix validation check failed")
 	}
 	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)

@@ -10,10 +10,9 @@ FAIL does not write cache. The agent reports which checks failed and why.
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {rule}` | full (default) | All 8 checks. Quality checks are holistic — always runs full. |
-| `validate@ {rule}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
-| `validate@ {rule}:{keyword}` | scoped | Match keyword to check name. User explicitly chooses focus. |
-| `validate@ {rule}:full` | full | All 8 checks. Explicit equivalent of default. |
+| `validate@ {rule}` | full | All 8 checks. Quality checks are holistic — always runs full. |
+| `validate@ {rule}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@ {rule}:{keyword}` | targeted | Match keyword to check name. User explicitly chooses focus. Does not write a cache. |
 
 ## Execution Rules
 
@@ -125,6 +124,6 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 
 After all 8 checks complete:
 
-- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: full`, file hashes. Exception: when triggered by `:check-{n}` or `:{keyword}`, write `mode: scoped` with `scoped_check: "{n}"`.
+- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: full`, file hashes. Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`.
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache.

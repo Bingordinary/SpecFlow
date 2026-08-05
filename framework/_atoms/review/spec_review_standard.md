@@ -118,7 +118,7 @@ Whether the implemented code structure forms an acceptable architecture for the 
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
 | **P3** | Style or clarity | Does not affect correctness, does not significantly harm maintainability | Unused import, minor naming inconsistency, stale comment | Don't block |
 
-P0/P1 findings block regardless of scoped or full mode. The only additional gate for promote is that the cache must come from a `:full` run.
+P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted keyword re-reviews do not write a cache, so they never satisfy the gate.
 
 ## 6. Finding Output Format
 

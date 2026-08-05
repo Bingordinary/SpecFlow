@@ -113,79 +113,6 @@ func TestCheckVerify(t *testing.T) {
 	}
 }
 
-func TestCheckValidateScoped(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	os.MkdirAll(candidateDir, 0755)
-
-	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	specHash, _ := fileHash(specPath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-
-	// Scoped cache: pass but mode=scoped, scoped_check=1
-	cacheContent := "---\ncommand: validate\nunit: test\nmode: scoped\nscoped_check: \"1\"\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n---\nCheck 1 passed.\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := CheckValidate(repoRoot, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatal("expected scoped validate cache to be rejected, got fresh")
-	}
-}
-
-func TestCheckVerifyScoped(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	srcDir := filepath.Join(repoRoot, "src")
-	os.MkdirAll(candidateDir, 0755)
-	os.MkdirAll(srcDir, 0755)
-
-	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	srcPath := filepath.Join(srcDir, "handler.go")
-	srcContent := "package main\nfunc main() {}\n"
-	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	specHash, _ := fileHash(specPath)
-	srcHash, _ := fileHash(srcPath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-
-	// Scoped verify cache: aligned but mode=scoped, scoped_item=AUTH-AC-001
-	cacheContent := "---\ncommand: verify\nunit: test\nmode: scoped\nscoped_item: AUTH-AC-001\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nItem AUTH-AC-001 aligned.\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := CheckVerify(repoRoot, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatal("expected scoped verify cache to be rejected, got fresh")
-	}
-}
-
 func TestCheckValidateMissingMode(t *testing.T) {
 	repoRoot := t.TempDir()
 
@@ -816,39 +743,6 @@ func TestCheckReviewStale(t *testing.T) {
 	}
 	if !strings.Contains(result.Reason, "stale") {
 		t.Fatalf("expected stale message, got: %s", result.Reason)
-	}
-}
-
-func TestCheckReviewScopedNonBlocking(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	srcDir := filepath.Join(repoRoot, "src")
-	os.MkdirAll(srcDir, 0755)
-	srcPath := filepath.Join(srcDir, "handler.go")
-	srcContent := "package main\nfunc main() {}\n"
-	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	srcHash, _ := fileHash(srcPath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-
-	cacheContent := "---\ncommand: review\nunit: test\nmode: scoped\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 1\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nScoped non-blocking review.\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := CheckReview(repoRoot, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatalf("expected not fresh (scoped review cache), got: %s", result.Reason)
-	}
-	if !strings.Contains(result.Reason, "scoped") {
-		t.Fatalf("expected scoped message, got: %s", result.Reason)
 	}
 }
 

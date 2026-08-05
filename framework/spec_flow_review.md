@@ -105,14 +105,14 @@ Each command must have clearly defined boundaries. The review must verify:
 
 2. **review** (implemented as `validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
 
-3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Default: scoped (git-aware). `:full` for all unit code. Review cache must exist, be full mode, and non-blocking to satisfy promote.
+3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Always reviews all unit code. Review cache must exist and be non-blocking to satisfy promote.
 
 4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status
    b. Agent-side body path pre-check (unit only): scans the candidate spec body for candidate-layer path references that would break after promote (candidate files are deleted). Structured field path occurrences (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `fix_required`. Narrative references require user judgment and `blocked` until resolved.
     c. CLI archive step via `specflowctl promote`: independently validates validate+verify+review cache freshness, validates format, copies candidate→stable, removes candidate files
     
-   Validate, verify, and review are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). Review cache is required for promote — must exist, be full mode, non-blocking, and fresh. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate, verify, or review cache is stale, missing, scoped, or blocking. Promote must not archive if any check fails.
+   Validate, verify, and review are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). Review cache is required for promote — must exist and be non-blocking. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate, verify, or review cache is stale, missing, or blocking. Promote must not archive if any check fails.
 
 Each command must have:
 1. a defined input (what parameters it accepts)

@@ -19,15 +19,12 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `verify@ {unit}` | scoped (default) | git diff HEAD → match changed files to spec content → verify that content (all 7 steps) |
-| `verify@ {unit}:{keyword}` | scoped | Match keyword to spec content by title, feature name, or structure → verify that content |
-| `verify@ {unit}:full` | full | Verify all spec content (all 7 steps, batch by spec structure) + cross-check |
+| `verify@ {unit}` | full | Verify all spec content (all 7 steps, batch by spec structure) + cross-check |
+| `verify@ {unit}:{keyword}` | targeted | Match keyword to spec content by title, feature name, API path, or structure → verify that content. Does not write a cache. |
 
-**Scoped selection logic:** Run `git diff HEAD`. Identify spec content referencing changed files (`affects.files`, `implementation_surface`, body file paths). Verify identified content using all 7 steps. No match → report "changed files not referenced in spec" and suggest full run.
+**Keyword domain:** verify keywords resolve to spec content — section titles, feature names, API paths, acceptance item ids, appendix files. A keyword matching no spec content is a no-match — ask the user for clarification.
 
-**Edge cases:** No git changes, scoped cache fresh → report still valid. No git changes, no cache → auto fallback to full. See `framework/verification_scope.md` §Scoped Verify and §Edge cases for full detail.
-
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full verification. Run `verify@ {unit}:full` for complete verification."
+**Output:** Targeted runs report only the requested content and note "This was a targeted check — no cache was written. Run `verify@ {unit}` for a complete verification."
 
 **Cache:** see `framework/validation_cache.md` for format.
 
@@ -46,7 +43,7 @@ After completing all analysis steps, the agent must report coverage confidence (
 
 ## Execution Rules
 
-- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. In **scoped mode**, must NOT delegate to other agents. In **full mode**, the main agent may delegate batches to read-only sub-agents — each sub-agent follows the same permissions (read-only, no delegation chain).
+- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. The main agent may delegate batches to read-only sub-agents — each sub-agent follows the same permissions (read-only, no delegation chain).
 - Each verifiable claim in the spec reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
 - Evidence is always code-level (file:line, struct/function signatures, grep results) — never runtime output.
 - For CANNOT_DETERMINE claims (e.g., pass_condition requires runtime verification): record the gap and continue.
@@ -807,7 +804,7 @@ After all sub-agents return:
    - Record per finding: `confirmed` — severity stays; `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason
    - Evidence rules (§9.4): upgrade requires positive evidence read from the target; downgrade requires completed reading that confirms the protective path or contained impact; no evidence → keep the original severity; one level per adjustment, at most two iterations
    - Deterministic severity mappings (e.g. Step 1 declaration table rows) are contract-decided and are not re-graded; every other retained finding with a severity grade — Step 7 grading, surplus, scope, and full-mode cross-check findings — is confirmed under this step
-   - Cross-check contradictions (full mode) are produced after collection; confirm their severities under these same rules before the summary is presented
+   - Cross-check contradictions are produced after collection; confirm their severities under these same rules before the summary is presented
    - The severity records appear in the summary (§Summary format) so the trace shows the check ran
 3. Classify findings per §Batch classification (skip when the activation threshold is not met)
 4. Present the consolidated findings summary (§Summary format)
@@ -819,7 +816,7 @@ After all sub-agents return:
 
 ```
 ────────────────────────────────────────────────────
-Mode: scoped | full
+Mode: full   # full run; targeted runs use `Mode: targeted` — see `framework/verification_scope.md`
 Verify result: PASS | FAIL   # P0/P1 → FAIL; all aligned or P2/P3 only → PASS (pending items in counts)
 Target: candidate | stable
 Blocking mismatches: N  (severity P0/P1)
@@ -860,11 +857,11 @@ Findings:
 
 ### Re-check after fixes
 
-Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). After a fix is applied, the agent must NOT re-run verify automatically. The agent proposes a scoped re-check with the concrete command and waits for the user to trigger it:
+Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). After a fix is applied, the agent must NOT re-run verify automatically. The agent guides the user to a targeted re-check with the concrete command and waits for the user to trigger it:
 
-- **Spec-only fixes** (spec prose, acceptance items, affects fields): scoped selection maps spec-file edits to affected content per `framework/verification_scope.md` §Scoped Verify step 3 (spec files have no code reference — the mapping is direct: edited body sections → those chapters and their corresponding acceptance items; edited item fields → those items; edited appendix files → the chapters referencing them). Propose `verify@{unit}` (scoped — it reports the mapping) or `verify@{unit}:{keyword}` for a targeted re-check; the user may choose full.
-- **Code fixes**: propose `verify@{unit}` (scoped — matches the changed code files).
-- Until a re-check is triggered, do NOT claim the fix is verified — report "fixed, pending re-confirmation". A scoped re-check writes a `mode: scoped` cache only when PASS (all items aligned, see Step 8); promote's mode gate rejects scoped caches (`framework/validation_cache.md`), so cache freshness is restored only by a user-triggered `verify@{unit}:full`.
+- **Spec-only fixes** (spec prose, acceptance items, affects fields): map the edits to the affected content — edited body sections → those chapters and their corresponding acceptance items; edited item fields → those items; edited appendix files → the chapters referencing them. Propose `verify@{unit}:{keyword}` for a targeted re-check, or `verify@{unit}` if the user wants complete verification.
+- **Code fixes**: propose `verify@{unit}:{keyword}` (keyword = the fixed feature/area) or `verify@{unit}` for complete verification.
+- Until a re-check is triggered, do NOT claim the fix is verified — report "fixed, pending re-confirmation". Targeted re-checks never write a cache (`framework/validation_cache.md`); cache freshness is restored only by a user-triggered `verify@{unit}` full run.
 
 After presenting the summary:
 - If batch grouping is active: stop and wait for the user's decision on the batch group (approve / release / move items out) and on each decision-group finding. Nothing is implemented without explicit user agreement.
@@ -894,13 +891,13 @@ After all 7 steps complete, determine cache action based on the highest severity
 - **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
   - Collect SHA-256 hashes of all files read during verification
-  - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: scoped|full`, `blocking: false`, file hashes
+  - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: full`, `blocking: false`, file hashes
 
 - **If any P0/P1 MISMATCH exists (verify FAIL):** delete existing `verify_result.md` if present. Do not write cache — `result: fail` never appears in a verify cache. Report blocking findings. Agent must stop and not proceed to promote.
 
 - **If all mismatches are P2/P3 (non-blocking, verify PASS):**
-  - **Full run (`:full`):** write verify cache with `blocking: false`:
-    - Collect SHA-256 hashes of all files read during verification
-    - Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
-    - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
-  - **Scoped run:** report findings only — do NOT write a cache. A scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. See `framework/validation_cache.md`.
+  - Collect SHA-256 hashes of all files read during verification
+  - Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
+  - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
+
+- **Targeted runs (`:{keyword}`):** report findings only — do NOT write a cache. Targeted runs never write a cache, and a targeted run that finds P0/P1 deletes the existing cache — blocking findings at any granularity mean promote must not proceed (`framework/validation_cache.md`).

@@ -2,127 +2,84 @@
 
 ## Problem
 
-`verify` operates on a spec unit against the **entire** relevant codebase. When the codebase is large, the agent's context window saturates, search quality degrades, and the result is unreliable. The all-or-nothing approach forces users to wait for a full scan even when they only need feedback on one aspect.
+`validate`, `verify`, and `review` operate on a spec unit against the relevant codebase or document set. The older scoped/full dual-mode design used git working-directory changes to pick a subset. Practice showed that subset results are structurally unusable: the promote gate only accepts results from a complete run, so a scoped result always had to be re-run in full before promote — the scoped pass was wasted work. The subset also did not match what the user actually cares about: git diff reflects "what was recently changed", not "what the user is worried about".
 
-`validate` checks operate on document quality — they are holistic by nature. Evaluating design soundness (Check 2) requires reading the full design regardless of which section changed. Diff-driven reduction of checks would create blind spots, making partial results unreliable.
+The one reason for scoped mode was context saturation on large codebases. That problem is solved structurally by sub-agent batching (see Full Verify below) — the main agent distributes work to read-only sub-agents instead of shrinking the checked surface.
 
 ## Solution
 
-Introduce two modes — `scoped` and `full` — for verify and review. For validate, `full` is the default because quality checks are holistic. Scoped validate is available only through explicit `:check-{n}` or `:{keyword}` — the user chooses the focus area, not git diff.
+There is one execution mode: **full**. Any run of `validate@{target}`, `verify@{unit}`, or `review@{unit}` checks everything in scope.
 
-This mirrors the `scoped_review` / `deep_audit` distinction from `framework/governance/review_scope.md`, adapted for the different semantics of verify and validate.
+Targeted checking exists only through explicit user choice: `:check-{n}` and `:{keyword}`. The user declares the focus, not git diff. Targeted runs are for iterative feedback — they never write a cache, so they can never satisfy the promote gate.
 
-> **Note on git fallback divergence:** `review_scope.md` handles "no git working changes" by shifting to `git log -1` as the scoped diff base. Verify cannot follow this pattern because spec content can be edited by the agent without git changes (new untracked files, in-memory edits). Falling back to full mode is the only safe scoped-free behavior in these cases.
+**Cache invariant:** only a full run writes a cache. A cache exists means a complete check passed (or, for review, a complete review completed). Targeted runs report findings and write nothing.
 
 ## Principles
 
-1. **Default full for validate** — validate checks are holistic quality evaluations. `validate@{target}` always runs all checks.
-2. **Default scoped for verify and review** — verify and review are external-mapping checks (spec↔code). The agent runs the smallest useful subset by default. The user gets fast, focused feedback.
-3. **Explicit full** — `:full` suffix for comprehensive mode on verify and review.
-4. **Explicit scoped for validate** — `:check-{n}` and `:{keyword}` allow the user to scope validate to a specific check. The user chooses the focus, not git diff.
-5. **Transparent scope** — every scoped result explicitly states what was checked and warns that it is not a full result.
-6. **Promote gate** — only `full` results satisfy the promote gate. Scoped results are for iterative feedback, not final approval.
-7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
+1. **Full by default, full always** — every command without a `:` suffix runs the complete check. No git-awareness, no subset selection.
+2. **Targeted only on explicit user choice** — `:check-{n}` (validate) and `:{keyword}` (all three commands) scope the run to a user-declared focus.
+3. **Targeted results never satisfy promote** — targeted runs do not write caches. Only a full run's cache passes the promote gate.
+4. **Keyword means "what the user wants to look at"** — each command resolves the keyword inside its own target domain (see Keyword Resolution).
+5. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
 
 ## Syntax
 
 ### Validate
 
-| User says | Mode | What agent does |
-|-----------|------|-----------------|
-| `validate@{target}` | full (default) | All 8 checks + cross-check (unit only — rules have no cross-check). Always runs full because quality checks are holistic. |
-| `validate@{target}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
-| `validate@{target}:{keyword}` | scoped | Matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. |
-| `validate@{target}:full` | full | All checks + cross-check (unit only — rules have no cross-check). Explicit equivalent of default. |
+| User says | What agent does |
+|-----------|-----------------|
+| `validate@{target}` | Full: all 8 checks + cross-check (unit only — rules have no cross-check). |
+| `validate@{target}:check-{n}` | Targeted: single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@{target}:{keyword}` | Targeted: matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3). Does not write a cache. |
 
 ### Verify
 
-| User says | Mode | What agent does |
-|-----------|------|-----------------|
-| `verify@{unit}` | scoped | Git-aware: `git diff HEAD` → map changed files to spec content → verify |
-| `verify@{unit}:{keyword}` | scoped | Matches keyword to spec content (section title, feature name, etc.) → verify that content |
-| `verify@{unit}:full` | full | Verify all spec content + cross-check |
+| User says | What agent does |
+|-----------|-----------------|
+| `verify@{unit}` | Full: verify all spec content (all 7 steps, batch by spec structure) + cross-check. |
+| `verify@{unit}:{keyword}` | Targeted: matches keyword to spec content (section title, feature name, API path, etc.) → verify that content. Does not write a cache. |
 
 ### Spec Review
 
-| User says | Mode | What agent does |
-|-----------|------|-----------------|
-| `review@{unit}` | scoped (default) | Git-aware: `git diff HEAD` → map changed files to `affects.files` and `implementation_surface` → review those files with spec context |
-| `review@{unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context |
-
+| User says | What agent does |
+|-----------|-----------------|
+| `review@{unit}` | Full: read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context. |
+| `review@{unit}:{keyword}` | Targeted: matches keyword to a file name in `affects.files` or `implementation_surface` → review that file. Does not write a cache. |
 
 ### Rule (validate only, verify removed)
 
-| User says | Mode | What agent does |
-|-----------|------|-----------------|
-| `validate@{rule}` | full (default) | All 8 checks (7 metadata + 1 body quality). Always runs full because quality checks are holistic. |
-| `validate@{rule}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
-| `validate@{rule}:{keyword}` | scoped | Matches keyword to a check name. User explicitly chooses focus. |
-| `validate@{rule}:full` | full | All 8 checks (7 metadata + 1 body quality). Explicit equivalent of default. |
+| User says | What agent does |
+|-----------|-----------------|
+| `validate@{rule}` | Full: all 8 checks (7 metadata + 1 body quality). |
+| `validate@{rule}:check-{n}` | Targeted: single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@{rule}:{keyword}` | Targeted: matches keyword to a check name. Does not write a cache. |
 
 > `verify` on a Rule target has been removed. If the user says `verify@{rule}`, report: "Rule verify has been removed. Run `validate@{rule}` instead." See `framework/concepts.md` for context.
 
-### `:{keyword}` parsing rules
+## Keyword Resolution
+
+### Parsing order
 
 When the user specifies a keyword after `:`, the agent resolves it in order:
 
-1. `full` → full mode, stop
-2. `check-{n}` (validate only) → run that specific check
-3. Match keyword against spec's internal structure (section titles, API paths, feature names, etc.) → locate relevant content, verify it
-4. Pure number (e.g., `:3`) → the Nth natural section in the spec
-5. No match → ask the user for clarification
+1. `check-{n}` (validate only) → run that specific check, stop
+2. Match the keyword inside the command's target domain (see the domain table below) → locate the relevant content and run the full procedure on it
+3. Pure number (e.g., `:3`) → the Nth natural section in the spec
+4. No match → ask the user for clarification. Do not guess.
 
-## Scoped Verify
+### Target domains
 
-### Selection logic
+Each command resolves keywords inside its own domain. The form is the same everywhere (`:{keyword}`), but what the keyword addresses differs because the commands check different kinds of objects:
 
-Scoped verify uses **git working directory changes** to determine what to verify:
+| Command | Keyword resolves to | Example |
+|---------|--------------------|---------|
+| `validate@{target}:{keyword}` | A check name from the command's checklist | `:design` → Check 2 (design soundness), `:scope` → Check 3 (scope integrity) |
+| `verify@{unit}:{keyword}` | Spec content: section title, feature name, API path, appendix | `:login` → the login section, `:AUTH-AC-003` → that acceptance item |
+| `review@{unit}:{keyword}` | A file name from `affects.files` or `implementation_surface` | `:login.go` → review `src/auth/login.go` |
 
-1. Run `git diff HEAD` (or `git diff --cached` if no working changes)
-2. Read the spec and identify all content (body sections, acceptance entries, etc.) that **reference** the changed files:
-   - Explicit references: `affects.files`, `implementation_surface`, file paths in body text
-   - Implicit references: feature/module names that correspond to known file paths
-3. **Spec-file changes:** if the changed files are the spec files themselves (main spec or appendices — not code), no code reference matches. Instead, map the edits to the affected content directly: edited body sections → those chapters and their corresponding acceptance items; edited acceptance item fields → those items; edited appendix files → the chapters referencing them. Report the mapping and note that the user can scope by keyword (`verify@{unit}:{keyword}`) for a targeted re-check.
-4. Verify the identified content using the full verify process (all 7 steps)
-5. If multiple content areas match, verify them in natural spec order
-6. **Cache recording:** record the first matching item's ID as `scoped_item` in the cache. The body summary describes the full scope. This ensures a representative ID is available for cache status disclosure even when multiple areas are verified.
+**Validate keyword dictionary:** validate's targeted checks are the 8 checks of `framework/unit_validate_checklist.md` (unit) or `framework/rule_validate_checklist.md` (rule). The common keywords: `structure` (Check 1), `design` (Check 2), `scope` (Check 3), `evidence` (Check 4), `acceptance`/`coverage` (Check 5), `affects` (Check 6), `cross-unit` (Check 7), `constraint` (Check 8). A keyword that does not match any check name is a no-match — ask the user.
 
-### Edge cases
-
-| Condition | Behavior |
-|-----------|----------|
-| No git changes, scoped cache fresh | Report "files unchanged, scoped result still valid". Offer full or specific keyword. |
-| No git changes, no cache | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
-| Changed files don't match any spec content | Report "changed files not referenced in spec". Suggest user run full or add spec references. (Spec-file-only changes are handled by the selection logic step 3 — not this row.) |
-
-> **Cache:** When scoped verify auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
-
-## Scoped Review
-
-### Selection logic
-
-Scoped review uses **git working directory changes** to determine what to review:
-
-1. Run `git diff HEAD` (or `git diff --cached` if no working changes)
-2. Read the spec and identify files that **reference** the changed code:
-   - `affects.files` entries matching changed files
-   - `implementation_surface` entries matching changed files
-3. Review the identified files using the `spec_review_checklist.md` standard
-4. If multiple files match, review them in natural order
-
-### Edge cases
-
-| Condition | Behavior |
-|-----------|----------|
-| No git changes, scoped cache fresh | Report "files unchanged, scoped result still valid". Offer full review. |
-| No git changes, no cache | Fall back to full mode automatically. Output prefix: `Mode: full (fallback — no git changes for scoped)`. |
-| Changed files don't match any spec references | Report "changed files not referenced in spec". Suggest user run full review. |
-
-> **Cache:** When scoped review auto-falls back to full mode (rows above), cache is written as `mode: full` — same behavior as an explicit `:full` run.
-
-## Full Review
-
-Full mode reviews **all unit code** referenced in the candidate spec. The agent reads all files listed in `affects.files` and `implementation_surface` across all acceptance items, then reviews them using the `spec_review_checklist.md` standard. Cross-file findings (patterns visible only when examining multiple files together) are reported with all relevant file references.
+A keyword for verify may also match a file name; the agent maps it to the spec content that references that file. A keyword for review may also match a feature name; the agent maps it to the files behind that feature.
 
 ## Full Verify
 
@@ -141,7 +98,7 @@ How the main agent splits content into batches is an **internal optimization dec
 
 The user does not interact with batches. The output is a single summary for all spec content.
 
-## Cross-check (full mode only)
+## Cross-check
 
 After all content passes verification, the agent runs a cross-check to detect issues that individual verification passes would miss.
 
@@ -171,36 +128,20 @@ After all 8 checks pass individually:
 
 **Output:** same as verify cross-check — per-check PASS or specific finding.
 
-## Scoped Validate
+## Targeted Runs
 
-Validate does not support git-diff-driven scoped mode. Quality checks are holistic — running a subset based on which section changed creates blind spots.
+Targeted runs are available only through explicit user choice:
 
-Scoped validate is available only through explicit user choice:
 - `validate@{target}:check-{n}` — run a single specific check
 - `validate@{target}:{keyword}` — run checks matching a keyword
+- `verify@{unit}:{keyword}` — verify the spec content matching a keyword
+- `review@{unit}:{keyword}` — review the code file matching a keyword
 
-When the user explicitly scopes, the agent still reads the **full document** for context but only reports on the requested check(s).
+When the user explicitly targets, the agent still reads the **full document** for context but only reports on the requested check(s)/content/file.
 
-## Full Validate
-
-All 8 checks, executed sequentially in their numbered order, followed by the cross-check. This is the **default** mode for `validate@{target}`.
+**Targeted runs never write a cache.** They are iterative feedback only. The promote gate accepts only caches from full runs. If a targeted run finds P0/P1 findings, it deletes the existing cache — blocking findings at any granularity mean promote must not proceed.
 
 ## Output Format
-
-### Scoped result
-
-```
-Mode: scoped (git-diff: 2 files changed → [description of affected content])
-Verify result: PASS
-Content checked:
-  - POST /login — login.go, token.go
-Files checked:
-  - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
-  - src/api/login.go (sha256:def...)
----
-Scoped result: spec content related to changed files is aligned.
-This is not a full verification. Run `verify@user_auth:full` for complete verification.
-```
 
 ### Full result
 
@@ -215,21 +156,20 @@ Coverage:
 Summary: all spec content is aligned. No cross-check contradictions found.
 ```
 
-### Validate scoped
+### Targeted result
 
 ```
-Mode: scoped (user requested: check-3 — scope integrity)
-Validate result: PASS
-Failed checks: 0 / Total findings: 0 / Advisory findings: 0
-Check(s) executed:
-  - check-1 (structural integrity): PASS — prerequisite
-  - check-3 (scope integrity): PASS — user requested
+Mode: targeted (user requested: login)
+Verify result: PASS
+Content checked:
+  - POST /login — login.go, token.go
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
+  - src/api/login.go (sha256:def...)
 ---
-Scoped result: scope integrity PASS.
-This is not a full validation. Other checks were not run.
-Run `validate@user_auth:full` for complete validation.
+Targeted result: the requested content is aligned.
+This was a targeted check — no cache was written.
+Run `verify@user_auth` for a complete verification.
 ```
 
 ### Validate full
@@ -244,6 +184,23 @@ Cross-check: 3/3 PASS
 ...
 ---
 Full validation passed.
+```
+
+### Validate targeted
+
+```
+Mode: targeted (user requested: check-3 — scope integrity)
+Validate result: PASS
+Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+Check(s) executed:
+  - check-1 (structural integrity): PASS — prerequisite
+  - check-3 (scope integrity): PASS — user requested
+Files checked:
+  - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
+---
+Targeted result: scope integrity PASS.
+This was a targeted check — no cache was written.
+Run `validate@user_auth` for a complete validation.
 ```
 
 ## Check Communication to Users
@@ -274,43 +231,40 @@ File-specific format and details:
 
 ### Write rules
 
-| Event | Mode | Cache action |
-|-------|------|-------------|
-| `validate@{unit}` | full (default) | Write `mode: full` |
-| `validate@{unit}:check-{n}` | scoped | Write `mode: scoped`, `scoped_check: "{n}"` (scoped-over-full rule applies — does not overwrite existing full cache) |
-| `validate@{unit}:full` | full | Write `mode: full` |
-| Any validate FAIL | — | Delete cache |
-| `verify@{unit}` scoped PASS (all aligned) | scoped | Write `mode: scoped`, `result: pass`, `blocking: false` (scoped-over-full rule applies — does not overwrite existing full cache) |
-| `verify@{unit}:full` PASS (all aligned) | full | Write `mode: full`, `result: pass`, `blocking: false` |
-| `verify` FAIL (any P0/P1 findings) | — | Delete cache. Agent must stop, not proceed to promote |
-| `verify@{unit}:full` PASS (P2/P3 non-blocking findings) | full | Write `mode: full`, `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`). Promote may proceed |
-| `verify` scoped PASS (P2/P3 non-blocking findings) | — | Report findings only — do NOT write cache |
+| Event | Cache action |
+|-------|-------------|
+| `validate@{target}` full PASS | Write `validate_result.md` with `mode: full`, hashes of all read files |
+| `validate@{target}` FAIL | Delete the validate cache |
+| `verify@{unit}` full PASS (all aligned) | Write `verify_result.md` with `result: pass`, `mode: full`, `blocking: false`, hashes |
+| `verify@{unit}` full PASS (P2/P3 non-blocking findings) | Write `verify_result.md` with `result: pass`, `mode: full`, `blocking: false`, severity counts (`p0_count`...`p3_count`), hashes. Promote may proceed |
+| `verify` FAIL (any P0/P1 findings) | Delete the verify cache. Agent must stop, not proceed to promote |
+| `review@{unit}` full PASS | Write `review_result.md` with `mode: full`, `blocking: false`, hashes of all read files, findings body |
+| `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `blocking: true`, finding counts, findings body |
+| Any targeted run (`:check-{n}` / `:{keyword}`) | PASS with only P2/P3 findings → report findings, write NOTHING. P0/P1 findings → delete the existing cache. Targeted runs never write a cache |
 
-### Scoped-over-full rule
+### Cache semantics
 
-A `mode: full` cache is overwritten **only** by another full run. A scoped run does not downgrade a full cache to scoped — the full cache stays valid.
-
-**Exception (blocking):** If a scoped run FAILs (P0/P1 findings), it deletes the cache regardless of prior mode. P0/P1 at any granularity means promote must not proceed.
-
-**Exception (non-blocking):** If a scoped run PASSes with only P2/P3 findings (no P0/P1), it reports the findings but does NOT write the cache — a scoped cache cannot pass promote's mode gate, and writing would downgrade an existing full cache. Only a `:full` P2/P3 run writes a cache, with `result: pass`, `blocking: false` and severity counts. Promote may proceed on that full non-blocking cache.
+- A cache exists only when a full run completed. `mode: full` is the only value ever written.
+- A targeted run never writes or downgrades an existing cache — a full cache stays valid unless a targeted run finds P0/P1 (which deletes it).
+- Any FAIL at full granularity deletes the cache. P0/P1 at any granularity means promote must not proceed.
 
 ## Relationship with Promote
 
-- `specflowctl promote --unit <name>` requires `mode: full` for both caches. The validate cache must have `result: pass`; the verify cache must have `result: pass` (P2/P3 pending items are carried by the severity counts — non-blocking findings pass the promote gate)
+- `specflowctl promote --unit <name>` requires fresh caches for validate, verify, review, and appendix coverage. Every cache has `mode: full` by construction (targeted runs do not write caches).
+- The validate cache must have `result: pass`; the verify cache must have `result: pass` (P2/P3 pending items are carried by the severity counts — non-blocking findings pass the promote gate); the review cache must be non-blocking.
 - A verify cache with any other result value is rejected. `result: fail` never appears in a verify cache: P0/P1 findings delete the cache instead of writing it.
-- Scoped caches are **ignored** by promote (rejected with guidance to run full)
-- No cache at all → promote rejected
+- No cache at all → promote rejected.
 
 ## State Transition Disclosure
 
 | Cache state | Disclosure |
 |-------------|-----------|
-| scoped validate cache fresh | "Validate passed for check(s) {n} (user requested scoped), but not all checks were run" |
-| scoped verify cache fresh | "Scoped verify passed for content related to recent changes" |
-| full validate cache fresh | "Validate passed all checks" |
-| full verify cache fresh | "Verify passed all content" |
-| full verify cache fresh (result: pass, blocking: false, p2_count/p3_count > 0) | "Verify passed with P2/P3 pending findings — promote may proceed" |
+| validate cache fresh | "Validate passed all checks" |
+| verify cache fresh | "Verify passed all content" |
+| verify cache fresh (result: pass, blocking: false, p2_count/p3_count > 0) | "Verify passed with P2/P3 pending findings — promote may proceed" |
+| review cache fresh | "Review passed — no P0 or P1 findings" |
+| No cache / stale | "Cache does not exist or is expired, needs re-checking" |
 
-When scoped cache exists, agent offers:
-- "Run `verify@{unit}:full` for complete verification"
+After a targeted run, the agent offers:
+- "Run `verify@user_auth` for complete verification"
 - "Or specify a section to verify by keyword"

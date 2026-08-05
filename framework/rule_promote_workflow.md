@@ -36,7 +36,7 @@ The agent may report cache state and version change type to help the user decide
 The CLI tool performs:
 
 1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
-2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to run `validate@{rule}:full` first.
+2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (hash mismatch), rejects promote with guidance to run `validate@{rule}` first.
 3. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
 4. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
 5. **Version sanity** — candidate version > stable version

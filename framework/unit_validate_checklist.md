@@ -19,12 +19,13 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {unit}` | full (default) | All 8 checks + cross-check. Quality checks are holistic — always runs full. |
-| `validate@ {unit}:check-{n}` | scoped | Single check `{n}` only. User explicitly chooses focus. |
-| `validate@ {unit}:{keyword}` | scoped | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. |
-| `validate@ {unit}:full` | full | All 8 checks + cross-check. Explicit equivalent of default. |
+| `validate@ {unit}` | full | All 8 checks + cross-check. Quality checks are holistic — always runs full. |
+| `validate@ {unit}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@ {unit}:{keyword}` | targeted | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. Does not write a cache. |
 
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "Only check(s) {n} were executed. This is not a full validation. Run `validate@ {unit}:full` for complete validation."
+**Keyword domain:** validate keywords resolve to check names — `structure` (Check 1), `design` (Check 2), `scope` (Check 3), `evidence` (Check 4), `acceptance`/`coverage` (Check 5), `affects` (Check 6), `cross-unit` (Check 7), `constraint` (Check 8). A keyword matching no check name is a no-match — ask the user for clarification.
+
+**Output:** Targeted runs report only the executed check(s) and note "This was a targeted check — no cache was written. Run `validate@ {unit}` for a complete validation."
 
 ## Execution Rules
 
@@ -57,7 +58,7 @@ Summary: ...
 
 **Counting rules:**
 - `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
-- `Total findings` is the total number of distinct findings across all FAIL checks. In scoped mode, only executed checks are counted.
+- `Total findings` is the total number of distinct findings across all FAIL checks. In targeted runs, only executed checks are counted.
 - `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K`. They are never counted in `Total findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Total findings` = batch group items + decision group items).
 
@@ -564,7 +565,7 @@ After all 8 checks complete:
     - Every non-exempt appendix file
     - All referenced files (unit_refs, rule_refs, affects.files are already included)
   - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes
-  - Exception: when triggered by `:check-{n}` or `:{keyword}`, write `mode: scoped` with `scoped_check: "{n}"`
+  - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
 
@@ -609,7 +610,7 @@ After classification, present the findings (§Summary format) and wait for the u
 
 ```
 ────────────────────────────────────────────────────
-Mode: scoped | full
+Mode: full   # full run; targeted runs use `Mode: targeted` — see `framework/verification_scope.md`
 Validate result: FAIL
 Failed checks: N / Total findings: M
 Findings:
@@ -635,5 +636,5 @@ Findings:
 
 ### Validate-specific notes
 
-- **Re-validation rule:** After any fix is applied, the agent must NOT re-run validate automatically. Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). The agent proposes a scoped re-check with the concrete command and waits for the user to trigger it. Affected-check mapping: acceptance item edits (any field) affect the Check 5 family — suggest `validate@{unit}:check-5`, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6 — suggest `validate@{unit}:check-5` plus `validate@{unit}:check-6`; edits to spec body prose or appendices affect 5a/5b — suggest `validate@{unit}:check-5`. Example suggestion: "Fixes applied. Suggest re-running `validate@{unit}:check-{n}` to confirm. Shall I run it?" Until a re-run is triggered, do NOT write a pass cache and do NOT claim the fix is verified — report "fixed, pending re-confirmation". When a re-run is triggered by the user, the final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
+- **Re-validation rule:** After any fix is applied, the agent must NOT re-run validate automatically. Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). The agent guides the user to a targeted re-check with the concrete command and waits for the user to trigger it. Affected-check mapping: acceptance item edits (any field) affect the Check 5 family — suggest `validate@{unit}:check-5`, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6 — suggest `validate@{unit}:check-5` plus `validate@{unit}:check-6`; edits to spec body prose or appendices affect 5a/5b — suggest `validate@{unit}:check-5`. Example suggestion: "Fixes applied. Suggest re-running `validate@{unit}:check-{n}` to confirm. Shall I run it?" (Targeted re-checks never write a cache — only a user-triggered `validate@{unit}` full run restores the cache.) Until a re-run is triggered, do NOT write a pass cache and do NOT claim the fix is verified — report "fixed, pending re-confirmation". When a re-run is triggered by the user, the final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
 - **Blocked items** (resolution_type: blocked) require user input — skip to next finding without suggesting a fix.

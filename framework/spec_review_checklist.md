@@ -8,14 +8,12 @@ When an agent executes `review@{unit}`, it uses the spec-aware code quality revi
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `review@{unit}` | scoped (default) | git diff HEAD → match changed files to `affects.files` and `implementation_surface` → review those files using the standard defined below |
-| `review@{unit}:full` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files using the standard defined below |
+| `review@{unit}` | full | Read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files using the standard defined below |
+| `review@{unit}:{keyword}` | targeted | Match keyword to a file name in `affects.files` or `implementation_surface` → review that file using the standard defined below. Does not write a cache. |
 
-**Scoped selection logic:** Run `git diff HEAD`. Identify files matching `affects.files` or `implementation_surface` in the candidate spec. Review identified files using the standard below. No match → report "changed files not referenced in spec" and suggest full run.
+**Keyword domain:** review keywords resolve to code file names from the candidate spec's `affects.files` or `implementation_surface` (e.g., `:login.go` → review `src/auth/login.go`). A feature-name keyword is mapped to the files behind that feature. A keyword matching no file is a no-match — ask the user for clarification.
 
-**Edge cases:** No git changes, scoped cache fresh → report still valid. No git changes, no cache → auto fallback to full.
-
-**Output:** Prefix with `Mode: scoped` or `Mode: full`. For scoped: append note "This is not a full review. Run `review@{unit}:full` for complete review."
+**Output:** Targeted runs report only the requested file(s) and note "This was a targeted check — no cache was written. Run `review@{unit}` for a complete review."
 
 **Cache:** see `framework/validation_cache.md` for format.
 
@@ -30,7 +28,7 @@ When an agent executes `review@{unit}`, it uses the spec-aware code quality revi
 ## Output Format
 
 ```
-Mode: scoped | full
+Mode: full
 Review result: PASS | FAIL
 Findings: N (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 
@@ -69,7 +67,7 @@ Severity check (§7.4):
 Gate: review {blocks|does not block} promote ({reason})
 ```
 
-**Architecture assessment (Dimension 8):** Always produced in full mode; in scoped mode produced when any in-scope file participates in a Dimension 8 gate finding. The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
+**Architecture assessment (Dimension 8):** The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
 
 **Conclusion mapping:** any Dimension 8 P0/P1 gate finding → `unacceptable`; P2/P3 only → `needs_attention`; none → `acceptable`. The conclusion does not change the Gate Rules table — the gate remains decided by P0/P1 findings.
 
@@ -90,11 +88,11 @@ Findings:
 
 | Condition | Result |
 |-----------|--------|
-| P0 or P1 findings exist | FAIL — blocks promote regardless of scoped/full |
+| P0 or P1 findings exist | FAIL — blocks promote |
 | Only P2 or P3 findings | PASS — does not block promote |
 | No findings | PASS — does not block promote |
 
-For promote gate: only `:full` mode cache with PASS result satisfies the promote requirement. A scoped PASS cache is informational only.
+For promote gate: a cache written by a full run with PASS result satisfies the promote requirement. Targeted re-reviews never write a cache, so they are informational only.
 
 ==ATOM_BEGIN:spec_review_standard==
 # Spec Review Standard
@@ -217,7 +215,7 @@ Whether the implemented code structure forms an acceptable architecture for the 
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
 | **P3** | Style or clarity | Does not affect correctness, does not significantly harm maintainability | Unused import, minor naming inconsistency, stale comment | Don't block |
 
-P0/P1 findings block regardless of scoped or full mode. The only additional gate for promote is that the cache must come from a `:full` run.
+P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted keyword re-reviews do not write a cache, so they never satisfy the gate.
 
 ## 6. Finding Output Format
 
@@ -241,8 +239,7 @@ Each finding contains:
 
 After collection, before output — validate that each finding holds in the full codebase and full document set, not just in the local review context.
 
-Both scoped and full mode need this:
-- **Scoped** — reviews only git-diff files; a changed file may call code outside the diff set. The agent cannot assume the callee lacks protections without reading it.
+Every review run needs this:
 - **Full** — distributes work to sub-agents; each sees only its slice, not cross-unit implementation details.
 
 ### 7.2 Process
@@ -317,13 +314,13 @@ After cross-check (§7) and batch classification (§Batch classification) comple
 
 2. Write `docs/specs/meta/validation/unit/{name}/review_result.md` per `framework/validation_cache.md` format:
    - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-   - Include `mode: scoped|full`, severity counts, `blocking`, file hashes
+   - Include `mode: full`, severity counts, `blocking`, file hashes
    - Include full findings body (cannot be omitted — required for promote gate detail)
 
-Review always writes cache regardless of pass/fail.
+Full runs always write cache regardless of pass/fail. Targeted runs (`:{keyword}`) never write a cache, and a targeted run that finds P0/P1 deletes the existing cache — blocking findings at any granularity mean promote must not proceed. See `framework/validation_cache.md`.
 
 **Cache record contract:** The cache records the file state read during the review run — it is independent of the user's decision outcome:
 
 - Collect file hashes from the files read during the review run (same collection point as verify Step 8)
 - Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
-- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent may propose a scoped re-review (`review@{unit}`) and waits for the user to trigger it; the `:full` re-run is triggered by the user when deciding to promote.
+- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`) or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.
