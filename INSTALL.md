@@ -2,9 +2,9 @@
 
 Install specFlow into the current project. specFlow is a per-project installation — it lives in `./specflow/` alongside the project code.
 
-## One-Line Install
+## Install
 
-Run the following command in the project root:
+The installation is agent-driven. Tell your agent to install specFlow (e.g. "install specFlow into this project"); the agent reads this document and runs the installation script from the project root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts/install.sh | bash
@@ -16,7 +16,7 @@ PowerShell:
 irm https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts/install.ps1 | iex
 ```
 
-### What the installer does
+The installer:
 
 1. Clones the specFlow repository into `./specflow/`
 2. Adds `specflow/` to `.gitignore`
@@ -25,16 +25,17 @@ irm https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts
 
 After installation, platform hooks will automatically inject specFlow rules into the agent context at every session start.
 
-## Manual Setup
+## Existing Project Adoption
 
-```bash
-git clone https://github.com/Bingordinary/SpecFlow.git specflow
-printf "\nspecflow/\n" >> .gitignore
-specflow/tooling/scripts/pull_with_release.sh
-specflow/tooling/bin/specflowctl-<os>-<arch> init
-```
+specFlow supports onboarding an existing (already-implemented) project. After installation, perform an adoption check:
 
-Replace `<os>` and `<arch>` with the current platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`).
+1. Scan the project source code.
+2. Determine whether this is a greenfield project or an existing project:
+   - **Greenfield** (no existing source code) → proceed with normal usage; nothing further is needed.
+   - **Existing project** → ask the user: "This project already contains code. Do you want to build specs from the existing implementation?"
+3. If the user confirms, follow the adoption flow in `specflow/framework/operations/adopt.md`: scan → unit cut list (with suspicious-point markings) → user confirmation → batch candidate generation with evidence appendices → guided per-batch `validate` / `verify` / `review` / `promote`.
+
+Adoption progress is tracked in-session; the flow can be resumed in later sessions by telling the agent to continue adoption (e.g. "继续建档").
 
 ## Verify
 

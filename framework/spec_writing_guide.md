@@ -58,6 +58,10 @@ Refs are bare unit or rule names; the ref resolves to the current version.
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
+The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
+
+Evidence has a defined lifecycle (see §7): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix ends as an empty file (see §7). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
+
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
 ```yaml
@@ -332,6 +336,18 @@ An appendix file may carry an optional `status` field in its frontmatter:
 - `status: exempt` — the appendix is exempt from candidate coverage requirements. A stable appendix with `status: exempt` does **not** require a corresponding candidate appendix, even when the unit has an active candidate round. The tooling skips exempt stable appendices during `CandidateCoverageMismatchesWithExclusions` checks.
 
 The `status` field is validated only when present. Absence is treated as `active`. This field is intended for stable-layer appendices that are valid governance artifacts but not relevant to the current candidate round.
+
+### Evidence Appendix Lifecycle
+
+Evidence appendices are transitional artifacts created by the adoption flow for existing-code onboarding (`framework/operations/adopt.md`). They record observed implementation behavior per behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
+
+The retirement path is incremental, matching how real projects replace old behavior:
+
+1. **Adoption round:** the appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
+2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (remove the evidence appendix from its `affects.appendices`, provide design rationale) and the corresponding appendix section is retired (deleted). Other domains keep their evidence references.
+3. **Final round:** when no acceptance item references the evidence appendix, retire the last section, promote (the emptied appendix is copied to stable, flushing leftover stable sections), then set `evidence_appendix_ref` to `none`. Do not delete the appendix file before promote — the stable copy cannot be deleted by governance, and deleting only the candidate copy leaves the stable sections in place, re-triggering the orphan finding in every later round. After the final promote the appendix ends as an empty file with no governance effect.
+
+Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
 
 ## 8. Authoring Baseline
 

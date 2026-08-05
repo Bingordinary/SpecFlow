@@ -177,9 +177,10 @@ When findings mix resolution types (within one check or across checks), the `Res
 - **Proportionality check:** Is the design complexity proportional to the stated goal? If the same goal could be achieved with significantly less design surface area → flag (possible over-engineering)
 
 **Step 2 — Design rationale review**
-- **Evidence-driven precondition:** Read the spec frontmatter's `evidence_appendix_ref` field.
-  - If `evidence_appendix_ref` is PRESENT and not `none` → the spec is evidence-driven (design records existing implementation). The code behavior itself constitutes the design rationale. **Skip** the rationale review below. Report "Step 2: N/A (evidence-driven — rationale is implicit in existing code)" and proceed to Step 3.
-  - If `evidence_appendix_ref` is ABSENT or `none` → the spec is design-driven. Execute the rationale review below.
+- **Evidence-driven precondition (per acceptance item):** The waiver is decided per acceptance item, not per spec. Read the spec frontmatter's `evidence_appendix_ref` field and each acceptance item's `affects.appendices`.
+  - For each acceptance item: if `evidence_appendix_ref` is PRESENT and not `none` AND the item's `affects.appendices` references the evidence appendix → the item is evidence-driven (its behavior domain is recorded from existing implementation). The code behavior itself constitutes the design rationale. **Skip** the rationale review below for this item. Report per item: "Step 2: waived (evidence-driven — rationale is implicit in existing code)".
+  - Otherwise → the item is design-driven. Execute the rationale review below for this item.
+  - Mixed states are legal: a spec may combine evidence-driven and design-driven items during incremental replacement (see `framework/operations/adopt.md`). Report the classification per item.
 - Does the spec explain **why** each key design decision was made? (e.g., "chose event-driven architecture because async decoupling is required, not because it is popular")
 - If there are viable alternative approaches (sync vs async, push vs pull, strong vs eventual consistency), does the spec acknowledge them and explain why they were rejected?
 - If a design choice is non-obvious and no rationale is given → FAIL (fix_required: add design decision record)
@@ -209,7 +210,7 @@ Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and
 Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5.2), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with evidence. Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
 
 **Step 5 — Verdict**
-- PASS: goal-means aligned, rationale documented (or N/A when evidence-driven), no critical flaws found
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), no critical flaws found
 - FAIL: specific findings reported
 
 **Check method:** Content reasoning + adversarial analysis + taste-level assessment (the subagent makes active engineering judgments)
@@ -241,29 +242,32 @@ Before presenting advisory findings, confirm each P2/P3 grading per `framework/s
 
 ## Check 4 — Evidence-driven vs design-driven consistency
 
-**Purpose:** Verify consistency between `evidence_appendix_ref` and the spec body. If an evidence appendix is declared, it must contain observed implementation behavior; if absent, the design must be self-contained or declarative of its replacement nature.
+**Purpose:** Verify consistency between `evidence_appendix_ref`, the evidence appendix, and the acceptance items. The waiver decision is per acceptance item: an item is evidence-driven when it references the evidence appendix in `affects.appendices`; otherwise it is design-driven. Mixed states are legal and expected during incremental replacement (see `framework/operations/adopt.md`). This check also detects zombie, orphan, and residual evidence states, all reported at **default severity P1** (blocking — promote must not proceed until resolved).
 
 **Execution steps:**
 
-```
-IF evidence_appendix_ref is PRESENT and not none:
-  → The design is based on observed implementation (evidence-driven)
-  → The appendix content must record actually observed implementation behavior
-     (semantic consistency verified in Check 6)
-
-IF evidence_appendix_ref is ABSENT or none:
-  → The design is design-driven (new concept or pure design change)
-  → IF any acceptance item has verification_type == inspectable
+1. **Per-item classification:**
+   - If `evidence_appendix_ref` is PRESENT and not `none`:
+     - Acceptance items whose `affects.appendices` references the evidence appendix → evidence-driven (rationale waiver applies, Check 2 Step 2)
+     - Acceptance items that do NOT reference it → design-driven (rationale review applies)
+   - If `evidence_appendix_ref` is ABSENT or `none`:
+     - All items are design-driven (new concept or pure design change)
+     - IF any acceptance item has verification_type == inspectable
        AND evidence_requirements includes old_code_deleted and no_remaining_refs:
        → This candidate is a replacement
        → Verify old code retirement separately (unit_verify_checklist Step 4)
-```
 
-**PASS:** evidence_appendix_ref is consistent with the spec body
+2. **Zombie detection (default P1):** For each evidence-driven acceptance item (its `affects.appendices` references the evidence appendix), verify the evidence appendix contains a behavior-domain section corresponding to the item's behavior. If the item references the appendix but no corresponding section exists → FAIL (P1): stale reference — convert the item to design-driven (remove the evidence reference, add design rationale) or update the appendix.
 
-**FAIL:** Contradiction found (fix_required)
+3. **Orphan detection (default P1):** For each evidence appendix content section, verify an evidence-driven acceptance item whose behavior domain corresponds to the section exists (i.e. an item that references the evidence appendix and matches the section's behavior domain). If a section has no corresponding acceptance item → FAIL (P1): orphaned evidence — retire the section (delete it) or add a referencing item.
 
-**Check method:** evidence_appendix_ref × acceptance item attributes
+4. **Residual detection (default P1):** For each evidence-driven item whose behavior domain has been redesigned in the candidate (the spec body describes new or changed behavior for that domain), report FAIL (P1): the item must be converted to design-driven and the corresponding evidence section retired.
+
+**PASS:** evidence_appendix_ref is consistent with the spec body; no zombie, orphan, or residual evidence states
+
+**FAIL:** Contradiction found, or zombie/orphan/residual evidence state detected (P1, fix_required)
+
+**Check method:** evidence_appendix_ref × acceptance item attributes × evidence appendix content cross-reference
 
 ---
 
@@ -522,6 +526,9 @@ affects.appendices:
 - If the appendix describes existing implementation behavior mixed with new design parts,
   it must clearly distinguish which parts are existing and which are new
 - If content is only background or patch notes → FAIL (fix_required)
+- Each acceptance item that references the evidence appendix in `affects.appendices`
+  must have a corresponding behavior-domain section in the appendix content;
+  zombie/orphan/residual states are reported by Check 4 at default severity P1
 ```
 
 3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (fix_required: update or remove the invalid path reference)

@@ -80,6 +80,12 @@ When referencing spec content in discussion, analysis, or implementation reasoni
 - **stable** — Prior consensus. Superseded by candidate during active work.
 - **candidate** — Current design intent. Working draft, not automatically correct.
 
+## Existing Project Adoption
+
+When the user expresses adoption intent — e.g. "把这几个模块登记一下", "继续建档", "把现有实现记录一下" — the project is being onboarded from existing code. Follow `framework/operations/adopt.md` for the full adoption flow: scan → unit cut list → user confirmation → batch candidate generation with evidence appendices → guided per-batch validate / verify / review / promote.
+
+Adoption-generated evidence uses per-acceptance-item waiver semantics: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/spec_writing_guide.md` §2 and `framework/unit_validate_checklist.md` Check 4). Zombie, orphan, and residual evidence states are reported by `validate` at default severity P1.
+
 ### Automatic Target Type Detection
 
 `validate`, `verify`, and `promote` work for both units and rules.
