@@ -114,7 +114,7 @@ Checks for consistency across different parts of the spec:
 | Error code conflict | Same error code assigned to different error conditions? |
 | Cross-reference integrity | Section A references a claim or definition in Section B that doesn't exist? |
 
-**Output:** list of cross-check findings (PASS for each check, or specific contradiction identified).
+**Output:** list of cross-check findings (PASS for each check, or specific contradiction identified). The results are reported as the report body's `Cross-check:` line (§Output Format below); contradictions are additionally presented as findings.
 
 ### Validate cross-check
 
@@ -143,30 +143,51 @@ When the user explicitly targets, the agent still reads the **full document** fo
 
 ## Output Format
 
-### Full result
+Results are presented using the unified report skeleton defined in each command's checklist (§Output Format in `framework/unit_validate_checklist.md`, `framework/unit_verify_checklist.md`, `framework/spec_review_checklist.md`, `framework/rule_validate_checklist.md`). The examples below show the skeleton in use.
+
+### Full result (verify)
 
 ```
-Mode: full
-Verify result: PASS
-Cross-check: 5/5 PASS
+────────────────────────────────────────────
+verify@user_auth · full · candidate
+Result: PASS
+Blocking promote: no
+Key counts: Blocking mismatches: 0 / Non-blocking mismatches: 0
+────────────────────────────────────────────
+Items:
+  - AUTH-AC-001: ALIGNED — src/auth/login.go:42
+  ...
 Coverage:
   - items_with_deterministic_evidence: 10/10
   - items_reading_only: 0
-
-Summary: all spec content is aligned. No cross-check contradictions found.
+Cross-check: 5/5 PASS
+────────────────────────────────────────────
+Findings: none
+Summary: blocking_mismatches: 0 / non_blocking_mismatches: 0
+────────────────────────────────────────────
+Next step: if the design is finalized, run `promote@user_auth`
+────────────────────────────────────────────
 ```
 
-### Targeted result
+### Targeted result (verify)
 
 ```
-Mode: targeted (user requested: login)
-Verify result: PASS
+────────────────────────────────────────────
+verify@user_auth · targeted (user requested: login) · candidate
+Result: PASS
+Blocking promote: no
+Key counts: Blocking mismatches: 0 / Non-blocking mismatches: 0
+────────────────────────────────────────────
 Content checked:
   - POST /login — login.go, token.go
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
   - src/api/login.go (sha256:def...)
----
+────────────────────────────────────────────
+Summary: the requested content is aligned.
+────────────────────────────────────────────
+Next step: None
+────────────────────────────────────────────
 Targeted result: the requested content is aligned.
 This was a targeted check — no cache was written.
 Run `verify@user_auth` for a complete verification.
@@ -175,29 +196,44 @@ Run `verify@user_auth` for a complete verification.
 ### Validate full
 
 ```
-Mode: full
-Validate result: PASS
-Failed checks: 0 / Total findings: 0 / Advisory findings: 0
-Cross-check: 3/3 PASS
+────────────────────────────────────────────
+validate@user_auth · full · candidate
+Result: PASS
+Blocking promote: no
+Key counts: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+────────────────────────────────────────────
 1. Structural integrity: PASS
 2. Design soundness: PASS
 ...
----
+Cross-check: 3/3 PASS
+────────────────────────────────────────────
+Findings: none
+Summary: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+────────────────────────────────────────────
+Next step: None
+────────────────────────────────────────────
 Full validation passed.
 ```
 
 ### Validate targeted
 
 ```
-Mode: targeted (user requested: check-3 — scope integrity)
-Validate result: PASS
-Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+────────────────────────────────────────────
+validate@user_auth · targeted (user requested: check-3 — scope integrity) · candidate
+Result: PASS
+Blocking promote: no
+Key counts: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+────────────────────────────────────────────
 Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
   - check-3 (scope integrity): PASS — user requested
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
----
+────────────────────────────────────────────
+Summary: scope integrity PASS.
+────────────────────────────────────────────
+Next step: None
+────────────────────────────────────────────
 Targeted result: scope integrity PASS.
 This was a targeted check — no cache was written.
 Run `validate@user_auth` for a complete validation.

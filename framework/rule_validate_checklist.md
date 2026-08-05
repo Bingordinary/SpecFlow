@@ -4,7 +4,7 @@
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
 
 **Result:** PASS writes `docs/specs/meta/validation/rule/{id}/validate_result.md`.
-FAIL does not write cache. The agent reports which checks failed and why.
+FAIL does not write cache. Report per §Output Format.
 
 ## Mode Selection
 
@@ -19,6 +19,70 @@ FAIL does not write cache. The agent reports which checks failed and why.
 - Agent may read rule files, search text patterns, check file existence
 - Agent must NOT modify files, execute commands (beyond read-only tools), or delegate to other agents
 - On FAIL: identify which checks failed and the contradictory information
+
+## Output Format
+
+==ATOM_BEGIN:report_skeleton==
+## Unified Report Skeleton
+
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+
+```
+────────────────────────────────────────────
+{command}@{target} · {mode} · {layer}
+Result: {verdict}
+Blocking promote: yes | no
+Key counts: {command-specific counts}
+────────────────────────────────────────────
+{body}
+────────────────────────────────────────────
+Findings:
+  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
+Summary: {command-specific summary counts}
+────────────────────────────────────────────
+Next step: {concrete next command with reason, or "None"}
+────────────────────────────────────────────
+```
+
+**Field definitions:**
+
+- `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{layer}` — the spec layer checked: `candidate` | `stable`.
+- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
+- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
+- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
+- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
+- `Summary:` — command-specific final counts.
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+
+**Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
+==ATOM_END:report_skeleton==
+
+### Body format (rule validate)
+
+One line per check, numbered as in this file:
+
+```
+1. Frontmatter completeness: PASS | FAIL — reason
+2. ID/Scope consistency: PASS | FAIL — reason
+3. File path consistency: PASS | FAIL — reason
+4. Version semantics: PASS | FAIL — reason
+5. Promotion owner unit: PASS | WARNING — reason
+6. Prohibited fields: PASS | FAIL — reason
+7. Unbound retention correctness: PASS | FAIL — reason
+8. Rule body quality: PASS | WARNING | FAIL — reason
+```
+
+**Counting rules:**
+
+- `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
+- `Total findings` is the total number of distinct findings across all FAIL checks. In targeted runs, only executed checks are counted.
+- WARNING findings are presented on their check line's reason and counted separately as `Advisory findings: K` — they are never counted in `Total findings` and never affect `Failed checks`.
+- `Blocking promote` is `yes` on any FAIL (validate FAIL blocks promote; a FAIL also deletes the validate cache).
+
+Rule validate findings are always presented flat — rules have no batch classification; each FAIL finding is listed directly under the `Findings:` section.
 
 ## Checklist
 

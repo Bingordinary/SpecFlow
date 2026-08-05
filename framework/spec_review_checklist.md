@@ -27,11 +27,47 @@ When an agent executes `review@{unit}`, it uses the spec-aware code quality revi
 
 ## Output Format
 
-```
-Mode: full
-Review result: PASS | FAIL
-Findings: N (P0: 0 | P1: 0 | P2: 0 | P3: 0)
+==ATOM_BEGIN:report_skeleton==
+## Unified Report Skeleton
 
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+
+```
+────────────────────────────────────────────
+{command}@{target} · {mode} · {layer}
+Result: {verdict}
+Blocking promote: yes | no
+Key counts: {command-specific counts}
+────────────────────────────────────────────
+{body}
+────────────────────────────────────────────
+Findings:
+  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
+Summary: {command-specific summary counts}
+────────────────────────────────────────────
+Next step: {concrete next command with reason, or "None"}
+────────────────────────────────────────────
+```
+
+**Field definitions:**
+
+- `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{layer}` — the spec layer checked: `candidate` | `stable`.
+- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
+- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
+- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
+- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
+- `Summary:` — command-specific final counts.
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+
+**Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
+==ATOM_END:report_skeleton==
+
+### Body format (review)
+
+```
 Architecture assessment:
   conclusion: acceptable | needs_attention | unacceptable
   module_boundaries: {assessment} — {basis}
@@ -42,6 +78,19 @@ Architecture assessment:
   engineering_patterns: {assessment} — {basis}
   gate_findings: {P0/P1 findings from Dimension 8, if any}
 
+Suppressed by spec:
+  {location} — {issue} → {suppression_reason}, {spec_ref}
+```
+
+**`{layer}` (skeleton header):** the layer of the spec the review is based on — `candidate`, falling back to `stable` when no candidate exists (§2 Pre-review Setup).
+
+**Architecture assessment (Dimension 8):** The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
+
+**Conclusion mapping:** any Dimension 8 P0/P1 gate finding → `unacceptable`; P2/P3 only → `needs_attention`; none → `acceptable`. The conclusion does not change the Gate Rules table — the gate remains decided by P0/P1 findings.
+
+### Findings section
+
+```
 Findings:
   Batch group (N items) — fix does not change runtime behavior, suggested for batch handling:
     - {location}: {one-line fix} (P3, based on: {evidence location})
@@ -51,25 +100,7 @@ Findings:
           spec_context: {design context, if any}
           recommendation: {fix suggestion}
     ...
-
-Suppressed by spec:
-  {location} — {issue} → {suppression_reason}, {spec_ref}
-
-Summary:
-  Total potential findings: N
-  Suppressed by spec: N
-  P0: N | P1: N | P2: N | P3: N
-
-Severity check (§7.4):
-  confirmed: N | adjusted: N
-  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
-
-Gate: review {blocks|does not block} promote ({reason})
 ```
-
-**Architecture assessment (Dimension 8):** The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
-
-**Conclusion mapping:** any Dimension 8 P0/P1 gate finding → `unacceptable`; P2/P3 only → `needs_attention`; none → `acceptable`. The conclusion does not change the Gate Rules table — the gate remains decided by P0/P1 findings.
 
 When batch grouping is inactive (threshold not met), the Findings section uses the flat format:
 
@@ -81,8 +112,20 @@ Findings:
   ...
 ```
 
+### Severity check
+
+```
+Severity check:
+  confirmed: N | adjusted: N
+  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
+```
+
 **PASS:** No P0 or P1 findings exist.
 **FAIL:** One or more P0 or P1 findings exist — blocks promote.
+
+**Summary:** the skeleton's `Summary` line carries `Total potential findings: N / Suppressed by spec: N` — the P0-P3 counts already appear in the header's `Key counts`.
+
+The gate outcome is carried by the unified skeleton's `Blocking promote: yes | no` header line; the Gate Rules table below decides it.
 
 ## Gate Rules
 

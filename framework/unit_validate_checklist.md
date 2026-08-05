@@ -38,9 +38,49 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 ## Output Format
 
+==ATOM_BEGIN:report_skeleton==
+## Unified Report Skeleton
+
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+
 ```
-Validate result: PASS | FAIL (fix_required | blocked)
-Failed checks: N / Total findings: M / Advisory findings: K
+────────────────────────────────────────────
+{command}@{target} · {mode} · {layer}
+Result: {verdict}
+Blocking promote: yes | no
+Key counts: {command-specific counts}
+────────────────────────────────────────────
+{body}
+────────────────────────────────────────────
+Findings:
+  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
+Summary: {command-specific summary counts}
+────────────────────────────────────────────
+Next step: {concrete next command with reason, or "None"}
+────────────────────────────────────────────
+```
+
+**Field definitions:**
+
+- `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{layer}` — the spec layer checked: `candidate` | `stable`.
+- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
+- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
+- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
+- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
+- `Summary:` — command-specific final counts.
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+
+**Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
+==ATOM_END:report_skeleton==
+
+### Body format (validate)
+
+One line per check, numbered as in this file:
+
+```
 1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
@@ -52,8 +92,12 @@ Failed checks: N / Total findings: M / Advisory findings: K
 6. Affects-source validity: PASS | FAIL — reason
 7. Cross-unit consistency: PASS | FAIL — reason
 8. Constraint alignment: PASS | FAIL — reason
-Resolution: fix_required | blocked — next step
-Summary: ...
+```
+
+After the check lines, report the cross-check line (full runs only):
+
+```
+Cross-check: 3/3 PASS — per-check results; contradictions are presented as findings
 ```
 
 **Counting rules:**
@@ -73,7 +117,7 @@ Summary: ...
 
 A check with a single finding keeps the existing one-line reason format.
 
-When findings mix resolution types (within one check or across checks), the output `Resolution` line is `blocked` if any finding is `blocked` — a blocked finding stops the flow and requires user input per Execution Rules; otherwise it is `fix_required`.
+When findings mix resolution types (within one check or across checks), the `Result` line's resolution value is `blocked` if any finding is `blocked` — a blocked finding stops the flow and requires user input per Execution Rules; otherwise it is `fix_required`.
 
 ---
 
@@ -608,11 +652,17 @@ After classification, present the findings (§Summary format) and wait for the u
 
 ### Summary format
 
+Present the findings using the unified report skeleton (§Output Format). The header, `Blocking promote`, key counts, and `Next step` follow the skeleton; only the Findings section is command-specific and defined here.
+
 ```
-────────────────────────────────────────────────────
-Mode: full   # full run; targeted runs use `Mode: targeted` — see `framework/verification_scope.md`
-Validate result: FAIL
-Failed checks: N / Total findings: M
+────────────────────────────────────────────
+validate@{unit} · full · candidate   # targeted runs: validate@{unit} · targeted (user requested: {keyword}) · candidate
+Result: FAIL (fix_required | blocked)
+Blocking promote: yes
+Key counts: Failed checks: N / Total findings: M / Advisory findings: K
+────────────────────────────────────────────
+{body — the executed check lines, one per check}
+────────────────────────────────────────────
 Findings:
   Batch group (N items) — fix fully determined by an objective standard:
     - {item}: {one-line fix} (based on: {standard reference})
@@ -620,7 +670,10 @@ Findings:
   Decision group (M items) — need confirmation:
     1. {check-name}: FAIL — {reason} (fix_required | blocked)
     ...
-────────────────────────────────────────────────────
+Summary: Failed checks: N / Total findings: M / Advisory findings: K
+────────────────────────────────────────────
+Next step: {fix_required → "fixes applied — re-run `validate@{unit}:check-{n}` to confirm"; blocked → "awaiting your decision on {item}"}
+────────────────────────────────────────────
 ```
 
 `Total findings` equals the sum of batch group items and decision group items.
@@ -628,7 +681,6 @@ Findings:
 When no finding qualifies for the batch group, present flat:
 
 ```
-Failed checks: N / Total findings: M
 Findings:
   1. {check-name}: FAIL — {reason} (fix_required | blocked)
   ...

@@ -50,9 +50,47 @@ After completing all analysis steps, the agent must report coverage confidence (
 
 ## Output Format
 
+==ATOM_BEGIN:report_skeleton==
+## Unified Report Skeleton
+
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+
 ```
-Verify result: PASS | FAIL      # FAIL = P0/P1 findings; PASS may carry P2/P3 pending items (see Step 8)
-Target: candidate | stable
+────────────────────────────────────────────
+{command}@{target} · {mode} · {layer}
+Result: {verdict}
+Blocking promote: yes | no
+Key counts: {command-specific counts}
+────────────────────────────────────────────
+{body}
+────────────────────────────────────────────
+Findings:
+  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
+Summary: {command-specific summary counts}
+────────────────────────────────────────────
+Next step: {concrete next command with reason, or "None"}
+────────────────────────────────────────────
+```
+
+**Field definitions:**
+
+- `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{layer}` — the spec layer checked: `candidate` | `stable`.
+- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
+- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
+- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
+- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
+- `Summary:` — command-specific final counts.
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+
+**Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
+==ATOM_END:report_skeleton==
+
+### Body format (verify)
+
+```
 Items:
   - {item.id}: ALIGNED | MISMATCH (severity: P0|P1|P2|P3) | CANNOT_DETERMINE — code references
 Scope: PASS | FAIL — findings
@@ -60,14 +98,16 @@ Integrity: PASS | FAIL — findings
 Coverage:
   - items_with_deterministic_evidence: N/M
   - items_reading_only: N
+Cross-check: 5/5 PASS — per-check results; contradictions are presented as findings
 First-principles divergence analysis: (only if any MISMATCH)
   - {item.id}: {suggested direction} (severity: P0|P1|P2|P3) — {rationale}
     User verdict: ...
     Next step: ...
-Summary:
-  - blocking_mismatches: N  (P0/P1 count)
-  - non_blocking_mismatches: N  (P2/P3 count)
 ```
+
+The `Cross-check:` line reports the full-run cross-check results (see §Cross-check in `framework/verification_scope.md`); contradictions it produces are presented as findings. Targeted reports omit the line.
+
+The `Target:` line from earlier formats is now the `{layer}` field in the unified skeleton header (`candidate` | `stable`).
 
 ---
 
@@ -814,13 +854,17 @@ After all sub-agents return:
 
 ### Summary format
 
+Present the findings using the unified report skeleton (§Output Format). The header, `Blocking promote`, key counts, and `Next step` follow the skeleton; the Severity check and Findings sections are command-specific and defined here.
+
 ```
-────────────────────────────────────────────────────
-Mode: full   # full run; targeted runs use `Mode: targeted` — see `framework/verification_scope.md`
-Verify result: PASS | FAIL   # P0/P1 → FAIL; all aligned or P2/P3 only → PASS (pending items in counts)
-Target: candidate | stable
-Blocking mismatches: N  (severity P0/P1)
-Non-blocking mismatches: N  (severity P2/P3)
+────────────────────────────────────────────
+verify@{unit} · full · candidate | stable   # targeted runs: verify@{unit} · targeted (user requested: {keyword}) · candidate | stable
+Result: PASS | FAIL   # P0/P1 → FAIL; all aligned or P2/P3 only → PASS (pending items in counts)
+Blocking promote: yes | no   # yes only when P0/P1 findings exist (FAIL)
+Key counts: Blocking mismatches: N (severity P0/P1) / Non-blocking mismatches: N (severity P2/P3)
+────────────────────────────────────────────
+{body — Items / Scope / Integrity / Coverage / divergence analysis}
+────────────────────────────────────────────
 Severity check:
   confirmed: N | adjusted: N
   - {item.id} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
@@ -832,7 +876,10 @@ Findings:
     - {item.id}: spec says {X}, code does {Y}
       → {suggested direction} (severity: P{n}, confidence: {level})
     - ...
-────────────────────────────────────────────────────
+Summary: blocking_mismatches: N / non_blocking_mismatches: N
+────────────────────────────────────────────
+Next step: {per direction table — spec_gap → "update the candidate spec, then re-run `verify@{unit}:{keyword}`"; code_gap → "implement the code change, then re-run `verify@{unit}:{keyword}`"; needs_design → "redesign the candidate, then re-run validate and verify"; blocked → "awaiting your decision on {item}"}
+────────────────────────────────────────────
 ```
 
 When batch grouping is inactive (threshold not met), the Findings section uses the flat format:

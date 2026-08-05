@@ -5,3 +5,4 @@ specflowctl_location | misc/specflowctl_location.md | framework/concepts.md,fram
 framework_path | misc/framework_path.md | framework/concepts.md
 spec_review_standard | review/spec_review_standard.md | framework/spec_review_checklist.md,framework/severity_policy.md
 batch_findings_mechanism | misc/batch_findings_mechanism.md | framework/unit_verify_checklist.md,framework/unit_validate_checklist.md,framework/spec_review_checklist.md
+report_skeleton | misc/report_skeleton.md | framework/unit_validate_checklist.md,framework/unit_verify_checklist.md,framework/spec_review_checklist.md,framework/rule_validate_checklist.md
