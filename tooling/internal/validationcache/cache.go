@@ -52,8 +52,10 @@ type cacheFileEntry struct {
 }
 
 // CheckValidate reads and validates the validate cache for the given unit.
+// The cache must list the main candidate spec file; a cache whose files list
+// omits it cannot prove the main spec was validated.
 func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"})
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
 
 // CheckVerify reads and validates the verify cache for the given unit.
@@ -61,7 +63,7 @@ func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
 // write a cache (the cache is deleted), and P2/P3 pending findings are
 // carried by the severity counts (blocking: false).
 func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"})
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
 
 // CheckAppendicesInCache verifies that every non-exempt candidate appendix for
@@ -104,8 +106,8 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 	matches, err := filepath.Glob(fullGlob)
 	if err != nil {
 		return CheckResult{
-			Fresh:  true,
-			Reason: fmt.Sprintf("cannot glob appendix files: %v (gate skipped)", err),
+			Fresh:  false,
+			Reason: fmt.Sprintf("cannot glob appendix files: %v — promote rejected", err),
 		}, nil
 	}
 
@@ -144,8 +146,10 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 }
 
 // CheckRuleValidate reads and validates the validate cache for the given rule.
+// The cache must list the main candidate rule file; a cache whose files list
+// omits it cannot prove the rule was validated.
 func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
-	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"})
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))
 }
 
 // CheckReview reads and validates the review cache for the given unit.
@@ -256,15 +260,6 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	}, nil
 }
 
-// CheckRuleVerify is deprecated — rule verify has been removed.
-// It always returns not-fresh with a deprecation message.
-func CheckRuleVerify(repoRoot, ruleID string) (CheckResult, error) {
-	return CheckResult{
-		Fresh:  false,
-		Reason: "rule verify has been removed (see framework/concepts.md); only rule validate is required for promote",
-	}, nil
-}
-
 // deleteCache removes a specific cache file for the given target.
 func deleteCache(repoRoot, targetKind, targetName, command string) error {
 	var fileName string
@@ -307,17 +302,11 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 	return deleteCache(repoRoot, "rule", ruleID, command)
 }
 
-// DeleteAllRuleCache removes the validate cache for the given rule.
-// (Rule verify cache is no longer used.)
-func DeleteAllRuleCache(repoRoot, ruleID string) error {
-	return DeleteRuleCache(repoRoot, ruleID, "validate")
-}
-
 // ------------------------------------------------------------
 // Internal
 // ------------------------------------------------------------
 
-func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string) (CheckResult, error) {
+func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string, requiredMainFile string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
 
 	// Check existence
@@ -369,6 +358,26 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 			Fresh:  false,
 			Reason: fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s` before promoting", command, cache.Mode, command, cache.Unit),
 		}, nil
+	}
+
+	// Require the main file to be listed. A cache whose files list omits the
+	// main candidate spec (or rule) cannot prove that file was read during the
+	// run, so promote must not treat the gate as satisfied.
+	if requiredMainFile != "" {
+		mainAbs := resolvePath(repoRoot, requiredMainFile)
+		listed := false
+		for _, entry := range cache.Files {
+			if resolvePath(repoRoot, entry.Path) == mainAbs {
+				listed = true
+				break
+			}
+		}
+		if !listed {
+			return CheckResult{
+				Fresh:  false,
+				Reason: fmt.Sprintf("%s cache files list does not include the main %s file %s. Run `%s@%s` again.", command, targetKind, requiredMainFile, command, cache.Unit),
+			}, nil
+		}
 	}
 
 	// Re-compute hashes for all listed files

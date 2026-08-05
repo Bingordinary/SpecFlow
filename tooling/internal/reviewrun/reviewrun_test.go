@@ -201,6 +201,21 @@ func TestInitIncludesSupportingLayerConvergenceSlice(t *testing.T) {
 	}
 }
 
+func TestInitHookCheckSliceIncludesHooksFile(t *testing.T) {
+	_, file, _ := createInitializedRun(t)
+	state := mustParse(t, file)
+	slice := findSlice(t, state, "hook_check")
+
+	for _, input := range []string{
+		"framework/concepts.md",
+		"framework/hooks.md",
+	} {
+		if !containsString(slice.InputFiles, input) {
+			t.Fatalf("expected hook_check input %s, got %+v", input, slice.InputFiles)
+		}
+	}
+}
+
 func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	repoRoot := createReviewRunRepo(t)
 	now := time.Date(2026, 4, 26, 10, 30, 0, 0, time.UTC)
@@ -1092,6 +1107,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"severity_policy.md",
 		"spec_writing_guide.md",
 		"concepts.md",
+		"hooks.md",
 	}
 	for _, name := range frameworkFiles {
 		mustWrite(t, filepath.Join(repoRoot, "framework", name), "# "+name+"\n")

@@ -576,18 +576,6 @@ func TestCheckAppendicesInCache_NoValidateCacheFails(t *testing.T) {
 	}
 }
 
-func TestCheckRuleVerify(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	result, err := CheckRuleVerify(repoRoot, "b_rule_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatal("expected not fresh (rule verify is deprecated), got fresh")
-	}
-}
-
 func TestDeleteRuleCache(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_test")
@@ -845,5 +833,161 @@ func TestDeleteAllWithReviewCache(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("%s should be deleted after DeleteAll", name)
 		}
+	}
+}
+
+func TestCheckValidateMissingMainSpecFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Cache lists an appendix path but NOT the main spec
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/appendix/unit_test_api.md\n    hash: sha256:abc\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckValidate(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected cache without the main spec to be rejected, got fresh")
+	}
+	if !strings.Contains(result.Reason, "main unit file") {
+		t.Fatalf("expected reason to mention the main unit file, got: %s", result.Reason)
+	}
+}
+
+func TestCheckValidateEmptyFilesListFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Cache with no files listed at all
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckValidate(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected cache with an empty files list to be rejected, got fresh")
+	}
+}
+
+func TestCheckVerifyMissingMainSpecFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Verify cache lists only a source file, not the main spec
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:abc\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected verify cache without the main spec to be rejected, got fresh")
+	}
+}
+
+func TestCheckRuleValidateMissingMainRuleFails(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	os.MkdirAll(ruleDir, 0755)
+
+	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
+	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// Cache with a files list that omits the main rule file
+	cacheContent := "---\ncommand: validate\nunit: b_rule_test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/other_rule.md\n    hash: sha256:abc\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckRuleValidate(repoRoot, "b_rule_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected rule cache without the main rule file to be rejected, got fresh")
+	}
+	if !strings.Contains(result.Reason, "main rule file") {
+		t.Fatalf("expected reason to mention the main rule file, got: %s", result.Reason)
+	}
+}
+
+func TestCheckAppendicesInCache_GlobErrorFailsClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// An invalid glob pattern in the unit name makes filepath.Glob fail
+	result, err := CheckAppendicesInCache(repoRoot, "test[")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected glob failure to reject the gate, got fresh")
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
@@ -184,7 +186,12 @@ func writeRuleValidateCache(t *testing.T, repoRoot, ruleID string) {
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles: []\n---\n"
+	rulePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", ruleID+".md")
+	ruleHash, err := specpaths.FileHash(rulePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cache), 0644); err != nil {
 		t.Fatal(err)
 	}

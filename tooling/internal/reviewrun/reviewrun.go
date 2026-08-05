@@ -803,6 +803,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return []string{
 					scope.FrameworkPath("concepts.md"),
+					scope.FrameworkPath("hooks.md"),
 				}
 			},
 		},
