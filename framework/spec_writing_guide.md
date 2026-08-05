@@ -58,6 +58,22 @@ Refs are bare unit or rule names; the ref resolves to the current version.
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
+`rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
+
+```yaml
+rule_exceptions:
+  - rule: g_rule_repository_baseline
+    reason: "{written justification}"
+```
+
+Or `rule_exceptions: none`. Rules:
+
+1. Each referenced `rule` must be a stable global rule or a bound rule listed in this unit's `rule_refs`. A reference to any other rule is invalid.
+2. The `reason` must be written justification; exceptions without a reason are invalid.
+3. Exceptions are recorded in the unit spec only — never in the rule file. Rule files do not store unit-specific deviations.
+4. Exceptions are not permanent. Each time the unit opens a candidate round, `validate` Check 8 re-evaluates every recorded exception: if it no longer holds (architecture rewritten, rule changed, or reason expired), it is reported for removal; if it still holds, the reason is re-examined and the exception is kept.
+5. An exception applies only to the unit that records it. It does not exempt any other unit.
+
 ## 3. Unit Dependencies
 
 `unit_refs` means the current unit depends on the referenced unit's formal behavior.

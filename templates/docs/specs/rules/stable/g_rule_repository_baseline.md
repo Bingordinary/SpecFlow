@@ -2,7 +2,7 @@
 rule_id: g_rule_repository_baseline
 rule_scope: global
 layer: stable
-rule_version: 0.1.0
+rule_version: 0.2.0
 ---
 
 # Repository Baseline Rule
@@ -75,6 +75,15 @@ Record only the preferred default choice.
 5. When a unit needs to reuse an existing mechanism across units, require:
 6. When a unit needs a reusable local rule that is not a global default, bind a `b_` rule through `rule_refs`.
 7. Multiple units reusing one `b_` rule does not by itself make that rule global.
+8. When a unit's implementation spans multiple modules, prefer one responsibility per module boundary, cut at the natural seams of the behavior domains declared in the unit's acceptance items.
+9. Prefer dependency direction that follows the layer order recorded in §5.1: an upper-layer unit may depend on units in the same or lower layers; reverse dependency requires an explicit recorded exception.
+
+### 5.1 Layer Order
+
+The repository's architecture layers, recorded from upper to lower:
+
+1. {layer}
+2. {layer}
 
 ## 6. Prohibitions And Exceptions
 
@@ -83,9 +92,16 @@ Record only the preferred default choice.
 1. Do not introduce two conflicting primary solutions in parallel for the same class of core capability unless the exception is explicitly recorded.
 2. Do not let a unit bypass a formally recognized shared mechanism and rebuild equivalent infrastructure without explanation.
 3. Do not present a temporary implementation choice as the repository-wide engineering baseline.
+4. Do not create circular dependencies between units. Check method: derive the dependency graph from all current-layer units' `unit_refs`; a cycle (A depends on B while B depends on A, directly or transitively) is a violation. Executed by the agent during unit validate; tooling enforcement is a candidate follow-up.
+5. Do not reverse the layer order recorded in §5.1 in `unit_refs` unless the unit truth records an explicit exception. Check method: at validate time, resolve the order from this rule's §5.1 recording and each unit's declared architecture layer from its spec truth (architecture section or design decision records); a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation. Units whose spec records no architecture layer are not judged by this prohibition. Executed by the agent during unit validate; tooling enforcement is a candidate follow-up.
+6. Do not let a unit's `implementation_surface` entangle responsibilities that the unit's own acceptance items declare as separate behavior domains. Check method: cross-reference the declared behavior domains against the implementation surface layout at validate time.
+7. Do not introduce abstractions justified only by future or speculative needs. An abstraction must serve a behavior or constraint recorded in the current unit truth.
 
 ### 6.2 Exceptions
 
-Record exceptions only when the exception is already accepted as repository truth.
+An exception is a unit's approved deviation from this rule. Exceptions are recorded in the unit spec frontmatter `rule_exceptions` field with a written reason — never in this rule file. See `specflow/framework/spec_writing_guide.md` §2 for the field contract.
 
-1. Exception:
+Exception lifecycle:
+
+- Exceptions are recorded only when they are already accepted as repository truth; they are not permanent.
+- Each time the unit opens a candidate round, `validate` Check 8 re-evaluates every recorded exception: if it no longer holds (architecture rewritten, rule changed, or reason expired), the exception is reported for removal; if it still holds, the reason is re-examined and the exception is kept.
