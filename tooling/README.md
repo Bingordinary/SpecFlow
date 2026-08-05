@@ -45,7 +45,7 @@ PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull, reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums.
+The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
 
 Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag:
 
@@ -123,7 +123,9 @@ The tooling layer must not:
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
 14. `validate candidate --unit UNIT`
-    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency)
+    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check)
+15. `validate rule --id RULE_ID`
+    - validate candidate rule structure (checks: frontmatter, ID/scope consistency, file path consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
 
 ## Review Run-State Commands
 
