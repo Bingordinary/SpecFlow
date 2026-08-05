@@ -263,6 +263,19 @@ Work traces not tracked by the spec.
 - **Spec interaction**: Contained in `known_debt` → suppress; not contained → flag
 - **Not considered**: Spec-planned items are normal progress, not findings
 
+### Dimension 8: Architectural Design Quality
+
+Whether the implemented code structure forms an acceptable architecture for the unit's declared responsibility. This dimension evaluates the design surface of the code — module boundaries, responsibility organization, abstraction levels, dependency clarity, and extension landing points — as an overall architecture assessment, not as a smell checklist.
+
+- **Assessment object**: The code under `implementation_surface` and `affects.files` — package structure, module boundaries, how responsibilities are organized, how components depend on each other, and how the structure matches the repository's established engineering patterns (layering, naming, error-handling conventions)
+- **P0/P1 findings (gate-level, judged from code structure and spec declarations alone)**:
+  - Spec-recorded architectural intent (e.g., declared layering, module boundaries) is implemented in a structure that has drifted beyond recognition → P0/P1
+  - The unit reaches past the `unit_refs` boundary and reaches into a dependency unit's internal implementation → P1
+  - Internal implementation organization is severely disconnected from the unit's declared responsibility (e.g., a "config loading" unit's surface contains business logic) → P1
+- **P2/P3 findings (advisory, taste-level)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
+- **Spec interaction**: Spec-recorded architectural decisions with a conforming implementation are NOT re-questioned here — the recorded decision is authoritative (validated by `validate`). Assessment focuses on implementation drift from recorded intent and on code structure the spec does not cover
+- **Not considered**: Design quality of spec-recorded decisions themselves (owned by `validate` Check 2); acceptance alignment (owned by `verify`)
+
 ## 5. Severity Levels
 
 | Level | Definition | Characteristic | Example | Promote Gate |

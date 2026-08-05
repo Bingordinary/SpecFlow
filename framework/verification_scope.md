@@ -220,7 +220,7 @@ Summary: all spec content is aligned. No cross-check contradictions found.
 ```
 Mode: scoped (user requested: check-3 — scope integrity)
 Validate result: PASS
-Failed checks: 0 / Total findings: 0
+Failed checks: 0 / Total findings: 0 / Advisory findings: 0
 Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
   - check-3 (scope integrity): PASS — user requested
@@ -237,7 +237,7 @@ Run `validate@user_auth:full` for complete validation.
 ```
 Mode: full
 Validate result: PASS
-Failed checks: 0 / Total findings: 0
+Failed checks: 0 / Total findings: 0 / Advisory findings: 0
 Cross-check: 3/3 PASS
 1. Structural integrity: PASS
 2. Design soundness: PASS

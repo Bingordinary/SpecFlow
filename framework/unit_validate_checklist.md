@@ -39,7 +39,7 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 ```
 Validate result: PASS | FAIL (fix_required | blocked)
-Failed checks: N / Total findings: M
+Failed checks: N / Total findings: M / Advisory findings: K
 1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
 3. Scope integrity: PASS | FAIL — reason
@@ -58,6 +58,7 @@ Summary: ...
 **Counting rules:**
 - `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
 - `Total findings` is the total number of distinct findings across all FAIL checks. In scoped mode, only executed checks are counted.
+- `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K`. They are never counted in `Total findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Total findings` = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding as an indented numbered sub-line under the check line. Each sub-line carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, and its resolution type:
@@ -151,11 +152,20 @@ Actively search for design flaws in both main spec and appendix content. Read ap
 
 If a plausible critical flaw is identified that the spec does not address → FAIL (blocked: needs user judgment on whether this is a design gap or intentional)
 
-**Step 4 — Verdict**
+**Step 4 — Design decision taste level**
+Assess only the design decisions the spec has actually recorded (design decision records, architecture descriptions, component trees, data types in main spec and appendices). Evaluate taste-level quality of those recorded decisions:
+- Are module/component boundaries cut at the natural seams of the stated behavior domains?
+- Does each recorded responsibility stay single-purpose?
+- Are extension landing points explicit where the spec records future-work expectations?
+- Do the recorded decisions follow the repository's established engineering patterns?
+
+Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and do not block promote. If the spec records no design decisions (no architecture section, no design decision records, and no appendix design content) → report "Step 4: N/A (no recorded design decisions)" and proceed. This step must not invent architecture the spec does not record; it evaluates only what is written. Objective design defects remain Step 3's territory.
+
+**Step 5 — Verdict**
 - PASS: goal-means aligned, rationale documented (or N/A when evidence-driven), no critical flaws found
 - FAIL: specific findings reported
 
-**Check method:** Content reasoning + adversarial analysis (the subagent makes active engineering judgments)
+**Check method:** Content reasoning + adversarial analysis + taste-level assessment (the subagent makes active engineering judgments)
 
 ---
 
@@ -521,15 +531,19 @@ affects.appendices:
    - If constraint says "all APIs must use HTTPS" — does the design describe HTTP?
    - If constraint says "synchronous calls are not supported" — does the design depend on sync calls?
 ```
-4. Read each bound rule listed in `rule_refs`
-5. Check the candidate design against each bound rule:
+4. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §4). For the circular-dependency prohibition (`g_rule_repository_baseline.md` §6.1 item 4), glob all current-layer unit spec files (candidate and stable) and derive the dependency graph from their `unit_refs`. For the layer-order prohibition (§6.1 item 5), resolve the order from the rule's §5.1 recording and each unit's declared architecture layer from its spec truth; a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation unless the unit truth records an exception (`rule_exceptions`). Units without a recorded architecture layer are not judged by this prohibition.
+5. Check the candidate design against each global rule and each bound rule:
 ```
    - Is every "must not" prohibition respected?
    - Is every "must" requirement satisfied?
 ```
-6. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (fix_required: align appendix content with constraints)
+6. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §2). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule version:
+   - Referenced rule is neither a stable global rule nor a bound rule listed in this unit's `rule_refs`, or the reason is missing → FAIL (fix_required: correct or remove the invalid exception entry)
+   - Exception no longer justified (architecture was rewritten, rule changed, or the reason expired) → FAIL (fix_required: report the exception for removal; the removal is applied only after user approval)
+   - Exception still justified → keep it and state the re-examination verdict in this check's reason
+7. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (fix_required: align appendix content with constraints)
 
-**PASS:** Candidate (main spec + appendices) is compatible with all constraints and bound rules
+**PASS:** Candidate (main spec + appendices) is compatible with all constraints and bound rules; all recorded rule exceptions are still justified
 
 **FAIL:** Constraint or rule violation found in main spec or appendices (fix_required)
 
@@ -555,6 +569,8 @@ After all 8 checks complete:
 ---
 
 ## Present Findings
+
+Advisory findings from Check 2 Step 4 are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS.
 
 ### Batch classification (validate)
 

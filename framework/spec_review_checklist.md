@@ -34,6 +34,16 @@ Mode: scoped | full
 Review result: PASS | FAIL
 Findings: N (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 
+Architecture assessment:
+  conclusion: acceptable | needs_attention | unacceptable
+  module_boundaries: {assessment} — {basis}
+  responsibility_organization: {assessment} — {basis}
+  dependency_clarity: {assessment} — {basis}
+  abstraction_level: {assessment} — {basis}
+  extension_landing_points: {assessment} — {basis}
+  engineering_patterns: {assessment} — {basis}
+  gate_findings: {P0/P1 findings from Dimension 8, if any}
+
 Findings:
   Batch group (N items) — fix does not change runtime behavior, suggested for batch handling:
     - {location}: {one-line fix} (P3, based on: {evidence location})
@@ -54,6 +64,10 @@ Summary:
 
 Gate: review {blocks|does not block} promote ({reason})
 ```
+
+**Architecture assessment (Dimension 8):** Always produced in full mode; in scoped mode produced when any in-scope file participates in a Dimension 8 gate finding. The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
+
+**Conclusion mapping:** any Dimension 8 P0/P1 gate finding → `unacceptable`; P2/P3 only → `needs_attention`; none → `acceptable`. The conclusion does not change the Gate Rules table — the gate remains decided by P0/P1 findings.
 
 When batch grouping is inactive (threshold not met), the Findings section uses the flat format:
 
@@ -176,6 +190,19 @@ Work traces not tracked by the spec.
 - **What to flag**: TODO, FIXME, HACK, XXX markers
 - **Spec interaction**: Contained in `known_debt` → suppress; not contained → flag
 - **Not considered**: Spec-planned items are normal progress, not findings
+
+### Dimension 8: Architectural Design Quality
+
+Whether the implemented code structure forms an acceptable architecture for the unit's declared responsibility. This dimension evaluates the design surface of the code — module boundaries, responsibility organization, abstraction levels, dependency clarity, and extension landing points — as an overall architecture assessment, not as a smell checklist.
+
+- **Assessment object**: The code under `implementation_surface` and `affects.files` — package structure, module boundaries, how responsibilities are organized, how components depend on each other, and how the structure matches the repository's established engineering patterns (layering, naming, error-handling conventions)
+- **P0/P1 findings (gate-level, judged from code structure and spec declarations alone)**:
+  - Spec-recorded architectural intent (e.g., declared layering, module boundaries) is implemented in a structure that has drifted beyond recognition → P0/P1
+  - The unit reaches past the `unit_refs` boundary and reaches into a dependency unit's internal implementation → P1
+  - Internal implementation organization is severely disconnected from the unit's declared responsibility (e.g., a "config loading" unit's surface contains business logic) → P1
+- **P2/P3 findings (advisory, taste-level)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
+- **Spec interaction**: Spec-recorded architectural decisions with a conforming implementation are NOT re-questioned here — the recorded decision is authoritative (validated by `validate`). Assessment focuses on implementation drift from recorded intent and on code structure the spec does not cover
+- **Not considered**: Design quality of spec-recorded decisions themselves (owned by `validate` Check 2); acceptance alignment (owned by `verify`)
 
 ## 5. Severity Levels
 
