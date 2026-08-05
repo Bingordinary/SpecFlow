@@ -591,40 +591,9 @@ func mustAbs(path string) string {
 	return abs
 }
 
-func resolvePath(base, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(base, filepath.FromSlash(path))
-}
-
-func parseCSV(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		result = append(result, part)
-	}
-	return result
-}
-
 func noneIfEmpty(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "none"
 	}
 	return value
-}
-
-
-func defaultListValue(items []string) []string {
-	if len(items) == 0 {
-		return []string{"none"}
-	}
-	return items
 }

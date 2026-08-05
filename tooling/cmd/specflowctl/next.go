@@ -45,7 +45,3 @@ func runNext(args []string, stdout, stderr io.Writer) error {
 	_, err = fmt.Fprint(stdout, next.FormatInfo(info))
 	return err
 }
-
-func writeNextUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: specflowctl next --unit <name> [--repo-root PATH]")
-}

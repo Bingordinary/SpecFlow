@@ -54,26 +54,6 @@ func RuleStableFileRef(ruleID string) string {
 	return ref
 }
 
-func AppendixDir(layer string) (string, error) {
-	switch layer {
-	case "candidate":
-		return CandidateAppendixDir, nil
-	case "stable":
-		return StableAppendixDir, nil
-	default:
-		return "", fmt.Errorf("unsupported layer %q", layer)
-	}
-}
-
 func CandidateAppendixGlob(unit string) string {
 	return fmt.Sprintf("%s/unit_%s_*.md", CandidateAppendixDir, unit)
-}
-
-func ObjectCandidateAppendixGlob(objectType, object string) (string, error) {
-	switch objectType {
-	case "unit":
-		return fmt.Sprintf("%s/unit_%s_*.md", CandidateAppendixDir, object), nil
-	default:
-		return "", fmt.Errorf("unsupported object type %q", objectType)
-	}
 }
