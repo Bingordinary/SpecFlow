@@ -10,10 +10,10 @@ Before executing any verify step, the agent must read the complete unit spec:
 
 1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
 2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
-3. For each appendix, read its frontmatter. Skip files with `status: exempt`.
-4. Read the content of every non-exempt appendix file.
+3. For each appendix, read its frontmatter. Skip files with `status: exempt` or `status: retired`.
+4. Read the content of every non-exempt, non-retired appendix file.
 
-The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
+The unit's complete spec is the union of the main spec and all non-exempt, non-retired appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
 
 ## Mode Selection
 

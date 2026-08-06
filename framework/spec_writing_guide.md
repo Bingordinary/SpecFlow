@@ -60,7 +60,7 @@ Refs are bare unit or rule names; the ref resolves to the current version.
 
 The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
 
-Evidence has a defined lifecycle (see §7): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix ends as an empty file (see §7). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
+Evidence has a defined lifecycle (see §7): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix is retired via `status: retired` (see §7). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
 
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
@@ -175,6 +175,19 @@ When editing an existing rule candidate, bump the version deterministically:
 - If new compatible content is added without changing existing meaning → bump MINOR
 - If only wording is clarified without meaning change → bump PATCH
 - If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
+
+### 5.5 Rule Retirement
+
+A rule can be retired when its constraint no longer applies to any unit. Retirement is the end of the rule: the stable copy is removed by promote and cannot be forked back.
+
+Procedure:
+
+1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 7 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone.
+2. In the candidate rule frontmatter, add `status: retired`. The rule version is not compared against the stable version for retired rules (the stable copy is removed, not updated).
+3. Run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation.
+4. After promote, the stable rule file is deleted; the candidate rule file is removed. The rule no longer exists in any layer.
+
+Retirement is a terminal state — git history is the only record of the retired rule.
 
 ## 6. Acceptance Criteria
 
@@ -334,8 +347,31 @@ An appendix file may carry an optional `status` field in its frontmatter:
 
 - `status: active` (default) — the appendix participates normally in governance validation and coverage checks.
 - `status: exempt` — the appendix is exempt from candidate coverage requirements. A stable appendix with `status: exempt` does **not** require a corresponding candidate appendix, even when the unit has an active candidate round. The tooling skips exempt stable appendices during `CandidateCoverageMismatchesWithExclusions` checks.
+- `status: retired` — the appendix is being retired. The candidate appendix with this status is not copied on promote; instead the stable copy is deleted (see [Appendix Retirement](#appendix-retirement)). Retired appendices are skipped by coverage and content checks, like exempt ones.
 
-The `status` field is validated only when present. Absence is treated as `active`. This field is intended for stable-layer appendices that are valid governance artifacts but not relevant to the current candidate round.
+The `status` field is validated only when present. Absence is treated as `active`. This field is intended for stable-layer appendices that are valid governance artifacts but not relevant to the current candidate round, and for candidate-layer appendices that declare the removal of a stable appendix.
+
+### Appendix Retirement
+
+When an appendix (evidence or ordinary design appendix) is no longer needed, retire it explicitly — do not delete the candidate file and rely on promote to leave the stable copy behind. Deleting the candidate copy only removes the candidate file: the stable copy stays, is copied back by the next fork, and its content keeps producing orphan warnings (or contradictions with the main spec). The stable copy can only be removed through an explicit retirement:
+
+1. In the candidate appendix frontmatter, add `status: retired`. Content may remain — the whole file is removed, and git history preserves the record.
+2. Remove any references to the appendix from the main spec (`affects.appendices` entries and `evidence_appendix_ref`). `validate` Check 6 rejects references to a retiring appendix, and the mechanical `specflowctl validate` Check 4 and `specflowctl promote` both reject them as well (a retiring spec's own references are exempt — they disappear with it).
+3. Run the normal gates (`validate@{unit}`, `verify@{unit}`, `review@{unit}`) and `promote@{unit}` with user confirmation.
+4. On promote, the stable copy of the retired appendix is deleted together with the candidate copy. After promote the appendix exists in no layer.
+
+The same mechanism retires an appendix while the rest of the unit continues to be edited: only the appendices marked `retired` are removed, all other files promote normally.
+
+### Unit Retirement
+
+A whole unit (main spec and all its appendices) is retired by marking the candidate main spec with `status: retired`:
+
+1. Remove all references to the unit from other units' `unit_refs` (a retiring unit is rejected by promote while any current-layer unit still references it — `specflowctl validate` Check 4 and `specflowctl promote` both enforce this).
+2. In the candidate main spec frontmatter, add `status: retired`. The acceptance item set is not required on a retiring spec.
+3. Run `validate@{unit}`, then `promote@{unit}` with user confirmation. The verify and review gates are skipped for a retiring unit — its content is being removed, not archived, so implementation alignment and code review have no object (promote also runs only the validate cache gate for a retiring unit, matching rule retirement).
+4. On promote, the stable main spec and every stable appendix of the unit (including `status: exempt` ones) are deleted, and all candidate files are removed. After promote the unit exists in no layer; `specflowctl next` reports the empty state, and a new round can only start by designing the unit from scratch.
+
+Unit retirement is a terminal state — git history is the only record of the retired unit.
 
 ### Evidence Appendix Lifecycle
 
@@ -345,7 +381,7 @@ The retirement path is incremental, matching how real projects replace old behav
 
 1. **Adoption round:** the appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
 2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (remove the evidence appendix from its `affects.appendices`, provide design rationale) and the corresponding appendix section is retired (deleted). Other domains keep their evidence references.
-3. **Final round:** when no acceptance item references the evidence appendix, retire the last section, promote (the emptied appendix is copied to stable, flushing leftover stable sections), then set `evidence_appendix_ref` to `none`. Do not delete the appendix file before promote — the stable copy cannot be deleted by governance, and deleting only the candidate copy leaves the stable sections in place, re-triggering the orphan finding in every later round. After the final promote the appendix ends as an empty file with no governance effect.
+3. **Final round:** when no acceptance item references the evidence appendix, retire the last section if one remains, then retire the appendix itself: add `status: retired` to the candidate appendix frontmatter and set `evidence_appendix_ref` to `none`. Do not delete the appendix file before promote — deleting only the candidate copy leaves the stable sections in place, re-triggering the orphan finding in every later round. On the final promote the retired appendix is removed from stable along with the candidate copy (see [Appendix Retirement](#appendix-retirement)); the appendix ends with no file at all, with no governance effect.
 
 Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
 

@@ -127,6 +127,10 @@ If path does not match the declared layer → FAIL.
 
 ### Check 4 — Version Semantics
 
+If the rule is marked for retirement (`status: retired` in frontmatter), the version gate is skipped: the stable copy is removed on promote, not updated — PASS with the note "rule is marked retired — version comparison skipped". The other retirement requirements still apply: `status` must be the literal `retired`, and no current-layer unit may explicitly reference the rule in `rule_refs` — the mechanical Check 7 rejects a retiring rule that still has explicit consumers, for bound and global rules alike (a global rule's default applicability to every unit lifts automatically when its stable file disappears, so only explicit references block the retire). The retiring rule must not have consumers.
+
+Otherwise:
+
 If this is a brand-new rule (no stable file exists): verify `rule_version` equals `0.1.0`.
 
 If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read the stable file's frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
@@ -146,6 +150,10 @@ Verify the rule file does NOT contain:
 If either is found → FAIL.
 
 ### Check 7 — `unbound_retention` Correctness
+
+If the rule is marked for retirement (`status: retired` in frontmatter), the `unbound_retention` fields are not required: the rule is being removed from stable, not retained, so the retention declaration has no object. The mechanical Check 7 only verifies that no current-layer unit still explicitly references the rule in `rule_refs` — pass with the note "rule is marked retired — no rule_refs references remain" when no explicit reference remains (bound and global rules alike; a global rule's default applicability to every unit lifts automatically when the stable rule file disappears, so only explicit references block the retire).
+
+Otherwise:
 
 If the rule is a bound shared rule (`b_rule_`) AND has no current consumers: verify the file explicitly records:
 - `unbound_retention: intentional`

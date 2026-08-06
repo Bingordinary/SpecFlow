@@ -690,6 +690,210 @@ acceptance_item_set:
 	}
 }
 
+func TestPromoteRetiredUnitEndToEnd(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// Stable layer holds the unit from a previous round.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: test_unit\nlayer: stable\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
+	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stableAppendixDir, "unit_test_unit_helper.md"),
+		[]byte("---\nunit: test_unit\nlayer: stable\n---\nOld content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Candidate declares the unit retired (no acceptance item set).
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: test_unit\nlayer: candidate\nversion: 1.0.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write the three required caches (main spec only — no active appendix).
+	specHash := computeHash(specPath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
+	os.MkdirAll(cacheDir, 0755)
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	verifyCache := fmt.Sprintf("---\ncommand: verify\nunit: test_unit\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	reviewCache := fmt.Sprintf("---\ncommand: review\nunit: test_unit\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-06-30T12:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("retire promote failed: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+
+	// The whole unit is gone from stable and candidate; caches cleared.
+	for _, p := range []string{
+		"docs/specs/units/stable/unit_test_unit.md",
+		"docs/specs/units/stable/appendix/unit_test_unit_helper.md",
+		"docs/specs/units/candidate/unit_test_unit.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after retire", p)
+		}
+	}
+	for _, c := range []string{"validate_result.md", "verify_result.md", "review_result.md"} {
+		if _, err := os.Stat(filepath.Join(cacheDir, c)); !os.IsNotExist(err) {
+			t.Fatalf("cache %s must be cleared after retire", c)
+		}
+	}
+}
+
+func TestPromoteRetiredUnitValidateCacheOnly(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// Stable layer holds the unit from a previous round, including an
+	// appendix that must disappear with the unit.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: test_unit\nlayer: stable\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
+	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stableAppendixDir, "unit_test_unit_helper.md"),
+		[]byte("---\nunit: test_unit\nlayer: stable\n---\nOld content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Candidate declares the unit retired; the candidate appendix is NOT
+	// marked retired (the documented procedure only requires the main spec).
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candidateAppendixDir := filepath.Join(candidateDir, "appendix")
+	if err := os.MkdirAll(candidateAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: test_unit\nlayer: candidate\nversion: 1.0.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	appendixPath := filepath.Join(candidateAppendixDir, "unit_test_unit_helper.md")
+	if err := os.WriteFile(appendixPath, []byte("---\nunit: test_unit\nlayer: candidate\n---\nNew content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only the validate cache exists — and it lists the main spec only, not
+	// the active candidate appendix. A retiring unit must pass with just this
+	// gate (verify, review, and appendix coverage are skipped).
+	specHash := computeHash(specPath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
+	os.MkdirAll(cacheDir, 0755)
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("retire promote failed: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "gates skipped") {
+		t.Fatalf("expected gate-skip notice, stdout:\n%s", stdout.String())
+	}
+
+	// The whole unit is gone from every layer — no stable appendix may
+	// survive a retiring unit, and no candidate appendix may be promoted.
+	for _, p := range []string{
+		"docs/specs/units/stable/unit_test_unit.md",
+		"docs/specs/units/stable/appendix/unit_test_unit_helper.md",
+		"docs/specs/units/candidate/unit_test_unit.md",
+		"docs/specs/units/candidate/appendix/unit_test_unit_helper.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after retire", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "validate_result.md")); !os.IsNotExist(err) {
+		t.Fatal("validate cache must be cleared after retire")
+	}
+}
+
+func TestConsumers_GlobalRuleListsAllUnits(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// The rule file exists (candidate layer) and two units are present — a
+	// global rule applies to every current-layer unit by default, so all
+	// units are reported.
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ruleDir, "g_rule_naming.md"),
+		[]byte("---\nrule_id: g_rule_naming\nrule_scope: global\nlayer: candidate\nrule_version: 0.1.0\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(unitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"unit_a.md", "unit_b.md"} {
+		if err := os.WriteFile(filepath.Join(unitDir, name),
+			[]byte("---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runConsumers([]string{"--rule", "g_rule_naming", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("consumers failed: %v\nstderr=%s", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Consumers of \"g_rule_naming\" (2)") {
+		t.Fatalf("expected both units listed, got:\n%s", out)
+	}
+}
+
+func TestConsumers_GlobalRuleMissingFileErrors(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// A retired (or mistyped) global rule has no rule file — its default
+	// applicability no longer exists, so the command reports the rule as
+	// not found instead of listing every unit.
+	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(unitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unitDir, "unit_a.md"),
+		[]byte("---\nid: a\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := runConsumers([]string{"--rule", "g_rule_naming", "--repo-root", repoRoot}, &stdout, &stderr)
+	if err == nil {
+		t.Fatalf("expected error for missing rule file, stdout:\n%s", stdout.String())
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' in error, got: %v", err)
+	}
+}
+
 func createCLITestRepo(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "specflowctl-test-*")

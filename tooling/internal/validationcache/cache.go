@@ -111,17 +111,20 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 		}, nil
 	}
 
-	// 4. Check each non-exempt appendix
+	// 4. Check each non-exempt candidate appendix (retiring appendices are
+	// skipped like exempt ones — promote removes their stable copies instead
+	// of copying them)
 	var missing []string
 	for _, m := range matches {
 		relPath, _ := filepath.Rel(repoRoot, m)
 		relPathSlash := filepath.ToSlash(relPath)
 
-		// Check status: skip exempt appendices
+		// Check status: skip exempt and retired appendices
 		data, err := os.ReadFile(m)
 		if err == nil {
 			fm := specpaths.ReadFrontmatterStringMap(string(data))
-			if strings.EqualFold(strings.TrimSpace(fm["status"]), "exempt") {
+			status := strings.TrimSpace(fm["status"])
+			if status == "exempt" || status == "retired" {
 				continue
 			}
 		}

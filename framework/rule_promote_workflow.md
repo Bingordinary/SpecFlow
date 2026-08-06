@@ -18,6 +18,17 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 | **MINOR** (0.x.0) | Compatible extension | Assess consumer impact per rule content. Typically none. |
 | **PATCH** (0.0.x) | Wording clarification | Assess consumer impact per rule content. Typically none. |
 | None | Brand new rule (no previous stable) | No consumers exist yet. Rule promoted to stable. |
+| **Retired** (`status: retired`) | Rule is removed from stable | Agent must remove the rule from every unit that explicitly lists it in `rule_refs` before promote (explicit references only — a global rule's default applicability lifts when its file disappears); the CLI rejects a retire while explicit references remain |
+
+## Retirement
+
+A rule whose constraint no longer applies is retired by adding `status: retired` to the candidate rule frontmatter (see `framework/spec_writing_guide.md` §5.5). The retire promote follows the same cache gate, but instead of copying, the CLI removes the stable rule file and the candidate rule file. The version gate is skipped for retired rules (the stable copy is removed, not updated). Retirement is terminal — git history is the only record.
+
+### Pre-check for retirement
+
+1. Find all current-layer units that explicitly list the rule in `rule_refs`. `specflowctl consumers --rule <id>` does this for bound rules (`b_rule_*`) — its output is the explicit referrers. It must NOT be used for global rules (`g_rule_*`): for those it lists every current-layer unit (default applicability, not a reference). Instead, run `validate@{rule}` and read the retirement note of Check 7 (`unbound_retention` correctness) — it lists every remaining explicit referrer and fails the validate until they are gone. A global rule's default applicability to every unit is not a reference — it lifts automatically when the stable rule file disappears.
+2. Each explicit referrer must drop the rule from its `rule_refs` (and the body explanation if present) and pass its own validate before the rule is retired. The CLI rejects the retire while any reference remains.
+3. After retirement, `specflowctl consumers --rule <id>` reports no consumers for a bound rule (its explicit references were cleared before retire); for a global rule it reports the rule as not found because the rule file no longer exists — the default applicability has already lifted with the file, so no command confirmation is needed.
 
 ## Workflow
 

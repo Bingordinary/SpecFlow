@@ -63,10 +63,10 @@ Other behavior domains keep their evidence references and continue to waive rati
 When no acceptance item references the evidence appendix:
 
 1. Retire the last evidence section if one remains.
-2. Promote normally: the emptied appendix is copied to stable, flushing any leftover stable sections.
-3. Remove `evidence_appendix_ref` from the spec frontmatter (set to `none`).
+2. Add `status: retired` to the candidate evidence appendix frontmatter and set `evidence_appendix_ref` to `none` in the spec frontmatter.
+3. Promote normally: the retiring appendix is not copied; the stable copy is removed together with the candidate copy (see `framework/spec_writing_guide.md` §7 Appendix Retirement).
 
-Do not delete the candidate appendix file before promote — the stable copy cannot be deleted by any governance mechanism (only `promote` writes to stable), so deleting the candidate copy leaves the stable sections in place and the orphan finding re-appears in every later round. After the final promote the appendix remains as an empty file with no governance effect: no section means no zombie, orphan, or residual finding, and future forks copy it as inert content.
+Do not delete the candidate appendix file before promote — deleting the candidate copy leaves the stable sections in place and the orphan finding re-appears in every later round. After the final promote the appendix exists in no layer: no file means no zombie, orphan, or residual finding, and no inert content is forked in later rounds.
 
 ### Enforcement
 

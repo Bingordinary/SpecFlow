@@ -10,8 +10,8 @@ Before executing any check, the agent must read the complete unit content:
 
 1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
 2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
-3. For each appendix, read its frontmatter. Skip files with `status: exempt`.
-4. Read the content of every non-exempt appendix file.
+3. For each appendix, read its frontmatter. Skip files with `status: exempt` or `status: retired`.
+4. Read the content of every non-exempt, non-retired appendix file.
 
 The unit's complete spec is the union of the main spec and all non-exempt appendix files. All checks that follow operate on this union.
 
@@ -140,9 +140,10 @@ When findings mix resolution types (within one check or across checks), the `Res
      - Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — describe the governance system itself
      - File paths inside code-block examples serving as illustrations
    - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
-8. **Appendix frontmatter check:** For each non-exempt appendix file, verify:
+8. **Appendix frontmatter check:** For each non-exempt, non-retired appendix file, verify:
    - `unit` frontmatter field matches current unit name
    - `layer` frontmatter field is `"candidate"`
+   - `status`, when present, is one of `active` (or absent), `exempt`, `retired` — any other value is FAIL
 9. **Appendix path check:** Verify each appendix file's path matches the convention: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
 10. **Layer-prefix path check (FAIL):** Scan the main spec body and every non-exempt appendix for layer-prefixed spec paths that break after promote or mispoint during an active candidate round. Unlike step 7, there is no code-block exemption: paths inside code-block examples are flagged the same as prose.
     - Absolute forms: `docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`
@@ -160,6 +161,8 @@ When findings mix resolution types (within one check or across checks), the `Res
 **Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
 
 **Communication note:** When suggesting Check 1 to a user, describe it as "structural integrity — verifies file structure and reference existence without evaluating design quality."
+
+**Retiring unit:** when the candidate main spec declares `status: retired` (see `framework/spec_writing_guide.md` §7 Unit Retirement), the unit is being removed from stable. The acceptance item set is not required (agent Check 5's acceptance checks are skipped for the retired spec), and retiring appendices are skipped like exempt ones. Check 1 still verifies the required frontmatter fields. The retiring spec's own references (`unit_refs`, `rule_refs`, version pins, appendix and evidence references) are exempt from the mechanical checks — they disappear with it. The mechanical `specflowctl validate` checks use their own numbering (Check 1 frontmatter, Check 2 acceptance items, Check 3 anchor integrity, Check 4 reference integrity, Check 5 appendix files, Check 6 version consistency, Check 7 layer-path check); of these, a retiring spec skips Check 2, 3, 4, 6, and 7, while Check 1 still applies and Check 5 keeps its appendix-level exempt/retired skipping. `specflowctl promote` also skips its reference checks for a retiring unit. Reference protection: a unit that is being retired must not be referenced by any other current-layer unit's `unit_refs` — the mechanical `specflowctl validate` Check 4 rejects such a reference; the agent must also report it via agent Check 7 (cross-unit) with `blocked` resolution until the referrer drops the reference.
 
 ---
 
@@ -516,6 +519,7 @@ affects.files:
 affects.appendices:
   - Each appendix must exist and belong to this unit
   - The appendix frontmatter must declare the correct unit and layer
+  - An appendix with `status: retired` must not be referenced: the retiring appendix is removed on promote, so the reference would break — FAIL (fix_required: remove the reference or remove the `status: retired` declaration). The mechanical `specflowctl validate` Check 4 and `specflowctl promote` reject the same reference (a retiring spec's own references are exempt).
 ```
 
 2. If `evidence_appendix_ref` is not `none`:

@@ -71,7 +71,7 @@ func Fork(repoRoot, unitName string) *Result {
 		rel, _ := filepath.Rel(repoRoot, m)
 
 		appendixFM := specpaths.ReadFrontmatterStringMap(readFileString(m))
-		if strings.EqualFold(appendixFM["status"], "exempt") {
+		if appendixFM["status"] == "exempt" {
 			r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", rel))
 			continue
 		}

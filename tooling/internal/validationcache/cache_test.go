@@ -531,6 +531,44 @@ func TestCheckAppendicesInCache_ExemptAppendixNotInCachePass(t *testing.T) {
 	}
 }
 
+func TestCheckAppendicesInCache_RetiredAppendixNotInCachePass(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	appendixDir := filepath.Join(candidateDir, "appendix")
+	os.MkdirAll(appendixDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create retiring appendix on disk but NOT in cache — should be allowed
+	appendixPath := filepath.Join(appendixDir, "unit_test_legacy.md")
+	appendixContent := "---\nunit: test\nlayer: candidate\nstatus: retired\n---\n"
+	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\nAll checks passed.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckAppendicesInCache(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh (retired appendix skipped), got: %s", result.Reason)
+	}
+}
+
 func TestCheckAppendicesInCache_ValidateCacheNotPassFails(t *testing.T) {
 	repoRoot := t.TempDir()
 

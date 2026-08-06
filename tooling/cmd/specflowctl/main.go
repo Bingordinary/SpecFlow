@@ -15,6 +15,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -123,6 +124,15 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Unit promote path
+	// Detect retirement: a retiring unit is removed from stable, so the
+	// content-alignment gates (verify, review) and appendix coverage have no
+	// object — only the validate cache gate remains, matching rule retirement.
+	retiring := false
+	if data, err := os.ReadFile(filepath.Join(absRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", unitName))); err == nil {
+		fm := specpaths.ReadFrontmatterStringMap(string(data))
+		retiring = strings.TrimSpace(fm["status"]) == "retired"
+	}
+
 	// Check validate cache freshness
 	validateResult, err := validationcache.CheckValidate(absRoot, unitName)
 	if err != nil {
@@ -137,47 +147,52 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	// Check verify cache freshness
-	verifyResult, err := validationcache.CheckVerify(absRoot, unitName)
-	if err != nil {
-		return fmt.Errorf("verify cache error: %w", err)
-	}
-	if !verifyResult.Fresh {
-		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
+	if retiring {
+		fmt.Fprintln(stdout, "Retiring unit — verify, review, and appendix coverage gates skipped.")
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "Run `verify@%s` first, then retry promote.\n", unitName)
-		return errors.New("verify cache check failed")
-	}
-	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
-	fmt.Fprintln(stdout, "")
+	} else {
+		// Check verify cache freshness
+		verifyResult, err := validationcache.CheckVerify(absRoot, unitName)
+		if err != nil {
+			return fmt.Errorf("verify cache error: %w", err)
+		}
+		if !verifyResult.Fresh {
+			fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
+			fmt.Fprintln(stdout, "")
+			fmt.Fprintf(stdout, "Run `verify@%s` first, then retry promote.\n", unitName)
+			return errors.New("verify cache check failed")
+		}
+		fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
+		fmt.Fprintln(stdout, "")
 
-	// Check review cache (required gate — must exist, be full mode, fresh, and non-blocking)
-	reviewResult, err := validationcache.CheckReview(absRoot, unitName)
-	if err != nil {
-		return fmt.Errorf("review cache error: %w", err)
-	}
-	if !reviewResult.Fresh {
-		fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
+		// Check review cache (required gate — must exist, be full mode, fresh, and non-blocking)
+		reviewResult, err := validationcache.CheckReview(absRoot, unitName)
+		if err != nil {
+			return fmt.Errorf("review cache error: %w", err)
+		}
+		if !reviewResult.Fresh {
+			fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
+			fmt.Fprintln(stdout, "")
+			fmt.Fprintf(stdout, "Run `review@%s` first, then retry promote.\n", unitName)
+			return errors.New("review cache check failed")
+		}
+		fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "Run `review@%s` first, then retry promote.\n", unitName)
-		return errors.New("review cache check failed")
-	}
-	fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
-	fmt.Fprintln(stdout, "")
 
-	// Check appendix files are included in validate cache
-	appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
-	if err != nil {
-		return fmt.Errorf("appendix cache check error: %w", err)
-	}
-	if !appendixResult.Fresh {
-		fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
+		// Check appendix files are included in validate cache
+		appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
+		if err != nil {
+			return fmt.Errorf("appendix cache check error: %w", err)
+		}
+		if !appendixResult.Fresh {
+			fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
+			fmt.Fprintln(stdout, "")
+			fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
+			return errors.New("appendix validation check failed")
+		}
+		fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
-		return errors.New("appendix validation check failed")
 	}
-	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
-	fmt.Fprintln(stdout, "")
 
 	result := promote.Promote(absRoot, unitName)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))

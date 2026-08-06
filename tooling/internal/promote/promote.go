@@ -36,9 +36,14 @@ type Result struct {
 }
 
 // stagedCopy is one file prepared for the atomic promote archive phase.
+// When remove is true, the operation deletes the destination file instead of
+// committing a staged copy into place: the backup phase moves the existing
+// destination aside, the commit phase skips it, and the success phase
+// discards the backup (the rollback phase restores it).
 type stagedCopy struct {
-	tmp string
-	dst string
+	tmp    string
+	dst    string
+	remove bool
 }
 
 // stageCopyWithLayerTransform copies src to a temporary file next to dst,
@@ -125,6 +130,9 @@ func commitStagedWith(staged []stagedCopy, commit func(tmp, dst string) error) e
 	}
 
 	for i, s := range staged {
+		if s.remove {
+			continue
+		}
 		if err := commit(s.tmp, s.dst); err != nil {
 			restoreBackups(backups[:i])
 			cleanupStaged(staged[i:])
@@ -151,6 +159,58 @@ func restoreBackups(backups []backupEntry) {
 			os.Remove(b.dst)
 		}
 	}
+}
+
+// readFrontmatterMap reads the frontmatter field map of a spec file, or nil
+// if the file cannot be read.
+func readFrontmatterMap(path string) map[string]string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return parseFrontmatter(string(data))
+}
+
+// findUnitReferrers scans every current-layer unit main spec (candidate and
+// stable) for unit_refs entries pointing at unitName. It is used to protect a
+// retiring unit: the stable copy is deleted on promote, so no other unit may
+// keep a reference to it.
+func findUnitReferrers(repoRoot, unitName string) []string {
+	return findSpecRefs(repoRoot, "unit_refs", unitName)
+}
+
+// findRuleReferrers scans every current-layer unit main spec (candidate and
+// stable) for rule_refs entries pointing at ruleID. It is used to protect a
+// retiring rule: the stable copy is deleted on promote, so no unit may keep a
+// reference to it.
+func findRuleReferrers(repoRoot, ruleID string) []string {
+	return findSpecRefs(repoRoot, "rule_refs", ruleID)
+}
+
+func findSpecRefs(repoRoot, field, target string) []string {
+	var referrers []string
+	for _, dir := range []string{"docs/specs/units/candidate", "docs/specs/units/stable"} {
+		matches, _ := filepath.Glob(filepath.Join(repoRoot, dir, "unit_*.md"))
+		for _, m := range matches {
+			fm := readFrontmatterMap(m)
+			if fm == nil {
+				continue
+			}
+			raw := fm[field]
+			if raw == "" || strings.EqualFold(raw, "none") {
+				continue
+			}
+			for _, ref := range specpaths.ParseRefList(raw) {
+				ref = strings.TrimSpace(strings.Split(ref, "@")[0])
+				if ref == target {
+					rel, _ := filepath.Rel(repoRoot, m)
+					referrers = append(referrers, rel)
+					break
+				}
+			}
+		}
+	}
+	return referrers
 }
 
 // Promote runs the promote flow for the given unit.
@@ -184,6 +244,16 @@ func Promote(repoRoot, unitName string) *Result {
 	content := string(data)
 
 	fm := parseFrontmatter(content)
+	retired := strings.TrimSpace(fm["status"]) == "retired"
+
+	if retired {
+		if referrers := findUnitReferrers(repoRoot, unitName); len(referrers) > 0 {
+			r.Issues = append(r.Issues, fmt.Sprintf(
+				"unit %s is being retired but is still referenced by: %s — remove the references before retiring",
+				unitName, strings.Join(referrers, ", ")))
+		}
+	}
+
 	checks := []struct {
 		field string
 		value string
@@ -203,21 +273,33 @@ func Promote(repoRoot, unitName string) *Result {
 		r.Issues = append(r.Issues, fmt.Sprintf("Layer must be 'candidate', got '%s'", v))
 	}
 
-	// Step 3: Check acceptance items exist
-	if !strings.Contains(content, "acceptance_item_set:") && !strings.Contains(content, "acceptance_item_set") {
-		r.Issues = append(r.Issues, "No acceptance items found (acceptance_item_set is required)")
+	// Step 3: Check acceptance items exist (a retiring spec declares the end of
+	// the unit, so it is not required to carry an acceptance item set)
+	if !retired {
+		if !strings.Contains(content, "acceptance_item_set:") && !strings.Contains(content, "acceptance_item_set") {
+			r.Issues = append(r.Issues, "No acceptance items found (acceptance_item_set is required)")
+		}
 	}
 
 	// Step 3b: Check unit_refs don't point to unpromoted candidate-only files
-	if fm["unit_refs"] != "" && !strings.EqualFold(fm["unit_refs"], "none") {
+	// and don't point to retiring targets. A retiring target loses its stable
+	// copy on promote, so the reference cannot survive the retirement — even
+	// when the stable copy still exists today. Skipped for a retiring unit: its
+	// own references disappear with it (same exemption as step 3e and the
+	// mechanical validate Check 4).
+	if !retired && fm["unit_refs"] != "" && !strings.EqualFold(fm["unit_refs"], "none") {
 		refs := specpaths.ParseRefList(fm["unit_refs"])
 		for _, ref := range refs {
 			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
 			if ref == "" || ref == unitName {
 				continue
 			}
-			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", ref))
 			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", ref))
+			if targetFM := readFrontmatterMap(candidatePath); targetFM != nil && strings.TrimSpace(targetFM["status"]) == "retired" {
+				r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' is being retired — remove the references before retiring", ref))
+				continue
+			}
+			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", ref))
 			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
 				if _, err := os.Stat(candidatePath); err == nil {
 					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' exists only in candidate layer — promote it first", ref))
@@ -229,15 +311,21 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 
 	// Step 3c: Check rule_refs don't point to unpromoted candidate-only files
-	if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+	// and don't point to retiring targets (same protection as step 3b).
+	// Skipped for a retiring unit (same exemption as step 3b).
+	if !retired && fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
 		refs := specpaths.ParseRefList(fm["rule_refs"])
 		for _, ref := range refs {
 			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
 			if ref == "" {
 				continue
 			}
-			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ref))
 			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ref))
+			if targetFM := readFrontmatterMap(candidatePath); targetFM != nil && strings.TrimSpace(targetFM["status"]) == "retired" {
+				r.Issues = append(r.Issues, fmt.Sprintf("rule_refs target '%s' is being retired — remove the references before retiring", ref))
+				continue
+			}
+			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ref))
 			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
 				if _, err := os.Stat(candidatePath); err == nil {
 					r.Issues = append(r.Issues, fmt.Sprintf("rule_refs target '%s' exists only in candidate layer — promote it first", ref))
@@ -256,27 +344,52 @@ func Promote(repoRoot, unitName string) *Result {
 		}
 	}
 
-	// Step 4: Check appendix files
+	// Step 3e: Reject references to retiring appendices — the retiring appendix
+	// is removed on promote, leaving the promoted spec with a dangling
+	// reference. Same protection as the mechanical validate Check 4. A
+	// retiring unit's own references disappear with it and are not checked.
 	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if !retired {
+		if v := fm["evidence_appendix_ref"]; v != "" && !strings.EqualFold(v, "none") && specvalidation.AppendixMarkedRetired(appendixDir, v) {
+			r.Issues = append(r.Issues, fmt.Sprintf("evidence_appendix_ref points to retiring appendix '%s' — remove the reference before retiring it", v))
+		}
+		for _, ref := range specvalidation.ExtractAffectsAppendices(content) {
+			if specvalidation.AppendixMarkedRetired(appendixDir, ref) {
+				r.Issues = append(r.Issues, fmt.Sprintf("affects.appendices references retiring appendix '%s' — remove the reference before retiring it", ref))
+			}
+		}
+	}
+
+	// Step 4: Check appendix files — active appendices are staged for the
+	// archive phase, retiring appendices are scheduled for stable removal.
+	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
 	pattern := fmt.Sprintf("unit_%s_*.md", unitName)
 	matches, _ := filepath.Glob(filepath.Join(appendixDir, pattern))
+
+	var staged []stagedCopy
+	var removed []stagedCopy
+
 	for _, m := range matches {
 		rel, _ := filepath.Rel(repoRoot, m)
+		appendixFM := readFrontmatterMap(m)
+		appendixRetired := appendixFM != nil && strings.TrimSpace(appendixFM["status"]) == "retired"
+		if retired {
+			// A retiring unit takes every candidate appendix with it: nothing
+			// is copied to stable. The stable removals are scheduled by the
+			// retired-unit branch below (a single glob over the stable layer),
+			// so this loop must not append the same destination again — a
+			// duplicate remove entry would break the backup-phase rollback.
+			r.Actions = append(r.Actions, fmt.Sprintf("Retiring appendix: %s", rel))
+			continue
+		}
+		if appendixRetired {
+			dest := filepath.Join(stableAppendixDir, filepath.Base(m))
+			removed = append(removed, stagedCopy{dst: dest, remove: true})
+			r.Actions = append(r.Actions, fmt.Sprintf("Retiring appendix: %s", rel))
+			continue
+		}
 		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", rel))
-	}
 
-	if len(r.Issues) > 0 {
-		r.Passed = false
-		return r
-	}
-
-	// Step 5: Copy candidate files to stable (two-phase commit)
-	// Phase 1 — stage every file to a temp file; a failure here leaves the
-	// stable layer untouched (no partial archive).
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	var staged []stagedCopy
-
-	for _, m := range matches {
 		dest := filepath.Join(stableAppendixDir, filepath.Base(m))
 		tmp, err := stageCopyWithLayerTransform(m, dest)
 		if err != nil {
@@ -286,30 +399,54 @@ func Promote(repoRoot, unitName string) *Result {
 			return r
 		}
 		staged = append(staged, stagedCopy{tmp: tmp, dst: dest})
-		rel, _ := filepath.Rel(repoRoot, dest)
+		rel, _ = filepath.Rel(repoRoot, dest)
 		r.Actions = append(r.Actions, fmt.Sprintf("Promoted appendix: %s", rel))
 	}
 
-	// Stage the main spec last so it acts as the commit point.
-	tmpSpec, err := stageCopyWithLayerTransform(candidateSpec, stableSpec)
-	if err != nil {
-		cleanupStaged(staged)
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage spec: %v", err))
+	if len(r.Issues) > 0 {
 		r.Passed = false
 		return r
 	}
-	staged = append(staged, stagedCopy{tmp: tmpSpec, dst: stableSpec})
+
+	// Step 5: Stage the main spec last so it acts as the commit point. A
+	// retiring unit is not copied — its stable main spec and every stable
+	// appendix (including exempt ones) are scheduled for removal instead.
+	if retired {
+		stableAppendices, _ := filepath.Glob(filepath.Join(stableAppendixDir, pattern))
+		for _, sm := range stableAppendices {
+			removed = append(removed, stagedCopy{dst: sm, remove: true})
+			rel, _ := filepath.Rel(repoRoot, sm)
+			r.Actions = append(r.Actions, fmt.Sprintf("Retiring stable appendix: %s", rel))
+		}
+		removed = append(removed, stagedCopy{dst: stableSpec, remove: true})
+		r.Actions = append(r.Actions, fmt.Sprintf("Retiring: docs/specs/units/stable/unit_%s.md", unitName))
+	} else {
+		tmpSpec, err := stageCopyWithLayerTransform(candidateSpec, stableSpec)
+		if err != nil {
+			cleanupStaged(staged)
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage spec: %v", err))
+			r.Passed = false
+			return r
+		}
+		staged = append(staged, stagedCopy{tmp: tmpSpec, dst: stableSpec})
+	}
 
 	// Phase 2 — rename staged files into place (appendices first, then the
-	// main spec as the commit point). Failures before this phase never touch
-	// the stable layer: staging writes only temp files.
-	if err := commitStaged(staged); err != nil {
+	// main spec as the commit point) and remove retired destinations, all in
+	// one transaction. Failures before this phase never touch the stable
+	// layer: staging writes only temp files.
+	commitList := append(staged, removed...)
+	if err := commitStaged(commitList); err != nil {
 		cleanupStaged(staged)
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
+	if retired {
+		r.Actions = append(r.Actions, fmt.Sprintf("Retired: docs/specs/units/stable/unit_%s.md and its stable appendices removed", unitName))
+	} else {
+		r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
+	}
 
 	// Step 7: Remove candidate files so file existence remains an unambiguous
 	// state signal. "Candidate file exists = being edited" — after promote, no
@@ -424,6 +561,16 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}
 
 	fm := parseFrontmatter(string(data))
+	retired := strings.TrimSpace(fm["status"]) == "retired"
+
+	if retired {
+		if referrers := findRuleReferrers(repoRoot, ruleID); len(referrers) > 0 {
+			r.Issues = append(r.Issues, fmt.Sprintf(
+				"rule %s is being retired but is still referenced by: %s — remove the references before retiring",
+				ruleID, strings.Join(referrers, ", ")))
+		}
+	}
+
 	requiredFields := []struct {
 		field string
 		value string
@@ -451,60 +598,75 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 
 	candidateVersion := fm["rule_version"]
 
-	// Step 4: Detect current stable version
+	// Step 4: Detect current stable version (a retiring rule has no version
+	// comparison — the stable copy is removed, not updated)
 	stableVersion := ""
-	if _, err := os.Stat(stableRule); err == nil {
-		stableData, err := os.ReadFile(stableRule)
-		if err == nil {
-			stableFM := parseFrontmatter(string(stableData))
-			stableVersion = stableFM["rule_version"]
+	if !retired {
+		if _, err := os.Stat(stableRule); err == nil {
+			stableData, err := os.ReadFile(stableRule)
+			if err == nil {
+				stableFM := parseFrontmatter(string(stableData))
+				stableVersion = stableFM["rule_version"]
+			}
 		}
+
+		if stableVersion != "" {
+			r.Actions = append(r.Actions, fmt.Sprintf("Current stable version: %s", stableVersion))
+			r.Actions = append(r.Actions, fmt.Sprintf("Candidate version: %s", candidateVersion))
+		}
+
+		// Step 5: Version sanity check
+		if stableVersion != "" && candidateVersion == stableVersion {
+			r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s is same as stable version — bump the version", candidateVersion))
+			r.Passed = false
+			return r
+		}
+		if stableVersion != "" && !isVersionGreater(candidateVersion, stableVersion) {
+			r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s must be greater than stable version %s", candidateVersion, stableVersion))
+			r.Passed = false
+			return r
+		}
+
+		// Step 6: Determine version change type
+		r.ChangeType = versionChangeType(candidateVersion, stableVersion)
+		switch r.ChangeType {
+		case ChangeMajor:
+			r.Actions = append(r.Actions, "MAJOR change detected")
+		case ChangeMinor:
+			r.Actions = append(r.Actions, "MINOR change detected")
+		case ChangePatch:
+			r.Actions = append(r.Actions, "PATCH change detected")
+		case ChangeNone:
+			r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
+		}
+	} else {
+		r.Actions = append(r.Actions, "Rule marked retired — no version comparison")
 	}
 
-	if stableVersion != "" {
-		r.Actions = append(r.Actions, fmt.Sprintf("Current stable version: %s", stableVersion))
-		r.Actions = append(r.Actions, fmt.Sprintf("Candidate version: %s", candidateVersion))
+	// Step 7: Copy candidate to stable with layer transform (staged, atomic).
+	// A retiring rule is not copied — its stable copy is removed instead.
+	if retired {
+		if err := commitStaged([]stagedCopy{{dst: stableRule, remove: true}}); err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to retire rule: %v", err))
+			r.Passed = false
+			return r
+		}
+		r.Actions = append(r.Actions, fmt.Sprintf("Retired: docs/specs/rules/stable/%s.md removed", ruleID))
+	} else {
+		tmp, err := stageCopyWithLayerTransform(candidateRule, stableRule)
+		if err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage rule: %v", err))
+			r.Passed = false
+			return r
+		}
+		if err := commitStaged([]stagedCopy{{tmp: tmp, dst: stableRule}}); err != nil {
+			os.Remove(tmp)
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit rule: %v", err))
+			r.Passed = false
+			return r
+		}
+		r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 	}
-
-	// Step 5: Version sanity check
-	if stableVersion != "" && candidateVersion == stableVersion {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s is same as stable version — bump the version", candidateVersion))
-		r.Passed = false
-		return r
-	}
-	if stableVersion != "" && !isVersionGreater(candidateVersion, stableVersion) {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s must be greater than stable version %s", candidateVersion, stableVersion))
-		r.Passed = false
-		return r
-	}
-
-	// Step 6: Determine version change type
-	r.ChangeType = versionChangeType(candidateVersion, stableVersion)
-	switch r.ChangeType {
-	case ChangeMajor:
-		r.Actions = append(r.Actions, "MAJOR change detected")
-	case ChangeMinor:
-		r.Actions = append(r.Actions, "MINOR change detected")
-	case ChangePatch:
-		r.Actions = append(r.Actions, "PATCH change detected")
-	case ChangeNone:
-		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
-	}
-
-	// Step 7: Copy candidate to stable with layer transform (staged, atomic)
-	tmp, err := stageCopyWithLayerTransform(candidateRule, stableRule)
-	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage rule: %v", err))
-		r.Passed = false
-		return r
-	}
-	if err := commitStaged([]stagedCopy{{tmp: tmp, dst: stableRule}}); err != nil {
-		os.Remove(tmp)
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit rule: %v", err))
-		r.Passed = false
-		return r
-	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
 
 	// Step 8: Delete candidate rule file. A cleanup failure keeps the candidate
 	// rule in place; the stable rule is already archived, so the failure

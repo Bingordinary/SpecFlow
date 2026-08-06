@@ -403,6 +403,17 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 
 	// Global rules apply to every current-layer unit by default
 	if strings.HasPrefix(ruleID, "g_rule_") {
+		// A global rule's default applicability exists only while the rule
+		// file exists. A missing rule file (retired rule, or a mistyped ID)
+		// cannot constrain anything, so the rule is reported as not found
+		// instead of returning every unit.
+		candidateRule := filepath.Join(repoRoot, specpaths.RuleCandidateFileRef(ruleID))
+		stableRule := filepath.Join(repoRoot, specpaths.RuleStableFileRef(ruleID))
+		if _, err := os.Stat(candidateRule); err != nil {
+			if _, err := os.Stat(stableRule); err != nil {
+				return nil, fmt.Errorf("rule %s not found in docs/specs/rules/ (candidate or stable)", ruleID)
+			}
+		}
 		for _, dir := range searchDirs {
 			entries, err := os.ReadDir(dir)
 			if err != nil {
@@ -430,6 +441,25 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 		}
 		sort.Strings(consumers)
 		return consumers, nil
+	}
+
+	return FindExplicitRuleConsumers(repoRoot, ruleID)
+}
+
+// FindExplicitRuleConsumers scans every current-layer unit main spec for
+// rule_refs entries containing the given ruleID and returns the unit names.
+// Unlike FindRuleConsumers, it uses the same explicit rule_refs semantics for
+// every rule scope — a global rule's default applicability to all units is
+// not treated as a reference here, so retirement (which removes the stable
+// rule file and thereby lifts the default applicability) can be validated
+// against the references that must actually be cleaned up.
+func FindExplicitRuleConsumers(repoRoot, ruleID string) ([]string, error) {
+	var consumers []string
+	seen := map[string]bool{}
+
+	searchDirs := []string{
+		filepath.Join(repoRoot, specpaths.CandidateDir),
+		filepath.Join(repoRoot, specpaths.StableDir),
 	}
 
 	for _, dir := range searchDirs {

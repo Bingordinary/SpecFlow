@@ -227,6 +227,591 @@ func TestPromoteRuleSuccess(t *testing.T) {
 	}
 }
 
+func TestPromoteUnitRetiredAppendix(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Stable layer already holds both appendix copies from a previous round.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: demo\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	stableExtra := "---\nunit: demo\nlayer: stable\n---\n\nOld extra content\n"
+	stableLegacy := "---\nunit: demo\nlayer: stable\n---\n\nOld legacy content\n"
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte(stableExtra), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_legacy.md"), []byte(stableLegacy), 0644)
+
+	// Candidate: active spec + active extra appendix + retiring legacy appendix.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\n---\n\nNew extra content\n"), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_legacy.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nTo be retired\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+
+	// The retiring appendix's stable copy must be removed; the active
+	// appendix and the main spec must be archived normally.
+	if _, err := os.Stat(filepath.Join(stableAppendixDir, "unit_demo_legacy.md")); !os.IsNotExist(err) {
+		t.Fatal("retired appendix stable copy must be removed")
+	}
+	extra, err := os.ReadFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"))
+	if err != nil {
+		t.Fatalf("active appendix stable copy missing: %v", err)
+	}
+	if !strings.Contains(string(extra), "New extra content") {
+		t.Fatalf("active appendix not updated: %s", extra)
+	}
+	if _, err := os.Stat(filepath.Join(stableDir, "unit_demo.md")); err != nil {
+		t.Fatalf("stable spec missing: %v", err)
+	}
+	// Candidate layer fully cleaned.
+	if _, err := os.Stat(filepath.Join(candAppendixDir, "unit_demo_legacy.md")); !os.IsNotExist(err) {
+		t.Fatal("retired candidate appendix must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(candAppendixDir, "unit_demo_extra.md")); !os.IsNotExist(err) {
+		t.Fatal("candidate appendix must be removed after promote")
+	}
+	foundRetireAction := false
+	for _, a := range result.Actions {
+		if strings.Contains(a, "Retiring appendix") && strings.Contains(a, "unit_demo_legacy.md") {
+			foundRetireAction = true
+		}
+	}
+	if !foundRetireAction {
+		t.Fatalf("expected retiring action for legacy appendix, actions: %v", result.Actions)
+	}
+}
+
+func TestPromoteUnitRetiredSpec(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Stable layer holds the unit from a previous round, including an
+	// exempt appendix that must also disappear with the unit.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: demo\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: stable\n---\n\nExtra\n"), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_exempt.md"), []byte("---\nunit: demo\nlayer: stable\nstatus: exempt\n---\n\nExempt\n"), 0644)
+
+	// Candidate declares the whole unit retired — no acceptance item set.
+	// The candidate appendix is also marked retired (a retiring unit carries
+	// no active candidate content).
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nExtra\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+
+	// The whole unit is gone from stable (main spec + every appendix,
+	// including the exempt one) and from candidate.
+	for _, p := range []string{
+		"docs/specs/units/stable/unit_demo.md",
+		"docs/specs/units/stable/appendix/unit_demo_extra.md",
+		"docs/specs/units/stable/appendix/unit_demo_exempt.md",
+		"docs/specs/units/candidate/unit_demo.md",
+		"docs/specs/units/candidate/appendix/unit_demo_extra.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after retire", p)
+		}
+	}
+
+	foundRetireAction := false
+	for _, a := range result.Actions {
+		if strings.Contains(a, "Retiring: docs/specs/units/stable/unit_demo.md") {
+			foundRetireAction = true
+		}
+	}
+	if !foundRetireAction {
+		t.Fatalf("expected retire action, actions: %v", result.Actions)
+	}
+}
+
+func TestRetiredUnitBackupFailureRollbackPreservesStableAppendix(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Stable layer holds the unit and a same-named appendix from a previous
+	// round. The candidate carries the same appendix name, so the retired-unit
+	// removal list must schedule the stable destination exactly once — a
+	// duplicate entry would break the backup-phase rollback (the duplicate's
+	// empty backup entry deletes the just-restored file).
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte("---\nid: demo\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: stable\n---\n\nORIGINAL EXTRA\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte("---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\n---\n"), 0644)
+
+	// Sabotage the backup phase: a directory occupying the main spec's backup
+	// name makes the rename fail after the appendix was already moved aside.
+	if err := os.MkdirAll(filepath.Join(stableDir, ".sf-backup-unit_demo.md"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("promote must fail when the backup phase fails")
+	}
+
+	// The stable appendix must survive the rollback with its original content.
+	data, err := os.ReadFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"))
+	if err != nil {
+		t.Fatalf("stable appendix lost on rollback: %v", err)
+	}
+	if !strings.Contains(string(data), "ORIGINAL EXTRA") {
+		t.Fatalf("stable appendix content corrupted: %s", data)
+	}
+}
+
+func TestPromoteUnitRetiredKeepsNoCandidateAppendix(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Stable layer holds the unit from a previous round, including a
+	// non-retired appendix that must disappear with the unit.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	stableAppendixDir := filepath.Join(stableDir, "appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: demo\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
+	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: stable\n---\n\nExtra\n"), 0644)
+
+	// The candidate main spec is retired, but the candidate appendix is NOT
+	// marked retired — the documented unit-retirement procedure only requires
+	// the status on the main spec.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\n---\n\nExtra\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+
+	// The whole unit is gone from every layer — no stable appendix may
+	// survive a retiring unit, even one whose candidate copy was not marked
+	// retired.
+	for _, p := range []string{
+		"docs/specs/units/stable/unit_demo.md",
+		"docs/specs/units/stable/appendix/unit_demo_extra.md",
+		"docs/specs/units/candidate/unit_demo.md",
+		"docs/specs/units/candidate/appendix/unit_demo_extra.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after retire", p)
+		}
+	}
+
+	// No candidate appendix may be promoted by a retire.
+	for _, a := range result.Actions {
+		if strings.Contains(a, "Promoted appendix") {
+			t.Fatalf("retire promote must not promote appendices, got action: %s", a)
+		}
+	}
+}
+
+func TestPromoteUnitRetiredNeverPromoted(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// A unit that was created and retired before ever reaching stable: retire
+	// must not create any stable files.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\n---\n\nExtra\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+
+	for _, p := range []string{
+		"docs/specs/units/stable/unit_demo.md",
+		"docs/specs/units/stable/appendix/unit_demo_extra.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not be created by retire", p)
+		}
+	}
+	for _, p := range []string{
+		"docs/specs/units/candidate/unit_demo.md",
+		"docs/specs/units/candidate/appendix/unit_demo_extra.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must be cleaned up after retire", p)
+		}
+	}
+}
+
+func TestPromoteUnitRetiredReferrerBlocked(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+	consumer := "---\nid: consumer\nlayer: candidate\nversion: 0.1.0\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
+	os.WriteFile(filepath.Join(candDir, "unit_consumer.md"), []byte(consumer), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected retire promote to be rejected while a unit still references it")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "still referenced by") {
+		t.Fatalf("expected referrer issue, got: %v", result.Issues)
+	}
+}
+
+func writePromotableUnit(t *testing.T, repoRoot, unit, unitRefs, ruleRefs string) {
+	t.Helper()
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: " + unit + "\nlayer: candidate\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: " + unit + ".core\n" +
+		"    description: Behavior.\n" +
+		"    verification_type: testable\n" +
+		"    verification_surface: internal/demo\n" +
+		"    implementation_surface: internal/demo\n" +
+		"    verification_method: Go test\n" +
+		"    pass_condition: passes.\n" +
+		"    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_"+unit+".md"), []byte(spec), 0644)
+}
+
+func TestPromoteUnitRefToRetiringCandidateRejects(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The referenced unit exists only in the candidate layer and is marked
+	// retired — promoting it is impossible, so the reference must be removed.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: retiring\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
+	os.WriteFile(filepath.Join(candDir, "unit_retiring.md"), []byte(retiredSpec), 0644)
+	writePromotableUnit(t, repoRoot, "consumer", "retiring", "none")
+
+	result := Promote(repoRoot, "consumer")
+	if result.Passed {
+		t.Fatalf("expected promote to be rejected for a reference to a retiring unit, issues: %v", result.Issues)
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
+		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteUnitRefToRetiringUnitWithStableRejects(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The referenced unit still has a stable copy today, but the candidate
+	// layer declares retirement — the stable copy is removed on promote, so
+	// the reference cannot survive.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableDir, "unit_retiring.md"), []byte("---\nid: retiring\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# retiring\n"), 0644)
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: retiring\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
+	os.WriteFile(filepath.Join(candDir, "unit_retiring.md"), []byte(retiredSpec), 0644)
+	writePromotableUnit(t, repoRoot, "consumer", "retiring", "none")
+
+	result := Promote(repoRoot, "consumer")
+	if result.Passed {
+		t.Fatalf("expected promote to be rejected for a reference to a retiring unit, issues: %v", result.Issues)
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
+		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteRuleRefToRetiringCandidateRejects(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The referenced rule exists only in the candidate layer and is marked
+	// retired — the reference must be removed before the rule is retired.
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(ruleDir, "b_rule_x.md"), []byte(retiredRule), 0644)
+	writePromotableUnit(t, repoRoot, "consumer", "none", "b_rule_x")
+
+	result := Promote(repoRoot, "consumer")
+	if result.Passed {
+		t.Fatalf("expected promote to be rejected for a reference to a retiring rule, issues: %v", result.Issues)
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
+		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteRuleRefToRetiringRuleWithStableRejects(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The referenced rule still has a stable copy today, but the candidate
+	// layer declares retirement — the stable copy is removed on promote, so
+	// the reference cannot survive.
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_x.md"), []byte("---\nrule_id: b_rule_x\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.1\nstatus: retired\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(ruleDir, "b_rule_x.md"), []byte(retiredRule), 0644)
+	writePromotableUnit(t, repoRoot, "consumer", "none", "b_rule_x")
+
+	result := Promote(repoRoot, "consumer")
+	if result.Passed {
+		t.Fatalf("expected promote to be rejected for a reference to a retiring rule, issues: %v", result.Issues)
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
+		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteRejectsRetiringAppendixRef(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n" +
+		"evidence_appendix_ref: unit_demo_evidence.md\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: demo.core\n" +
+		"    description: Behavior.\n" +
+		"    verification_type: testable\n" +
+		"    verification_surface: internal/demo\n" +
+		"    implementation_surface: internal/demo\n" +
+		"    verification_method: Go test\n" +
+		"    pass_condition: passes.\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      appendices:\n" +
+		"        - unit_demo_evidence.md\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_evidence.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nLegacy\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected promote to be rejected while the spec references a retiring appendix")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "retiring appendix") {
+		t.Fatalf("expected retiring-appendix issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteRejectsRetiringAppendixInlineFlowRef(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: demo.core\n" +
+		"    description: Behavior.\n" +
+		"    verification_type: testable\n" +
+		"    verification_surface: internal/demo\n" +
+		"    implementation_surface: internal/demo\n" +
+		"    verification_method: Go test\n" +
+		"    pass_condition: passes.\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      appendices: [unit_demo_evidence.md]\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_evidence.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nLegacy\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected promote to be rejected while the spec references a retiring appendix via inline flow form")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "retiring appendix") {
+		t.Fatalf("expected retiring-appendix issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteRetiredUnitWithOwnAppendixRefs(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// A retiring unit may still reference its own retiring appendix — both
+	// disappear together, so the reference is not checked.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candAppendixDir := filepath.Join(candDir, "appendix")
+	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n" +
+		"status: retired\nevidence_appendix_ref: unit_demo_evidence.md\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: demo.core\n" +
+		"    description: Behavior.\n" +
+		"    verification_type: testable\n" +
+		"    verification_surface: internal/demo\n" +
+		"    implementation_surface: internal/demo\n" +
+		"    verification_method: Go test\n" +
+		"    pass_condition: passes.\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      appendices:\n" +
+		"        - unit_demo_evidence.md\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
+	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_evidence.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nLegacy\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass with own appendix refs, issues: %v", result.Issues)
+	}
+	for _, p := range []string{
+		"docs/specs/units/candidate/unit_demo.md",
+		"docs/specs/units/candidate/appendix/unit_demo_evidence.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after retire", p)
+		}
+	}
+}
+
+func TestPromoteRuleRetired(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(stableDir, "b_rule_old.md"), []byte(stableRule), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Same version as stable: the version gate is skipped for retired rules.
+	retiredRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule retired\n"
+	os.WriteFile(filepath.Join(candDir, "b_rule_old.md"), []byte(retiredRule), 0644)
+	writeRuleValidateCache(t, repoRoot, "b_rule_old")
+
+	result := PromoteRule(repoRoot, "b_rule_old")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(stableDir, "b_rule_old.md")); !os.IsNotExist(err) {
+		t.Fatal("retired rule stable copy must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(candDir, "b_rule_old.md")); !os.IsNotExist(err) {
+		t.Fatal("retired candidate rule must be removed")
+	}
+}
+
+func TestPromoteRuleRetiredReferrerBlocked(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(candDir, "b_rule_x.md"), []byte(retiredRule), 0644)
+	writeRuleValidateCache(t, repoRoot, "b_rule_x")
+
+	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(unitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	consumer := "---\nid: consumer\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_x\n---\n\n# consumer\n"
+	os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(consumer), 0644)
+
+	result := PromoteRule(repoRoot, "b_rule_x")
+	if result.Passed {
+		t.Fatal("expected retire promote to be rejected while a unit still references it")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "still referenced by") {
+		t.Fatalf("expected referrer issue, got: %v", result.Issues)
+	}
+}
+
+func TestPromoteUnitRetiredOwnRefsExempt(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The retiring unit's own refs point to a unit that exists only in the
+	// candidate layer — normally a promote rejection, but the retiring spec's
+	// references disappear with it and are not checked.
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: only_candidate\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+	os.WriteFile(filepath.Join(candDir, "unit_only_candidate.md"), []byte("---\nid: only_candidate\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# only_candidate\n"), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass with own candidate-only refs, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(candDir, "unit_demo.md")); !os.IsNotExist(err) {
+		t.Fatal("retired candidate spec must be removed after promote")
+	}
+}
+
 func TestCommitStagedRollsBack(t *testing.T) {
 	dir := t.TempDir()
 
