@@ -63,12 +63,12 @@ generate_atom() {
     local begin_marker="==ATOM_BEGIN:${atom_id}=="
     local end_marker="==ATOM_END:${atom_id}=="
 
-    if ! echo "$target_content" | grep -qF "$begin_marker"; then
+    if ! grep -qF -- "$begin_marker" "$target_file"; then
       echo "WARNING: Missing begin marker '$begin_marker' in $target_rel (atom: $atom_id)"
       MISSING_MARKER=$((MISSING_MARKER + 1))
       continue
     fi
-    if ! echo "$target_content" | grep -qF "$end_marker"; then
+    if ! grep -qF -- "$end_marker" "$target_file"; then
       echo "WARNING: Missing end marker '$end_marker' in $target_rel (atom: $atom_id)"
       MISSING_MARKER=$((MISSING_MARKER + 1))
       continue
