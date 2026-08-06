@@ -695,11 +695,18 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 		}
 	}
 	// A retiring spec is removed from stable — layer-prefix references in its
-	// body have no post-promote target and are not checked.
+	// body and in its appendices have no post-promote target and are not
+	// checked (matching unit_validate_checklist.md: a retiring spec skips
+	// Check 7 entirely, including its appendices).
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	if strings.TrimSpace(fm["status"]) != "retired" {
-		scanContent(fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName), string(data))
+	if strings.TrimSpace(fm["status"]) == "retired" {
+		return CheckResult{
+			Name:    "Body layer-path check",
+			Status:  Pass,
+			Details: "spec is marked retired — layer-path check skipped",
+		}
 	}
+	scanContent(fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName), string(data))
 
 	appendixGlob := specpaths.CandidateAppendixGlob(unitName)
 	fullGlob := filepath.Join(repoRoot, filepath.FromSlash(appendixGlob))

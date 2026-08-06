@@ -22,7 +22,7 @@ Unit truth lives in:
 | stable | `docs/specs/units/stable/unit_{unit}.md` | `docs/specs/units/stable/appendix/unit_{unit}_{name}.md` |
 | candidate | `docs/specs/units/candidate/unit_{unit}.md` | `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md` |
 
-Unit frontmatter records identity, layer, version, `unit_refs`, and `rule_refs`. Appendix files may carry an optional `status` field (`active` or `exempt`) — see `framework/spec_writing_guide.md` §Appendix Files.
+Unit frontmatter records identity, layer, version, `unit_refs`, and `rule_refs`. Appendix files may carry an optional `status` field (`active`, `exempt`, or `retired`) — see `framework/spec_writing_guide.md` §Appendix Files.
 
 ## Rule
 

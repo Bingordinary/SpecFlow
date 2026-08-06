@@ -902,6 +902,27 @@ func TestCheckLayerPaths_RetiredSpecExempt(t *testing.T) {
 	}
 }
 
+func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
+	repoRoot := t.TempDir()
+	// A retiring unit takes every appendix with it: the appendix layer-path
+	// scan has no post-promote target and must be skipped together with the
+	// main spec (unit_validate_checklist.md: a retiring spec skips Check 7).
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	appendix := "---\nunit: test_unit\nlayer: candidate\n---\n\nReferences candidate/unit_auth.md.\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := checkLayerPaths(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for retiring unit appendix, got %s: %s", result.Status, result.Details)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Integration: ValidateCandidate end-to-end
 // ---------------------------------------------------------------------------
