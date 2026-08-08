@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fileops"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
@@ -448,6 +449,25 @@ func Promote(repoRoot, unitName string) *Result {
 		r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
 	}
 
+	// Step 6: Record (or remove) the promote-time code-surface baseline. It
+	// survives the cache cleanup — fresh@stable compares the current code
+	// surface against it. Written before the candidate removal so a failure
+	// leaves the candidate in place and promote can be re-run.
+	if retired {
+		if err := baseline.RemoveBaseline(repoRoot, "unit", unitName); err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove baseline: %v", err))
+			r.Passed = false
+			return r
+		}
+	} else {
+		if err := baseline.WriteUnitBaseline(repoRoot, unitName, content); err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to write baseline: %v — re-run promote or restore the baseline manually", err))
+			r.Passed = false
+			return r
+		}
+		r.Actions = append(r.Actions, fmt.Sprintf("Recorded baseline: docs/specs/meta/baseline/unit/%s.yaml", unitName))
+	}
+
 	// Step 7: Remove candidate files so file existence remains an unambiguous
 	// state signal. "Candidate file exists = being edited" — after promote, no
 	// editing is in progress. Appendices are removed first and the main spec
@@ -666,6 +686,25 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 			return r
 		}
 		r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
+	}
+
+	// Record (or remove) the promote-time baseline. The rule's observable
+	// surface is the archived rule file itself (a rule declares no code
+	// surface). Written before the candidate removal so a failure leaves the
+	// candidate in place and promote can be re-run.
+	if retired {
+		if err := baseline.RemoveBaseline(repoRoot, "rule", ruleID); err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove baseline: %v", err))
+			r.Passed = false
+			return r
+		}
+	} else {
+		if err := baseline.WriteRuleBaseline(repoRoot, ruleID); err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to write baseline: %v — re-run promote or restore the baseline manually", err))
+			r.Passed = false
+			return r
+		}
+		r.Actions = append(r.Actions, fmt.Sprintf("Recorded baseline: docs/specs/meta/baseline/rule/%s.yaml", ruleID))
 	}
 
 	// Step 8: Delete candidate rule file. A cleanup failure keeps the candidate

@@ -129,7 +129,7 @@ When findings mix resolution types (within one check or across checks), the `Res
 
 1. Read `docs/specs/units/candidate/unit_{unit}.md` and all non-exempt appendix files (see Prerequisite)
 2. Verify required frontmatter fields: `id`, `layer` (must be `"candidate"`), `version`, `unit_refs`, `rule_refs`
-3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `runnable`
+3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `runnable`. `implementation_surface` may be the placeholder `<pending>` during design-first rounds (the path is not yet known); the placeholder must be exactly `<pending>` — variants are reported for correction. A leftover `<pending>` is a MISMATCH in verify (Step 6), so it must be replaced with the real path once the implementation exists
 4. Verify all `unit_refs` point to existing spec files (bare name, e.g. `agent`). Resolve by searching candidate directory first (`unit_{name}.md`), then fall back to stable (`unit_{name}.md`).
 5. Verify all `rule_refs` point to existing rule files (global or bound)
 6. Verify any appendix files referenced in the spec body exist at the expected path
@@ -168,7 +168,7 @@ When findings mix resolution types (within one check or across checks), the `Res
 
 ## Check 2 — Design soundness
 
-**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented. The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
+**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the design decisions are closed, so the downstream executor is never forced to choose (see `framework/spec_writing_guide.md` §8 Authoring Baseline). The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
 
 **Execution steps:**
 
@@ -212,11 +212,23 @@ Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and
 
 Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5.2), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with evidence. Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
 
-**Step 5 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), no critical flaws found
+**Step 5 — Decision closure verification**
+Verify that the spec closes every implementation-affecting decision listed in `framework/spec_writing_guide.md` §8 Authoring Baseline (the "The Spec must close implementation-affecting decisions" list): which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility. The downstream executor must not be forced to choose.
+
+- **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
+- For each of the seven decisions: can the downstream executor determine the answer from the spec alone, without making a choice?
+  - For evidence-driven acceptance items (Step 2 waiver), the closure source is the evidence appendix: verify it records the item's behavior domain as directly readable behavioral truth (per `framework/spec_writing_guide.md` §2 `evidence_appendix_ref`), not only background, motivation, or patch notes.
+  - The "how acceptance proves the stated responsibility" decision is covered by Check 5's acceptance quality review — here, only confirm the acceptance items exist and can prove the stated responsibility.
+- If a decision is intentionally not made, the spec must state that boundary and explain why (per `framework/spec_writing_guide.md` §8, the "If a decision is intentionally not made" rule). An open decision without a stated boundary is a FAIL.
+- Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual.
+
+**FAIL:** any of the seven decisions is left open AND not explicitly bounded with a reason (fix_required: record the decision or declare the boundary; blocked when recording it requires user input — Execution Rules "missing decision")
+
+**Step 6 — Verdict**
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all seven §8 decisions closed or explicitly bounded, no critical flaws found
 - FAIL: specific findings reported
 
-**Check method:** Content reasoning + adversarial analysis + taste-level assessment (the subagent makes active engineering judgments)
+**Check method:** Content reasoning + adversarial analysis + taste-level assessment + decision closure verification (the subagent makes active engineering judgments)
 
 ---
 

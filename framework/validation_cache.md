@@ -183,14 +183,34 @@ The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is
 
 ## Freshness Check (read-only)
 
-`specflowctl fresh` (agent trigger `fresh@{target}` / `fresh@all`) reports cache freshness without executing any check:
+`specflowctl fresh` (agent triggers `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all`) reports freshness without executing any check:
 
-- **`specflowctl fresh`** — summary for every unit and rule with a candidate file (stable-only targets are not listed). One row per target with per-gate status and the overall `READY FOR PROMOTE: N of M` count.
-- **`specflowctl fresh --unit <name>`** / **`--rule <id>`** — detail for one target: per-gate status, the promote-identical rejection reason for any gate that is not fresh, and the cache timestamp for fresh gates.
+- **`specflowctl fresh`** (alias of `--scope candidate`) — summary for every unit and rule with a candidate file. One row per target with per-gate status and the overall `READY FOR PROMOTE: N of M` count.
+- **`specflowctl fresh --scope stable`** — summary for every stable unit and rule. One row per target with its drift state (see Stable Drift Baseline below). Stable targets have no promote gate and are never counted in `READY FOR PROMOTE`.
+- **`specflowctl fresh --scope all`** — candidate summary and stable summary in one report. `READY FOR PROMOTE` covers the candidate section only.
+- **`specflowctl fresh --unit <name>`** / **`--rule <id>`** — detail for one target. A target that exists only in stable (no candidate file) reports the stable drift detail instead of candidate gate statuses.
 
 The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (review with P0/P1) / `OK` (appendix). Classification reuses the same checks as `specflowctl promote` (Staleness Detection above), so a fresh report and a promote run never disagree. For a retiring unit only the validate gate is reported, matching promote's gate set.
 
-`fresh` is strictly read-only: it never writes or deletes caches and never triggers validate/verify/review. Its purpose is operational visibility — while iterating on multiple units that share files, a change to one unit that invalidates another unit's caches shows up as `STALE` immediately.
+`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify/review. Its purpose is operational visibility — while iterating on multiple units that share files, a change to one unit that invalidates another unit's caches shows up as `STALE` immediately.
+
+## Stable Drift Baseline
+
+Promote records a **baseline**: a SHA-256 hash snapshot of the promoted target's code surface. Baselines live under `docs/specs/meta/baseline/` (`unit/{name}.yaml`, `rule/{id}.yaml`), are written by `specflowctl promote` (and removed when the target is retired), and are kept after promote deletes the caches. The baseline is a data snapshot, not a state machine — "drift" is never persisted, it is recomputed on every read.
+
+- **Unit baseline:** the files declared by `implementation_surface` (directories expanded recursively) and `affects.files`. A fresh `verify@{unit}` against stable silences the comparison: the code was recently confirmed to still conform.
+- **Rule baseline:** the stable rule file itself (a rule declares no code surface) — it detects direct edits to a stable rule that bypass the fork flow.
+
+`fresh`'s stable scope compares the current code surface against the baseline:
+
+| State | Meaning |
+|---|---|
+| `VERIFIED` | A fresh stable verify cache exists — the code was recently confirmed to still conform. Silences the baseline comparison. |
+| `OK` | No verify cache; the code surface matches the promote-time baseline. |
+| `CHANGED` | The surface differs from the baseline (files changed, missing, or added — the report names them). The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
+| `MISSING` | No baseline recorded (the target was promoted before baseline support). |
+
+The report states what it mechanically knows: `CHANGED` means "code changed since promote" — it never claims the spec is violated. Semantic confirmation is always a user-triggered `verify@{unit}` against the stable target.
 
 ## Important
 

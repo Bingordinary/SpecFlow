@@ -1029,3 +1029,89 @@ func TestCheckAppendicesInCache_GlobErrorFailsClosed(t *testing.T) {
 		t.Fatal("expected glob failure to reject the gate, got fresh")
 	}
 }
+
+func TestCheckVerifyStable(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(stableDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(stableDir, "unit_test.md")
+	specContent := "---\nid: test\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// verify@stable records the STABLE spec path in its files list.
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: stable\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\nAll items aligned.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerifyStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh for stable verify cache, got: %s", result.Reason)
+	}
+
+	// The candidate-based CheckVerify must NOT accept a stable-path cache:
+	// it proves nothing about a candidate round.
+	candResult, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candResult.Fresh {
+		t.Fatalf("CheckVerify must reject a stable-path verify cache")
+	}
+}
+
+func TestCheckVerifyStable_CodeChanged(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(stableDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+
+	specPath := filepath.Join(stableDir, "unit_test.md")
+	os.WriteFile(specPath, []byte("---\nid: test\nlayer: stable\nversion: 0.1.0\n---\n"), 0644)
+
+	srcPath := filepath.Join(srcDir, "handler.go")
+	os.WriteFile(srcPath, []byte("package main\nfunc main() {}\n"), 0644)
+
+	specHash, _ := fileHash(specPath)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: stable\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n---\n"
+	os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644)
+
+	// Code changes after the stable verify -> cache goes stale, so the
+	// silence no longer applies and baseline drift shows.
+	os.WriteFile(srcPath, []byte("package main\nfunc main() { println(\"changed\") }\n"), 0644)
+
+	result, err := CheckVerifyStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatalf("expected stale after code change, got: %s", result.Reason)
+	}
+}

@@ -82,6 +82,16 @@ func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
 
+// CheckVerifyStable reads and validates the verify cache for the given unit
+// against the STABLE spec path. A verify@stable run (verify code against a
+// stable unit, no candidate round) records the stable main spec in its files
+// list; the candidate-based CheckVerify cannot validate such a cache. The
+// fresh stable report uses it to silence baseline drift: a fresh stable
+// verify cache means the code was recently confirmed to still conform.
+func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+}
+
 // CheckAppendicesInCache verifies that every non-exempt candidate appendix for
 // the given unit is listed in the validate_result.md cache file. This is a
 // mechanical promote gate — it ensures the agent included all appendix files

@@ -183,6 +183,27 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 		}
 	}
 
+	// Validate implementation_surface values (must be non-empty; <pending>
+	// is the legal design-first placeholder — verify blocks on any leftover
+	// <pending>, see framework/unit_verify_checklist.md Step 6)
+	var emptySurface int
+	for _, line := range itemLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "implementation_surface:") {
+			parts := strings.SplitN(trimmed, ":", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) == "" {
+				emptySurface++
+			}
+		}
+	}
+	if emptySurface > 0 {
+		return CheckResult{
+			Name:    "Acceptance items",
+			Status:  Fail,
+			Details: fmt.Sprintf("%d item(s) have an empty implementation_surface; use the <pending> placeholder during design-first rounds", emptySurface),
+		}
+	}
+
 	return CheckResult{
 		Name:    "Acceptance items",
 		Status:  Pass,
@@ -218,50 +239,7 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	var anchorFiles []string
-	lines := strings.Split(content, "\n")
-	inAcceptanceBlock := false
-	inFilesBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.Contains(trimmed, "acceptance_item_set:") {
-			inAcceptanceBlock = true
-			continue
-		}
-
-		if inAcceptanceBlock {
-			// Stop if we hit a new top-level section
-			if trimmed != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "#") {
-				if strings.Contains(trimmed, ":") && !strings.HasPrefix(trimmed, "-") {
-					if trimmed == "acceptance_item_set:" || strings.HasPrefix(trimmed, "acceptance_item_set") {
-						continue
-					}
-					if !strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "- ") {
-						break
-					}
-				}
-			}
-
-			if strings.TrimSpace(line) == "files:" || (strings.Contains(line, "files:") && strings.HasPrefix(line, "      ")) {
-				inFilesBlock = true
-				continue
-			}
-
-			if inFilesBlock {
-				trimFile := strings.TrimSpace(line)
-				if strings.HasPrefix(trimFile, "- ") {
-					fpath := trimFile[2:]
-					if fpath != "" {
-						anchorFiles = append(anchorFiles, fpath)
-					}
-				} else if trimFile != "" && !strings.HasPrefix(line, "      ") && !strings.HasPrefix(line, "        ") {
-					inFilesBlock = false
-				}
-			}
-		}
-	}
+	anchorFiles := ExtractAffectsFiles(content)
 
 	if len(anchorFiles) == 0 {
 		return CheckResult{

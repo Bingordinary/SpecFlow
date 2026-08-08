@@ -225,7 +225,7 @@ acceptance_item_set:
 | `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
-| `implementation_surface` | yes | Implementation code surface path |
+| `implementation_surface` | yes | Implementation code surface path. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH |
 | `verification_method` | yes | How to verify (e.g. "Go test for demo behavior") |
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |

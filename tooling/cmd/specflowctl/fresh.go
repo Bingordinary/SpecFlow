@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -40,6 +41,7 @@ func runFresh(args []string, stdout, stderr io.Writer) error {
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	unitPtr := fs.String("unit", "", "unit name")
 	ruleIDPtr := fs.String("rule", "", "rule id")
+	scopePtr := fs.String("scope", "candidate", "scope: candidate | stable | all")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -47,6 +49,13 @@ func runFresh(args []string, stdout, stderr io.Writer) error {
 	absRoot := mustAbs(*repoRootPtr)
 	unitName := strings.TrimSpace(*unitPtr)
 	ruleID := strings.TrimSpace(*ruleIDPtr)
+	scope := strings.TrimSpace(strings.ToLower(*scopePtr))
+
+	switch scope {
+	case "candidate", "stable", "all":
+	default:
+		return fmt.Errorf("invalid --scope %q: must be candidate, stable, or all", scope)
+	}
 
 	if unitName != "" && ruleID != "" {
 		writeFreshUsage(stderr)
@@ -59,15 +68,31 @@ func runFresh(args []string, stdout, stderr io.Writer) error {
 	case ruleID != "":
 		return writeRuleFreshDetail(stdout, absRoot, ruleID)
 	default:
-		return writeAllFresh(stdout, absRoot)
+		return writeAllFresh(stdout, absRoot, scope)
 	}
 }
 
 // ------------------------------------------------------------
-// Summary mode (specflowctl fresh — all candidates)
+// Summary mode (specflowctl fresh [--scope ...])
 // ------------------------------------------------------------
 
-func writeAllFresh(stdout io.Writer, absRoot string) error {
+func writeAllFresh(stdout io.Writer, absRoot, scope string) error {
+	if scope == "candidate" || scope == "all" {
+		if err := writeCandidateFreshSection(stdout, absRoot); err != nil {
+			return err
+		}
+	}
+	if scope == "stable" || scope == "all" {
+		if err := writeStableFreshSection(stdout, absRoot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeCandidateFreshSection reports the cache freshness of every active
+// candidate (the promote-readiness view).
+func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 	unitNames, err := candidateUnitNames(absRoot)
 	if err != nil {
 		return err
@@ -118,6 +143,70 @@ func writeAllFresh(stdout io.Writer, absRoot string) error {
 	return nil
 }
 
+// writeStableFreshSection reports the drift state of every stable target
+// (the code-surface view). Stable targets have no promote gate — the state
+// is either a fresh stable verify cache (VERIFIED) or the baseline
+// comparison (OK / CHANGED / NONE).
+func writeStableFreshSection(stdout io.Writer, absRoot string) error {
+	unitNames, err := stableUnitNames(absRoot)
+	if err != nil {
+		return err
+	}
+	ruleIDs, err := stableRuleIDs(absRoot)
+	if err != nil {
+		return err
+	}
+
+	if len(unitNames) == 0 && len(ruleIDs) == 0 {
+		fmt.Fprintln(stdout, "No stable targets found.")
+		return nil
+	}
+
+	if len(unitNames) > 0 {
+		fmt.Fprintf(stdout, "STABLE UNITS (%d):\n", len(unitNames))
+		for _, name := range unitNames {
+			fmt.Fprintf(stdout, "  %s\n", stableUnitSummaryLine(absRoot, name))
+		}
+		fmt.Fprintln(stdout)
+	}
+
+	if len(ruleIDs) > 0 {
+		fmt.Fprintf(stdout, "STABLE RULES (%d):\n", len(ruleIDs))
+		for _, id := range ruleIDs {
+			fmt.Fprintf(stdout, "  %s\n", stableRuleSummaryLine(absRoot, id))
+		}
+		fmt.Fprintln(stdout)
+	}
+
+	return nil
+}
+
+// stableUnitSummaryLine reports one stable unit's drift state. A fresh
+// stable verify cache (recently confirmed to still conform) silences the
+// baseline comparison.
+func stableUnitSummaryLine(repoRoot, unitName string) string {
+	vStatus, _ := validationcache.CheckVerifyStable(repoRoot, unitName)
+	if vStatus.Fresh {
+		return fmt.Sprintf("%-13s  %-9s  %s", unitName, "VERIFIED", "verify cache is fresh — code confirmed to still conform")
+	}
+	return stableBaselineSummaryLine(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName))
+}
+
+func stableRuleSummaryLine(repoRoot, ruleID string) string {
+	return stableBaselineSummaryLine(repoRoot, ruleID, baseline.CheckRuleBaseline(repoRoot, ruleID))
+}
+
+func stableBaselineSummaryLine(repoRoot, name string, result baseline.CheckResult) string {
+	switch result.Status {
+	case baseline.StatusOK:
+		return fmt.Sprintf("%-13s  %-9s  %s", name, "OK", result.Details)
+	case baseline.StatusChanged:
+		return fmt.Sprintf("%-13s  %-9s  %s", name, "CHANGED", result.Details)
+	default:
+		return fmt.Sprintf("%-13s  %-9s  %s", name, "MISSING", result.Details)
+	}
+}
+
 func unitSummaryLine(repoRoot, unitName string) (string, bool) {
 	if isRetiringUnit(repoRoot, unitName) {
 		vStatus, _ := checkUnitGate(repoRoot, unitName, "validate")
@@ -148,6 +237,14 @@ func ruleSummaryLine(repoRoot, ruleID string) (string, bool) {
 // ------------------------------------------------------------
 
 func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
+	// A stable-only unit has no candidate round — report its drift state
+	// instead of candidate gate statuses.
+	if _, err := os.Stat(filepath.Join(absRoot, "docs/specs/units/stable", "unit_"+unitName+".md")); err == nil {
+		if _, err := os.Stat(filepath.Join(absRoot, "docs/specs/units/candidate", "unit_"+unitName+".md")); os.IsNotExist(err) {
+			return writeUnitStableFreshDetail(stdout, absRoot, unitName)
+		}
+	}
+
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (unit)\n\n", unitName)
 
 	nonFresh := 0
@@ -202,7 +299,39 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	return nil
 }
 
+func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) error {
+	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (unit, stable)\n\n", unitName)
+
+	vStatus, _ := validationcache.CheckVerifyStable(absRoot, unitName)
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", classifyGate(vStatus), vStatus.Reason)
+	if vStatus.Fresh {
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Drift: none — verify cache is fresh (code confirmed to still conform).")
+		return nil
+	}
+
+	result := baseline.CheckUnitBaseline(absRoot, unitName)
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
+	fmt.Fprintln(stdout)
+	switch result.Status {
+	case baseline.StatusOK:
+		fmt.Fprintln(stdout, "Drift: none — code surface matches the promote-time baseline.")
+	case baseline.StatusChanged:
+		fmt.Fprintln(stdout, "Drift: possible — code changed since promote. Run verify against stable to confirm.")
+	default:
+		fmt.Fprintln(stdout, "No baseline recorded for this stable unit (promoted before baseline support).")
+	}
+	return nil
+}
+
 func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
+	// A stable-only rule has no candidate round — report its drift state.
+	if _, err := os.Stat(filepath.Join(absRoot, "docs/specs/rules/stable", ruleID+".md")); err == nil {
+		if _, err := os.Stat(filepath.Join(absRoot, "docs/specs/rules/candidate", ruleID+".md")); os.IsNotExist(err) {
+			return writeRuleStableFreshDetail(stdout, absRoot, ruleID)
+		}
+	}
+
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule)\n\n", ruleID)
 
 	vStatus, vDetail := checkRuleGate(absRoot, ruleID)
@@ -217,6 +346,23 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: yes\n")
 	} else {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — validate needs attention\n")
+	}
+	return nil
+}
+
+func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
+	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule, stable)\n\n", ruleID)
+
+	result := baseline.CheckRuleBaseline(absRoot, ruleID)
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
+	fmt.Fprintln(stdout)
+	switch result.Status {
+	case baseline.StatusOK:
+		fmt.Fprintln(stdout, "Drift: none — rule file matches the promote-time baseline.")
+	case baseline.StatusChanged:
+		fmt.Fprintln(stdout, "Drift: possible — rule file changed since promote.")
+	default:
+		fmt.Fprintln(stdout, "No baseline recorded for this stable rule (promoted before baseline support).")
 	}
 	return nil
 }
@@ -318,7 +464,15 @@ func readSummary(repoRoot, targetKind, targetName, fileName string) *validationc
 // ------------------------------------------------------------
 
 func candidateUnitNames(repoRoot string) ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_*.md"))
+	return unitNamesInLayer(repoRoot, "candidate")
+}
+
+func stableUnitNames(repoRoot string) ([]string, error) {
+	return unitNamesInLayer(repoRoot, "stable")
+}
+
+func unitNamesInLayer(repoRoot, layer string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "docs/specs/units/"+layer+"/unit_*.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +485,15 @@ func candidateUnitNames(repoRoot string) ([]string, error) {
 }
 
 func candidateRuleIDs(repoRoot string) ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(repoRoot, "docs/specs/rules/candidate/*.md"))
+	return ruleIDsInLayer(repoRoot, "candidate")
+}
+
+func stableRuleIDs(repoRoot string) ([]string, error) {
+	return ruleIDsInLayer(repoRoot, "stable")
+}
+
+func ruleIDsInLayer(repoRoot, layer string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "docs/specs/rules/"+layer+"/*.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -354,15 +516,17 @@ func isRetiringUnit(repoRoot, unitName string) bool {
 
 func writeFreshUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl fresh [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl fresh [--scope candidate|stable|all] [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl fresh --unit UNIT [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl fresh --rule RULE_ID [--repo-root PATH]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Reports cache freshness for all active candidates (no flags),")
-	fmt.Fprintln(w, "or for a single unit/rule target. Read-only: never writes or")
-	fmt.Fprintln(w, "deletes caches, never runs validate/verify/review.")
+	fmt.Fprintln(w, "Reports cache freshness for all active candidates (default --scope")
+	fmt.Fprintln(w, "candidate), drift state for all stable targets (--scope stable), or")
+	fmt.Fprintln(w, "both (--scope all), or for a single unit/rule target. Read-only:")
+	fmt.Fprintln(w, "never writes or deletes caches, never runs validate/verify/review.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
+	fmt.Fprintln(w, "  --scope SCOPE    candidate | stable | all (default: candidate)")
 	fmt.Fprintln(w, "  --unit UNIT      Unit name for single-target report")
 	fmt.Fprintln(w, "  --rule RULE_ID   Rule id for single-target report")
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")

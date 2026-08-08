@@ -635,13 +635,16 @@ Do not classify the resolution direction — defer to Step 7.
 
 ## Step 6 — Stub & Placeholder Scan
 
-**Purpose:** Systematically scan implementation files for known "not done" patterns. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders.
+**Purpose:** Systematically scan for known "not done" patterns — in the spec's implementation mapping and in implementation files. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders.
 
 **Execution steps:**
 
-1. Collect all implementation files from `implementation_surface` paths and `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
+1. **Spec-side placeholder check (before collecting files):** For each acceptance item, read the `implementation_surface` value:
+   - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled — the mapping must be completed before verify can locate the implementation (do not classify yet — defer to Step 7)
 
-2. For each file, run these commands and record findings:
+2. Collect all implementation files from `implementation_surface` paths and `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
+
+3. For each file, run these commands and record findings:
 
    a. Stub/empty patterns:
    ```bash
@@ -658,14 +661,14 @@ Do not classify the resolution direction — defer to Step 7.
    grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
    ```
 
-3. Per-file result:
+4. Per-file result:
    ```
    {file}: CLEAN | STUB_FOUND
      - line 5: // TODO: connect to database (debt_marker)
      - line 12: return Response.json({}) (empty_response)
    ```
 
-4. Any stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
+5. Any stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
 
 **PASS:** No stubs or placeholders found
 

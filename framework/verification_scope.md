@@ -60,10 +60,12 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `fresh@{target}` | Read-only report of the target's cache freshness. Runs `specflowctl fresh --unit <name>` (unit) or `--rule <id>` (rule) and reports each applicable gate (unit: validate / verify / review / appendix; rule: validate only) plus a `READY FOR PROMOTE` conclusion. |
-| `fresh@all` | Read-only report of every active candidate's cache freshness. Runs `specflowctl fresh` and reports each unit and rule with a candidate file, sorted and grouped, with the overall `READY FOR PROMOTE: N of M` count. |
+| `fresh@{target}` | Read-only report of the target's cache freshness. Runs `specflowctl fresh --unit <name>` (unit) or `--rule <id>` (rule) and reports each applicable gate (unit: validate / verify / review / appendix; rule: validate only) plus a `READY FOR PROMOTE` conclusion. A stable-only target (no candidate file) reports its drift state instead. |
+| `fresh@candidate` | Read-only report of every active candidate's cache freshness. Runs `specflowctl fresh --scope candidate` and reports each unit and rule with a candidate file, sorted and grouped, with the overall `READY FOR PROMOTE: N of M` count. |
+| `fresh@stable` | Read-only drift report of every stable unit and rule. Runs `specflowctl fresh --scope stable` and reports each target's drift state (`VERIFIED` / `OK` / `CHANGED` / `MISSING` — see Stable Drift Baseline in `framework/validation_cache.md`). |
+| `fresh@all` | Read-only report of both active candidates and stable targets. Runs `specflowctl fresh --scope all`; `READY FOR PROMOTE` covers the candidate section only. |
 
-`fresh` has no `full`/`targeted` distinction and no `:keyword` variant — it does not execute any check, it only inspects cache files and re-computes hashes with the same logic promote uses. It never writes, deletes, or touches caches, and it never runs validate/verify/review. A `fresh@` query is always safe to run and never invalidates a gate.
+`fresh` has no `full`/`targeted` distinction and no `:keyword` variant — it does not execute any check, it only inspects cache files, baseline files, and re-computes hashes with the same logic promote uses. It never writes, deletes, or touches caches or baselines, and it never runs validate/verify/review. A `fresh@` query is always safe to run and never invalidates a gate.
 
 Gate status vocabulary: `FRESH` (cache exists and satisfies the gate), `STALE` (cache exists but files changed, coverage is incomplete, or mode/result is invalid — re-running the gate fixes it), `MISSING` (no cache file — never run, or run failed and the cache was deleted), `BLOCKED` (review only: cache declares P0/P1 findings), `OK` (appendix gate: all appendices are covered by the validate cache).
 

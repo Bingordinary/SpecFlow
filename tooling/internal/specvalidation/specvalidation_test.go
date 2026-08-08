@@ -179,6 +179,46 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test item\n"+
+			"    verification_type: auto\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface:\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n")
+	result := checkAcceptanceItems(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatal("expected FAIL for empty implementation_surface value")
+	}
+}
+
+func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T) {
+	repoRoot := t.TempDir()
+	// <pending> is the legal design-first placeholder — the path is not yet
+	// known; verify blocks on any leftover <pending>.
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test item\n"+
+			"    verification_type: auto\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: <pending>\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n")
+	result := checkAcceptanceItems(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for <pending> implementation_surface, got %s: %s", result.Status, result.Details)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Check 3: Anchor integrity
 // ---------------------------------------------------------------------------
@@ -241,6 +281,78 @@ func TestCheckAnchors_MissingFileFail(t *testing.T) {
 	result := checkAnchors(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for missing anchor file")
+	}
+}
+
+func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
+	repoRoot := t.TempDir()
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "handler.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// affects.files sits in the middle of the item set; the next item's
+	// "- id:" line must not be collected as an anchor file.
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test\n"+
+			"    verification_type: auto\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: src/\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n"+
+			"    affects:\n"+
+			"      files:\n"+
+			"        - src/handler.go\n"+
+			"  - id: item_2\n"+
+			"    description: test\n"+
+			"    verification_type: auto\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: src/\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n")
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for files block followed by next item, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
+	repoRoot := t.TempDir()
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "handler.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The files block is followed by a block-form appendices sub-block; its
+	// 8-space "- evidence.md" entries must not be collected as anchor files.
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test\n"+
+			"    verification_type: auto\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: src/\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n"+
+			"    affects:\n"+
+			"      files:\n"+
+			"        - src/handler.go\n"+
+			"      appendices:\n"+
+			"        - unit_test_unit_evidence.md\n")
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for files block followed by block-form appendices, got %s: %s", result.Status, result.Details)
 	}
 }
 

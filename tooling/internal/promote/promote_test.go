@@ -945,3 +945,107 @@ func TestPromoteRuleCandidateRemovalFailure(t *testing.T) {
 		t.Fatal("candidate rule must survive a cleanup failure")
 	}
 }
+
+func TestPromoteUnit_WritesBaseline(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	if _, err := os.Stat(basePath); err != nil {
+		t.Fatalf("baseline not written: %v", err)
+	}
+}
+
+func TestPromoteUnitRetired_RemovesBaseline(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Simulate a previous round: stable unit exists and a baseline was
+	// recorded at that promote.
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableSpec := "---\nid: demo\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(basePath, []byte("kind: unit\nname: demo\nsurfaces: []\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nlayer: candidate\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+
+	if _, err := os.Stat(basePath); !os.IsNotExist(err) {
+		t.Fatalf("baseline must be removed on retire, stat err: %v", err)
+	}
+}
+
+func TestPromoteRule_WritesBaseline(t *testing.T) {
+	repoRoot := t.TempDir()
+	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rule := "---\nrule_id: g_rule_test\nrule_scope: global\nlayer: candidate\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	if err := os.WriteFile(filepath.Join(ruleDir, "g_rule_test.md"), []byte(rule), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeRuleValidateCache(t, repoRoot, "g_rule_test")
+
+	result := PromoteRule(repoRoot, "g_rule_test")
+	if !result.Passed {
+		t.Fatalf("expected rule promote to pass, issues: %v", result.Issues)
+	}
+
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/g_rule_test.yaml")
+	if _, err := os.Stat(basePath); err != nil {
+		t.Fatalf("rule baseline not written: %v", err)
+	}
+}
+
+func TestPromoteRuleRetired_RemovesBaseline(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableDir, "b_rule_test.md"), []byte("---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: stable\nrule_version: 1.0.0\n---\n\nTruth\n"), 0644)
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_test.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(basePath, []byte("kind: rule\nname: b_rule_test\nsurfaces: []\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredRule := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 1.0.1\nstatus: retired\n---\n\nRetired\n"
+	os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(retiredRule), 0644)
+	writeRuleValidateCache(t, repoRoot, "b_rule_test")
+
+	result := PromoteRule(repoRoot, "b_rule_test")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+
+	if _, err := os.Stat(basePath); !os.IsNotExist(err) {
+		t.Fatalf("rule baseline must be removed on retire, stat err: %v", err)
+	}
+}

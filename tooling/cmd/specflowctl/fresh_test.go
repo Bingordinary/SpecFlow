@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 )
 
 func assertGateStatus(t *testing.T, output, gate, status string) {
@@ -383,5 +385,230 @@ func TestFreshMutuallyExclusive(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("expected mutual-exclusion error, got: %v", err)
+	}
+}
+
+func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
+	t.Helper()
+	dir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "unit_"+name+".md")
+	content := "---\nid: " + name + "\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeStableRuleSpec(t *testing.T, repoRoot, id string) string {
+	t.Helper()
+	dir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, id+".md")
+	content := "---\nrule_id: " + id + "\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestFreshStableScope verifies --scope stable lists every stable target with
+// its drift state and --scope all shows both sections without counting stable
+// targets in READY FOR PROMOTE.
+func TestFreshStableScope(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// A candidate (for the all-scope readiness count) and two stable units:
+	// one with a matching baseline, one with no baseline.
+	writeUnitSpec(t, repoRoot, "active")
+	writeStableUnitSpec(t, repoRoot, "settled")
+	writeStableUnitSpec(t, repoRoot, "legacy")
+
+	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: settled.core\n" +
+		"    description: t\n" +
+		"    verification_type: auto\n" +
+		"    verification_surface: src/\n" +
+		"    implementation_surface: src/\n" +
+		"    verification_method: check\n" +
+		"    pass_condition: ok\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      files:\n" +
+		"        - src/a.go\n"
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "STABLE UNITS (2):") {
+		t.Fatalf("expected STABLE UNITS section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "settled") || !strings.Contains(out, "OK") {
+		t.Fatalf("expected settled OK, got:\n%s", out)
+	}
+	if !strings.Contains(out, "legacy") || !strings.Contains(out, "MISSING") {
+		t.Fatalf("expected legacy MISSING, got:\n%s", out)
+	}
+	if strings.Contains(out, "READY FOR PROMOTE") {
+		t.Fatalf("stable scope must not report promote readiness:\n%s", out)
+	}
+	if strings.Contains(out, "active") {
+		t.Fatalf("stable scope must not list candidates:\n%s", out)
+	}
+
+	outAll, err := freshRun(t, repoRoot, "--scope", "all")
+	if err != nil {
+		t.Fatalf("fresh --scope all: %v", err)
+	}
+	if !strings.Contains(outAll, "UNITS (1):") || !strings.Contains(outAll, "STABLE UNITS (2):") {
+		t.Fatalf("expected both sections in all scope, got:\n%s", outAll)
+	}
+	if !strings.Contains(outAll, "READY FOR PROMOTE: 0 of 1") {
+		t.Fatalf("ready count must cover candidates only, got:\n%s", outAll)
+	}
+}
+
+// TestFreshStableScope_VerifiedSilence verifies a fresh stable verify cache
+// silences the baseline comparison.
+func TestFreshStableScope_VerifiedSilence(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableUnitSpec(t, repoRoot, "settled")
+
+	// Baseline says the surface is unchanged...
+	specPath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_settled.md")
+	specHash := computeHash(specPath)
+	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: settled.core\n" +
+		"    description: t\n" +
+		"    verification_type: auto\n" +
+		"    verification_surface: src/\n" +
+		"    implementation_surface: src/\n" +
+		"    verification_method: check\n" +
+		"    pass_condition: ok\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      files:\n" +
+		"        - src/a.go\n"
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+		t.Fatal(err)
+	}
+
+	// ...but the surface has changed since. A fresh verify@stable cache (with
+	// the STABLE spec path in its files list) must override the CHANGED state.
+	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
+	writeUnitCache(t, repoRoot, "settled", "verify", "target: stable\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "VERIFIED") {
+		t.Fatalf("expected VERIFIED (silenced by fresh verify cache), got:\n%s", out)
+	}
+	if strings.Contains(out, "CHANGED") {
+		t.Fatalf("expected no CHANGED when verify cache is fresh, got:\n%s", out)
+	}
+}
+
+// TestFreshStableScope_Changed verifies a changed surface reports CHANGED
+// with the offending files when no fresh verify cache exists.
+func TestFreshStableScope_Changed(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableUnitSpec(t, repoRoot, "settled")
+
+	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: settled.core\n" +
+		"    description: t\n" +
+		"    verification_type: auto\n" +
+		"    verification_surface: src/\n" +
+		"    implementation_surface: src/\n" +
+		"    verification_method: check\n" +
+		"    pass_condition: ok\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      files:\n" +
+		"        - src/a.go\n"
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "CHANGED") {
+		t.Fatalf("expected CHANGED, got:\n%s", out)
+	}
+	if !strings.Contains(out, "src/a.go") {
+		t.Fatalf("expected changed file in details, got:\n%s", out)
+	}
+}
+
+// TestFreshStableUnitDetail verifies --unit on a stable-only unit reports the
+// drift detail.
+func TestFreshStableUnitDetail(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableUnitSpec(t, repoRoot, "settled")
+
+	out, err := freshRun(t, repoRoot, "--unit", "settled")
+	if err != nil {
+		t.Fatalf("fresh --unit settled: %v", err)
+	}
+	if !strings.Contains(out, "(unit, stable)") {
+		t.Fatalf("expected stable detail header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "MISSING") {
+		t.Fatalf("expected MISSING baseline state, got:\n%s", out)
+	}
+}
+
+// TestFreshInvalidScope verifies an invalid scope is rejected.
+func TestFreshInvalidScope(t *testing.T) {
+	repoRoot := t.TempDir()
+	_, err := freshRun(t, repoRoot, "--scope", "bogus")
+	if err == nil {
+		t.Fatal("expected error for invalid scope")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Fatalf("expected scope value in error, got: %v", err)
+	}
+}
+
+// TestFreshStableRules verifies stable rules appear in the stable scope.
+func TestFreshStableRules(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableRuleSpec(t, repoRoot, "g_rule_demo")
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "STABLE RULES (1):") || !strings.Contains(out, "g_rule_demo") {
+		t.Fatalf("expected stable rules section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "MISSING") {
+		t.Fatalf("expected MISSING for baseline-less rule, got:\n%s", out)
 	}
 }
