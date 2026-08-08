@@ -67,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runValidate(args[1:], stdout, stderr)
 	case "consumers":
 		return runConsumers(args[1:], stdout, stderr)
+	case "fresh":
+		return runFresh(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -517,6 +519,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
+	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }
 

@@ -56,6 +56,19 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 > `verify` on a Rule target has been removed. If the user says `verify@{rule}`, report: "Rule verify has been removed. Run `validate@{rule}` instead." See `framework/concepts.md` for context.
 
+### Freshness check (read-only)
+
+| User says | What agent does |
+|-----------|-----------------|
+| `fresh@{target}` | Read-only report of the target's cache freshness. Runs `specflowctl fresh --unit <name>` (unit) or `--rule <id>` (rule) and reports each applicable gate (unit: validate / verify / review / appendix; rule: validate only) plus a `READY FOR PROMOTE` conclusion. |
+| `fresh@all` | Read-only report of every active candidate's cache freshness. Runs `specflowctl fresh` and reports each unit and rule with a candidate file, sorted and grouped, with the overall `READY FOR PROMOTE: N of M` count. |
+
+`fresh` has no `full`/`targeted` distinction and no `:keyword` variant — it does not execute any check, it only inspects cache files and re-computes hashes with the same logic promote uses. It never writes, deletes, or touches caches, and it never runs validate/verify/review. A `fresh@` query is always safe to run and never invalidates a gate.
+
+Gate status vocabulary: `FRESH` (cache exists and satisfies the gate), `STALE` (cache exists but files changed, coverage is incomplete, or mode/result is invalid — re-running the gate fixes it), `MISSING` (no cache file — never run, or run failed and the cache was deleted), `BLOCKED` (review only: cache declares P0/P1 findings), `OK` (appendix gate: all appendices are covered by the validate cache).
+
+For a retiring unit (`status: retired` in the candidate frontmatter), only the validate gate is reported — verify, review, and appendix are skipped, matching promote.
+
 ## Keyword Resolution
 
 ### Parsing order

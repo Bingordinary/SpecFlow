@@ -23,10 +23,26 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
-// CheckResult describes whether a cache file is fresh.
+// CheckCategory classifies why a cache check passed or failed. It mirrors
+// the gate vocabulary of the freshness report: fresh (gate satisfied),
+// missing (no cache file), stale (re-run the gate to fix), blocked
+// (review only: cache is valid but declares P0/P1 findings).
+type CheckCategory string
+
+const (
+	CategoryFresh   CheckCategory = "fresh"
+	CategoryMissing CheckCategory = "missing"
+	CategoryStale   CheckCategory = "stale"
+	CategoryBlocked CheckCategory = "blocked"
+)
+
+// CheckResult describes whether a cache file is fresh. Category records
+// the classification from the same check chain that promote relies on,
+// so consumers can classify without re-reading the cache themselves.
 type CheckResult struct {
-	Fresh  bool
-	Reason string
+	Fresh    bool
+	Category CheckCategory
+	Reason   string
 }
 
 // cacheFile is the parsed representation of a cache file.
@@ -74,23 +90,33 @@ func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 	// 1. Read validate cache
 	cachePath := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		return CheckResult{
+			Fresh:    false,
+			Category: CategoryMissing,
+			Reason:   fmt.Sprintf("validate cache not found at %s", relPath(repoRoot, cachePath)),
+		}, nil
+	}
 	cache, err := readCache(cachePath)
 	if err != nil {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err),
 		}, nil
 	}
 	if cache.Command != "validate" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cache command is %q, expected 'validate'", cache.Command),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cache command is %q, expected 'validate'", cache.Command),
 		}, nil
 	}
 	if cache.Result != "pass" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("validate cache result is %q, expected 'pass'", cache.Result),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("validate cache result is %q, expected 'pass'", cache.Result),
 		}, nil
 	}
 
@@ -106,8 +132,9 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 	matches, err := filepath.Glob(fullGlob)
 	if err != nil {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cannot glob appendix files: %v — promote rejected", err),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cannot glob appendix files: %v — promote rejected", err),
 		}, nil
 	}
 
@@ -136,15 +163,17 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 
 	if len(missing) > 0 {
 		return CheckResult{
-			Fresh: false,
+			Fresh:    false,
+			Category: CategoryStale,
 			Reason: fmt.Sprintf("appendix file(s) not included in validation: %s. Run `validate@%s` again.",
 				strings.Join(missing, ", "), unitName),
 		}, nil
 	}
 
 	return CheckResult{
-		Fresh:  true,
-		Reason: fmt.Sprintf("all %d appendix file(s) are included in validate cache", len(matches)),
+		Fresh:    true,
+		Category: CategoryFresh,
+		Reason:   fmt.Sprintf("all %d appendix file(s) are included in validate cache", len(matches)),
 	}, nil
 }
 
@@ -165,31 +194,35 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	// Existence check — review cache is required for promote
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("Review not completed. Run `review@%s` first.", unitName),
+			Fresh:    false,
+			Category: CategoryMissing,
+			Reason:   fmt.Sprintf("Review not completed. Run `review@%s` first.", unitName),
 		}, nil
 	}
 
 	cache, err := readCache(cachePath)
 	if err != nil {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cannot read review cache: %v", err),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cannot read review cache: %v", err),
 		}, nil
 	}
 
 	if cache.Command != "review" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("review cache command is %q, expected 'review'", cache.Command),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("review cache command is %q, expected 'review'", cache.Command),
 		}, nil
 	}
 
 	// Mode check — only full-mode caches satisfy the promote gate
 	if cache.Mode != "full" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("review cache mode is %q, expected 'full' — run `review@%s` before promoting", cache.Mode, unitName),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("review cache mode is %q, expected 'full' — run `review@%s` before promoting", cache.Mode, unitName),
 		}, nil
 	}
 
@@ -214,8 +247,9 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 
 	if len(missingFiles) > 0 || len(mismatchedFiles) > 0 {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("Review cache is stale. Run `review@%s` again.", unitName),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("Review cache is stale. Run `review@%s` again.", unitName),
 		}, nil
 	}
 
@@ -224,16 +258,18 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	// without that field fails closed, matching the verify-cache path.
 	if !cache.blockingSeen {
 		return CheckResult{
-			Fresh:  false,
-			Reason: "review cache missing required field `blocking` — cannot determine blocking status",
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   "review cache missing required field `blocking` — cannot determine blocking status",
 		}, nil
 	}
 
 	// Result value check — only the documented result values are valid
 	if cache.Result != "pass" && cache.Result != "fail" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("review cache result is %q, expected 'pass' or 'fail'", cache.Result),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("review cache result is %q, expected 'pass' or 'fail'", cache.Result),
 		}, nil
 	}
 
@@ -244,22 +280,67 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	// trust its blocking status.
 	if (cache.Result == "fail") != cache.Blocking {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("review cache has conflicting declarations: result %q, blocking %t", cache.Result, cache.Blocking),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("review cache has conflicting declarations: result %q, blocking %t", cache.Result, cache.Blocking),
 		}, nil
 	}
 
 	// Blocking check — P0/P1 findings block promote
 	if cache.Blocking {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("Review found %d P0 and %d P1 finding(s). Resolve before promoting.", cache.P0Count, cache.P1Count),
+			Fresh:    false,
+			Category: CategoryBlocked,
+			Reason:   fmt.Sprintf("Review found %d P0 and %d P1 finding(s). Resolve before promoting.", cache.P0Count, cache.P1Count),
 		}, nil
 	}
 
 	return CheckResult{
-		Fresh:  true,
-		Reason: fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged)", cache.Result, len(cache.Files)),
+		Fresh:    true,
+		Category: CategoryFresh,
+		Reason:   fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged)", cache.Result, len(cache.Files)),
+	}, nil
+}
+
+// CacheSummary is a read-only summary of a cache file's frontmatter,
+// used by freshness reporting. It does not perform any freshness check.
+type CacheSummary struct {
+	Command   string
+	Unit      string
+	Mode      string
+	Result    string
+	Target    string
+	Blocking  bool
+	P0Count   int
+	P1Count   int
+	P2Count   int
+	P3Count   int
+	Timestamp string
+	FileCount int
+}
+
+// ReadCacheSummary parses the given cache file (fileName is e.g.
+// "validate_result.md") and returns its frontmatter summary. It returns
+// an error only if the file is missing or malformed.
+func ReadCacheSummary(repoRoot, targetKind, targetName, fileName string) (*CacheSummary, error) {
+	path := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	cache, err := readCache(path)
+	if err != nil {
+		return nil, err
+	}
+	return &CacheSummary{
+		Command:   cache.Command,
+		Unit:      cache.Unit,
+		Mode:      cache.Mode,
+		Result:    cache.Result,
+		Target:    cache.Target,
+		Blocking:  cache.Blocking,
+		P0Count:   cache.P0Count,
+		P1Count:   cache.P1Count,
+		P2Count:   cache.P2Count,
+		P3Count:   cache.P3Count,
+		Timestamp: cache.Timestamp,
+		FileCount: len(cache.Files),
 	}, nil
 }
 
@@ -315,8 +396,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	// Check existence
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache not found at %s", command, relPath(repoRoot, cachePath)),
+			Fresh:    false,
+			Category: CategoryMissing,
+			Reason:   fmt.Sprintf("%s cache not found at %s", command, relPath(repoRoot, cachePath)),
 		}, nil
 	}
 
@@ -324,16 +406,18 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	cache, err := readCache(cachePath)
 	if err != nil {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cannot read %s cache: %v", command, err),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cannot read %s cache: %v", command, err),
 		}, nil
 	}
 
 	// Validate command matches
 	if cache.Command != command {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("cache command is %q, expected %q", cache.Command, command),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cache command is %q, expected %q", cache.Command, command),
 		}, nil
 	}
 
@@ -347,8 +431,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	}
 	if !resultOk {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache result is %q, expected one of %v", command, cache.Result, validResults),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache result is %q, expected one of %v", command, cache.Result, validResults),
 		}, nil
 	}
 
@@ -358,8 +443,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	// do not write caches), so mode must always be "full".
 	if cache.Mode != "full" {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s` before promoting", command, cache.Mode, command, cache.Unit),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache mode is %q, expected 'full' — run `%s@%s` before promoting", command, cache.Mode, command, cache.Unit),
 		}, nil
 	}
 
@@ -377,8 +463,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}
 		if !listed {
 			return CheckResult{
-				Fresh:  false,
-				Reason: fmt.Sprintf("%s cache files list does not include the main %s file %s. Run `%s@%s` again.", command, targetKind, requiredMainFile, command, cache.Unit),
+				Fresh:    false,
+				Category: CategoryStale,
+				Reason:   fmt.Sprintf("%s cache files list does not include the main %s file %s. Run `%s@%s` again.", command, targetKind, requiredMainFile, command, cache.Unit),
 			}, nil
 		}
 	}
@@ -404,20 +491,23 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 
 	if len(missingFiles) > 0 {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache stale: files missing: %s", command, strings.Join(missingFiles, ", ")),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache stale: files missing: %s", command, strings.Join(missingFiles, ", ")),
 		}, nil
 	}
 	if len(mismatchedFiles) > 0 {
 		return CheckResult{
-			Fresh:  false,
-			Reason: fmt.Sprintf("%s cache stale: files have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache stale: files have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
 		}, nil
 	}
 
 	return CheckResult{
-		Fresh:  true,
-		Reason: fmt.Sprintf("%s cache is fresh (result: %s, %d file(s) unchanged)", command, cache.Result, len(cache.Files)),
+		Fresh:    true,
+		Category: CategoryFresh,
+		Reason:   fmt.Sprintf("%s cache is fresh (result: %s, %d file(s) unchanged)", command, cache.Result, len(cache.Files)),
 	}, nil
 }
 

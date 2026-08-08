@@ -181,6 +181,17 @@ The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is
 6. **Result value check** — `result` must be `pass` or `fail`. Any other value is rejected.
 7. **Consistency check** — `result: fail` must declare `blocking: true` and `result: pass` must declare `blocking: false`. A conflicting declaration is rejected: the cache was written incorrectly and its blocking status cannot be trusted.
 
+## Freshness Check (read-only)
+
+`specflowctl fresh` (agent trigger `fresh@{target}` / `fresh@all`) reports cache freshness without executing any check:
+
+- **`specflowctl fresh`** — summary for every unit and rule with a candidate file (stable-only targets are not listed). One row per target with per-gate status and the overall `READY FOR PROMOTE: N of M` count.
+- **`specflowctl fresh --unit <name>`** / **`--rule <id>`** — detail for one target: per-gate status, the promote-identical rejection reason for any gate that is not fresh, and the cache timestamp for fresh gates.
+
+The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (review with P0/P1) / `OK` (appendix). Classification reuses the same checks as `specflowctl promote` (Staleness Detection above), so a fresh report and a promote run never disagree. For a retiring unit only the validate gate is reported, matching promote's gate set.
+
+`fresh` is strictly read-only: it never writes or deletes caches and never triggers validate/verify/review. Its purpose is operational visibility — while iterating on multiple units that share files, a change to one unit that invalidates another unit's caches shows up as `STALE` immediately.
+
 ## Important
 
 Cache is never refreshed automatically. Only the agent writing a new cache after a fresh validate/verify changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical hash check.

@@ -609,7 +609,7 @@ func TestCheckAppendicesInCache_NoValidateCacheFails(t *testing.T) {
 	if result.Fresh {
 		t.Fatal("expected not fresh (no validate cache), got fresh")
 	}
-	if !strings.Contains(result.Reason, "cannot read validate cache") {
+	if !strings.Contains(result.Reason, "validate cache not found") {
 		t.Fatalf("expected reason about missing cache, got: %s", result.Reason)
 	}
 }
