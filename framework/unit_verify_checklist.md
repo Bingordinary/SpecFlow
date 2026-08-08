@@ -905,6 +905,29 @@ Findings:
 | **needs_design** | Neither side matches a coherent design — needs rethinking | Redesign candidate → suggest validate then verify; user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
 | **blocked** | Mismatch depends on external input or unresolved decision | User unblocks → suggest re-running verify; user triggers | P0/P1 → BLOCK; P2/P3 → Allow |
 
+### Fix execution rules
+
+The direction table determines WHO decides (the user, per HARD RULE 3a) and WHAT the next step is, but not HOW to execute the fix. This section governs the fix execution phase — between the user's direction verdict and the re-check. Its purpose is to keep the fix faithful to design intent: the spec is a design document (the system's intended behavior), not an implementation record. These constraints take effect at fix execution time; a re-check can only verify spec-code consistency, never fidelity, so the constraints cannot be deferred to re-check.
+
+**code_gap fixes (change code):**
+
+- The fix baseline is the behavior the spec declares — the code must implement the spec's stated semantics, using the acceptance items / behavior declarations as the reference.
+- Do not silently shrink spec semantics to simplify implementation (lowering thresholds, deleting branches, swallowing errors). If a smaller semantic seems warranted by implementation cost, that is a spec change — stop, return to the user for a new verdict (the spec_gap determination path), and do not modify the spec as a bypass.
+- The fix addresses only the finding the user ruled on. Do not introduce behavior changes the spec does not declare.
+
+**spec_gap fixes (change spec):**
+
+- Only the candidate layer may be modified (stable cannot be modified directly — reconciliation goes through `unit_fork`, see Stable-only mode below).
+- Before deleting, rewriting, or weakening a behavior declaration, determine what the declaration is:
+  - **Design intent** (the system's intended behavior / external semantics): deletion or rewriting requires a design-intent change basis — an internal spec contradiction, a conflict with a more authoritative source (stable consensus, a bound/global rule, an external protocol), or git history proving the intent was abandoned. "The code happens to behave this way" is not, by itself, a basis.
+  - **Mechanism description** (how the behavior is implemented): may evolve with the implementation — but a design intent must not be demoted to a mechanism description to bypass the constraint above.
+- The spec keeps its design-document nature: behavior declarations are written as intended behavior (what the system should do), not rewritten as an implementation record (e.g. "truncated at buffer write, no longer truncated at display" style implementation accounting).
+
+**General constraints:**
+
+- Do not claim the fix is verified before it is applied — the existing "fixed, pending re-confirmation" rule below applies.
+- Fidelity does not depend on re-check: a re-run verifies consistency only, so the constraints above bind at fix execution time.
+
 ### Re-check after fixes
 
 Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). After a fix is applied, the agent must NOT re-run verify automatically. The agent guides the user to a targeted re-check with the concrete command and waits for the user to trigger it:
