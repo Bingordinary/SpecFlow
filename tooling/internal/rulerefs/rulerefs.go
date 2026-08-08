@@ -389,7 +389,7 @@ func markdownFieldKey(trimmed string) (string, bool) {
 // FindRuleConsumers searches all unit spec files under docs/specs/units/
 // for rule_refs containing the given ruleID. Returns the list of unit names.
 //
-// Global rules (g_rule_*) apply to every current-layer unit per spec_writing_guide.md §4
+// Global rules (g_rule_*) apply to every current-layer unit per spec_writing_guide.md §5
 // and are not listed in individual unit's rule_refs. For global rules, this function
 // returns all current-layer unit names regardless of their rule_refs.
 func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {

@@ -33,7 +33,7 @@ specFlow supports onboarding an existing (already-implemented) project. After in
 2. Determine whether this is a greenfield project or an existing project:
    - **Greenfield** (no existing source code) → proceed with normal usage; nothing further is needed.
    - **Existing project** → ask the user: "This project already contains code. Do you want to build specs from the existing implementation?"
-3. If the user confirms, follow the adoption flow in `specflow/framework/operations/adopt.md`: scan → unit cut list (with suspicious-point markings) → user confirmation → batch candidate generation with evidence appendices → guided per-batch `validate` / `verify` / `review` / `promote`.
+3. If the user confirms, follow the adoption flow in `specflow/framework/operations/adopt.md`: scan → structure review and alignment decision → unit cut list (with suspicious-point markings and directory mapping) → user confirmation → batch candidate generation with evidence appendices → guided per-batch `validate` / `verify` / `review` / `promote`.
 
 Adoption progress is tracked in-session; the flow can be resumed in later sessions by telling the agent to continue adoption (e.g. "继续建档").
 

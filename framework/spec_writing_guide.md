@@ -28,7 +28,16 @@ Rule Specs:
 
 `docs/specs/scenarios/**` is not a supported formal Spec path.
 
-## 2. Unit Frontmatter
+## 2. Unit Division and Project Structure
+
+Unit cuts should map explicitly onto the project's structure instead of existing as an implicit many-to-many relationship between documents and directories.
+
+1. **Prefer explicit mapping.** When dividing work into units, list the project's directory/package structure first and map each responsibility to the directories that carry it. Prefer a one-to-one correspondence between unit and directory; at minimum, record the mapping explicitly at cut time — the adoption flow's cut list carries a directory-mapping column (see `framework/operations/adopt.md` Step 3).
+2. **Do not force responsibility cuts onto technical layering.** When the project structure is organized by technical layer (e.g. controller/service), either refactor the structure first or accept cross-directory units. Forcing responsibility-based cuts onto a non-responsibility structure produces mappings that are unreadable to humans and expensive to repair later.
+3. **Extract cross-cutting constraints as rules.** Constraint-type content (protocols, component contracts) that spans responsibilities should be extracted as shared rules (see §Rule Extraction) instead of being repeated in every unit document. The adoption flow's structure-review step surfaces this option at cut time (see `framework/operations/adopt.md` Step 2).
+4. The framework does not force any specific organization: unit cuts are a decision made together with the user, recorded explicitly, and revisited when the structure changes.
+
+## 3. Unit Frontmatter
 
 Each unit main Spec must include these fields:
 
@@ -60,7 +69,7 @@ Refs are bare unit or rule names; the ref resolves to the current version.
 
 The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
 
-Evidence has a defined lifecycle (see §7): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix is retired via `status: retired` (see §7). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
+Evidence has a defined lifecycle (see §8): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix is retired via `status: retired` (see §8). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
 
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
@@ -78,7 +87,7 @@ Or `rule_exceptions: none`. Rules:
 4. Exceptions are not permanent. Each time the unit opens a candidate round, `validate` Check 8 re-evaluates every recorded exception: if it no longer holds (architecture rewritten, rule changed, or reason expired), it is reported for removal; if it still holds, the reason is re-examined and the exception is kept.
 5. An exception applies only to the unit that records it. It does not exempt any other unit.
 
-## 3. Unit Dependencies
+## 4. Unit Dependencies
 
 `unit_refs` means the current unit depends on the referenced unit's formal behavior.
 
@@ -89,7 +98,7 @@ It does not mean:
 
 If the body says the unit relies on another unit's official behavior, `unit_refs` must list that unit ref.
 
-## 4. Rule References
+## 5. Rule References
 
 Stable global rules are default inputs for every current-layer unit and are not repeated in each unit's `rule_refs`.
 
@@ -105,7 +114,7 @@ Rules:
 
 Rule files must not record consumer truth through `bound_objects`.
 
-## 5. Rule Frontmatter
+## 6. Rule Frontmatter
 
 Each rule Spec must include:
 
@@ -120,7 +129,7 @@ rule_version: x.y.z
 
 `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist.
 
-### 5.1 Rule Creation
+### 6.1 Rule Creation
 
 When creating a new rule:
 
@@ -137,7 +146,7 @@ When creating a new rule:
 8. If the bound shared rule has formal current consumers, remove any `unbound_retention` fields.
 9. Do not write consumer lists or `bound_objects` into the rule file.
 
-### 5.2 Rule Extraction (Unit → Rule)
+### 6.2 Rule Extraction (Unit → Rule)
 
 When extracting existing unit-local formal truth into a rule:
 
@@ -151,12 +160,12 @@ When extracting existing unit-local formal truth into a rule:
 8. Update each affected candidate unit's `rule_refs` and body explanation.
 9. Do not write consumer lists or `bound_objects` into any rule file.
 
-### 5.3 Consumer Discovery Constraint
+### 6.3 Consumer Discovery Constraint
 
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
 Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
 
-### 5.4 Rule Version Semantics
+### 6.4 Rule Version Semantics
 
 Agent sets the rule version when editing the rule file. The version must change when the rule body changes (read-only access does not bump version).
 
@@ -176,7 +185,7 @@ When editing an existing rule candidate, bump the version deterministically:
 - If only wording is clarified without meaning change → bump PATCH
 - If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
 
-### 5.5 Rule Retirement
+### 6.5 Rule Retirement
 
 A rule can be retired when its constraint no longer applies to any unit. Retirement is the end of the rule: the stable copy is removed by promote and cannot be forked back.
 
@@ -189,7 +198,7 @@ Procedure:
 
 Retirement is a terminal state — git history is the only record of the retired rule.
 
-## 6. Acceptance Criteria
+## 7. Acceptance Criteria
 
 Each current-layer unit main Spec must include a `Testability / Acceptance Criteria` section or an explicitly equivalent acceptance section.
 
@@ -320,7 +329,7 @@ Splitting is legitimate when any condition fails. Examples:
 
 `validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains, and over-split detection reports items that satisfy all four conditions above as merge candidates. See `framework/unit_validate_checklist.md` §5a.
 
-## 7. Appendix Files
+## 8. Appendix Files
 
 Appendix files are support truth for one unit.
 
@@ -341,7 +350,7 @@ All appendix files must use the `/appendix/` subdirectory under the layer direct
 - Stable: `docs/specs/units/stable/appendix/unit_{unit}_{name}.md`
 The candidate may have additional candidate appendices.
 
-**Body references:** The spec body references appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`), never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. See §11.
+**Body references:** The spec body references appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`), never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. See §12.
 
 An appendix file may carry an optional `status` field in its frontmatter:
 
@@ -385,7 +394,7 @@ The retirement path is incremental, matching how real projects replace old behav
 
 Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
 
-## 8. Authoring Baseline
+## 9. Authoring Baseline
 
 A formal Spec must make the following clear for the next governance step:
 
@@ -415,7 +424,7 @@ If a decision is intentionally not made, the Spec must state that boundary and e
 
 Appendix files may carry detailed truth for one unit but do not weaken the handoff baseline. An appendix used as implementation truth must not contain only background, motivation, principles, or patch notes — it must state the current rule or design as directly readable truth.
 
-## 9. Rule Scope Resolution
+## 10. Rule Scope Resolution
 
 Rule scope is resolved from rule truth:
 - `rule_scope: global` or id beginning with `g_rule_` → repository-wide rule, applies to every current-layer unit
@@ -425,7 +434,7 @@ When both `rule_scope` and id prefix are present, `rule_scope` in frontmatter ta
 
 Rule files must not store consumer lists. `bound_objects` is not the source of rule consumers. The bound shared rule consumer graph is reconstructed from current-layer unit frontmatter `rule_refs`.
 
-## 10. Dependency Order
+## 11. Dependency Order
 
 ```text
 unit → rule
@@ -438,7 +447,7 @@ unit → unit through unit_refs
 2. rule truth owns reusable constraints
 3. unit-to-unit dependency is explicit and stable-only
 
-## 11. Prose Content Rules
+## 12. Prose Content Rules
 
 Spec body prose sections (Description, Responsibility, and any user-defined narrative sections) must not contain code file paths.
 

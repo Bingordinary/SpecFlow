@@ -99,7 +99,7 @@ The repository's architecture layers, recorded from upper to lower:
 
 ### 6.2 Exceptions
 
-An exception is a unit's approved deviation from this rule. Exceptions are recorded in the unit spec frontmatter `rule_exceptions` field with a written reason — never in this rule file. See `specflow/framework/spec_writing_guide.md` §2 for the field contract.
+An exception is a unit's approved deviation from this rule. Exceptions are recorded in the unit spec frontmatter `rule_exceptions` field with a written reason — never in this rule file. See `specflow/framework/spec_writing_guide.md` §3 for the field contract.
 
 Exception lifecycle:
 

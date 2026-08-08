@@ -36,11 +36,11 @@ When the user disagrees with the agent's suggested direction (code_gap / spec_ga
 When a rule operation cannot proceed safely (ambiguous, combines multiple actions, or previous step returned blocked):
 
 1. **Route to exactly one action** — reduce the request to the smallest distinct rule action:
-   - Creating new rule truth → write candidate rule (see `spec_writing_guide.md` §5.1)
-   - Extracting unit-local truth → extract to rule (see `spec_writing_guide.md` §5.2)
+   - Creating new rule truth → write candidate rule (see `spec_writing_guide.md` §6.1)
+   - Extracting unit-local truth → extract to rule (see `spec_writing_guide.md` §6.2)
    - Binding/unbinding a unit → edit unit `rule_refs` and body explanation (normal spec editing)
-   - Splitting/merging/renaming rules → manual multi-step change: create/update rule files (see `spec_writing_guide.md` §5.1), update consumer `rule_refs`, delete old files
-   - Retiring a rule → follow the formal retirement flow (see `spec_writing_guide.md` §5.5 and `rule_promote_workflow.md`): add `status: retired` to the candidate rule frontmatter, clear every explicit `rule_refs` reference to it, run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation. Do not delete rule files manually — `promote` is the only operation that removes stable files
+   - Splitting/merging/renaming rules → manual multi-step change: create/update rule files (see `spec_writing_guide.md` §6.1), update consumer `rule_refs`, delete old files
+   - Retiring a rule → follow the formal retirement flow (see `spec_writing_guide.md` §6.5 and `rule_promote_workflow.md`): add `status: retired` to the candidate rule frontmatter, clear every explicit `rule_refs` reference to it, run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation. Do not delete rule files manually — `promote` is the only operation that removes stable files
 2. **Raise a clarification checkpoint** when the requested meaning is unclear — ask the user for specifics before proceeding
 3. **Raise a decision checkpoint** when the user must choose between two valid approaches
 4. **Raise a prerequisite checkpoint** when a legal upstream action must happen before the rule change (e.g., a consuming unit must be forked to candidate before its binding can change)

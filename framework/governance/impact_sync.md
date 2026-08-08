@@ -26,7 +26,7 @@ Do not infer consumers from implementation directories alone.
 
 ## Consumer Discovery
 
-Rule change impact is self-contained and does not route through `impact_sync`. For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5; cache staleness is detected at promote time.
+Rule change impact is self-contained and does not route through `impact_sync`. For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §6; cache staleness is detected at promote time.
 
 The consumer discovery rules below apply only when `impact_sync` is triggered by a non-rule change (stable unit version change or governance-flow fallback).
 
@@ -65,7 +65,7 @@ When classification is uncertain, use the earliest proven invalidated layer and 
 
 Rule impact is handled directly by the agent — `specflowctl promote --rule` simply promotes the rule file; the agent assesses and handles consumer impact per `rule_promote_workflow.md`.
 
-For non-promote rule edits (creation, extraction, bindings): the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §5. Cache staleness is detected at promote time.
+For non-promote rule edits (creation, extraction, bindings): the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §6. Cache staleness is detected at promote time.
 
 When `impact_sync` is triggered by a non-rule change, consumer discovery uses:
 - `g_rule_` files → every current-layer unit (unless the rule defines an explicit exception)

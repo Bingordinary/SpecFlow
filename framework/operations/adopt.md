@@ -19,15 +19,27 @@ Adoption progress is tracked in-session by the agent; there is no adoption state
 
 Identify module boundaries and dependency relationships from the code structure (packages, services, entry points). Produce a proposed unit cut with candidate unit names, the files each unit covers, and inter-unit dependencies.
 
-### Step 2 — Unit cut list with suspicious-point column
+### Step 2 — Structure review and alignment decision
 
-Present the cut list to the user. Each row: unit name, covered files, dependencies. The list carries an additional column — **suspicious points** — where the agent marks (without judging) code locations that look suspect: TODO markers, panic/fallback swallowing, dead code, contradictory logic. Marking is non-judgmental: it only surfaces spots the user may want to look at; it does not classify them as defects. The user may ignore the column entirely.
+Review the project structure and align the unit cut with it before writing the cut list:
 
-### Step 3 — User confirmation and adjustment
+1. List the project's directory/package structure and map each responsibility to the directories that carry it.
+2. Judge whether the structure is organized by responsibility and whether it is suitable to be organized by responsibility. Do not force responsibility-based cuts onto a structure that is technical layering (e.g. controller/service) or heavily cross-cutting.
+3. When a responsibility spans multiple directories, present the user with options:
+   - **Code reorganization** — split packages or move files so the structure matches the responsibility.
+   - **Rule extraction** — for constraint-type content (protocols, component contracts), extract it as a shared rule instead of repeating it in every unit (see `framework/spec_writing_guide.md` §Rule Extraction).
+   - **Accept a cross-directory unit** — keep the unit spanning directories and record the mapping explicitly in the cut list.
+4. The plan is a recommendation only: consult the user and execute their decision. The framework does not force any specific organization.
+
+### Step 3 — Unit cut list with suspicious-point and directory-mapping columns
+
+Present the cut list to the user. Each row: unit name, covered files, directory mapping, dependencies. The **directory mapping** column records which directory (or directories) each unit governs, making the unit↔structure mapping explicit and visible. The list carries an additional column — **suspicious points** — where the agent marks (without judging) code locations that look suspect: TODO markers, panic/fallback swallowing, dead code, contradictory logic. Marking is non-judgmental: it only surfaces spots the user may want to look at; it does not classify them as defects. The user may ignore the column entirely.
+
+### Step 4 — User confirmation and adjustment
 
 The user confirms the cut, adjusts it (merge, split, or rename units), or defers units to a later batch. Units may be adopted in any order; the user decides the batch size and pacing.
 
-### Step 4 — Batch candidate generation
+### Step 5 — Batch candidate generation
 
 For each unit in the confirmed batch, the agent:
 
@@ -37,7 +49,7 @@ For each unit in the confirmed batch, the agent:
 
 **Coverage standard for adoption:** main flow + boundary behaviors. Cover entry/exit points, the normal path, key error paths, and boundary conditions. Do not exhaustively document internal details — detail is added by later iterations as the unit evolves.
 
-### Step 5 — Guided per-batch promotion
+### Step 6 — Guided per-batch promotion
 
 The agent guides the user through the normal pipeline for each batch, at the user's pace: `validate@{unit}` → `verify@{unit}` → `review@{unit}` → `promote@{unit}`. Evidence-driven items skip the design-rationale review (see `framework/unit_validate_checklist.md` Check 2 Step 2); all other quality gates apply unchanged. After a batch is promoted, the next batch may start.
 
@@ -64,7 +76,7 @@ When no acceptance item references the evidence appendix:
 
 1. Retire the last evidence section if one remains.
 2. Add `status: retired` to the candidate evidence appendix frontmatter and set `evidence_appendix_ref` to `none` in the spec frontmatter.
-3. Promote normally: the retiring appendix is not copied; the stable copy is removed together with the candidate copy (see `framework/spec_writing_guide.md` §7 Appendix Retirement).
+3. Promote normally: the retiring appendix is not copied; the stable copy is removed together with the candidate copy (see `framework/spec_writing_guide.md` §8 Appendix Retirement).
 
 Do not delete the candidate appendix file before promote — deleting the candidate copy leaves the stable sections in place and the orphan finding re-appears in every later round. After the final promote the appendix exists in no layer: no file means no zombie, orphan, or residual finding, and no inert content is forked in later rounds.
 

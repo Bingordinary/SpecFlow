@@ -22,7 +22,7 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 
 ## Retirement
 
-A rule whose constraint no longer applies is retired by adding `status: retired` to the candidate rule frontmatter (see `framework/spec_writing_guide.md` §5.5). The retire promote follows the same cache gate, but instead of copying, the CLI removes the stable rule file and the candidate rule file. The version gate is skipped for retired rules (the stable copy is removed, not updated). Retirement is terminal — git history is the only record.
+A rule whose constraint no longer applies is retired by adding `status: retired` to the candidate rule frontmatter (see `framework/spec_writing_guide.md` §6.5). The retire promote follows the same cache gate, but instead of copying, the CLI removes the stable rule file and the candidate rule file. The version gate is skipped for retired rules (the stable copy is removed, not updated). Retirement is terminal — git history is the only record.
 
 ### Pre-check for retirement
 
