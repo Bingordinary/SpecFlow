@@ -357,13 +357,13 @@ After cross-check (§7) and batch classification (§Batch classification) comple
 
 2. Write `docs/specs/meta/validation/unit/{name}/review_result.md` per `framework/validation_cache.md` format:
    - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-   - Include `mode: full`, severity counts, `blocking`, file hashes
+   - Include `mode: full`, severity counts, `blocking`, file hashes and dependency CIDs
    - Include full findings body (cannot be omitted — required for promote gate detail)
 
 Full runs always write cache regardless of pass/fail. Targeted runs (`:{keyword}`) never write a cache, and a targeted run that finds P0/P1 deletes the existing cache — blocking findings at any granularity mean promote must not proceed. See `framework/validation_cache.md`.
 
 **Cache record contract:** The cache records the file state read during the review run — it is independent of the user's decision outcome:
 
-- Collect file hashes from the files read during the review run (same collection point as verify Step 8)
+- Collect dependency evidence from the files read during the review run (same collection point as verify Step 8): for each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the review judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
 - Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
-- Any fix applied after the cache write makes the cache stale (promote's hash check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`) or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.
+- Any fix applied after the cache write makes the cache stale (promote's dependency check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`) or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.

@@ -5,12 +5,14 @@
 // Cache files for units live under docs/specs/meta/validation/unit/{name}/.
 // Cache files for rules live under docs/specs/meta/validation/rule/{id}/.
 // They record:
-//   - Which files were checked (paths + SHA-256 hashes)
+//   - Which files were checked (paths + whole-file hash + dependency chunk CIDs)
 //   - Whether the check passed (pass)
 //   - When the check was run
 //
-// specflowctl promote reads both caches, re-computes hashes, and rejects
-// if anything has changed since the cache was written.
+// specflowctl promote reads both caches, re-chunks every listed file, and
+// rejects if a declared dependency chunk CID is no longer present. Content
+// changes outside the declared dependency chunks keep the cache fresh and
+// surface as an informational note only.
 package validationcache
 
 import (
@@ -20,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -39,10 +42,13 @@ const (
 // CheckResult describes whether a cache file is fresh. Category records
 // the classification from the same check chain that promote relies on,
 // so consumers can classify without re-reading the cache themselves.
+// Note carries informational context for a FRESH result (e.g. content
+// changed outside the declared dependency chunks) — it never blocks.
 type CheckResult struct {
 	Fresh    bool
 	Category CheckCategory
 	Reason   string
+	Note     string
 }
 
 // cacheFile is the parsed representation of a cache file.
@@ -62,9 +68,14 @@ type cacheFile struct {
 	Files        []cacheFileEntry
 }
 
+// cacheFileEntry is one file in a cache's files list. Hash is the whole-file
+// content hash at run time (informational: detects changes outside the
+// dependency chunks). Deps are the content identifiers (CIDs) of the chunks
+// the run actually depended on — freshness is judged against Deps only.
 type cacheFileEntry struct {
-	Path string `yaml:"path"`
-	Hash string `yaml:"hash"`
+	Path string   `yaml:"path"`
+	Hash string   `yaml:"hash"`
+	Deps []string `yaml:"deps"`
 }
 
 // CheckValidate reads and validates the validate cache for the given unit.
@@ -196,7 +207,8 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 
 // CheckReview reads and validates the review cache for the given unit.
 // The review cache is a required promote gate: it must exist, mode must be
-// "full", hashes must match, and it must not be blocking (P0/P1 findings).
+// "full", the declared dependency chunks must be unchanged, and it must not
+// be blocking (P0/P1 findings).
 // If any condition fails, promote must be rejected with guidance.
 func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
@@ -236,21 +248,27 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 		}, nil
 	}
 
-	// Hash check — stale caches cannot satisfy the promote gate
+	// Dependency check — stale caches cannot satisfy the promote gate. Freshness is
+	// judged on the declared dependency chunks; content changes outside them
+	// are informational only.
 	var mismatchedFiles []string
 	var missingFiles []string
+	var changedFiles []string
 	for _, entry := range cache.Files {
-		fullPath := resolvePath(repoRoot, entry.Path)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			missingFiles = append(missingFiles, entry.Path)
-			continue
-		}
-		currentHash, err := fileHash(fullPath)
+		state, changed, err := fileFreshness(repoRoot, entry)
 		if err != nil {
 			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
 			continue
 		}
-		if currentHash != normalizeHash(entry.Hash) {
+		if changed {
+			changedFiles = append(changedFiles, entry.Path)
+		}
+		switch state {
+		case fileMissing:
+			missingFiles = append(missingFiles, entry.Path)
+		case fileNoDeps:
+			mismatchedFiles = append(mismatchedFiles, fmt.Sprintf("%s (no dependency chunks declared)", entry.Path))
+		case fileDepChanged:
 			mismatchedFiles = append(mismatchedFiles, entry.Path)
 		}
 	}
@@ -305,11 +323,15 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 		}, nil
 	}
 
-	return CheckResult{
+	result := CheckResult{
 		Fresh:    true,
 		Category: CategoryFresh,
-		Reason:   fmt.Sprintf("review cache is fresh (result: %s, %d file(s) unchanged)", cache.Result, len(cache.Files)),
-	}, nil
+		Reason:   fmt.Sprintf("review cache is fresh (result: %s, dependency chunks of %d file(s) unchanged)", cache.Result, len(cache.Files)),
+	}
+	if len(changedFiles) > 0 {
+		result.Note = fmt.Sprintf("review: content changed outside the declared dependency chunks in %s — the gate stays fresh, but if semantic coupling exists (e.g. called functions, shared structures), consider re-running `review@%s`", strings.Join(changedFiles, ", "), unitName)
+	}
+	return result, nil
 }
 
 // CacheSummary is a read-only summary of a cache file's frontmatter,
@@ -400,6 +422,64 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 // Internal
 // ------------------------------------------------------------
 
+// fileFreshnessState classifies the freshness of one cache file entry
+// against the file's current content.
+type fileFreshnessState int
+
+const (
+	fileMissing   fileFreshnessState = iota // file is gone from disk
+	fileNoDeps                              // entry declares no dependency chunks but the file has content
+	fileDepChanged                          // a declared dependency chunk CID is no longer present
+	fileFresh                               // every declared dependency chunk is unchanged
+)
+
+// fileFreshness re-chunks the current file and checks every declared
+// dependency chunk CID against it. Freshness is judged on the dependency
+// chunks only — content changes outside the declared dependencies do not
+// stale the cache but are reported as changed (informational). The
+// whole-file hash recorded in the cache powers that informational
+// comparison.
+func fileFreshness(repoRoot string, entry cacheFileEntry) (state fileFreshnessState, changed bool, err error) {
+	fullPath := resolvePath(repoRoot, entry.Path)
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fileMissing, false, nil
+		}
+		return fileMissing, false, err
+	}
+
+	text := specpaths.NormalizeText(string(data))
+	fc := contenthash.ChunkText(text)
+
+	// Whole-file comparison is informational only: it detects changes
+	// outside the declared dependency chunks so fresh reports can warn
+	// about possible semantic coupling without failing the gate.
+	if entry.Hash != "" {
+		if normalizeHash(entry.Hash) != normalizeHash(contenthash.FileHashText(text)) {
+			changed = true
+		}
+	}
+
+	if len(entry.Deps) == 0 {
+		if len(fc.Chunks) > 0 {
+			return fileNoDeps, changed, nil
+		}
+		return fileFresh, changed, nil
+	}
+
+	present := make(map[string]bool, len(fc.Chunks))
+	for _, c := range fc.Chunks {
+		present[normalizeHash(c.CID)] = true
+	}
+	for _, dep := range entry.Deps {
+		if !present[normalizeHash(dep)] {
+			return fileDepChanged, changed, nil
+		}
+	}
+	return fileFresh, changed, nil
+}
+
 func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string, requiredMainFile string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
 
@@ -480,21 +560,25 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}
 	}
 
-	// Re-compute hashes for all listed files
+	// Re-check all listed files against their declared dependency chunks
 	var mismatchedFiles []string
 	var missingFiles []string
+	var changedFiles []string
 	for _, entry := range cache.Files {
-		fullPath := resolvePath(repoRoot, entry.Path)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			missingFiles = append(missingFiles, entry.Path)
-			continue
-		}
-		currentHash, err := fileHash(fullPath)
+		state, changed, err := fileFreshness(repoRoot, entry)
 		if err != nil {
 			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
 			continue
 		}
-		if currentHash != normalizeHash(entry.Hash) {
+		if changed {
+			changedFiles = append(changedFiles, entry.Path)
+		}
+		switch state {
+		case fileMissing:
+			missingFiles = append(missingFiles, entry.Path)
+		case fileNoDeps:
+			mismatchedFiles = append(mismatchedFiles, fmt.Sprintf("%s (no dependency chunks declared — cache was written before content-addressed freshness or the declared ranges covered no content; run `%s@%s` again)", entry.Path, command, cache.Unit))
+		case fileDepChanged:
 			mismatchedFiles = append(mismatchedFiles, entry.Path)
 		}
 	}
@@ -510,15 +594,19 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
-			Reason:   fmt.Sprintf("%s cache stale: files have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
+			Reason:   fmt.Sprintf("%s cache stale: dependency chunks have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
 		}, nil
 	}
 
-	return CheckResult{
+	result := CheckResult{
 		Fresh:    true,
 		Category: CategoryFresh,
-		Reason:   fmt.Sprintf("%s cache is fresh (result: %s, %d file(s) unchanged)", command, cache.Result, len(cache.Files)),
-	}, nil
+		Reason:   fmt.Sprintf("%s cache is fresh (result: %s, dependency chunks of %d file(s) unchanged)", command, cache.Result, len(cache.Files)),
+	}
+	if len(changedFiles) > 0 {
+		result.Note = fmt.Sprintf("%s: content changed outside the declared dependency chunks in %s — the gate stays fresh, but if semantic coupling exists (e.g. called functions, shared structures), consider re-running `%s@%s`", command, strings.Join(changedFiles, ", "), command, cache.Unit)
+	}
+	return result, nil
 }
 
 // readCache parses a cache file (YAML frontmatter + markdown body).
@@ -552,6 +640,7 @@ func readCache(path string) (*cacheFile, error) {
 	cache := &cacheFile{}
 	var currentEntry *cacheFileEntry
 	inFilesBlock := false
+	inDepsBlock := false
 
 	for _, line := range fmLines {
 		trimmed := strings.TrimSpace(line)
@@ -562,31 +651,49 @@ func readCache(path string) (*cacheFile, error) {
 		// Detect files block entries
 		if trimmed == "files:" {
 			inFilesBlock = true
+			inDepsBlock = false
 			continue
 		}
 
 		if inFilesBlock {
 			if strings.HasPrefix(trimmed, "- path:") {
 				// New entry
+				inDepsBlock = false
 				path := strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:"))
 				path = strings.Trim(path, "\"'")
 				currentEntry = &cacheFileEntry{Path: path}
 				cache.Files = append(cache.Files, *currentEntry)
 				continue
 			}
+			if trimmed == "deps:" {
+				inDepsBlock = true
+				continue
+			}
+			if inDepsBlock {
+				if strings.HasPrefix(trimmed, "-") {
+					dep := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+					dep = strings.Trim(dep, "\"'")
+					if currentEntry != nil {
+						currentEntry.Deps = append(currentEntry.Deps, dep)
+						cache.Files[len(cache.Files)-1] = *currentEntry
+					}
+					continue
+				}
+				// A non-list line ends the deps block
+				inDepsBlock = false
+			}
 			if strings.HasPrefix(trimmed, "hash:") && currentEntry != nil {
 				hash := strings.TrimSpace(strings.TrimPrefix(trimmed, "hash:"))
 				hash = strings.Trim(hash, "\"'")
-				cache.Files[len(cache.Files)-1] = cacheFileEntry{
-					Path: cache.Files[len(cache.Files)-1].Path,
-					Hash: hash,
-				}
+				currentEntry.Hash = hash
+				cache.Files[len(cache.Files)-1] = *currentEntry
 				continue
 			}
 			// If we hit a non-empty line that doesn't start with - or is a continuation,
 			// we might have left the files block
 			if currentEntry != nil {
 				inFilesBlock = false
+				inDepsBlock = false
 			}
 		}
 

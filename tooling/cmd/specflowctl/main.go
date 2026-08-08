@@ -69,6 +69,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runConsumers(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
+	case "gate-evidence":
+		return runGateEvidence(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -147,6 +149,9 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
+	if validateResult.Note != "" {
+		fmt.Fprintf(stdout, "Note: %s\n", validateResult.Note)
+	}
 	fmt.Fprintln(stdout, "")
 
 	if retiring {
@@ -165,6 +170,9 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 			return errors.New("verify cache check failed")
 		}
 		fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
+		if verifyResult.Note != "" {
+			fmt.Fprintf(stdout, "Note: %s\n", verifyResult.Note)
+		}
 		fmt.Fprintln(stdout, "")
 
 		// Check review cache (required gate — must exist, be full mode, fresh, and non-blocking)
@@ -179,6 +187,9 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 			return errors.New("review cache check failed")
 		}
 		fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
+		if reviewResult.Note != "" {
+			fmt.Fprintf(stdout, "Note: %s\n", reviewResult.Note)
+		}
 		fmt.Fprintln(stdout, "")
 
 		// Check appendix files are included in validate cache
@@ -228,6 +239,9 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
+	if validateResult.Note != "" {
+		fmt.Fprintf(stdout, "Note: %s\n", validateResult.Note)
+	}
 	fmt.Fprintln(stdout, "")
 
 	result := promote.PromoteRule(absRoot, ruleID)
@@ -520,6 +534,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
+	fmt.Fprintln(w, "  gate-evidence Compute dependency chunk CIDs for a file read during a gate run")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }
 

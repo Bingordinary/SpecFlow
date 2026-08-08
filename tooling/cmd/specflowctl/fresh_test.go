@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 )
 
 func assertGateStatus(t *testing.T, output, gate, status string) {
@@ -72,6 +73,7 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	sb.WriteString("files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:%s\n", f.path, f.hash)
+		sb.WriteString(cacheDepsAt(t, repoRoot, f.path))
 	}
 	sb.WriteString("---\nok\n")
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {
@@ -109,6 +111,7 @@ func writeRuleCache(t *testing.T, repoRoot, id string, files []cacheFileSpec) {
 	sb.WriteString("files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:%s\n", f.path, f.hash)
+		sb.WriteString(cacheDepsAt(t, repoRoot, f.path))
 	}
 	sb.WriteString("---\nok\n")
 	if err := os.WriteFile(filepath.Join(dir, "validate_result.md"), []byte(sb.String()), 0644); err != nil {
@@ -123,6 +126,24 @@ func freshRun(t *testing.T, repoRoot string, args ...string) (string, error) {
 	fullArgs := append(args, "--repo-root", repoRoot)
 	err := runFresh(fullArgs, &stdout, &stderr)
 	return stdout.String(), err
+}
+
+// cacheDepsAt renders a whole-file dependency block for a cache entry.
+func cacheDepsAt(t *testing.T, repoRoot, relPath string) string {
+	t.Helper()
+	full := filepath.Join(repoRoot, filepath.FromSlash(relPath))
+	fc, err := contenthash.ChunkFile(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	if len(fc.Chunks) > 0 {
+		b.WriteString("    deps:\n")
+	}
+	for _, c := range fc.Chunks {
+		fmt.Fprintf(&b, "      - %s\n", c.CID)
+	}
+	return b.String()
 }
 
 func fullUnitSpecPaths(repoRoot, name string) []cacheFileSpec {
@@ -235,17 +256,18 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	// Deliberately stale verify cache: wrong hash
-	stale := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: "0000000000000000000000000000000000000000000000000000000000000000"}}
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", stale)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", files)
+	// Deliberately stale verify cache: the spec changes after the cache is written,
+	// so the declared dependency chunk is gone.
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "verify", "STALE")
-	if !strings.Contains(output, "files have changed") {
-		t.Fatalf("expected changed-file detail, got:\n%s", output)
+	if !strings.Contains(output, "dependency chunks have changed") {
+		t.Fatalf("expected changed-dependency detail, got:\n%s", output)
 	}
 	if !strings.Contains(output, "READY FOR PROMOTE: no") {
 		t.Fatalf("expected ready no, got:\n%s", output)
@@ -294,8 +316,9 @@ func TestFreshUnitDetailStaleBlockedReview(t *testing.T) {
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	stale := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: "0000000000000000000000000000000000000000000000000000000000000000"}}
-	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", stale)
+	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+	// The spec changes after the review cache is written: stale, not BLOCKED.
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -611,4 +634,72 @@ func TestFreshStableRules(t *testing.T) {
 	if !strings.Contains(out, "MISSING") {
 		t.Fatalf("expected MISSING for baseline-less rule, got:\n%s", out)
 	}
+}
+
+// TestFreshUnitDetailShowsNote verifies the informational note about content
+// changed outside the declared dependency chunks reaches the fresh report —
+// the promote-gate check prints it, and the fresh report must too (the note
+// is the agent's signal that semantic coupling may exist).
+func TestFreshUnitDetailShowsNote(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	sharedPath := filepath.Join(srcDir, "shared.go")
+	var b strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&b, "line %d: some unique shared content\n", i)
+	}
+	os.WriteFile(sharedPath, []byte(b.String()), 0644)
+
+	// Dependency evidence: whole-file for the spec, lines 1-10 only for the
+	// shared file.
+	fcSpec, _ := contenthash.ChunkFile(specPath)
+	var specDeps []string
+	for _, c := range fcSpec.Chunks {
+		specDeps = append(specDeps, c.CID)
+	}
+	fcShared, _ := contenthash.ChunkFile(sharedPath)
+	sharedDeps := contenthash.CIDsForRanges(fcShared, [][2]int{{1, 10}})
+	if len(sharedDeps) == 0 {
+		t.Fatal("expected dependency chunks for lines 1-10")
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
+	os.MkdirAll(cacheDir, 0755)
+	var sb strings.Builder
+	sb.WriteString("---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n")
+	fmt.Fprintf(&sb, "  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:%s\n", computeHash(specPath))
+	sb.WriteString(depsBlock(specDeps))
+	fmt.Fprintf(&sb, "  - path: src/shared.go\n    hash: sha256:%s\n", computeHash(sharedPath))
+	sb.WriteString(depsBlock(sharedDeps))
+	sb.WriteString("---\nok\n")
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(sb.String()), 0644)
+
+	// A change far outside the declared dependency range (line 200).
+	data, _ := os.ReadFile(sharedPath)
+	os.WriteFile(sharedPath, []byte(strings.Replace(string(data), "line 200:", "line 200 CHANGED:", 1)), 0644)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "FRESH")
+	if !strings.Contains(output, "content changed outside the declared dependency chunks") {
+		t.Fatalf("expected the informational note in the fresh report, got:\n%s", output)
+	}
+}
+
+// depsBlock renders a deps block for a cache file entry.
+func depsBlock(deps []string) string {
+	if len(deps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("    deps:\n")
+	for _, d := range deps {
+		fmt.Fprintf(&b, "      - %s\n", d)
+	}
+	return b.String()
 }

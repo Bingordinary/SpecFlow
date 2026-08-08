@@ -209,15 +209,15 @@ func stableBaselineSummaryLine(repoRoot, name string, result baseline.CheckResul
 
 func unitSummaryLine(repoRoot, unitName string) (string, bool) {
 	if isRetiringUnit(repoRoot, unitName) {
-		vStatus, _ := checkUnitGate(repoRoot, unitName, "validate")
+		vStatus, _, _ := checkUnitGate(repoRoot, unitName, "validate")
 		ready := gatePassed(vStatus)
 		return fmt.Sprintf("%-13s (retiring)  validate: %-8s  READY: %t",
 			unitName, vStatus, ready), ready
 	}
 
-	vStatus, _ := checkUnitGate(repoRoot, unitName, "validate")
-	vfStatus, _ := checkUnitGate(repoRoot, unitName, "verify")
-	rStatus, _ := checkUnitGate(repoRoot, unitName, "review")
+	vStatus, _, _ := checkUnitGate(repoRoot, unitName, "validate")
+	vfStatus, _, _ := checkUnitGate(repoRoot, unitName, "verify")
+	rStatus, _, _ := checkUnitGate(repoRoot, unitName, "review")
 	aStatus, _ := checkAppendixGate(repoRoot, unitName)
 
 	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(rStatus) && gatePassed(aStatus)
@@ -226,7 +226,7 @@ func unitSummaryLine(repoRoot, unitName string) (string, bool) {
 }
 
 func ruleSummaryLine(repoRoot, ruleID string) (string, bool) {
-	vStatus, _ := checkRuleGate(repoRoot, ruleID)
+	vStatus, _, _ := checkRuleGate(repoRoot, ruleID)
 	ready := gatePassed(vStatus)
 	return fmt.Sprintf("%-13s  validate: %-8s  READY: %t",
 		ruleID, vStatus, ready), ready
@@ -249,9 +249,12 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 
 	nonFresh := 0
 
-	vStatus, vDetail := checkUnitGate(absRoot, unitName, "validate")
+	vStatus, vDetail, vNote := checkUnitGate(absRoot, unitName, "validate")
 	if vStatus == gateFresh {
 		vDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
+		if vNote != "" {
+			vDetail += " | " + vNote
+		}
 	} else {
 		nonFresh++
 	}
@@ -268,17 +271,23 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		return nil
 	}
 
-	vfStatus, vfDetail := checkUnitGate(absRoot, unitName, "verify")
+	vfStatus, vfDetail, vfNote := checkUnitGate(absRoot, unitName, "verify")
 	if vfStatus == gateFresh {
 		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
+		if vfNote != "" {
+			vfDetail += " | " + vfNote
+		}
 	} else {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
 
-	rStatus, rDetail := checkUnitGate(absRoot, unitName, "review")
+	rStatus, rDetail, rNote := checkUnitGate(absRoot, unitName, "review")
 	if rStatus == gateFresh {
 		rDetail = freshDetail(readSummary(absRoot, "unit", unitName, "review_result.md"))
+		if rNote != "" {
+			rDetail += " | " + rNote
+		}
 	} else {
 		nonFresh++
 	}
@@ -334,9 +343,12 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule)\n\n", ruleID)
 
-	vStatus, vDetail := checkRuleGate(absRoot, ruleID)
+	vStatus, vDetail, vNote := checkRuleGate(absRoot, ruleID)
 	if vStatus == gateFresh {
 		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
+		if vNote != "" {
+			vDetail += " | " + vNote
+		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
 	fmt.Fprintln(stdout, "verify and review do not apply to rules.")
@@ -372,8 +384,9 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 // ------------------------------------------------------------
 
 // checkUnitGate classifies one of the unit gates (validate/verify/review)
-// and returns the promote-identical reason text.
-func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string) {
+// and returns the promote-identical reason text plus the informational note
+// (e.g. content changed outside the declared dependency chunks).
+func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string, string) {
 	var (
 		result validationcache.CheckResult
 		err    error
@@ -386,20 +399,20 @@ func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string) {
 	case "review":
 		result, err = validationcache.CheckReview(repoRoot, unitName)
 	default:
-		return gateStale, fmt.Sprintf("unknown gate %q", command)
+		return gateStale, fmt.Sprintf("unknown gate %q", command), ""
 	}
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.Note
 }
 
-func checkRuleGate(repoRoot, ruleID string) (gateStatus, string) {
+func checkRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
 	result, err := validationcache.CheckRuleValidate(repoRoot, ruleID)
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.Note
 }
 
 func checkAppendixGate(repoRoot, unitName string) (gateStatus, string) {

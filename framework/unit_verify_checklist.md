@@ -963,14 +963,14 @@ After all 7 steps complete, determine cache action based on the highest severity
 
 - **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-  - Collect SHA-256 hashes of all files read during verification
-  - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: full`, `blocking: false`, file hashes
+  - Collect dependency evidence for every file read during verification: run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the alignment judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+  - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: full`, `blocking: false`, file hashes and dependency CIDs
 
 - **If any P0/P1 MISMATCH exists (verify FAIL):** delete existing `verify_result.md` if present. Do not write cache — `result: fail` never appears in a verify cache. Report blocking findings. Agent must stop and not proceed to promote.
 
 - **If all mismatches are P2/P3 (non-blocking, verify PASS):**
-  - Collect SHA-256 hashes of all files read during verification
-  - Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes
+  - Collect dependency evidence for every file read during verification (same gate-evidence procedure as above)
+  - Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `target: candidate|stable`, `mode: full`, file hashes and dependency CIDs
   - Report findings as non-blocking — agent may continue (P2/P3 findings do not block promote).
 
 - **Targeted runs (`:{keyword}`):** report findings only — do NOT write a cache. Targeted runs never write a cache, and a targeted run that finds P0/P1 deletes the existing cache — blocking findings at any granularity mean promote must not proceed (`framework/validation_cache.md`).

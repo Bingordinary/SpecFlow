@@ -196,6 +196,14 @@ If the rule has current consumers: verify `unbound_retention` and its related fi
 
 After all 8 checks complete:
 
-- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format. Include `result: pass`, `mode: full`, file hashes. Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`.
+- **If all PASS:** write `docs/specs/meta/validation/rule/{id}/validate_result.md` per `framework/validation_cache.md` format:
+  - Create `docs/specs/meta/validation/rule/{id}/` directory if needed
+  - Collect dependency evidence for every file read during validation, including:
+    - The candidate rule file itself (all checks)
+    - The stable sibling rule file, if present (Check 4 reads its `rule_version`)
+    - All unit spec files searched under `docs/specs/units/` (Check 5 existence check and Check 7 consumer discovery)
+  - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+  - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes and dependency CIDs
+  - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache.

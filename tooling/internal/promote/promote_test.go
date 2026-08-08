@@ -2,12 +2,14 @@ package promote
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -191,7 +193,18 @@ func writeRuleValidateCache(t *testing.T, repoRoot, ruleID string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n---\n"
+	fc, err := contenthash.ChunkFile(rulePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deps strings.Builder
+	if len(fc.Chunks) > 0 {
+		deps.WriteString("    deps:\n")
+	}
+	for _, c := range fc.Chunks {
+		fmt.Fprintf(&deps, "      - %s\n", c.CID)
+	}
+	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n" + deps.String() + "---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cache), 0644); err != nil {
 		t.Fatal(err)
 	}

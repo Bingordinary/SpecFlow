@@ -9,7 +9,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 )
+
+// cacheDeps renders a deps block for a cache file entry covering the whole
+// file (whole-file dependency — the conservative declaration).
+func cacheDeps(t *testing.T, path string) string {
+	t.Helper()
+	fc, err := contenthash.ChunkFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	if len(fc.Chunks) > 0 {
+		b.WriteString("    deps:\n")
+	}
+	for _, c := range fc.Chunks {
+		fmt.Fprintf(&b, "      - %s\n", c.CID)
+	}
+	return b.String()
+}
 
 func TestNextCLI(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
@@ -123,11 +143,11 @@ timestamp: "2026-06-30T10:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Validate passed.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -143,11 +163,11 @@ timestamp: "2026-06-30T11:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Verify passed.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -168,11 +188,11 @@ timestamp: "2026-06-30T12:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 No P0/P1 findings.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -447,11 +467,11 @@ timestamp: "2026-06-30T10:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Validate passed.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -470,11 +490,11 @@ timestamp: "2026-06-30T11:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Non-blocking findings found.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -495,11 +515,11 @@ timestamp: "2026-06-30T12:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 No P0/P1 findings.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -587,11 +607,11 @@ timestamp: "2026-06-30T10:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Validate passed.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -611,11 +631,11 @@ timestamp: "2026-06-30T11:00:00Z"
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
     hash: sha256:%s
----
+%s---
 Blocking findings found.
-`, specHash, appendixHash)
+`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -723,9 +743,9 @@ func TestPromoteRetiredUnitEndToEnd(t *testing.T) {
 	specHash := computeHash(specPath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
-	verifyCache := fmt.Sprintf("---\ncommand: verify\nunit: test_unit\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
-	reviewCache := fmt.Sprintf("---\ncommand: review\nunit: test_unit\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-06-30T12:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
+	verifyCache := fmt.Sprintf("---\ncommand: verify\nunit: test_unit\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
+	reviewCache := fmt.Sprintf("---\ncommand: review\nunit: test_unit\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-06-30T12:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -801,7 +821,7 @@ func TestPromoteRetiredUnitValidateCacheOnly(t *testing.T) {
 	specHash := computeHash(specPath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n---\n", specHash)
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
