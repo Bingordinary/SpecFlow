@@ -239,7 +239,7 @@ acceptance_item_set:
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |
 | `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
-| `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name); used in `acceptance_behavior_fingerprint` calculation |
+| `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name) |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
 | `affects.files` | recommended | Implementation files that must be verified as part of this item's scope |
 | `affects.appendices` | recommended | Appendix names that must be checked |
