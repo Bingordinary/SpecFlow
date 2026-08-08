@@ -104,27 +104,33 @@ The tooling layer must not:
 6. `consumers`
    - list units that reference a given rule in their `rule_refs`
    - `consumers --rule <id>`: for global rules (`g_rule_*`) returns every current-layer unit; for bound rules (`b_rule_*`) returns only matching units (empty output means no consumers)
-7. `promote`
+7. `fresh`
+   - report cache freshness and promote readiness without executing any check
+   - `fresh --scope candidate|stable|all` (default `candidate`): candidate scope reports every unit/rule with a candidate file and its gate statuses plus the `READY FOR PROMOTE: N of M` count; stable scope reports the drift state of every stable target (`VERIFIED` / `OK` / `CHANGED` / `MISSING`, see Stable Drift Baseline in `framework/validation_cache.md`); all scope reports both (`READY FOR PROMOTE` covers the candidate section only)
+   - `fresh --unit <name>` / `fresh --rule <id>`: detail for one target — candidate gate statuses, or drift state for a stable-only target (no candidate file)
+   - strictly read-only: never writes or deletes caches or baselines, never triggers validate/verify/review; a `fresh` report and a `promote` run never disagree because both use the same cache checks
+   - corresponds to the `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` agent triggers (see `framework/concepts.md` and `framework/validation_cache.md` §Freshness Check)
+8. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
-8. `review collect-default-scope --flow <review_flow>`
+9. `review collect-default-scope --flow <review_flow>`
    - collect the deterministic default scope for the explicit review flow
-9. `review run-init --flow <review_flow>`
+10. `review run-init --flow <review_flow>`
    - create or reuse the full-scope run-state file for the explicit review flow
-10. `review run-validate --flow <review_flow>`
+11. `review run-validate --flow <review_flow>`
    - validate required run-state fields, timestamps, all fixed statuses including closed statuses, baseline slices, score state when present, and dynamic slice parent links
-11. `review run-refresh --flow <review_flow>`
+12. `review run-refresh --flow <review_flow>`
    - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
-12. `review run-touch --flow <review_flow>`
+13. `review run-touch --flow <review_flow>`
    - refresh only `last_updated_at`
-13. `validate write`
+14. `validate write`
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
-14. `validate candidate --unit UNIT`
+15. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check)
-15. `validate rule --id RULE_ID`
+16. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, file path consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
 
 ## Review Run-State Commands
