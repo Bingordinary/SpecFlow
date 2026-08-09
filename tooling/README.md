@@ -136,7 +136,8 @@ The tooling layer must not:
 16. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check)
 17. `validate rule --id RULE_ID`
-    - validate candidate rule structure (checks: frontmatter, ID/scope consistency, file path consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
+    - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
+    - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
 
 ## Review Run-State Commands
 

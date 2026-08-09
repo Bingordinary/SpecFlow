@@ -82,26 +82,26 @@ func discoverRelatedUnits(repoRoot, unitName, specPath string) []string {
 	fullPath := filepath.Join(repoRoot, specPath)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
+		// Fall back to stable spec (same reading path as rule_refs below)
+		stablePath := fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
+		fullPath := filepath.Join(repoRoot, stablePath)
+		data, err = os.ReadFile(fullPath)
+		if err != nil {
+			return nil
+		}
+	}
+	fm := specpaths.ReadFrontmatterStringMap(string(data))
+	raw := fm["unit_refs"]
+	if raw == "" || strings.EqualFold(raw, "none") {
 		return nil
 	}
-
-	content := string(data)
 	var refs []string
 	seen := map[string]bool{}
-
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "unit_refs:") {
-			rest := strings.TrimPrefix(line, "unit_refs:")
-			rest = strings.TrimSpace(rest)
-			for _, ref := range strings.Split(rest, ",") {
-				ref = strings.TrimSpace(ref)
-				ref = strings.Split(ref, "@")[0]
-				if ref != "" && ref != unitName && !seen[ref] {
-					seen[ref] = true
-					refs = append(refs, ref)
-				}
-			}
+	for _, ref := range specpaths.ParseRefList(raw) {
+		ref = strings.TrimSpace(strings.Split(ref, "@")[0])
+		if ref != "" && ref != unitName && !seen[ref] {
+			seen[ref] = true
+			refs = append(refs, ref)
 		}
 	}
 	return refs
