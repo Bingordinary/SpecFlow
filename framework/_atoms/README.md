@@ -27,9 +27,13 @@ framework/_atoms/
 ├── manifest.txt                 # Atom registry (atom_id → source → targets)
 ├── generate.sh                  # Generation script
 ├── verify.sh                    # Verification script
-└── misc/
-    ├── framework_path.md        # Framework path resolution reference
-    └── specflowctl_location.md  # Tooling path reference
+├── misc/
+│   ├── batch_findings_mechanism.md  # Batch-group assertion re-verification mechanism
+│   ├── framework_path.md            # Framework path resolution reference
+│   ├── report_skeleton.md           # Unified quality-gate report skeleton
+│   └── specflowctl_location.md      # Tooling path reference
+└── review/
+    └── spec_review_standard.md      # Spec-aware code review standard
 ```
 
 ## How Target Files Reference Atoms
