@@ -228,13 +228,7 @@ For local tooling development, rebuild them with `build-release`.
 
 When developing the tooling itself, do not assume that ordinary commands may run through `go run`.
 The freshness gate requires an embedded build fingerprint for ordinary governance actions.
-The supported `go run` recovery and inspection surface remains:
-
-1. `build-release`
-2. `tooling-fingerprint`
-3. `doctor`
-4. `help`
-5. the internal build-fingerprint query command
+The commands that may still run through `go run` are exactly the recovery and inspection surface listed under [Freshness Rule](#freshness-rule) — the two surfaces are the same bypass set, so there is only one list to keep current.
 
 Examples:
 

@@ -39,7 +39,7 @@ After completing all analysis steps, the agent must report coverage confidence (
 ## Target Selection
 
 - If a candidate spec exists → verify code against **candidate** (the current working proposal). Mismatches trigger first-principles divergence analysis (Step 7).
-- If no candidate exists but a stable spec does → verify code against **stable** (check if current implementation still conforms to recorded truth). Do not enter divergence resolution — instead, recommend a `unit_fork`.
+- If no candidate exists but a stable spec does → verify code against **stable** (check if current implementation still conforms to recorded truth). Do not enter divergence resolution — instead, recommend forking the unit (`specflowctl fork --unit <name>`).
 
 ## Execution Rules
 
@@ -917,7 +917,7 @@ The direction table determines WHO decides (the user, per HARD RULE 3a) and WHAT
 
 **spec_gap fixes (change spec):**
 
-- Only the candidate layer may be modified (stable cannot be modified directly — reconciliation goes through `unit_fork`, see Stable-only mode below).
+- Only the candidate layer may be modified (stable cannot be modified directly — reconciliation goes through forking the unit (`specflowctl fork --unit <name>`), see Stable-only mode below).
 - Before deleting, rewriting, or weakening a behavior declaration, determine what the declaration is:
   - **Design intent** (the system's intended behavior / external semantics): deletion or rewriting requires a design-intent change basis — an internal spec contradiction, a conflict with a more authoritative source (stable consensus, a bound/global rule, an external protocol), or git history proving the intent was abandoned. "The code happens to behave this way" is not, by itself, a basis.
   - **Mechanism description** (how the behavior is implemented): may evolve with the implementation — but a design intent must not be demoted to a mechanism description to bypass the constraint above.
@@ -950,9 +950,9 @@ When no candidate spec exists (verify against stable):
 3. If any MISMATCH:
    - The implementation has drifted from recorded stable truth
    - Do not suggest spec modifications (cannot modify stable spec directly)
-   - Report the drift and recommend unit_fork:
+   - Report the drift and recommend forking the unit (`specflowctl fork --unit <name>`):
      "Current implementation diverges from stable spec at {details}.
-     Recommend creating a candidate round (unit_fork) to reconcile the difference."
+     Recommend creating a candidate round via `specflowctl fork --unit <name>` to reconcile the difference."
 ```
 
 ---
