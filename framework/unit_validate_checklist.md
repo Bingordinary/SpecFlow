@@ -171,7 +171,7 @@ When findings mix resolution types (within one check or across checks), the `Res
 
 ## Check 2 — Design soundness
 
-**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the design decisions are closed, so the downstream executor is never forced to choose (see `framework/spec_writing_guide.md` §9 Authoring Baseline). The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
+**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the spec satisfies the full `framework/spec_writing_guide.md` §9 Authoring Baseline: the ten expression points are made clear (a reader who never sees the code can restate the design), the design decisions are closed, so the downstream executor is never forced to choose, and any intentionally unmade decision declares its boundary. The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
 
 **Execution steps:**
 
@@ -215,23 +215,28 @@ Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and
 
 Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5 Execution Rules, rule 2), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with evidence. Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
 
-**Step 5 — Decision closure verification**
-Verify that the spec closes every implementation-affecting decision listed in `framework/spec_writing_guide.md` §9 Authoring Baseline (the "The Spec must close implementation-affecting decisions" list): which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility. The downstream executor must not be forced to choose.
+**Step 5 — Authoring Baseline verification**
+Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Authoring Baseline in two layers: the ten expression points are made clear (a reader who never sees the code can restate the design), and every implementation-affecting decision is closed. The downstream executor must not be forced to choose.
 
-- **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
+- **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a point or a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
+
+**Layer 1 — Expression points (the "must make clear" list):** For each of the ten baseline points — (1) the intended user, actor, or caller; (2) the unit responsibility and why the unit owns it; (3) the entry point or trigger; (4) the normal path from input to result; (5) the boundaries crossed on that path; (6) the data, state, or durable truth each step reads or writes; (7) the owner of each read/write responsibility; (8) the output artifact or observable result; (9) the way failures or unavailable dependencies are exposed; (10) the verification surface and success condition — can the reader determine the answer from the spec alone? A point that is not made clear is a FAIL (fix_required: express it in the spec).
+
+**Layer 2 — Decision closure (the "must close" list):** Verify that the spec closes every implementation-affecting decision: which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility.
+
 - For each of the seven decisions: can the downstream executor determine the answer from the spec alone, without making a choice?
   - For evidence-driven acceptance items (Step 2 waiver), the closure source is the evidence appendix: verify it records the item's behavior domain as directly readable behavioral truth (per `framework/spec_writing_guide.md` §3 `evidence_appendix_ref`), not only background, motivation, or patch notes.
   - The "how acceptance proves the stated responsibility" decision is covered by Check 5's acceptance quality review — here, only confirm the acceptance items exist and can prove the stated responsibility.
 - If a decision is intentionally not made, the spec must state that boundary and explain why (per `framework/spec_writing_guide.md` §9, the "If a decision is intentionally not made" rule). An open decision without a stated boundary is a FAIL.
-- Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual.
+- Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual. Coverage obligations are limited to formal behavior domains (see Check 5a Step 2 extraction premise); narrative elaboration in the body does not add coverage obligations.
 
-**FAIL:** any of the seven decisions is left open AND not explicitly bounded with a reason (fix_required: record the decision or declare the boundary; blocked when recording it requires user input — Execution Rules "missing decision")
+**FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (fix_required: express the point, or record the decision / declare the boundary; blocked when recording it requires user input — Execution Rules "missing decision")
 
 **Step 6 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all seven §9 decisions closed or explicitly bounded, no critical flaws found
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found
 - FAIL: specific findings reported
 
-**Check method:** Content reasoning + adversarial analysis + taste-level assessment + decision closure verification (the subagent makes active engineering judgments)
+**Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification (the subagent makes active engineering judgments)
 
 ---
 
@@ -302,7 +307,7 @@ Verify that the spec closes every implementation-affecting decision listed in `f
 **Execution steps:**
 
 1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5g (which requires `pass_condition` to carry constraints beyond `description`).
-2. Extract all behavior domains from the spec body (main flow, protocols, error handling, state transitions, etc.) at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain; do not split scenarios of the same domain into separate coverage requirements.
+2. **Extraction premise (shared with sub-check 5h):** Behavior-domain extraction targets only formal behavior declared in the spec body and appendices — a behavior subject (endpoint, function, state machine, or flow entry point) together with its behavior semantics. Non-constraining narrative (design discussion, illustrative examples, motivation, variant elaboration) is NOT a behavior domain source and does not create coverage obligations. Extract all behavior domains at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain (error paths, boundary cases, and state transitions of the same subject are scenarios of that domain, not separate domains); do not split scenarios of the same domain into separate coverage requirements.
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
@@ -524,7 +529,7 @@ PASS — pass_condition provides complementary information:
    - Field / type / enum names and data formats
    - Protocol names and formats
    - Timing / consistency assumptions (sync vs async, ordering guarantees, consistency expectations)
-   - Non-constraining narrative (design discussion, illustrative examples, motivation) is NOT a contract statement — same judgment principle as Check 5a's behavior-domain extraction
+   - Non-constraining narrative (design discussion, illustrative examples, motivation) is NOT a contract statement — same judgment principle as sub-check 5a's extraction premise (see 5a Step 2)
 2. For each contract statement, verify a carrier carries it at a **comparable granularity**:
    - The acceptance item set (an item's `description` or `pass_condition` states the same value, code, field name, format, or assumption), or
    - A protocol appendix (API contract, data type, error code, state machine section) states it

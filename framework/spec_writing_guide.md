@@ -6,7 +6,7 @@ Files under `specflow/` are framework and delivery documents and are written in 
 
 Files under `docs/` are project communication documents and are written in Chinese unless a specific delivery artifact requires otherwise.
 
-This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 8.
+This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 9.
 
 Format compliance does not by itself prove handoff completeness.
 
@@ -334,7 +334,7 @@ Splitting is legitimate when any condition fails. Examples:
 
 #### Relationship to validate
 
-`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains, and over-split detection reports items that satisfy all four conditions above as merge candidates. See `framework/unit_validate_checklist.md` §5a.
+`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains — error paths, boundary cases, and state transitions of the same behavior subject are scenarios of one domain, not separate domains — and over-split detection reports items that satisfy all four conditions above as merge candidates. Extraction targets only formal behavior (see `framework/spec_writing_guide.md` §4 Formal behavior carriers): non-constraining narrative (design discussion, motivation, illustrative examples) does not create coverage obligations. See `framework/unit_validate_checklist.md` §5a.
 
 ### Contract Substance Baseline
 
@@ -466,6 +466,36 @@ The Spec must close implementation-affecting decisions. The downstream executor 
 - how acceptance proves the stated responsibility
 
 If a decision is intentionally not made, the Spec must state that boundary and explain why.
+
+### Reader Contract
+
+A Spec is a design document for human readers first, and an execution contract second. The Authoring Baseline above defines what must be made clear; this contract defines how a good Spec presents it — as a design narrative that serves four reader audiences, not as a mechanism inventory. A narrative answers "how it works and why"; an inventory only answers "what exists".
+
+| Audience | What the reader must be able to take away |
+|---|---|
+| **Successor (no code access)** | Restate the full design after reading: how each mechanism works, how data flows, how steps sequence, where state is owned, what happens on failure, and why decisions were made — including alternatives rejected and their reasons. |
+| **Engineer** | Know how to implement without reading code: the entry point, what each normal-path step reads and writes, how boundaries are exposed, and the result shape. All design decisions are closed (the must-close list above). |
+| **Designer / product manager** | Understand the module's value and position: what problem it solves, its place in the system, its relation to neighboring modules, and what it does not do. This layer must not require code or runtime knowledge. |
+| **Acceptance items** | Acceptance items are the means of verifying that the design was implemented. They cover verifiable behavior contracts (written to the code's real capability), but they do not carry design expression. |
+
+**Information layers.** A well-formed Spec presents the unit in four layers, from general to specific:
+
+1. **Value / function layer** — what problem the unit solves, its position in the system, its relationships, and its boundaries (serves the designer / product manager).
+2. **Design narrative layer** — mechanisms, data flow, sequencing, state ownership, failure behavior, and decision rationale including rejected alternatives (serves the successor).
+3. **Implementation guidance layer** — entry points, step-by-step read/write behavior, boundary exposure, and result shape, with all decisions closed (serves the engineer).
+4. **Acceptance contract layer** — the acceptance item set, kept minimal: verifiable behavior contracts only (see §7 Acceptance Criteria).
+
+**Example document shape** for a unit main Spec:
+
+```text
+Background & value     → what problem this unit solves and where it sits in the system
+Design narrative       → how the mechanism works, data flow, sequencing, state
+                         ownership, failure behavior, decisions and rejected alternatives
+Boundaries             → what the unit does not do; dependency expectations
+Acceptance items       → minimal verifiable behavior contracts (see §7)
+```
+
+Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
 
 ### Appendix Handoff
 
