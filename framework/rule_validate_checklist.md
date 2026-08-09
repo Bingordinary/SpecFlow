@@ -19,20 +19,23 @@ FAIL does not write cache. Report per §Output Format.
 - Agent may read rule files, search text patterns, check file existence
 - Agent must NOT modify files, execute commands (beyond read-only tools), or delegate to other agents
 - On FAIL: identify which checks failed and the contradictory information
+- Resolution types (each finding is labeled with one):
+  - **actionable** — A concrete repair can be made inside the current candidate rule file without user judgment.
+  - **needs_decision** — Requires user input (unclear intent, missing decision, or external dependency). Stop and ask.
 
 ## Output Format
 
 ==ATOM_BEGIN:report_skeleton==
 ## Unified Report Skeleton
 
-All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header lines (`Result`, `Blocking promote`, `Key counts`) and the `Next step` line are identical across commands; only the body content and the Findings section entries' detail lines are command-specific and defined in each checklist file.
 
 ```
 ────────────────────────────────────────────
 {command}@{target} · {mode} · {layer}
-Result: {verdict}
+Result: PASS | FAIL
 Blocking promote: yes | no
-Key counts: {command-specific counts}
+Key counts: Findings: N (P0: a | P1: b | P2: c | P3: d)
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
@@ -40,8 +43,8 @@ Dependency scope:
   {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
 ────────────────────────────────────────────
 Findings:
-  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
-Summary: {command-specific summary counts}
+  [{severity}] {location} — {issue} (actionable | needs_decision)
+  {command-specific detail lines, indented}
 ────────────────────────────────────────────
 Next step: {concrete next command with reason, or "None"}
 ────────────────────────────────────────────
@@ -52,14 +55,13 @@ Next step: {concrete next command with reason, or "None"}
 - `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
 - `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
 - `{layer}` — the spec layer checked: `candidate` | `stable`.
-- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
-- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
-- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `Result` — `PASS | FAIL` for all three commands. The gate is decided by severity: FAIL means P0/P1 findings exist. validate grades findings P0/P1 only, so any validate FAIL is a P0/P1 finding; verify/review FAIL means P0/P1 mismatches/findings exist.
+- `Blocking promote: yes | no` — `yes` when P0/P1 findings exist (the run FAILs); `no` otherwise. Valid for all three commands.
+- `Key counts: Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total finding count, a/b/c/d the count per severity. validate grades findings P0/P1 only, so its P2/P3 counts are always 0; verify's blocking mismatches equal the P0/P1 counts and non-blocking mismatches equal the P2/P3 counts. Command-specific summary numbers (validate's failed checks and advisory findings, verify's coverage, review's suppressed-by-spec count) appear in the body.
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
-- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
-- `Summary:` — command-specific final counts.
+- `Findings:` — one entry per finding in the unified format `[{severity}] {location} — {issue} (actionable | needs_decision)`. `actionable` — a concrete repair can be made without user judgment (verify: direction spec_gap/code_gap; review: a determined recommendation); `needs_decision` — requires user input or a design decision before the fix can be made (verify: direction needs_design/blocked; review: architecture trade-offs). Command-specific detail (verify's suggested direction, review's spec_context/recommendation, validate's contradicting information sources) appears as indented detail lines under the entry. Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
-- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
 ==ATOM_END:report_skeleton==
@@ -77,16 +79,27 @@ One line per check, numbered as in this file:
 6. Prohibited fields: PASS | FAIL — reason
 7. Unbound retention correctness: PASS | FAIL — reason
 8. Rule body quality: PASS | WARNING | FAIL — reason
+Failed checks: N | Advisory findings: K
 ```
 
 **Counting rules:**
 
-- `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
-- `Total findings` is the total number of distinct findings across all FAIL checks. In targeted runs, only executed checks are counted.
-- WARNING findings are presented on their check line's reason and counted separately as `Advisory findings: K` — they are never counted in `Total findings` and never affect `Failed checks`.
-- `Blocking promote` is `yes` on any FAIL (validate FAIL blocks promote; a FAIL also deletes the validate cache).
+- `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks; a/b/c/d the count per severity. rule validate grades findings P0/P1 only — P1 is the contract-decided default, P0 requires severity confirmation per `framework/severity_policy.md` §9 (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
+- `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
+- WARNING findings (Check 5 / Check 8 step 3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body — they are never counted in `Findings` and never affect `Failed checks`.
+- `Blocking promote` is `yes` when P0/P1 findings exist (rule validate FAIL blocks promote; a FAIL also deletes the validate cache).
 
-Rule validate findings are always presented flat — rules have no batch classification; each FAIL finding is listed directly under the `Findings:` section.
+Rule validate findings are always presented flat — rules have no batch classification; each FAIL finding is listed directly under the `Findings:` section in the unified finding format `[{severity}] {location} — {issue} (actionable | needs_decision)`.
+
+### Severity check
+
+rule validate grades findings P0/P1. P1 is the contract-decided default for every FAIL check — it needs no confirmation. A P0 grade is a judgment-based assignment and must be confirmed per `framework/severity_policy.md` §9: read the impact surface the P0 claim depends on (the consumer units or the governance file governing the affected mechanism), verify the §9.3 boundary holds, and record `confirmed` or `adjusted: P0 → P1` with the evidence file and reason. The records appear in the report between the body and the Findings section, so the trace shows the check ran.
+
+```
+Severity check:
+  confirmed: N | adjusted: N
+  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
+```
 
 ## Checklist
 

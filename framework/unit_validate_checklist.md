@@ -33,22 +33,22 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 - Each check reports **PASS** or **FAIL** with a reason.
 - On FAIL, the agent must identify **which information sources contradict each other** (e.g., "spec body describes auto-retry logic but no acceptance item covers it"). The fix is recorded in the FAIL reason.
 - Resolution types:
-  - **fix_required** — A concrete repair can be made inside the current candidate spec.
-  - **blocked** — Requires user input (unclear intent, missing decision, or external dependency). Stop and ask.
+  - **actionable** — A concrete repair can be made inside the current candidate spec without user judgment.
+  - **needs_decision** — Requires user input (unclear intent, missing decision, or external dependency). Stop and ask.
 
 ## Output Format
 
 ==ATOM_BEGIN:report_skeleton==
 ## Unified Report Skeleton
 
-All quality-gate reports (validate, verify, review) share the same report skeleton below. The header, the `Blocking promote` line, and the `Next step` line are identical across commands; the verdict vocabulary, the key counts, and the body content are command-specific and defined in each checklist file.
+All quality-gate reports (validate, verify, review) share the same report skeleton below. The header lines (`Result`, `Blocking promote`, `Key counts`) and the `Next step` line are identical across commands; only the body content and the Findings section entries' detail lines are command-specific and defined in each checklist file.
 
 ```
 ────────────────────────────────────────────
 {command}@{target} · {mode} · {layer}
-Result: {verdict}
+Result: PASS | FAIL
 Blocking promote: yes | no
-Key counts: {command-specific counts}
+Key counts: Findings: N (P0: a | P1: b | P2: c | P3: d)
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
@@ -56,8 +56,8 @@ Dependency scope:
   {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
 ────────────────────────────────────────────
 Findings:
-  {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
-Summary: {command-specific summary counts}
+  [{severity}] {location} — {issue} (actionable | needs_decision)
+  {command-specific detail lines, indented}
 ────────────────────────────────────────────
 Next step: {concrete next command with reason, or "None"}
 ────────────────────────────────────────────
@@ -68,14 +68,13 @@ Next step: {concrete next command with reason, or "None"}
 - `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
 - `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
 - `{layer}` — the spec layer checked: `candidate` | `stable`.
-- `{verdict}` — each command keeps its own verdict vocabulary on the unified line: validate — `PASS | FAIL` (unit targets add the `(fix_required | blocked)` resolution defined in `framework/unit_validate_checklist.md`); verify — `PASS | FAIL`; review — `PASS | FAIL`.
-- `Blocking promote: yes | no` — `yes` when the result blocks promote (validate FAIL; verify P0/P1 findings; review P0/P1 findings); `no` otherwise.
-- `{command-specific counts}` — validate: `Failed checks: N / Total findings: M / Advisory findings: K`; verify: `Blocking mismatches: N / Non-blocking mismatches: N`; review: `Findings: N (P0: a | P1: b | P2: c | P3: d)`.
+- `Result` — `PASS | FAIL` for all three commands. The gate is decided by severity: FAIL means P0/P1 findings exist. validate grades findings P0/P1 only, so any validate FAIL is a P0/P1 finding; verify/review FAIL means P0/P1 mismatches/findings exist.
+- `Blocking promote: yes | no` — `yes` when P0/P1 findings exist (the run FAILs); `no` otherwise. Valid for all three commands.
+- `Key counts: Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total finding count, a/b/c/d the count per severity. validate grades findings P0/P1 only, so its P2/P3 counts are always 0; verify's blocking mismatches equal the P0/P1 counts and non-blocking mismatches equal the P2/P3 counts. Command-specific summary numbers (validate's failed checks and advisory findings, verify's coverage, review's suppressed-by-spec count) appear in the body.
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
-- `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
-- `Summary:` — command-specific final counts.
+- `Findings:` — one entry per finding in the unified format `[{severity}] {location} — {issue} (actionable | needs_decision)`. `actionable` — a concrete repair can be made without user judgment (verify: direction spec_gap/code_gap; review: a determined recommendation); `needs_decision` — requires user input or a design decision before the fix can be made (verify: direction needs_design/blocked; review: architecture trade-offs). Command-specific detail (verify's suggested direction, review's spec_context/recommendation, validate's contradicting information sources) appears as indented detail lines under the entry. Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
-- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
+- `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
 ==ATOM_END:report_skeleton==
@@ -98,30 +97,31 @@ One line per check, numbered as in this file:
 8. Constraint alignment: PASS | FAIL — reason
 ```
 
-After the check lines, report the cross-check line (full runs only):
+After the check lines, report the cross-check line (full runs only) and the counts:
 
 ```
 Cross-check: 3/3 PASS — per-check results; contradictions are presented as findings
+Failed checks: N | Advisory findings: K
 ```
 
 **Counting rules:**
-- `Failed checks` is the number of FAIL checks among executed checks. WARNING is not a failed check.
-- `Total findings` is the total number of distinct findings across all FAIL checks. In targeted runs, only executed checks are counted.
-- `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K`. They are never counted in `Total findings` and never affect `Failed checks`.
-- The same counts are reused in the Present Findings summary (`Total findings` = batch group items + decision group items).
+- `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks; a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default, P0 requires severity confirmation per `framework/severity_policy.md` §9 (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
+- `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
+- `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
-**Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding as an indented numbered sub-line under the check line. Each sub-line carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, and its resolution type:
+**Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding as an indented numbered sub-line under the check line, in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, and its resolution type:
 
 ```
 5a. Coverage completeness: FAIL — 3 findings
-  5a-1. {location} — {finding} (fix_required)
-  5a-2. {location} — {finding} (fix_required)
-  5a-3. {location} — {finding} (blocked)
+  5a-1. [P1] {location} — {finding} (actionable)
+  5a-2. [P1] {location} — {finding} (actionable)
+  5a-3. [P1] {location} — {finding} (needs_decision)
 ```
 
 A check with a single finding keeps the existing one-line reason format.
 
-When findings mix resolution types (within one check or across checks), the `Result` line's resolution value is `blocked` if any finding is `blocked` — a blocked finding stops the flow and requires user input per Execution Rules; otherwise it is `fix_required`.
+When findings mix resolution types (within one check or across checks), the report presents each finding with its own resolution — a `needs_decision` finding stops the flow and requires user input per Execution Rules.
 
 ---
 
@@ -159,13 +159,13 @@ When findings mix resolution types (within one check or across checks), the `Res
 
 **WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference
 
-**FAIL:** Any missing field, reference to a non-existent file, or layer-prefixed spec path in prose or structured fields (fix_required)
+**FAIL:** Any missing field, reference to a non-existent file, or layer-prefixed spec path in prose or structured fields (actionable)
 
 **Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
 
 **Communication note:** When suggesting Check 1 to a user, describe it as "structural integrity — verifies file structure and reference existence without evaluating design quality."
 
-**Retiring unit:** when the candidate main spec declares `status: retired` (see `framework/spec_writing_guide.md` §8 Unit Retirement), the unit is being removed from stable. The acceptance item set is not required (agent Check 5's acceptance checks are skipped for the retired spec), and retiring appendices are skipped like exempt ones. Check 1 still verifies the required frontmatter fields. The retiring spec's own references (`unit_refs`, `rule_refs`, version pins, appendix and evidence references) are exempt from the mechanical checks — they disappear with it. The mechanical `specflowctl validate` checks use their own numbering (Check 1 frontmatter, Check 2 acceptance items, Check 3 anchor integrity, Check 4 reference integrity, Check 5 appendix files, Check 6 version consistency, Check 7 layer-path check); of these, a retiring spec skips Check 2, 3, 4, 6, and 7, while Check 1 still applies and Check 5 keeps its appendix-level exempt/retired skipping. `specflowctl promote` also skips its reference checks for a retiring unit. Reference protection: a unit that is being retired must not be referenced by any other current-layer unit's `unit_refs` — the mechanical `specflowctl validate` Check 4 rejects such a reference; the agent must also report it via agent Check 7 (cross-unit) with `blocked` resolution until the referrer drops the reference.
+**Retiring unit:** when the candidate main spec declares `status: retired` (see `framework/spec_writing_guide.md` §8 Unit Retirement), the unit is being removed from stable. The acceptance item set is not required (agent Check 5's acceptance checks are skipped for the retired spec), and retiring appendices are skipped like exempt ones. Check 1 still verifies the required frontmatter fields. The retiring spec's own references (`unit_refs`, `rule_refs`, version pins, appendix and evidence references) are exempt from the mechanical checks — they disappear with it. The mechanical `specflowctl validate` checks use their own numbering (Check 1 frontmatter, Check 2 acceptance items, Check 3 anchor integrity, Check 4 reference integrity, Check 5 appendix files, Check 6 version consistency, Check 7 layer-path check); of these, a retiring spec skips Check 2, 3, 4, 6, and 7, while Check 1 still applies and Check 5 keeps its appendix-level exempt/retired skipping. `specflowctl promote` also skips its reference checks for a retiring unit. Reference protection: a unit that is being retired must not be referenced by any other current-layer unit's `unit_refs` — the mechanical `specflowctl validate` Check 4 rejects such a reference; the agent must also report it via agent Check 7 (cross-unit) with `needs_decision` resolution until the referrer drops the reference.
 
 ---
 
@@ -189,7 +189,7 @@ When findings mix resolution types (within one check or across checks), the `Res
   - Mixed states are legal: a spec may combine evidence-driven and design-driven items during incremental replacement (see `framework/operations/adopt.md`). Report the classification per item.
 - Does the spec explain **why** each key design decision was made? (e.g., "chose event-driven architecture because async decoupling is required, not because it is popular")
 - If there are viable alternative approaches (sync vs async, push vs pull, strong vs eventual consistency), does the spec acknowledge them and explain why they were rejected?
-- If a design choice is non-obvious and no rationale is given → FAIL (fix_required: add design decision record)
+- If a design choice is non-obvious and no rationale is given → FAIL (actionable: add design decision record)
 
 **Step 3 — Adversarial analysis (red-team)**
 Actively search for design flaws in both main spec and appendix content. Read appendix descriptions of API contracts, data formats, state machines, error handling, and include them in each attack angle:
@@ -202,7 +202,7 @@ Actively search for design flaws in both main spec and appendix content. Read ap
 | Boundary / limit | Is behavior defined under high load, large data volume, long-running execution, or resource exhaustion? Any resource leak risk? |
 | Security | Is there unauthorized access, data leakage, or injection risk? Is auth enforced consistently at every entry point? |
 
-If a plausible critical flaw is identified that the spec does not address → FAIL (blocked: needs user judgment on whether this is a design gap or intentional)
+If a plausible critical flaw is identified that the spec does not address → FAIL (needs_decision: needs user judgment on whether this is a design gap or intentional)
 
 **Step 4 — Design decision taste level**
 Assess only the design decisions the spec has actually recorded (design decision records, architecture descriptions, component trees, data types in main spec and appendices). Evaluate taste-level quality of those recorded decisions:
@@ -220,7 +220,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 - **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a point or a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
 
-**Layer 1 — Expression points (the "must make clear" list):** For each of the ten baseline points — (1) the intended user, actor, or caller; (2) the unit responsibility and why the unit owns it; (3) the entry point or trigger; (4) the normal path from input to result; (5) the boundaries crossed on that path; (6) the data, state, or durable truth each step reads or writes; (7) the owner of each read/write responsibility; (8) the output artifact or observable result; (9) the way failures or unavailable dependencies are exposed; (10) the verification surface and success condition — can the reader determine the answer from the spec alone? A point that is not made clear is a FAIL (fix_required: express it in the spec).
+**Layer 1 — Expression points (the "must make clear" list):** For each of the ten baseline points — (1) the intended user, actor, or caller; (2) the unit responsibility and why the unit owns it; (3) the entry point or trigger; (4) the normal path from input to result; (5) the boundaries crossed on that path; (6) the data, state, or durable truth each step reads or writes; (7) the owner of each read/write responsibility; (8) the output artifact or observable result; (9) the way failures or unavailable dependencies are exposed; (10) the verification surface and success condition — can the reader determine the answer from the spec alone? A point that is not made clear is a FAIL (actionable: express it in the spec).
 
 **Layer 2 — Decision closure (the "must close" list):** Verify that the spec closes every implementation-affecting decision: which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility.
 
@@ -230,7 +230,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 - If a decision is intentionally not made, the spec must state that boundary and explain why (per `framework/spec_writing_guide.md` §9, the "If a decision is intentionally not made" rule). An open decision without a stated boundary is a FAIL.
 - Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual. Coverage obligations are limited to formal behavior domains (see Check 5a Step 2 extraction premise); narrative elaboration in the body does not add coverage obligations.
 
-**FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (fix_required: express the point, or record the decision / declare the boundary; blocked when recording it requires user input — Execution Rules "missing decision")
+**FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
 **Step 6 — Verdict**
 - PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found
@@ -253,11 +253,11 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
    - Do the goals and described behaviors agree? (goal description scope matches behavior scope)
    - Do non-goals conflict with any described behavior? (non-goal says "not doing X" but behavior describes X)
    - Are the boundaries respected by the behavior descriptions? (e.g., boundary is "client-side validation only" but behavior describes server-side logic)
-5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (fix_required: move content to the correct unit or declare scope expansion)
+5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (actionable: move content to the correct unit or declare scope expansion)
 
 **PASS:** Scope is clear and self-consistent; no non-goal is violated; appendix content stays within unit scope
 
-**FAIL:** Ambiguous scope, goal/non-goal contradiction, boundary violation, or out-of-scope appendix content (fix_required)
+**FAIL:** Ambiguous scope, goal/non-goal contradiction, boundary violation, or out-of-scope appendix content (actionable)
 
 **Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content)
 
@@ -288,7 +288,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 **PASS:** evidence_appendix_ref is consistent with the spec body; no zombie, orphan, or residual evidence states
 
-**FAIL:** Contradiction found, or zombie/orphan/residual evidence state detected (P1, fix_required)
+**FAIL:** Contradiction found, or zombie/orphan/residual evidence state detected (P1, actionable)
 
 **Check method:** evidence_appendix_ref × acceptance item attributes × evidence appendix content cross-reference
 
@@ -311,14 +311,14 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
-6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (fix_required)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
+6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (actionable)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (actionable)
 7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
 
 **PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; no merge candidates found
 
 **WARNING:** Merge candidates (over-split acceptance items)
 
-**FAIL:** Uncovered behavior domain or surface type mismatch (fix_required); appendix contract/behavior content without item coverage (fix_required); appendix-main spec contradiction (fix_required); contract statement without carrier coverage (5h, fix_required); item violating the Contract Substance Baseline (5i, fix_required)
+**FAIL:** Uncovered behavior domain or surface type mismatch (actionable); appendix contract/behavior content without item coverage (actionable); appendix-main spec contradiction (actionable); contract statement without carrier coverage (5h, actionable); item violating the Contract Substance Baseline (5i, actionable)
 
 **Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for over-splitting detection)
 
@@ -345,7 +345,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 **PASS:** No contradictions found
 
-**FAIL:** One or more contradictions found, with quoted evidence (fix_required)
+**FAIL:** One or more contradictions found, with quoted evidence (actionable)
 
 **Check method:** Spec body × acceptance item pass_condition — semantic cross-reference with quoted evidence
 
@@ -371,7 +371,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 **PASS:** No conflicts found
 
-**FAIL:** One or more conflicts found, with quoted evidence from both items (fix_required)
+**FAIL:** One or more conflicts found, with quoted evidence from both items (actionable)
 
 **Check method:** Cross-item cross-reference by verification_surface and affects.files
 
@@ -391,7 +391,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 **PASS:** All testable items use Gherkin-style description format
 
-**FAIL:** One or more testable items have non-compliant description format (fix_required)
+**FAIL:** One or more testable items have non-compliant description format (actionable)
 
 **Check method:** Acceptance item description × verification_type — format pattern check
 
@@ -425,7 +425,7 @@ For each acceptance item:
   - pass_condition: "registration works correctly"
   - "works correctly" is a value judgment, not a verifiable condition.
     No concrete code change would cause this specific condition to FAIL.
-  - fix_required: Replace with a specific, measurable pass_condition
+  - actionable: Replace with a specific, measurable pass_condition
 ```
 
 **Edge cases:**
@@ -465,7 +465,7 @@ For each acceptance item:
 {item.id}: FAIL — Description too vague for test derivation
   - description: "User can register"
   - Verdict: No inputs, no expected outputs, no conditions.
-  - fix_required: Expand description with Given/When/Then scenarios or specific pass conditions
+  - actionable: Expand description with Given/When/Then scenarios or specific pass conditions
 ```
 
 **PASS:** All testable items have actionable descriptions
@@ -533,11 +533,11 @@ PASS — pass_condition provides complementary information:
 2. For each contract statement, verify a carrier carries it at a **comparable granularity**:
    - The acceptance item set (an item's `description` or `pass_condition` states the same value, code, field name, format, or assumption), or
    - A protocol appendix (API contract, data type, error code, state machine section) states it
-3. A contract statement with no carrier → FAIL (fix_required: move the contract into an acceptance item or a protocol appendix)
+3. A contract statement with no carrier → FAIL (actionable: move the contract into an acceptance item or a protocol appendix)
 
 **PASS:** Every contract statement in prose is carried by an item or protocol appendix
 
-**FAIL:** One or more contract statements lack carrier coverage (fix_required)
+**FAIL:** One or more contract statements lack carrier coverage (actionable)
 
 **Check method:** Body + non-evidence appendices × (acceptance item set ∪ protocol appendices) — contract-level cross-reference, quoted evidence per statement
 
@@ -561,7 +561,7 @@ For each acceptance item, apply the five baseline rules (S1–S5, see `framework
 
 **PASS:** All items satisfy the Contract Substance Baseline
 
-**FAIL:** One or more items violate S1–S5 (fix_required, with the violated rule quoted)
+**FAIL:** One or more items violate S1–S5 (actionable, with the violated rule quoted)
 
 **Check method:** Contract Substance Baseline × acceptance item set — rule-by-rule semantic assessment with quoted evidence
 
@@ -591,7 +591,7 @@ affects.files:
 affects.appendices:
   - Each appendix must exist and belong to this unit
   - The appendix frontmatter must declare the correct unit
-  - An appendix with `status: retired` must not be referenced: the retiring appendix is removed on promote, so the reference would break — FAIL (fix_required: remove the reference or remove the `status: retired` declaration). The mechanical `specflowctl validate` Check 4 and `specflowctl promote` reject the same reference (a retiring spec's own references are exempt).
+  - An appendix with `status: retired` must not be referenced: the retiring appendix is removed on promote, so the reference would break — FAIL (actionable: remove the reference or remove the `status: retired` declaration). The mechanical `specflowctl validate` Check 4 and `specflowctl promote` reject the same reference (a retiring spec's own references are exempt).
 ```
 
 2. If `evidence_appendix_ref` is not `none`:
@@ -601,17 +601,17 @@ affects.appendices:
   (not only background, motivation, principles, or patch notes)
 - If the appendix describes existing implementation behavior mixed with new design parts,
   it must clearly distinguish which parts are existing and which are new
-- If content is only background or patch notes → FAIL (fix_required)
+- If content is only background or patch notes → FAIL (actionable)
 - Each acceptance item that references the evidence appendix in `affects.appendices`
   must have a corresponding behavior-domain section in the appendix content;
   zombie/orphan/residual states are reported by Check 4 at default severity P1
 ```
 
-3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (fix_required: update or remove the invalid path reference)
+3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (actionable: update or remove the invalid path reference)
 
 **PASS:** All affects declarations are valid, evidence appendix is semantically consistent, appendix file path references exist
 
-**FAIL:** Reference inconsistency, appendix content contradicts declaration, or appendix references non-existent file paths (fix_required)
+**FAIL:** Reference inconsistency, appendix content contradicts declaration, or appendix references non-existent file paths (actionable)
 
 **Check method:** affects.* × frontmatter refs cross-reference + appendix content semantic assessment
 
@@ -638,9 +638,9 @@ affects.appendices:
    - Does this candidate modify a contract that a dependency stable spec relies on?
      If yes, and the dependency's candidate spec does not already reflect the same change
        → the change must be explicitly declared in this candidate's spec body
-       If not declared → FAIL (blocked: needs user confirmation on downstream impact)
+       If not declared → FAIL (needs_decision: needs user confirmation on downstream impact)
 ```
-6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (fix_required: resolve the cross-unit inconsistency)
+6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (actionable: resolve the cross-unit inconsistency)
 7. **Carrier substance warning:** if a dependency unit's carriers (item set or protocol appendices) are compliant but carry no comparable contract statements (e.g. items with no concrete values, codes, or formats to compare against) → WARNING naming the unit and the empty carriers, recommending the dependency unit enrich its acceptance items per `framework/spec_writing_guide.md` §7 Contract Substance Baseline. Not a FAIL — the dependency unit's own validate Check 5i gates empty carriers at promote; this warning surfaces the coupling risk to the user.
 
 **Dependency scope report:** Report the carrier regions actually depended on — the dependency unit's acceptance item set and the whole protocol appendix files. The item set is declared as a **structural region dependency** (`specflowctl gate-evidence --file <path> --acceptance-items`, see `framework/validation_cache.md` §Structural Region Dependencies): it is located by structure, so prose edits elsewhere in the same file — even inside the same content-defined chunk — do not stale this cache. Protocol appendices are contract files and are declared whole. Cache entries for dependency unit main specs, their protocol appendices, and rule files are written as **logical references** (`unit:{name}`, `unit:{name}:appendix:{file}`, `rule:{id}`) instead of physical paths — freshness resolves them to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
@@ -649,7 +649,7 @@ affects.appendices:
 
 **WARNING (step 7):** Dependency unit carriers carry no comparable contract statements — consider enriching them per the Contract Substance Baseline
 
-**FAIL:** Contradiction found (fix_required) or unacknowledged contract breakage (blocked)
+**FAIL:** Contradiction found (actionable) or unacknowledged contract breakage (needs_decision)
 
 **Check method:** Candidate × related candidates × related stables three-way cross-reference over the formal behavior carriers (acceptance item sets + protocol appendices).
 
@@ -676,14 +676,14 @@ affects.appendices:
    - Is every "must" requirement satisfied?
 ```
 6. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §3). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule version:
-   - Referenced rule is neither a stable global rule nor a bound rule listed in this unit's `rule_refs`, or the reason is missing → FAIL (fix_required: correct or remove the invalid exception entry)
-   - Exception no longer justified (architecture was rewritten, rule changed, or the reason expired) → FAIL (fix_required: report the exception for removal; the removal is applied only after user approval)
+   - Referenced rule is neither a stable global rule nor a bound rule listed in this unit's `rule_refs`, or the reason is missing → FAIL (actionable: correct or remove the invalid exception entry)
+   - Exception no longer justified (architecture was rewritten, rule changed, or the reason expired) → FAIL (actionable: report the exception for removal; the removal is applied only after user approval)
    - Exception still justified → keep it and state the re-examination verdict in this check's reason
-7. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (fix_required: align appendix content with constraints)
+7. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (actionable: align appendix content with constraints)
 
 **PASS:** Candidate (main spec + appendices) is compatible with all constraints and bound rules; all recorded rule exceptions are still justified
 
-**FAIL:** Constraint or rule violation found in main spec or appendices (fix_required)
+**FAIL:** Constraint or rule violation found in main spec or appendices (actionable)
 
 **Check method:** Candidate × system_constraints × bound rules three-way cross-reference
 
@@ -713,7 +713,7 @@ Advisory findings from Check 2 Step 4 are presented for awareness only — they 
 
 ### Batch classification (validate)
 
-When FAIL items exist, the main agent classifies each finding into a **batch group** or a **decision group** before presenting. Classification uses each FAIL's resolution type (fix_required / blocked) and the check definition — it adds no new analysis; for batch group candidates it only runs lightweight assertion re-verification (see Assertion re-verification below).
+When FAIL items exist, the main agent classifies each finding into a **batch group** or a **decision group** before presenting. Classification uses each FAIL's resolution type (actionable / needs_decision) and the check definition — it adds no new analysis; for batch group candidates it only runs lightweight assertion re-verification (see Assertion re-verification below).
 
 **Batch group eligibility:** A finding enters the batch group only if its fix is fully determined by an objective standard — no interpretation of design intent is required. The batch group is limited to these fix types:
 - Check 1: missing required frontmatter fields (standard: the required fields list)
@@ -721,7 +721,7 @@ When FAIL items exist, the main agent classifies each finding into a **batch gro
 - Check 1: appendix path or naming not following the convention (standard: the path convention)
 - Check 5d: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
 
-All other FAIL findings — including 5e/5f/5g content rewrites, Checks 2/3/4/6/7/8, and every blocked item — go to the decision group. **Blocked items always go to the decision group.**
+All other FAIL findings — including 5e/5f/5g content rewrites, Checks 2/3/4/6/7/8, and every needs_decision item — go to the decision group. **needs_decision items always go to the decision group.**
 
 No activation threshold: findings are aggregated at check level rather than presented flat per item, so splitting out the batch group adds constant cost and always reduces the decisions the user must make — there is no over-splitting scenario. The batch group is inherently limited by the fix-type list above.
 
@@ -740,45 +740,58 @@ Re-verification failure → item moves to the decision group. This runs before e
 
 After classification, present the findings (§Summary format) and wait for the user's decision per HARD RULE 3a:
 - **Batch group:** one decision on the whole group per §Batch classification.
-- **Decision group:** present each finding with its resolution type (fix_required / blocked) and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
+- **Decision group:** present each finding with its resolution type (actionable / needs_decision) and wait for the user's decision per HARD RULE 3a. Do not offer a structured resolution menu.
+
+### Severity check
+
+validate grades findings P0/P1. P1 is the contract-decided default for every FAIL check — it needs no confirmation. A P0 grade is a judgment-based assignment and must be confirmed per `framework/severity_policy.md` §9: read the impact surface the P0 claim depends on (the downstream consumer, dependent unit, or the section/appendix the claim relies on), verify the §9.3 boundary holds, and record `confirmed` or `adjusted: P0 → P1` with the evidence file and reason. Check 2 Step 4 advisory findings are confirmed under the same rules (see Check 2 Step 4). The records appear in the report so the trace shows the check ran.
+
+```
+Severity check:
+  confirmed: N | adjusted: N
+  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
+```
 
 ### Summary format
 
-Present the findings using the unified report skeleton (§Output Format). The header, `Blocking promote`, key counts, and `Next step` follow the skeleton; only the Findings section is command-specific and defined here.
+Present the findings using the unified report skeleton (§Output Format). The header, `Blocking promote`, key counts, and `Next step` follow the skeleton; the Severity check and Findings sections are command-specific and defined here.
 
 ```
 ────────────────────────────────────────────
 validate@{unit} · full · candidate   # targeted runs: validate@{unit} · targeted (user requested: {keyword}) · candidate
-Result: FAIL (fix_required | blocked)
+Result: FAIL
 Blocking promote: yes
-Key counts: Failed checks: N / Total findings: M / Advisory findings: K
+Key counts: Findings: N (P0: a | P1: b | P2: c | P3: d)
 ────────────────────────────────────────────
-{body — the executed check lines, one per check}
+{body — the executed check lines, one per check; Failed checks: N and Advisory findings: K shown in the body}
+────────────────────────────────────────────
+Severity check:
+  confirmed: N | adjusted: N
+  - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
 ────────────────────────────────────────────
 Findings:
   Batch group (N items) — fix fully determined by an objective standard:
-    - {item}: {one-line fix} (based on: {standard reference})
+    - [{severity}] {location} — {issue} (actionable, based on: {standard reference})
     ...
   Decision group (M items) — need confirmation:
-    1. {check-name}: FAIL — {reason} (fix_required | blocked)
+    1. [{severity}] {location} — {issue} (actionable | needs_decision)
     ...
-Summary: Failed checks: N / Total findings: M / Advisory findings: K
 ────────────────────────────────────────────
-Next step: {fix_required → "fixes applied — re-run `validate@{unit}:check-{n}` to confirm"; blocked → "awaiting your decision on {item}"}
+Next step: {actionable → "fixes applied — re-run `validate@{unit}:check-{n}` to confirm"; needs_decision → "awaiting your decision on {item}"}
 ────────────────────────────────────────────
 ```
 
-`Total findings` equals the sum of batch group items and decision group items.
+`Findings` (N) equals the sum of batch group items and decision group items.
 
 When no finding qualifies for the batch group, present flat:
 
 ```
 Findings:
-  1. {check-name}: FAIL — {reason} (fix_required | blocked)
+  1. [{severity}] {location} — {issue} (actionable | needs_decision)
   ...
 ```
 
 ### Validate-specific notes
 
 - **Re-validation rule:** After any fix is applied, the agent must NOT re-run validate automatically. Executing quality-gate commands is user-triggered only (see HARD RULE 2 in `framework/concepts.md`). The agent guides the user to a targeted re-check with the concrete command and waits for the user to trigger it. Affected-check mapping: acceptance item edits (any field) affect the Check 5 family — suggest `validate@{unit}:check-5`, since every sub-check reads item fields; `affects.*` edits additionally affect Check 6 — suggest `validate@{unit}:check-5` plus `validate@{unit}:check-6`; edits to spec body prose or appendices affect 5a/5b — suggest `validate@{unit}:check-5`. Example suggestion: "Fixes applied. Suggest re-running `validate@{unit}:check-{n}` to confirm. Shall I run it?" (Targeted re-checks never write a cache — only a user-triggered `validate@{unit}` full run restores the cache.) Until a re-run is triggered, do NOT write a pass cache and do NOT claim the fix is verified — report "fixed, pending re-confirmation". When a re-run is triggered by the user, the final validate result is based on the re-run, not on the pre-fix snapshot. Findings from the pre-fix snapshot that are no longer reproducible on the re-run are dropped, not carried forward as still-open. When a re-run changes an earlier finding, inform the user: "Re-validated affected checks after the fix. [finding] no longer holds. Remaining findings: ..."
-- **Blocked items** (resolution_type: blocked) require user input — skip to next finding without suggesting a fix.
+- **needs_decision items** (resolution_type: needs_decision) require user input — skip to next finding without suggesting a fix.

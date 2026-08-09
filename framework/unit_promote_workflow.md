@@ -10,8 +10,8 @@ When an agent executes `promote@{unit}`, it follows the 3 steps defined in this 
 - **Subagent permissions after promote:** must NOT modify files.
 - Each step reports **PASS** or **FAIL** with a reason.
 - Resolution types:
-  - **fix_required** — A concrete repair can be made.
-  - **blocked** — Requires user input (unclear intent, external dependency). Stop and ask.
+  - **actionable** — A concrete repair can be made.
+  - **needs_decision** — Requires user input (unclear intent, external dependency). Stop and ask.
 
 ## Output Format
 
@@ -76,9 +76,9 @@ Summary: ...
 
 **PASS:** No candidate-layer path references found in the file content.
 
-**FAIL (fix_required):** One or more structured field paths found. Report exact line numbers and matched paths. Inform the user and recommend editing the candidate spec to replace `candidate/` with `stable/` before re-running promote. The agent must NOT modify files during the promote workflow.
+**FAIL (actionable):** One or more structured field paths found. Report exact line numbers and matched paths. Inform the user and recommend editing the candidate spec to replace `candidate/` with `stable/` before re-running promote. The agent must NOT modify files during the promote workflow.
 
-**FAIL (blocked):** Narrative references found. These require user judgment — report each occurrence and ask the user whether each should be updated. Do not proceed to Step 3 until resolved.
+**FAIL (needs_decision):** Narrative references found. These require user judgment — report each occurrence and ask the user whether each should be updated. Do not proceed to Step 3 until resolved.
 
 ---
 

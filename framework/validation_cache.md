@@ -241,7 +241,7 @@ exists.
 | Event | Action |
 |-------|--------|
 | `validate@{unit}` full PASS | Write `validate_result.md` with `mode: full`, and `hash` + `deps` evidence for every file read (via `specflowctl gate-evidence`) |
-| `validate` FAIL / blocked | Delete `validate_result.md` if it exists |
+| `validate` FAIL / needs_decision | Delete `validate_result.md` if it exists |
 | `verify@{unit}` full PASS (all aligned) | Write `verify_result.md` with `result: pass`, severity counts at 0, `mode: full`, `blocking: false`, and `hash` + `deps` evidence for every file read |
 | `verify@{unit}` full PASS (P2/P3 non-blocking findings) | Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `mode: full`, and `hash` + `deps` evidence. Promote may proceed |
 | `verify` FAIL (any P0/P1 findings) | Delete `verify_result.md` if it exists. Agent must stop, not proceed to promote |

@@ -182,8 +182,9 @@ Flows that currently define an execution position:
 2. `spec_flow_design_review` — procedure step 13 (`framework/spec_flow_design_review.md`)
 3. `review` — cross-check §7.4 (`framework/spec_review_checklist.md`)
 4. `verify` — Step 7 analysis collection (`framework/unit_verify_checklist.md`)
-5. `validate` — Check 2 Step 4 advisory findings only (`framework/unit_validate_checklist.md`)
-6. scoped review — conclusion stage (`framework/governance/review_scope.md`)
+5. `validate` — P0 adjudications (P1 is the contract-decided default and is not re-graded) and Check 2 Step 4 advisory findings (`framework/unit_validate_checklist.md`)
+6. `validate` (rule) — P0 adjudications (P1 is the contract-decided default and is not re-graded) (`framework/rule_validate_checklist.md`)
+7. scoped review — conclusion stage (`framework/governance/review_scope.md`)
 
 The list is a record of current wiring, not the coverage definition. Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, evidence rules, and record contract.
 

@@ -20,8 +20,8 @@ The implementation no longer matches recorded stable truth:
 
 ## 4. Validate fails repeatedly
 
-1. Check whether the issue is `fix_required` (concrete repair possible in the candidate) or `blocked` (requires user input)
-2. If blocked: stop and present the question to the user
+1. Check whether the issue is `actionable` (concrete repair possible in the candidate) or `needs_decision` (requires user input)
+2. If needs_decision: stop and present the question to the user
 
 ## 5. User disagrees with divergence suggestion
 
@@ -33,7 +33,7 @@ When the user disagrees with the agent's suggested direction (code_gap / spec_ga
 
 ## 6. Rule Operation Unsafe or Blocked
 
-When a rule operation cannot proceed safely (ambiguous, combines multiple actions, or previous step returned blocked):
+When a rule operation cannot proceed safely (ambiguous, combines multiple actions, or a previous step returned `needs_decision`):
 
 1. **Route to exactly one action** — reduce the request to the smallest distinct rule action:
    - Creating new rule truth → write candidate rule (see `spec_writing_guide.md` §6.1)

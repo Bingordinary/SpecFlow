@@ -167,7 +167,7 @@ Results are presented using the unified report skeleton defined in each command'
 verify@user_auth · full · candidate
 Result: PASS
 Blocking promote: no
-Key counts: Blocking mismatches: 0 / Non-blocking mismatches: 0
+Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
 Items:
   - AUTH-AC-001: ALIGNED — src/auth/login.go:42
@@ -178,7 +178,6 @@ Coverage:
 Cross-check: 5/5 PASS
 ────────────────────────────────────────────
 Findings: none
-Summary: blocking_mismatches: 0 / non_blocking_mismatches: 0
 ────────────────────────────────────────────
 Next step: if the design is finalized, run `promote@user_auth`
 ────────────────────────────────────────────
@@ -191,15 +190,13 @@ Next step: if the design is finalized, run `promote@user_auth`
 verify@user_auth · targeted (user requested: login) · candidate
 Result: PASS
 Blocking promote: no
-Key counts: Blocking mismatches: 0 / Non-blocking mismatches: 0
+Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
 Content checked:
   - POST /login — login.go, token.go
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
   - src/api/login.go (sha256:def...)
-────────────────────────────────────────────
-Summary: the requested content is aligned.
 ────────────────────────────────────────────
 Next step: None
 ────────────────────────────────────────────
@@ -215,15 +212,15 @@ Run `verify@user_auth` for a complete verification.
 validate@user_auth · full · candidate
 Result: PASS
 Blocking promote: no
-Key counts: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
 1. Structural integrity: PASS
 2. Design soundness: PASS
 ...
 Cross-check: 3/3 PASS
+Failed checks: 0 | Advisory findings: 0
 ────────────────────────────────────────────
 Findings: none
-Summary: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
 ────────────────────────────────────────────
 Next step: None
 ────────────────────────────────────────────
@@ -237,15 +234,14 @@ Full validation passed.
 validate@user_auth · targeted (user requested: check-3 — scope integrity) · candidate
 Result: PASS
 Blocking promote: no
-Key counts: Failed checks: 0 / Total findings: 0 / Advisory findings: 0
+Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
 Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
   - check-3 (scope integrity): PASS — user requested
+Failed checks: 0 | Advisory findings: 0
 Files checked:
   - docs/specs/units/candidate/unit_user_auth.md (sha256:abc...)
-────────────────────────────────────────────
-Summary: scope integrity PASS.
 ────────────────────────────────────────────
 Next step: None
 ────────────────────────────────────────────
@@ -267,10 +263,10 @@ When the agent needs to suggest checks to the user (edge cases, option proposals
 
 ## Present Findings
 
-When validate or verify produces findings, the agent presents
-the findings to the user. P0/P1 verify findings (verify FAIL) stop the agent — it must not
-proceed to promote and waits for a decision per HARD RULE 3a. P2/P3 verify
-findings (verify PASS with pending items) are non-blocking — the agent reports them and may continue (promote is
+When validate, verify, or review produces findings, the agent presents
+the findings to the user. P0/P1 findings (FAIL) stop the agent — it must not
+proceed to promote and waits for a decision per HARD RULE 3a. verify/review P2/P3
+findings (PASS with pending items) are non-blocking — the agent reports them and may continue (promote is
 not stopped). No structured resolution menu is used.
 
 File-specific format and details:
