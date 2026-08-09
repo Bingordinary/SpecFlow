@@ -98,7 +98,7 @@ The tooling layer must not:
    - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, and related units
    - this is a render action: read-only, does not modify any project file
 5. `fork`
-   - copy a stable spec/rule (and appendix files for units) to the candidate layer with layer transform and version bump
+   - copy a stable spec/rule (and appendix files for units) to the candidate layer with a version bump
    - `fork --unit <name>` / `fork --rule <id>`: rejects if a candidate already exists or the stable source does not exist
    - this is the only allowed fork path (see HARD RULE 5 in `framework/concepts.md`)
 6. `consumers`
@@ -110,10 +110,11 @@ The tooling layer must not:
    - `fresh --unit <name>` / `fresh --rule <id>`: detail for one target — candidate gate statuses, or drift state for a stable-only target (no candidate file)
    - strictly read-only: never writes or deletes caches or baselines, never triggers validate/verify/review; a `fresh` report and a `promote` run never disagree because both use the same cache checks
    - corresponds to the `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` agent triggers (see `framework/concepts.md` and `framework/validation_cache.md` §Freshness Check)
-8. `gate-evidence`
-   - compute the dependency evidence for one file read during a validate/verify/review run
-   - `gate-evidence --file <path>` with optional `--ranges START-END,START-END` (1-based, inclusive; empty means the whole file): maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + the `deps` chunk CIDs to record in the cache's `files` entry
-   - corresponds to the `specflowctl gate-evidence` agent-trigger row (see `framework/concepts.md` and `framework/validation_cache.md` §Dependency Declaration)
+ 8. `gate-evidence`
+    - compute the dependency evidence for one file read during a validate/verify/review run
+    - `gate-evidence --file <path>` with optional `--ranges START-END,START-END` (1-based, inclusive; empty means the whole file): maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + the `deps` chunk CIDs to record in the cache's `files` entry
+    - with `--acceptance-items`: declares the `acceptance_item_set` structural region as the dependency (`region:acceptance_items:<cid>`), located by structure rather than line numbers or chunk boundaries; with an empty `--ranges` it replaces the whole-file declaration, with `--ranges` both are declared (see `framework/validation_cache.md` §Structural Region Dependencies)
+    - corresponds to the `specflowctl gate-evidence` agent-trigger row (see `framework/concepts.md` and `framework/validation_cache.md` §Dependency Declaration)
 9. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache

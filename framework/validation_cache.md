@@ -69,6 +69,37 @@ no `deps` but a non-empty file fails closed (see Staleness Detection).
 path, so `./` prefixes, absolute paths, and platform separators in the
 recorded path are equivalent.
 
+### Logical References
+
+Cross-unit and rule dependencies — any dependency object resolved by name: a dependency unit main spec read by unit `validate` Check 7, a protocol appendix of a dependency unit read by unit `validate` Check 7, a rule file read by unit `validate` Check 8, or a unit spec file scanned by rule `validate` consumer discovery — are recorded as **logical references** instead of physical paths:
+
+```yaml
+files:
+  - path: unit:auth            # logical reference — resolves to the current-layer unit main spec
+    hash: sha256:def456...
+    deps:
+      - sha256:7890ab...
+      - region:acceptance_items:sha256:111222...   # structural region dependency
+  - path: unit:auth:appendix:unit_auth_account_token_claims  # logical reference — resolves to the current-layer protocol appendix
+    hash: sha256:def456...
+    deps:
+      - sha256:3456cd...
+  - path: rule:g_rule_http     # logical reference — resolves to the current-layer rule file
+    hash: sha256:abc123...
+    deps:
+      - sha256:3456cd...
+```
+
+A logical reference resolves at freshness-check time to the **current-layer** file (candidate first, stable fallback), and the recorded `hash`/`deps` come from the file the run actually read. This makes a promote of the referenced unit or rule (which deletes the candidate file without changing content) **not** stale caches whose dependency content is unchanged — a physical path would fail closed the moment the candidate file disappears. The appendix form (`unit:{name}:appendix:{file}`) takes the full appendix file base name without the `.md` extension (`unit_auth_account_token_claims`), resolved the same way (candidate first, stable fallback); the unit name is contextual. Logical references are allowed only for spec objects resolved by name (`unit:`, `unit:{name}:appendix:`, `rule:`); physical paths remain mandatory for every other entry (the unit's own main spec and appendices — the promote appendix gate keys on those physical paths — code files, constraints). An unresolved logical reference (no candidate and no stable file) fails closed.
+
+### Structural Region Dependencies
+
+Chunk CIDs are the chunk-boundary granularity (~2 KB, content-defined): a small file is a single chunk, so a line-range declaration on it degenerates to the whole file. For spec content whose semantic granularity is finer than a chunk — the acceptance item set of a dependency unit — a **structural region dependency** is used instead:
+
+- `specflowctl gate-evidence --file <path> --acceptance-items` emits `region:acceptance_items:<cid>`, the content identifier of the `acceptance_item_set` region (from the marker to the next top-level heading).
+- Freshness re-locates the region by structure (the marker and heading, not line numbers) and compares the region's CID. Edits outside the region — even inside the same content-defined chunk — do not stale the cache; edits inside it do.
+- Region dependencies are the precise declaration mode for cross-unit checks, which depend on a dependency unit's acceptance item set and not on its prose. Rule files and protocol appendices are contract files (the whole file is the carrier) and keep whole-file declarations.
+
 `mode: full` means a complete run of all checks/steps. Only full runs write caches — targeted runs (`:check-{n}` / `:{keyword}`) never do, so `mode` is always `full`. See `framework/verification_scope.md` for the full design.
 
 ### Verify result semantics
@@ -280,7 +311,7 @@ The review cache at `docs/specs/meta/validation/unit/{name}/review_result.md` is
 
 The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (review with P0/P1) / `OK` (appendix). Classification reuses the same checks as `specflowctl promote` (Staleness Detection above), so a fresh report and a promote run never disagree. For a retiring unit only the validate gate is reported, matching promote's gate set.
 
-`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify/review. Its purpose is operational visibility — while iterating on multiple units that share files, a change to one unit that invalidates another unit's caches shows up as `STALE` immediately.
+`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify/review. Its purpose is operational visibility while iterating on multiple units that share files — but a shared-file change stales a cache **only when it falls inside the declared dependency chunks**. Changes outside the declared dependencies keep the cache fresh and surface as an informational note (see Staleness Detection above): visibility is carried by the note, not by an over-broad STALE verdict. Cross-unit and rule dependencies declared as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) stay fresh across a promote of the referenced target when the dependency content is unchanged.
 
 ## Stable Drift Baseline
 

@@ -90,10 +90,10 @@ After migration, run the format compliance check against `framework/spec_writing
 
 | Check | What to verify |
 |-------|---------------|
-| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `layer`, `version`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
+| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `version`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
 | Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present. Compare against `spec_writing_guide.md`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
-| Rule files | For each rule file: `rule_id`, `rule_scope`, `layer`, `rule_version` present. Path matches convention. |
+| Rule files | For each rule file: `rule_id`, `rule_scope`, `rule_version` present. Path matches convention. |
 
 Report each check as PASSED or FAILED with details. If any check fails and the cause is a missed migration, fix it. If the cause is unclear or requires business judgment, report it to the user.
 

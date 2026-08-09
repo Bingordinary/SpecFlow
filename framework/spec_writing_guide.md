@@ -43,11 +43,12 @@ Each unit main Spec must include these fields:
 
 ```yaml
 id: {unit}
-layer: stable|candidate
 version: x.y.z
 unit_refs: none
 rule_refs: none
 ```
+
+The spec layer is encoded by the file path (`docs/specs/units/candidate/` vs `docs/specs/units/stable/`) — no `layer` frontmatter field is declared, and promote performs a pure copy without touching file content.
 
 `unit_refs` may also be a YAML list of unit refs:
 
@@ -91,6 +92,13 @@ Or `rule_exceptions: none`. Rules:
 
 `unit_refs` means the current unit depends on the referenced unit's formal behavior.
 
+**Formal behavior carriers:** a unit's formal behavior is declared in exactly two places:
+
+1. the acceptance item set (`acceptance_item_set` in the main spec's `Testability / Acceptance Criteria` section), and
+2. protocol appendices — appendix files carrying API contracts, data type definitions, error codes, or state machine transitions.
+
+Everything else in the unit (body prose, evidence appendices, background, motivation, design discussion) is not a formal behavior carrier. Contract statements (protocols, data formats, error codes, behavior semantics) must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5i), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers and declares its cache dependencies over exactly those regions, so unrelated edits to non-carrier content do not stale dependent units' caches.
+
 It does not mean:
 
 1. the current unit may edit the referenced unit
@@ -121,7 +129,6 @@ Each rule Spec must include:
 ```yaml
 rule_id: {rule}
 rule_scope: global|bound
-layer: stable|candidate
 rule_version: x.y.z
 ```
 
@@ -191,7 +198,7 @@ A rule can be retired when its constraint no longer applies to any unit. Retirem
 
 Procedure:
 
-1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 7 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone.
+1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 6 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone.
 2. In the candidate rule frontmatter, add `status: retired`. The rule version is not compared against the stable version for retired rules (the stable copy is removed, not updated).
 3. Run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation.
 4. After promote, the stable rule file is deleted; the candidate rule file is removed. The rule no longer exists in any layer.
@@ -329,6 +336,45 @@ Splitting is legitimate when any condition fails. Examples:
 
 `validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains, and over-split detection reports items that satisfy all four conditions above as merge candidates. See `framework/unit_validate_checklist.md` §5a.
 
+### Contract Substance Baseline
+
+Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them.
+
+| Rule | Requirement | Rejected form |
+|---|---|---|
+| S1 — Contract element sufficiency | `description` and/or `pass_condition` must carry at least one concrete contract element: a numeric constraint (timeout, rate, limit), an HTTP status code, a field/type/enum name, an error code, a protocol format, or a timing/consistency assumption | Pure behavior narration with no element: "User can log in", "System handles requests correctly" |
+| S2 — Specific-value obligation | Constraints are stated with concrete values: `201` not `2xx`, `5s` not "fast", authentication methods enumerated (`OAuth2 + API Key`) not "multiple methods" | Generalized values: "returns a success code", "responds quickly", "supports various formats" |
+| S3 — Scenario completeness | The Gherkin scenario set includes the happy path plus at least one failure or boundary scenario | Only the happy path |
+| S4 — Information increment | `pass_condition` carries constraints the `description` does not | `pass_condition` rephrasing the `description` |
+| S5 — No template phrasing | No content-free boilerplate | "behaves as expected", "processed correctly", "meets user expectations" |
+
+**Example — rejected:**
+
+```yaml
+  - id: auth.login
+    description: User can log in with email and password.
+    pass_condition: Login succeeds with valid credentials.
+```
+
+The item is falsifiable (a broken login fails it) but carries zero contract elements: no status code, no token, no error code. A dependent unit cannot compare against it.
+
+**Example — accepted:**
+
+```yaml
+  - id: auth.login
+    description: |
+      Given a registered user with email "user@example.com" and password "ValidP@ss1"
+      When the user sends a POST /api/login with correct email and password
+      Then the system returns 200 with a JWT token in the Authorization header
+
+      Given a registered user with email "user@example.com" and password "ValidP@ss1"
+      When the user sends a POST /api/login with wrong password "WrongP@ss1"
+      Then the system returns 401 with error code "INVALID_CREDENTIALS"
+    pass_condition: Returns 200 with JWT on valid credentials; 401 with INVALID_CREDENTIALS on wrong password; token expires after 30 minutes.
+```
+
+The item carries concrete elements (status codes, error code, token format, expiry bound) that the cross-unit check can compare against.
+
 ## 8. Appendix Files
 
 Appendix files are support truth for one unit.
@@ -337,13 +383,14 @@ They do not replace the unit main Spec.
 
 Appendix ownership is derived from the appendix path and appendix frontmatter, not from a main-Spec index.
 
+**Contract content requires acceptance coverage:** API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are part of the unit's formal behavior (see §4) and must have a corresponding acceptance item in the main spec. `validate` Check 5a fails appendix contract content without such coverage — the acceptance item set is the complete formal behavior carrier, and the cross-unit check reads dependency units through it. Ordinary design appendices and evidence appendices carry no contract-coverage requirement beyond the standard behavior-domain coverage checks.
+
 Each unit appendix must:
 
 1. use the current path shape for its layer and unit id
 2. declare `unit: {unit}` in frontmatter
-3. declare `layer: stable|candidate` in frontmatter
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`) and applies layer transforms consistently. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`) and bumps the main spec version. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
 - Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
@@ -362,7 +409,7 @@ The `status` field is validated only when present. Absence is treated as `active
 
 ### Appendix Retirement
 
-When an appendix (evidence or ordinary design appendix) is no longer needed, retire it explicitly — do not delete the candidate file and rely on promote to leave the stable copy behind. Deleting the candidate copy only removes the candidate file: the stable copy stays, is copied back by the next fork, and its content keeps producing orphan warnings (or contradictions with the main spec). The stable copy can only be removed through an explicit retirement:
+When an appendix (evidence or ordinary design appendix) is no longer needed, retire it explicitly — do not delete the candidate file and rely on promote to leave the stable copy behind. Deleting the candidate copy only removes the candidate file: the stable copy stays, is copied back by the next fork, and its content keeps producing orphan findings (or contradictions with the main spec). The stable copy can only be removed through an explicit retirement:
 
 1. In the candidate appendix frontmatter, add `status: retired`. Content may remain — the whole file is removed, and git history preserves the record.
 2. Remove any references to the appendix from the main spec (`affects.appendices` entries and `evidence_appendix_ref`). `validate` Check 6 rejects references to a retiring appendix, and the mechanical `specflowctl validate` Check 4 and `specflowctl promote` both reject them as well (a retiring spec's own references are exempt — they disappear with it).

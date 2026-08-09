@@ -7,7 +7,6 @@ import (
 
 const extractionSpec = `---
 id: demo
-layer: candidate
 version: 0.1.0
 unit_refs: none
 rule_refs: none

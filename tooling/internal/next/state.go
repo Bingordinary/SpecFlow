@@ -54,16 +54,14 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 		info.Appendices = append(info.Appendices, rel)
 	}
 
-	specPath, err := specpaths.ObjectMainSpecFileRef("unit", "candidate", unitName)
-	if err == nil {
-		info.RelatedUnits = discoverRelatedUnits(repoRoot, unitName, specPath)
-		// Read rule_refs from candidate spec frontmatter
-		fullPath := filepath.Join(repoRoot, specPath)
-		if data, readErr := os.ReadFile(fullPath); readErr == nil {
-			fm := specpaths.ReadFrontmatterStringMap(string(data))
-			if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
-				info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
-			}
+	specPath := specpaths.CandidateUnitSpecFileRef(unitName)
+	info.RelatedUnits = discoverRelatedUnits(repoRoot, unitName, specPath)
+	// Read rule_refs from candidate spec frontmatter
+	fullPath := filepath.Join(repoRoot, specPath)
+	if data, readErr := os.ReadFile(fullPath); readErr == nil {
+		fm := specpaths.ReadFrontmatterStringMap(string(data))
+		if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+			info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
 		}
 	} else if info.HasStable {
 		// Fall back to stable spec

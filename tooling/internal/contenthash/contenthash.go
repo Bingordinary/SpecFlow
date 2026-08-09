@@ -249,3 +249,85 @@ func CIDsForRanges(fc FileChunks, ranges [][2]int) []string {
 	}
 	return out
 }
+
+// AcceptanceItemsRegion locates the acceptance_item_set structural region of
+// a spec's normalized text: from the exact marker line (a line whose trimmed
+// form is exactly `acceptance_item_set:` — a prose mention of the marker
+// elsewhere, even at line start, does not start the region) to the next
+// top-level heading (a line starting with `#` and no leading whitespace) or
+// the end of the text. The region is located by structure, not by line
+// number, so inserting or deleting content elsewhere only moves the region —
+// its content identity is preserved. ok is false when the marker is absent.
+func AcceptanceItemsRegion(text string) (region string, ok bool) {
+	lines := strings.Split(text, "\n")
+	startIdx := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "acceptance_item_set:" {
+			startIdx = i
+			break
+		}
+	}
+	if startIdx == -1 {
+		return "", false
+	}
+	endIdx := len(lines)
+	for i := startIdx + 1; i < len(lines); i++ {
+		line := lines[i]
+		if line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && strings.HasPrefix(line, "#") {
+			endIdx = i
+			break
+		}
+	}
+	return strings.Join(lines[startIdx:endIdx], "\n"), true
+}
+
+// RegionCID computes the content identifier of a structural region's text.
+func RegionCID(regionText string) string {
+	return CID([]byte(regionText))
+}
+
+// DepsPresent reports whether every declared dependency still holds for the
+// given normalized text. Chunk CIDs are matched against the text's current
+// content-defined chunk set; structural region dependencies
+// (`region:<type>:<cid>`) are re-located by structure and compared by content
+// identity, so edits outside the region do not invalidate them. An unknown
+// region type fails closed. An empty deps list reports true.
+func DepsPresent(text string, deps []string) bool {
+	fc := ChunkText(text)
+	present := make(map[string]bool, len(fc.Chunks))
+	for _, c := range fc.Chunks {
+		present[stripCIDPrefix(c.CID)] = true
+	}
+	for _, dep := range deps {
+		if strings.HasPrefix(dep, "region:") {
+			rest := strings.TrimPrefix(dep, "region:")
+			name, cid, found := strings.Cut(rest, ":")
+			if !found {
+				return false
+			}
+			switch name {
+			case "acceptance_items":
+				region, ok := AcceptanceItemsRegion(text)
+				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region)) {
+					return false
+				}
+			default:
+				return false
+			}
+			continue
+		}
+		if !present[stripCIDPrefix(dep)] {
+			return false
+		}
+	}
+	return true
+}
+
+// stripCIDPrefix removes any algorithm prefix (e.g. "sha256:") from a stored
+// or computed CID so it compares on the value alone.
+func stripCIDPrefix(cid string) string {
+	if idx := strings.LastIndex(cid, ":"); idx >= 0 {
+		return cid[idx+1:]
+	}
+	return cid
+}

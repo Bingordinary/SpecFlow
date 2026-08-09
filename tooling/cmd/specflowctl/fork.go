@@ -28,7 +28,7 @@ func runFork(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "Usage: specflowctl fork (--unit <name> | --rule <id>) [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Copy a stable spec/rule (and associated appendix files) to the candidate layer.")
-		fmt.Fprintln(stderr, "Updates frontmatter (layer, version) and reports the complete fork manifest.")
+		fmt.Fprintln(stderr, "Copies content verbatim (the layer is encoded by the path), increments the version, and reports the complete fork manifest.")
 		fmt.Fprintln(stderr, "This is the only allowed way to fork. Manual cp is not permitted.")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Flags:")

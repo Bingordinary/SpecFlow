@@ -55,7 +55,6 @@ func checkFrontmatter(repoRoot, ruleID string) CheckResult {
 	}{
 		{"rule_id", "rule_id"},
 		{"rule_scope", "rule_scope"},
-		{"layer", "layer"},
 		{"rule_version", "rule_version"},
 	}
 
@@ -124,62 +123,6 @@ func checkIDScopeConsistency(repoRoot, ruleID string) CheckResult {
 	}
 
 	return CheckResult{Name: "ID/Scope consistency", Status: Pass}
-}
-
-func checkFilePath(repoRoot, ruleID string) CheckResult {
-	fm := frontmatterKeys(repoRoot, ruleID)
-	if fm == nil {
-		return CheckResult{
-			Name:    "File path consistency",
-			Status:  Fail,
-			Details: "cannot read frontmatter",
-		}
-	}
-
-	declaredLayer := strings.TrimSpace(fm["layer"])
-	if declaredLayer == "" {
-		return CheckResult{
-			Name:    "File path consistency",
-			Status:  Fail,
-			Details: "layer field is missing",
-		}
-	}
-
-	path := candidateRulePath(repoRoot, ruleID)
-	pathRel := specpaths.RuleCandidateFileRef(ruleID)
-
-	var expectedDir string
-	switch declaredLayer {
-	case "candidate":
-		expectedDir = specpaths.RuleCandidateDir
-	case "stable":
-		expectedDir = specpaths.RuleStableDir
-	default:
-		return CheckResult{
-			Name:    "File path consistency",
-			Status:  Fail,
-			Details: fmt.Sprintf("invalid layer %q; must be 'candidate' or 'stable'", declaredLayer),
-		}
-	}
-
-	if !strings.HasPrefix(pathRel, expectedDir) {
-		return CheckResult{
-			Name:    "File path consistency",
-			Status:  Fail,
-			Details: fmt.Sprintf("declared layer is %q but file is at %s, expected %s/", declaredLayer, pathRel, expectedDir),
-		}
-	}
-
-	dir := filepath.Dir(path)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return CheckResult{
-			Name:    "File path consistency",
-			Status:  Fail,
-			Details: fmt.Sprintf("directory %s does not exist", expectedDir),
-		}
-	}
-
-	return CheckResult{Name: "File path consistency", Status: Pass}
 }
 
 func isVersionGreater(v1, v2 string) bool {

@@ -11,6 +11,9 @@ Key counts: {command-specific counts}
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
+Dependency scope:
+  {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
+────────────────────────────────────────────
 Findings:
   {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
 Summary: {command-specific summary counts}
@@ -30,6 +33,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Summary:` — command-specific final counts.
+- `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.

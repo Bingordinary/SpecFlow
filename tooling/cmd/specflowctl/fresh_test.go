@@ -33,7 +33,7 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func writeRetiringUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nlayer: candidate\nstatus: retired\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nstatus: retired\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func writeRuleSpec(t *testing.T, repoRoot, id string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, id+".md")
-	content := "---\nrule_id: " + id + "\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\n---\n"
+	content := "---\nrule_id: " + id + "\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestFreshAllMixed(t *testing.T) {
 	// stable-only unit must NOT appear
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\nlayer: stable\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\n---\n"), 0644)
 
 	// one rule with fresh validate cache
 	rulePath := writeRuleSpec(t, repoRoot, "b_rule_auth")
@@ -259,7 +259,7 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", files)
 	// Deliberately stale verify cache: the spec changes after the cache is written,
 	// so the declared dependency chunk is gone.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -318,7 +318,7 @@ func TestFreshUnitDetailStaleBlockedReview(t *testing.T) {
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
 	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
 	// The spec changes after the review cache is written: stale, not BLOCKED.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -418,7 +418,7 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func writeStableRuleSpec(t *testing.T, repoRoot, id string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, id+".md")
-	content := "---\nrule_id: " + id + "\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n"
+	content := "---\nrule_id: " + id + "\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestFreshStableScope(t *testing.T) {
 	writeStableUnitSpec(t, repoRoot, "settled")
 	writeStableUnitSpec(t, repoRoot, "legacy")
 
-	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -529,7 +529,7 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 	}
 	mid := fc.Chunks[len(fc.Chunks)/2]
 
-	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -571,7 +571,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	// Baseline says the surface is unchanged...
 	specPath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_settled.md")
 	specHash := computeHash(specPath)
-	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -615,7 +615,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeStableUnitSpec(t, repoRoot, "settled")
 
-	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +

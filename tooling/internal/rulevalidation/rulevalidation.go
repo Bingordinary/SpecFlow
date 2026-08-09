@@ -43,7 +43,6 @@ func ValidateRule(repoRoot, ruleID string) *RuleResult {
 
 	r.Checks = append(r.Checks, checkFrontmatter(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkIDScopeConsistency(repoRoot, ruleID))
-	r.Checks = append(r.Checks, checkFilePath(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkVersionSemantics(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkPromotionOwner(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkProhibitedFields(repoRoot, ruleID))

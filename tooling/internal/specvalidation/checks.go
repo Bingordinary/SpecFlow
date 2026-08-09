@@ -10,15 +10,10 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
-// specPath is a shorthand for specpaths.MainSpecFileRef("candidate", unitName).
+// specPath is a shorthand for specpaths.CandidateUnitSpecFileRef(unitName).
 // It produces docs/specs/units/candidate/unit_<unitName>.md.
 func specPath(repoRoot, unitName string) string {
-	ref, err := specpaths.MainSpecFileRef("candidate", unitName)
-	if err != nil {
-		// candidate is always a supported layer; err is unreachable here.
-		panic(err)
-	}
-	return filepath.Join(repoRoot, ref)
+	return filepath.Join(repoRoot, specpaths.CandidateUnitSpecFileRef(unitName))
 }
 
 // ------------------------------------------------------------
@@ -43,7 +38,6 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 		label string
 	}{
 		{"id", "id"},
-		{"layer", "layer"},
 		{"version", "version"},
 		{"unit_refs", "unit_refs"},
 		{"rule_refs", "rule_refs"},
@@ -69,14 +63,6 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 			Name:    "Frontmatter completeness",
 			Status:  Fail,
 			Details: fmt.Sprintf("frontmatter id %q does not match unit name %q", fm["id"], unitName),
-		}
-	}
-
-	if !strings.EqualFold(fm["layer"], "candidate") {
-		return CheckResult{
-			Name:    "Frontmatter completeness",
-			Status:  Fail,
-			Details: fmt.Sprintf("layer must be 'candidate', got %q", fm["layer"]),
 		}
 	}
 
@@ -516,9 +502,6 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 		}
 		if strings.TrimSpace(fm["unit"]) != unitName {
 			errs = append(errs, fmt.Sprintf("%s: frontmatter unit=%q, expected %q", rel, fm["unit"], unitName))
-		}
-		if !strings.EqualFold(strings.TrimSpace(fm["layer"]), "candidate") {
-			errs = append(errs, fmt.Sprintf("%s: frontmatter layer=%q, expected 'candidate'", rel, fm["layer"]))
 		}
 	}
 

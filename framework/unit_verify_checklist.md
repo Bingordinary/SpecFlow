@@ -64,6 +64,9 @@ Key counts: {command-specific counts}
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
+Dependency scope:
+  {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
+────────────────────────────────────────────
 Findings:
   {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
 Summary: {command-specific summary counts}
@@ -83,6 +86,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Summary:` — command-specific final counts.
+- `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -203,7 +207,7 @@ c. Reports:
 
 ## Step 2 — Acceptance alignment
 
-**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. For appendix content, cross-reference technical claims (API contracts, data type definitions, configuration keys) against code even if no acceptance item directly covers them.
+**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. For appendix content, cross-reference technical claims (API contracts, data type definitions, configuration keys) against code — appendix contract content always has a corresponding acceptance item (validate Check 5a enforces this, see `framework/spec_writing_guide.md` §4), so the item set is the complete contract surface.
 
 **Why this is achievable:** A pass_condition like "Returns HTTP 201 with id and created_at" can be verified by checking the handler code returns 201 status and includes those fields in the response struct. The subagent cannot verify the code *works correctly*, but it can verify the code *is structured correctly*.
 
@@ -782,6 +786,9 @@ Root cause: {incomplete | stale | divergence | accident | blocked}
 Suggested direction: {spec_gap | code_gap | needs_design | blocked}
 Files involved: {spec and/or code file paths the suggested fix would touch}
   - List every file the fix would modify; the main agent uses this for batch classification scope evaluation
+Dependency scope: {the files this alignment judgment actually depended on}
+  {file}: {line ranges}   # 1-based closed intervals; "all" for whole-file judgments
+  - The main agent uses this in Step 8 to write the verify cache (`--ranges`); the declared ranges must cover every region this judgment depended on, including called functions and referenced structures
 Severity: {P0 | P1 | P2 | P3}
   - Derive from the declaration's table row in Step 1 (severity if missing).
   - For surplus findings: determine by the construct's semantic role —
@@ -963,7 +970,7 @@ After all 7 steps complete, determine cache action based on the highest severity
 
 - **If all ALIGNED:** write verify cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-  - Collect dependency evidence for every file read during verification: run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the alignment judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+  - Collect dependency evidence for every file read during verification: run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the Step 7 sub-agents' `Dependency scope` reports (see Step 7 §Output format); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the alignment judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
   - Write `verify_result.md` with `result: pass`, severity counts at 0, `target: candidate|stable`, `mode: full`, `blocking: false`, file hashes and dependency CIDs
 
 - **If any P0/P1 MISMATCH exists (verify FAIL):** delete existing `verify_result.md` if present. Do not write cache — `result: fail` never appears in a verify cache. Report blocking findings. Agent must stop and not proceed to promote.

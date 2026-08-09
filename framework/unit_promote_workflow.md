@@ -98,7 +98,7 @@ Summary: ...
    d. Appendix cache — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. Retired candidate appendices are exempt from this check (promote removes their stable copies instead of copying them). If any appendix is missing, rejects promote with guidance to re-run `validate@{unit}`. Skipped for a retiring unit.
    e. All required cache checks pass → format validation (frontmatter, required fields, and ref target check — `unit_refs`/`rule_refs` pointing only to candidate-layer files are rejected with "promote it first" guidance, since the referenced unit/rule must already be stable; retiring targets are rejected with "remove the references before retiring" guidance) + copy candidate files to stable + remove candidate files.
 3. The CLI automatically:
-   - Transforms the `layer` frontmatter field from `candidate` to `stable`
+   - Copies candidate content to stable verbatim (the layer is encoded by the file path — no frontmatter field is transformed, so promoted content is byte-identical and content-addressed caches of dependent units stay fresh)
    - Appendix filenames are preserved since they no longer encode layer
    - Removes the stable copies of retired content (in the same transaction as the copies)
    - Deletes candidate cache files after success

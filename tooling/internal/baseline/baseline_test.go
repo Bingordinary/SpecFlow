@@ -12,7 +12,6 @@ import (
 
 const unitSpec = `---
 id: demo
-layer: candidate
 version: 0.1.0
 unit_refs: none
 rule_refs: none
@@ -329,5 +328,115 @@ func TestCheckUnitBaseline_DepOutsideChangeOKWithNote(t *testing.T) {
 	}
 	if !strings.Contains(result.Note, "handler.go") {
 		t.Fatalf("expected handler.go in note, got: %s", result.Note)
+	}
+}
+
+// regionDepContent is a surface file whose formal-behavior region (the
+// acceptance_item_set section) is declared as the only dependency. Prose
+// edits outside the region must not drift the baseline.
+const regionDepContent = `---
+id: demo
+version: 0.1.0
+unit_refs: none
+rule_refs: none
+---
+
+# Demo
+
+## Description
+
+Background prose about the surface file.
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: demo.core
+    description: Core behavior.
+    pass_condition: Passes.
+
+## Notes
+
+Trailing section.
+`
+
+// writeRegionDepBaseline records a baseline whose surface entry depends only
+// on the acceptance_item_set structural region of the file — the verify-time
+// dependency form that must resolve through the same dependency matching as
+// the validation caches.
+func writeRegionDepBaseline(t *testing.T, repoRoot, content string) {
+	t.Helper()
+	full := filepath.Join(repoRoot, "internal/demo/handler.go")
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	text, err := contenthash.FileText(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	region, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("test content must contain the acceptance_item_set marker")
+	}
+	regionCID := contenthash.RegionCID(region)
+
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := fmt.Sprintf("kind: unit\nname: demo\ntimestamp: 2026-08-09T00:00:00Z\nsurfaces:\n  - path: %q\n    entries:\n      - path: %q\n        hash: %q\n        deps:\n          - %q\n",
+		"internal/demo/handler.go", "internal/demo/handler.go", contenthash.FileHashText(text), "region:acceptance_items:"+regionCID)
+	if err := os.WriteFile(basePath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckUnitBaseline_RegionDepProseEditStaysOK(t *testing.T) {
+	repoRoot := setupRepo(t)
+	writeRegionDepBaseline(t, repoRoot, regionDepContent)
+
+	edited := strings.Replace(regionDepContent, "Background prose about the surface file.", "Background prose edited during iteration.", 1)
+	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusOK {
+		t.Fatalf("expected OK after prose edit outside the declared region, got %s: %s", result.Status, result.Details)
+	}
+	if result.Note == "" {
+		t.Fatal("expected informational note when content changed outside the declared region")
+	}
+}
+
+func TestCheckUnitBaseline_RegionDepEditInsideRegionChanged(t *testing.T) {
+	repoRoot := setupRepo(t)
+	writeRegionDepBaseline(t, repoRoot, regionDepContent)
+
+	edited := strings.Replace(regionDepContent, "Core behavior.", "Core behavior changed.", 1)
+	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusChanged {
+		t.Fatalf("expected CHANGED after region edit, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "handler.go") {
+		t.Fatalf("expected handler.go in details, got: %s", result.Details)
+	}
+}
+
+func TestCheckUnitBaseline_RegionDepMarkerRemovedChanged(t *testing.T) {
+	repoRoot := setupRepo(t)
+	writeRegionDepBaseline(t, repoRoot, regionDepContent)
+
+	edited := strings.Replace(regionDepContent, "acceptance_item_set:\n", "", 1)
+	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusChanged {
+		t.Fatalf("expected CHANGED (fail closed) when the region marker is gone, got %s: %s", result.Status, result.Details)
 	}
 }

@@ -41,6 +41,9 @@ Key counts: {command-specific counts}
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
+Dependency scope:
+  {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
+────────────────────────────────────────────
 Findings:
   {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
 Summary: {command-specific summary counts}
@@ -60,6 +63,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Summary:` — command-specific final counts.
+- `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -274,6 +278,15 @@ Each finding contains:
 - `issue`: description of the problem
 - `spec_context`: (optional) relevant design context from the spec, helps the user understand the code-design relationship
 - `recommendation`: fix suggestion
+
+**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its slice — for each file it read, the line ranges its review judgment actually depended on (1-based closed intervals; `all` when the assessment covered the whole file):
+
+```
+Dependency scope:
+  {file}: {lines}   # "all" for whole-file judgments
+```
+
+Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The main agent carries this report over and uses it when writing the review cache (`--ranges`, see `framework/spec_review_checklist.md` §8); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
 ==ATOM_END:spec_review_standard==
 
 ## 7. Cross-Check
@@ -364,6 +377,6 @@ Full runs always write cache regardless of pass/fail. Targeted runs (`:{keyword}
 
 **Cache record contract:** The cache records the file state read during the review run — it is independent of the user's decision outcome:
 
-- Collect dependency evidence from the files read during the review run (same collection point as verify Step 8): for each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the review judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+- Collect dependency evidence from the files read during the review run (same collection point as verify Step 8): for each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the sub-agents' `Dependency scope` reports (see §6); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the review judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
 - Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
 - Any fix applied after the cache write makes the cache stale (promote's dependency check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`) or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.

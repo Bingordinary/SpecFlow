@@ -28,8 +28,8 @@ type RuleResult struct {
 func Fork(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
-	stableSpec, _ := specpaths.ObjectMainSpecFileRef("unit", "stable", unitName)
-	candidateSpec, _ := specpaths.ObjectMainSpecFileRef("unit", "candidate", unitName)
+	stableSpec := specpaths.StableUnitSpecFileRef(unitName)
+	candidateSpec := specpaths.CandidateUnitSpecFileRef(unitName)
 	stableSpecPath := filepath.Join(repoRoot, stableSpec)
 	candidateSpecPath := filepath.Join(repoRoot, candidateSpec)
 
@@ -85,7 +85,6 @@ func Fork(repoRoot, unitName string) *Result {
 
 	copyErr := copyFileWithVersion(
 		stableSpecPath, candidateSpecPath,
-		"stable", "candidate",
 		"version", candidateVersion,
 	)
 	if copyErr != nil {
@@ -96,7 +95,7 @@ func Fork(repoRoot, unitName string) *Result {
 	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s (version %s -> %s)", stableSpec, candidateSpec, stableVersion, candidateVersion))
 
 	for _, f := range filesToCopy {
-		if err := fileops.CopyFileTransform(f.src, f.dst, "stable", "candidate"); err != nil {
+		if err := fileops.CopyFile(f.src, f.dst); err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
 			r.Passed = false
 			return r
@@ -112,8 +111,8 @@ func Fork(repoRoot, unitName string) *Result {
 func ForkRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
 
-	stableRule, _ := specpaths.ObjectMainSpecFileRef("rule", "stable", ruleID)
-	candidateRule, _ := specpaths.ObjectMainSpecFileRef("rule", "candidate", ruleID)
+	stableRule := specpaths.RuleStableFileRef(ruleID)
+	candidateRule := specpaths.RuleCandidateFileRef(ruleID)
 	stableRulePath := filepath.Join(repoRoot, stableRule)
 	candidateRulePath := filepath.Join(repoRoot, candidateRule)
 	r.StableRule = stableRule
@@ -144,7 +143,6 @@ func ForkRule(repoRoot, ruleID string) *RuleResult {
 
 	copyErr := copyFileWithVersion(
 		stableRulePath, candidateRulePath,
-		"stable", "candidate",
 		"rule_version", candidateVersion,
 	)
 	if copyErr != nil {
@@ -218,15 +216,14 @@ func FormatRuleResult(r *RuleResult) string {
 	return buf.String()
 }
 
-func copyFileWithVersion(src, dst, fromLayer, toLayer, versionField, newVersion string) error {
+func copyFileWithVersion(src, dst, versionField, newVersion string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 	content := string(data)
-	transformed := fileops.TransformLayerInFrontmatter(content, fromLayer, toLayer)
 
-	lines := strings.Split(transformed, "\n")
+	lines := strings.Split(content, "\n")
 	found := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)

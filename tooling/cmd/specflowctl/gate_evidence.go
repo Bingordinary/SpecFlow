@@ -21,23 +21,37 @@ import (
 // persisted. Line numbers are never stored, so later insertions/deletions
 // cannot invalidate the dependency evidence as long as the depended-on
 // content itself is unchanged.
+//
+// With --acceptance-items, the acceptance_item_set structural region (see
+// contenthash.AcceptanceItemsRegion) is declared as a structural dependency:
+// the region's content CID is emitted with a `region:acceptance_items:` tag.
+// Structural regions are located by structure rather than line numbers, so
+// edits outside the region — even inside the same content-defined chunk —
+// do not invalidate the dependency. This is the precise declaration mode for
+// cross-unit checks, which depend only on a dependency unit's acceptance
+// item set.
 func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-evidence", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	filePtr := fs.String("file", "", "file path relative to repo root")
 	rangesPtr := fs.String("ranges", "", "line ranges actually read, e.g. 120-180,300-320 (1-based, inclusive); empty means the whole file")
+	acceptanceItemsPtr := fs.Bool("acceptance-items", false, "declare the acceptance_item_set structural region as the dependency (with no --ranges it replaces the whole-file declaration)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if strings.TrimSpace(*filePtr) == "" {
-		fmt.Fprintln(stderr, "Usage: specflowctl gate-evidence --file <path> [--ranges START-END,START-END] [--repo-root PATH]")
+		fmt.Fprintln(stderr, "Usage: specflowctl gate-evidence --file <path> [--ranges START-END,START-END] [--acceptance-items] [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Computes dependency evidence for a file read during validate/verify/review.")
 		fmt.Fprintln(stderr, "The agent declares the line ranges it actually depended on; the CLI maps")
 		fmt.Fprintln(stderr, "them onto content-defined chunks and outputs the chunk CIDs to record")
 		fmt.Fprintln(stderr, "in the cache file. An empty --ranges declares a whole-file dependency.")
+		fmt.Fprintln(stderr, "--acceptance-items declares the acceptance_item_set structural region")
+		fmt.Fprintln(stderr, "(structure-located, independent of chunk boundaries and line numbers) as the")
+		fmt.Fprintln(stderr, "dependency. With an empty --ranges the region replaces the whole-file")
+		fmt.Fprintln(stderr, "declaration; with --ranges both are declared.")
 		return errors.New("--file is required")
 	}
 
@@ -62,13 +76,22 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 	}
 
 	var deps []string
-	if len(ranges) == 0 {
-		// No ranges declared: the whole file is the dependency (conservative).
+	if len(ranges) == 0 && !*acceptanceItemsPtr {
+		// Nothing declared: the whole file is the dependency (conservative).
 		for _, c := range fc.Chunks {
 			deps = append(deps, c.CID)
 		}
 	} else {
-		deps = contenthash.CIDsForRanges(fc, ranges)
+		if len(ranges) > 0 {
+			deps = contenthash.CIDsForRanges(fc, ranges)
+		}
+		if *acceptanceItemsPtr {
+			region, ok := contenthash.AcceptanceItemsRegion(text)
+			if !ok {
+				return fmt.Errorf("acceptance_item_set region not found in %s — cannot declare the structural dependency", relPath)
+			}
+			deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
+		}
 	}
 
 	if len(fc.Chunks) > 0 && len(deps) == 0 {

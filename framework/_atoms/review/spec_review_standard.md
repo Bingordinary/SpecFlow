@@ -134,3 +134,12 @@ Each finding contains:
 - `issue`: description of the problem
 - `spec_context`: (optional) relevant design context from the spec, helps the user understand the code-design relationship
 - `recommendation`: fix suggestion
+
+**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its slice — for each file it read, the line ranges its review judgment actually depended on (1-based closed intervals; `all` when the assessment covered the whole file):
+
+```
+Dependency scope:
+  {file}: {lines}   # "all" for whole-file judgments
+```
+
+Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The main agent carries this report over and uses it when writing the review cache (`--ranges`, see `framework/spec_review_checklist.md` §8); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.

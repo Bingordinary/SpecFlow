@@ -377,27 +377,23 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 }
 
 // depsPresent reports whether every declared dependency CID still exists in
-// the file's current chunk set. ok=false means a declared dependency chunk
-// is gone — the file drifted. ok=true with a non-empty note means the
-// content changed outside the declared dependencies: informational only,
-// the file is still considered conforming (mirrors the cache freshness note
-// semantics in framework/validation_cache.md).
+// the file's current content. Chunk CIDs are matched against the chunk set;
+// structural region dependencies (`region:<type>:<cid>`, e.g. a dependency
+// unit's acceptance_item_set) are re-located by structure and compared by
+// content identity. ok=false means a declared dependency is gone — the file
+// drifted. ok=true with a non-empty note means the content changed outside
+// the declared dependencies: informational only, the file is still considered
+// conforming (mirrors the cache freshness note semantics in
+// framework/validation_cache.md).
 func depsPresent(full string, e entry) (bool, string) {
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return false, ""
 	}
 	text := specpaths.NormalizeText(string(data))
-	fc := contenthash.ChunkText(text)
 
-	present := make(map[string]bool, len(fc.Chunks))
-	for _, c := range fc.Chunks {
-		present[normalizeCID(c.CID)] = true
-	}
-	for _, dep := range e.Deps {
-		if !present[normalizeCID(dep)] {
-			return false, ""
-		}
+	if !contenthash.DepsPresent(text, e.Deps) {
+		return false, ""
 	}
 
 	currentHash := contenthash.FileHashText(text)

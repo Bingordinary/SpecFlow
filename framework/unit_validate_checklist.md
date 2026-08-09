@@ -52,6 +52,9 @@ Key counts: {command-specific counts}
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
+Dependency scope:
+  {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
+────────────────────────────────────────────
 Findings:
   {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
 Summary: {command-specific summary counts}
@@ -71,6 +74,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Summary:` — command-specific final counts.
+- `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -128,7 +132,7 @@ When findings mix resolution types (within one check or across checks), the `Res
 **Execution steps:**
 
 1. Read `docs/specs/units/candidate/unit_{unit}.md` and all non-exempt appendix files (see Prerequisite)
-2. Verify required frontmatter fields: `id`, `layer` (must be `"candidate"`), `version`, `unit_refs`, `rule_refs`
+2. Verify required frontmatter fields: `id`, `version`, `unit_refs`, `rule_refs`. The spec layer is encoded by the file path (`docs/specs/units/candidate/` vs `docs/specs/units/stable/`) — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §3)
 3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `runnable`. `implementation_surface` may be the placeholder `<pending>` during design-first rounds (the path is not yet known); the placeholder must be exactly `<pending>` — variants are reported for correction. A leftover `<pending>` is a MISMATCH in verify (Step 6), so it must be replaced with the real path once the implementation exists
 4. Verify all `unit_refs` point to existing spec files (bare name, e.g. `agent`). Resolve by searching candidate directory first (`unit_{name}.md`), then fall back to stable (`unit_{name}.md`).
 5. Verify all `rule_refs` point to existing rule files (global or bound)
@@ -142,7 +146,6 @@ When findings mix resolution types (within one check or across checks), the `Res
    - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
 8. **Appendix frontmatter check:** For each non-exempt, non-retired appendix file, verify:
    - `unit` frontmatter field matches current unit name
-   - `layer` frontmatter field is `"candidate"`
    - `status`, when present, is one of `active` (or absent), `exempt`, `retired` — any other value is FAIL
 9. **Appendix path check:** Verify each appendix file's path matches the convention: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
 10. **Layer-prefix path check (FAIL):** Scan the main spec body and every non-exempt appendix for layer-prefixed spec paths that break after promote or mispoint during an active candidate round. Unlike step 7, there is no code-block exemption: paths inside code-block examples are flagged the same as prose.
@@ -303,14 +306,14 @@ Verify that the spec closes every implementation-affecting decision listed in `f
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
-6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes content that has no corresponding acceptance item → WARNING (possible orphan behavior — documented in appendix but not verified). If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
+6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (fix_required)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (fix_required)
 7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
 
 **PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; no merge candidates found
 
-**WARNING:** Orphan appendix behavior (documented but not verified) or merge candidates (over-split acceptance items)
+**WARNING:** Merge candidates (over-split acceptance items)
 
-**FAIL:** Uncovered behavior domain or surface type mismatch (fix_required); appendix-main spec contradiction (fix_required)
+**FAIL:** Uncovered behavior domain or surface type mismatch (fix_required); appendix contract/behavior content without item coverage (fix_required); appendix-main spec contradiction (fix_required); contract statement without carrier coverage (5h, fix_required); item violating the Contract Substance Baseline (5i, fix_required)
 
 **Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for over-splitting detection)
 
@@ -507,6 +510,58 @@ PASS — pass_condition provides complementary information:
 
 **Check method:** Semantic cross-reference — agent compares information content of description vs pass_condition
 
+---
+
+### Sub-check 5h — Contract statement carry-over (NEW)
+
+**Purpose:** Contract statements in the spec body and non-evidence appendices must be carried by a formal behavior carrier (the acceptance item set or a protocol appendix, see `framework/spec_writing_guide.md` §4). The cross-unit check reads only carriers, so a contract that lives only in prose is invisible to every dependent unit.
+
+**Execution steps:**
+
+1. Extract **contract statements** from the spec body and every non-evidence, non-exempt appendix:
+   - Numeric constraints (timeout, rate, limit, TTL values)
+   - HTTP status codes and error codes
+   - Field / type / enum names and data formats
+   - Protocol names and formats
+   - Timing / consistency assumptions (sync vs async, ordering guarantees, consistency expectations)
+   - Non-constraining narrative (design discussion, illustrative examples, motivation) is NOT a contract statement — same judgment principle as Check 5a's behavior-domain extraction
+2. For each contract statement, verify a carrier carries it at a **comparable granularity**:
+   - The acceptance item set (an item's `description` or `pass_condition` states the same value, code, field name, format, or assumption), or
+   - A protocol appendix (API contract, data type, error code, state machine section) states it
+3. A contract statement with no carrier → FAIL (fix_required: move the contract into an acceptance item or a protocol appendix)
+
+**PASS:** Every contract statement in prose is carried by an item or protocol appendix
+
+**FAIL:** One or more contract statements lack carrier coverage (fix_required)
+
+**Check method:** Body + non-evidence appendices × (acceptance item set ∪ protocol appendices) — contract-level cross-reference, quoted evidence per statement
+
+---
+
+### Sub-check 5i — Contract substance (NEW)
+
+**Purpose:** The acceptance item set is the primary formal behavior carrier; empty-but-compliant items ("correct handling", "behaves as expected") leave the cross-unit check nothing to compare against. Every item must satisfy the Contract Substance Baseline, enforced here.
+
+**Execution steps:**
+
+For each acceptance item, apply the five baseline rules (S1–S5, see `framework/spec_writing_guide.md` §7 Contract Substance Baseline):
+
+1. **S1 — Contract element sufficiency:** `description` and/or `pass_condition` must carry at least one concrete contract element (numeric constraint, HTTP status code, field/type/enum name, error code, protocol format, timing/consistency assumption). Pure behavior narration with no element → FAIL (e.g. "User can log in", "System handles requests correctly")
+2. **S2 — Specific-value obligation:** constraints use concrete values — `201` not `2xx`, `5s` not "fast", methods enumerated (`OAuth2 + API Key`) not "multiple methods". Generalized values → FAIL
+3. **S3 — Scenario completeness:** the Gherkin scenario set includes the happy path plus at least one failure or boundary scenario. Happy-path-only items with a testable verification type → FAIL (non-testable items: the pass_condition must carry at least one failure/edge condition instead)
+4. **S4 — Information increment:** `pass_condition` carries constraints the `description` does not. Pure rephrase → FAIL (overlaps Check 5g by design — 5g judges value, 5i judges substance; both are FAIL-level)
+5. **S5 — No template phrasing:** no content-free boilerplate ("behaves as expected", "processed correctly", "meets user expectations") → FAIL
+
+**Relationship to 5e/5f/5g:** 5e judges falsifiability, 5f actionability, 5g information increment — 5i judges **contract information content** (presence of concrete elements, specific values, scenario coverage, boilerplate). The checks are complementary; a single item may fail several at once. When an item fails 5i, quote the violated rule and the offending text.
+
+**PASS:** All items satisfy the Contract Substance Baseline
+
+**FAIL:** One or more items violate S1–S5 (fix_required, with the violated rule quoted)
+
+**Check method:** Contract Substance Baseline × acceptance item set — rule-by-rule semantic assessment with quoted evidence
+
+---
+
 ## Check 6 — Affects-source validity
 
 **Purpose:** Each acceptance item's `affects` declarations must be consistent with the spec's formal references. Evidence appendix content must be structurally sound and semantically meaningful.
@@ -530,7 +585,7 @@ affects.files:
 
 affects.appendices:
   - Each appendix must exist and belong to this unit
-  - The appendix frontmatter must declare the correct unit and layer
+  - The appendix frontmatter must declare the correct unit
   - An appendix with `status: retired` must not be referenced: the retiring appendix is removed on promote, so the reference would break — FAIL (fix_required: remove the reference or remove the `status: retired` declaration). The mechanical `specflowctl validate` Check 4 and `specflowctl promote` reject the same reference (a retiring spec's own references are exempt).
 ```
 
@@ -564,10 +619,13 @@ affects.appendices:
 **Execution steps:**
 
 1. From `unit_refs`, get the list of dependency units (bare names, resolved candidate-first per Check 1)
-2. For each dependency unit:
-   - Candidate spec takes priority — read it and check for conflicting statements about shared protocols, data formats, or behavior
-   - Also read the stable spec and check whether this candidate changes any contract that the stable spec depends on — skip the stable contract check if the dependency's candidate spec already reflects the change
-3. Specific checks:
+2. For each dependency unit, read only its **formal behavior carriers** (see `framework/spec_writing_guide.md` §4):
+   - The dependency unit's acceptance item set in the main spec (candidate first, then stable)
+   - Its protocol appendices — files carrying API contracts, data type definitions, error codes, or state machine transitions
+   Body prose and evidence appendices are not carriers: the no-contradiction assertion does not depend on them, and edits there must not stale dependent caches. Carrier completeness is guaranteed by the dependency unit's own validate (Check 5a fails contract content without item coverage), so reading the carriers reads the dependency unit's complete formal behavior.
+3. Candidate spec takes priority — check the carriers for conflicting statements about shared protocols, data formats, or behavior; when the candidate names specific contract symbols (protocol names, field/type names, error codes), locate and verify those exact carrier regions first
+4. Also read the stable spec's carriers and check whether this candidate changes any contract that the stable spec depends on — skip the stable contract check if the dependency's candidate spec already reflects the change
+5. Specific checks:
 ```
    - Are API signatures compatible across all related units?
    - Are data formats (field names, types, enum values) consistent?
@@ -577,13 +635,18 @@ affects.appendices:
        → the change must be explicitly declared in this candidate's spec body
        If not declared → FAIL (blocked: needs user confirmation on downstream impact)
 ```
-4. **Appendix cross-unit check:** Include appendix content (API contracts, data type definitions, error codes, state machines) in the cross-unit comparison. If an appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (fix_required: resolve the cross-unit inconsistency)
+6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (fix_required: resolve the cross-unit inconsistency)
+7. **Carrier substance warning:** if a dependency unit's carriers (item set or protocol appendices) are compliant but carry no comparable contract statements (e.g. items with no concrete values, codes, or formats to compare against) → WARNING naming the unit and the empty carriers, recommending the dependency unit enrich its acceptance items per `framework/spec_writing_guide.md` §7 Contract Substance Baseline. Not a FAIL — the dependency unit's own validate Check 5i gates empty carriers at promote; this warning surfaces the coupling risk to the user.
+
+**Dependency scope report:** Report the carrier regions actually depended on — the dependency unit's acceptance item set and the whole protocol appendix files. The item set is declared as a **structural region dependency** (`specflowctl gate-evidence --file <path> --acceptance-items`, see `framework/validation_cache.md` §Structural Region Dependencies): it is located by structure, so prose edits elsewhere in the same file — even inside the same content-defined chunk — do not stale this cache. Protocol appendices are contract files and are declared whole. Cache entries for dependency unit main specs, their protocol appendices, and rule files are written as **logical references** (`unit:{name}`, `unit:{name}:appendix:{file}`, `rule:{id}`) instead of physical paths — freshness resolves them to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
 
 **PASS:** No contradictions across related units; acknowledged contract changes are declared
 
+**WARNING (step 7):** Dependency unit carriers carry no comparable contract statements — consider enriching them per the Contract Substance Baseline
+
 **FAIL:** Contradiction found (fix_required) or unacknowledged contract breakage (blocked)
 
-**Check method:** Candidate × related candidates × related stables three-way cross-reference
+**Check method:** Candidate × related candidates × related stables three-way cross-reference over the formal behavior carriers (acceptance item sets + protocol appendices).
 
 ---
 
@@ -601,7 +664,7 @@ affects.appendices:
    - If constraint says "all APIs must use HTTPS" — does the design describe HTTP?
    - If constraint says "synchronous calls are not supported" — does the design depend on sync calls?
 ```
-4. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). For the circular-dependency prohibition (`g_rule_repository_baseline.md` §6.1 item 4), glob all current-layer unit spec files (candidate and stable) and derive the dependency graph from their `unit_refs`. For the layer-order prohibition (§6.1 item 5), resolve the order from the rule's §5.1 recording and each unit's declared architecture layer from its spec truth; a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation unless the unit truth records an exception (`rule_exceptions`). Units without a recorded architecture layer are not judged by this prohibition.
+4. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). For the circular-dependency prohibition (`g_rule_repository_baseline.md` §6.1 item 4), glob all current-layer unit spec files (candidate and stable) and derive the dependency graph from their `unit_refs`. For the layer-order prohibition (§6.1 item 5), resolve the order from the rule's §5.1 recording and each unit's declared architecture layer from its spec truth; a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation unless the unit truth records an exception (`rule_exceptions`). Units without a recorded architecture layer are not judged by this prohibition. Rule files are contract files — the constraint declarations are the whole file, so their dependency entries declare the rule file and are written as logical references (`rule:{id}`), which resolve to the current-layer file at freshness time so a rule promote does not stale consumer caches whose dependency content is unchanged
 5. Check the candidate design against each global rule and each bound rule:
 ```
    - Is every "must not" prohibition respected?
@@ -631,7 +694,7 @@ After all 8 checks complete:
     - Main spec file
     - Every non-exempt appendix file
     - All referenced files (unit_refs, rule_refs, affects.files are already included)
-  - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+  - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the sub-agent's `Dependency scope` report (see §Output Format); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration). **Cross-unit and rule dependency entries are written as logical references** — `unit:{name}` for a dependency unit main spec read by Check 7, `unit:{name}:appendix:{file}` for a dependency unit protocol appendix read by Check 7 (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file read by Check 8 — with the `hash` + `deps` of the file the sub-agent actually read (see §Logical References)
   - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes and dependency CIDs
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 

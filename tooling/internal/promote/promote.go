@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fileops"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -47,11 +46,10 @@ type stagedCopy struct {
 	remove bool
 }
 
-// stageCopyWithLayerTransform copies src to a temporary file next to dst,
-// applying the candidate→stable layer transform. The final destination is
-// written only by commitStaged, so a failure anywhere in the staging phase
+// stageCopy copies src to a temporary file next to dst. The final destination
+// is written only by commitStaged, so a failure anywhere in the staging phase
 // leaves the stable layer untouched.
-func stageCopyWithLayerTransform(src, dst string) (string, error) {
+func stageCopy(src, dst string) (string, error) {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return "", err
@@ -60,7 +58,6 @@ func stageCopyWithLayerTransform(src, dst string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	transformed := fileops.TransformLayerInFrontmatter(string(data), "candidate", "stable")
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return "", err
 	}
@@ -69,7 +66,7 @@ func stageCopyWithLayerTransform(src, dst string) (string, error) {
 		return "", err
 	}
 	tmpPath := tmp.Name()
-	if _, err := tmp.Write([]byte(transformed)); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return "", err
@@ -260,7 +257,6 @@ func Promote(repoRoot, unitName string) *Result {
 		value string
 	}{
 		{"id", fm["id"]},
-		{"layer", fm["layer"]},
 		{"version", fm["version"]},
 	}
 
@@ -268,10 +264,6 @@ func Promote(repoRoot, unitName string) *Result {
 		if c.value == "" {
 			r.Issues = append(r.Issues, fmt.Sprintf("Missing required field: %s", c.field))
 		}
-	}
-
-	if v := fm["layer"]; v != "" && !strings.EqualFold(v, "candidate") {
-		r.Issues = append(r.Issues, fmt.Sprintf("Layer must be 'candidate', got '%s'", v))
 	}
 
 	// Step 3: Check acceptance items exist (a retiring spec declares the end of
@@ -392,7 +384,7 @@ func Promote(repoRoot, unitName string) *Result {
 		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", rel))
 
 		dest := filepath.Join(stableAppendixDir, filepath.Base(m))
-		tmp, err := stageCopyWithLayerTransform(m, dest)
+		tmp, err := stageCopy(m, dest)
 		if err != nil {
 			cleanupStaged(staged)
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage appendix: %v", err))
@@ -422,7 +414,7 @@ func Promote(repoRoot, unitName string) *Result {
 		removed = append(removed, stagedCopy{dst: stableSpec, remove: true})
 		r.Actions = append(r.Actions, fmt.Sprintf("Retiring: docs/specs/units/stable/unit_%s.md", unitName))
 	} else {
-		tmpSpec, err := stageCopyWithLayerTransform(candidateSpec, stableSpec)
+		tmpSpec, err := stageCopy(candidateSpec, stableSpec)
 		if err != nil {
 			cleanupStaged(staged)
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage spec: %v", err))
@@ -548,7 +540,7 @@ type RuleResult struct {
 //  4. Detect current stable version
 //  5. Version sanity check (candidate version > stable version)
 //  6. Determine version change type (MAJOR/MINOR/PATCH/none)
-//  7. Copy candidate to stable with layer transform
+//  7. Copy candidate to stable (pure copy)
 //  8. Delete candidate rule file
 func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
@@ -603,7 +595,6 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}{
 		{"rule_id", fm["rule_id"]},
 		{"rule_scope", fm["rule_scope"]},
-		{"layer", fm["layer"]},
 		{"rule_version", fm["rule_version"]},
 	}
 
@@ -611,10 +602,6 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		if f.value == "" {
 			r.Issues = append(r.Issues, fmt.Sprintf("Missing required field: %s", f.field))
 		}
-	}
-
-	if v := fm["layer"]; v != "" && !strings.EqualFold(v, "candidate") {
-		r.Issues = append(r.Issues, fmt.Sprintf("Layer must be 'candidate', got '%s'", v))
 	}
 
 	if len(r.Issues) > 0 {
@@ -669,7 +656,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Actions = append(r.Actions, "Rule marked retired — no version comparison")
 	}
 
-	// Step 7: Copy candidate to stable with layer transform (staged, atomic).
+	// Step 7: Copy candidate to stable (pure copy — the layer is encoded by the path), staged and atomic.
 	// A retiring rule is not copied — its stable copy is removed instead.
 	if retired {
 		if err := commitStaged([]stagedCopy{{dst: stableRule, remove: true}}); err != nil {
@@ -679,7 +666,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		}
 		r.Actions = append(r.Actions, fmt.Sprintf("Retired: docs/specs/rules/stable/%s.md removed", ruleID))
 	} else {
-		tmp, err := stageCopyWithLayerTransform(candidateRule, stableRule)
+		tmp, err := stageCopy(candidateRule, stableRule)
 		if err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage rule: %v", err))
 			r.Passed = false

@@ -5,7 +5,6 @@ import "testing"
 func TestReadFrontmatter_InlineList(t *testing.T) {
 	text := `---
 id: test
-layer: candidate
 version: 0.1.0
 unit_refs: [auth@0.1.0, billing@0.2.0]
 rule_refs: none
@@ -14,9 +13,6 @@ rule_refs: none
 	fm := ReadFrontmatterStringMap(text)
 	if fm["id"] != "test" {
 		t.Fatalf("expected id=test, got %q", fm["id"])
-	}
-	if fm["layer"] != "candidate" {
-		t.Fatalf("expected layer=candidate, got %q", fm["layer"])
 	}
 	if fm["version"] != "0.1.0" {
 		t.Fatalf("expected version=0.1.0, got %q", fm["version"])
@@ -32,7 +28,6 @@ rule_refs: none
 func TestReadFrontmatter_BlockStyleList(t *testing.T) {
 	text := `---
 id: test
-layer: candidate
 version: 0.1.0
 unit_refs:
   - auth@0.1.0
@@ -55,7 +50,6 @@ rule_refs: none
 func TestReadFrontmatter_BlockStyleSingleItem(t *testing.T) {
 	text := `---
 id: test
-layer: candidate
 version: 0.1.0
 unit_refs:
   - auth@0.1.0
@@ -71,7 +65,6 @@ rule_refs: none
 func TestReadFrontmatter_BothBlockStyle(t *testing.T) {
 	text := `---
 id: test
-layer: candidate
 version: 0.1.0
 unit_refs:
   - auth

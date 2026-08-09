@@ -22,7 +22,6 @@ func createMinimalCandidate(t *testing.T, repoRoot, unitName string) string {
 	path := filepath.Join(dir, "unit_"+unitName+".md")
 	content := "---\n" +
 		"id: " + unitName + "\n" +
-		"layer: candidate\n" +
 		"version: 0.1.0\n" +
 		"unit_refs: none\n" +
 		"rule_refs: none\n" +
@@ -73,20 +72,10 @@ func TestCheckFrontmatter_MissingSpec(t *testing.T) {
 func TestCheckFrontmatter_WrongID(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: other_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: other_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	result := checkFrontmatter(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for id mismatch")
-	}
-}
-
-func TestCheckFrontmatter_WrongLayer(t *testing.T) {
-	repoRoot := t.TempDir()
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: stable\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
-	result := checkFrontmatter(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatal("expected FAIL for wrong layer")
 	}
 }
 
@@ -94,7 +83,7 @@ func TestCheckFrontmatter_MissingField(t *testing.T) {
 	repoRoot := t.TempDir()
 	// Missing version field
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n")
 	result := checkFrontmatter(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for missing version field")
@@ -108,7 +97,7 @@ func TestCheckFrontmatter_MissingField(t *testing.T) {
 func TestCheckAcceptanceItems_Pass(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: first acceptance item\n"+
@@ -136,7 +125,7 @@ func TestCheckAcceptanceItems_MissingSet(t *testing.T) {
 func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n")
 	// acceptance_item_set exists but has no items with "- id:"
 	result := checkAcceptanceItems(repoRoot, "test_unit")
@@ -148,7 +137,7 @@ func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
 func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: only description\n"+
@@ -163,7 +152,7 @@ func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
 func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
@@ -182,7 +171,7 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
@@ -203,7 +192,7 @@ func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T)
 	// <pending> is the legal design-first placeholder — the path is not yet
 	// known; verify blocks on any leftover <pending>.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
@@ -243,7 +232,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -265,7 +254,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 func TestCheckAnchors_MissingFileFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -296,7 +285,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 	// affects.files sits in the middle of the item set; the next item's
 	// "- id:" line must not be collected as an anchor file.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -335,7 +324,7 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 	// The files block is followed by a block-form appendices sub-block; its
 	// 8-space "- evidence.md" entries must not be collected as anchor files.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -361,7 +350,7 @@ func TestCheckAnchors_RetiredSpecExempt(t *testing.T) {
 	// A retiring spec is removed from stable — its affects.files anchors are
 	// not required, even when the referenced implementation is gone.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -396,7 +385,7 @@ func TestCheckReferences_PassNone(t *testing.T) {
 func TestCheckReferences_MissingRefFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	// auth does not exist in candidate or stable
 	result := checkReferences(repoRoot, "test_unit")
@@ -413,11 +402,11 @@ func TestCheckReferences_CandidateRefPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(candidateDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: candidate\nversion: 0.1.0\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -433,11 +422,11 @@ func TestCheckReferences_StableRefPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: stable\nversion: 0.1.0\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -448,7 +437,7 @@ func TestCheckReferences_StableRefPass(t *testing.T) {
 func TestCheckReferences_RefNotFoundFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - nonexistent_unit\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -466,11 +455,11 @@ func TestCheckReferences_RetiredTargetFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(candidateDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: candidate\nversion: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth\nrule_refs: none\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -488,11 +477,11 @@ func TestCheckReferences_RetiredRuleTargetFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_auth.md"),
-		[]byte("---\nrule_id: b_rule_auth\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
+		[]byte("---\nrule_id: b_rule_auth\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs:\n  - b_rule_auth\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -505,9 +494,9 @@ func TestCheckReferences_RetiredAppendixInAffectsFail(t *testing.T) {
 	// An acceptance item references a candidate appendix that is being
 	// retired — the reference breaks on promote and must be rejected.
 	writeAppendix(t, repoRoot, "test_unit", "legacy",
-		"unit: test_unit\nlayer: candidate\nstatus: retired\n")
+		"unit: test_unit\nstatus: retired\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -534,9 +523,9 @@ func TestCheckReferences_RetiredEvidenceRefFail(t *testing.T) {
 	// evidence_appendix_ref points at a candidate appendix that is being
 	// retired — the field must be dropped before the appendix retires.
 	writeAppendix(t, repoRoot, "test_unit", "evidence",
-		"unit: test_unit\nlayer: candidate\nstatus: retired\n")
+		"unit: test_unit\nstatus: retired\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
 			"evidence_appendix_ref: unit_test_unit_evidence.md\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -551,9 +540,9 @@ func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
 	repoRoot := t.TempDir()
 	// An affects.appendices entry pointing at an active appendix is legal.
 	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: test_unit\nlayer: candidate\n")
+		"unit: test_unit\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
 			"evidence_appendix_ref: unit_test_unit_api.md\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -566,9 +555,9 @@ func TestCheckReferences_RetiredAppendixInAffectsInlineFlowFail(t *testing.T) {
 	// The inline YAML flow form of affects.appendices must be rejected like
 	// the block form when it references a retiring appendix.
 	writeAppendix(t, repoRoot, "test_unit", "legacy",
-		"unit: test_unit\nlayer: candidate\nstatus: retired\n")
+		"unit: test_unit\nstatus: retired\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -685,9 +674,9 @@ func TestCheckReferences_RetiredSpecOwnRefsExempt(t *testing.T) {
 	// A retiring spec's own references disappear with it — referencing a
 	// retiring appendix from a retiring spec is not checked.
 	writeAppendix(t, repoRoot, "test_unit", "evidence",
-		"unit: test_unit\nlayer: candidate\nstatus: retired\n")
+		"unit: test_unit\nstatus: retired\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n"+
 			"status: retired\nevidence_appendix_ref: unit_test_unit_evidence.md\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -725,7 +714,7 @@ func TestCheckAppendices_CorrectFrontmatterPass(t *testing.T) {
 	repoRoot := t.TempDir()
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: test_unit\nlayer: candidate\n")
+		"unit: test_unit\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for correct frontmatter, got %s: %s", result.Status, result.Details)
@@ -736,7 +725,7 @@ func TestCheckAppendices_WrongUnitFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: wrong_unit\nlayer: candidate\n")
+		"unit: wrong_unit\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for wrong unit, got %s: %s", result.Status, result.Details)
@@ -746,25 +735,11 @@ func TestCheckAppendices_WrongUnitFail(t *testing.T) {
 	}
 }
 
-func TestCheckAppendices_WrongLayerFail(t *testing.T) {
-	repoRoot := t.TempDir()
-	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: test_unit\nlayer: stable\n")
-	result := checkAppendices(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for wrong layer, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "layer") {
-		t.Fatalf("expected error about layer mismatch, got: %s", result.Details)
-	}
-}
-
 func TestCheckAppendices_ExemptAppendixSkip(t *testing.T) {
 	repoRoot := t.TempDir()
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: test_unit\nlayer: candidate\nstatus: exempt\n")
+		"unit: test_unit\nstatus: exempt\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for exempt appendix (skipped), got %s: %s", result.Status, result.Details)
@@ -775,7 +750,7 @@ func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
 	repoRoot := t.TempDir()
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: wrong_unit\nlayer: stable\nstatus: exempt\n")
+		"unit: wrong_unit\nstatus: exempt\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for exempt appendix even with bad frontmatter (skip), got %s: %s", result.Status, result.Details)
@@ -786,7 +761,7 @@ func TestCheckAppendices_RetiredAppendixSkip(t *testing.T) {
 	repoRoot := t.TempDir()
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: wrong_unit\nlayer: stable\nstatus: retired\n")
+		"unit: wrong_unit\nstatus: retired\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for retired appendix (skipped), got %s: %s", result.Status, result.Details)
@@ -796,7 +771,7 @@ func TestCheckAppendices_RetiredAppendixSkip(t *testing.T) {
 func TestCheckAcceptanceItems_RetiredSpecExempt(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
 	result := checkAcceptanceItems(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -825,12 +800,12 @@ func TestCheckVersionConsistency_MismatchFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: stable\nversion: 0.2.0\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.2.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// Candidate references auth@0.1.0 (wrong version)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -846,12 +821,12 @@ func TestCheckVersionConsistency_MatchPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: stable\nversion: 0.1.0\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.1.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// Candidate references auth@0.1.0 (correct)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -869,11 +844,11 @@ func TestCheckVersionConsistency_RetiredSpecExempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nlayer: stable\nversion: 0.2.0\n---\n"), 0644); err != nil {
+		[]byte("---\nid: auth\nversion: 0.2.0\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\nstatus: retired\n---\n")
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -888,7 +863,7 @@ func TestCheckVersionConsistency_RetiredSpecExempt(t *testing.T) {
 func TestCheckLayerPaths_Pass(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nThis unit depends on the token claims design of unit_auth_account_token_claims.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -899,7 +874,7 @@ func TestCheckLayerPaths_Pass(t *testing.T) {
 func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/candidate/unit_auth.md for details.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -910,7 +885,7 @@ func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
 func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nApplies docs/specs/rules/candidate/g_rule_naming.md.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -921,7 +896,7 @@ func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
 func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee candidate/unit_auth.md for details.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -932,7 +907,7 @@ func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nClaims structure: candidate/appendix/unit_auth_account_token_claims.md\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -943,7 +918,7 @@ func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
 func TestCheckLayerPaths_CodePathNoFalsePositive(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nThe handler lives at src/candidate/handler.go.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -957,7 +932,7 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 	// prose by a string-level check — the agent checklist covers prose.
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/stable/unit_payment.md.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -968,12 +943,12 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: test_unit\nlayer: candidate\n---\n\nReferences candidate/unit_auth.md.\n"
+	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -986,12 +961,12 @@ func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: test_unit\nlayer: candidate\nstatus: exempt\n---\n\nReferences candidate/unit_auth.md.\n"
+	appendix := "---\nunit: test_unit\nstatus: exempt\n---\n\nReferences candidate/unit_auth.md.\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_exempt.md"), []byte(appendix), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1006,7 +981,7 @@ func TestCheckLayerPaths_RetiredSpecExempt(t *testing.T) {
 	// A retiring spec is removed from stable — layer-prefix references in its
 	// body have no post-promote target and are not checked.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
 			"\nReferences candidate/unit_auth.md in the body.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -1020,12 +995,12 @@ func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
 	// scan has no post-promote target and must be skipped together with the
 	// main spec (unit_validate_checklist.md: a retiring spec skips Check 7).
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
+		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: test_unit\nlayer: candidate\n---\n\nReferences candidate/unit_auth.md.\n"
+	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1043,7 +1018,7 @@ func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
 func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 	t.Helper()
 	writeCandidate(t, repoRoot, unitName,
-		"---\nid: "+unitName+"\nlayer: candidate\nversion: 0.1.0\n"+
+		"---\nid: "+unitName+"\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+

@@ -26,7 +26,7 @@ A rule whose constraint no longer applies is retired by adding `status: retired`
 
 ### Pre-check for retirement
 
-1. Find all current-layer units that explicitly list the rule in `rule_refs`. `specflowctl consumers --rule <id>` does this for bound rules (`b_rule_*`) — its output is the explicit referrers. It must NOT be used for global rules (`g_rule_*`): for those it lists every current-layer unit (default applicability, not a reference). Instead, run `validate@{rule}` and read the retirement note of Check 7 (`unbound_retention` correctness) — it lists every remaining explicit referrer and fails the validate until they are gone. A global rule's default applicability to every unit is not a reference — it lifts automatically when the stable rule file disappears.
+1. Find all current-layer units that explicitly list the rule in `rule_refs`. `specflowctl consumers --rule <id>` does this for bound rules (`b_rule_*`) — its output is the explicit referrers. It must NOT be used for global rules (`g_rule_*`): for those it lists every current-layer unit (default applicability, not a reference). Instead, run `validate@{rule}` and read the retirement note of Check 6 (`unbound_retention` correctness) — it lists every remaining explicit referrer and fails the validate until they are gone. A global rule's default applicability to every unit is not a reference — it lifts automatically when the stable rule file disappears.
 2. Each explicit referrer must drop the rule from its `rule_refs` (and the body explanation if present) and pass its own validate before the rule is retired. The CLI rejects the retire while any reference remains.
 3. After retirement, `specflowctl consumers --rule <id>` reports no consumers for a bound rule (its explicit references were cleared before retire); for a global rule it reports the rule as not found because the rule file no longer exists — the default applicability has already lifted with the file, so no command confirmation is needed.
 
@@ -48,11 +48,11 @@ The CLI tool performs:
 
 1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
 2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to run `validate@{rule}` first.
-3. **Validate frontmatter** — `rule_id`, `rule_scope`, `layer`, `rule_version`
+3. **Validate frontmatter** — `rule_id`, `rule_scope`, `rule_version`
 4. **Detect current stable version** — reads `docs/specs/rules/stable/{rule_id}.md` frontmatter
 5. **Version sanity** — candidate version > stable version
 6. **Determine version change type** — MAJOR vs MINOR vs PATCH
-7. **Copy candidate→stable** — layer transform (`layer: candidate`→`layer: stable`)
+7. **Copy candidate→stable** — pure copy (the layer is encoded by the file path — no frontmatter field is transformed)
 8. **Delete candidate** — removes the candidate rule file
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.

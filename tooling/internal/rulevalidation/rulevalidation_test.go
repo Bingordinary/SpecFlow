@@ -49,7 +49,7 @@ func TestCheckVersionSemantics_RetiredRuleSkipsVersionComparison(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stable := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n"
+	stable := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "b_rule_test.md"), []byte(stable), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestCheckVersionSemantics_RetiredRuleSkipsVersionComparison(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"
+	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCheckVersionSemantics_NonLiteralRetiredStatusFailsVersionGate(t *testin
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stable := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: stable\nrule_version: 0.1.0\n---\n"
+	stable := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "b_rule_test.md"), []byte(stable), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestCheckVersionSemantics_NonLiteralRetiredStatusFailsVersionGate(t *testin
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: Retired\n---\n"
+	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\nstatus: Retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestCheckUnboundRetention_RetiredBoundRuleNoConsumersPass(t *testing.T) {
 	}
 	// A retiring bound rule with no remaining consumers must not be forced to
 	// declare unbound_retention fields — the rule is going away.
-	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"
+	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestCheckUnboundRetention_RetiredBoundRuleWithConsumerFail(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"
+	candidate := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestCheckUnboundRetention_RetiredBoundRuleWithConsumerFail(t *testing.T) {
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
+	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestCheckUnboundRetention_RetiredGlobalRuleExplicitConsumerFail(t *testing.
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nrule_id: g_rule_http\nrule_scope: global\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"
+	candidate := "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 0.1.0\nstatus: retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "g_rule_http.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestCheckUnboundRetention_RetiredGlobalRuleExplicitConsumerFail(t *testing.
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"
+	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestCheckUnboundRetention_RetiredGlobalRuleDefaultApplicabilityPass(t *test
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nrule_id: g_rule_http\nrule_scope: global\nlayer: candidate\nrule_version: 0.1.0\nstatus: retired\n---\n"
+	candidate := "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 0.1.0\nstatus: retired\n---\n"
 	if err := os.WriteFile(filepath.Join(candDir, "g_rule_http.md"), []byte(candidate), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestCheckUnboundRetention_RetiredGlobalRuleDefaultApplicabilityPass(t *test
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}

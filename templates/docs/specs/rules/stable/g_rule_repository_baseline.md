@@ -1,7 +1,6 @@
 ---
 rule_id: g_rule_repository_baseline
 rule_scope: global
-layer: stable
 rule_version: 0.2.0
 ---
 

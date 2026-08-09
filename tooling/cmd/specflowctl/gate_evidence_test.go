@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 )
 
 func TestGateEvidenceBasic(t *testing.T) {
@@ -138,5 +140,54 @@ func TestGateEvidenceMalformedRanges(t *testing.T) {
 	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "src/auth.go", "--ranges", "abc"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected error for malformed ranges")
+	}
+}
+
+func TestGateEvidenceAcceptanceItemsRegion(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence failed: %v\nstderr=%s", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "region:acceptance_items:sha256:") {
+		t.Fatalf("expected a region:acceptance_items dep, got:\n%s", out)
+	}
+
+	// The region CID must equal the structural region CID.
+	text, _ := contenthash.FileText(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_dep.md"))
+	region, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("expected region")
+	}
+	expected := "region:acceptance_items:" + contenthash.RegionCID(region)
+	if !strings.Contains(out, expected) {
+		t.Fatalf("expected dep %q in output, got:\n%s", expected, out)
+	}
+}
+
+func TestGateEvidenceAcceptanceItemsMissingMarker(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\nNo items.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error when the acceptance_item_set marker is absent")
+	}
+	if !strings.Contains(err.Error(), "acceptance_item_set region not found") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

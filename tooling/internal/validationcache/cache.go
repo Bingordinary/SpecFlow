@@ -118,7 +118,11 @@ func ReadVerifyDeps(repoRoot, unitName string) (map[string][]string, error) {
 	}
 	deps := make(map[string][]string, len(cache.Files))
 	for _, f := range cache.Files {
-		deps[relPath(repoRoot, resolvePath(repoRoot, f.Path))] = f.Deps
+		p := resolveEntryPath(repoRoot, f.Path)
+		if p == "" {
+			continue // logical reference with no current-layer file — nothing to record
+		}
+		deps[relPath(repoRoot, p)] = f.Deps
 	}
 	return deps, nil
 }
@@ -460,7 +464,10 @@ const (
 // whole-file hash recorded in the cache powers that informational
 // comparison.
 func fileFreshness(repoRoot string, entry cacheFileEntry) (state fileFreshnessState, changed bool, err error) {
-	fullPath := resolvePath(repoRoot, entry.Path)
+	fullPath := resolveEntryPath(repoRoot, entry.Path)
+	if fullPath == "" {
+		return fileMissing, false, nil
+	}
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -488,14 +495,8 @@ func fileFreshness(repoRoot string, entry cacheFileEntry) (state fileFreshnessSt
 		return fileFresh, changed, nil
 	}
 
-	present := make(map[string]bool, len(fc.Chunks))
-	for _, c := range fc.Chunks {
-		present[normalizeHash(c.CID)] = true
-	}
-	for _, dep := range entry.Deps {
-		if !present[normalizeHash(dep)] {
-			return fileDepChanged, changed, nil
-		}
+	if !contenthash.DepsPresent(text, entry.Deps) {
+		return fileDepChanged, changed, nil
 	}
 	return fileFresh, changed, nil
 }
@@ -797,4 +798,28 @@ func resolvePath(repoRoot, filePath string) string {
 		return filePath
 	}
 	return filepath.Join(repoRoot, filepath.FromSlash(filePath))
+}
+
+// resolveEntryPath resolves a cache file entry to an absolute file path.
+// Logical references (`unit:<name>` / `unit:<name>:appendix:<file>` /
+// `rule:<id>`) resolve to the current-layer file (candidate first, stable
+// fallback), so a promote of the referenced unit or rule does not stale
+// caches whose dependency content is unchanged. Physical paths resolve
+// directly. Returns "" when a logical reference resolves to no file in any
+// layer.
+func resolveEntryPath(repoRoot, path string) string {
+	if strings.HasPrefix(path, "unit:") {
+		rest := strings.TrimPrefix(path, "unit:")
+		if _, appendix, found := strings.Cut(rest, ":appendix:"); found {
+			// The unit name is contextual: the appendix is resolved by its
+			// full file base name (unit_{unit}_{name}), which is unique
+			// across units by the naming convention.
+			return specpaths.ResolveUnitAppendix(repoRoot, appendix)
+		}
+		return specpaths.ResolveUnitFile(repoRoot, rest)
+	}
+	if strings.HasPrefix(path, "rule:") {
+		return specpaths.ResolveRuleFile(repoRoot, strings.TrimPrefix(path, "rule:"))
+	}
+	return resolvePath(repoRoot, path)
 }

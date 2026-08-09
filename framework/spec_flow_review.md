@@ -247,7 +247,7 @@ The compatibility check may judge only:
 1. required file presence for current project-instance entry points
 2. required section, table, field, frontmatter, and binding shape
 3. agreement between project-instance object references and current framework path rules
-4. appendix frontmatter and path agreement for owner, layer, and file-prefix shape, without judging the appendix's business content
+4. appendix frontmatter and path agreement for owner and file-prefix shape, without judging the appendix's business content
 
 The compatibility check must not judge:
 
@@ -258,7 +258,7 @@ The compatibility check must not judge:
 5. whether the current governance design is worth using
 
 If the project-instance compatibility check finds old file shape, missing required references, or invalid binding format, it is a `spec_flow_review` finding because the framework cannot safely operate on the current project instance.
-If the compatibility check finds an appendix whose owner, layer, or path prefix disagrees with the current framework path rules, it is a `spec_flow_review` finding because current framework commands cannot safely consume that project instance.
+If the compatibility check finds an appendix whose owner or file prefix disagrees with the current framework path rules, it is a `spec_flow_review` finding because current framework commands cannot safely consume that project instance.
 If the discovered concern is only about the truth content being wrong, incomplete, or undesirable as business truth, report that it is outside this check and route it to the owning command or design review.
 
 ### 2.11 Project-Instance Migration Closure
@@ -492,7 +492,7 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews the current project-instance files under `docs/specs/` only for format and contract compatibility with current framework rules
    - reviews `spec_writing_guide.md` as the owner contract for object family, reference format, and rule binding format
    - reviews `operations/update.md` as the migration owner for project-instance shape drift discovered by this slice
-   - verifies appendix owner/layer/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
+   - verifies appendix owner/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`
     - reviews `framework/hooks.md` for internal consistency of the hook system description

@@ -36,6 +36,9 @@ Key counts: {command-specific counts}
 ────────────────────────────────────────────
 {body}
 ────────────────────────────────────────────
+Dependency scope:
+  {file}: {lines}   # 1-based closed line ranges the judgment depended on; "all" for whole-file judgments
+────────────────────────────────────────────
 Findings:
   {batch group / decision group per this file's batch classification, or flat when grouping is inactive}
 Summary: {command-specific summary counts}
@@ -55,6 +58,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Summary:` — command-specific final counts.
+- `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; blocked → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -94,7 +98,6 @@ Verify the rule file has all required frontmatter fields:
 |-------|----------|-------------|
 | `rule_id` | Yes | `g_rule_{name}` or `b_rule_{name}` |
 | `rule_scope` | Yes | `global` or `bound` |
-| `layer` | Yes | `candidate` or `stable` |
 | `rule_version` | Yes | `x.y.z` (semver) |
 
 If any required field is missing or empty → FAIL.
@@ -114,20 +117,13 @@ When both are present, `rule_scope` in frontmatter takes precedence (per `spec_w
 
 ### Check 3 — File Path Consistency
 
-Verify the rule file is in the correct directory:
-
-| layer | Directory |
-|-------|-----------|
-| `candidate` | `docs/specs/rules/candidate/` |
-| `stable` | `docs/specs/rules/stable/` |
+Verify the rule file is in the correct layer directory: the file being validated must be at `docs/specs/rules/candidate/{rule_id}.md`. The rule layer is encoded by the file path — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §6).
 
 Filenames follow the pattern `{g_or_b}_rule_{id}.md` — `g_rule_` for global rules, `b_rule_` for bound rules.
 
-If path does not match the declared layer → FAIL.
-
 ### Check 4 — Version Semantics
 
-If the rule is marked for retirement (`status: retired` in frontmatter), the version gate is skipped: the stable copy is removed on promote, not updated — PASS with the note "rule is marked retired — version comparison skipped". The other retirement requirements still apply: `status` must be the literal `retired`, and no current-layer unit may explicitly reference the rule in `rule_refs` — the mechanical Check 7 rejects a retiring rule that still has explicit consumers, for bound and global rules alike (a global rule's default applicability to every unit lifts automatically when its stable file disappears, so only explicit references block the retire). The retiring rule must not have consumers.
+If the rule is marked for retirement (`status: retired` in frontmatter), the version gate is skipped: the stable copy is removed on promote, not updated — PASS with the note "rule is marked retired — version comparison skipped". The other retirement requirements still apply: `status` must be the literal `retired`, and no current-layer unit may explicitly reference the rule in `rule_refs` — the mechanical Check 6 rejects a retiring rule that still has explicit consumers, for bound and global rules alike (a global rule's default applicability to every unit lifts automatically when its stable file disappears, so only explicit references block the retire). The retiring rule must not have consumers.
 
 Otherwise:
 
@@ -151,7 +147,7 @@ If either is found → FAIL.
 
 ### Check 7 — `unbound_retention` Correctness
 
-If the rule is marked for retirement (`status: retired` in frontmatter), the `unbound_retention` fields are not required: the rule is being removed from stable, not retained, so the retention declaration has no object. The mechanical Check 7 only verifies that no current-layer unit still explicitly references the rule in `rule_refs` — pass with the note "rule is marked retired — no rule_refs references remain" when no explicit reference remains (bound and global rules alike; a global rule's default applicability to every unit lifts automatically when the stable rule file disappears, so only explicit references block the retire).
+If the rule is marked for retirement (`status: retired` in frontmatter), the `unbound_retention` fields are not required: the rule is being removed from stable, not retained, so the retention declaration has no object. The mechanical Check 6 only verifies that no current-layer unit still explicitly references the rule in `rule_refs` — pass with the note "rule is marked retired — no rule_refs references remain" when no explicit reference remains (bound and global rules alike; a global rule's default applicability to every unit lifts automatically when the stable rule file disappears, so only explicit references block the retire).
 
 Otherwise:
 
@@ -202,7 +198,7 @@ After all 8 checks complete:
     - The candidate rule file itself (all checks)
     - The stable sibling rule file, if present (Check 4 reads its `rule_version`)
     - All unit spec files searched under `docs/specs/units/` (Check 5 existence check and Check 7 consumer discovery)
-  - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges` = whole file) and record its `hash` + `deps` output in the cache's `files` entry. The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
+  - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the executor's own `Dependency scope` report (see §Output Format); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration). **Unit spec files scanned by Check 7 consumer discovery are written as logical references** — `unit:{name}` — with the `hash` + `deps` of the file the executor actually read; the stable sibling rule file keeps a physical path (it is a fixed-layer read, not a name-resolved dependency). See `framework/validation_cache.md` §Logical References
   - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes and dependency CIDs
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
