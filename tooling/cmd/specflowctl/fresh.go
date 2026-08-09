@@ -199,6 +199,9 @@ func stableRuleSummaryLine(repoRoot, ruleID string) string {
 func stableBaselineSummaryLine(repoRoot, name string, result baseline.CheckResult) string {
 	switch result.Status {
 	case baseline.StatusOK:
+		if result.Note != "" {
+			return fmt.Sprintf("%-13s  %-9s  %s", name, "OK", result.Note)
+		}
 		return fmt.Sprintf("%-13s  %-9s  %s", name, "OK", result.Details)
 	case baseline.StatusChanged:
 		return fmt.Sprintf("%-13s  %-9s  %s", name, "CHANGED", result.Details)
@@ -325,6 +328,9 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	switch result.Status {
 	case baseline.StatusOK:
 		fmt.Fprintln(stdout, "Drift: none — code surface matches the promote-time baseline.")
+		if result.Note != "" {
+			fmt.Fprintf(stdout, "Note: %s\n", result.Note)
+		}
 	case baseline.StatusChanged:
 		fmt.Fprintln(stdout, "Drift: possible — code changed since promote. Run verify against stable to confirm.")
 	default:

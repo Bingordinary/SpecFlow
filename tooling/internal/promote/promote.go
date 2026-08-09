@@ -460,7 +460,13 @@ func Promote(repoRoot, unitName string) *Result {
 			return r
 		}
 	} else {
-		if err := baseline.WriteUnitBaseline(repoRoot, unitName, content); err != nil {
+		verifyDeps, err := validationcache.ReadVerifyDeps(repoRoot, unitName)
+		if err != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to read verify dependency evidence: %v — re-run promote", err))
+			r.Passed = false
+			return r
+		}
+		if err := baseline.WriteUnitBaseline(repoRoot, unitName, content, verifyDeps); err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to write baseline: %v — re-run promote or restore the baseline manually", err))
 			r.Passed = false
 			return r

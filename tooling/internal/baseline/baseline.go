@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
@@ -30,11 +31,13 @@ const (
 type CheckResult struct {
 	Status  Status
 	Details string
+	Note    string
 }
 
 type entry struct {
 	Path string
 	Hash string
+	Deps []string
 }
 
 type surface struct {
@@ -52,11 +55,22 @@ func baselinePath(repoRoot, kind, name string) string {
 // WriteUnitBaseline records the hash snapshot of the code surface declared by
 // the unit spec (implementation_surface + affects.files). Directories are
 // expanded recursively so that later additions are detected as drift too.
-// The <pending> placeholder is not a real surface and is skipped.
-func WriteUnitBaseline(repoRoot, unitName, specContent string) error {
+// The <pending> placeholder is not a real surface and is skipped. verifyDeps
+// carries the dependency chunk CIDs declared by the promote-time verify run
+// (path -> deps, keys in canonical repo-relative slash form as returned by
+// ReadVerifyDeps): files with declared dependencies are judged on chunk
+// existence, files without them on the whole-file hash.
+func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) error {
 	surfaces := collectSurfaces(repoRoot,
 		specvalidation.ExtractImplementationSurfaces(specContent),
 		specvalidation.ExtractAffectsFiles(specContent))
+	for i := range surfaces {
+		for j := range surfaces[i].Entries {
+			if deps, ok := verifyDeps[surfaces[i].Entries[j].Path]; ok {
+				surfaces[i].Entries[j].Deps = deps
+			}
+		}
+	}
 	return writeBaseline(repoRoot, "unit", unitName, surfaces)
 }
 
@@ -174,6 +188,12 @@ func writeBaseline(repoRoot, kind, name string, surfaces []surface) error {
 		for _, e := range s.Entries {
 			fmt.Fprintf(&buf, "      - path: %q\n", e.Path)
 			fmt.Fprintf(&buf, "        hash: %q\n", e.Hash)
+			if len(e.Deps) > 0 {
+				buf.WriteString("        deps:\n")
+				for _, d := range e.Deps {
+					fmt.Fprintf(&buf, "          - %q\n", d)
+				}
+			}
 		}
 	}
 	path := baselinePath(repoRoot, kind, name)
@@ -197,6 +217,7 @@ func readBaseline(path string) (*parsedBaseline, error) {
 	b := &parsedBaseline{}
 	var cur *surface
 	var curEntry *entry
+	inDeps := false
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
@@ -209,14 +230,24 @@ func readBaseline(path string) (*parsedBaseline, error) {
 			}
 			cur.Entries = append(cur.Entries, entry{Path: unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")))})
 			curEntry = &cur.Entries[len(cur.Entries)-1]
+			inDeps = false
 		case strings.HasPrefix(line, "        hash:"):
 			if curEntry != nil {
 				curEntry.Hash = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "hash:")))
+			}
+		case strings.HasPrefix(line, "        deps:"):
+			if curEntry != nil {
+				inDeps = true
+			}
+		case strings.HasPrefix(line, "          - "):
+			if inDeps && curEntry != nil {
+				curEntry.Deps = append(curEntry.Deps, unquote(strings.TrimSpace(strings.TrimPrefix(line, "          - "))))
 			}
 		case strings.HasPrefix(trimmed, "- path:"):
 			b.surfaces = append(b.surfaces, surface{Path: unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")))})
 			cur = &b.surfaces[len(b.surfaces)-1]
 			curEntry = nil
+			inDeps = false
 		case strings.HasPrefix(trimmed, "kind:"):
 			b.kind = strings.TrimSpace(strings.TrimPrefix(trimmed, "kind:"))
 		case strings.HasPrefix(trimmed, "name:"):
@@ -247,7 +278,7 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 		return CheckResult{Status: StatusChanged, Details: fmt.Sprintf("cannot read baseline: %v", err)}
 	}
 
-	var changed, missing, added []string
+	var changed, missing, added, notes []string
 	for _, s := range b.surfaces {
 		full := filepath.Join(repoRoot, filepath.FromSlash(s.Path))
 		info, err := os.Stat(full)
@@ -258,19 +289,30 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 			continue
 		}
 		if info.IsDir() {
-			baselineEntries := make(map[string]string, len(s.Entries))
+			baselineEntries := make(map[string]entry, len(s.Entries))
 			for _, e := range s.Entries {
-				baselineEntries[e.Path] = e.Hash
+				baselineEntries[e.Path] = e
 			}
 			currentEntries := make(map[string]string)
 			for _, e := range expandDir(repoRoot, full) {
 				currentEntries[e.Path] = e.Hash
 			}
-			for p, h := range baselineEntries {
-				ch, ok := currentEntries[p]
+			for p, be := range baselineEntries {
+				ce, ok := currentEntries[p]
 				if !ok {
 					missing = append(missing, p)
-				} else if ch != h {
+					continue
+				}
+				if len(be.Deps) > 0 {
+					ok, note := depsPresent(filepath.Join(repoRoot, filepath.FromSlash(p)), be)
+					if !ok {
+						changed = append(changed, p)
+					} else if note != "" {
+						notes = append(notes, note)
+					}
+					continue
+				}
+				if ce != be.Hash {
 					changed = append(changed, p)
 				}
 			}
@@ -286,21 +328,39 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 			changed = append(changed, s.Path)
 			continue
 		}
-		currentHash, err := specpaths.FileHash(full)
-		if err != nil {
-			missing = append(missing, s.Entries[0].Path)
+		e := s.Entries[0]
+		if len(e.Deps) > 0 {
+			ok, note := depsPresent(full, e)
+			if !ok {
+				changed = append(changed, e.Path)
+			} else if note != "" {
+				notes = append(notes, note)
+			}
 			continue
 		}
-		if currentHash != s.Entries[0].Hash {
-			changed = append(changed, s.Entries[0].Path)
+		currentHash, err := specpaths.FileHash(full)
+		if err != nil {
+			missing = append(missing, e.Path)
+			continue
+		}
+		if currentHash != e.Hash {
+			changed = append(changed, e.Path)
 		}
 	}
 
 	sort.Strings(changed)
 	sort.Strings(missing)
 	sort.Strings(added)
+	sort.Strings(notes)
 
 	if len(changed) == 0 && len(missing) == 0 && len(added) == 0 {
+		if len(notes) > 0 {
+			return CheckResult{
+				Status:  StatusOK,
+				Details: "code surface matches the promote-time baseline (outside the declared dependencies)",
+				Note:    strings.Join(notes, "; "),
+			}
+		}
 		return CheckResult{Status: StatusOK, Details: "code surface matches the promote-time baseline"}
 	}
 	var parts []string
@@ -314,4 +374,44 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 		parts = append(parts, "added: "+strings.Join(added, ", "))
 	}
 	return CheckResult{Status: StatusChanged, Details: strings.Join(parts, "; ") + " — code changed since promote, run verify against stable to confirm"}
+}
+
+// depsPresent reports whether every declared dependency CID still exists in
+// the file's current chunk set. ok=false means a declared dependency chunk
+// is gone — the file drifted. ok=true with a non-empty note means the
+// content changed outside the declared dependencies: informational only,
+// the file is still considered conforming (mirrors the cache freshness note
+// semantics in framework/validation_cache.md).
+func depsPresent(full string, e entry) (bool, string) {
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return false, ""
+	}
+	text := specpaths.NormalizeText(string(data))
+	fc := contenthash.ChunkText(text)
+
+	present := make(map[string]bool, len(fc.Chunks))
+	for _, c := range fc.Chunks {
+		present[normalizeCID(c.CID)] = true
+	}
+	for _, dep := range e.Deps {
+		if !present[normalizeCID(dep)] {
+			return false, ""
+		}
+	}
+
+	currentHash := contenthash.FileHashText(text)
+	if e.Hash != "" && normalizeCID(currentHash) != normalizeCID(e.Hash) {
+		return true, fmt.Sprintf("%s: content changed outside declared dependencies — re-verify if semantic coupling exists", e.Path)
+	}
+	return true, ""
+}
+
+// normalizeCID strips a "sha256:" prefix so stored and computed CIDs compare
+// on the hex value alone.
+func normalizeCID(cid string) string {
+	if idx := strings.LastIndex(cid, ":"); idx >= 0 {
+		return cid[idx+1:]
+	}
+	return cid
 }

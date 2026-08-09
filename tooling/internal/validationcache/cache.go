@@ -103,6 +103,26 @@ func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 }
 
+// ReadVerifyDeps returns the declared dependency CIDs per file path from the
+// unit's verify cache (path -> deps CID list). Keys are canonicalized to
+// repo-relative slash paths (same resolution as the gate's fileFreshness), so
+// "./" prefixes, absolute paths, and platform separators in the agent-written
+// cache are equivalent. Used by promote to record the verify-time dependencies
+// into the baseline. Errors are returned as-is — promote fails loudly rather
+// than degrading the baseline.
+func ReadVerifyDeps(repoRoot, unitName string) (map[string][]string, error) {
+	cachePath := cacheFilePath(repoRoot, "unit", unitName, "verify_result.md")
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return nil, err
+	}
+	deps := make(map[string][]string, len(cache.Files))
+	for _, f := range cache.Files {
+		deps[relPath(repoRoot, resolvePath(repoRoot, f.Path))] = f.Deps
+	}
+	return deps, nil
+}
+
 // CheckAppendicesInCache verifies that every non-exempt candidate appendix for
 // the given unit is listed in the validate_result.md cache file. This is a
 // mechanical promote gate — it ensures the agent included all appendix files

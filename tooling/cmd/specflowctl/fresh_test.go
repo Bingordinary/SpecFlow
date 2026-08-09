@@ -467,7 +467,7 @@ func TestFreshStableScope(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -503,6 +503,65 @@ func TestFreshStableScope(t *testing.T) {
 	}
 }
 
+// TestFreshStableScope_OKWithNote verifies the drift report shows OK with an
+// informational note when the code surface changed outside the declared
+// dependency chunks.
+func TestFreshStableScope_OKWithNote(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableUnitSpec(t, repoRoot, "settled")
+
+	var sb strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&sb, "line %03d: some padding content to grow the chunk set\n", i)
+	}
+	content := sb.String()
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	aPath := filepath.Join(srcDir, "a.go")
+	os.WriteFile(aPath, []byte(content), 0644)
+
+	fc, err := contenthash.ChunkFile(aPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.Chunks) < 3 {
+		t.Fatalf("test setup expected multiple chunks, got %d", len(fc.Chunks))
+	}
+	mid := fc.Chunks[len(fc.Chunks)/2]
+
+	spec := "---\nid: settled\nlayer: candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+		"acceptance_item_set:\n" +
+		"  - id: settled.core\n" +
+		"    description: t\n" +
+		"    verification_type: auto\n" +
+		"    verification_surface: src/\n" +
+		"    implementation_surface: src/\n" +
+		"    verification_method: check\n" +
+		"    pass_condition: ok\n" +
+		"    runnable: yes\n" +
+		"    affects:\n" +
+		"      files:\n" +
+		"        - src/a.go\n"
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, map[string][]string{"src/a.go": {mid.CID}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change a region outside the declared dependency chunk.
+	newline := strings.Index(content, "\n")
+	os.WriteFile(aPath, []byte("modified first line\n"+content[newline+1:]), 0644)
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "settled") || !strings.Contains(out, "OK") {
+		t.Fatalf("expected settled OK, got:\n%s", out)
+	}
+	if !strings.Contains(out, "content changed outside declared dependencies") {
+		t.Fatalf("expected drift note, got:\n%s", out)
+	}
+}
+
 // TestFreshStableScope_VerifiedSilence verifies a fresh stable verify cache
 // silences the baseline comparison.
 func TestFreshStableScope_VerifiedSilence(t *testing.T) {
@@ -528,7 +587,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -572,7 +631,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)

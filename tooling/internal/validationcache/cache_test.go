@@ -1326,3 +1326,43 @@ func mustHash(t *testing.T, path string) string {
 	}
 	return h
 }
+
+func TestReadVerifyDeps(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+	abs := filepath.Join(repoRoot, "src", "util.go")
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\nfiles:\n  - path: ./src/handler.go\n    hash: sha256:aaa\n    deps:\n      - sha256:cid1\n      - sha256:cid2\n  - path: " + abs + "\n    hash: sha256:bbb\n---\n"
+	os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644)
+
+	deps, err := ReadVerifyDeps(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deps) != 2 {
+		t.Fatalf("expected 2 file entries, got %d: %v", len(deps), deps)
+	}
+	if len(deps["src/handler.go"]) != 2 || deps["src/handler.go"][0] != "sha256:cid1" || deps["src/handler.go"][1] != "sha256:cid2" {
+		t.Fatalf("unexpected deps for handler.go: %v", deps["src/handler.go"])
+	}
+	if deps["src/util.go"] != nil {
+		t.Fatalf("expected no deps for util.go, got %v", deps["src/util.go"])
+	}
+}
+
+func TestReadVerifyDeps_MissingCacheFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	if _, err := ReadVerifyDeps(repoRoot, "test"); err == nil {
+		t.Fatal("expected error for missing verify cache")
+	}
+}
+
+func TestReadVerifyDeps_CorruptCacheFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+	os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte("not a cache"), 0644)
+	if _, err := ReadVerifyDeps(repoRoot, "test"); err == nil {
+		t.Fatal("expected error for corrupt verify cache")
+	}
+}

@@ -30,9 +30,24 @@ func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	}
 }
 
+// writeVerifyCache writes a minimal passing verify cache for the unit so
+// promote can read the verify-time dependency evidence (ReadVerifyDeps).
+func writeVerifyCache(t *testing.T, repoRoot, unit string) {
+	t.Helper()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", unit)
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cache := "---\ncommand: verify\nunit: " + unit + "\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-01-01T00:00:00Z\"\nfiles:\n  - path: \"docs/specs/units/candidate/unit_" + unit + ".md\"\n    hash: \"sha256:abc\"\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cache), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPromoteUnitSuccess(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
 
 	candPath := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")
 	candInfo, err := os.Stat(candPath)
@@ -93,6 +108,7 @@ func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeVerifyCache(t, repoRoot, "demo")
 
 	result := Promote(repoRoot, "demo")
 	found := false
@@ -116,6 +132,7 @@ func TestPromoteUnitBodyAbsoluteLayerPathWarning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeVerifyCache(t, repoRoot, "demo")
 
 	result := Promote(repoRoot, "demo")
 	found := false
@@ -139,6 +156,7 @@ func TestPromoteUnitBodyCodePathNoWarning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
+	writeVerifyCache(t, repoRoot, "demo")
 
 	result := Promote(repoRoot, "demo")
 	for _, a := range result.Actions {
@@ -266,6 +284,7 @@ func TestPromoteUnitRetiredAppendix(t *testing.T) {
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nlayer: candidate\n---\n\nNew extra content\n"), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_legacy.md"), []byte("---\nunit: demo\nlayer: candidate\nstatus: retired\n---\n\nTo be retired\n"), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
 
 	result := Promote(repoRoot, "demo")
 	if !result.Passed {
@@ -885,6 +904,7 @@ func TestPromoteUnitCandidateRemovalFailure(t *testing.T) {
 	writeCandidateUnit(t, repoRoot, "demo")
 
 	candAppendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	writeVerifyCache(t, repoRoot, "demo")
 	if err := os.Chmod(candAppendixDir, 0555); err != nil {
 		t.Fatal(err)
 	}
@@ -963,14 +983,57 @@ func TestPromoteUnit_WritesBaseline(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidateUnit(t, repoRoot, "demo")
 
+	// Code surface: the candidate's implementation_surface (internal/demo).
+	codeDir := filepath.Join(repoRoot, "internal/demo")
+	if err := os.MkdirAll(codeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	codeContent := "package demo\n\nfunc Core() string { return \"core\" }\n"
+	codePath := filepath.Join(codeDir, "core.go")
+	if err := os.WriteFile(codePath, []byte(codeContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify cache carrying declared dependency CIDs for the code file. The
+	// code file path is recorded as an absolute path — the same variant the
+	// gate's resolvePath tolerates — proving ReadVerifyDeps canonicalizes
+	// keys before the baseline matching (a non-canonical key would silently
+	// drop the deps and the assertion below would fail).
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/demo")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	depCID := contenthash.CID([]byte(codeContent))
+	cache := "---\ncommand: verify\nunit: demo\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-01-01T00:00:00Z\"\nfiles:\n  - path: \"docs/specs/units/candidate/unit_demo.md\"\n    hash: \"sha256:abc\"\n  - path: \"" + codePath + "\"\n    hash: \"" + depCID + "\"\n    deps:\n      - \"" + depCID + "\"\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	result := Promote(repoRoot, "demo")
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
 
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
-	if _, err := os.Stat(basePath); err != nil {
+	data, err := os.ReadFile(basePath)
+	if err != nil {
 		t.Fatalf("baseline not written: %v", err)
+	}
+	if !strings.Contains(string(data), "deps:") || !strings.Contains(string(data), depCID) {
+		t.Fatalf("baseline missing verify dependency CIDs:\n%s", data)
+	}
+}
+
+func TestPromoteUnit_NoVerifyCacheFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected promote to fail without verify dependency evidence")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "failed to read verify dependency evidence") {
+		t.Fatalf("expected verify dependency issue, got: %v", result.Issues)
 	}
 }
 

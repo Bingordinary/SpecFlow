@@ -64,6 +64,11 @@ Each `files` entry records two kinds of evidence:
 (see [Dependency Declaration](#dependency-declaration)). A `files` entry with
 no `deps` but a non-empty file fails closed (see Staleness Detection).
 
+`files` paths are resolved against the repository root. Dependency matching
+(staleness checks and baseline recording) uses the canonical repo-relative
+path, so `./` prefixes, absolute paths, and platform separators in the
+recorded path are equivalent.
+
 `mode: full` means a complete run of all checks/steps. Only full runs write caches — targeted runs (`:check-{n}` / `:{keyword}`) never do, so `mode` is always `full`. See `framework/verification_scope.md` for the full design.
 
 ### Verify result semantics
@@ -279,21 +284,21 @@ The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (review with P0
 
 ## Stable Drift Baseline
 
-Promote records a **baseline**: a SHA-256 hash snapshot of the promoted target's code surface. Baselines live under `docs/specs/meta/baseline/` (`unit/{name}.yaml`, `rule/{id}.yaml`), are written by `specflowctl promote` (and removed when the target is retired), and are kept after promote deletes the caches. The baseline is a data snapshot, not a state machine — "drift" is never persisted, it is recomputed on every read.
+Promote records a **baseline**: a snapshot of the promoted target's code surface. Baselines live under `docs/specs/meta/baseline/` (`unit/{name}.yaml`, `rule/{id}.yaml`), are written by `specflowctl promote` (and removed when the target is retired), and are kept after promote deletes the caches. The baseline is a data snapshot, not a state machine — "drift" is never persisted, it is recomputed on every read. Baselines are durable records with the same lifecycle as the stable spec and must be kept under version control; only `docs/specs/meta/validation/` (the caches) is meant to be ignored.
 
-- **Unit baseline:** the files declared by `implementation_surface` (directories expanded recursively) and `affects.files`. A fresh `verify@{unit}` against stable silences the comparison: the code was recently confirmed to still conform.
-- **Rule baseline:** the stable rule file itself (a rule declares no code surface) — it detects direct edits to a stable rule that bypass the fork flow.
+- **Unit baseline:** the files declared by `implementation_surface` (directories expanded recursively) and `affects.files`. For each surface file the baseline records the whole-file hash and, when the promote-time verify run declared dependencies on that file, the dependency chunk CIDs (copied from the verify cache, which must be fresh for promote). A fresh `verify@{unit}` against stable silences the comparison: the code was recently confirmed to still conform.
+- **Rule baseline:** the stable rule file itself (a rule declares no code surface) — it detects direct edits to a stable rule that bypass the fork flow. Rule baselines keep the whole-file hash comparison: rules have no verify run, so no dependency CIDs exist.
 
 `fresh`'s stable scope compares the current code surface against the baseline:
 
 | State | Meaning |
 |---|---|
 | `VERIFIED` | A fresh stable verify cache exists — the code was recently confirmed to still conform. Silences the baseline comparison. |
-| `OK` | No verify cache; the code surface matches the promote-time baseline. |
-| `CHANGED` | The surface differs from the baseline (files changed, missing, or added — the report names them). The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
+| `OK` | No verify cache; the code surface matches the baseline. For unit files with declared dependency CIDs, "matches" means every declared dependency chunk still exists — content changes outside the declared chunks do not fail the check. Such changes surface as an informational note ("content changed outside declared dependencies — re-verify if semantic coupling exists") instead. Files without declared dependency CIDs (including all legacy baselines written before dependency support) are judged on the whole-file hash. |
+| `CHANGED` | The surface differs from the baseline: a declared dependency chunk is gone, a hash-only file changed, or files are missing or added (the report names them). The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
 | `MISSING` | No baseline recorded (the target was promoted before baseline support). |
 
-The report states what it mechanically knows: `CHANGED` means "code changed since promote" — it never claims the spec is violated. Semantic confirmation is always a user-triggered `verify@{unit}` against the stable target.
+The report states what it mechanically knows: `CHANGED` means "code changed since promote" — it never claims the spec is violated. Semantic confirmation is always a user-triggered `verify@{unit}` against the stable target. The dependency-CID judgment is the same approximation the promote gate already accepts for caches: a note is a prompt to re-run when semantic coupling exists, never a failure.
 
 ## Important
 

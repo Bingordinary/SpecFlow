@@ -3,14 +3,15 @@ set -euo pipefail
 
 REPO_URL="https://github.com/Bingordinary/SpecFlow.git"
 TARGET_DIR="specflow"
-IGNORE_ENTRY="specflow/"
+IGNORE_ENTRIES=("specflow/" "docs/specs/meta/validation/" ".tmp/" "/meta/" ".claude-plugin/" ".opencode/" "hooks/hooks.json")
 
 usage() {
   cat >&2 <<'USAGE'
 Usage: install.sh
 
 Run from the root of the repository that should adopt specFlow.
-The installer clones SpecFlow into ./specflow, adds specflow/ to .gitignore,
+The installer clones SpecFlow into ./specflow, adds ignore entries
+(specflow/, validation caches, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 USAGE
 }
@@ -62,14 +63,15 @@ platform_suffix() {
 }
 
 add_gitignore_entry() {
-  if [[ -f .gitignore ]] && grep -qxF "${IGNORE_ENTRY}" .gitignore; then
+  local entry="$1"
+  if [[ -f .gitignore ]] && grep -qxF "${entry}" .gitignore; then
     return 0
   fi
 
   if [[ -s .gitignore ]]; then
-    printf '\n%s\n' "${IGNORE_ENTRY}" >> .gitignore
+    printf '\n%s\n' "${entry}" >> .gitignore
   else
-    printf '%s\n' "${IGNORE_ENTRY}" >> .gitignore
+    printf '%s\n' "${entry}" >> .gitignore
   fi
 }
 
@@ -111,8 +113,10 @@ fi
 echo "Cloning SpecFlow into ./${TARGET_DIR}..."
 git clone "${REPO_URL}" "${TARGET_DIR}"
 
-echo "Adding ${IGNORE_ENTRY} to .gitignore..."
-add_gitignore_entry
+echo "Adding ignore entries to .gitignore..."
+for entry in "${IGNORE_ENTRIES[@]}"; do
+  add_gitignore_entry "${entry}"
+done
 
 echo "Installing local specFlow binaries..."
 bash "${TARGET_DIR}/tooling/scripts/pull_with_release.sh"

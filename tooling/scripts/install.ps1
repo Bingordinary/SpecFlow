@@ -7,14 +7,15 @@ $ErrorActionPreference = "Stop"
 
 $RepoUrl = "https://github.com/Bingordinary/SpecFlow.git"
 $TargetDir = "specflow"
-$IgnoreEntry = "specflow/"
+$IgnoreEntries = @("specflow/", "docs/specs/meta/validation/", ".tmp/", "/meta/", ".claude-plugin/", ".opencode/", "hooks/hooks.json")
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"
 Usage: install.ps1
 
 Run from the root of the repository that should adopt specFlow.
-The installer clones SpecFlow into ./specflow, adds specflow/ to .gitignore,
+The installer clones SpecFlow into ./specflow, adds ignore entries
+(specflow/, validation caches, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 "@)
 }
@@ -150,8 +151,10 @@ if (Test-Path -LiteralPath $TargetDir) {
 Write-Host "Cloning SpecFlow into ./$TargetDir..."
 Invoke-CheckedNative "git" @("clone", $RepoUrl, $TargetDir)
 
-Write-Host "Adding $IgnoreEntry to .gitignore..."
-Add-GitignoreEntry ".gitignore" $IgnoreEntry
+Write-Host "Adding ignore entries to .gitignore..."
+foreach ($entry in $IgnoreEntries) {
+    Add-GitignoreEntry ".gitignore" $entry
+}
 
 Write-Host "Installing local specFlow binaries..."
 $pullScript = Join-Path $TargetDir "tooling/scripts/pull_with_release.ps1"
