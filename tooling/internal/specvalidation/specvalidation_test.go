@@ -594,7 +594,7 @@ func TestExtractAffectsAppendices(t *testing.T) {
 		want    []string
 	}{
 		{
-			name: "block form",
+			name:    "block form",
 			content: block,
 			want:    []string{"unit_demo_evidence.md"},
 		},
@@ -695,7 +695,7 @@ func writeAppendix(t *testing.T, repoRoot, unitName, appendixName, frontmatter s
 		t.Fatal(err)
 	}
 	content := "---\n" + frontmatter + "\n---\n"
-	path := filepath.Join(appendixDir, "unit_" + unitName + "_" + appendixName + ".md")
+	path := filepath.Join(appendixDir, "unit_"+unitName+"_"+appendixName+".md")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1044,8 +1044,8 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 7 {
-		t.Fatalf("expected 7 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 8 {
+		t.Fatalf("expected 8 checks, got %d", len(result.Checks))
 	}
 }
 
@@ -1116,5 +1116,149 @@ func TestFormatResult_FailedChecksCount(t *testing.T) {
 	output := FormatResult(result)
 	if !strings.Contains(output, "Failed checks: 2") {
 		t.Fatalf("expected \"Failed checks: 2\" in output, got:\n%s", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Check 8: Dependency cycles
+// ---------------------------------------------------------------------------
+
+func writeCandidateWithRefs(t *testing.T, repoRoot, unitName, unitRefs, ruleRefs string) {
+	t.Helper()
+	content := "---\nid: " + unitName + "\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n"
+	writeCandidate(t, repoRoot, unitName, content)
+}
+
+func TestCheckDependencyCycles_Pass(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
+	writeCandidateWithRefs(t, repoRoot, "payment", "none", "none")
+
+	result := checkDependencyCycles(repoRoot, "auth")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckDependencyCycles_FailsBothCycleMembers(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
+	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
+
+	for _, unit := range []string{"auth", "payment"} {
+		result := checkDependencyCycles(repoRoot, unit)
+		if result.Status != Fail {
+			t.Fatalf("expected FAIL for %s, got %s: %s", unit, result.Status, result.Details)
+		}
+		if !strings.Contains(result.Details, "auth -> payment") {
+			t.Fatalf("expected cycle listing in details, got: %s", result.Details)
+		}
+		if !strings.Contains(result.Details, "g_rule_repository_baseline.md §6.1 item 4") {
+			t.Fatalf("expected resolution guidance in details, got: %s", result.Details)
+		}
+	}
+}
+
+func TestCheckDependencyCycles_OutsideUnitUnaffected(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
+	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
+	writeCandidateWithRefs(t, repoRoot, "session", "[auth]", "none")
+
+	result := checkDependencyCycles(repoRoot, "session")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for unit outside the cycle, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckDependencyCycles_TransitiveCycle(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "a", "[b]", "none")
+	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
+	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
+
+	result := checkDependencyCycles(repoRoot, "b")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for transitive cycle member, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "a -> b -> c") {
+		t.Fatalf("expected normalized cycle listing, got: %s", result.Details)
+	}
+}
+
+func TestCheckDependencyCycles_RetiringSpecSkipped(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "auth", "---\nid: auth\nstatus: retired\nversion: 1.0.0\nunit_refs: [payment]\nrule_refs: none\n---\n")
+	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
+
+	result := checkDependencyCycles(repoRoot, "auth")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for retiring spec, got %s: %s", result.Status, result.Details)
+	}
+}
+
+// A retiring unit's references disappear with it, so its edges must not be
+// part of the dependency graph: an unrelated unit (here "b", which never
+// references the retiring "a") must not be failed on a cycle that only
+// exists because of the retiring unit's to-be-deleted edge a -> b.
+// The unit that does reference the retiring unit ("c") is still rejected —
+// but by the reference-integrity check (Check 4), not by the cycle check.
+func TestCheckDependencyCycles_RetiringUnitEdgesDoNotAffectOthers(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "a", "---\nid: a\nstatus: retired\nversion: 1.0.0\nunit_refs: [b]\nrule_refs: none\n---\n")
+	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
+	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
+
+	result := checkDependencyCycles(repoRoot, "b")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for b (outside the retiring unit's edge), got %s: %s", result.Status, result.Details)
+	}
+
+	full := ValidateCandidate(repoRoot, "c")
+	for _, check := range full.Checks {
+		if check.Name == "Reference integrity" && check.Status != Fail {
+			t.Fatalf("expected c to fail reference integrity for referencing the retiring unit, got: %s", check.Details)
+		}
+	}
+}
+
+func TestCheckDependencyCycles_BuildFailureCarriesGuidance(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "auth", "none", "none")
+	// Make the stable units path a regular file so graph build fails for a
+	// reason unrelated to the validated unit (ReadDir yields ENOTDIR).
+	if err := os.WriteFile(filepath.Join(repoRoot, "docs/specs/units/stable"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := checkDependencyCycles(repoRoot, "auth")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "cannot build dependency graph") {
+		t.Fatalf("expected build failure detail, got: %s", result.Details)
+	}
+	if !strings.Contains(result.Details, "Check 8 reads every current-layer unit spec") {
+		t.Fatalf("expected build guidance in details, got: %s", result.Details)
+	}
+}
+
+func TestValidateCandidate_FailsOnCycle(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
+	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
+
+	result := ValidateCandidate(repoRoot, "auth")
+	if result.Passed {
+		t.Fatal("expected overall FAIL for a unit on a cycle")
+	}
+	found := false
+	for _, c := range result.Checks {
+		if c.Name == "Dependency cycles" && c.Status == Fail {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a failed Dependency cycles check, got checks: %v", result.Checks)
 	}
 }

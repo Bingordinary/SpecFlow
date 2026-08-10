@@ -88,7 +88,7 @@ func ShouldBypass(args []string) bool {
 
 
 	switch args[0] {
-	case "-h", "--help", "help", "build-release", "tooling-fingerprint", "doctor", "next", HiddenBuildFingerprintCommand:
+	case "-h", "--help", "help", "build-release", "tooling-fingerprint", "doctor", "next", "deps", HiddenBuildFingerprintCommand:
 		return true
 	default:
 		return false

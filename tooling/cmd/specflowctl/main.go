@@ -67,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runValidate(args[1:], stdout, stderr)
 	case "consumers":
 		return runConsumers(args[1:], stdout, stderr)
+	case "deps":
+		return runDeps(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
 	case "gate-evidence":
@@ -533,6 +535,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
+	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  gate-evidence Compute dependency CIDs (chunk ranges and/or the acceptance_item_set region) for a file read during a gate run")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")

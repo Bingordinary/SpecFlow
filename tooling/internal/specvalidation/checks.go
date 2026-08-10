@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/unitgraph"
 )
 
 // specPath is a shorthand for specpaths.CandidateUnitSpecFileRef(unitName).
@@ -698,3 +699,72 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 	return CheckResult{Name: "Body layer-path check", Status: Pass}
 }
 
+// ------------------------------------------------------------
+// Check 8: Dependency cycles (unit_refs graph)
+// ------------------------------------------------------------
+
+// cycleGuidance is the standard resolution guidance attached to every cycle
+// finding. It lists the two structural resolutions without judging which one
+// applies — the tool reports and blocks, the user decides how to unbind.
+const cycleGuidance = "Resolve by extracting the shared contract into a rule (star-shaped dependencies), or re-drawing unit boundaries. See g_rule_repository_baseline.md §6.1 item 4; run `deps@all` for the dependency graph."
+
+// cycleBuildGuidance is attached when the graph cannot be built at all. The
+// failure cause is unrelated to the validated unit — any unreadable unit
+// spec blocks the whole graph — so the guidance must point at the reported
+// file rather than at cycle resolutions.
+const cycleBuildGuidance = "Check 8 reads every current-layer unit spec to build the graph — an unreadable spec (permission, corruption) blocks all units, not just this one. Repair the reported file and re-run validate; run `deps@all` to reproduce the failure."
+
+// checkDependencyCycles derives the dependency graph from all current-layer
+// units' unit_refs and FAILS when the validated unit participates in a cycle.
+// A cycle means no member can ever reach stable without drifting (the unit is
+// blocked on its own dependency's unstable acceptance items), so every
+// in-cycle unit FAILs — blocking promote. Units outside the cycle are not
+// affected by it. Only explicit unit_refs edges count; prose is never
+// inferred. A retiring spec is skipped — its references disappear with it.
+func checkDependencyCycles(repoRoot, unitName string) CheckResult {
+	path := specPath(repoRoot, unitName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return CheckResult{
+			Name:    "Dependency cycles",
+			Status:  Fail,
+			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
+		}
+	}
+	fm := specpaths.ReadFrontmatterStringMap(string(data))
+	if strings.TrimSpace(fm["status"]) == "retired" {
+		return CheckResult{
+			Name:    "Dependency cycles",
+			Status:  Pass,
+			Details: "spec is marked retired — cycle check skipped",
+		}
+	}
+
+	graph, err := unitgraph.Build(repoRoot, "all")
+	if err != nil {
+		return CheckResult{
+			Name:    "Dependency cycles",
+			Status:  Fail,
+			Details: fmt.Sprintf("cannot build dependency graph: %v. %s", err, cycleBuildGuidance),
+		}
+	}
+
+	var involved []string
+	for _, cycle := range graph.Cycles() {
+		for _, member := range cycle {
+			if member == unitName {
+				involved = append(involved, strings.Join(cycle, " -> "))
+				break
+			}
+		}
+	}
+	if len(involved) == 0 {
+		return CheckResult{Name: "Dependency cycles", Status: Pass}
+	}
+
+	return CheckResult{
+		Name:    "Dependency cycles",
+		Status:  Fail,
+		Details: fmt.Sprintf("circular dependency: %s. %s", strings.Join(involved, "; "), cycleGuidance),
+	}
+}

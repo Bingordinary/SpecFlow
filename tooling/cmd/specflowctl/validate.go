@@ -222,6 +222,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  5. Appendix files")
 	fmt.Fprintln(w, "  6. Version/ref consistency")
 	fmt.Fprintln(w, "  7. Body layer-path check (candidate-layer spec paths)")
+	fmt.Fprintln(w, "  8. Dependency cycle check (unit_refs graph — a unit on a cycle FAILs)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate rule runs mechanical checks on a candidate rule:")
 	fmt.Fprintln(w, "  1. Frontmatter completeness")

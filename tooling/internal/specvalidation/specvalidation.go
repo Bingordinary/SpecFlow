@@ -8,6 +8,7 @@
 //  5. Appendix files exist
 //  6. Version/ref consistency
 //  7. Body layer-path check (candidate-layer spec paths)
+//  8. Dependency cycle check (unit_refs graph has no cycles through the unit)
 package specvalidation
 
 import (
@@ -48,7 +49,7 @@ type Result struct {
 	Checks     []CheckResult
 }
 
-// ValidateCandidate runs all 7 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 8 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -59,6 +60,7 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkVersionConsistency(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkDependencyCycles(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {
