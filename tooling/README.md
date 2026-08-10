@@ -104,38 +104,44 @@ The tooling layer must not:
 6. `consumers`
    - list units that reference a given rule in their `rule_refs`
    - `consumers --rule <id>`: for global rules (`g_rule_*`) returns every current-layer unit; for bound rules (`b_rule_*`) returns only matching units (empty output means no consumers)
-7. `fresh`
+7. `deps`
+   - read-only dependency analysis over the in-scope units' declared `unit_refs`
+   - `deps [--scope all|candidate|stable]` (default `all` — current-layer units, candidate preferred, stable fallback; retiring units with `status: retired` are excluded — their references disappear with them): reports the directed dependency graph (unit nodes + `unit_refs` edges), rule refs per unit, cycle member lists, and the promotion order (dependencies first; units without a promotion order are blocked by a cycle)
+   - `deps --unit <name>`: the unit's depends-on refs, bound rules, referrers, and cycle state; `deps --rule <id>`: the units bound to the rule — explicit `rule_refs` consumers for a bound rule (`b_rule_*`), every current-layer unit for a global rule (`g_rule_*`, which applies by default and is not repeated in `rule_refs`); a global rule with no rule file is reported as not found
+   - pure mechanical computation: only explicit `unit_refs`/`rule_refs` edges count, no prose inference, no judgment, no file writes
+   - corresponds to the `deps@all` / `deps@{unit}` / `deps@{rule}` agent triggers (see `framework/verification_scope.md` §Dependency Analysis)
+8. `fresh`
    - report cache freshness and promote readiness without executing any check
    - `fresh --scope candidate|stable|all` (default `candidate`): candidate scope reports every unit/rule with a candidate file and its gate statuses plus the `READY FOR PROMOTE: N of M` count; stable scope reports the drift state of every stable target (`VERIFIED` / `OK` / `CHANGED` / `MISSING`, see Stable Drift Baseline in `framework/validation_cache.md`); all scope reports both (`READY FOR PROMOTE` covers the candidate section only)
    - `fresh --unit <name>` / `fresh --rule <id>`: detail for one target — candidate gate statuses, or drift state for a stable-only target (no candidate file)
    - strictly read-only: never writes or deletes caches or baselines, never triggers validate/verify/review; a `fresh` report and a `promote` run never disagree because both use the same cache checks
    - corresponds to the `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` agent triggers (see `framework/concepts.md` and `framework/validation_cache.md` §Freshness Check)
- 8. `gate-evidence`
+ 9. `gate-evidence`
     - compute the dependency evidence for one file read during a validate/verify/review run
     - `gate-evidence --file <path>` with optional `--ranges START-END,START-END` (1-based, inclusive; empty means the whole file): maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + the `deps` chunk CIDs to record in the cache's `files` entry
     - with `--acceptance-items`: declares the `acceptance_item_set` structural region as the dependency (`region:acceptance_items:<cid>`), located by structure rather than line numbers or chunk boundaries; with an empty `--ranges` it replaces the whole-file declaration, with `--ranges` both are declared (see `framework/validation_cache.md` §Structural Region Dependencies)
     - corresponds to the `specflowctl gate-evidence` agent-trigger row (see `framework/concepts.md` and `framework/validation_cache.md` §Dependency Declaration)
-9. `promote`
+10. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
-10. `review collect-default-scope --flow <review_flow>`
+11. `review collect-default-scope --flow <review_flow>`
     - collect the deterministic default scope for the explicit review flow
-11. `review run-init --flow <review_flow>`
+12. `review run-init --flow <review_flow>`
     - create or reuse the full-scope run-state file for the explicit review flow
-12. `review run-validate --flow <review_flow>`
+13. `review run-validate --flow <review_flow>`
     - validate required run-state fields, timestamps, all fixed statuses including closed statuses, baseline slices, score state when present, and dynamic slice parent links
-13. `review run-refresh --flow <review_flow>`
+14. `review run-refresh --flow <review_flow>`
     - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
-14. `review run-touch --flow <review_flow>`
+15. `review run-touch --flow <review_flow>`
     - refresh only `last_updated_at`
-15. `validate write`
+16. `validate write`
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
-16. `validate candidate --unit UNIT`
-    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check)
-17. `validate rule --id RULE_ID`
+17. `validate candidate --unit UNIT`
+    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check, dependency cycle check)
+18. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
     - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
 
@@ -269,4 +275,4 @@ The minimal stale-binary recovery and inspection surface remains:
 3. `doctor`
 4. `help`
 5. the internal build-fingerprint query command
-6. `next` — these are read-only render actions that do not modify project files or advance governance state
+6. `next`, `deps` — these are read-only render actions that do not modify project files or advance governance state

@@ -173,7 +173,7 @@ Required rules:
 3. `build-release` must embed one build-time fingerprint derived from that source input set into the produced binaries
 4. a compiled tooling binary must compare its embedded fingerprint against the current live source fingerprint before executing ordinary governance actions
 5. when the fingerprints differ, the binary must stop and require a rebuild instead of continuing
-6. the bypass surface for that freshness gate must stay minimal and cover only recovery or inspection entry points needed to rebuild or diagnose the binary state, plus read-only render actions (`next` — the deterministic directive for the current governance step, which is a read-only render action that does not modify project files or advance state)
+6. the bypass surface for that freshness gate must stay minimal and cover only recovery or inspection entry points needed to rebuild or diagnose the binary state, plus read-only render actions (`next` — the deterministic directive for the current governance step, and `deps` — the global dependency/cycle report, both read-only render actions that do not modify project files or advance state)
 7. `doctor` must report stale current-platform binaries as failures rather than treating binary presence alone as sufficient
 8. compiled binaries must not be committed to git
 

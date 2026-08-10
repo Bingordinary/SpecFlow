@@ -67,6 +67,16 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 `fresh` has no `full`/`targeted` distinction and no `:keyword` variant — it does not execute any check, it only inspects cache files, baseline files, and re-chunks files with the same dependency logic promote uses. It never writes, deletes, or touches caches or baselines, and it never runs validate/verify/review. A `fresh@` query is always safe to run and never invalidates a gate.
 
+### Dependency analysis (read-only)
+
+| User says | What agent does |
+|-----------|-----------------|
+| `deps@all` | Runs `specflowctl deps` (scope `all` — every current-layer unit, candidate preferred, stable fallback; retiring units with `status: retired` are excluded — their references disappear with them, see `framework/unit_validate_checklist.md` retiring-unit note). Reports the dependency graph (unit nodes + directed `unit_refs` edges), any cycle member lists, and the promotion order (dependencies first). Pure mechanical computation — no inference, no judgment, no file writes. |
+| `deps@{unit}` | Runs `specflowctl deps --unit <name>` and reports that unit's dependency view: its `unit_refs` (depends on), its `rule_refs` (bound rules), the units that reference it, and whether it sits on a cycle. |
+| `deps@{rule}` | Runs `specflowctl deps --rule <id>` and reports the units bound to the rule. For a bound rule (`b_rule_*`): the units that list it in their `rule_refs`; empty output means no consumers. For a global rule (`g_rule_*`): every current-layer unit — global rules apply to all units by default and are not repeated in `rule_refs` (unlike `consumers@{rule}`, retiring units are excluded — the graph excludes them because their references disappear with them; `consumers` counts a retiring candidate file while it exists, matching the rule retirement check). A global rule with no rule file (retired, mistyped) is reported as not found. |
+
+`deps` has no `full`/`targeted` distinction and no `:keyword` variant — it is a read-only structural report. It only reads spec files; it never writes, deletes, or touches caches or baselines, and it never runs validate/verify/review. It complements `next` (single-unit discovery) and `fresh` (gate freshness) without overlap: when `validate` FAILs a unit on a cycle, `deps@all` is the diagnosis step — the cycle members and the full edge set tell the user what to unbind before re-running validate.
+
 Gate status vocabulary: `FRESH` (cache exists and satisfies the gate), `STALE` (cache exists but files changed, coverage is incomplete, or mode/result is invalid — re-running the gate fixes it), `MISSING` (no cache file — never run, or run failed and the cache was deleted), `BLOCKED` (review only: cache declares P0/P1 findings), `OK` (appendix gate: all appendices are covered by the validate cache).
 
 For a retiring unit (`status: retired` in the candidate frontmatter), only the validate gate is reported — verify, review, and appendix are skipped, matching promote.
