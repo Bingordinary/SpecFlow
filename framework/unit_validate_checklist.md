@@ -661,32 +661,24 @@ affects.appendices:
 
 **Execution steps:**
 
-1. Read `docs/specs/system_constraints.md` if it exists
-2. If frontmatter contains `system_constraints_ref`, verify its version matches the current constraints file version
-3. Check each constraint against the candidate design:
-```
-   - Does any behavior conflict with a documented constraint?
-   - If constraint says "all APIs must use HTTPS" — does the design describe HTTP?
-   - If constraint says "synchronous calls are not supported" — does the design depend on sync calls?
-```
-4. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). For the circular-dependency prohibition (`g_rule_repository_baseline.md` §6.1 item 4), glob all current-layer unit spec files (candidate and stable) and derive the dependency graph from their `unit_refs`, excluding retiring units (`status: retired`) — their references disappear with them (see the retiring-unit note above), so including them would create phantom cycles that vanish on retirement. The graph derivation and cycle verdict are also executed mechanically by `specflowctl validate` Check 8 (every unit on a cycle FAILs, blocking promote) and visualized by `specflowctl deps` (graph, cycle members, promotion order — agent triggers `deps@all` / `deps@{unit}` / `deps@{rule}`, see `framework/verification_scope.md` §Dependency Analysis); the agent re-derives the graph independently rather than trusting the mechanical verdict alone. Graph build failures are fail-closed: an unreadable unit spec (permission, corruption) blocks the whole graph, so every unit FAILs Check 8 with the failing file named in the Details — repair the file and re-run validate; `deps@all` reproduces the failure. For the layer-order prohibition (§6.1 item 5), resolve the order from the rule's §5.1 recording and each unit's declared architecture layer from its spec truth; a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation unless the unit truth records an exception (`rule_exceptions`). Units without a recorded architecture layer are not judged by this prohibition. Rule files are contract files — the constraint declarations are the whole file, so their dependency entries declare the rule file and are written as logical references (`rule:{id}`), which resolve to the current-layer file at freshness time so a rule promote does not stale consumer caches whose dependency content is unchanged
-5. Check the candidate design against each global rule and each bound rule:
+1. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). Execute the circular-dependency and layer-order prohibitions exactly as recorded in `g_rule_repository_baseline.md` §6.1 items 4-5 — the rule file carries the graph derivation, tooling cross-check, fail-closed behavior, and resolution path. Rule file reads are declared as logical references (`rule:{id}`) in the validate cache (see `framework/validation_cache.md` §Logical References).
+2. Check the candidate design against each global rule and each bound rule:
 ```
    - Is every "must not" prohibition respected?
    - Is every "must" requirement satisfied?
 ```
-6. **Cycle resolution guidance (when the dependency graph contains a cycle):** analyze the cycle's nature before proposing a fix. The two structural resolutions are (a) extracting the shared contract region — the protocol/role statements repeated across the cycle members' acceptance items — into a rule so the dependencies become star-shaped (the cycle members then reference the rule instead of each other), and (b) re-drawing the unit boundaries so the coupled contract lives in a single unit. Present the analysis to the user; the user decides the resolution, and the fix is applied only after explicit approval (a cycle is never resolvable by promote ordering — promote is per-unit and the cycle members mutually block each other's acceptance items).
-7. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §3). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule version:
+3. **Cycle resolution guidance (when the dependency graph contains a cycle):** follow the resolution path recorded in `g_rule_repository_baseline.md` §6.1 item 4 — analyze the cycle's nature (extract the shared contract region into a rule so the dependencies become star-shaped, or re-draw the unit boundaries), present the analysis to the user, and apply the fix only after explicit approval.
+4. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §3). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule version:
    - Referenced rule is neither a stable global rule nor a bound rule listed in this unit's `rule_refs`, or the reason is missing → FAIL (actionable: correct or remove the invalid exception entry)
    - Exception no longer justified (architecture was rewritten, rule changed, or the reason expired) → FAIL (actionable: report the exception for removal; the removal is applied only after user approval)
    - Exception still justified → keep it and state the re-examination verdict in this check's reason
-8. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (actionable: align appendix content with constraints)
+5. **Appendix constraint check:** Include appendix design descriptions, API contracts, and behavior definitions in the constraint and bound rule checking. If appendix content describes behavior that violates a global constraint or bound rule → FAIL (actionable: align appendix content with constraints)
 
 **PASS:** Candidate (main spec + appendices) is compatible with all constraints and bound rules; all recorded rule exceptions are still justified
 
 **FAIL:** Constraint or rule violation found in main spec or appendices (actionable)
 
-**Check method:** Candidate × system_constraints × bound rules three-way cross-reference
+**Check method:** Candidate × stable global rule set × bound rules three-way cross-reference
 
 ---
 

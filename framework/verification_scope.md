@@ -67,7 +67,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 `fresh` has no `full`/`targeted` distinction and no `:keyword` variant — it does not execute any check, it only inspects cache files, baseline files, and re-chunks files with the same dependency logic promote uses. It never writes, deletes, or touches caches or baselines, and it never runs validate/verify/review. A `fresh@` query is always safe to run and never invalidates a gate.
 
-### Dependency analysis (read-only)
+### Dependency Analysis (read-only)
 
 | User says | What agent does |
 |-----------|-----------------|
@@ -147,7 +147,7 @@ After all 8 checks pass individually:
 
 | Check | What it looks for |
 |-------|------------------|
-| Design × Constraints | Does the design (Check 2) respect the system constraints (Check 8)? |
+| Design × Constraints | Does the design (Check 2) respect the global constraints and bound rules (Check 8)? |
 | Coverage × Scope | Does the acceptance coverage (Check 5) actually prove the declared scope (Check 3)? |
 | Cross-unit cohesion | Do individual unit decisions (Check 7) align with the combined design intent? |
 
