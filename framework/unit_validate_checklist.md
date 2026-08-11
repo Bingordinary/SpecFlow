@@ -27,6 +27,18 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 **Output:** Targeted runs report only the executed check(s) and note "This was a targeted check — no cache was written. Run `validate@ {unit}` for a complete validation."
 
+### Stable-only mode
+
+When no candidate spec exists (validate against stable), run the same 8 checks + cross-check against the **stable** content:
+
+1. Read the stable main spec: `docs/specs/units/stable/unit_{unit}.md`
+2. Glob all stable appendix files: `docs/specs/units/stable/appendix/unit_{unit}_*.md`, read every non-exempt, non-retired appendix (same skip rules as the candidate path)
+3. Run all 8 checks + cross-check against the stable content — Checks 6/7/8 are the live part: referenced files, dependency-unit contracts, and rules may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does)
+4. **PASS** → write the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; `mode: full`, `hash` + `deps` evidence, same procedure as Step 9)
+5. **FAIL** → delete the existing validate cache if present, do not write a cache, present the findings, and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit the stable spec directly — promote is the only operation that writes stable files
+
+The stable confirmation cache is read-only state: it grants no promote eligibility (stable has no gate) and delta re-runs (`revalidate`) do not apply to stable-only targets — see `framework/verification_scope.md` §Stable-only Targets and §Delta Runs.
+
 ## Execution Rules
 
 - **Subagent permissions:** may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents.
@@ -66,7 +78,7 @@ Next step: {concrete next command with reason, or "None"}
 **Field definitions:**
 
 - `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
-- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs; `delta` for incremental re-runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`).
 - `{layer}` — the spec layer checked: `candidate` | `stable`.
 - `Result` — `PASS | FAIL` for all three commands. The gate is decided by severity: FAIL means P0/P1 findings exist. validate grades findings P0/P1 only, so any validate FAIL is a P0/P1 finding; verify/review FAIL means P0/P1 mismatches/findings exist.
 - `Blocking promote: yes | no` — `yes` when P0/P1 findings exist (the run FAILs); `no` otherwise. Valid for all three commands.
@@ -74,6 +86,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — one entry per finding in the unified format `[{severity}] {location} — {issue} (actionable | needs_decision)`. `actionable` — a concrete repair can be made without user judgment (verify: direction spec_gap/code_gap; review: a determined recommendation); `needs_decision` — requires user input or a design decision before the fix can be made (verify: direction needs_design/blocked; review: architecture trade-offs). Command-specific detail (verify's suggested direction, review's spec_context/recommendation, validate's contradicting information sources) appears as indented detail lines under the entry. Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
+- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run judgment in the run's own structure (e.g. validate: "check-7 (cross-unit): re-run — dependency unit `auth` contract changed"), followed by a line declaring the carried-over judgments ("checks 1-6, 8: carried over — their dependency evidence is unchanged") and the cross-check result. See `framework/verification_scope.md` §Delta Runs. The incremental scope must be reported before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -693,10 +706,20 @@ After all 8 checks complete:
     - Every non-exempt appendix file
     - All referenced files (unit_refs, rule_refs, affects.files are already included)
   - For each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the sub-agent's `Dependency scope` report (see §Output Format); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration). **Cross-unit and rule dependency entries are written as logical references** — `unit:{name}` for a dependency unit main spec read by Check 7, `unit:{name}:appendix:{file}` for a dependency unit protocol appendix read by Check 7 (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file read by Check 8 — with the `hash` + `deps` of the file the sub-agent actually read (see §Logical References)
-  - Write `validate_result.md` with `result: pass`, `mode: full`, file hashes and dependency CIDs
+  - Write `validate_result.md` with `result: pass`, `target: candidate`, `mode: full`, file hashes and dependency CIDs
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
 - **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
+
+### Delta re-run (revalidate@{unit} / revalidate@{rule})
+
+Candidate targets only — a delta re-run against a stable-only target reports "`re*` re-runs apply to candidate targets" and stops (see `framework/verification_scope.md` §Delta Runs → Layer applicability). Triggered by the user when the candidate cache is STALE. Follow §Delta Runs in `framework/verification_scope.md`:
+
+1. **Preconditions** — the existing cache must have `mode: full` and `result: pass`; a MISSING cache or a blocked review cache (for rereview) has no usable baseline — run the full command instead.
+2. **Scope derivation** — list the stale sources (entries whose declared dependency CIDs no longer exist) from the cache and `fresh@{unit}`; re-read the spec to map the changed content to the affected checks (e.g. a dependency unit's acceptance item changed → Check 7 re-run; the other checks read only the unit's own spec and keep their evidence); include the cross-check; for files whose whole-file hash changed outside the declared deps, re-scan for semantic coupling and include affected checks. Report the scope — re-run checks with their stale source and reason, and the carried-over checks — before executing.
+3. **Degradation** — if a stale source is the unit's own main spec or one of its own appendix files, the scope is nearly the whole run: report this to the user and ask whether to proceed or run `validate@{unit}` instead.
+4. **Execution** — re-run only the scoped checks + cross-check. Any P0/P1 finding → delete the validate cache, stop, present findings (same as full FAIL).
+5. **On PASS** — rewrite `validate_result.md` with `mode: full`, `basis: delta`, `target: candidate`, a fresh `timestamp`, and a **complete** `files` list: new `hash` + `deps` evidence (`specflowctl gate-evidence`) for the re-run checks' files, the original evidence for the carried-over checks' files (their CIDs are unchanged by construction — they were not stale sources). Logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) are carried over the same way.
 
 ---
 

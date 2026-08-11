@@ -55,7 +55,7 @@ Next step: {concrete next command with reason, or "None"}
 **Field definitions:**
 
 - `{command}@{target}` — the command and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`, `review@user_auth`. Commands: `validate`, `verify`, `review`. Targets: unit or rule name.
-- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs.
+- `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs; `delta` for incremental re-runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`).
 - `{layer}` — the spec layer checked: `candidate` | `stable`.
 - `Result` — `PASS | FAIL` for all three commands. The gate is decided by severity: FAIL means P0/P1 findings exist. validate grades findings P0/P1 only, so any validate FAIL is a P0/P1 finding; verify/review FAIL means P0/P1 mismatches/findings exist.
 - `Blocking promote: yes | no` — `yes` when P0/P1 findings exist (the run FAILs); `no` otherwise. Valid for all three commands.
@@ -63,6 +63,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — one entry per finding in the unified format `[{severity}] {location} — {issue} (actionable | needs_decision)`. `actionable` — a concrete repair can be made without user judgment (verify: direction spec_gap/code_gap; review: a determined recommendation); `needs_decision` — requires user input or a design decision before the fix can be made (verify: direction needs_design/blocked; review: architecture trade-offs). Command-specific detail (verify's suggested direction, review's spec_context/recommendation, validate's contradicting information sources) appears as indented detail lines under the entry. Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
+- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run judgment in the run's own structure (e.g. validate: "check-7 (cross-unit): re-run — dependency unit `auth` contract changed"), followed by a line declaring the carried-over judgments ("checks 1-6, 8: carried over — their dependency evidence is unchanged") and the cross-check result. See `framework/verification_scope.md` §Delta Runs. The incremental scope must be reported before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -290,6 +291,10 @@ Dependency scope:
 Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The main agent carries this report over and uses it when writing the review cache (`--ranges`, see `framework/spec_review_checklist.md` §8); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
 ==ATOM_END:spec_review_standard==
 
+### Stable-only targets
+
+When no candidate exists, the review runs with the stable spec as design context (see §8 Write review cache — the stable review writes `target: stable`, a quality confirmation state consumed by `fresh@stable`; it grants no promote eligibility).
+
 ## 7. Cross-Check
 
 ### 7.1 Purpose
@@ -371,13 +376,25 @@ After cross-check (§7) and batch classification (§Batch classification) comple
 
 2. Write `docs/specs/meta/validation/unit/{name}/review_result.md` per `framework/validation_cache.md` format:
    - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
-   - Include `mode: full`, severity counts, `blocking`, file hashes and dependency CIDs
+   - Include `mode: full`, `target: candidate`, severity counts, `blocking`, file hashes and dependency CIDs
    - Include full findings body (cannot be omitted — required for promote gate detail)
 
 Full runs always write cache regardless of pass/fail. Targeted runs (`:{keyword}`) never write a cache, and a targeted run that finds P0/P1 deletes the existing cache — blocking findings at any granularity mean promote must not proceed. See `framework/validation_cache.md`.
+
+**Stable-only target:** write the review cache with `target: stable` — the quality confirmation state consumed by `fresh@stable` (same shape: `mode: full`, severity counts, `blocking`, file hashes and dependency CIDs, findings body). It grants no promote eligibility; delta re-runs (`rereview`) do not apply to stable-only targets (see `framework/verification_scope.md` §Delta Runs). Finding handling for a stable review: implementation-class defects (code-local issues) may be fixed in code and re-reviewed; design-class defects (root cause in the stable spec's intent) lead to forking (`specflowctl fork --unit <name>`) — the stable spec itself is never edited directly.
 
 **Cache record contract:** The cache records the file state read during the review run — it is independent of the user's decision outcome:
 
 - Collect dependency evidence from the files read during the review run (same collection point as verify Step 8): for each file, run `specflowctl gate-evidence --file <path> --ranges <lines>` and record its `hash` + `deps` output in the cache's `files` entry. The `--ranges` values come from the sub-agents' `Dependency scope` reports (see §6); a file reported as `all` (or not reported) is declared without `--ranges` (whole file). The declared ranges must cover every region the review judgment depended on — including called functions and referenced structures (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration)
 - Write the cache before applying any user-approved fixes — presenting findings and waiting for the user's decision is presentation only and does not gate the cache write
-- Any fix applied after the cache write makes the cache stale (promote's dependency check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`) or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.
+- Any fix applied after the cache write makes the cache stale (promote's dependency check fails) — a full review re-run is required before promote. This is a promote-gate requirement enforced when the user triggers promote; it does not authorize automatic re-review after fixes. The agent must not re-run review on its own initiative (see HARD RULE 2 in `framework/concepts.md`). After a fix, the agent guides the user to a targeted re-review (`review@{unit}:{keyword}`), a delta re-run (`rereview@{unit}`), or a concrete full command and waits for the user to trigger it; the full re-run is triggered by the user when deciding to promote.
+
+### Delta re-run (rereview@{unit})
+
+Candidate targets only — a delta re-run against a stable-only target reports "`re*` re-runs apply to candidate targets" and stops (see `framework/verification_scope.md` §Delta Runs → Layer applicability). Triggered by the user when the candidate cache is STALE. Follow §Delta Runs in `framework/verification_scope.md`:
+
+1. **Preconditions** — the existing cache must have `mode: full` and `blocking: false` (a blocked cache declares unresolved P0/P1 findings — not a usable baseline; resolve the findings first). A MISSING cache has no baseline — run `review@{unit}` instead.
+2. **Scope derivation** — list the stale sources (entries whose declared dependency CIDs no longer exist) from the cache and `fresh@{unit}`; re-read the spec and the code to map the changed content to the affected files under review; include the cross-check; for files whose whole-file hash changed outside the declared deps, re-scan for semantic coupling and include affected files. Report the scope — re-review files with their stale source and reason, and the carried-over files — before executing.
+3. **Degradation** — if a stale source is the unit's own main spec (review reads it for design context), the scope is nearly the whole review: report this to the user and ask whether to proceed or run `review@{unit}` instead.
+4. **Execution** — re-review only the scoped files + cross-check. Any P0/P1 finding → write the cache with `result: fail`, `blocking: true` (same as full FAIL — the review cache records blocking status rather than deleting itself), present findings, stop.
+5. **On PASS** — rewrite `review_result.md` with `result: pass`, `mode: full`, `basis: delta`, `target: candidate`, `blocking: false`, severity counts, a fresh `timestamp`, a **complete** `files` list (new `hash` + `deps` evidence for re-reviewed files, original evidence for carried-over files), and the findings body.

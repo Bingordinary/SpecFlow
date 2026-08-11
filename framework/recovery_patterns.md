@@ -56,3 +56,15 @@ agent-dependent — an empty result does not guarantee the file is absent.
    path, fall back to direct path access for the specific file to confirm
 3. Only proceed with the normal "file missing" procedure after direct path
    access confirms the file does not exist
+
+## 8. Dependency change stales a consumer's caches
+
+A dependency unit's contract (or a rule file, or a shared appendix) changed, and the caches of every unit that reads it are now STALE — even though the consumer's own spec and code did not change. This is the normal parallel-iteration pattern; STALE is correct behavior, not an error.
+
+1. Diagnose with `fresh@{unit}` — it names the stale gate(s) and the reason.
+2. Recovery for a **candidate** target, all user-triggered (HARD RULE 2):
+   - **Delta re-run** (`revalidate@{unit}` / `reverify@{unit}` / `rereview@{unit}`) — re-runs only the judgments whose evidence went stale plus cross-check, carries the rest over, and rewrites the cache with `basis: delta`. The cheapest path when the stale source is a dependency and the consumer's own spec is unchanged. The agent derives and reports the incremental scope explicitly before executing (see §Delta Runs in `framework/verification_scope.md`). Candidate targets only.
+   - **Full re-run** (`validate@{unit}` etc.) — re-runs everything. Needed when the stale source is the unit's own main spec or appendix (the delta scope degrades to nearly a full run), when the cache is MISSING, or when the user prefers it.
+   - **Targeted re-check** (`:check-{n}` / `:{keyword}`) — iterative feedback only; never writes a cache, so it does not restore promote eligibility.
+3. For a **stable-only** target, the stale confirmation state (a rule or dependency contract changed → `validate: STALE` in `fresh@stable`) is impact detection: every stable unit bound to the changed rule shows up in one report. Recovery is the full confirmation run (`validate@{unit}` against stable); delta re-runs do not apply to stable-only targets (see §Stable-only Targets in `framework/verification_scope.md`). If the stable content no longer holds against the changed dependency or rule, fork the unit to reconcile.
+4. If a targeted run ever finds P0/P1, it deletes the cache — resolve the findings before any recovery run.
