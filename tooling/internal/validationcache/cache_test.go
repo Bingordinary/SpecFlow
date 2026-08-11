@@ -103,6 +103,83 @@ func TestCheckValidateStale(t *testing.T) {
 	}
 }
 
+func TestCheckValidateDeltaBasis(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	specHash, _ := fileHash(specPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// A delta-basis cache (mode: full, basis: delta) must satisfy the gate —
+	// the basis field is audit metadata and never affects the mode check.
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, specPath)) + "---\nAll checks passed (incremental re-run).\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckValidate(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected delta-basis cache to be fresh, got: %s", result.Reason)
+	}
+}
+
+func TestReadCacheSummaryBasis(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	deltaCache := "---\ncommand: validate\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(deltaCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := ReadCacheSummary(repoRoot, "unit", "test", "validate_result.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Basis != "delta" {
+		t.Fatalf("expected basis delta, got %q", summary.Basis)
+	}
+	if summary.Mode != "full" {
+		t.Fatalf("expected mode full, got %q", summary.Mode)
+	}
+}
+
+func TestReadCacheSummaryBasisDefault(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// A cache without a basis field (legacy full-run cache) reads back empty.
+	plainCache := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(plainCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := ReadCacheSummary(repoRoot, "unit", "test", "validate_result.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Basis != "" {
+		t.Fatalf("expected empty basis, got %q", summary.Basis)
+	}
+}
+
 func TestCheckVerify(t *testing.T) {
 	repoRoot := t.TempDir()
 
@@ -868,6 +945,116 @@ func TestCheckReviewConflictingDeclaration(t *testing.T) {
 	}
 }
 
+func TestCheckReviewStable(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// A stable review cache records `target: stable` — the stable-layer
+	// quality confirmation consumed by the fresh stable report.
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 1\np3_count: 0\nblocking: false\ntarget: stable\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nNo P0/P1 findings.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReviewStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh for stable review cache, got: %s", result.Reason)
+	}
+}
+
+func TestCheckReviewStable_RejectsCandidateCache(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// A candidate review cache (target: candidate — the state after a
+	// candidate review during an active round) must NOT satisfy the stable
+	// confirmation check: the layers are separated by the target field, and
+	// the candidate cache cannot prove the stable confirmation state.
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nNo P0/P1 findings.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReviewStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatalf("expected stale for candidate-target review cache, got: %s", result.Reason)
+	}
+	if !strings.Contains(result.Reason, "target") {
+		t.Fatalf("expected reason to mention the target field, got: %s", result.Reason)
+	}
+
+	// The candidate-based CheckReview must still accept the same cache.
+	candResult, err := CheckReview(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !candResult.Fresh {
+		t.Fatalf("CheckReview must accept a candidate-target review cache, got: %s", candResult.Reason)
+	}
+}
+
+func TestCheckReviewStable_BlockedStaysBlocked(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	srcDir := filepath.Join(repoRoot, "src")
+	os.MkdirAll(srcDir, 0755)
+	srcPath := filepath.Join(srcDir, "handler.go")
+	srcContent := "package main\nfunc main() {}\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// A stable review FAIL writes `target: stable` with blocking: true — the
+	// target check must not interfere with the blocking classification.
+	cacheContent := "---\ncommand: review\nunit: test\nmode: full\nresult: fail\np0_count: 1\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: true\ntarget: stable\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nFound P0: null pointer.\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckReviewStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Category != CategoryBlocked {
+		t.Fatalf("expected blocked category, got %v (reason: %s)", result.Category, result.Reason)
+	}
+}
+
 func TestDeleteReviewCache(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
@@ -1143,6 +1330,163 @@ func TestCheckVerifyStable_CodeChanged(t *testing.T) {
 	}
 	if result.Fresh {
 		t.Fatalf("expected stale after code change, got: %s", result.Reason)
+	}
+}
+
+func TestCheckValidateStable(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	rulesStableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	os.MkdirAll(stableDir, 0755)
+	os.MkdirAll(rulesStableDir, 0755)
+
+	specPath := filepath.Join(stableDir, "unit_test.md")
+	os.WriteFile(specPath, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+
+	// The rule file is an external dependency of the stable content: when it
+	// changes, the validate@stable confirmation goes stale.
+	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
+	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+
+	specHash, _ := fileHash(specPath)
+	ruleHash, _ := fileHash(rulePath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+
+	// validate@stable records the STABLE spec path and its rule dependency.
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, specPath)) + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n" + depsYAML(chunkDeps(t, rulePath)) + "---\nAll checks passed.\n"
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
+
+	result, err := CheckValidateStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh for stable validate cache, got: %s", result.Reason)
+	}
+
+	// The candidate-based CheckValidate must NOT accept a stable-path cache.
+	candResult, err := CheckValidate(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candResult.Fresh {
+		t.Fatalf("CheckValidate must reject a stable-path validate cache")
+	}
+}
+
+func TestCheckValidateStable_RuleChanged(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	rulesStableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	os.MkdirAll(stableDir, 0755)
+	os.MkdirAll(rulesStableDir, 0755)
+
+	specPath := filepath.Join(stableDir, "unit_test.md")
+	os.WriteFile(specPath, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+
+	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
+	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+
+	specHash, _ := fileHash(specPath)
+	ruleHash, _ := fileHash(rulePath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	os.MkdirAll(cacheDir, 0755)
+	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, specPath)) + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n" + depsYAML(chunkDeps(t, rulePath)) + "---\n"
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
+
+	// The rule changes after the stable validate -> the confirmation goes stale.
+	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 2\n---\nAll APIs must use HTTPS and reject cleartext.\n"), 0644)
+
+	result, err := CheckValidateStable(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatalf("expected stale after rule change, got: %s", result.Reason)
+	}
+}
+
+func TestCheckRuleValidateStable(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	unitsStableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	os.MkdirAll(stableRuleDir, 0755)
+	os.MkdirAll(unitsStableDir, 0755)
+
+	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
+	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+
+	// A consumer unit is an external dependency of the stable rule: when the
+	// consumer changes, the rule's validate@stable confirmation goes stale.
+	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+
+	ruleHash, _ := fileHash(rulePath)
+	consumerHash, _ := fileHash(consumerPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_http")
+	os.MkdirAll(cacheDir, 0755)
+
+	// validate@stable on a rule records the STABLE rule path and the consumer
+	// units it scanned.
+	cacheContent := "---\ncommand: validate\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n" + depsYAML(chunkDeps(t, rulePath)) + "  - path: docs/specs/units/stable/unit_consumer.md\n    hash: sha256:" + consumerHash + "\n" + depsYAML(chunkDeps(t, consumerPath)) + "---\nAll checks passed.\n"
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
+
+	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh for stable rule validate cache, got: %s", result.Reason)
+	}
+
+	// The candidate-based CheckRuleValidate must NOT accept a stable-path cache.
+	candResult, err := CheckRuleValidate(repoRoot, "g_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candResult.Fresh {
+		t.Fatalf("CheckRuleValidate must reject a stable-path rule validate cache")
+	}
+}
+
+func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	unitsStableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	os.MkdirAll(stableRuleDir, 0755)
+	os.MkdirAll(unitsStableDir, 0755)
+
+	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
+	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+
+	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+
+	ruleHash, _ := fileHash(rulePath)
+	consumerHash, _ := fileHash(consumerPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_http")
+	os.MkdirAll(cacheDir, 0755)
+	cacheContent := "---\ncommand: validate\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n" + depsYAML(chunkDeps(t, rulePath)) + "  - path: docs/specs/units/stable/unit_consumer.md\n    hash: sha256:" + consumerHash + "\n" + depsYAML(chunkDeps(t, consumerPath)) + "---\n"
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
+
+	// The consumer changes (e.g. its rule_refs) -> the confirmation goes stale.
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.2.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
+
+	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatalf("expected stale after consumer change, got: %s", result.Reason)
 	}
 }
 

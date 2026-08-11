@@ -56,6 +56,7 @@ type cacheFile struct {
 	Command      string `yaml:"command"`
 	Unit         string `yaml:"unit"`
 	Mode         string `yaml:"mode,omitempty"`
+	Basis        string `yaml:"basis,omitempty"`
 	Result       string `yaml:"result"`
 	Target       string `yaml:"target,omitempty"`
 	Blocking     bool   `yaml:"blocking"`
@@ -101,6 +102,17 @@ func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 // verify cache means the code was recently confirmed to still conform.
 func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+}
+
+// CheckValidateStable reads and validates the validate cache for the given
+// unit against the STABLE spec path. A validate@stable run (validate the
+// stable content against the current dependencies and rules, no candidate
+// round) records the stable main spec in its files list; the
+// candidate-based CheckValidate cannot validate such a cache (its main-file
+// check points at the candidate spec). The fresh stable report consumes it
+// as the stable content's dependency/rule confirmation state.
+func CheckValidateStable(repoRoot, unitName string) (CheckResult, error) {
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 }
 
 // ReadVerifyDeps returns the declared dependency CIDs per file path from the
@@ -229,12 +241,38 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))
 }
 
+// CheckRuleValidateStable reads and validates the validate cache for the given
+// rule against the STABLE rule path. A validate@stable run on a rule (no
+// candidate round) records the stable rule file and the consumer units it
+// scanned; the candidate-based CheckRuleValidate cannot validate such a cache
+// (its main-file check points at the candidate rule). The fresh stable report
+// consumes it as the stable rule's consumer/consistency confirmation state.
+func CheckRuleValidateStable(repoRoot, ruleID string) (CheckResult, error) {
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID))
+}
+
 // CheckReview reads and validates the review cache for the given unit.
 // The review cache is a required promote gate: it must exist, mode must be
 // "full", the declared dependency chunks must be unchanged, and it must not
 // be blocking (P0/P1 findings).
 // If any condition fails, promote must be rejected with guidance.
 func CheckReview(repoRoot, unitName string) (CheckResult, error) {
+	return checkReview(repoRoot, unitName, "")
+}
+
+// CheckReviewStable reads and validates the review cache for the given unit
+// as the stable-layer quality confirmation. The review gate has no main-file
+// requirement (its evidence is the reviewed code surface, not a spec), so the
+// layer is separated by the `target` field: only a cache recorded with
+// `target: stable` by an @stable confirmation run can prove the stable
+// confirmation state. A candidate review cache (no `target` or
+// `target: candidate`) fails this check closed, so the fresh stable report
+// never mislabels a candidate review as the stable confirmation.
+func CheckReviewStable(repoRoot, unitName string) (CheckResult, error) {
+	return checkReview(repoRoot, unitName, "stable")
+}
+
+func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error) {
 	cachePath := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
 
 	// Existence check — review cache is required for promote
@@ -269,6 +307,18 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 			Fresh:    false,
 			Category: CategoryStale,
 			Reason:   fmt.Sprintf("review cache mode is %q, expected 'full' — run `review@%s` before promoting", cache.Mode, unitName),
+		}, nil
+	}
+
+	// Layer check — a stable-layer confirmation cache must declare its layer
+	// via `target: stable` (the review gate has no main-file requirement to
+	// separate the layers by path). Fail closed: a cache without the
+	// declaration cannot prove the stable confirmation state.
+	if requiredTarget != "" && cache.Target != requiredTarget {
+		return CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("review cache target is %q, expected %q — the stable confirmation cache must be recorded with `target: stable` by an @stable review run", cache.Target, requiredTarget),
 		}, nil
 	}
 
@@ -364,6 +414,7 @@ type CacheSummary struct {
 	Command   string
 	Unit      string
 	Mode      string
+	Basis     string
 	Result    string
 	Target    string
 	Blocking  bool
@@ -388,6 +439,7 @@ func ReadCacheSummary(repoRoot, targetKind, targetName, fileName string) (*Cache
 		Command:   cache.Command,
 		Unit:      cache.Unit,
 		Mode:      cache.Mode,
+		Basis:     cache.Basis,
 		Result:    cache.Result,
 		Target:    cache.Target,
 		Blocking:  cache.Blocking,
@@ -731,6 +783,8 @@ func readCache(path string) (*cacheFile, error) {
 					cache.Unit = value
 				case "mode":
 					cache.Mode = value
+				case "basis":
+					cache.Basis = value
 				case "result":
 					cache.Result = value
 				case "target":

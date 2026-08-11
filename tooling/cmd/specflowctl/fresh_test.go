@@ -557,13 +557,23 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 	if !strings.Contains(out, "settled") || !strings.Contains(out, "OK") {
 		t.Fatalf("expected settled OK, got:\n%s", out)
 	}
+	out, err = freshRun(t, repoRoot, "--unit", "settled")
+	if err != nil {
+		t.Fatalf("fresh --unit settled: %v", err)
+	}
+	if !strings.Contains(out, "settled") || !strings.Contains(out, "drift") || !strings.Contains(out, "OK") {
+		t.Fatalf("expected settled drift OK, got:\n%s", out)
+	}
 	if !strings.Contains(out, "content changed outside declared dependencies") {
 		t.Fatalf("expected drift note, got:\n%s", out)
 	}
 }
 
 // TestFreshStableScope_VerifiedSilence verifies a fresh stable verify cache
-// silences the baseline comparison.
+// shows the verify confirmation state while the baseline drift column still
+// reports the mechanical surface change — the two dimensions are
+// independent: "surface changed since promote" and "recently confirmed to
+// still conform" are both true.
 func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeStableUnitSpec(t, repoRoot, "settled")
@@ -592,7 +602,8 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	}
 
 	// ...but the surface has changed since. A fresh verify@stable cache (with
-	// the STABLE spec path in its files list) must override the CHANGED state.
+	// the STABLE spec path in its files list) must show FRESH in the verify
+	// column while the drift column stays CHANGED.
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
 	writeUnitCache(t, repoRoot, "settled", "verify", "target: stable\n",
 		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
@@ -601,11 +612,11 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh --scope stable: %v", err)
 	}
-	if !strings.Contains(out, "VERIFIED") {
-		t.Fatalf("expected VERIFIED (silenced by fresh verify cache), got:\n%s", out)
+	if !strings.Contains(out, "verify: FRESH") {
+		t.Fatalf("expected verify FRESH (confirmed to still conform), got:\n%s", out)
 	}
-	if strings.Contains(out, "CHANGED") {
-		t.Fatalf("expected no CHANGED when verify cache is fresh, got:\n%s", out)
+	if !strings.Contains(out, "drift: CHANGED") {
+		t.Fatalf("expected drift CHANGED (mechanical surface change), got:\n%s", out)
 	}
 }
 
@@ -636,15 +647,103 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
 
-	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	out, err := freshRun(t, repoRoot, "--unit", "settled")
 	if err != nil {
-		t.Fatalf("fresh --scope stable: %v", err)
+		t.Fatalf("fresh --unit settled: %v", err)
 	}
 	if !strings.Contains(out, "CHANGED") {
 		t.Fatalf("expected CHANGED, got:\n%s", out)
 	}
 	if !strings.Contains(out, "src/a.go") {
 		t.Fatalf("expected changed file in details, got:\n%s", out)
+	}
+}
+
+// TestFreshStableScope_Confirmations verifies the stable summary shows all
+// three confirmation states (validate/verify/review) plus the drift column
+// when the stable-layer caches exist.
+func TestFreshStableScope_Confirmations(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeStableUnitSpec(t, repoRoot, "settled")
+	specHash := computeHash(specPath)
+
+	// Three stable-layer confirmation caches (validate/verify/review) written
+	// by the corresponding @stable runs. review caches require the blocking
+	// field.
+	writeUnitCache(t, repoRoot, "settled", "validate", "target: stable\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+	writeUnitCache(t, repoRoot, "settled", "verify", "target: stable\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+	writeUnitCache(t, repoRoot, "settled", "review", "target: stable\nblocking: false\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	for _, want := range []string{"validate: FRESH", "verify: FRESH", "review: FRESH", "drift: MISSING"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in stable summary, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestFreshStableScope_ReviewSeparatesLayers verifies the stable summary's
+// review column cannot be satisfied by a candidate review cache. During an
+// active candidate round the shared review cache path holds the candidate
+// cache (target: candidate); only a cache recorded with `target: stable` by an
+// @stable review run proves the stable quality confirmation.
+func TestFreshStableScope_ReviewSeparatesLayers(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeStableUnitSpec(t, repoRoot, "settled")
+	specHash := computeHash(specPath)
+
+	// An active candidate round exists (both files present) and the last
+	// review run was a candidate review — its cache carries target: candidate.
+	writeUnitSpec(t, repoRoot, "settled")
+	writeUnitCache(t, repoRoot, "settled", "review", "target: candidate\nblocking: false\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if strings.Contains(out, "review: FRESH") {
+		t.Fatalf("candidate review cache must not satisfy the stable review confirmation, got:\n%s", out)
+	}
+
+	// A stable review run overwrites the cache with target: stable -> the
+	// stable confirmation state shows FRESH.
+	writeUnitCache(t, repoRoot, "settled", "review", "target: stable\nblocking: false\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+
+	out, err = freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "review: FRESH") {
+		t.Fatalf("expected review FRESH after stable review run, got:\n%s", out)
+	}
+}
+
+// TestFreshStableScope_RuleValidate verifies a stable-layer rule validate
+// cache shows in the stable summary.
+func TestFreshStableScope_RuleValidate(t *testing.T) {
+	repoRoot := t.TempDir()
+	rulePath := writeStableRuleSpec(t, repoRoot, "g_rule_demo")
+	ruleHash := computeHash(rulePath)
+
+	ruleCacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_demo")
+	os.MkdirAll(ruleCacheDir, 0755)
+	cache := "---\ncommand: validate\nunit: g_rule_demo\nmode: full\nresult: pass\ntarget: stable\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_demo.md\n    hash: sha256:" + ruleHash + "\n" + cacheDepsAt(t, repoRoot, "docs/specs/rules/stable/g_rule_demo.md") + "---\nok\n"
+	os.WriteFile(filepath.Join(ruleCacheDir, "validate_result.md"), []byte(cache), 0644)
+
+	out, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh --scope stable: %v", err)
+	}
+	if !strings.Contains(out, "g_rule_demo") || !strings.Contains(out, "validate: FRESH") {
+		t.Fatalf("expected rule validate FRESH in stable summary, got:\n%s", out)
 	}
 }
 

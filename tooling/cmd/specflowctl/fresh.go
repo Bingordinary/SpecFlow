@@ -143,10 +143,11 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 	return nil
 }
 
-// writeStableFreshSection reports the drift state of every stable target
-// (the code-surface view). Stable targets have no promote gate — the state
-// is either a fresh stable verify cache (VERIFIED) or the baseline
-// comparison (OK / CHANGED / NONE).
+// writeStableFreshSection reports the confirmation and drift state of every
+// stable target. Stable targets have no promote gate — the report shows the
+// three confirmation states (validate: dependencies/rules, verify: code
+// alignment, review: code quality) plus the baseline drift comparison
+// (OK / CHANGED / MISSING).
 func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 	unitNames, err := stableUnitNames(absRoot)
 	if err != nil {
@@ -181,32 +182,35 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 	return nil
 }
 
-// stableUnitSummaryLine reports one stable unit's drift state. A fresh
-// stable verify cache (recently confirmed to still conform) silences the
-// baseline comparison.
+// stableUnitSummaryLine reports one stable unit's confirmation and drift
+// state. The three confirmation columns (validate/verify/review) come from
+// the stable-layer caches written by the corresponding @stable runs; the
+// drift column is the mechanical baseline comparison. A fresh verify cache
+// means the code was recently confirmed to still conform even when the
+// baseline surface differs.
 func stableUnitSummaryLine(repoRoot, unitName string) string {
-	vStatus, _ := validationcache.CheckVerifyStable(repoRoot, unitName)
-	if vStatus.Fresh {
-		return fmt.Sprintf("%-13s  %-9s  %s", unitName, "VERIFIED", "verify cache is fresh — code confirmed to still conform")
-	}
-	return stableBaselineSummaryLine(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName))
+	vaStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "validate")
+	vfStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "verify")
+	rStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "review")
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  review: %-8s  drift: %-8s",
+		unitName, vaStatus, vfStatus, rStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)))
 }
 
 func stableRuleSummaryLine(repoRoot, ruleID string) string {
-	return stableBaselineSummaryLine(repoRoot, ruleID, baseline.CheckRuleBaseline(repoRoot, ruleID))
+	vStatus, _, _ := checkStableRuleGate(repoRoot, ruleID)
+	return fmt.Sprintf("%-13s  validate: %-8s  drift: %-8s",
+		ruleID, vStatus, stableDriftLabel(repoRoot, ruleID, baseline.CheckRuleBaseline(repoRoot, ruleID)))
 }
 
-func stableBaselineSummaryLine(repoRoot, name string, result baseline.CheckResult) string {
+// stableDriftLabel maps a baseline check status to the drift column label.
+func stableDriftLabel(repoRoot, name string, result baseline.CheckResult) string {
 	switch result.Status {
 	case baseline.StatusOK:
-		if result.Note != "" {
-			return fmt.Sprintf("%-13s  %-9s  %s", name, "OK", result.Note)
-		}
-		return fmt.Sprintf("%-13s  %-9s  %s", name, "OK", result.Details)
+		return "OK"
 	case baseline.StatusChanged:
-		return fmt.Sprintf("%-13s  %-9s  %s", name, "CHANGED", result.Details)
+		return "CHANGED"
 	default:
-		return fmt.Sprintf("%-13s  %-9s  %s", name, "MISSING", result.Details)
+		return "MISSING"
 	}
 }
 
@@ -314,13 +318,32 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (unit, stable)\n\n", unitName)
 
-	vStatus, _ := validationcache.CheckVerifyStable(absRoot, unitName)
-	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", classifyGate(vStatus), vStatus.Reason)
-	if vStatus.Fresh {
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Drift: none — verify cache is fresh (code confirmed to still conform).")
-		return nil
+	vaStatus, vaDetail, vaNote := checkStableUnitGate(absRoot, unitName, "validate")
+	if vaStatus == gateFresh {
+		vaDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
+		if vaNote != "" {
+			vaDetail += " | " + vaNote
+		}
 	}
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vaStatus, vaDetail)
+
+	vfStatus, vfDetail, vfNote := checkStableUnitGate(absRoot, unitName, "verify")
+	if vfStatus == gateFresh {
+		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
+		if vfNote != "" {
+			vfDetail += " | " + vfNote
+		}
+	}
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
+
+	rStatus, rDetail, rNote := checkStableUnitGate(absRoot, unitName, "review")
+	if rStatus == gateFresh {
+		rDetail = freshDetail(readSummary(absRoot, "unit", unitName, "review_result.md"))
+		if rNote != "" {
+			rDetail += " | " + rNote
+		}
+	}
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "review", rStatus, rDetail)
 
 	result := baseline.CheckUnitBaseline(absRoot, unitName)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
@@ -371,6 +394,15 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule, stable)\n\n", ruleID)
 
+	vStatus, vDetail, vNote := checkStableRuleGate(absRoot, ruleID)
+	if vStatus == gateFresh {
+		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
+		if vNote != "" {
+			vDetail += " | " + vNote
+		}
+	}
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
+
 	result := baseline.CheckRuleBaseline(absRoot, ruleID)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
 	fmt.Fprintln(stdout)
@@ -388,6 +420,46 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 // ------------------------------------------------------------
 // Gate checks
 // ------------------------------------------------------------
+
+// checkStableUnitGate classifies one of the stable-layer confirmation states
+// (validate/verify/review) using the same check chain promote relies on. The
+// stable variants separate the layers the way each gate's evidence allows:
+// validate/verify point the main-file check at the stable spec path (their
+// caches must list the stable main spec), and review requires the cache to be
+// recorded with `target: stable` (the review gate has no main-file
+// requirement). A candidate-run cache fails the matching stable variant, so
+// the stable report never mislabels a candidate cache as a stable
+// confirmation.
+func checkStableUnitGate(repoRoot, unitName, command string) (gateStatus, string, string) {
+	var (
+		result validationcache.CheckResult
+		err    error
+	)
+	switch command {
+	case "validate":
+		result, err = validationcache.CheckValidateStable(repoRoot, unitName)
+	case "verify":
+		result, err = validationcache.CheckVerifyStable(repoRoot, unitName)
+	case "review":
+		result, err = validationcache.CheckReviewStable(repoRoot, unitName)
+	default:
+		return gateStale, fmt.Sprintf("unknown gate %q", command), ""
+	}
+	if err != nil {
+		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
+	}
+	return classifyGate(result), result.Reason, result.Note
+}
+
+// checkStableRuleGate classifies the stable-layer validate confirmation
+// state of a rule.
+func checkStableRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
+	result, err := validationcache.CheckRuleValidateStable(repoRoot, ruleID)
+	if err != nil {
+		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
+	}
+	return classifyGate(result), result.Reason, result.Note
+}
 
 // checkUnitGate classifies one of the unit gates (validate/verify/review)
 // and returns the promote-identical reason text plus the informational note
@@ -466,8 +538,12 @@ func freshDetail(summary *validationcache.CacheSummary) string {
 	if summary == nil {
 		return "cache is fresh"
 	}
-	return fmt.Sprintf("result: %s · mode: %s · %d file(s) · %s",
+	detail := fmt.Sprintf("result: %s · mode: %s · %d file(s) · %s",
 		summary.Result, summary.Mode, summary.FileCount, noneIfEmpty(summary.Timestamp))
+	if summary.Basis != "" {
+		detail += fmt.Sprintf(" · basis: %s", summary.Basis)
+	}
+	return detail
 }
 
 func readSummary(repoRoot, targetKind, targetName, fileName string) *validationcache.CacheSummary {

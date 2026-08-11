@@ -112,8 +112,8 @@ The tooling layer must not:
    - corresponds to the `deps@all` / `deps@{unit}` / `deps@{rule}` agent triggers (see `framework/verification_scope.md` §Dependency Analysis)
 8. `fresh`
    - report cache freshness and promote readiness without executing any check
-   - `fresh --scope candidate|stable|all` (default `candidate`): candidate scope reports every unit/rule with a candidate file and its gate statuses plus the `READY FOR PROMOTE: N of M` count; stable scope reports the drift state of every stable target (`VERIFIED` / `OK` / `CHANGED` / `MISSING`, see Stable Drift Baseline in `framework/validation_cache.md`); all scope reports both (`READY FOR PROMOTE` covers the candidate section only)
-   - `fresh --unit <name>` / `fresh --rule <id>`: detail for one target — candidate gate statuses, or drift state for a stable-only target (no candidate file)
+    - `fresh --scope candidate|stable|all` (default `candidate`): candidate scope reports every unit/rule with a candidate file and its gate statuses plus the `READY FOR PROMOTE: N of M` count; stable scope reports every stable target's three confirmation states (validate: dependencies/rules, verify: code alignment, review: code quality — rule targets report validate only) plus the baseline drift state (`OK` / `CHANGED` / `MISSING`, see Stable Drift Baseline in `framework/validation_cache.md`); all scope reports both (`READY FOR PROMOTE` covers the candidate section only)
+    - `fresh --unit <name>` / `fresh --rule <id>`: detail for one target — candidate gate statuses, or confirmation states + drift for a stable-only target (no candidate file)
    - strictly read-only: never writes or deletes caches or baselines, never triggers validate/verify/review; a `fresh` report and a `promote` run never disagree because both use the same cache checks
    - corresponds to the `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` agent triggers (see `framework/concepts.md` and `framework/validation_cache.md` §Freshness Check)
  9. `gate-evidence`
