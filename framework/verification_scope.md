@@ -137,6 +137,34 @@ How the main agent splits content into batches is an **internal optimization dec
 
 The user does not interact with batches. The output is a single summary for all spec content.
 
+## Sub-agent Prompt Assembly
+
+The sub-agent prompt assembly structure is shared by verify and review full runs. The main agent assembles the prompt from the spec and the command's own checklist, following this fixed structure. Command-specific values are listed per command; where the table does not list a review-specific value, the verify value applies unchanged.
+
+**Mandatory fields:**
+
+1. Role line — "read-only detection sub-agent for verify batch {n} of {N}" (verify) / "read-only review sub-agent for review batch {n} of {N}" (review)
+2. Spec source — main spec path + version, plus the appendix directory (all non-exempt, non-retired appendices are part of the spec, per the verify checklist prerequisite)
+3. Batch scope — section titles and acceptance item ids as anchors for verify (not line numbers — the spec is a moving target); the file list itself is the anchor for review
+4. Implementation surface — the files the batch may need, from `implementation_surface` and `affects.files`
+5. Protocol reference — the command's own checklist, as the only protocol source: verify → `framework/unit_verify_checklist.md` Steps 1-6 (Step 2's Part A/B sub-checks included); review → `framework/spec_review_checklist.md`
+
+**File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 2-4. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing.
+
+An `implementation_surface` value of `<pending>` produces no file-list entry — the placeholder declares an unknown implementation surface; its judgment belongs to verify Step 6 (MISMATCH), it is never collected as a file.
+
+**Prohibitions:**
+
+1. No inline restatement of protocol rules (severity tables, evidence thresholds, Part B check definitions) — the sub-agent reads the checklist itself
+2. No severity assignment — detection sub-agents report MISMATCH type (structural / acceptance / scope / stub) only; direction classification is Step 7's job, and stub type determination (RELEVANT/IRRELEVANT) is Step 6 detection output, not analysis classification (see `framework/unit_verify_checklist.md` Step 6 and the Step 7 full-mode note). Review sub-agents grade findings P0-P3 per the review checklist's own gate rules.
+3. No behavior summary presented as normative — the spec is the only normative source; a prompt summary that conflicts with the spec is reported as a prompt/spec discrepancy, spec wins
+
+**Required output fields:**
+
+- verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE` with code references; review: findings per the review checklist's output format
+- `Dependency scope:` lines (see the unified report skeleton)
+- failure path: "Verification could not complete — {reason}" (review: "Review could not complete — {reason}")
+
 ## Cross-check
 
 After all content passes verification, the agent runs a cross-check to detect issues that individual verification passes would miss.

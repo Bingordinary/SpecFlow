@@ -95,7 +95,7 @@ The tooling layer must not:
    - rebuild cross-platform binaries
 4. `next`
    - discover a unit's files and dependencies
-   - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, and related units
+   - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, related units, and the acceptance-item-derived fields (implementation surfaces, affects files, acceptance item ids — when the spec declares them)
    - this is a render action: read-only, does not modify any project file
 5. `fork`
    - copy a stable spec/rule (and appendix files for units) to the candidate layer with a version bump

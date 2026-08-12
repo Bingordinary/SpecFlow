@@ -136,6 +136,8 @@ A check with a single finding keeps the existing one-line reason format.
 
 When findings mix resolution types (within one check or across checks), the report presents each finding with its own resolution — a `needs_decision` finding stops the flow and requires user input per Execution Rules.
 
+**Evidence discipline:** every check line's reason must reference the spec content the verdict covers (section title, item id, appendix name). A PASS with no reference means the check did not run — report FAIL with "no evidence basis".
+
 ---
 
 ## Check 1 — Structural integrity

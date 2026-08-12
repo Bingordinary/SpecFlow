@@ -34,6 +34,17 @@ Verify is a **static structural alignment check** — it compares what the spec 
 
 **Adversarial stance:** verification starts from the assumption that the spec is NOT aligned with the code. Every ALIGNED claim must cite a deterministic check (grep, file existence, line count) — "I read the code and it looks correct" is not sufficient evidence for ALIGNED. Claims without deterministic evidence must be reported as CANNOT_DETERMINE.
 
+**Verdict folding:** an item's verdict is decided claim by claim:
+
+| Evidence state | Verdict |
+|---|---|
+| Every normative claim has deterministic evidence, no counterexample | ALIGNED |
+| At least one claim has a confirmed counterexample | MISMATCH (affected claims listed) |
+| No counterexample, but ≥1 claim cannot be proven statically | CANNOT_DETERMINE (gap listed) |
+| Test absence / Part A-B concerns | No verdict change — recorded as annotations |
+
+Fold order: MISMATCH > CANNOT_DETERMINE > ALIGNED. A claim supported only by the existence of a test is not deterministic evidence — tests are annotations, not proof of implementation behavior.
+
 After completing all analysis steps, the agent must report coverage confidence (see §Output Format Coverage).
 
 ## Target Selection
@@ -46,6 +57,7 @@ After completing all analysis steps, the agent must report coverage confidence (
 - **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. The main agent may delegate batches to read-only sub-agents — each sub-agent follows the same permissions (read-only, no delegation chain).
 - Each verifiable claim in the spec reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
 - Evidence is always code-level (file:line, struct/function signatures, grep results) — never runtime output.
+- A symbol name, comment, test function name, or interface existence alone is not evidence of behavior — read the code that implements the behavior (e.g. an enum value is confirmed by its definition and JSON tag, not by its identifier).
 - For CANNOT_DETERMINE claims (e.g., pass_condition requires runtime verification): record the gap and continue.
 
 ## Output Format
@@ -485,6 +497,10 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
 - Files in affects.files but with no relevant code → flag (over-declared scope)
 ```
 
+**Scope boundary for non-implementation files:**
+- Test files are not scope violations: `affects.files` declares implementation scope; a relevant test file absent from it is recorded in `Dependency scope`, not reported as under-declared scope.
+- Dependency files (read for context but not part of the implementation) are likewise recorded in `Dependency scope`, never as scope findings.
+
 **PASS:** All affects declarations are accurate and complete
 
 **FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found — defer classification to Step 7
@@ -672,7 +688,9 @@ Do not classify the resolution direction — defer to Step 7.
      - line 12: return Response.json({}) (empty_response)
    ```
 
-5. Any stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
+5. Classify each grep hit: **RELEVANT** (real stub/placeholder/debt marker in implementation code) or **IRRELEVANT** (idiomatic constructs — e.g. Go `return nil`, TODO comments matching the spec's `known_debt`, error sentinels, test fixtures). Only RELEVANT hits are MISMATCH.
+
+6. Any RELEVANT stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
 
 **PASS:** No stubs or placeholders found
 
@@ -690,7 +708,7 @@ Do not classify the resolution direction — defer to Step 7.
 
 For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-agent**. Each sub-agent analyzes one mismatch independently, without cross-contamination from other items.
 
-> **Full mode note:** In full mode, Steps 1-6 are distributed across batching sub-agents. Those are detection-only — they do not classify. After all batching sub-agents return, the main agent launches one analysis sub-agent per mismatch for Step 7. Analysis sub-agents are separate from batching sub-agents.
+> **Full mode note:** In full mode, Steps 1-6 are distributed across batching sub-agents. Those are detection-only — they determine each claim's verdict (including Step 6's RELEVANT/IRRELEVANT stub-hood determination) but they do not classify the resolution direction (code_gap / spec_gap / needs_design / blocked). After all batching sub-agents return, the main agent launches one analysis sub-agent per mismatch for Step 7. Analysis sub-agents are separate from batching sub-agents.
 
 ### Sub-agent protocol
 
