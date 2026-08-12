@@ -65,3 +65,42 @@ func TestExtractImplementationSurfaces_NoSet(t *testing.T) {
 		t.Fatalf("expected no surfaces, got %v", got)
 	}
 }
+
+// A later top-level section must terminate the scan: none of its
+// lookalike content (- id:, implementation_surface:, files:) may leak
+// into the extraction.
+const extractionSpecWithLaterSection = extractionSpec + `## Definition of Done
+
+Unrelated documentation list
+
+- id: unrelated.example
+  description: not part of the acceptance set
+
+implementation_surface: docs/specs/units/candidate/unit_demo.md
+
+        - unrelated/path.go
+`
+
+func TestExtractAcceptanceItemIDs_StopsAtLaterSection(t *testing.T) {
+	got := ExtractAcceptanceItemIDs(extractionSpecWithLaterSection)
+	want := []string{"demo.core", "demo.aux"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestExtractAffectsFiles_StopsAtLaterSection(t *testing.T) {
+	got := ExtractAffectsFiles(extractionSpecWithLaterSection)
+	want := []string{"internal/demo/handler.go", "src/a.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestExtractImplementationSurfaces_StopsAtLaterSection(t *testing.T) {
+	got := ExtractImplementationSurfaces(extractionSpecWithLaterSection)
+	want := []string{"internal/demo", "<pending>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}

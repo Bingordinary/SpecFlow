@@ -8,18 +8,22 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 // UnitInfo describes a unit's file state.
 type UnitInfo struct {
-	Name           string
-	HasCandidate   bool
-	CandidateSpec  string
-	HasStable      bool
-	StableSpec     string
-	Appendices     []string
-	RuleRefs       []string
-	RelatedUnits   []string
+	Name                  string
+	HasCandidate          bool
+	CandidateSpec         string
+	HasStable             bool
+	StableSpec            string
+	Appendices            []string
+	RuleRefs              []string
+	RelatedUnits          []string
+	ImplementationSurfaces []string
+	AffectsFiles          []string
+	AcceptanceItems       []string
 }
 
 // DiscoverUnit reads the file system to discover a unit's file state.
@@ -56,26 +60,44 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 
 	specPath := specpaths.CandidateUnitSpecFileRef(unitName)
 	info.RelatedUnits = discoverRelatedUnits(repoRoot, unitName, specPath)
-	// Read rule_refs from candidate spec frontmatter
+	// Read rule_refs and acceptance-item fields from the candidate spec,
+	// falling back to the stable spec.
 	fullPath := filepath.Join(repoRoot, specPath)
 	if data, readErr := os.ReadFile(fullPath); readErr == nil {
-		fm := specpaths.ReadFrontmatterStringMap(string(data))
-		if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
-			info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
-		}
+		populateSpecInfo(info, string(data))
 	} else if info.HasStable {
-		// Fall back to stable spec
 		stablePath := fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
-		fullPath := filepath.Join(repoRoot, stablePath)
-		if data, readErr := os.ReadFile(fullPath); readErr == nil {
-			fm := specpaths.ReadFrontmatterStringMap(string(data))
-			if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
-				info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
-			}
+		if data, readErr := os.ReadFile(filepath.Join(repoRoot, stablePath)); readErr == nil {
+			populateSpecInfo(info, string(data))
 		}
 	}
 
 	return info, nil
+}
+
+// populateSpecInfo fills the acceptance-item-derived fields of info from
+// the spec content: rule_refs, implementation surfaces, affects files, and
+// acceptance item ids (deduplicated, document order).
+func populateSpecInfo(info *UnitInfo, content string) {
+	fm := specpaths.ReadFrontmatterStringMap(content)
+	if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
+		info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
+	}
+	info.ImplementationSurfaces = dedupe(specvalidation.ExtractImplementationSurfaces(content))
+	info.AffectsFiles = dedupe(specvalidation.ExtractAffectsFiles(content))
+	info.AcceptanceItems = dedupe(specvalidation.ExtractAcceptanceItemIDs(content))
+}
+
+func dedupe(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, v := range values {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func discoverRelatedUnits(repoRoot, unitName, specPath string) []string {
@@ -142,6 +164,27 @@ func FormatInfo(info *UnitInfo) string {
 		buf.WriteString("Related units:\n")
 		for _, u := range info.RelatedUnits {
 			fmt.Fprintf(&buf, "  - %s\n", u)
+		}
+	}
+
+	if len(info.ImplementationSurfaces) > 0 {
+		buf.WriteString("Implementation surface:\n")
+		for _, s := range info.ImplementationSurfaces {
+			fmt.Fprintf(&buf, "  - %s\n", s)
+		}
+	}
+
+	if len(info.AffectsFiles) > 0 {
+		buf.WriteString("Affects files:\n")
+		for _, f := range info.AffectsFiles {
+			fmt.Fprintf(&buf, "  - %s\n", f)
+		}
+	}
+
+	if len(info.AcceptanceItems) > 0 {
+		buf.WriteString("Acceptance items:\n")
+		for _, id := range info.AcceptanceItems {
+			fmt.Fprintf(&buf, "  - %s\n", id)
 		}
 	}
 
