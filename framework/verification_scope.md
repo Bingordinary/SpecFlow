@@ -21,7 +21,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 1. **Full by default, complete always** — every command without a `:` suffix runs the complete check; delta runs (`re*`) also produce a complete check by re-checking the stale part and carrying the rest over. No git-awareness, no subset selection.
 2. **Targeted only on explicit user choice** — `:check-{n}` (validate) and `:{keyword}` (all three commands) scope the run to a user-declared focus.
 3. **Targeted results never satisfy promote** — targeted runs do not write caches. Only a complete-coverage run's cache passes the promote gate.
-4. **Delta only on explicit user choice** — `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` re-run only the judgments whose evidence went stale (plus cross-check) and write a cache with `basis: delta`. The incremental scope is derived from the stale cache evidence and reported to the user explicitly (see §Delta Runs).
+4. **Delta only on explicit user choice** — `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` re-run only the judgments whose evidence went stale (plus cross-check — unit targets) and write a cache with `basis: delta`. The incremental scope is derived from the stale cache evidence and reported to the user explicitly (see §Delta Runs).
 5. **Delta applies to candidate targets only** — the incremental re-run restores promote eligibility, which exists only for candidates. A delta run against a stable-only target reports "delta re-runs apply to candidate targets — run the full command, or fork to start a new round" (see §Delta Runs → Layer applicability).
 6. **Keyword means "what the user wants to look at"** — each command resolves the keyword inside its own target domain (see Keyword Resolution).
 7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
@@ -64,7 +64,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit and rule candidate targets only. Preconditions and scope rules in §Delta Runs. |
+| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit and rule candidate targets only. Preconditions and scope rules in §Delta Runs. |
 | `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit candidate targets only (rule verify has been removed). |
 | `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit candidate targets only. |
 
@@ -139,31 +139,220 @@ The user does not interact with batches. The output is a single summary for all 
 
 ## Sub-agent Prompt Assembly
 
-The sub-agent prompt assembly structure is shared by verify and review full runs. The main agent assembles the prompt from the spec and the command's own checklist, following this fixed structure. Command-specific values are listed per command; where the table does not list a review-specific value, the verify value applies unchanged.
+The sub-agent prompt assembly structure is shared by the three quality-gate commands. The main agent assembles the prompt from the target's files and the command's own checklist, following this fixed structure. Command-specific values are listed per field below.
+
+The three commands use two execution shapes:
+
+1. **Independent single-executor sub-agent (validate)** — `validate@{unit}` / `validate@{rule}` (full and delta runs) execute the checklist in one read-only sub-agent session. There is no batching: the sub-agent runs the whole checklist itself and returns one report. The purpose is independence, not context economy — the sub-agent does not hold the context in which the spec was written, so its verdicts are not self-approval (see `framework/spec_flow_review.md` §2.3: promote's quality gates are independent sessions, not self-approval).
+2. **Batched parallel sub-agents (verify, review)** — full verify and review runs split work into batches across parallel read-only sub-agents. Batching exists to avoid context saturation on code surfaces; batch splitting is an internal optimization and the result is independent of it.
+
+A sub-agent prompt is a **mission package for a zero-context worker**: the sub-agent has no conversation history and no framework knowledge beyond this prompt and the files it is told to read. The prompt must therefore answer five questions without requiring inference — who am I, what am I doing, why, what counts as done, and who consumes my output. The mandatory fields below guarantee this.
 
 **Mandatory fields:**
 
-1. Role line — "read-only detection sub-agent for verify batch {n} of {N}" (verify) / "read-only review sub-agent for review batch {n} of {N}" (review)
-2. Spec source — main spec path + version, plus the appendix directory (all non-exempt, non-retired appendices are part of the spec, per the verify checklist prerequisite)
-3. Batch scope — section titles and acceptance item ids as anchors for verify (not line numbers — the spec is a moving target); the file list itself is the anchor for review
-4. Implementation surface — the files the batch may need, from `implementation_surface` and `affects.files`
-5. Protocol reference — the command's own checklist, as the only protocol source: verify → `framework/unit_verify_checklist.md` Steps 1-6 (Step 2's Part A/B sub-checks included); review → `framework/spec_review_checklist.md`
+1. **Role line** —
+   - validate: "read-only validation sub-agent for {unit|rule} {name}", followed by "You are an independent read-only session: you do not hold the context in which this spec was written, and the main agent does not re-litigate your verdicts — it collects your output verbatim into the final report."
+   - verify: "read-only detection sub-agent for verify batch {n} of {N}", followed by "You are one of {N} parallel read-only workers; the main agent collects all workers' results verbatim into the final report."
+   - review: "read-only review sub-agent for review batch {n} of {N}", followed by the same parallel-worker sentence.
+2. **Mission statement** — one sentence stating the deliverable, fixed form:
+   - validate: "Validate {target} per the protocol: execute each check in Check scope, report PASS / WARNING / FAIL per check with a reason (FAIL reasons identify the contradicting information sources), and report findings with P0/P1 severity and resolution type."
+   - verify: "Verify each item in Batch scope: decide ALIGNED / MISMATCH / CANNOT_DETERMINE per the protocol, with deterministic evidence for every claim."
+   - review: "Review each file in Batch scope per the protocol and report findings with P0-P3 severity."
+3. **Spec source** — main spec path + version, plus the appendix directory (all non-exempt, non-retired appendices are part of the spec, per the checklist prerequisites)
+4. **Check / Batch scope** —
+   - validate full: "all 8 checks + cross-check" (unit) / "all 8 checks" (rule — rules have no cross-check); validate delta: re-run checks {list} + cross-check (unit; rules have no cross-check), carried-over checks {list} declared (see §Delta Runs); validate targeted (`:check-{n}` / `:{keyword}`): executed directly by the main agent, no sub-agent is launched (see §Targeted Runs)
+   - verify: section titles and acceptance item ids as anchors (not line numbers — the spec is a moving target)
+   - review: the file list itself is the anchor
+5. **Read surface** — the files the sub-agent may need:
+   - validate (unit): the spec and its referenced dependency files (`unit_refs`, `rule_refs`, `affects.files` document targets); implementation code is not read
+   - validate (rule): the candidate rule file, its stable sibling if present (Check 4), and the unit spec files under `docs/specs/units/` (Check 5 existence check and Check 7 consumer discovery)
+   - verify / review: from `implementation_surface` and `affects.files`
+6. **Protocol reference** — the command's own checklist, as the only protocol source: validate unit → `framework/unit_validate_checklist.md` (all 8 checks, cross-check included); validate rule → `framework/rule_validate_checklist.md` (all 8 checks, no cross-check); verify → `framework/unit_verify_checklist.md` Steps 1-6 (Step 2's Part A/B sub-checks included); review → `framework/spec_review_checklist.md`
+7. **Context** — the background the sub-agent needs to orient itself, four fixed sentences: which command and target this run serves ("You are part of the `validate@{unit}` full run"); execution-shape declaration (validate: "You are an independent read-only session — your verdicts are not self-approval, and the main agent collects them verbatim"; verify: "Batch boundaries are an internal optimization — your result is the same whether an item is verified alone or in a group"; review: "Batch boundaries are an internal optimization — your result is the same whether a file is reviewed alone or in a group"); output consumption ("Your output is collected verbatim by the main agent into the final report; follow the protocol's output format exactly"); unit orientation ("{unit} is {one-sentence description}; candidate version {version}"). The one-sentence unit description is distilled from the spec's goal/responsibility sections (spec path from `specflowctl next` output); the version comes from the spec frontmatter.
+8. **Glossary** — one line per term used in this prompt or in the protocol steps this sub-agent executes. Each line: term — one-sentence definition — source reference. The canonical glossary below is the full set for the three quality-gate commands; the main agent includes every term that appears in the assembled prompt and no others. Scenarios outside the three commands (e.g. the `spec_flow_issues` triage prompt) define their own glossary in their protocol file (`framework/operations/issues.md` Step 3).
+9. **Permissions** — verbatim: "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
 
-**File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 2-4. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing.
+**Canonical glossary** (source references are authoritative; a definition is a locating aid, not a rule restatement):
+
+| Term | Definition | Source |
+|---|---|---|
+| acceptance item | An entry in the spec's `acceptance_item_set` (in the `Testability / Acceptance Criteria` section), carrying id, description, verification_type, pass_condition and other fields | `framework/spec_writing_guide.md` §7 |
+| pass_condition | The condition an item must satisfy, written as verifiable assertions (e.g. "Returns HTTP 201") | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
+| verification_type | The item's verification mode: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
+| implementation_surface | The per-item code surface path the item's implementation lives under; `<pending>` is a placeholder that verify reports as MISMATCH | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
+| affects.files | The implementation files an item declares as its scope for verify | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
+| unit_refs | The frontmatter declaration of units this unit depends on (formal behavior contract); validate Check 7 reads the referenced units' contracts | `framework/spec_writing_guide.md` §4 (Unit Dependencies) |
+| rule_refs | The frontmatter declaration of rules bound to this unit; validate Check 8 reads the referenced rules | `framework/spec_writing_guide.md` §5 (Rule References) |
+| candidate / stable layer | The spec layers: candidate is the working draft, stable is accepted truth; the layer is encoded by the file path | `framework/concepts.md` §The Two Layers |
+| ALIGNED / MISMATCH / CANNOT_DETERMINE | The per-claim verdicts; fold order MISMATCH > CANNOT_DETERMINE > ALIGNED | `framework/unit_verify_checklist.md` §Verdict folding |
+| deterministic evidence | A reproducible static check: a grep command with its result, a file existence check, or a file:line read | `framework/unit_verify_checklist.md` Step 2 |
+| Dependency scope | The report's per-file line-range declaration (1-based closed ranges; `all` for whole-file judgments), used by the main agent when writing the cache | `framework/unit_verify_checklist.md` §Output Format |
+| Part A / Part B | The two parts of the test design sub-check: coverage completeness / test meaningfulness | `framework/unit_verify_checklist.md` Step 2 |
+| B1-B6 | The six Part B checks: mock density, assertion authenticity, tautological assertions, all-happy-path, mock-through, test naming | `framework/unit_verify_checklist.md` Step 2 |
+| stub | A placeholder or debt marker in implementation code (Step 6 grep findings; RELEVANT hits are MISMATCH) | `framework/unit_verify_checklist.md` Step 6 |
+| surplus | Code structure with no spec correspondence (reported as MISMATCH type: surplus) | `framework/unit_verify_checklist.md` Step 5 |
+| cross-check | The final consistency check over all content after individual checks pass | `framework/verification_scope.md` §Cross-check |
+| check 1-8 (validate) | The eight validate checks: structural integrity, design soundness, scope integrity, evidence-driven vs design-driven consistency, acceptance coverage & correctness, affects-source validity, cross-unit consistency, constraint alignment | `framework/unit_validate_checklist.md` |
+| exempt / retired appendix | Appendix statuses skipped when assembling the spec union (`status: exempt` / `status: retired` files are not read) | `framework/unit_validate_checklist.md` §Prerequisite |
+| resolution type | Each finding's fix classification: `actionable` (concrete repair without user judgment) or `needs_decision` (requires user input) | `framework/unit_validate_checklist.md` §Execution Rules |
+| advisory finding | Taste-level P2/P3 findings from validate Check 2 Step 4, presented on the check line's reason, counted separately, never blocking | `framework/unit_validate_checklist.md` Check 2 Step 4 |
+| P0 / P1 severity (validate) | The only severities validate grades: P1 is the contract-decided default for FAIL checks; P0 requires §9 confirmation | `framework/unit_validate_checklist.md` §Severity check |
+
+**File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 3-5. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing. For validate, the same command output supplies the spec, the appendix directory, and the dependency targets (`unit_refs` / `rule_refs`) that make up the read surface. For `validate@{rule}` — `specflowctl next` supports unit targets only — the mechanical baseline is the command target file `docs/specs/rules/candidate/{rule_id}.md`, its stable sibling `docs/specs/rules/stable/{rule_id}.md` if present (Check 4), and the unit spec files globbed under `docs/specs/units/` (Checks 5/7).
 
 An `implementation_surface` value of `<pending>` produces no file-list entry — the placeholder declares an unknown implementation surface; its judgment belongs to verify Step 6 (MISMATCH), it is never collected as a file.
 
 **Prohibitions:**
 
-1. No inline restatement of protocol rules (severity tables, evidence thresholds, Part B check definitions) — the sub-agent reads the checklist itself
-2. No severity assignment — detection sub-agents report MISMATCH type (structural / acceptance / scope / stub) only; direction classification is Step 7's job, and stub type determination (RELEVANT/IRRELEVANT) is Step 6 detection output, not analysis classification (see `framework/unit_verify_checklist.md` Step 6 and the Step 7 full-mode note). Review sub-agents grade findings P0-P3 per the review checklist's own gate rules.
+1. No inline restatement of protocol rules (severity tables, evidence thresholds, Part B check definitions) — the sub-agent reads the checklist itself. This prohibition covers protocol rules only: the context declarations above (fields 1-9) are mandatory and are not restatements — they locate the protocol, they do not replace it. When any prompt text conflicts with the protocol, the protocol wins and the sub-agent reports the conflict.
+2. No severity assignment outside the command's own rules — validate sub-agents grade findings P0/P1 with a resolution type per `framework/unit_validate_checklist.md` (P1 is the contract-decided default; P0 requires the §9 confirmation record — see its Severity check section); verify detection sub-agents report MISMATCH type (structural / acceptance / scope / stub / surplus) only — severity assignment is Step 7's job (the analysis sub-agent grades per the Step 7 output contract, the main agent confirms per §9), and stub type determination (RELEVANT/IRRELEVANT) is Step 6 detection output, not analysis classification (see `framework/unit_verify_checklist.md` Step 6 and the Step 7 full-mode note); review sub-agents grade findings P0-P3 per the review checklist's own gate rules.
 3. No behavior summary presented as normative — the spec is the only normative source; a prompt summary that conflicts with the spec is reported as a prompt/spec discrepancy, spec wins
 
 **Required output fields:**
 
-- verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE` with code references; review: findings per the review checklist's output format
+- validate per check: `{n}. {check name}: PASS | WARNING | FAIL — reason`; FAIL reasons identify the contradicting information sources per the checklist's Execution Rules; findings use the unified format `[{P0|P1}] {location} — {issue} (actionable | needs_decision)`; cross-check line for unit full runs
+- verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE` with code references — the type is the detection verdict (structural / acceptance / scope / stub / surplus); detection sub-agents do not assign severity — the Step 7 analysis sub-agents grade it per the Step 7 output contract and the main agent confirms it per §9 before the final report; review: findings per the review checklist's output format
 - `Dependency scope:` lines (see the unified report skeleton)
-- failure path: "Verification could not complete — {reason}" (review: "Review could not complete — {reason}")
+- failure path: "Validation could not complete — {reason}" (verify: "Verification could not complete — {reason}"; review: "Review could not complete — {reason}")
+
+**Assembly example (verify)** — a complete assembled verify prompt. `{unit}`/paths are placeholders the main agent fills in; the glossary shows only the terms used in this prompt:
+
+```
+You are a read-only detection sub-agent for verify batch 2 of 4. You are one of 4
+parallel read-only workers; the main agent collects all workers' results verbatim
+into the final report.
+
+Mission: Verify each item in Batch scope: decide ALIGNED / MISMATCH /
+CANNOT_DETERMINE per the protocol, with deterministic evidence for every claim.
+
+Spec source: docs/specs/units/candidate/unit_auth.md (candidate, version 0.2.1);
+appendices: docs/specs/units/candidate/appendix/unit_auth_*.md (non-exempt,
+non-retired only).
+
+Batch scope: AUTH-AC-003, AUTH-AC-004 (login section).
+
+Implementation surface: src/api/login.go, src/api/token.go, src/store/session.go.
+
+Protocol: framework/unit_verify_checklist.md Steps 1-6 (including Step 2's
+Part A/B sub-checks). This is the only protocol source — follow it exactly.
+
+Context: You are part of the `verify@auth` full run. Batch boundaries are an
+internal optimization — your result is the same whether an item is verified
+alone or in a group. Your output is collected verbatim by the main agent into
+the final report; follow the protocol's output format exactly. auth is the user
+authentication unit; candidate version 0.2.1.
+
+Glossary:
+- acceptance item — an entry in the spec's `acceptance_item_set`, carrying id,
+  description, verification_type, pass_condition (spec_writing_guide.md §7)
+- pass_condition — the condition an item must satisfy, written as verifiable
+  assertions (spec_writing_guide.md §7)
+- verification_type — the item's verification mode: testable / inspectable /
+  reviewable (spec_writing_guide.md §7)
+- implementation_surface — the per-item code surface path (spec_writing_guide.md §7)
+- affects.files — the implementation files an item declares as its scope
+  (spec_writing_guide.md §7)
+- candidate / stable layer — candidate is the working draft, stable is accepted
+  truth; the layer is encoded by the file path (concepts.md §The Two Layers)
+- exempt / retired appendix — appendix statuses skipped when assembling the spec
+  union; non-exempt, non-retired files are read (unit_validate_checklist.md §Prerequisite)
+- ALIGNED / MISMATCH / CANNOT_DETERMINE — per-claim verdicts; fold order
+  MISMATCH > CANNOT_DETERMINE > ALIGNED (unit_verify_checklist.md §Verdict folding)
+- deterministic evidence — a reproducible static check: a grep command with its
+  result, or a file:line read (unit_verify_checklist.md Step 2)
+- Dependency scope — per-file line ranges your judgment depended on
+  (unit_verify_checklist.md §Output Format)
+- Part A / Part B — the two parts of the test design sub-check
+  (unit_verify_checklist.md Step 2)
+- mock density / B1-B6 — Part B's six checks (unit_verify_checklist.md Step 2)
+- stub — placeholder or debt marker in code (unit_verify_checklist.md Step 6)
+- surplus — code structure with no spec correspondence (unit_verify_checklist.md Step 5)
+
+Permissions: You may read files, search text by pattern, glob for files, and
+run read-only git queries. You must NOT modify any file, run any command that
+changes state, or launch further sub-agents.
+
+Required output:
+- Per item: {item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE — with code
+  references and deterministic evidence (grep command + result, or file:line
+  reads); type is the detection verdict (structural / acceptance / scope /
+  stub / surplus); severity is not reported by detection sub-agents — the Step 7
+  analysis sub-agents assign it and the main agent confirms it per §9; plus
+  Part A and Part B findings per acceptance item
+- Dependency scope: one line per file the judgment depended on (1-based closed
+  line ranges, or "all")
+- If you could not complete: "Verification could not complete — {reason}"
+```
+
+**Assembly example (validate)** — a complete assembled validate prompt for a unit full run. `{unit}`/paths are placeholders the main agent fills in; the glossary shows only the terms used in this prompt:
+
+```
+You are a read-only validation sub-agent for unit payment. You are an independent
+read-only session: you do not hold the context in which this spec was written,
+and the main agent does not re-litigate your verdicts — it collects your output
+verbatim into the final report.
+
+Mission: Validate unit payment per the protocol: execute each check in Check
+scope, report PASS / WARNING / FAIL per check with a reason (FAIL reasons identify
+the contradicting information sources), and report findings with P0/P1 severity
+and resolution type.
+
+Spec source: docs/specs/units/candidate/unit_payment.md (candidate, version 1.3.0);
+appendices: docs/specs/units/candidate/appendix/unit_payment_*.md (non-exempt,
+non-retired only).
+
+Check scope: all 8 checks + cross-check.
+
+Read surface: the spec above plus its referenced dependency files (unit_refs,
+rule_refs, affects.files document targets). Implementation code is not read.
+
+Protocol: framework/unit_validate_checklist.md — all 8 checks plus the cross-check
+section. This is the only protocol source — follow it exactly.
+
+Context: You are part of the `validate@payment` full run. You are an independent
+read-only session — your verdicts are not self-approval, and the main agent
+collects them verbatim. Your output is collected verbatim by the main agent into
+the final report; follow the protocol's output format exactly. payment is the
+payment processing unit; candidate version 1.3.0.
+
+Glossary:
+- candidate / stable layer — candidate is the working draft, stable is accepted
+  truth; the layer is encoded by the file path (concepts.md §The Two Layers)
+- check 1-8 — the eight validate checks: structural integrity, design soundness,
+  scope integrity, evidence-driven vs design-driven consistency, acceptance
+  coverage & correctness, affects-source validity, cross-unit consistency,
+  constraint alignment (unit_validate_checklist.md)
+- exempt / retired appendix — appendix statuses skipped when assembling the spec
+  union (unit_validate_checklist.md §Prerequisite)
+- unit_refs — the units this unit depends on (formal behavior contract); read by
+  Check 7 (spec_writing_guide.md §4)
+- rule_refs — the rules bound to this unit; read by Check 8
+  (spec_writing_guide.md §5)
+- resolution type — actionable / needs_decision, the fix classification each
+  finding carries (unit_validate_checklist.md §Execution Rules)
+- advisory finding — taste-level P2/P3 findings from Check 2 Step 4, presented on
+  the check line's reason, never blocking (unit_validate_checklist.md Check 2)
+- P0 / P1 severity — the only severities validate grades; P1 is the default, P0
+  requires confirmation (unit_validate_checklist.md §Severity check)
+- Dependency scope — per-file line ranges your judgment depended on
+  (unit_validate_checklist.md §Output Format)
+- cross-check — the final consistency check over all content after individual
+  checks pass (verification_scope.md §Cross-check)
+
+Permissions: You may read files, search text by pattern, glob for files, and
+run read-only git queries. You must NOT modify any file, run any command that
+changes state, or launch further sub-agents.
+
+Required output:
+- Per check: {n}. {check name}: PASS | WARNING | FAIL — reason; FAIL reasons
+  identify the contradicting information sources; findings in the unified format
+  [{P0|P1}] {location} — {issue} (actionable | needs_decision)
+- Cross-check: N/N PASS — per-check results
+- Failed checks: N | Advisory findings: K
+- Dependency scope: one line per file the judgment depended on (1-based closed
+  line ranges, or "all")
+- If you could not complete: "Validation could not complete — {reason}"
+```
 
 ## Cross-check
 
@@ -214,7 +403,7 @@ A delta run is possible only when the previous result is still valid and its evi
 1. Read the stale cache and the `fresh@` report to list the stale sources — entries whose dependency CIDs no longer exist — and files whose whole-file hash changed outside the declared dependencies.
 2. Re-read the spec (and the code structure for verify/review) to derive which judgments depended on the changed content. Example: a dependency unit's acceptance item changed → the unit's validate Check 7 (cross-unit) contract comparison must be re-run; the other checks read only the unit's own spec and keep their evidence.
 3. For files whose hash changed but declared deps are unchanged: quickly re-scan them for semantic coupling with any judgment — if coupling exists, include the affected judgments in the scope (this operationalizes the informational note in `framework/validation_cache.md` §Staleness Detection).
-4. The scope must always include the cross-check — it is a holistic judgment over all content, and changed shared content can change it.
+4. The scope must always include the cross-check (unit targets — rules have no cross-check) — it is a holistic judgment over all content, and changed shared content can change it.
 5. Report the scope explicitly before executing: the re-run judgments with their stale source and reason, and the carried-over judgments with the statement that their dependency evidence is unchanged. Declare conservatively — when unsure whether a judgment is affected, include it (declare-heavy, same principle as dependency declaration).
 
 ### Execution
@@ -222,7 +411,7 @@ A delta run is possible only when the previous result is still valid and its evi
 - Re-run only the scoped judgments. Carried-over judgments are not re-executed — their previous results stand on unchanged evidence.
 - Any P0/P1 finding during the re-run is treated exactly like a full-run FAIL: validate/verify delete the cache; review writes the cache with `blocking: true`. Promote must not proceed.
 - On PASS, rewrite the cache with `mode: full`, `basis: delta`, a fresh `timestamp`, and a complete `files` list: re-run judgments replace their entries with new evidence (`specflowctl gate-evidence` on the files they read); carried-over judgments keep their entries with the original hash and deps — their CIDs are unchanged by construction, since they were not stale sources. The files list must stay complete (including the main spec and every appendix) so the appendix and main-file promote checks keep passing.
-- The report uses the standard skeleton with `mode: delta`, an `Incremental scope:` section (re-run judgments + carried-over declaration + cross-check), and the cache-write note "cache written with basis: delta".
+- The report uses the standard skeleton with `mode: delta`, an `Incremental scope:` section (re-run judgments + carried-over declaration + cross-check — rules have no cross-check), and the cache-write note "cache written with basis: delta".
 
 ### Trust statement
 
@@ -260,6 +449,8 @@ Targeted runs are available only through explicit user choice:
 When the user explicitly targets, the agent still reads the **full document** for context but only reports on the requested check(s)/content/file.
 
 **Targeted runs never write a cache.** They are iterative feedback only. The promote gate accepts only caches from full runs. If a targeted run finds P0/P1 findings, it deletes the existing cache — blocking findings at any granularity mean promote must not proceed.
+
+**Targeted execution shape:** targeted runs execute directly in the main agent session — no sub-agent is launched and no prompt is assembled per §Sub-agent Prompt Assembly. They are lightweight single-check feedback outside the promote gate, so the independent-session guarantee does not apply to them.
 
 ## Output Format
 

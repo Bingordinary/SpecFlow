@@ -43,11 +43,30 @@ Capture the title, body, labels, and comments. Do not infer issue content from t
 
 ### Step 3: Triage each issue (spec + code comparison)
 
-For each issue, launch a read-only subagent that performs the analysis independently (same pattern as `validate`/`review` — an independent session, not self-approval). The subagent must:
+For each issue, launch a read-only subagent that performs the analysis independently (same pattern as `validate`/`review` — an independent session, not self-approval). The subagent prompt is a mission package for a zero-context worker: it has no conversation history and no framework knowledge beyond the prompt. The prompt must answer, without requiring inference: who am I, what am I doing, why, what counts as done, and who consumes my output. The triage prompt is assembled per the fixed forms below (task-package principle; the fixed forms of `framework/verification_scope.md` §Sub-agent Prompt Assembly apply to the three quality-gate commands only — the triage assembly forms are defined here):
+
+- **Role line:** "read-only triage sub-agent for issue #{number}"
+- **Mission (fixed form):** "Triage issue #{number}: locate the affected area, read the design intent, verify the actual behavior from the tooling source, classify the issue per the classification table, and produce the Step 3 output format."
+- **Context (fixed form):** "You are part of the `spec_flow_issues` run. You are an independent read-only session — you do not hold the context of prior discussions or of how the issue was filed, and the main agent does not re-litigate your verdicts. Your output is collected verbatim into the local report; follow the Step 3 output format exactly."
+- **Protocol reference:** "framework/operations/issues.md Step 3 — the only protocol source; the prompt contains no restatement of protocol rules."
+- **Glossary:** one line per term used in the assembled prompt, sourced from this file's classification table and output contract: `classification`, `basis`, `REAL-bug`, `REAL-design`, `NOT-ISSUE`, `DUPLICATE`, `ENHANCEMENT` — each with a one-sentence definition and its source reference in this file (the classification table below). A term with no definition or source is a prompt defect.
+
+**Input (mandatory, provided by the main agent):** the full issue content — title, body, all labels, and all comments — passed verbatim. Never pass only the title or a summary; the sub-agent must not infer issue content.
+
+**Permissions (verbatim):** "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
+
+**Output (mandatory, per issue):**
+
+- One line: `#{issue number} | {classification} | {basis}` where `{basis}` cites the deterministic evidence — a documentation `file:line` or a code `file:line` reference. A classification without a cited basis is not a valid output.
+- For REAL-bug and REAL-design: root cause (first-principles analysis, not symptom description), affected files with `file:line` references, fix plan, and verification method (see Step 4).
+- For NOT-ISSUE, DUPLICATE, and ENHANCEMENT: one or two sentences of reasoning.
+- If the triage could not complete: "Triage could not complete — {reason}"
+
+The subagent must:
 
 1. **Locate the affected area** — map the issue's title and body keywords to the framework documentation (`framework/*.md`), the tooling source (`tooling/cmd/specflowctl/*.go`), the tooling scripts (`tooling/scripts/`), or the templates (`templates/`, `hooks/`).
 2. **Read the design intent** — read the relevant framework documentation that states how the behavior *should* work (e.g. a checklist, a command reference entry, `framework/spec_flow_review.md`).
-3. **Verify the actual behavior** — read the relevant tooling source (or run `go test` / the binary when needed) to establish what the system *actually* does.
+3. **Verify the actual behavior** — read the relevant tooling source to establish what the system *actually* does. Running `go test` or the binary is not part of the sub-agent's permission set; if static evidence is insufficient to determine the classification, state the missing evidence in `{basis}` — the main agent may run the tests itself.
 4. **Compare and classify** using the table below.
 5. **Check `REVIEW_EXPERIENCE_RULES.md`** — before reporting a NOT-ISSUE or REAL finding, check whether the pattern falls into a documented non-issue category (e.g. deployment-artifact path expectations). Do not treat the listed keywords as exhaustive.
 
@@ -65,7 +84,7 @@ Severity follows the shared P0–P3 grading defined in `framework/severity_polic
 
 ### Step 4: Produce a fix plan for real problems
 
-For every REAL-bug and REAL-design finding, the subagent (or the main agent, if the subagent returned only the classification) must produce:
+For every REAL-bug and REAL-design finding, the subagent must produce:
 
 1. **Root cause** — first-principles analysis of why the defect exists, not a description of the symptom.
 2. **Affected files** — the exact files to change, with `file_path:line` references.

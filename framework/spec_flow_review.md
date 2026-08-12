@@ -39,7 +39,7 @@ When reading Sections 2.3-2.4, "review" refers to the user workflow command. Eve
 It does not pass a review only because the required files were read or the required slices were visited.
 Each in-scope rule, file, slice, and cross-convergence path must satisfy the standards in this section.
 
-The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance compatibility`, `project-instance migration closure`, and `review scope completeness`.
+The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance compatibility`, `project-instance migration closure`, `self-containment`, `tool-enforcement boundary`, `review scope completeness`, `atom system integrity`, `consumer-aware path validation`, and `sub-agent prompt assembly validity`.
 
 ### 2.1 Content Validity
 
@@ -380,6 +380,42 @@ A pass claim for agent-operability review must not ignore unresolved consumer-pa
 
 Consumer-aware path validation under this section applies only when the deployable files under review are explicitly included in the review scope. In default source_repo layout review (Section 3), deployable hook and plugin artifacts are outside the default scope, and this section does not apply by default. When those files are included in a narrowed or installed-project review, each variant must be validated independently.
 
+### 2.17 Sub-Agent Prompt Assembly Validity
+
+A sub-agent is a zero-context, one-shot worker: it has no conversation history and no framework knowledge beyond the prompt the main agent hands it and the files it is told to read. Every governance rule that directs the main agent to command a sub-agent must therefore guarantee that a prompt assembled per that rule lets the sub-agent answer five questions without inference: who am I, what am I doing, why now, what counts as done, and who consumes my output.
+
+**Scope (scenario inventory):** the current framework's sub-agent scenarios are —
+
+1. validate validation sub-agents (independent single-executor session, no batching), verify batch detection sub-agents, and review batch review sub-agents — assembly rules in `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape / verify and review shapes)
+2. verify Step 7 mismatch-analysis sub-agents — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
+3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
+
+The reviewer must verify the scenario inventory is complete with a deterministic search (e.g. grep `sub-agent` / `subagent` / `launch a read-only` across `framework/`). A sub-agent scenario that exists in the framework but is not covered by this standard is a finding — the standard and the mechanism are out of sync, handled under Section 2.6 (Contract Drift) — and the affected slice must not be marked `passed`.
+
+**Checkpoints (executed per scenario):**
+
+1. **Role and mission** — the assembled prompt directly answers "who am I, what am I doing"; the task boundary requires no inference.
+2. **Context and motivation** — the assembled prompt answers "why now, where am I in the flow" (owning command, execution shape, output consumer). Batch-scoped prompts must declare that batch splitting is an internal optimization and the result is independent of it; single-executor prompts (validate) must declare the independent-session guarantee — the sub-agent does not hold the writing context and the main agent does not re-litigate its verdicts.
+3. **Terminology entry** — every framework term that appears in the assembled prompt has a definition or a source reference in the prompt (fine-grained: one-line definition plus source). An undefined term is a finding.
+4. **Protocol location** — the assembled prompt points to a single protocol source, and it contains no restatement of protocol rules (the boundary between rule restatement and context declaration is judged per `framework/verification_scope.md` §Sub-agent Prompt Assembly Prohibitions).
+5. **Permission boundary** — the assembled prompt states the read-only permission and the prohibitions (no file modification, no state-changing commands, no further sub-agent launch).
+6. **Output contract** — the assembled prompt states its output format and failure path, and the stated output format agrees with the unified report skeleton (drift against `report_skeleton` is handled under Section 2.6).
+7. **Zero-guessing** — the assembled prompt text contains no point whose correct execution requires executor inference. Any "the executor must guess" point is a finding.
+
+**Review method:**
+
+1. **Static rule check** — read each assembly/protocol rule and verify the seven checkpoints are enforced at the rule level (mandatory fields, no vague wording, no gap left for the main agent to improvise).
+2. **Complete assembly exercise (mandatory, at least one per scenario)** — the reviewer assembles a real prompt per each rule and checks every checkpoint against the assembled product with text-level evidence (quote the product text; "it reads fine overall" is not evidence). Partial assembly or skipping the exercise does not count as coverage:
+   - Exercise A: a verify batch prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (verify mission form)
+   - Exercise B: a review batch prompt per the same rule (review mission form)
+   - Exercise C: a Step 7 mismatch-analysis prompt per `framework/unit_verify_checklist.md` Step 7 (full input table, Context scope per the fill rule)
+   - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
+   - Exercise E: a validate prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape; unit or rule target)
+   - Each exercise must use placeholder content different from the rule's own examples, so the reviewer does not reproduce the template example (self-confirmation bias).
+3. **Escalation (optional)** — when a checkpoint is in doubt on an assembled product, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
+
+**Boundary:** the assembly exercise proves the rule can produce a valid prompt; it does not prove the main agent produces a valid prompt on every real run — that is execution discipline, outside this standard's meta-review scope. Common product-level defects found in the exercises must be written back as fixes to the assembly rules.
+
 ## 3. Default Scope
 
 This section applies only to explicit `deep_audit`.
@@ -507,6 +543,11 @@ Local slices review one owner area for internal closure, side effects, contract 
     - reviews `concepts.md`, rule-governance files, review policy files, and Spec writing policy files in the current review scope
     - verifies that `concepts.md` (the hook-injected content) contains self-contained instructions: trigger phrases, HARD RULES, commands, and suggestion flow rules
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
+11. `sub_agent_prompt_assembly`
+    - reviews the sub-agent assembly/protocol rules: `verification_scope.md` (§Sub-agent Prompt Assembly — validate, verify, and review shapes), `unit_validate_checklist.md` (8-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (Step 7 sub-agent protocol), `operations/issues.md` (Step 3), and their referenced checklists
+    - verifies per Section 2.17: all seven checkpoints via static rule check plus a complete assembly exercise (one assembled prompt per sub-agent scenario, with text-level evidence per checkpoint)
+    - verifies the scenario inventory itself is complete via deterministic search; any uncovered sub-agent scenario is a finding
+    - verifies assembled-prompt output contracts agree with the unified report skeleton (Section 2.6 drift)
 
 ### 4.2 Cross-Convergence Baseline Slices
 

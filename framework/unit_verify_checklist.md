@@ -98,7 +98,7 @@ Next step: {concrete next command with reason, or "None"}
 - `{body}` — command-specific content defined in this file's body format section (validate: one line per check; verify: Items / Scope / Integrity / Coverage / first-principles divergence analysis; review: Architecture assessment and suppressed findings).
 - `Findings:` — one entry per finding in the unified format `[{severity}] {location} — {issue} (actionable | needs_decision)`. `actionable` — a concrete repair can be made without user judgment (verify: direction spec_gap/code_gap; review: a determined recommendation); `needs_decision` — requires user input or a design decision before the fix can be made (verify: direction needs_design/blocked; review: architecture trade-offs). Command-specific detail (verify's suggested direction, review's spec_context/recommendation, validate's contradicting information sources) appears as indented detail lines under the entry. Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive.
 - `Dependency scope:` — one line per file the run's judgment actually depended on: `{file}: {lines}` with 1-based closed line ranges (e.g. `120-180,300-320`), `all` when the judgment covered the whole file. In full runs, every read-only subagent reports this scope for the files it read and the main agent carries it over verbatim; in single-executor flows, the executor reports its own scope for the files it read. The main agent uses it when writing the validation cache (`--ranges`, see `framework/validation_cache.md` §Dependency Declaration). Targeted runs may omit it.
-- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run judgment in the run's own structure (e.g. validate: "check-7 (cross-unit): re-run — dependency unit `auth` contract changed"), followed by a line declaring the carried-over judgments ("checks 1-6, 8: carried over — their dependency evidence is unchanged") and the cross-check result. See `framework/verification_scope.md` §Delta Runs. The incremental scope must be reported before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
+- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run judgment in the run's own structure (e.g. validate: "check-7 (cross-unit): re-run — dependency unit `auth` contract changed"), followed by a line declaring the carried-over judgments ("checks 1-6, 8: carried over — their dependency evidence is unchanged") and the cross-check result (unit targets — rules have no cross-check). See `framework/verification_scope.md` §Delta Runs. The incremental scope must be reported before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
@@ -108,7 +108,7 @@ Next step: {concrete next command with reason, or "None"}
 
 ```
 Items:
-  - {item.id}: ALIGNED | MISMATCH [P0|P1|P2|P3] | CANNOT_DETERMINE — code references
+  - {item.id}: ALIGNED | MISMATCH (type) [P0|P1|P2|P3] | CANNOT_DETERMINE — code references
 Scope: PASS | FAIL — findings
 Integrity: PASS | FAIL — findings
 Coverage:
@@ -120,6 +120,8 @@ First-principles divergence analysis: (only if any MISMATCH)
     User verdict: ...
     Next step: ...
 ```
+
+The `[P0|P1|P2|P3]` on MISMATCH lines is the severity confirmed per `framework/severity_policy.md` §9 after Step 7 analysis — detection sub-agents report type only (see `framework/verification_scope.md` §Sub-agent Prompt Assembly); the main agent fills the Items lines from the Step 7 results.
 
 The `Cross-check:` line reports the full-run cross-check results (see §Cross-check in `framework/verification_scope.md`); contradictions it produces are presented as findings. Targeted reports omit the line.
 
@@ -710,7 +712,19 @@ For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-
 
 > **Full mode note:** In full mode, Steps 1-6 are distributed across batching sub-agents. Those are detection-only — they determine each claim's verdict (including Step 6's RELEVANT/IRRELEVANT stub-hood determination) but they do not classify the resolution direction (code_gap / spec_gap / needs_design / blocked). After all batching sub-agents return, the main agent launches one analysis sub-agent per mismatch for Step 7. Analysis sub-agents are separate from batching sub-agents.
 
+> **Delta mode note:** In a delta run (`reverify@{unit}`), the re-run scope is executed directly by the main agent — no batching sub-agents are launched. If the re-run produces MISMATCH items, the Step 7 protocol below applies unchanged: the main agent launches one analysis sub-agent per mismatch, with the same input table and Context scope fill rule.
+
 ### Sub-agent protocol
+
+**Prompt assembly (main agent):** the analysis prompt is a mission package for a zero-context worker, assembled per the task-package principles of `framework/verification_scope.md` §Sub-agent Prompt Assembly (the mandatory-fields and glossary rules apply; the batch/unit-specific field forms do not):
+
+- Role line: "read-only analysis sub-agent for mismatch {item.id}"
+- Mission: "Analyze this mismatch per the protocol: determine root cause and suggested direction, and produce the Step 7 output format."
+- Context: "You are part of the `verify@{unit}` run (full or delta mode). The main agent collects your output verbatim into the final report; follow the protocol's output format exactly."
+- Data payload: the input table below, passed verbatim (Context scope filled per the fill rule below)
+- Protocol reference: Step 7 of this file — the only protocol source; the prompt contains no restatement of protocol rules
+- Permissions (verbatim): "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
+- Glossary: one line per framework term used in the assembled prompt (mismatch type values, suggested directions, Dependency scope, and any other term the prompt or the protocol steps it executes use), each with a one-sentence definition and its source reference in this file — a term with no definition or source is a prompt defect
 
 **Input provided by main agent:**
 
@@ -721,6 +735,8 @@ For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-
 | Spec content | Exact spec text (section, pass_condition, or declaration) with file path and line |
 | Code content | Exact code that differs, with file path and line |
 | Context scope | Instructions on what to read beyond the mismatch point |
+
+**Context scope fill rule (main agent):** the scope is the mismatch point's enclosing function or structure, its direct callers and callees, the tests covering the behavior, and the spec section containing the item plus its sibling items and shared definitions (error codes, types, enums, data models, rationale). When unsure whether a region is relevant, include it — declare-heavy, same principle as dependency declaration. The sub-agent reads the stated scope in addition to the exact mismatch content (fields above); it does not re-verify the mismatch itself.
 
 For surplus mismatches, the first-principles analysis additionally evaluates:
 - Is this a genuine design decision that belongs in the spec? → **spec_gap**
