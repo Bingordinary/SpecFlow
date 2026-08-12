@@ -191,6 +191,9 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | B1-B6 | The six Part B checks: mock density, assertion authenticity, tautological assertions, all-happy-path, mock-through, test naming | `framework/unit_verify_checklist.md` Step 2 |
 | stub | A placeholder or debt marker in implementation code (Step 6 grep findings; RELEVANT hits are MISMATCH) | `framework/unit_verify_checklist.md` Step 6 |
 | surplus | Code structure with no spec correspondence (reported as MISMATCH type: surplus) | `framework/unit_verify_checklist.md` Step 5 |
+| structural / acceptance / scope | The remaining MISMATCH type values: structural (Step 1 declaration mismatch), acceptance (Step 2 pass_condition mismatch), scope (Step 3 affects declaration mismatch) | `framework/unit_verify_checklist.md` Steps 1-3 |
+| severity (verify / review) | The P0-P3 grade of a finding; blocking semantics per the shared severity policy | `framework/severity_policy.md` §4 |
+| §9 severity confirmation | The severity consistency check the main agent runs before cache write or final report, recording confirmed or adjusted per finding | `framework/severity_policy.md` §9 |
 | cross-check | The final consistency check over all content after individual checks pass | `framework/verification_scope.md` §Cross-check |
 | check 1-8 (validate) | The eight validate checks: structural integrity, design soundness, scope integrity, evidence-driven vs design-driven consistency, acceptance coverage & correctness, affects-source validity, cross-unit consistency, constraint alignment | `framework/unit_validate_checklist.md` |
 | exempt / retired appendix | Appendix statuses skipped when assembling the spec union (`status: exempt` / `status: retired` files are not read) | `framework/unit_validate_checklist.md` §Prerequisite |
@@ -212,6 +215,7 @@ An `implementation_surface` value of `<pending>` produces no file-list entry —
 
 - validate per check: `{n}. {check name}: PASS | WARNING | FAIL — reason`; FAIL reasons identify the contradicting information sources per the checklist's Execution Rules; findings use the unified format `[{P0|P1}] {location} — {issue} (actionable | needs_decision)`; cross-check line for unit full runs
 - verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE` with code references — the type is the detection verdict (structural / acceptance / scope / stub / surplus); detection sub-agents do not assign severity — the Step 7 analysis sub-agents grade it per the Step 7 output contract and the main agent confirms it per §9 before the final report; review: findings per the review checklist's output format
+- review batch assessment: each review batch reports the per-batch Dimension 8 assessment lines (`module_boundaries`, `responsibility_organization`, `dependency_clarity`, `abstraction_level`, `extension_landing_points`, `engineering_patterns`, each with an assessment and basis) for the files in its batch, per `framework/spec_review_checklist.md` §Body format; the main agent aggregates the per-batch assessments into the final report's Architecture assessment block
 - `Dependency scope:` lines (see the unified report skeleton)
 - failure path: "Validation could not complete — {reason}" (verify: "Verification could not complete — {reason}"; review: "Review could not complete — {reason}")
 

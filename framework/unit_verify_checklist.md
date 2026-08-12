@@ -828,10 +828,19 @@ Severity: {P0 | P1 | P2 | P3}
   - For surplus findings: determine by the construct's semantic role —
     public API = P0/P1, internal implementation detail = P2.
   - For scope findings (Step 3): annotative role → default P2.
+  - For acceptance findings (Step 2): map the pass_condition's semantic role
+    to the Step 1 severity table — contractual assertions (status codes,
+    response fields, error codes) take the table row's severity for the
+    declaration type they express; descriptive assertions default to P2.
+  - For stub findings (Step 6): a RELEVANT stub or placeholder in production
+    code defaults to P1; a stub in test-only or tooling code defaults to P2.
 Confidence: {high | medium | low}
 Rationale: {2-3 sentence first-principles reasoning chain}
 Signal layer: {condensed metadata summary, if collected}
 ```
+
+**Failure path:** an analysis sub-agent that cannot complete its analysis
+reports: "Analysis could not complete — {reason}" and no other output.
 
 **Constraints:**
 

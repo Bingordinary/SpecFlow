@@ -105,7 +105,7 @@ Each command must have clearly defined boundaries. The review must verify:
 
 2. **review** (implemented as `validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
 
-3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Always reviews all unit code. Review cache must exist and be non-blocking to satisfy promote.
+3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Always reviews all unit code. Review cache must exist, be full mode, fresh, and non-blocking to satisfy promote.
 
 4. **promote**: given a unit name or rule id, runs a multi-step process:
    a. Agent pre-check (optional): reports cache freshness and runnable status

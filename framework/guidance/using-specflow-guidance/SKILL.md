@@ -48,4 +48,5 @@ A guidance step ends with one of these outcomes:
 1. `continue_discussion` - the design is not clear enough yet
 2. `ready_for_candidate_writeback` - the user has approved a specific conclusion that should be written into candidate truth
 3. `route_to_existing_command` - current repository truth already provides a legal command route
-4. `stop_for_checkpoint` - the smallest missing decision must be requested through the active routing or command checkpoint rules
+4. `do_not_writeback` - the guidance result is a blocking design issue that must not be encoded into candidate truth (returned by `design-quality-review`); the step ends here — no writeback is offered, and the blocking issue is reported to the user with the writeback_ready_points and points_to_exclude_from_candidate lists
+5. `stop_for_checkpoint` - the smallest missing decision must be requested through the active routing or command checkpoint rules

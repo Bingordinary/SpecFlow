@@ -9,13 +9,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 concepts_content=$(cat "${REPO_ROOT}/framework/concepts.md" 2>&1 || echo "Error reading framework/concepts.md")
 
 escape_for_json() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
+    # Real tab/CR characters (bash $'...' quoting) are embedded into the sed
+    # script so the match relies only on literal character matching, which
+    # every POSIX sed supports — the \t / \r escape forms are a GNU/BSD
+    # extension and must not be relied on.
+    local tab=$'\t' cr=$'\r'
+    printf '%s\n' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/${tab}/\\\\t/g" -e "s/${cr}/\\\\r/g" -e 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//'
 }
 
 concepts_escaped=$(escape_for_json "$concepts_content")

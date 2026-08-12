@@ -49,7 +49,7 @@ For each issue, launch a read-only subagent that performs the analysis independe
 - **Mission (fixed form):** "Triage issue #{number}: locate the affected area, read the design intent, verify the actual behavior from the tooling source, classify the issue per the classification table, and produce the Step 3 output format."
 - **Context (fixed form):** "You are part of the `spec_flow_issues` run. You are an independent read-only session — you do not hold the context of prior discussions or of how the issue was filed, and the main agent does not re-litigate your verdicts. Your output is collected verbatim into the local report; follow the Step 3 output format exactly."
 - **Protocol reference:** "framework/operations/issues.md Step 3 — the only protocol source; the prompt contains no restatement of protocol rules."
-- **Glossary:** one line per term used in the assembled prompt, sourced from this file's classification table and output contract: `classification`, `basis`, `REAL-bug`, `REAL-design`, `NOT-ISSUE`, `DUPLICATE`, `ENHANCEMENT` — each with a one-sentence definition and its source reference in this file (the classification table below). A term with no definition or source is a prompt defect.
+- **Glossary:** one line per term used in the assembled prompt, sourced from this file's classification table and output contract: `classification`, `basis`, `REAL-bug`, `REAL-design`, `NOT-ISSUE`, `DUPLICATE`, `ENHANCEMENT`, `severity` — each with a one-sentence definition and its source reference in this file (the classification table below, and `framework/severity_policy.md` §4 for severity). A term with no definition or source is a prompt defect.
 
 **Input (mandatory, provided by the main agent):** the full issue content — title, body, all labels, and all comments — passed verbatim. Never pass only the title or a summary; the sub-agent must not infer issue content.
 
@@ -58,7 +58,7 @@ For each issue, launch a read-only subagent that performs the analysis independe
 **Output (mandatory, per issue):**
 
 - One line: `#{issue number} | {classification} | {basis}` where `{basis}` cites the deterministic evidence — a documentation `file:line` or a code `file:line` reference. A classification without a cited basis is not a valid output.
-- For REAL-bug and REAL-design: root cause (first-principles analysis, not symptom description), affected files with `file:line` references, fix plan, and verification method (see Step 4).
+- For REAL-bug and REAL-design: `Severity: {P0 | P1 | P2 | P3}` per `framework/severity_policy.md` §4, plus root cause (first-principles analysis, not symptom description), affected files with `file:line` references, fix plan, and verification method (see Step 4).
 - For NOT-ISSUE, DUPLICATE, and ENHANCEMENT: one or two sentences of reasoning.
 - If the triage could not complete: "Triage could not complete — {reason}"
 

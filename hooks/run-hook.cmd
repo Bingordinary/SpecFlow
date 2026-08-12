@@ -17,26 +17,31 @@ if "%~1"=="" (
 
 set "HOOK_DIR=%~dp0"
 
-REM Try Git for Windows bash in standard locations
+REM Try Git for Windows bash in standard locations.
+REM Note: %ERRORLEVEL% is expanded at parse time inside a parenthesized block,
+REM so each bash invocation's exit code is captured AFTER its block closes.
 if exist "C:\Program Files\Git\bin\bash.exe" (
     "C:\Program Files\Git\bin\bash.exe" "%HOOK_DIR%%~1" %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
+    goto :exit_with_code
 )
 if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
     "C:\Program Files (x86)\Git\bin\bash.exe" "%HOOK_DIR%%~1" %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
+    goto :exit_with_code
 )
 
 REM Try bash on PATH (e.g. user-installed Git Bash, MSYS2, Cygwin)
 where bash >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     bash "%HOOK_DIR%%~1" %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
+    goto :exit_with_code
 )
 
 REM No bash found - exit silently rather than error
 REM (plugin still works, just without SessionStart context injection)
 exit /b 0
+
+:exit_with_code
+exit /b %ERRORLEVEL%
 CMDBLOCK
 
 # Unix: run the named script directly

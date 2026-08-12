@@ -172,6 +172,8 @@ When extracting existing unit-local formal truth into a rule:
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
 Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
 
+**Current-layer vs file-level semantics:** "current-layer" resolves each unit to its candidate file when one exists, falling back to the stable file (the same resolution `specflowctl deps` uses). The retirement and mechanical validation checks use file-level semantics instead: any existing unit file — including a stable file whose candidate has already dropped the reference — still counts as a consumer, so a retirement cannot leave a dangling stable-layer reference (see §6.5). The divergence scenario is a candidate that removed the rule from `rule_refs` while its stable predecessor still lists it: conceptually the unit is no longer a consumer, mechanically the reference still counts until the unit promotes. `specflowctl consumers` follows the file-level semantics.
+
 ### 6.4 Rule Version Semantics
 
 Agent sets the rule version when editing the rule file. The version must change when the rule body changes (read-only access does not bump version).
@@ -186,6 +188,8 @@ Change type determination — compare the candidate version against the current 
 
 A brand-new rule starts at `0.1.0`. When a rule has no stable version yet (first promotion), no cascade occurs regardless of version.
 
+**Cascade meaning:** the "Cascade?" column indicates whether a rule promotion requires downstream consumer handling. There is no automatic cascade — tooling never modifies consumer units. For a MAJOR change, the agent identifies affected consumer units and handles their constraint compliance per `framework/rule_promote_workflow.md` §Post-promote Consumer Impact; for MINOR/PATCH changes, consumer impact is assessed per rule content and is typically none. The affected units' caches go stale mechanically (their validate cache declares `rule:{id}` as a logical reference), so their promote is rejected until they are re-validated.
+
 When editing an existing rule candidate, bump the version deterministically:
 - If any existing constraint changes meaning → bump MAJOR
 - If new compatible content is added without changing existing meaning → bump MINOR
@@ -198,7 +202,7 @@ A rule can be retired when its constraint no longer applies to any unit. Retirem
 
 Procedure:
 
-1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 6 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone.
+1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 6 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone. For a stable-only unit that references the rule (no candidate file), open a candidate round first: run `specflowctl fork --unit <name>`, remove the rule from the candidate's `rule_refs` (and body explanation if present), run the unit gates (validate / verify / review) and promote the unit — only then does the stable-layer reference disappear and the rule retire stop being rejected. The retirement is rejected mechanically while any existing unit file still lists the rule (file-level semantics, see §6.3).
 2. In the candidate rule frontmatter, add `status: retired`. The rule version is not compared against the stable version for retired rules (the stable copy is removed, not updated).
 3. Run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation.
 4. After promote, the stable rule file is deleted; the candidate rule file is removed. The rule no longer exists in any layer.

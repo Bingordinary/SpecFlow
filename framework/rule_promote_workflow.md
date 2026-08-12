@@ -64,8 +64,12 @@ After the CLI succeeds, the agent must act based on the change type:
 
 **If MAJOR:**
 1. Identify affected consumer units by running `specflowctl consumers --rule <id>` or searching for `rule_refs` containing the rule ID in `docs/specs/units/`
-2. The agent should update affected units as needed and report to the user
-3. Suggest running `validate` then `verify` on each affected unit
+2. For each affected unit that needs a content update:
+   - If the unit has no candidate file, fork it first per HARD RULE 5 (`specflowctl fork --unit <name>` — stable is never edited directly)
+   - Update the candidate content per the rule's new constraint
+   - Suggest running `validate` then `verify` on each affected unit (user-triggered per HARD RULE 2)
+3. Note that the rule promote already made each affected unit's validate cache stale (the cache declares `rule:{id}` as a logical reference), so the unit's promote is mechanically rejected until it is re-validated — no extra action is needed beyond the re-validation above
+4. Report the tool output and the affected-unit plan to the user
 
 **If MINOR/PATCH:**
 1. Assess consumer impact per rule content. Typically no impact — confirm and proceed.
