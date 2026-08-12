@@ -47,7 +47,7 @@ PowerShell:
 
 The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
 
-Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag:
+Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag. Must be run on the `main` branch of the SpecFlow source repository — both scripts reject non-main branches:
 
 ```bash
 specflow/tooling/scripts/push_with_release.sh
@@ -103,7 +103,7 @@ The tooling layer must not:
    - this is the only allowed fork path (see HARD RULE 5 in `framework/concepts.md`)
 6. `consumers`
    - list units that reference a given rule in their `rule_refs`
-   - `consumers --rule <id>`: for global rules (`g_rule_*`) returns every current-layer unit; for bound rules (`b_rule_*`) returns only matching units (empty output means no consumers)
+   - `consumers --rule <id>`: for global rules (`g_rule_*`) returns every current-layer unit; for bound rules (`b_rule_*`) returns only matching units (empty output means no consumers); a global rule with no rule file is reported as not found (same contract as `deps --rule`)
 7. `deps`
    - read-only dependency analysis over the in-scope units' declared `unit_refs`
    - `deps [--scope all|candidate|stable]` (default `all` — current-layer units, candidate preferred, stable fallback; retiring units with `status: retired` are excluded — their references disappear with them): reports the directed dependency graph (unit nodes + `unit_refs` edges), rule refs per unit, cycle member lists, and the promotion order (dependencies first; units without a promotion order are blocked by a cycle)

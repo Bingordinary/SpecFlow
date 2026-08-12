@@ -261,8 +261,8 @@ func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	if !containsString(designFoundation.InputFiles, "framework/operations/update.md") {
 		t.Fatalf("expected migration policy in design foundation input files, got %+v", designFoundation.InputFiles)
 	}
-	if !containsString(designFoundation.InputFiles, "framework/operations/version.md") {
-		t.Fatalf("expected version policy in design foundation input files, got %+v", designFoundation.InputFiles)
+	if containsString(designFoundation.InputFiles, "framework/operations/version.md") {
+		t.Fatalf("did not expect version policy in design foundation input files (scope drift, F-015), got %+v", designFoundation.InputFiles)
 	}
 	if !containsString(designFoundation.InputFiles, "framework/concepts.md") {
 		t.Fatalf("expected concepts.md in design foundation input files, got %+v", designFoundation.InputFiles)
@@ -1108,6 +1108,11 @@ func createReviewRunRepo(t *testing.T) string {
 		"spec_writing_guide.md",
 		"concepts.md",
 		"hooks.md",
+		"verification_scope.md",
+		"unit_validate_checklist.md",
+		"unit_verify_checklist.md",
+		"spec_review_checklist.md",
+		"operations/issues.md",
 	}
 	for _, name := range frameworkFiles {
 		mustWrite(t, filepath.Join(repoRoot, "framework", name), "# "+name+"\n")
@@ -1131,6 +1136,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/_atoms/manifest.txt",
 		"framework/_atoms/generate.sh",
 		"framework/_atoms/verify.sh",
+		"framework/_atoms/misc/report_skeleton.md",
 		"templates/meta/governance_review/README.md",
 		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 			"templates/docs/specs/units/candidate/unit_demo.md",

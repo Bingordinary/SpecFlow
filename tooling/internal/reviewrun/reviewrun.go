@@ -824,6 +824,22 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			},
 		},
 		{
+			ID:             "sub_agent_prompt_assembly",
+			SliceType:      "local",
+			ReviewQuestion: "Do the sub-agent assembly rules satisfy the seven Section 2.17 checkpoints with complete assembly exercises.",
+			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
+				return union([]string{
+					scope.FrameworkPath("verification_scope.md"),
+					scope.FrameworkPath("unit_validate_checklist.md"),
+					scope.FrameworkPath("rule_validate_checklist.md"),
+					scope.FrameworkPath("unit_verify_checklist.md"),
+					scope.FrameworkPath("operations/issues.md"),
+					scope.FrameworkPath("spec_review_checklist.md"),
+					scope.FrameworkPath("_atoms/misc/report_skeleton.md"),
+				})
+			},
+		},
+		{
 			ID:             "command_to_process_convergence",
 			SliceType:      "cross_convergence",
 			ReviewQuestion: "Do the three commands (next, review, promote) converge with process closure rules.",

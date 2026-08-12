@@ -391,7 +391,8 @@ func markdownFieldKey(trimmed string) (string, bool) {
 //
 // Global rules (g_rule_*) apply to every current-layer unit per spec_writing_guide.md §5
 // and are not listed in individual unit's rule_refs. For global rules, this function
-// returns all current-layer unit names regardless of their rule_refs.
+// returns every unit with a candidate or stable file (file-level semantics per
+// spec_writing_guide.md §6.3), regardless of their rule_refs.
 func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	var consumers []string
 	seen := map[string]bool{}
@@ -446,7 +447,9 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	return FindExplicitRuleConsumers(repoRoot, ruleID)
 }
 
-// FindExplicitRuleConsumers scans every current-layer unit main spec for
+// FindExplicitRuleConsumers scans every unit main spec in the candidate and
+// stable directories (file-level semantics per spec_writing_guide.md §6.3 —
+// a stable file whose candidate has dropped the reference still counts) for
 // rule_refs entries containing the given ruleID and returns the unit names.
 // Unlike FindRuleConsumers, it uses the same explicit rule_refs semantics for
 // every rule scope — a global rule's default applicability to all units is

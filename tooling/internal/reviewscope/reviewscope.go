@@ -158,7 +158,6 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("concepts.md"),
 		scope.FrameworkPath("core/object_model.md"),
 		scope.FrameworkPath("operations/update.md"),
-		scope.FrameworkPath("operations/version.md"),
 		scope.FrameworkPath("spec_writing_guide.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}

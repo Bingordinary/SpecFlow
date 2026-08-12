@@ -146,6 +146,10 @@ func FormatInfo(info *UnitInfo) string {
 	}
 	buf.WriteString("\n")
 
+	if !info.HasCandidate && !info.HasStable {
+		buf.WriteString("(no design recorded)\n")
+	}
+
 	if len(info.Appendices) > 0 {
 		buf.WriteString("Appendices:\n")
 		for _, a := range info.Appendices {

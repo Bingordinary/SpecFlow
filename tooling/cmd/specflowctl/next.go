@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,15 +22,15 @@ func runNext(args []string, stdout, stderr io.Writer) error {
 
 	unitName := strings.TrimSpace(*unitPtr)
 	if unitName == "" {
-		fmt.Fprintln(stdout, "Usage: specflowctl next --unit <name>")
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Discovers the unit's spec files, appendices, rules, and related units.")
-		fmt.Fprintln(stdout, "No lifecycle state is read or advanced — file existence is state.")
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Flags:")
-		fmt.Fprintln(stdout, "  --unit NAME      Unit name to discover")
-		fmt.Fprintln(stdout, "  --repo-root PATH Repository root path (default: .)")
-		return nil
+		fmt.Fprintln(stderr, "Usage: specflowctl next --unit <name>")
+		fmt.Fprintln(stderr, "")
+		fmt.Fprintln(stderr, "Discovers the unit's spec files, appendices, rules, and related units.")
+		fmt.Fprintln(stderr, "No lifecycle state is read or advanced — file existence is state.")
+		fmt.Fprintln(stderr, "")
+		fmt.Fprintln(stderr, "Flags:")
+		fmt.Fprintln(stderr, "  --unit NAME      Unit name to discover")
+		fmt.Fprintln(stderr, "  --repo-root PATH Repository root path (default: .)")
+		return errors.New("missing --unit flag")
 	}
 
 	absRoot, err := filepath.Abs(*repoRootPtr)

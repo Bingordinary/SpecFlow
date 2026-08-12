@@ -36,12 +36,15 @@ func TestNextCLI(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	if err := runNext([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
-		t.Fatalf("next failed: %v\nstderr=%s", err, stderr.String())
+	if err := runNext([]string{"--repo-root", repoRoot}, &stdout, &stderr); err == nil {
+		t.Fatalf("expected usage error when --unit is missing, got nil")
 	}
-	output := stdout.String()
+	output := stderr.String()
 	if !strings.Contains(output, "Usage:") {
-		t.Fatalf("expected usage output, got %s", output)
+		t.Fatalf("expected usage output on stderr, got %s", output)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected no stdout on usage error, got %s", stdout.String())
 	}
 }
 

@@ -76,11 +76,7 @@ try {
     }
 
     if ($branch -ne "main") {
-        Write-Host "Pushing $branch to origin..."
-        Invoke-CheckedNative "git" @("push", "-u", "origin", $branch)
-        Write-Host "Current branch is $branch, not main."
-        Write-Host "Release tag push is skipped."
-        exit 0
+        throw "push_with_release.ps1 must be run on the main branch. Current branch is $branch."
     }
 
     Write-Host "Computing tooling source fingerprint..."
