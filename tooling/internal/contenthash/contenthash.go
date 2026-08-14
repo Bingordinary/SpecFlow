@@ -255,28 +255,42 @@ func CIDsForRanges(fc FileChunks, ranges [][2]int) []string {
 // form is exactly `acceptance_item_set:` — a prose mention of the marker
 // elsewhere, even at line start, does not start the region) to the next
 // top-level heading (a line starting with `#` and no leading whitespace) or
-// the end of the text. The region is located by structure, not by line
-// number, so inserting or deleting content elsewhere only moves the region —
-// its content identity is preserved. ok is false when the marker is absent.
+// the end of the text. Fenced code blocks (``` or ~~~) are content: a marker
+// or heading line inside one does not start or end the region. The region is
+// located by structure, not by line number, so inserting or deleting content
+// elsewhere only moves the region — its content identity is preserved. ok is
+// false when the marker is absent.
 func AcceptanceItemsRegion(text string) (region string, ok bool) {
 	lines := strings.Split(text, "\n")
 	startIdx := -1
+	fence := fenceTracker{}
 	for i, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
 		if strings.TrimSpace(line) == "acceptance_item_set:" {
 			startIdx = i
 			break
 		}
+		fence.advance(line)
 	}
 	if startIdx == -1 {
 		return "", false
 	}
 	endIdx := len(lines)
+	fence = fenceTracker{}
 	for i := startIdx + 1; i < len(lines); i++ {
 		line := lines[i]
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
 		if line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && strings.HasPrefix(line, "#") {
 			endIdx = i
 			break
 		}
+		fence.advance(line)
 	}
 	return strings.Join(lines[startIdx:endIdx], "\n"), true
 }
@@ -286,6 +300,252 @@ func RegionCID(regionText string) string {
 	return CID([]byte(regionText))
 }
 
+// SectionRegion is one section region of a file: the frontmatter region (the
+// file head through the line before the first `##` heading) or one `##`
+// heading section (the heading line through the line before the next `##`
+// heading; `###` and deeper headings belong to their `##` section). The
+// heading line itself is part of the region, so renaming a heading changes
+// the region's content identity.
+type SectionRegion struct {
+	Heading string // "" for the frontmatter region; the heading text without the `## ` prefix otherwise
+	Start   int    // 1-based line number of the region's first line (inclusive)
+	End     int    // 1-based line number of the region's last line (inclusive)
+	Text    string // the region content
+}
+
+// isSectionHeading reports whether a line is a `##` heading (a `##` prefix
+// followed by heading text, excluding `###` and deeper headings).
+func isSectionHeading(line string) bool {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "##") || strings.HasPrefix(t, "###") {
+		return false
+	}
+	rest := strings.TrimPrefix(t, "##")
+	return rest != "" && (rest[0] == ' ' || rest[0] == '\t')
+}
+
+// headingText extracts the heading text of a `##` heading line.
+func headingText(line string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "##"))
+}
+
+// MalformedHeadingLines returns the lines that look like a broken `##`
+// heading — trimmed text starting with `##` (not `###`) where the rest is
+// empty or does not start with whitespace, e.g. `##x` or `##`. Such lines
+// are content to the region splitter (SectionRegions never splits on them),
+// but they usually mean the author intended a heading and got the format
+// wrong. Lines inside fenced code blocks are content and never reported.
+func MalformedHeadingLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	fence := fenceTracker{}
+	var malformed []string
+	for _, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "##") && !strings.HasPrefix(t, "###") {
+			rest := strings.TrimPrefix(t, "##")
+			if rest == "" || (rest[0] != ' ' && rest[0] != '\t') {
+				malformed = append(malformed, t)
+			}
+		}
+		fence.advance(line)
+	}
+	return malformed
+}
+
+// fenceTracker tracks whether a line-by-line scan is inside a fenced code
+// block (a ``` or ~~~ fence). Heading lines inside a fenced block are
+// content, not structure — SectionRegions must not split on them.
+type fenceTracker struct {
+	active bool
+	char   byte
+	length int
+}
+
+// advance consumes one line and updates the fence state. Lines inside an
+// active fence are skipped until a closing fence; a fence-start line outside
+// an active fence opens one.
+func (f *fenceTracker) advance(line string) {
+	if f.active {
+		if isClosingFence(line, f.char, f.length) {
+			f.active = false
+		}
+		return
+	}
+	c, n, ok := fenceInfo(line)
+	if ok {
+		f.active = true
+		f.char = c
+		f.length = n
+	}
+}
+
+// fenceInfo reports whether a line opens a fenced code block and, if so, the
+// fence character and its run length. A fence is at least three backticks or
+// tildes; a backtick fence's info string must not contain backticks.
+func fenceInfo(line string) (char byte, length int, ok bool) {
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return 0, 0, false
+	}
+	c := t[0]
+	if c != '`' && c != '~' {
+		return 0, 0, false
+	}
+	n := 0
+	for n < len(t) && t[n] == c {
+		n++
+	}
+	if n < 3 {
+		return 0, 0, false
+	}
+	if c == '`' && strings.ContainsRune(t[n:], '`') {
+		return 0, 0, false
+	}
+	return c, n, true
+}
+
+// isClosingFence reports whether a line closes a fence opened with the given
+// character and run length (CommonMark closing semantics): the same character
+// in a consecutive run of at least `length` characters, followed by nothing
+// but whitespace — a longer run closes a shorter one (e.g. `~~~~` closes
+// `~~~`), and the closing run cannot carry trailing content.
+func isClosingFence(line string, char byte, length int) bool {
+	t := strings.TrimSpace(line)
+	n := 0
+	for n < len(t) && t[n] == char {
+		n++
+	}
+	if n < length {
+		return false
+	}
+	for i := n; i < len(t); i++ {
+		if t[i] != ' ' && t[i] != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+// SectionRegions splits normalized text into section regions: one frontmatter
+// region (from the file start to the line before the first `##` heading) plus
+// one region per `##` heading (from the heading line to the line before the
+// next `##` heading, or the end of the text). A text with no `##` heading is
+// a single frontmatter region. Regions are located by structure, not by line
+// number, so inserting or deleting content elsewhere only moves a region —
+// its content identity is preserved. Fenced code blocks (``` or ~~~) are
+// content: heading lines inside them do not split regions.
+func SectionRegions(text string) []SectionRegion {
+	lines := strings.Split(text, "\n")
+	first := -1
+	fence := fenceTracker{}
+	for i, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if isSectionHeading(line) {
+			first = i
+			break
+		}
+		fence.advance(line)
+	}
+	if first == -1 {
+		return []SectionRegion{{Start: 1, End: len(lines), Text: text}}
+	}
+	regions := []SectionRegion{{Heading: "", Start: 1, End: first, Text: strings.Join(lines[:first], "\n")}}
+	fence = fenceTracker{}
+	for i := first; i < len(lines); {
+		j := i + 1
+		for j < len(lines) {
+			if !fence.active && isSectionHeading(lines[j]) {
+				break
+			}
+			fence.advance(lines[j])
+			j++
+		}
+		regions = append(regions, SectionRegion{Heading: headingText(lines[i]), Start: i + 1, End: j, Text: strings.Join(lines[i:j], "\n")})
+		i = j
+	}
+	return regions
+}
+
+// LocateSectionRegion locates the section region with the given heading text
+// (without the `## ` prefix). ok is false when no section has that heading
+// or when more than one section has it — duplicated headings fail closed.
+func LocateSectionRegion(text, heading string) (SectionRegion, bool) {
+	var found SectionRegion
+	seen := false
+	for _, r := range SectionRegions(text) {
+		if r.Heading != heading {
+			continue
+		}
+		if seen {
+			return SectionRegion{}, false
+		}
+		found = r
+		seen = true
+	}
+	if !seen {
+		return SectionRegion{}, false
+	}
+	return found, true
+}
+
+// ListMissingDeps reports which declared dependencies no longer hold for the
+// given normalized text. Chunk CIDs are matched against the text's current
+// content-defined chunk set; structural region dependencies
+// (`region:acceptance_items:<cid>`) and section region dependencies
+// (`region:section:<heading>:<cid>`) are re-located by structure and compared
+// by content identity. An unknown region type fails closed (reported
+// missing). Missing dependencies are returned in declaration order.
+func ListMissingDeps(text string, deps []string) []string {
+	fc := ChunkText(text)
+	present := make(map[string]bool, len(fc.Chunks))
+	for _, c := range fc.Chunks {
+		present[stripCIDPrefix(c.CID)] = true
+	}
+	var missing []string
+	for _, dep := range deps {
+		if strings.HasPrefix(dep, "region:") {
+			rest := strings.TrimPrefix(dep, "region:")
+			name, payload, found := strings.Cut(rest, ":")
+			if !found {
+				missing = append(missing, dep)
+				continue
+			}
+			switch name {
+			case "acceptance_items":
+				region, ok := AcceptanceItemsRegion(text)
+				if !ok || stripCIDPrefix(payload) != stripCIDPrefix(RegionCID(region)) {
+					missing = append(missing, dep)
+				}
+			case "section":
+				idx := strings.LastIndex(payload, ":sha256:")
+				if idx < 0 {
+					missing = append(missing, dep)
+					continue
+				}
+				heading, cid := payload[:idx], payload[idx+1:]
+				region, ok := LocateSectionRegion(text, heading)
+				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region.Text)) {
+					missing = append(missing, dep)
+				}
+			default:
+				missing = append(missing, dep)
+			}
+			continue
+		}
+		if !present[stripCIDPrefix(dep)] {
+			missing = append(missing, dep)
+		}
+	}
+	return missing
+}
+
 // DepsPresent reports whether every declared dependency still holds for the
 // given normalized text. Chunk CIDs are matched against the text's current
 // content-defined chunk set; structural region dependencies
@@ -293,34 +553,7 @@ func RegionCID(regionText string) string {
 // identity, so edits outside the region do not invalidate them. An unknown
 // region type fails closed. An empty deps list reports true.
 func DepsPresent(text string, deps []string) bool {
-	fc := ChunkText(text)
-	present := make(map[string]bool, len(fc.Chunks))
-	for _, c := range fc.Chunks {
-		present[stripCIDPrefix(c.CID)] = true
-	}
-	for _, dep := range deps {
-		if strings.HasPrefix(dep, "region:") {
-			rest := strings.TrimPrefix(dep, "region:")
-			name, cid, found := strings.Cut(rest, ":")
-			if !found {
-				return false
-			}
-			switch name {
-			case "acceptance_items":
-				region, ok := AcceptanceItemsRegion(text)
-				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region)) {
-					return false
-				}
-			default:
-				return false
-			}
-			continue
-		}
-		if !present[stripCIDPrefix(dep)] {
-			return false
-		}
-	}
-	return true
+	return len(ListMissingDeps(text, deps)) == 0
 }
 
 // stripCIDPrefix removes any algorithm prefix (e.g. "sha256:") from a stored

@@ -274,6 +274,235 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	}
 }
 
+// TestFreshUnitDetailDeltaScope verifies that a STALE gate with per-check
+// evidence prints the mechanism-derived delta scope: which checks declared
+// the stale dependencies, the unclaimed entries, and the degradation state.
+func TestFreshUnitDetailDeltaScope(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specHash := computeHash(specPath)
+	text, _ := contenthash.FileText(specPath)
+	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
+	if !ok {
+		t.Fatal("expected Description section")
+	}
+	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
+	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("expected acceptance region")
+	}
+	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
+	os.MkdirAll(cacheDir, 0755)
+	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
+		"    checks:\n" +
+		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
+		"      - check: \"5\"\n        deps:\n          - " + itemsDep + "\n" +
+		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
+		"---\nok\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit only the Description section: check 1's dep goes stale, check 5's does not.
+	os.WriteFile(specPath, []byte(strings.Replace(specContent, "Auth prose.", "Auth prose, edited.", 1)), 0644)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "DELTA SCOPE (validate):") {
+		t.Fatalf("expected delta scope section, got:\n%s", output)
+	}
+	if !strings.Contains(output, "affected checks: 1") {
+		t.Fatalf("expected check 1 affected, got:\n%s", output)
+	}
+	if strings.Contains(output, "affected checks: 5") {
+		t.Fatalf("check 5 must stay unaffected, got:\n%s", output)
+	}
+	if !strings.Contains(output, "degrades: no") {
+		t.Fatalf("expected no degradation, got:\n%s", output)
+	}
+}
+
+// TestFreshUnitDetailDeltaScopeDegrades verifies the DELTA SCOPE output when
+// every declared non-cross check is stale while the cross entry stays fresh:
+// the cross-check's delta re-run is unconditional, so the report must say
+// "degrades: yes" (the incremental re-run is a full re-run).
+func TestFreshUnitDetailDeltaScopeDegrades(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specHash := computeHash(specPath)
+	text, _ := contenthash.FileText(specPath)
+	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
+	if !ok {
+		t.Fatal("expected Description section")
+	}
+	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
+	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("expected acceptance region")
+	}
+	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	scopeRegion, ok := contenthash.LocateSectionRegion(text, "Scope")
+	if !ok {
+		t.Fatal("expected Scope section")
+	}
+	scopeDep := "region:section:Scope:" + contenthash.RegionCID(scopeRegion.Text)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
+	os.MkdirAll(cacheDir, 0755)
+	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
+		"    checks:\n" +
+		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
+		"      - check: \"5\"\n        deps:\n          - " + itemsDep + "\n" +
+		"      - check: cross\n        deps:\n          - " + scopeDep + "\n" +
+		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n      - " + scopeDep + "\n" +
+		"---\nok\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit the Description and item sections: checks 1 and 5 go stale; the
+	// cross entry (Scope section) stays fresh.
+	edited := strings.Replace(specContent, "Auth prose.", "Auth prose, edited.", 1)
+	edited = strings.Replace(edited, "Passes.", "Passes promptly.", 1)
+	os.WriteFile(specPath, []byte(edited), 0644)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "affected checks: 1, 5") {
+		t.Fatalf("expected checks 1 and 5 affected (cross stays fresh), got:\n%s", output)
+	}
+	if !strings.Contains(output, "degrades: yes") {
+		t.Fatalf("expected degradation (every declared non-cross check stale + cross always re-runs), got:\n%s", output)
+	}
+}
+
+// TestFreshUnitDetailDeltaScopeAllUnclaimed verifies the DELTA SCOPE output
+// when the cache carries per-check evidence but every stale dep is unclaimed
+// (declare-heavy extras in the file-level union): the report must say
+// "affected checks: none" instead of the legacy-cache wording.
+func TestFreshUnitDetailDeltaScopeAllUnclaimed(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specHash := computeHash(specPath)
+	text, _ := contenthash.FileText(specPath)
+	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
+	if !ok {
+		t.Fatal("expected Description section")
+	}
+	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
+	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("expected acceptance region")
+	}
+	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
+	os.MkdirAll(cacheDir, 0755)
+	// The items dep is a declare-heavy extra: it sits in the file-level union
+	// but no check declared it.
+	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
+		"    checks:\n" +
+		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
+		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
+		"---\nok\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit the acceptance items region (unclaimed by any check).
+	os.WriteFile(specPath, []byte(strings.Replace(specContent, "Passes.", "Passes promptly.", 1)), 0644)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "affected checks: none") {
+		t.Fatalf("expected 'affected checks: none', got:\n%s", output)
+	}
+	if strings.Contains(output, "no per-check evidence") {
+		t.Fatalf("cache has per-check evidence — legacy wording must not appear, got:\n%s", output)
+	}
+	if !strings.Contains(output, "unclaimed entries:") {
+		t.Fatalf("expected the unclaimed entry reported, got:\n%s", output)
+	}
+}
+
+// TestFreshUnitDetailDeltaScopeUnionViolation verifies that a STALE gate
+// whose cache violates the union discipline still prints its DELTA SCOPE
+// section with the format error and the rewrite guidance.
+func TestFreshUnitDetailDeltaScopeUnionViolation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	specHash := computeHash(specPath)
+	text, _ := contenthash.FileText(specPath)
+	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
+	if !ok {
+		t.Fatal("expected Description section")
+	}
+	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
+	os.MkdirAll(cacheDir, 0755)
+	// The file-level deps union omits check 1's dep — a union violation that
+	// fails the gate closed.
+	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
+		"    checks:\n" +
+		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
+		"    deps:\n      - sha256:0000000000000000000000000000000000000000000000000000000000000000\n" +
+		"---\nok\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "DELTA SCOPE (validate):") {
+		t.Fatalf("expected a delta scope section even for a union violation, got:\n%s", output)
+	}
+	if !strings.Contains(output, "cache format error") {
+		t.Fatalf("expected the cache format error reported, got:\n%s", output)
+	}
+	if !strings.Contains(output, "re-run validate@user_auth") {
+		t.Fatalf("expected rewrite guidance, got:\n%s", output)
+	}
+}
+
 func TestFreshUnitDetailMissingReview(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")

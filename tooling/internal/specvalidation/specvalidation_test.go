@@ -25,7 +25,8 @@ func createMinimalCandidate(t *testing.T, repoRoot, unitName string) string {
 		"version: 0.1.0\n" +
 		"unit_refs: none\n" +
 		"rule_refs: none\n" +
-		"---\n"
+		"---\n" +
+		"\n## Description\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1014,12 +1015,14 @@ func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
 // Integration: ValidateCandidate end-to-end
 // ---------------------------------------------------------------------------
 
-// createFullCandidate writes a candidate spec that passes all 7 checks.
+// createFullCandidate writes a candidate spec that passes all checks.
 func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 	t.Helper()
 	writeCandidate(t, repoRoot, unitName,
 		"---\nid: "+unitName+"\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs: none\n---\n"+
+			"\n# "+unitName+"\n\n"+
+			"## Testability / Acceptance Criteria\n\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: integration test item\n"+
@@ -1044,8 +1047,8 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 8 {
-		t.Fatalf("expected 8 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 9 {
+		t.Fatalf("expected 9 checks, got %d", len(result.Checks))
 	}
 }
 
@@ -1260,5 +1263,150 @@ func TestValidateCandidate_FailsOnCycle(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected a failed Dependency cycles check, got checks: %v", result.Checks)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Check 9: Region locatability
+// ---------------------------------------------------------------------------
+
+func TestCheckRegionLocatability_Pass(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "ok",
+		"---\nid: ok\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"\n# OK Unit\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+	result := checkRegionLocatability(repoRoot, "ok")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_NoHeadingFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "flat",
+		"---\nid: flat\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+	result := checkRegionLocatability(repoRoot, "flat")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a spec without ## headings, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "no ## heading") {
+		t.Fatalf("expected heading guidance, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "dup",
+		"---\nid: dup\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Notes\n\nFirst.\n\n## Notes\n\nSecond.\n")
+	result := checkRegionLocatability(repoRoot, "dup")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for duplicated headings, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "duplicated ## heading") {
+		t.Fatalf("expected duplication detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "reserved",
+		"---\nid: reserved\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## frontmatter\n\nReal section prose.\n\n## Description\n\nProse.\n")
+	result := checkRegionLocatability(repoRoot, "reserved")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for the reserved frontmatter heading, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "reserved heading") {
+		t.Fatalf("expected reserved-heading detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_InlineMarkerFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "inline",
+		"---\nid: inline\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set: [a, b]\n")
+	result := checkRegionLocatability(repoRoot, "inline")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for an inline marker, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "exact standalone line") {
+		t.Fatalf("expected exact-line detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_FencedOnlyMarkerFails(t *testing.T) {
+	// The only exact-form marker sits inside a code fence — the structural
+	// region locator never matches inside a fence, so the spec cannot be
+	// located even though a naive exact-line scan would pass it.
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "fencedmarker",
+		"---\nid: fencedmarker\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nReal item prose without a marker.\n")
+	result := checkRegionLocatability(repoRoot, "fencedmarker")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a fenced-only marker, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "exact standalone line") {
+		t.Fatalf("expected exact-line detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_FencedExamplePlusRealMarkerPasses(t *testing.T) {
+	// A fenced example with an exact marker is content; the real marker
+	// outside the fence is what the locator finds.
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "both",
+		"---\nid: both\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: real.core\n    description: Real.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+	result := checkRegionLocatability(repoRoot, "both")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS with a real marker plus a fenced example, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_MalformedHeadingFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "malformed",
+		"---\nid: malformed\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n##NoSpace\n")
+	result := checkRegionLocatability(repoRoot, "malformed")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a malformed heading, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "malformed heading") {
+		t.Fatalf("expected malformed-heading detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_FencedHeadingDoesNotFail(t *testing.T) {
+	// A fenced `##`-like line is content — it must not be reported as a
+	// heading problem and must not break region splitting.
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "fenced",
+		"---\nid: fenced\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\n##inside fence\n## not a real heading\n```\n\n## Next\n")
+	result := checkRegionLocatability(repoRoot, "fenced")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for fenced heading-like lines, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_RetiredSpecPasses(t *testing.T) {
+	// A retiring spec is exempt from section structure — its content is
+	// being removed, so region locatability must not be required (same
+	// exemption as the other mechanical checks).
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "retiring",
+		"---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
+	result := checkRegionLocatability(repoRoot, "retiring")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for a retiring spec, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestValidateCandidate_RetiredSpecPassesAllChecks(t *testing.T) {
+	// End-to-end: a retiring spec (no ## headings, no acceptance items)
+	// must pass every mechanical check — Check 9 is skipped like the rest.
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "retiring",
+		"---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
+	result := ValidateCandidate(repoRoot, "retiring")
+	if !result.Passed {
+		t.Fatalf("expected PASS for a retiring spec, got checks: %v", result.Checks)
 	}
 }

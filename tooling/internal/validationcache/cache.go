@@ -73,10 +73,26 @@ type cacheFile struct {
 // content hash at run time (informational: detects changes outside the
 // dependency chunks). Deps are the content identifiers (CIDs) of the chunks
 // the run actually depended on — freshness is judged against Deps only.
+// Checks is the per-check dependency breakdown (check key -> the CIDs that
+// check's judgment depended on); it is the mechanism-derived delta scope
+// input (see StaleRegions) and is optional — a cache without it degrades to
+// file-level delta derivation.
 type cacheFileEntry struct {
-	Path string   `yaml:"path"`
-	Hash string   `yaml:"hash"`
-	Deps []string `yaml:"deps"`
+	Path   string       `yaml:"path"`
+	Hash   string       `yaml:"hash"`
+	Deps   []string     `yaml:"deps"`
+	Checks []checkEntry `yaml:"checks,omitempty"`
+}
+
+// checkEntry is one check's dependency declaration inside a files entry:
+// the check key (validate: "1"-"8"; verify: acceptance item id; review: the
+// batch/file dimension) and the CIDs the check's judgment actually depended
+// on. The file-level Deps list of the same entry is the union of all check
+// deps plus any undeclared remainder — the promote gate judges freshness on
+// that union; the per-check breakdown exists for delta scope derivation only.
+type checkEntry struct {
+	Check string   `yaml:"check"`
+	Deps  []string `yaml:"deps"`
 }
 
 // CheckValidate reads and validates the validate cache for the given unit.
@@ -329,6 +345,10 @@ func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error)
 	var missingFiles []string
 	var changedFiles []string
 	for _, entry := range cache.Files {
+		if ok, why := checksUnionSubsetOfDeps(entry); !ok {
+			mismatchedFiles = append(mismatchedFiles, fmt.Sprintf("%s (per-check deps missing from the file-level deps union: %s)", entry.Path, why))
+			continue
+		}
 		state, changed, err := fileFreshness(repoRoot, entry)
 		if err != nil {
 			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
@@ -471,6 +491,206 @@ func deleteCache(repoRoot, targetKind, targetName, command string) error {
 		return nil // already gone
 	}
 	return os.Remove(cachePath)
+}
+
+// StaleScope is the mechanism-derived delta scope for one cache file:
+// which declared dependencies went stale and which check keys declared
+// them. Degrades reports that every declared check is affected — the
+// delta re-run would be nearly a full re-run (for rule targets it
+// reports that the rule file itself — a whole-file declaration — went
+// stale, which stales every rule-body check). Unclaimed lists the file
+// entries whose stale dependencies no check declared — the caller must
+// map them to the affected checks by the command's logical-reference
+// rules or by semantic derivation (see framework/verification_scope.md
+// §Delta Runs). Unreadable lists the file entries that could not be
+// resolved or read during derivation — the promote gate reports those;
+// delta derivation works only on files that exist.
+type StaleScope struct {
+	StaleDeps  []string // declared dependency CIDs that no longer hold (deduplicated, declaration order)
+	Affected   []string // check keys with at least one stale dependency (deduplicated, declaration order)
+	Unclaimed  []string // file entries with stale deps no check declared (deduplicated, declaration order)
+	Unreadable []string // file entries that could not be resolved or read (deduplicated, declaration order)
+	HasChecks  bool     // the cache carries per-check declarations (false → file-level derivation only)
+	Degrades   bool     // every declared check is affected — delta ≈ full re-run
+}
+
+// checksUnionSubsetOfDeps verifies that every per-check dependency CID in a
+// files entry is also declared in the entry's file-level deps union. A
+// check-level dep missing from the union means the promote gate would judge
+// freshness on a narrower basis than the check declared — content the check
+// depends on could change without staling the cache (false fresh). Extra
+// file-level deps beyond the check union are legal (declare-heavy
+// conservatism). Entries without per-check declarations trivially pass.
+func checksUnionSubsetOfDeps(entry cacheFileEntry) (bool, string) {
+	if len(entry.Checks) == 0 {
+		return true, ""
+	}
+	depsSet := make(map[string]bool, len(entry.Deps))
+	for _, d := range entry.Deps {
+		depsSet[d] = true
+	}
+	var missing []string
+	for _, c := range entry.Checks {
+		for _, d := range c.Deps {
+			if !depsSet[d] {
+				missing = append(missing, fmt.Sprintf("%s (check %s)", d, c.Check))
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return false, strings.Join(missing, ", ")
+	}
+	return true, ""
+}
+
+// DeriveStaleScope reads the cache file for the given target and command and
+// derives the mechanism-level delta scope: the declared dependencies that
+// no longer hold for the current file contents and the check keys that
+// declared them (see framework/verification_scope.md §Delta Runs). Files
+// whose path resolves to nothing (unresolved logical references) and files
+// that cannot be read are reported in Unreadable — the promote gate reports
+// those; delta derivation works only on files that exist. A cache without
+// per-check declarations (HasChecks false) leaves Affected empty — the
+// caller then derives the scope from the file-level stale sources instead.
+// Entries whose stale dependencies no check declared are reported in
+// Unclaimed — the caller maps them to checks by rule (logical references)
+// or semantic derivation; they are never silently carried over. For rule
+// targets, staleness of the rule file itself (a whole-file declaration)
+// sets Degrades: any change to it stales every rule-body check.
+func DeriveStaleScope(repoRoot, targetKind, targetName, command string) (*StaleScope, error) {
+	cachePath := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return nil, err
+	}
+	scope := &StaleScope{}
+	var declared []string
+	declaredSeen := make(map[string]bool)
+	affectedSeen := make(map[string]bool)
+	staleSeen := make(map[string]bool)
+	unclaimedSeen := make(map[string]bool)
+	unreadableSeen := make(map[string]bool)
+	ruleFileStale := false
+	for _, entry := range cache.Files {
+		if ok, why := checksUnionSubsetOfDeps(entry); !ok {
+			return nil, fmt.Errorf("cache format error in %s: per-check deps missing from the file-level deps union: %s", entry.Path, why)
+		}
+		fullPath := resolveEntryPath(repoRoot, entry.Path)
+		if fullPath == "" {
+			if !unreadableSeen[entry.Path] {
+				unreadableSeen[entry.Path] = true
+				scope.Unreadable = append(scope.Unreadable, entry.Path+" (unresolved)")
+			}
+			continue
+		}
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			if !unreadableSeen[entry.Path] {
+				unreadableSeen[entry.Path] = true
+				scope.Unreadable = append(scope.Unreadable, fmt.Sprintf("%s (unreadable: %v)", entry.Path, err))
+			}
+			continue
+		}
+		text := specpaths.NormalizeText(string(data))
+		if len(entry.Checks) == 0 {
+			missing := contenthash.ListMissingDeps(text, entry.Deps)
+			for _, m := range missing {
+				if !staleSeen[m] {
+					staleSeen[m] = true
+					scope.StaleDeps = append(scope.StaleDeps, m)
+				}
+			}
+			if len(missing) > 0 && !unclaimedSeen[entry.Path] {
+				unclaimedSeen[entry.Path] = true
+				scope.Unclaimed = append(scope.Unclaimed, entry.Path)
+			}
+			if targetKind == "rule" && isRuleFileEntry(repoRoot, fullPath, targetName) && len(missing) > 0 {
+				ruleFileStale = true
+			}
+			continue
+		}
+		scope.HasChecks = true
+		claimed := make(map[string]bool)
+		for _, c := range entry.Checks {
+			if !declaredSeen[c.Check] {
+				declaredSeen[c.Check] = true
+				declared = append(declared, c.Check)
+			}
+			missing := contenthash.ListMissingDeps(text, c.Deps)
+			for _, m := range missing {
+				if !staleSeen[m] {
+					staleSeen[m] = true
+					scope.StaleDeps = append(scope.StaleDeps, m)
+				}
+			}
+			if len(missing) > 0 && !affectedSeen[c.Check] {
+				affectedSeen[c.Check] = true
+				scope.Affected = append(scope.Affected, c.Check)
+			}
+			for _, d := range c.Deps {
+				claimed[d] = true
+			}
+		}
+		// File-level stale deps no check declared (whole-file declarations,
+		// declare-heavy extras) have no check association — report the entry
+		// as unclaimed instead of silently ignoring the staleness.
+		unclaimedMissing := 0
+		for _, m := range contenthash.ListMissingDeps(text, entry.Deps) {
+			if claimed[m] {
+				continue
+			}
+			unclaimedMissing++
+			if !staleSeen[m] {
+				staleSeen[m] = true
+				scope.StaleDeps = append(scope.StaleDeps, m)
+			}
+		}
+		if unclaimedMissing > 0 && !unclaimedSeen[entry.Path] {
+			unclaimedSeen[entry.Path] = true
+			scope.Unclaimed = append(scope.Unclaimed, entry.Path)
+		}
+	}
+	// Degradation: the affected set always includes the cross-check — its
+	// delta re-run is unconditional (see framework/verification_scope.md
+	// §Delta Runs) — so the re-run covers every declared check exactly when
+	// every declared non-cross check is affected. The cross key is a
+	// recording convention: whether it is declared or fresh does not change
+	// the derived scope (see framework/validation_cache.md §Format). A cache
+	// declaring only "cross" degrades too — the single re-run check covers
+	// the whole declaration.
+	if scope.HasChecks && len(declared) > 0 {
+		nonCrossDeclared := 0
+		nonCrossAffected := 0
+		for _, k := range declared {
+			if k != "cross" {
+				nonCrossDeclared++
+			}
+		}
+		for _, k := range scope.Affected {
+			if k != "cross" {
+				nonCrossAffected++
+			}
+		}
+		if nonCrossDeclared == 0 || nonCrossAffected == nonCrossDeclared {
+			scope.Degrades = true
+		}
+	}
+	if targetKind == "rule" && ruleFileStale {
+		scope.Degrades = true
+	}
+	return scope, nil
+}
+
+// isRuleFileEntry reports whether a resolved cache entry path is the rule
+// file itself (candidate or stable layer). The rule file is a whole-file
+// declaration in rule validate caches, so its staleness stales every
+// rule-body check. The comparison runs on the resolved path (filepath.Clean),
+// so the documented path spellings (`./` prefixes, absolute paths, platform
+// separators) are all equivalent here, matching resolveEntryPath.
+func isRuleFileEntry(repoRoot, fullPath, ruleID string) bool {
+	clean := filepath.Clean(fullPath)
+	return clean == filepath.Clean(resolvePath(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))) ||
+		clean == filepath.Clean(resolvePath(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID)))
 }
 
 // DeleteCache removes a specific cache file (validate or verify) for the given unit.
@@ -638,6 +858,10 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	var missingFiles []string
 	var changedFiles []string
 	for _, entry := range cache.Files {
+		if ok, why := checksUnionSubsetOfDeps(entry); !ok {
+			mismatchedFiles = append(mismatchedFiles, fmt.Sprintf("%s (per-check deps missing from the file-level deps union: %s)", entry.Path, why))
+			continue
+		}
 		state, changed, err := fileFreshness(repoRoot, entry)
 		if err != nil {
 			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
@@ -712,8 +936,11 @@ func readCache(path string) (*cacheFile, error) {
 
 	cache := &cacheFile{}
 	var currentEntry *cacheFileEntry
+	var currentCheck *checkEntry
 	inFilesBlock := false
-	inDepsBlock := false
+	inFilesDepsBlock := false
+	inChecksBlock := false
+	inCheckDepsBlock := false
 
 	for _, line := range fmLines {
 		trimmed := strings.TrimSpace(line)
@@ -724,25 +951,52 @@ func readCache(path string) (*cacheFile, error) {
 		// Detect files block entries
 		if trimmed == "files:" {
 			inFilesBlock = true
-			inDepsBlock = false
+			inFilesDepsBlock = false
+			inChecksBlock = false
+			inCheckDepsBlock = false
 			continue
 		}
 
 		if inFilesBlock {
 			if strings.HasPrefix(trimmed, "- path:") {
 				// New entry
-				inDepsBlock = false
+				inFilesDepsBlock = false
+				inChecksBlock = false
+				inCheckDepsBlock = false
+				currentCheck = nil
 				path := strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:"))
 				path = strings.Trim(path, "\"'")
 				currentEntry = &cacheFileEntry{Path: path}
 				cache.Files = append(cache.Files, *currentEntry)
 				continue
 			}
-			if trimmed == "deps:" {
-				inDepsBlock = true
+			if inChecksBlock && strings.HasPrefix(trimmed, "- check:") {
+				// New check entry inside a checks block
+				inCheckDepsBlock = false
+				check := strings.TrimSpace(strings.TrimPrefix(trimmed, "- check:"))
+				check = strings.Trim(check, "\"'")
+				currentCheck = &checkEntry{Check: check}
+				if currentEntry != nil {
+					currentEntry.Checks = append(currentEntry.Checks, *currentCheck)
+					cache.Files[len(cache.Files)-1] = *currentEntry
+				}
 				continue
 			}
-			if inDepsBlock {
+			if inCheckDepsBlock {
+				if strings.HasPrefix(trimmed, "-") {
+					dep := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+					dep = strings.Trim(dep, "\"'")
+					if currentCheck != nil && currentEntry != nil {
+						currentCheck.Deps = append(currentCheck.Deps, dep)
+						currentEntry.Checks[len(currentEntry.Checks)-1] = *currentCheck
+						cache.Files[len(cache.Files)-1] = *currentEntry
+					}
+					continue
+				}
+				// A non-list line ends the check deps block
+				inCheckDepsBlock = false
+			}
+			if inFilesDepsBlock {
 				if strings.HasPrefix(trimmed, "-") {
 					dep := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
 					dep = strings.Trim(dep, "\"'")
@@ -752,8 +1006,21 @@ func readCache(path string) (*cacheFile, error) {
 					}
 					continue
 				}
-				// A non-list line ends the deps block
-				inDepsBlock = false
+				// A non-list line ends the files deps block
+				inFilesDepsBlock = false
+			}
+			if inChecksBlock && trimmed == "deps:" && currentCheck != nil && indentLevel(line) >= 8 {
+				inCheckDepsBlock = true
+				continue
+			}
+			if trimmed == "deps:" {
+				inFilesDepsBlock = true
+				continue
+			}
+			if trimmed == "checks:" {
+				inChecksBlock = true
+				currentCheck = nil
+				continue
 			}
 			if strings.HasPrefix(trimmed, "hash:") && currentEntry != nil {
 				hash := strings.TrimSpace(strings.TrimPrefix(trimmed, "hash:"))
@@ -766,7 +1033,9 @@ func readCache(path string) (*cacheFile, error) {
 			// we might have left the files block
 			if currentEntry != nil {
 				inFilesBlock = false
-				inDepsBlock = false
+				inFilesDepsBlock = false
+				inChecksBlock = false
+				inCheckDepsBlock = false
 			}
 		}
 
@@ -845,6 +1114,17 @@ func normalizeHash(stored string) string {
 		return stored[idx+1:]
 	}
 	return stored
+}
+
+// indentLevel returns the leading whitespace count of a frontmatter line.
+// It disambiguates the `deps:` block of a checks entry (8 spaces, per the
+// cache format) from the file-level `deps:` block (4 spaces).
+func indentLevel(line string) int {
+	n := 0
+	for n < len(line) && (line[n] == ' ' || line[n] == '\t') {
+		n++
+	}
+	return n
 }
 
 func resolvePath(repoRoot, filePath string) string {

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/unitgraph"
 )
@@ -766,5 +767,100 @@ func checkDependencyCycles(repoRoot, unitName string) CheckResult {
 		Name:    "Dependency cycles",
 		Status:  Fail,
 		Details: fmt.Sprintf("circular dependency: %s. %s", strings.Join(involved, "; "), cycleGuidance),
+	}
+}
+
+// ------------------------------------------------------------
+// Check 9: Region locatability
+// ------------------------------------------------------------
+func checkRegionLocatability(repoRoot, unitName string) CheckResult {
+	path := specPath(repoRoot, unitName)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
+		}
+	}
+	content := string(data)
+
+	fm := specpaths.ReadFrontmatterStringMap(content)
+	if strings.TrimSpace(fm["status"]) == "retired" {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Pass,
+			Details: "spec is marked retired — region locatability not required",
+		}
+	}
+
+	// 1. When the content mentions acceptance_item_set at all, the marker
+	// must be locatable — the structural region locator
+	// (contenthash.AcceptanceItemsRegion) matches only on a line whose
+	// trimmed form is exactly `acceptance_item_set:` and never inside a
+	// fenced code block, so inline, trailing-text, and fenced-only
+	// variants all fail the locator. The locator is the single judge of
+	// locatability — a scan that duplicated its rules would drift.
+	if strings.Contains(content, "acceptance_item_set:") {
+		if _, ok := contenthash.AcceptanceItemsRegion(content); !ok {
+			return CheckResult{
+				Name:    "Region locatability",
+				Status:  Fail,
+				Details: "acceptance_item_set: must appear as an exact standalone line outside a code fence — the structural region locator matches only the exact line outside fences; inline, trailing-text, or fenced variants cannot be located",
+			}
+		}
+	}
+
+	// 2. At least one ## heading: the frontmatter + section region model
+	// needs a section boundary.
+	regions := contenthash.SectionRegions(content)
+	if len(regions) < 2 {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: "spec has no ## heading — section regions cannot be located; restructure per framework/spec_writing_guide.md §13",
+		}
+	}
+
+	// 3. Unique headings: a duplicated heading cannot be located
+	// unambiguously and fails closed in the region locator.
+	seen := make(map[string]bool)
+	for _, r := range regions {
+		if r.Heading == "" {
+			continue
+		}
+		if r.Heading == "frontmatter" {
+			return CheckResult{
+				Name:    "Region locatability",
+				Status:  Fail,
+				Details: "reserved heading name \"frontmatter\" — the --section declaration spells the pre-heading region with \"frontmatter\", so a real ## frontmatter section cannot be declared by section regions; rename it",
+			}
+		}
+		if seen[r.Heading] {
+			return CheckResult{
+				Name:    "Region locatability",
+				Status:  Fail,
+				Details: fmt.Sprintf("duplicated ## heading %q — section regions cannot be located unambiguously; rename one of them", r.Heading),
+			}
+		}
+		seen[r.Heading] = true
+	}
+
+	// 4. Heading format: `## ` must be followed by heading text. A
+	// near-miss line (`##x`, or a bare `##`) is content to the splitter but
+	// almost always means the author intended a heading.
+	if malformed := contenthash.MalformedHeadingLines(content); len(malformed) > 0 {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: fmt.Sprintf("malformed heading line(s): %s — must be `## ` followed by heading text", strings.Join(malformed, ", ")),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Region locatability",
+		Status:  Pass,
+		Details: fmt.Sprintf("%d section regions located (%d ## headings)", len(regions), len(seen)),
 	}
 }

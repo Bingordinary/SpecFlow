@@ -661,6 +661,8 @@ unit_refs: none
 rule_refs: none
 ---
 
+## Testability / Acceptance Criteria
+
 acceptance_item_set:
   - id: test.check
     description: Test check.

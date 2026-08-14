@@ -306,6 +306,12 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "appendix", aStatus, aDetail)
 
+	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, map[string]gateStatus{
+		"validate": vStatus,
+		"verify":   vfStatus,
+		"review":   rStatus,
+	})
+
 	fmt.Fprintln(stdout)
 	if nonFresh == 0 {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: yes\n")
@@ -313,6 +319,64 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — %d gate(s) need attention\n", nonFresh)
 	}
 	return nil
+}
+
+// writeDeltaScopeSections prints the mechanism-derived delta scope (see
+// validationcache.DeriveStaleScope) for every STALE gate. The scope is the
+// delta re-run input: which checks declared the stale dependencies, which
+// file entries are unclaimed (no check declared their stale deps), which
+// entries could not be resolved or read, and whether every declared check
+// is affected (degradation). Gates that are not STALE print nothing — the
+// fresh report's own gate status already covers them.
+func writeDeltaScopeSections(stdout io.Writer, absRoot, targetKind, targetName string, statuses map[string]gateStatus) {
+	commands := []string{"validate", "verify", "review"}
+	for _, cmd := range commands {
+		if statuses[cmd] != gateStale {
+			continue
+		}
+		scope, err := validationcache.DeriveStaleScope(absRoot, targetKind, targetName, cmd)
+		if err != nil {
+			fmt.Fprintf(stdout, "\nDELTA SCOPE (%s):\n  cache format error: %v — re-run %s@%s to rewrite the cache\n", cmd, err, cmd, targetName)
+			continue
+		}
+		fmt.Fprintf(stdout, "\nDELTA SCOPE (%s):\n", cmd)
+		if len(scope.StaleDeps) == 0 {
+			if len(scope.Unreadable) > 0 {
+				fmt.Fprintln(stdout, "  no stale dependency CIDs — staleness comes from missing/unreadable files or cache metadata")
+			} else {
+				fmt.Fprintln(stdout, "  no stale dependencies — staleness comes from a non-dependency cause (cache metadata)")
+			}
+			if len(scope.Unreadable) > 0 {
+				fmt.Fprintf(stdout, "  unreadable entries: %s\n", strings.Join(scope.Unreadable, ", "))
+			}
+			continue
+		}
+		if scope.HasChecks {
+			if len(scope.Affected) > 0 {
+				fmt.Fprintf(stdout, "  affected checks: %s\n", strings.Join(scope.Affected, ", "))
+			} else {
+				fmt.Fprintln(stdout, "  affected checks: none — the stale deps are all unclaimed")
+			}
+		} else {
+			fmt.Fprintln(stdout, "  no per-check evidence — derive the scope from the stale entries semantically (legacy cache or whole-file declarations)")
+		}
+		if len(scope.Unclaimed) > 0 {
+			fmt.Fprintf(stdout, "  unclaimed entries: %s\n", strings.Join(scope.Unclaimed, ", "))
+		}
+		if len(scope.Unreadable) > 0 {
+			fmt.Fprintf(stdout, "  unreadable entries: %s\n", strings.Join(scope.Unreadable, ", "))
+		}
+		fmt.Fprintf(stdout, "  stale deps: %d\n", len(scope.StaleDeps))
+		if scope.Degrades {
+			if targetKind == "rule" {
+				fmt.Fprintln(stdout, "  degrades: yes — the rule file is a whole-file declaration, any change stales every rule-body check")
+			} else {
+				fmt.Fprintln(stdout, "  degrades: yes — every declared check is affected, an incremental re-run is a full re-run")
+			}
+		} else {
+			fmt.Fprintln(stdout, "  degrades: no")
+		}
+	}
 }
 
 func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) error {
@@ -381,6 +445,8 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
 	fmt.Fprintln(stdout, "verify and review do not apply to rules.")
+
+	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, map[string]gateStatus{"validate": vStatus})
 
 	fmt.Fprintln(stdout)
 	if gatePassed(vStatus) {
