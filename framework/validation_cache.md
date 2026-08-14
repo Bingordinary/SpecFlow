@@ -70,6 +70,83 @@ no `deps` but a non-empty file fails closed (see Staleness Detection).
 path, so `./` prefixes, absolute paths, and platform separators in the
 recorded path are equivalent.
 
+#### Per-check evidence (`checks`)
+
+For spec files whose judgments differ in read surface, the `files` entry also
+carries the per-check breakdown — which check key depended on which CIDs:
+
+```yaml
+files:
+  - path: docs/specs/units/candidate/unit_user_auth.md
+    hash: sha256:abc123...
+    checks:
+      - check: "1"                        # agent validate check 1 (structural integrity) — its structural scans span the whole body, so declare every region it read (here: the frontmatter region and the Description section; the item region is check 5's)
+        deps:
+          - region:section::sha256:111... # frontmatter region dep (empty heading)
+          - region:section:Description:sha256:444...
+      - check: "5"                        # agent validate check 5 (acceptance coverage & correctness) — reads the item region + contract sections
+        deps:
+          - region:acceptance_items:sha256:222...
+          - region:section:Contract:sha256:333...
+    deps:                                 # union of all check deps — the promote gate's judgment basis
+      - region:section::sha256:111...
+      - region:section:Description:sha256:444...
+      - region:acceptance_items:sha256:222...
+      - region:section:Contract:sha256:333...
+```
+
+- Check keys are command-specific: validate uses the **agent check number**
+  `"1"`–`"8"` (the 8 agent checks of `validate@{unit}`; the mechanical
+  `specflowctl validate` Check 9 — region locatability — is a gate-evidence
+  support check and takes no per-check declaration); verify uses the
+  acceptance item id the judgment aligned (e.g. `auth.login`); review uses the
+  batch/file dimension the assessment covered. The per-check granularity is
+  the mechanism-derived delta scope input (see `framework/verification_scope.md`
+  §Delta Runs) — it exists for delta derivation, not for the promote gate.
+  The cross-check (unit validate/verify/review) uses the reserved key `"cross"`
+  and reports its scope like any other check; its delta re-run is unconditional
+  (always part of the affected set), so the key is a recording convention, not
+  a derivation input — a `checks` entry with key `"cross"` derives its stale
+  deps like any other key (only a stale declared dep puts it in the affected
+  list), and omitting it does not change the derived scope. The degradation
+  conclusion is the one place the unconditional re-run is material: the
+  affected set always includes the cross-check, so a delta run covers every
+  declared check exactly when every declared **non-cross** check is affected —
+  a cache declaring only `"cross"` degrades too. Whether `"cross"` is declared
+  or fresh therefore never changes the degradation conclusion.
+- The file-level `deps` remains the union of all declared check deps (plus
+  any undeclared remainder). **The promote gate judges freshness on that
+  union only**, so the gate logic is identical with or without `checks`.
+- A cache written before per-check evidence (no `checks` field) stays fully
+  valid: the gate reads the union `deps` as before, and a delta run degrades
+  to file-level scope derivation (see `framework/verification_scope.md`
+  §Delta Runs → Incremental scope).
+- `checks` is optional per file: code files and contract files (whole-file
+  declarations) may omit it — a single judgment surface has nothing to break
+  down. The parser distinguishes the check-level `deps:` block (8-space
+  indent, inside a `checks` entry) from the file-level `deps:` block
+  (4-space indent).
+- Entries without a per-check breakdown (logical references, contract files,
+  whole-file declarations, declare-heavy extras) leave their deps **unclaimed**
+  by any check. The delta scope derivation reports such entries when they go
+  stale and maps them to checks by the command's fixed association or by
+  semantic derivation — they are never silently carried over (see
+  `framework/verification_scope.md` §Delta Runs → Incremental scope).
+- **Union discipline:** every per-check dep must also appear in the entry's
+  file-level `deps` union. The promote gate and the delta scope derivation
+  fail closed on a violation — a check dep missing from the union would let
+  content the check declared change without staling the cache (false fresh).
+  Extra file-level deps beyond the check union are legal (declare-heavy
+  conservatism).
+- **Whole-body checks declare everything they read:** a check whose steps
+  scan the whole file (e.g. validate Check 1 — prose-path hygiene, layer-path
+  scan, and section-structure checks run over every section) must declare
+  every region its judgment read, not just the frontmatter. Under-declaring
+  such a check leaves its evidence stale-safe: an edit to an undeclared
+  section does not stale the cache, and promote can proceed on a judgment
+  made against older content (false fresh). When unsure whether a region
+  influenced a check, declare it (declare-heavy principle).
+
 ### Logical References
 
 Cross-unit and rule dependencies — any dependency object resolved by name: a dependency unit main spec read by unit `validate` Check 7, a protocol appendix of a dependency unit read by unit `validate` Check 7, a rule file read by unit `validate` Check 8, or a unit spec file scanned by rule `validate` consumer discovery — are recorded as **logical references** instead of physical paths:
@@ -95,11 +172,12 @@ A logical reference resolves at freshness-check time to the **current-layer** fi
 
 ### Structural Region Dependencies
 
-Chunk CIDs are the chunk-boundary granularity (~2 KB, content-defined): a small file is a single chunk, so a line-range declaration on it degenerates to the whole file. For spec content whose semantic granularity is finer than a chunk — the acceptance item set of a dependency unit — a **structural region dependency** is used instead:
+Chunk CIDs are the chunk-boundary granularity (~2 KB, content-defined): a small file is a single chunk, so a line-range declaration on it degenerates to the whole file. For spec content whose semantic granularity is finer than a chunk, a **structural region dependency** is used instead:
 
 - `specflowctl gate-evidence --file <path> --acceptance-items` emits `region:acceptance_items:<cid>`, the content identifier of the `acceptance_item_set` region (from the marker to the next top-level heading).
-- Freshness re-locates the region by structure (the marker and heading, not line numbers) and compares the region's CID. Edits outside the region — even inside the same content-defined chunk — do not stale the cache; edits inside it do.
-- Region dependencies are the precise declaration mode for cross-unit checks, which depend on a dependency unit's acceptance item set and not on its prose. Rule files and protocol appendices are contract files (the whole file is the carrier) and keep whole-file declarations.
+- `specflowctl gate-evidence --file <path> --section <heading>` emits `region:section:<heading>:<cid>`, the content identifier of the section region with that heading text — the frontmatter region (heading `""`, from the file start to the line before the first `##` heading) or one `##` heading section (the heading line through the line before the next `##` heading; `###` and deeper headings belong to their `##` section). The heading line is part of the region, so renaming a heading changes its CID. `--section` is repeatable; `--sections` lists every section region (heading, line range, CID) without declaring anything.
+- Freshness re-locates the region by structure (the marker/heading, not line numbers) and compares the region's CID. Edits outside the region — even inside the same content-defined chunk — do not stale the cache; edits inside it do. A section heading that is missing or duplicated fails closed (the section cannot be located unambiguously).
+- Region dependencies are the precise declaration mode for judgments whose read surface is a spec region: cross-unit checks (a dependency unit's acceptance item set — `region:acceptance_items`), and own-spec judgments that read only some sections (e.g. validate Check 5's item region + contract sections — `region:acceptance_items` + `region:section:<heading>`). Rule files and protocol appendices are contract files (the whole file is the carrier) and keep whole-file declarations.
 
 `mode: full` means a complete run of all checks/steps — the judgment set is complete, not a subset. Only complete-coverage runs write caches: full runs (`validate@{target}` / `verify@{unit}` / `review@{unit}`) and delta runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`, see `framework/verification_scope.md` §Delta Runs). Targeted runs (`:check-{n}` / `:{keyword}`) never write, so `mode` is always `full`. The `basis` field distinguishes the two writers for audit: `basis: full` (or absent) means the cache came from a full run; `basis: delta` means a delta run re-executed the stale judgments and carried the rest over from the previous cache.
 
@@ -228,6 +306,19 @@ false-fresh cache. When unsure whether content influenced a judgment,
 declare it. During `verify`/`review`, ranges must cover every function or
 structure whose behavior the alignment judgment relies on.
 
+**Section-region declarations for unit specs:** for the unit's own main spec,
+declare dependencies as **section regions** (`--section <heading>`, see
+§Structural Region Dependencies) instead of line ranges: the sections are
+located by mechanism, the declaration needs no line arithmetic, and an edit
+in one section never stales a judgment that declared another. This is the
+primary declaration mode for own-spec judgments — each check declares the
+sections its judgment actually read (the per-check `checks` mapping, see
+§Format). A unit spec that cannot be split into sections (no `##` headings,
+or duplicated headings) fails closed when declared by section — restructure
+the spec per `framework/spec_writing_guide.md` §13 before declaring.
+Whole-file declarations remain the mode for code files, rule files, and
+protocol appendices (the whole file is the carrier).
+
 **Known limit:** the framework cannot verify that the agent's judgment
 depended only on the declared ranges. Under-declaration can produce a
 false-fresh cache that the mechanical gate cannot detect. The gate reports
@@ -251,7 +342,7 @@ exists.
 | `review@{unit}` full PASS | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: false`, `hash` + `deps` evidence for every file read, and findings body |
 | `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: true`, includes finding counts and findings body |
 | `review@{unit}` full run (stable-only target) | Write `review_result.md` with `target: stable` (PASS or FAIL) — the quality confirmation cache, consumed by `fresh@stable` only |
-| `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta PASS | Rewrite the gate's cache with `mode: full`, `basis: delta`: new `hash` + `deps` evidence for the re-run judgments' files, the original evidence for carried-over judgments' files, fresh `timestamp` (see `framework/verification_scope.md` §Delta Runs) |
+| `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta PASS | Rewrite the gate's cache with `mode: full`, `basis: delta`: new `hash` + `deps` + `checks` evidence for the re-run judgments' files, the original evidence (including the per-check `checks` breakdown) for carried-over judgments' files, fresh `timestamp` (see `framework/verification_scope.md` §Delta Runs) |
 | Delta run FAIL (P0/P1) | validate/verify: delete the cache. review: write with `blocking: true`. Promote must not proceed |
 | Targeted run (`:check-{n}` / `:{keyword}`) PASS | Report findings only — do NOT write any cache. A targeted run never writes a cache (the promote gate accepts only complete-coverage-run caches, and writing would not downgrade an existing cache) |
 | Targeted run (`:check-{n}` / `:{keyword}`) FAIL (P0/P1) | Delete the cache regardless of prior state. P0/P1 at any granularity means promote must not proceed |

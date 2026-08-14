@@ -163,6 +163,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
    - validate full: "all 8 checks + cross-check" (unit) / "all 8 checks" (rule — rules have no cross-check); validate delta: re-run checks {list} + cross-check (unit; rules have no cross-check), carried-over checks {list} declared (see §Delta Runs); validate targeted (`:check-{n}` / `:{keyword}`): executed directly by the main agent, no sub-agent is launched (see §Targeted Runs)
    - verify: section titles and acceptance item ids as anchors (not line numbers — the spec is a moving target)
    - review: the file list itself is the anchor
+   - **Delta runs (validate/verify/review):** the prompt's Check/Batch scope lists the re-run checks only; the sub-agent reports `Dependency scope` for the re-run checks it actually executed — carried-over checks are not re-executed and get no new scope declaration (their evidence stays in the cache unchanged)
 5. **Read surface** — the files the sub-agent may need:
    - validate (unit): the spec and its referenced dependency files (`unit_refs`, `rule_refs`, `affects.files` document targets); implementation code is not read
    - validate (rule): the candidate rule file, its stable sibling if present (Check 4), and the unit spec files under `docs/specs/units/` (Check 5 existence check and Check 7 consumer discovery)
@@ -186,7 +187,9 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | candidate / stable layer | The spec layers: candidate is the working draft, stable is accepted truth; the layer is encoded by the file path | `framework/concepts.md` §The Two Layers |
 | ALIGNED / MISMATCH / CANNOT_DETERMINE | The per-claim verdicts; fold order MISMATCH > CANNOT_DETERMINE > ALIGNED | `framework/unit_verify_checklist.md` §Verdict folding |
 | deterministic evidence | A reproducible static check: a grep command with its result, a file existence check, or a file:line read | `framework/unit_verify_checklist.md` Step 2 |
-| Dependency scope | The report's per-file line-range declaration (1-based closed ranges; `all` for whole-file judgments), used by the main agent when writing the cache | `framework/unit_verify_checklist.md` §Output Format |
+| Dependency scope | The report's per-check dependency declaration: one line per check stating the file and the section-region headings (or line ranges, or `all`) that check's judgment depended on, used by the main agent when writing the cache's per-check `checks` mapping | `framework/unit_verify_checklist.md` §Output Format |
+| section region | A content region of a markdown file located by heading: the frontmatter region (file head through the line before the first `##` heading, heading `""`) or one `##` heading section (heading line through the line before the next `##` heading; deeper headings belong to their `##` section). Declared as `region:section:<heading>:<cid>` | `framework/validation_cache.md` §Structural Region Dependencies |
+| structural region | A content region located by structure rather than line numbers: the acceptance item set (`region:acceptance_items:<cid>`, from the `acceptance_item_set:` marker to the next top-level heading) or a section region; edits outside the region do not stale a declaration on it | `framework/validation_cache.md` §Structural Region Dependencies |
 | Part A / Part B | The two parts of the test design sub-check: coverage completeness / test meaningfulness | `framework/unit_verify_checklist.md` Step 2 |
 | B1-B6 | The six Part B checks: mock density, assertion authenticity, tautological assertions, all-happy-path, mock-through, test naming | `framework/unit_verify_checklist.md` Step 2 |
 | stub | A placeholder or debt marker in implementation code (Step 6 grep findings; RELEVANT hits are MISMATCH) | `framework/unit_verify_checklist.md` Step 6 |
@@ -219,7 +222,7 @@ An `implementation_surface` value of `<pending>` produces no file-list entry —
 - validate per check: `{n}. {check name}: PASS | WARNING | FAIL — reason`; FAIL reasons identify the contradicting information sources per the checklist's Execution Rules; findings use the unified format `[{P0|P1}] {location} — {issue} (actionable | needs_decision)`; cross-check line for unit full runs
 - verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE` with code references — the type is the detection verdict (structural / acceptance / scope / stub / surplus); detection sub-agents do not assign severity — the Step 7 analysis sub-agents grade it per the Step 7 output contract and the main agent confirms it per §9 before the final report; review: findings per the review checklist's output format
 - review batch assessment: each review batch reports the per-batch Dimension 8 assessment lines (`module_boundaries`, `responsibility_organization`, `dependency_clarity`, `abstraction_level`, `extension_landing_points`, `engineering_patterns`, each with an assessment and basis) for the files in its batch, per `framework/spec_review_checklist.md` §Body format; the main agent aggregates the per-batch assessments into the final report's Architecture assessment block
-- `Dependency scope:` lines (see the unified report skeleton)
+- `Dependency scope:` one line per check the run executed — `{check key}: {file}: {declaration}` where `{check key}` is the command's check identifier (validate: `check-{n}`; verify: the acceptance item id; review: the batch/file dimension), `{file}` is the file the judgment read, and `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`, or the frontmatter region as `frontmatter`), 1-based closed line ranges, or `all` for whole-file judgments. The main agent maps the declaration onto the cache's per-check `checks` mapping (`--section` for section headings, `--ranges` for line ranges; see the unified report skeleton and `framework/validation_cache.md` §Format). Delta runs report the scope of the re-run checks only (see Check scope above)
 - failure path: "Validation could not complete — {reason}" (verify: "Verification could not complete — {reason}"; review: "Review could not complete — {reason}")
 
 **Assembly example (verify)** — a complete assembled verify prompt. `{unit}`/paths are placeholders the main agent fills in; the glossary shows only the terms used in this prompt:
@@ -286,8 +289,9 @@ Required output:
   stub / surplus); severity is not reported by detection sub-agents — the Step 7
   analysis sub-agents assign it and the main agent confirms it per §9; plus
   Part A and Part B findings per acceptance item
-- Dependency scope: one line per file the judgment depended on (1-based closed
-  line ranges, or "all")
+- Dependency scope: one line per item aligned — {item.id}: {file}: {section
+  heading | line ranges | "all"} (the sections/regions of the spec the item's
+  judgment depended on)
 - If you could not complete: "Verification could not complete — {reason}"
 ```
 
@@ -356,8 +360,13 @@ Required output:
   [{P0|P1}] {location} — {issue} (actionable | needs_decision)
 - Cross-check: N/N PASS — per-check results
 - Failed checks: N | Advisory findings: K
-- Dependency scope: one line per file the judgment depended on (1-based closed
-  line ranges, or "all")
+- Dependency scope: one line per check executed — check-{n}: {file}: {section
+  heading | line ranges | "all"} (the sections/regions of the spec the check's
+  judgment depended on; for the unit's own main spec, name the section-region
+  headings, e.g. "Description" or "Testability / Acceptance Criteria"; the
+  frontmatter region is "frontmatter"; cross-check reports its scope like any
+  other line, with check key `cross` (see `framework/validation_cache.md`
+  §Format → Per-check evidence)
 - If you could not complete: "Validation could not complete — {reason}"
 ```
 
@@ -395,6 +404,8 @@ After all 8 checks pass individually:
 
 Delta runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) restore a stale cache with a partial re-run instead of a full one. They are complete-coverage runs: the judgments whose dependency evidence went stale are re-executed, the rest are carried over from the previous run, and the cache is written with `basis: delta`. Promote trusts a delta cache exactly like a full one — carried-over judgments have unchanged dependency evidence recorded in the cache, which is the same trust basis the gate already uses (see §Relationship with Promote).
 
+The delta scope is **derived by mechanism**: the cache's per-check evidence (`checks`, see `framework/validation_cache.md` §Format) maps every check to the regions it declared; the stale regions are matched against that map to compute the affected check set. The agent does not guess which judgments a content change affects — it reports the derived scope, executes it, and covers the rest by carry-over. The map covers per-check declarations only: entries without a `checks` mapping (logical references, contract files, whole-file declarations, declare-heavy extras) have no check association, so their staleness is reported as **unclaimed** and mapped to checks by the rules below (§Incremental scope step 1) — never silently carried over.
+
 ### When delta applies
 
 A delta run is possible only when the previous result is still valid and its evidence can be diffed:
@@ -403,22 +414,28 @@ A delta run is possible only when the previous result is still valid and its evi
 2. The cache has at least one stale source — a `files` entry whose declared dependency CID is no longer present. If nothing is stale, report "cache is fresh — no incremental re-run needed" and stop.
 3. A MISSING cache has no baseline to carry over from — run the full command instead.
 
-**Degradation:** when a stale source is the unit's own main spec or one of its own appendix files, the re-run scope is effectively the whole run. Report this to the user ("the stale source is your own spec content — an incremental re-run is nearly a full re-run") and ask whether to proceed or run the full command instead.
+**Degradation is a derived conclusion, not a rule:** the affected check set is the set of checks whose declared dependencies went stale (plus the cross-check, which is always re-run). When that set covers **every** check the cache declares, the incremental scope is the whole run — report this to the user ("the stale sources affect every check — an incremental re-run is a full re-run") and ask whether to proceed or run the full command instead. This is not a special case of own-spec staleness: editing one section of your own spec stales only the checks that declared that section, and the delta re-runs exactly those.
 
-### Incremental scope (the agent's semantic work)
+### Incremental scope (mechanism-derived)
 
-1. Read the stale cache and the `fresh@` report to list the stale sources — entries whose dependency CIDs no longer exist — and files whose whole-file hash changed outside the declared dependencies.
-2. Re-read the spec (and the code structure for verify/review) to derive which judgments depended on the changed content. Example: a dependency unit's acceptance item changed → the unit's validate Check 7 (cross-unit) contract comparison must be re-run; the other checks read only the unit's own spec and keep their evidence.
+1. Run the scope derivation over the stale cache: `specflowctl fresh@{target}` reports the stale files, and for every STALE gate its detail output appends a `DELTA SCOPE (<gate>)` section — the mechanism-derived scope (the affected check keys from the cache's per-check `checks` mapping, the unclaimed entries, the stale-dep count, and the degradation state). The affected check set = {checks whose declared deps went stale} ∪ {cross-check}. Stale dependencies that no check declared — logical-reference entries (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`), contract files, whole-file declarations, and declare-heavy extras in the file-level union — are **unclaimed**: the derivation reports them as such (per entry, e.g. `unit:auth`) and the agent maps them to the checks that read them by the command's fixed association, never by guessing and never by silent carry-over:
+   - unit `validate`: a `unit:` entry → Check 7 (cross-unit); a `rule:` entry → Check 8 (constraint alignment).
+   - rule `validate`: a `unit:` entry → the consumer-discovery checks (Check 5/7).
+   - `verify`: an unclaimed code file or dependency entry → the acceptance items whose judgment read that file (semantic derivation — the item→file association is dynamic, see `framework/unit_verify_checklist.md`).
+   - `review`: an unclaimed code file or dependency entry → the review dimensions that assessed it (semantic derivation).
+   - When no fixed association exists (own-spec whole-file declarations), re-read the changed content and map it semantically; include the affected judgments conservatively (declare-heavy, step 4).
+   When the cache has no per-check evidence (written before `checks` support — `fresh@` reports "no per-check evidence"), derive the scope from the stale file sources instead: re-read the spec (and the code structure for verify/review) to map the changed content to the affected checks — the semantic derivation kept as the fallback for legacy caches (see `framework/unit_validate_checklist.md` §Delta re-run step 2).
+2. **Derivation vs `fresh@`:** the derivation judges per-check deps while `specflowctl fresh@{target}` judges file-level deps — the two can disagree (a whole-file chunk staleness is invisible to the check-level map). When they disagree, `fresh@` is authoritative: treat the file as a stale source, re-check its unclaimed deps, and map them per step 1.
 3. For files whose hash changed but declared deps are unchanged: quickly re-scan them for semantic coupling with any judgment — if coupling exists, include the affected judgments in the scope (this operationalizes the informational note in `framework/validation_cache.md` §Staleness Detection).
 4. The scope must always include the cross-check (unit targets — rules have no cross-check) — it is a holistic judgment over all content, and changed shared content can change it.
-5. Report the scope explicitly before executing: the re-run judgments with their stale source and reason, and the carried-over judgments with the statement that their dependency evidence is unchanged. Declare conservatively — when unsure whether a judgment is affected, include it (declare-heavy, same principle as dependency declaration).
+5. Report the scope explicitly before executing: the re-run checks with their stale source and reason (including the unclaimed entries and the checks they mapped to), and the carried-over checks with the statement that their dependency evidence is unchanged. Declare conservatively — when unsure whether a judgment is affected, include it (declare-heavy, same principle as dependency declaration).
 
 ### Execution
 
 - Re-run only the scoped judgments. Carried-over judgments are not re-executed — their previous results stand on unchanged evidence.
 - Any P0/P1 finding during the re-run is treated exactly like a full-run FAIL: validate/verify delete the cache; review writes the cache with `blocking: true`. Promote must not proceed.
-- On PASS, rewrite the cache with `mode: full`, `basis: delta`, a fresh `timestamp`, and a complete `files` list: re-run judgments replace their entries with new evidence (`specflowctl gate-evidence` on the files they read); carried-over judgments keep their entries with the original hash and deps — their CIDs are unchanged by construction, since they were not stale sources. The files list must stay complete (including the main spec and every appendix) so the appendix and main-file promote checks keep passing.
-- The report uses the standard skeleton with `mode: delta`, an `Incremental scope:` section (re-run judgments + carried-over declaration + cross-check — rules have no cross-check), and the cache-write note "cache written with basis: delta".
+- On PASS, rewrite the cache with `mode: full`, `basis: delta`, a fresh `timestamp`, and a complete `files` list: re-run judgments replace their entries with new evidence (`specflowctl gate-evidence` on the files they read — including the per-check `checks` breakdown for the re-run checks); carried-over judgments keep their entries with the original hash, deps, and checks — their CIDs are unchanged by construction, since they were not stale sources. The files list must stay complete (including the main spec and every appendix) so the appendix and main-file promote checks keep passing.
+- The report uses the standard skeleton with `mode: delta`, an `Incremental scope:` section (re-run checks + carried-over declaration + cross-check — rules have no cross-check), and the cache-write note "cache written with basis: delta".
 
 ### Trust statement
 
