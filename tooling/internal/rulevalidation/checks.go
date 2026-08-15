@@ -152,16 +152,6 @@ func checkVersionSemantics(repoRoot, ruleID string) CheckResult {
 		}
 	}
 
-	// A retiring rule is removed from stable, not versioned — the candidate
-	// version needs no comparison against the stable version.
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Pass,
-			Details: "rule is marked retired — version comparison skipped",
-		}
-	}
-
 	candidateVersion := strings.TrimSpace(fm["rule_version"])
 	if candidateVersion == "" {
 		return CheckResult{
@@ -276,34 +266,6 @@ func checkUnboundRetention(repoRoot, ruleID string) CheckResult {
 			Name:    "unbound_retention correctness",
 			Status:  Fail,
 			Details: "cannot read frontmatter",
-		}
-	}
-
-	// A retiring rule is removed from stable. Every explicit rule_refs
-	// reference must be dropped first (a global rule's default applicability
-	// lifts automatically when the rule file disappears, so only explicit
-	// references are checked); the unbound_retention fields are not required
-	// for a rule that is going away.
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		consumers, err := rulerefs.FindExplicitRuleConsumers(repoRoot, ruleID)
-		if err != nil {
-			return CheckResult{
-				Name:    "unbound_retention correctness",
-				Status:  Fail,
-				Details: fmt.Sprintf("cannot search for consumers: %v", err),
-			}
-		}
-		if len(consumers) > 0 {
-			return CheckResult{
-				Name:    "unbound_retention correctness",
-				Status:  Fail,
-				Details: fmt.Sprintf("rule is marked retired but still referenced in rule_refs by: %s — remove the references before retiring", strings.Join(consumers, ", ")),
-			}
-		}
-		return CheckResult{
-			Name:    "unbound_retention correctness",
-			Status:  Pass,
-			Details: "rule is marked retired — no rule_refs references remain",
 		}
 	}
 

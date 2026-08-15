@@ -537,6 +537,92 @@ func TestPromoteUnitRetiredReferrerBlocked(t *testing.T) {
 	}
 }
 
+func TestPromoteUnitRetiredStaleStableRefDoesNotBlock(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The divergence fixture from spec_writing_guide.md §8: the consumer's
+	// candidate dropped the reference while its stale stable predecessor
+	// still lists the retiring unit. Current-layer resolution counts only
+	// the candidate — the retirement proceeds, and the dangling stable
+	// reference is exposed by the stable confirmation check (fresh@stable
+	// validate) until the unit promotes, never silently.
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableRef := "---\nid: consumer\nversion: 0.1.0\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_consumer.md"), []byte(stableRef), 0644)
+
+	candUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dropped := "---\nid: consumer\nversion: 0.2.0\nunit_refs: none\nrule_refs: none\n---\n\n# consumer\n"
+	os.WriteFile(filepath.Join(candUnitDir, "unit_consumer.md"), []byte(dropped), 0644)
+	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/stable/unit_demo.md")); !os.IsNotExist(err) {
+		t.Fatalf("retired unit stable copy must be removed")
+	}
+}
+
+func TestPromoteUnitRetiredRetiringReferrerDoesNotBlock(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// A retiring unit's own references disappear with it, so a retiring
+	// referrer is not counted (the graph excludes retiring units) — it does
+	// not block another unit's retirement.
+	candUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiringRef := "---\nid: consumer\nversion: 0.1.1\nunit_refs: demo\nrule_refs: none\nstatus: retired\n---\n\n# consumer\n"
+	os.WriteFile(filepath.Join(candUnitDir, "unit_consumer.md"), []byte(retiringRef), 0644)
+	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+	}
+}
+
+func TestPromoteUnitRetiredReferrerCheckFailureFailsClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// A referrer-resolution failure must not silently retire the unit: the
+	// check fails closed and the retire promote is rejected.
+	candUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
+
+	// The stable layer is a file, not a directory — the graph build cannot
+	// read it, so the referrer set is unresolvable.
+	stablePath := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(filepath.Dir(stablePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stablePath, []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("expected retire promote to fail closed when the referrer set cannot be resolved")
+	}
+	if !strings.Contains(strings.Join(result.Issues, " "), "referrers") {
+		t.Fatalf("expected referrer-resolution issue, got: %v", result.Issues)
+	}
+}
+
 func writePromotableUnit(t *testing.T, repoRoot, unit, unitRefs, ruleRefs string) {
 	t.Helper()
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -600,56 +686,6 @@ func TestPromoteUnitRefToRetiringUnitWithStableRejects(t *testing.T) {
 	result := Promote(repoRoot, "consumer")
 	if result.Passed {
 		t.Fatalf("expected promote to be rejected for a reference to a retiring unit, issues: %v", result.Issues)
-	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
-		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
-	}
-}
-
-func TestPromoteRuleRefToRetiringCandidateRejects(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	// The referenced rule exists only in the candidate layer and is marked
-	// retired — the reference must be removed before the rule is retired.
-	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
-	if err := os.MkdirAll(ruleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule\n"
-	os.WriteFile(filepath.Join(ruleDir, "b_rule_x.md"), []byte(retiredRule), 0644)
-	writePromotableUnit(t, repoRoot, "consumer", "none", "b_rule_x")
-
-	result := Promote(repoRoot, "consumer")
-	if result.Passed {
-		t.Fatalf("expected promote to be rejected for a reference to a retiring rule, issues: %v", result.Issues)
-	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
-		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
-	}
-}
-
-func TestPromoteRuleRefToRetiringRuleWithStableRejects(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	// The referenced rule still has a stable copy today, but the candidate
-	// layer declares retirement — the stable copy is removed on promote, so
-	// the reference cannot survive.
-	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_x.md"), []byte("---\nrule_id: b_rule_x\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
-	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
-	if err := os.MkdirAll(ruleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nrule_version: 0.1.1\nstatus: retired\n---\n\n# Rule\n"
-	os.WriteFile(filepath.Join(ruleDir, "b_rule_x.md"), []byte(retiredRule), 0644)
-	writePromotableUnit(t, repoRoot, "consumer", "none", "b_rule_x")
-
-	result := Promote(repoRoot, "consumer")
-	if result.Passed {
-		t.Fatalf("expected promote to be rejected for a reference to a retiring rule, issues: %v", result.Issues)
 	}
 	if !strings.Contains(strings.Join(result.Issues, " "), "is being retired") {
 		t.Fatalf("expected retiring-target issue, got: %v", result.Issues)
@@ -763,7 +799,7 @@ func TestPromoteRetiredUnitWithOwnAppendixRefs(t *testing.T) {
 	}
 }
 
-func TestPromoteRuleRetired(t *testing.T) {
+func TestPromoteRuleStatusRetiredIsIgnored(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -777,47 +813,249 @@ func TestPromoteRuleRetired(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	// Same version as stable: the version gate is skipped for retired rules.
-	retiredRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule retired\n"
-	os.WriteFile(filepath.Join(candDir, "b_rule_old.md"), []byte(retiredRule), 0644)
+	// The `status: retired` declaration no longer drives a removal path — the
+	// candidate promotes like any other rule (version gate still applies).
+	candidateRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nrule_version: 0.2.0\nstatus: retired\n---\n\n# Rule next\n"
+	os.WriteFile(filepath.Join(candDir, "b_rule_old.md"), []byte(candidateRule), 0644)
 	writeRuleValidateCache(t, repoRoot, "b_rule_old")
 
 	result := PromoteRule(repoRoot, "b_rule_old")
 	if !result.Passed {
-		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
-	if _, err := os.Stat(filepath.Join(stableDir, "b_rule_old.md")); !os.IsNotExist(err) {
-		t.Fatal("retired rule stable copy must be removed")
+	stableData, err := os.ReadFile(filepath.Join(stableDir, "b_rule_old.md"))
+	if err != nil {
+		t.Fatalf("stable rule must exist after promote: %v", err)
+	}
+	if !strings.Contains(string(stableData), "rule_version: 0.2.0") {
+		t.Fatalf("stable rule must carry the promoted version 0.2.0, got:\n%s", stableData)
 	}
 	if _, err := os.Stat(filepath.Join(candDir, "b_rule_old.md")); !os.IsNotExist(err) {
-		t.Fatal("retired candidate rule must be removed")
+		t.Fatal("candidate rule must be removed after promote")
 	}
 }
 
-func TestPromoteRuleRetiredReferrerBlocked(t *testing.T) {
+func TestPromoteUnitDroppedRuleRefAutoRemoved(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	candDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	// The divergence fixture from spec_writing_guide.md §6.3: the stable unit
+	// still lists b_rule_old in rule_refs while the candidate dropped it. The
+	// promote commits the candidate, and the rule — left with no current-layer
+	// consumers and no unbound_retention — is removed with it.
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_old\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_old.md"), []byte(stableRule), 0644)
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_old.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(basePath, []byte("kind: rule\nname: b_rule_old\nsurfaces: []\n"), 0644)
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_old/validate_result.md")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(cachePath, []byte("---\ncommand: validate\nrule: b_rule_old\n---\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredRule := "---\nrule_id: b_rule_x\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n\n# Rule\n"
-	os.WriteFile(filepath.Join(candDir, "b_rule_x.md"), []byte(retiredRule), 0644)
-	writeRuleValidateCache(t, repoRoot, "b_rule_x")
+	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
 
-	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	if err := os.MkdirAll(unitDir, 0755); err != nil {
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	joined := strings.Join(result.Actions, "\n")
+	if !strings.Contains(joined, "Removed unbound rule: b_rule_old") {
+		t.Fatalf("expected auto-removal action, got:\n%s", joined)
+	}
+	for _, p := range []string{
+		"docs/specs/rules/stable/b_rule_old.md",
+		"docs/specs/meta/baseline/rule/b_rule_old.yaml",
+		"docs/specs/meta/validation/rule/b_rule_old/validate_result.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after auto-removal", p)
+		}
+	}
+}
+
+func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The dangling fixture from spec_writing_guide.md §6.5: the rule file is
+	// already gone (removed before this promote committed), while the stable
+	// unit still lists it in rule_refs and residual baseline/cache metadata
+	// remains. The promote must not fail on the missing rule — it degrades to
+	// residual metadata cleanup, the same path `specflowctl remove` takes.
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	consumer := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_x\n---\n\n# consumer\n"
-	os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(consumer), 0644)
+	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_ghost\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
-	result := PromoteRule(repoRoot, "b_rule_x")
-	if result.Passed {
-		t.Fatal("expected retire promote to be rejected while a unit still references it")
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_ghost.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "still referenced by") {
-		t.Fatalf("expected referrer issue, got: %v", result.Issues)
+	os.WriteFile(basePath, []byte("kind: rule\nname: b_rule_ghost\nsurfaces: []\n"), 0644)
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/b_rule_ghost/validate_result.md")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(cachePath, []byte("---\ncommand: validate\nrule: b_rule_ghost\n---\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass with the rule already removed, issues: %v", result.Issues)
+	}
+	joined := strings.Join(result.Actions, "\n")
+	if !strings.Contains(joined, "already removed") {
+		t.Fatalf("expected degraded-cleanup action, got:\n%s", joined)
+	}
+	for _, p := range []string{
+		"docs/specs/meta/baseline/rule/b_rule_ghost.yaml",
+		"docs/specs/meta/validation/rule/b_rule_ghost/validate_result.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist after degraded cleanup", p)
+		}
+	}
+}
+
+func TestPromoteUnitDroppedRuleRefRetainedNotRemoved(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_kept\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// The rule declares intentional retention — it must survive the promote.
+	retainedRule := "---\nrule_id: b_rule_kept\nrule_scope: bound\nrule_version: 0.1.0\nunbound_retention: intentional\nunbound_retention_reason: future reuse\nunbound_retention_owner: demo_flow\n---\n\n# Rule\n"
+	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_kept.md"), []byte(retainedRule), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	if strings.Contains(strings.Join(result.Actions, "\n"), "Removed unbound rule") {
+		t.Fatalf("retained rule must not be auto-removed, actions:\n%s", strings.Join(result.Actions, "\n"))
+	}
+	if _, err := os.Stat(filepath.Join(stableRuleDir, "b_rule_kept.md")); err != nil {
+		t.Fatalf("retained rule must still exist: %v", err)
+	}
+}
+
+func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_shared.md"), []byte("---\nrule_id: b_rule_shared\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
+
+	// Another current-layer unit still references the rule.
+	otherUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(otherUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	other := "---\nid: other\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# other\n"
+	os.WriteFile(filepath.Join(otherUnitDir, "unit_other.md"), []byte(other), 0644)
+
+	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(otherUnitDir, "unit_demo.md"), []byte(candidate), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	if strings.Contains(strings.Join(result.Actions, "\n"), "Removed unbound rule") {
+		t.Fatalf("still-consumed rule must not be auto-removed, actions:\n%s", strings.Join(result.Actions, "\n"))
+	}
+	if _, err := os.Stat(filepath.Join(stableRuleDir, "b_rule_shared.md")); err != nil {
+		t.Fatalf("still-consumed rule must exist: %v", err)
+	}
+}
+
+func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: g_rule_governance\n---\n\n# demo\n"
+	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
+
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stableRuleDir, "g_rule_governance.md"), []byte("---\nrule_id: g_rule_governance\nrule_scope: global\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
+
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
+	writeVerifyCache(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	if strings.Contains(strings.Join(result.Actions, "\n"), "Removed unbound rule") {
+		t.Fatalf("global rules must never be auto-removed, actions:\n%s", strings.Join(result.Actions, "\n"))
+	}
+	if _, err := os.Stat(filepath.Join(stableRuleDir, "g_rule_governance.md")); err != nil {
+		t.Fatalf("global rule must still exist: %v", err)
 	}
 }
 
@@ -1091,37 +1329,5 @@ func TestPromoteRule_WritesBaseline(t *testing.T) {
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/g_rule_test.yaml")
 	if _, err := os.Stat(basePath); err != nil {
 		t.Fatalf("rule baseline not written: %v", err)
-	}
-}
-
-func TestPromoteRuleRetired_RemovesBaseline(t *testing.T) {
-	repoRoot := t.TempDir()
-
-	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(stableDir, "b_rule_test.md"), []byte("---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 1.0.0\n---\n\nTruth\n"), 0644)
-	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_test.yaml")
-	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(basePath, []byte("kind: rule\nname: b_rule_test\nsurfaces: []\n"), 0644)
-
-	candDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
-	if err := os.MkdirAll(candDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	retiredRule := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 1.0.1\nstatus: retired\n---\n\nRetired\n"
-	os.WriteFile(filepath.Join(candDir, "b_rule_test.md"), []byte(retiredRule), 0644)
-	writeRuleValidateCache(t, repoRoot, "b_rule_test")
-
-	result := PromoteRule(repoRoot, "b_rule_test")
-	if !result.Passed {
-		t.Fatalf("expected retire promote to pass, issues: %v", result.Issues)
-	}
-
-	if _, err := os.Stat(basePath); !os.IsNotExist(err) {
-		t.Fatalf("rule baseline must be removed on retire, stat err: %v", err)
 	}
 }

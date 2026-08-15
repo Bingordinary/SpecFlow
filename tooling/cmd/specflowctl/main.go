@@ -71,6 +71,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runDeps(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
+	case "detect":
+		return runDetect(args[1:], stdout, stderr)
+	case "remove":
+		return runRemove(args[1:], stdout, stderr)
 	case "gate-evidence":
 		return runGateEvidence(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
@@ -537,6 +541,8 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
 	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
+	fmt.Fprintln(w, "  detect     Detect removable bound rules (no consumers, no retention)")
+	fmt.Fprintln(w, "  remove     Delete a rule whose constraint no longer applies (bound rules auto-verified; global rules on explicit instruction)")
 	fmt.Fprintln(w, "  gate-evidence Compute dependency CIDs (chunk ranges and/or the acceptance_item_set region) for a file read during a gate run")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }

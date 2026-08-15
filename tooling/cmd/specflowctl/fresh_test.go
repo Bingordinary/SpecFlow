@@ -1090,3 +1090,157 @@ func depsBlock(deps []string) string {
 	}
 	return b.String()
 }
+
+func TestFreshEmbedsUnboundRulesStableScope(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// An unbound rule with no retention declaration must appear in the
+	// stable view's removal-candidate list.
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
+	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// A retained rule must not appear.
+	retained := "---\nrule_id: b_rule_kept\nrule_scope: bound\nrule_version: 0.1.0\nunbound_retention: intentional\n---\n\n# Kept\n"
+	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_kept.md"), []byte(retained), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot, "--scope", "stable")
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
+		t.Fatalf("expected removal-candidate list, got:\n%s", output)
+	}
+	if !strings.Contains(output, "b_rule_orphan") {
+		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
+	}
+	listIdx := strings.Index(output, "RULES WITHOUT CONSUMERS")
+	if strings.Contains(output[listIdx:], "b_rule_kept") {
+		t.Fatalf("retained rule must not be listed, got:\n%s", output)
+	}
+}
+
+func TestFreshEmbedsUnboundRulesCandidateScope(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	writeRuleSpec(t, repoRoot, "b_rule_orphan")
+
+	output, err := freshRun(t, repoRoot)
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
+		t.Fatalf("expected removal-candidate list in the candidate view, got:\n%s", output)
+	}
+	if !strings.Contains(output, "b_rule_orphan") {
+		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
+	}
+}
+
+func TestFreshOmitsConsumedRule(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	writeRuleSpec(t, repoRoot, "b_rule_auth")
+	unit := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_auth\n---\n"
+	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(unitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unitDir, "unit_user_auth.md"), []byte(unit), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot)
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if strings.Contains(output, "RULES WITHOUT CONSUMERS") {
+		t.Fatalf("consumed rule must not be listed, got:\n%s", output)
+	}
+}
+
+func TestFreshEmbedsUnboundRulesLayerIndependent(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// A stable-only removable rule must appear in the default (candidate)
+	// scope too — the removal-candidate list is layer-independent.
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
+	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot)
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
+		t.Fatalf("expected removal-candidate list in the default candidate view, got:\n%s", output)
+	}
+	if !strings.Contains(output, "b_rule_orphan") {
+		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
+	}
+}
+
+func TestFreshAllScopeListsOnce(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// A rule with files in both layers is a single removal candidate — the
+	// all-scope report must list it exactly once, not once per layer.
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rule := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
+	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(rule), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeRuleSpec(t, repoRoot, "b_rule_orphan")
+
+	output, err := freshRun(t, repoRoot, "--scope", "all")
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if count := strings.Count(output, "RULES WITHOUT CONSUMERS"); count != 1 {
+		t.Fatalf("expected the list exactly once in the all-scope report, got %d:\n%s", count, output)
+	}
+	listIdx := strings.Index(output, "RULES WITHOUT CONSUMERS")
+	if count := strings.Count(output[listIdx:], "b_rule_orphan"); count != 1 {
+		t.Fatalf("expected b_rule_orphan exactly once in the list, got %d:\n%s", count, output)
+	}
+}
+
+func TestFreshEmptyCandidateStillListsRules(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	// No candidate files at all — the default report still ends with the
+	// removal-candidate list instead of hiding it behind the empty layer.
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
+	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot)
+	if err != nil {
+		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
+	}
+	if !strings.Contains(output, "No active candidates found.") {
+		t.Fatalf("expected the empty-candidate notice, got:\n%s", output)
+	}
+	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
+		t.Fatalf("expected the removal-candidate list despite the empty candidate layer, got:\n%s", output)
+	}
+}

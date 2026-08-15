@@ -372,7 +372,7 @@ func (g *Graph) UnitConsumers(name string) []string {
 // rule (g_rule_*) is not repeated in rule_refs — it applies to every
 // current-layer unit by default (spec_writing_guide.md §5) — so for global
 // rules every node is returned. The caller verifies the rule file exists;
-// a missing global rule (retired, mistyped) constrains nothing.
+// a missing global rule (removed, mistyped) constrains nothing.
 func (g *Graph) RuleConsumers(ruleID string) []string {
 	if strings.HasPrefix(ruleID, "g_rule_") {
 		return append([]string(nil), g.names...)

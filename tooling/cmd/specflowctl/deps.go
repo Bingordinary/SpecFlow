@@ -180,7 +180,7 @@ func writeUnitDeps(stdout io.Writer, graph *unitgraph.Graph, unitName string) er
 
 func writeRuleDeps(stdout io.Writer, graph *unitgraph.Graph, repoRoot, ruleID string) error {
 	// A global rule applies to every current-layer unit by default, but only
-	// while its rule file exists — a missing file (retired rule, mistyped ID)
+	// while its rule file exists — a missing file (removed rule, mistyped ID)
 	// constrains nothing and is reported as not found (same semantics as
 	// `consumers`).
 	if strings.HasPrefix(ruleID, "g_rule_") && !globalRuleExists(repoRoot, ruleID) {

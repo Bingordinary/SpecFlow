@@ -333,14 +333,6 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 
 			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("%s.md", refName))
 			if _, err := os.Stat(candidatePath); err == nil {
-				// Same protection as unit refs: a retiring rule loses its
-				// stable copy on promote.
-				if cdata, rerr := os.ReadFile(candidatePath); rerr == nil {
-					cfm := specpaths.ReadFrontmatterStringMap(string(cdata))
-					if strings.TrimSpace(cfm["status"]) == "retired" {
-						missingRefs = append(missingRefs, fmt.Sprintf("%s (being retired)", ref))
-					}
-				}
 				continue
 			}
 

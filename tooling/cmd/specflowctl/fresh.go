@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/ruledetect"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -87,7 +88,7 @@ func writeAllFresh(stdout io.Writer, absRoot, scope string) error {
 			return err
 		}
 	}
-	return nil
+	return writeUnboundRulesSection(stdout, absRoot)
 }
 
 // writeCandidateFreshSection reports the cache freshness of every active
@@ -179,6 +180,37 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 		fmt.Fprintln(stdout)
 	}
 
+	return nil
+}
+
+// writeUnboundRulesSection embeds the removal-candidate list — bound rules
+// (b_rule_*) with no current-layer (effective) consumers and no
+// unbound_retention declaration — at the end of every fresh summary report
+// (candidate, stable, and all scopes). The list is layer-independent:
+// removability is decided by consumers and the retention declaration alone,
+// not by which layer holds the rule file, so every summary shows the same
+// complete list exactly once. Read-only: removal always happens through
+// `specflowctl remove --rule`, never here.
+func writeUnboundRulesSection(stdout io.Writer, absRoot string) error {
+	results, err := ruledetect.DetectAll(absRoot)
+	if err != nil {
+		return err
+	}
+	var removable []ruledetect.DetectResult
+	for _, r := range results {
+		if r.Removable {
+			removable = append(removable, r)
+		}
+	}
+	if len(removable) == 0 {
+		return nil
+	}
+	fmt.Fprintf(stdout, "RULES WITHOUT CONSUMERS (removable candidates, %d):\n", len(removable))
+	for _, r := range removable {
+		fmt.Fprintf(stdout, "  %s\n", r.RuleID)
+	}
+	fmt.Fprintln(stdout, "  Removal is never automatic — run `specflowctl remove --rule <id>` to delete.")
+	fmt.Fprintln(stdout)
 	return nil
 }
 

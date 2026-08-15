@@ -471,12 +471,16 @@ func TestCheckReferences_RetiredTargetFail(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_RetiredRuleTargetFail(t *testing.T) {
+func TestCheckReferences_RetiredStatusIgnoredForRules(t *testing.T) {
 	repoRoot := t.TempDir()
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	if err := os.MkdirAll(ruleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	// A leftover `status: retired` declaration no longer marks a rule for
+	// removal — the rule file exists, so the reference is valid. Rule removal
+	// is `specflowctl remove --rule`, after which the file disappears and the
+	// reference becomes a missing-target violation.
 	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_auth.md"),
 		[]byte("---\nrule_id: b_rule_auth\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -485,8 +489,8 @@ func TestCheckReferences_RetiredRuleTargetFail(t *testing.T) {
 		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs:\n  - b_rule_auth\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for ref to retiring rule, got %s: %s", result.Status, result.Details)
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for ref to existing rule, got %s: %s", result.Status, result.Details)
 	}
 }
 

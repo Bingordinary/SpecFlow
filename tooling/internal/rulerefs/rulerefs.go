@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/unitgraph"
 )
 
 var refPattern = regexp.MustCompile(`^[a-z]_[a-z]_[a-z0-9_]+$`)
@@ -391,8 +392,9 @@ func markdownFieldKey(trimmed string) (string, bool) {
 //
 // Global rules (g_rule_*) apply to every current-layer unit per spec_writing_guide.md §5
 // and are not listed in individual unit's rule_refs. For global rules, this function
-// returns every unit with a candidate or stable file (file-level semantics per
-// spec_writing_guide.md §6.3), regardless of their rule_refs.
+// returns every unit with a candidate or stable file, regardless of their rule_refs.
+// Bound rules (b_rule_*) resolve consumers on the current-layer (effective) files,
+// candidate preferred with stable fallback (spec_writing_guide.md §6.3).
 func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	var consumers []string
 	seen := map[string]bool{}
@@ -405,7 +407,7 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	// Global rules apply to every current-layer unit by default
 	if strings.HasPrefix(ruleID, "g_rule_") {
 		// A global rule's default applicability exists only while the rule
-		// file exists. A missing rule file (retired rule, or a mistyped ID)
+		// file exists. A missing rule file (removed rule, or a mistyped ID)
 		// cannot constrain anything, so the rule is reported as not found
 		// instead of returning every unit.
 		candidateRule := filepath.Join(repoRoot, specpaths.RuleCandidateFileRef(ruleID))
@@ -447,69 +449,34 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	return FindExplicitRuleConsumers(repoRoot, ruleID)
 }
 
-// FindExplicitRuleConsumers scans every unit main spec in the candidate and
-// stable directories (file-level semantics per spec_writing_guide.md §6.3 —
-// a stable file whose candidate has dropped the reference still counts) for
-// rule_refs entries containing the given ruleID and returns the unit names.
-// Unlike FindRuleConsumers, it uses the same explicit rule_refs semantics for
-// every rule scope — a global rule's default applicability to all units is
-// not treated as a reference here, so retirement (which removes the stable
-// rule file and thereby lifts the default applicability) can be validated
-// against the references that must actually be cleaned up.
+// FindExplicitRuleConsumers resolves every unit to its current-layer file
+// (candidate preferred, stable fallback — the same resolution
+// specflowctl deps uses, built on unitgraph) and scans the rule_refs of the
+// effective file for the given ruleID, returning the unit names. A stable
+// file whose candidate has dropped the reference no longer counts: the
+// reference is semantically gone and only the stale stable file remains
+// (see spec_writing_guide.md §6.3), exposed by the stable confirmation
+// check instead of blocking removal. Unlike FindRuleConsumers, it uses the
+// same explicit rule_refs semantics for every rule scope — a global rule's
+// default applicability to all units is not treated as a reference here, so
+// removal (which removes the rule file and thereby lifts the default
+// applicability) can be validated against the references that must actually
+// be cleaned up.
 func FindExplicitRuleConsumers(repoRoot, ruleID string) ([]string, error) {
+	graph, err := unitgraph.Build(repoRoot, "all")
+	if err != nil {
+		return nil, err
+	}
 	var consumers []string
-	seen := map[string]bool{}
-
-	searchDirs := []string{
-		filepath.Join(repoRoot, specpaths.CandidateDir),
-		filepath.Join(repoRoot, specpaths.StableDir),
-	}
-
-	for _, dir := range searchDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read dir %s: %w", dir, err)
-		}
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			if !strings.HasPrefix(entry.Name(), "unit_") {
-				continue
-			}
-			if !strings.HasSuffix(entry.Name(), ".md") {
-				continue
-			}
-			content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-			if err != nil {
-				continue
-			}
-			fm := specpaths.ReadFrontmatterStringMap(string(content))
-			refsRaw := fm["rule_refs"]
-			if refsRaw == "" || strings.EqualFold(refsRaw, "none") {
-				continue
-			}
-			refs := specpaths.ParseRefList(refsRaw)
-			for _, ref := range refs {
-				refName := ref
-				if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
-					refName = ref[:atIdx]
-				}
-				if refName == ruleID && !seen[refName] {
-					// Extract unit name from filename
-					unitName := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "unit_"), ".md")
-					if !seen[unitName] {
-						consumers = append(consumers, unitName)
-						seen[unitName] = true
-					}
-				}
+	for _, node := range graph.Nodes() {
+		for _, ref := range node.RuleRefs {
+			if ref == ruleID {
+				consumers = append(consumers, node.Name)
+				break
 			}
 		}
 	}
-
+	sort.Strings(consumers)
 	return consumers, nil
 }
 
