@@ -35,7 +35,7 @@ When no candidate spec exists (validate against stable), run the same 8 checks +
 2. Glob all stable appendix files: `docs/specs/units/stable/appendix/unit_{unit}_*.md`, read every non-exempt, non-retired appendix (same skip rules as the candidate path)
 3. Run all 8 checks + cross-check against the stable content — Checks 6/7/8 are the live part: referenced files, dependency-unit contracts, and rules may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does)
 4. **PASS** → write the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; `mode: full`, `hash` + `deps` evidence, same procedure as Step 9)
-5. **FAIL** → delete the existing validate cache if present, do not write a cache, present the findings, and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit the stable spec directly — promote is the only operation that writes stable files
+5. **FAIL** → delete the existing validate cache if present, do not write a cache, present the findings (5a/5h FAIL findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit the stable spec directly — promote is the only operation that writes stable files
 
 The stable confirmation cache is read-only state: it grants no promote eligibility (stable has no gate). Delta re-runs (`revalidate`) apply to stable-only targets when the confirmation cache exists with `result: pass` (STALE recovery); a MISSING or BLOCKED stable cache needs the full confirmation run — see `framework/verification_scope.md` §Stable-only Targets and §Delta Runs → Layer applicability.
 
@@ -118,7 +118,7 @@ Failed checks: N | Advisory findings: K
 ```
 
 **Counting rules:**
-- `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks; a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default, P0 requires severity confirmation per `framework/severity_policy.md` §9 (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
+- `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default, P0 requires severity confirmation per `framework/severity_policy.md` §9 (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
 - `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
@@ -133,6 +133,8 @@ Failed checks: N | Advisory findings: K
 ```
 
 A check with a single finding keeps the existing one-line reason format.
+
+**Per-item merge rule (quality-bar family):** Findings from sub-checks 5e, 5f, 5g, and 5i that reference the same acceptance item (same location) and whose fix is a rewrite of that item are merged into **one finding**. The merged entry's issue line summarizes the item defect; its indented detail lines quote each violated sub-check and the offending text (following 5i's "quote the violated rule" format). The check lines in the body keep their individual PASS/FAIL status, but the finding entries merge everywhere: the merged entry is presented once, under the lowest-numbered violating sub-check's line (e.g. `5e-1`), and the other violating sub-checks' reasons reference it without re-enumerating — so per-check enumerations in the body and `Findings` N use the same post-merge count. The merged entry's severity is the highest among its violating sub-checks (P0 > P1); a P0 grade still requires the §9 confirmation record per the Severity check. `Findings` N counts merged findings — one item defect is one finding, regardless of how many sub-checks it violates. Findings from 5a (located at spec body regions), 5b/5c (each contradiction is an independent fix edit), and 5h (located at prose statements) are not merged — their locations and fixes differ.
 
 When findings mix resolution types (within one check or across checks), the report presents each finding with its own resolution — a `needs_decision` finding stops the flow and requires user input per Execution Rules.
 
@@ -337,12 +339,18 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 **Execution steps:**
 
 1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5g (which requires `pass_condition` to carry constraints beyond `description`).
-2. **Extraction premise (shared with sub-check 5h):** Behavior-domain extraction targets only formal behavior declared in the spec body and appendices — a behavior subject (endpoint, function, state machine, or flow entry point) together with its behavior semantics. Non-constraining narrative (design discussion, illustrative examples, motivation, variant elaboration) is NOT a behavior domain source and does not create coverage obligations. Extract all behavior domains at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain (error paths, boundary cases, and state transitions of the same subject are scenarios of that domain, not separate domains); do not split scenarios of the same domain into separate coverage requirements.
+2. **Extraction premise (shared with sub-check 5h):** Behavior-domain extraction targets only formal behavior declared in the spec body and appendices — a behavior subject (endpoint, function, state machine, or flow entry point) together with its behavior semantics. The subject must be externally observable per `framework/spec_writing_guide.md` §4: internal implementation detail (internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout) is design expression, not a behavior domain source, and creates no coverage obligation — the same boundary step 6 and sub-check 5h apply on their surfaces. Non-constraining narrative (design discussion, illustrative examples, motivation, variant elaboration) is NOT a behavior domain source and does not create coverage obligations. Extract all behavior domains at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain (error paths, boundary cases, and state transitions of the same subject are scenarios of that domain, not separate domains); do not split scenarios of the same domain into separate coverage requirements.
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
-6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files. For each, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (actionable)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (actionable)
+6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files — for contract content, apply the external-visibility boundary of `framework/spec_writing_guide.md` §4 first: internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, and configuration layout are design expression, not contract content, and create no coverage obligation. For each extracted domain or contract, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (actionable)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (actionable)
 7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
+8. **Extraction evidence (required for every uncovered-domain FAIL):** Each uncovered-domain finding (steps 3, 5, and step 6's uncovered-content case) must carry an extraction artifact that makes the claim falsifiable:
+   - **Source quote:** the section heading and quoted text in the spec body or appendix that declares the behavior domain
+   - **Granularity judgment:** why the quoted text is formal behavior (per the extraction premise in step 2, including the §4 external-visibility boundary applied to both body behavior domains and appendix contract content) rather than non-constraining narrative or internal design detail, and why its behavior variants form one domain (per the four granularity conditions in `framework/spec_writing_guide.md` §Acceptance Item Granularity) rather than scenarios of an already-covered domain
+   - **Absence claim:** the covered surface checked (the union of every item's `description` and `pass_condition`, per step 1) and how the absence of any covering item was verified
+   A step-6 contradiction finding (appendix content contradicting an acceptance item) carries the two-sided quoted evidence step 6 itself requires — it is a conflict claim, not an uncovered-domain claim, and is not subject to this template.
+   A finding without this artifact is not presented — the main agent re-verifies the artifact before classification and drops unfaithful claims (a subject actually mentioned in an item, or variants split out of a covered domain — see §Step 9 → Check 5 extraction re-verification).
 
 **PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; no merge candidates found
 
@@ -549,21 +557,28 @@ PASS — pass_condition provides complementary information:
 
 ### Sub-check 5h — Contract statement carry-over (NEW)
 
-**Purpose:** Contract statements in the spec body and non-evidence appendices must be carried by a formal behavior carrier (the acceptance item set or a protocol appendix, see `framework/spec_writing_guide.md` §4). The cross-unit check reads only carriers, so a contract that lives only in prose is invisible to every dependent unit.
+**Purpose:** Contract statements in the spec body and non-evidence appendices must be carried by a formal behavior carrier (the acceptance item set or a protocol appendix, see `framework/spec_writing_guide.md` §4). The cross-unit check reads only carriers, so a contract that lives only in prose is invisible to every dependent unit. The obligation is scoped to the external-visibility boundary of `framework/spec_writing_guide.md` §4: only statements declaring the unit's externally-observable behavior are taxed — internal implementation detail is design expression and creates no carrier obligation.
 
 **Execution steps:**
 
 1. Extract **contract statements** from the spec body and every non-evidence, non-exempt appendix:
-   - Numeric constraints (timeout, rate, limit, TTL values)
-   - HTTP status codes and error codes
-   - Field / type / enum names and data formats
-   - Protocol names and formats
-   - Timing / consistency assumptions (sync vs async, ordering guarantees, consistency expectations)
+   - Apply the external-visibility boundary of `framework/spec_writing_guide.md` §4 first: a statement declaring the unit's externally-observable behavior — what a caller or dependent unit must read to use this unit safely (API surface, exchanged data formats, error codes, protocol semantics, timing/consistency guarantees) — is a contract statement; internal implementation detail (internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout) is not, even when it states concrete values
+   - Then classify each statement by type:
+     - Numeric constraints (timeout, rate, limit, TTL values)
+     - HTTP status codes and error codes
+     - Field / type / enum names and data formats
+     - Protocol names and formats
+     - Timing / consistency assumptions (sync vs async, ordering guarantees, consistency expectations)
    - Non-constraining narrative (design discussion, illustrative examples, motivation) is NOT a contract statement — same judgment principle as sub-check 5a's extraction premise (see 5a Step 2)
 2. For each contract statement, verify a carrier carries it at a **comparable granularity**:
    - The acceptance item set (an item's `description` or `pass_condition` states the same value, code, field name, format, or assumption), or
    - A protocol appendix (API contract, data type, error code, state machine section) states it
 3. A contract statement with no carrier → FAIL (actionable: move the contract into an acceptance item or a protocol appendix)
+4. **Extraction evidence (required for every FAIL finding):** Each uncarried-contract finding must carry an extraction artifact that makes the claim falsifiable:
+   - **Source quote:** the section heading and quoted sentence in the spec body or appendix that states the contract
+   - **External-visibility judgment:** why the statement declares externally-observable behavior (per the §4 external-visibility boundary) rather than internal design detail
+   - **Absence claim:** the carrier surface checked (the acceptance item set and every protocol appendix) and how the absence of any carrier at comparable granularity was verified
+   A finding without this artifact is not presented — the main agent re-verifies the artifact before classification and drops unfaithful claims (a value actually carried, or a statement reclassified as internal detail — see §Step 9 → Check 5 extraction re-verification).
 
 **PASS:** Every contract statement in prose is carried by an item or protocol appendix
 
@@ -714,9 +729,19 @@ affects.appendices:
 
 ## Step 9 — Write validate cache (main agent)
 
-After all 8 checks complete:
+After all 8 checks complete, the main agent re-verifies the extraction artifacts of Check 5 FAIL findings (sub-check 5a step 8 / 5h step 4) — see Check 5 extraction re-verification below — then decides the cache on the post-verification verdicts:
 
-- **If all PASS:** write validate cache per `framework/validation_cache.md` format:
+### Check 5 extraction re-verification
+
+Uncovered-domain findings (sub-check 5a step 8) and uncarried-contract findings (sub-check 5h step 4) carry an extraction artifact. Before classification, the main agent re-verifies each artifact with deterministic checks:
+
+- Sub-agent claims "no item covers behavior subject X" → re-read the item set (the union of every item's `description` and `pass_condition`) and confirm X's quoted subject terms are really absent; a subject actually mentioned, or behavior variants split out of a covered domain (granularity violation), drops the finding
+- Sub-agent claims "no carrier states contract value Y" → grep the item set and the protocol appendices for the quoted value; a value actually carried at comparable granularity drops the finding
+- Sub-agent claims "Z is a behavior domain" (5a step 2), "Z is a contract statement" (5h), or "Z is appendix contract content requiring acceptance coverage" (5a step 6) → check the classification against the external-visibility boundary of `framework/spec_writing_guide.md` §4 (externally-observable behavior vs internal design detail); content reclassified as internal detail drops the finding
+
+Re-verification failure → the finding is dropped and the affected check's FAIL reason is updated accordingly (the check re-verdicts PASS if no finding survives). This runs before classification because a post-execution check re-run cannot detect a wrong-direction fix — once the spec is edited to match a false claim, the re-run passes and the error is cemented (same principle as Assertion re-verification below). Every dropped finding is recorded in the report with its location and drop reason (see §Summary format → Extraction re-verification), so a re-verified-out claim remains visible to the user. Surviving findings proceed to batch classification unchanged.
+
+- **If all checks PASS (after re-verification):** write validate cache per `framework/validation_cache.md` format:
   - Create `docs/specs/meta/validation/unit/{name}/` directory if needed
   - Collect dependency evidence for every file read during validation, including:
     - Main spec file
@@ -726,7 +751,7 @@ After all 8 checks complete:
   - Write `validate_result.md` with `result: pass`, `target: candidate`, `mode: full`, file hashes and dependency CIDs
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes the existing cache — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
-- **If any FAIL:** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
+- **If any FAIL remains (after re-verification):** delete existing `validate_result.md` if present. Do not write cache. Proceed to Present Findings.
 
 ### Delta re-run (revalidate@{unit})
 
@@ -735,7 +760,7 @@ Candidate targets, plus stable-only targets with a usable confirmation baseline 
 1. **Preconditions** — the existing cache must have `mode: full` and `result: pass`; a MISSING cache or a blocked review cache (for rereview) has no usable baseline — run the full command instead.
 2. **Scope derivation (mechanism-derived)** — run `fresh@{unit}` and read its `DELTA SCOPE (validate)` section: the affected check keys (from the cache's per-check `checks` mapping), the unclaimed entries, the stale-dep count, and the degradation state. Affected checks = {checks whose declared deps went stale} ∪ {cross-check}. Stale deps that no check declared are **unclaimed** — map them by the fixed associations: a `unit:{name}` / `unit:{name}:appendix:{file}` entry → Check 7 (cross-unit); a `rule:{id}` entry → Check 8 (constraint alignment); a whole-file or declare-heavy stale dep in the unit's own file → re-read the spec and map it semantically. A cache without per-check evidence (legacy — `fresh@` reports "no per-check evidence") falls back to semantic derivation: map the changed content to the affected checks by re-reading the spec. If `fresh@{unit}` reports STALE for an entry the derivation sees as unaffected, trust `fresh@` — treat the file as a stale source and map its unclaimed deps per the rules above (see `framework/verification_scope.md` §Delta Runs). Report the scope — re-run checks with their stale source and reason, and the carried-over checks — before executing.
 3. **Degradation (derived)** — when the affected set covers every declared check, the incremental scope is the whole run: report this to the user ("the stale sources affect every check — an incremental re-run is a full re-run") and ask whether to proceed or run `validate@{unit}` instead. Editing one section of your own spec stales only the checks that declared it — this is NOT a degradation trigger.
-4. **Execution** — re-run only the scoped checks + cross-check. Any P0/P1 finding → delete the validate cache, stop, present findings (same as full FAIL).
+4. **Execution** — re-run only the scoped checks + cross-check. Any P0/P1 finding → delete the validate cache, stop, present findings (same as full FAIL — 5a/5h findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation).
 5. **On PASS** — rewrite `validate_result.md` with `mode: full`, `basis: delta`, `target: candidate` (stable-only target: `target: stable`), a fresh `timestamp`, and a **complete** `files` list: new `hash` + `deps` + per-check `checks` evidence (`specflowctl gate-evidence`) for the re-run checks' files, the original evidence for the carried-over checks' files (their CIDs are unchanged by construction — they were not stale sources). Logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) are carried over the same way.
 
 ---
@@ -754,7 +779,7 @@ When FAIL items exist, the main agent classifies each finding into a **batch gro
 - Check 1: appendix path or naming not following the convention (standard: the path convention)
 - Check 5d: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
 
-All other FAIL findings — including 5e/5f/5g content rewrites, Checks 2/3/4/6/7/8, and every needs_decision item — go to the decision group. **needs_decision items always go to the decision group.**
+All other FAIL findings — including 5e/5f/5g/5i content rewrites, Checks 2/3/4/6/7/8, and every needs_decision item — go to the decision group. **needs_decision items always go to the decision group.**
 
 No activation threshold: findings are aggregated at check level rather than presented flat per item, so splitting out the batch group adds constant cost and always reduces the decisions the user must make — there is no over-splitting scenario. The batch group is inherently limited by the fix-type list above.
 
@@ -802,6 +827,8 @@ Severity check:
   confirmed: N | adjusted: N
   - {location} — adjusted {Px} → {Py}, evidence: {file}, reason: {one line}
 ────────────────────────────────────────────
+Extraction re-verification: dropped N — {location}: {reason}
+────────────────────────────────────────────
 Findings:
   Batch group (N items) — fix fully determined by an objective standard:
     - [{severity}] {location} — {issue} (actionable, based on: {standard reference})
@@ -815,6 +842,8 @@ Next step: {actionable → "fixes applied — re-run `validate@{unit}:check-{n}`
 ```
 
 `Findings` (N) equals the sum of batch group items and decision group items.
+
+`Extraction re-verification` appears only when the run dropped findings during the Check 5 extraction re-verification (see Step 9); it records each dropped finding's location and drop reason.
 
 When no finding qualifies for the batch group, present flat:
 
