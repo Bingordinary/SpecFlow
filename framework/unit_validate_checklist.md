@@ -179,6 +179,11 @@ When findings mix resolution types (within one check or across checks), the repo
     - **Fenced code blocks are content** — `##`-like lines inside ``` / ~~~ fences must not split regions; when a fence would visually span a section boundary, the spec needs restructuring (a fence cannot cross `##` headings — close the fence before the next heading)
     - **Every region the run will declare is locatable** — for each section the checks will declare (run `--section <heading>` probes), the heading resolves uniquely. A declaration that cannot be located fails closed at cache-write time; this step surfaces it at validate time
     - Fix direction: restructure the spec so the split is semantically clean (cohesion per `framework/spec_writing_guide.md` §13); do not fall back to whole-file declarations as a workaround
+13. **Version Notes check (FAIL):** verify the unit's own main spec complies with the Version Notes convention (see `framework/spec_writing_guide.md` §14). Applies to candidate specs only: stable-only runs skip it (stable content is consensus — the §14 Scope migration rule leaves the section to the unit's next candidate round), and retiring candidates skip it (the spec is being removed, not archived):
+    - Existence and position: the spec must contain a `## Version Notes` heading as its first `##` heading, immediately after the `#` title; a missing heading or a heading in any other position is a FAIL
+    - Lifecycle compliance: the section contains at most two entries — the top entry's version must equal the frontmatter `version` field, followed by at most one line summarizing the previous version; a section with more entries (an untruncated changelog carried over from the stable copy) is a FAIL
+    - Content discipline: entries record design-decision-level changes (behavior, contract, boundary, config semantics) — implementation details, typo fixes, or formatting edits belong to VCS history, not the section
+    - Fix direction: restructure the spec per `framework/spec_writing_guide.md` §14 (Version Notes)
 
 **PASS:** All format constraints satisfied
 

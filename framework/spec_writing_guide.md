@@ -565,3 +565,33 @@ The unit's own main spec is declared by **section regions** in validation caches
 8. **Reserved heading name:** `frontmatter` is a reserved spelling — the `--section frontmatter` declaration names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be declared by section regions: the declaration would silently alias the pre-heading region (validate Check 9 fails the reserved name). Choose a different heading text.
 
 A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, or stray pre-heading content) cannot be declared by section regions — validate Check 1/9 reports it and the fix direction is restructuring the spec per this section, not falling back to whole-file declarations.
+
+## 14. Version Notes
+
+Every unit main Spec must carry a Version Notes section summarizing the current version's design-level changes. It is a writing convention, not a tooling mechanism: the heading is an ordinary `##` section, the frontmatter `version` field remains the version authority, and VCS history remains the full changelog.
+
+**Position:** the section is the independent `## Version Notes` heading — the first `##` heading of the spec, located immediately after the `#` title:
+
+```text
+# {unit} Spec
+## Version Notes
+## 1. ...
+```
+
+The heading text is fixed — always `## Version Notes`, never localized or rephrased: the heading is part of the section region's content identity (§13 item 5), and a fixed spelling keeps the validate expectation single. The section is an ordinary `##` region and is subject to every §13 rule (unique heading, one topic, naming stability). It must not be written as a `> Version Notes` quote or as stray prose in the frontmatter region — §13 item 1 forbids any content there other than the YAML block, the `#` title, and blank lines.
+
+**Semantics:** the section records the current version's design-decision-level changes only — changes to behavior, contract, boundary, or config semantics. It is not a changelog: implementation details, typo fixes, and formatting edits are not recorded, and the full history lives in VCS. Each entry is a single line in the form:
+
+```text
+## Version Notes
+
+{version} — {change summary}
+
+{previous version} — {one-line summary of the previous round's changes}
+```
+
+The `{version}` of the top entry must equal the frontmatter `version` field. Entries are ordered newest first.
+
+**Lifecycle:** `specflowctl fork` copies the section verbatim — the tool rewrites only the frontmatter `version` field (a PATCH bump, see §8), never the body content. When the agent starts editing the candidate after fork, it truncates the section to the current version plus a one-line summary of the previous version, then records the new round's changes under the bumped version. `promote` copies the section unchanged — the candidate's Version Notes content becomes the stable content verbatim, matching the byte-identical copy rule of the promote workflow (see `framework/unit_promote_workflow.md`).
+
+**Scope:** the convention applies to the unit's own main Spec only. Rule files, appendix files, and protocol appendices are contract files declared whole (§13 item 7) and carry no Version Notes requirement. Specs promoted before this convention carry no section and are not forced to migrate: stable-only validation skips the Version Notes check, and the section is added on the unit's next candidate round (fork).

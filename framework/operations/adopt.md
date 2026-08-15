@@ -44,7 +44,7 @@ The user confirms the cut, adjusts it (merge, split, or rename units), or defers
 For each unit in the confirmed batch, the agent:
 
 1. Reads the code and writes the evidence appendix (`unit_{unit}_evidence.md`) under `docs/specs/units/candidate/appendix/`, organized by behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
-2. Writes the candidate main spec (`unit_{unit}.md`) with the acceptance item set. Each evidence-driven acceptance item lists the evidence appendix in its `affects.appendices` and uses a `verification_type` appropriate to the recorded behavior (`testable` / `inspectable`).
+2. Writes the candidate main spec (`unit_{unit}.md`) with the acceptance item set. Each evidence-driven acceptance item lists the evidence appendix in its `affects.appendices` and uses a `verification_type` appropriate to the recorded behavior (`testable` / `inspectable`). The spec's first `##` heading must be `## Version Notes` (see `framework/spec_writing_guide.md` §14), with a single entry for the initial adoption round whose version matches the frontmatter `version` field.
 3. Sets `evidence_appendix_ref: unit_{unit}_evidence.md` in the main spec frontmatter.
 
 **Coverage standard for adoption:** main flow + boundary behaviors. Cover entry/exit points, the normal path, key error paths, and boundary conditions. Do not exhaustively document internal details — detail is added by later iterations as the unit evolves.
