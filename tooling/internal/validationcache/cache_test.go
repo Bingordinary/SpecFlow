@@ -2638,3 +2638,44 @@ func TestDeriveStaleScopeRuleFilePrefixedPathDegrades(t *testing.T) {
 		t.Fatalf("expected the prefixed rule file entry unclaimed, got %v", scope.Unclaimed)
 	}
 }
+
+func TestRewriteCacheLayer(t *testing.T) {
+	input := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntarget: stable\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:abc\n  - path: docs/specs/units/stable/appendix/unit_test_a.md\n    hash: sha256:def\n  - path: unit:dep\n    hash: sha256:ghi\n  - path: src/a.go\n    hash: sha256:jkl\n---\n## Findings\n- P2: something\ntarget: stable is body text, not frontmatter\n"
+
+	out, changed := rewriteCacheLayer(input)
+	if !changed {
+		t.Fatal("expected the cache to be rewritten")
+	}
+	if !strings.Contains(out, "target: candidate\n") {
+		t.Fatalf("expected frontmatter target rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: docs/specs/units/candidate/unit_test.md") {
+		t.Fatalf("expected main spec path rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: docs/specs/units/candidate/appendix/unit_test_a.md") {
+		t.Fatalf("expected appendix path rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: unit:dep") {
+		t.Fatalf("logical reference must be preserved, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: src/a.go") {
+		t.Fatalf("code file path must be preserved, got:\n%s", out)
+	}
+	if !strings.Contains(out, "target: stable is body text, not frontmatter") {
+		t.Fatalf("body must be preserved verbatim, got:\n%s", out)
+	}
+	if strings.Contains(out, "docs/specs/units/stable/") {
+		t.Fatalf("no stable path may remain, got:\n%s", out)
+	}
+}
+
+func TestRewriteCacheLayerNoChange(t *testing.T) {
+	input := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\nok\n"
+	out, changed := rewriteCacheLayer(input)
+	if changed {
+		t.Fatal("a candidate-layer cache must not be rewritten")
+	}
+	if out != input {
+		t.Fatalf("content must be unchanged, got:\n%s", out)
+	}
+}

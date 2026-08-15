@@ -146,6 +146,19 @@ func cacheDepsAt(t *testing.T, repoRoot, relPath string) string {
 	return b.String()
 }
 
+// appendToFile appends content to a file (used to invalidate cache evidence).
+func appendToFile(t *testing.T, path, content string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func fullUnitSpecPaths(repoRoot, name string) []cacheFileSpec {
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_"+name+".md")
 	return []cacheFileSpec{{
@@ -991,6 +1004,162 @@ func TestFreshStableUnitDetail(t *testing.T) {
 	}
 	if !strings.Contains(out, "MISSING") {
 		t.Fatalf("expected MISSING baseline state, got:\n%s", out)
+	}
+}
+
+// TestFreshStableDetailAdvice verifies the stable detail report suggests the
+// recovery command per gate state: MISSING gates need the full confirmation
+// run, STALE gates suggest the delta re-run.
+func TestFreshStableDetailAdvice(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeStableUnitSpec(t, repoRoot, "settled")
+
+	out, err := freshRun(t, repoRoot, "--unit", "settled")
+	if err != nil {
+		t.Fatalf("fresh --unit settled: %v", err)
+	}
+	for _, want := range []string{
+		"-> required: validate@settled (full run - no delta baseline)",
+		"-> required: verify@settled (full run - no delta baseline)",
+		"-> required: review@settled (full run - no delta baseline)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected advice %q, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestFreshStableDetailDeltaScope verifies a STALE stable confirmation gate
+// shows its DELTA SCOPE section and the delta recovery suggestion.
+func TestFreshStableDetailDeltaScope(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeStableUnitSpec(t, repoRoot, "settled")
+	specHash := computeHash(specPath)
+
+	writeUnitCache(t, repoRoot, "settled", "validate", "target: stable\n",
+		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+
+	// The stable spec changes after the confirmation run -> the declared
+	// dependency chunk is gone -> validate: STALE with a derivable delta scope.
+	appendToFile(t, specPath, "# appended\n")
+
+	out, err := freshRun(t, repoRoot, "--unit", "settled")
+	if err != nil {
+		t.Fatalf("fresh --unit settled: %v", err)
+	}
+	if !strings.Contains(out, "validate  STALE") {
+		t.Fatalf("expected validate STALE, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-> suggestion: revalidate@settled (delta recovery)") {
+		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
+	}
+	if !strings.Contains(out, "DELTA SCOPE (validate):") {
+		t.Fatalf("expected DELTA SCOPE section, got:\n%s", out)
+	}
+}
+
+// TestFreshCandidateDetailAdvice verifies the candidate detail report suggests
+// the recovery command per gate state, symmetric with the stable report.
+func TestFreshCandidateDetailAdvice(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeUnitSpec(t, repoRoot, "iter")
+	specHash := computeHash(specPath)
+
+	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
+		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
+
+	// Fresh validate, but verify/review never ran -> MISSING advice.
+	out, err := freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "-> required: verify@iter (full run - no delta baseline)") {
+		t.Fatalf("expected verify advice, got:\n%s", out)
+	}
+
+	// The spec changes -> validate STALE -> delta recovery suggestion.
+	appendToFile(t, specPath, "# appended\n")
+	out, err = freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "-> suggestion: revalidate@iter (delta recovery)") {
+		t.Fatalf("expected revalidate advice, got:\n%s", out)
+	}
+}
+
+// TestFreshAppendixAdviceRequiresFreshValidate verifies the appendix advice
+// renders only when the validate cache is FRESH: a delta re-run then stops
+// early and cannot pick up a newly added appendix, so the full validate run
+// is the only recovery.
+func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeUnitSpec(t, repoRoot, "iter")
+	specHash := computeHash(specPath)
+
+	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
+		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
+
+	// A new non-exempt appendix appears after the validation run: the validate
+	// cache is still fresh, but the appendix gate goes STALE.
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nid: iter_b\nstatus: active\n---\n## Extra\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "validate  FRESH") {
+		t.Fatalf("expected validate FRESH, got:\n%s", out)
+	}
+	if !strings.Contains(out, "appendix  STALE") {
+		t.Fatalf("expected appendix STALE, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-> required: validate@iter (full run - appendix coverage)") {
+		t.Fatalf("expected full-run appendix advice, got:\n%s", out)
+	}
+}
+
+// TestFreshAppendixAdviceSuppressedWhenValidateStale verifies the appendix
+// advice is suppressed when the validate cache is STALE: the delta re-run
+// restores appendix coverage through its complete files list, so only the
+// delta recovery suggestion is printed.
+func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeUnitSpec(t, repoRoot, "iter")
+	specHash := computeHash(specPath)
+
+	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
+		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
+
+	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nid: iter_b\nstatus: active\n---\n## Extra\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The spec also changes -> validate STALE alongside the appendix STALE.
+	appendToFile(t, specPath, "# appended\n")
+
+	out, err := freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "validate  STALE") {
+		t.Fatalf("expected validate STALE, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-> suggestion: revalidate@iter (delta recovery)") {
+		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
+	}
+	if strings.Contains(out, "full run - appendix coverage") {
+		t.Fatalf("appendix full-run advice must be suppressed when validate is STALE, got:\n%s", out)
 	}
 }
 

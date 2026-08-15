@@ -14,7 +14,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 **Cache invariant:** only a complete-coverage run (full or delta) writes a cache. A cache exists means a complete check passed (or, for review, a complete review completed). Targeted runs report findings and write nothing.
 
-**Layer roles:** the verification loop — caches, promote eligibility, and delta re-runs — belongs to the candidate layer. The stable layer has no gate and no delta re-runs; the three full commands run against a stable-only target as **confirmation checks** of the stable content's continuing relationship with the outside world (see §Stable-only Targets). They write a `target: stable` cache consumed by `fresh@stable` and never edit anything — any change to consensus content goes through `fork` (see `framework/concepts.md` §4).
+**Layer roles:** the verification loop — caches, promote eligibility, and delta re-runs — belongs to the candidate layer. The stable layer has no gate; the three full commands run against a stable-only target as **confirmation checks** of the stable content's continuing relationship with the outside world (see §Stable-only Targets). They write a `target: stable` cache consumed by `fresh@stable` and never edit anything — any change to consensus content goes through `fork` (see `framework/concepts.md` §4). Delta re-runs restore a stale confirmation cache when a usable pass baseline exists (see §Delta Runs → Layer applicability).
 
 ## Principles
 
@@ -22,7 +22,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 2. **Targeted only on explicit user choice** — `:check-{n}` (validate) and `:{keyword}` (all three commands) scope the run to a user-declared focus.
 3. **Targeted results never satisfy promote** — targeted runs do not write caches. Only a complete-coverage run's cache passes the promote gate.
 4. **Delta only on explicit user choice** — `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` re-run only the judgments whose evidence went stale (plus cross-check — unit targets) and write a cache with `basis: delta`. The incremental scope is derived from the stale cache evidence and reported to the user explicitly (see §Delta Runs).
-5. **Delta applies to candidate targets only** — the incremental re-run restores promote eligibility, which exists only for candidates. A delta run against a stable-only target reports "delta re-runs apply to candidate targets — run the full command, or fork to start a new round" (see §Delta Runs → Layer applicability).
+5. **Delta restores both layers** — the incremental re-run restores promote eligibility for candidates and a stale confirmation state for stable-only targets (whose confirmation cache exists with `result: pass`, review: `blocking: false`). A delta run against a stable-only target without a usable baseline reports "No usable confirmation baseline. Run the full command" (see §Delta Runs → Layer applicability).
 6. **Keyword means "what the user wants to look at"** — each command resolves the keyword inside its own target domain (see Keyword Resolution).
 7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
 
@@ -64,9 +64,9 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit and rule candidate targets only. Preconditions and scope rules in §Delta Runs. |
-| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit candidate targets only (rule verify has been removed). |
-| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Unit candidate targets only. |
+| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline (see §Delta Runs → Layer applicability). Preconditions and scope rules in §Delta Runs. |
+| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline (rule verify has been removed). |
+| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline. |
 
 No `:keyword` / `:check-{n}` variant — a delta run is a complete-coverage run, not a targeted one.
 
@@ -443,7 +443,7 @@ A delta cache carries no lower evidence standard than a full cache: every judgme
 
 ### Layer applicability
 
-Delta re-runs apply to **candidate targets only**. A delta run restores promote eligibility, which exists only for the candidate layer; a stable-only target has no gate to restore, and its confirmation checks (see §Stable-only Targets) require complete judgment — a delta run skips exactly the judgments whose impact the confirmation needs to analyze. When the user triggers a delta command against a stable-only target, report: "`re*` re-runs apply to candidate targets. For stable content, run the full `validate@{unit}` / `verify@{unit}` / `review@{unit}` (confirmation check), or `specflowctl fork` to start a new round."
+Delta re-runs apply to **candidate targets** and to **stable-only targets with a usable confirmation baseline**. For a candidate target, a delta run restores promote eligibility, which exists only for the candidate layer. For a stable-only target, a delta run restores the stale confirmation state — it is a recovery, not a complete re-confirmation: it re-runs only the judgments whose dependency evidence went stale and carries the rest over from the pass baseline. The precondition is the same as for candidates — the gate's confirmation cache must exist with `mode: full` and `result: pass` (review: `blocking: false`). A MISSING cache (never confirmed) or a blocked/failed cache has no usable baseline — report: "No usable confirmation baseline. Run the full `validate@{unit}` / `verify@{unit}` / `review@{unit}` (confirmation check) first, or `specflowctl fork` to start a new round." Delta FAIL on a stable-only target behaves exactly like full FAIL: validate/verify delete the confirmation cache and recommend forking; review writes the cache with `blocking: true`.
 
 The layer boundary is decided by file existence: a target with a candidate file is a candidate target; a target with only stable files is a stable-only target. A delta run that would apply against the candidate file is valid even when the target's stable counterpart exists — `fresh@` separates the two cache sets with layer-specific checks: the stable validate/verify variants require the stable main spec in the cache's files list (their caches must prove the main file was read), and the stable review variant requires `target: stable` (the review gate has no main-file requirement, so the `target` field carries the layer).
 
@@ -459,7 +459,7 @@ When no candidate file exists for a unit (or rule), the three full commands run 
 
 Rule targets have no verify or review (rule verify has been removed; review is unit-only), so the rule confirmation is `validate@` alone.
 
-The confirmation caches go stale when their dependency evidence changes: the validate cache when a dependency unit's contract, a rule, or a referenced file changes; the verify and review caches when the code changes. Recovery is a full re-run of the same command — delta re-runs do not apply to stable-only targets (see §Delta Runs → Layer applicability). The stale signal doubles as impact detection: after a rule change, every stable unit bound to the rule shows `validate: STALE` in `fresh@stable`, naming the impact surface.
+The confirmation caches go stale when their dependency evidence changes: the validate cache when a dependency unit's contract, a rule, or a referenced file changes; the verify and review caches when the code changes. Recovery from STALE: a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) re-runs only the judgments whose evidence went stale and rewrites the cache with `basis: delta` — the default recovery path when a pass baseline exists (see §Delta Runs → Layer applicability). Recovery from MISSING (never confirmed) or BLOCKED (review P0/P1): the full confirmation run of the same command. Delta FAIL behaves like full FAIL: validate/verify delete the confirmation cache and recommend forking; review writes the cache with `blocking: true`. The stale signal doubles as impact detection: after a rule change, every stable unit bound to the rule shows `validate: STALE` in `fresh@stable`, naming the impact surface.
 
 ## Targeted Runs
 

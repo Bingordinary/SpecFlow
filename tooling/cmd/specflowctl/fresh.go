@@ -298,6 +298,9 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
+	if advice := gateAdvice("validate", vStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	if isRetiringUnit(absRoot, unitName) {
 		fmt.Fprintln(stdout)
@@ -320,6 +323,9 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
+	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	rStatus, rDetail, rNote := checkUnitGate(absRoot, unitName, "review")
 	if rStatus == gateFresh {
@@ -331,12 +337,18 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "review", rStatus, rDetail)
+	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	aStatus, aDetail := checkAppendixGate(absRoot, unitName)
 	if aStatus != gateOK {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "appendix", aStatus, aDetail)
+	if advice := appendixAdvice(aStatus, vStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, map[string]gateStatus{
 		"validate": vStatus,
@@ -422,6 +434,9 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vaStatus, vaDetail)
+	if advice := gateAdvice("validate", vaStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	vfStatus, vfDetail, vfNote := checkStableUnitGate(absRoot, unitName, "verify")
 	if vfStatus == gateFresh {
@@ -431,6 +446,9 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
+	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	rStatus, rDetail, rNote := checkStableUnitGate(absRoot, unitName, "review")
 	if rStatus == gateFresh {
@@ -440,6 +458,9 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "review", rStatus, rDetail)
+	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	result := baseline.CheckUnitBaseline(absRoot, unitName)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
@@ -455,6 +476,12 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	default:
 		fmt.Fprintln(stdout, "No baseline recorded for this stable unit (promoted before baseline support).")
 	}
+
+	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, map[string]gateStatus{
+		"validate": vaStatus,
+		"verify":   vfStatus,
+		"review":   rStatus,
+	})
 	return nil
 }
 
@@ -476,6 +503,9 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
+	if advice := gateAdvice("validate", vStatus, ruleID); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 	fmt.Fprintln(stdout, "verify and review do not apply to rules.")
 
 	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, map[string]gateStatus{"validate": vStatus})
@@ -500,6 +530,9 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 		}
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
+	if advice := gateAdvice("validate", vStatus, ruleID); advice != "" {
+		fmt.Fprintf(stdout, "  %s\n", advice)
+	}
 
 	result := baseline.CheckRuleBaseline(absRoot, ruleID)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
@@ -512,6 +545,10 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 	default:
 		fmt.Fprintln(stdout, "No baseline recorded for this stable rule (promoted before baseline support).")
 	}
+
+	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, map[string]gateStatus{
+		"validate": vStatus,
+	})
 	return nil
 }
 
@@ -629,6 +666,38 @@ func classifyGate(result validationcache.CheckResult) gateStatus {
 
 func gatePassed(status gateStatus) bool {
 	return status == gateFresh || status == gateOK
+}
+
+// gateAdvice renders the recovery suggestion for a non-fresh gate. STALE is
+// recoverable by the delta re-run (re* — the default recovery path); MISSING
+// and BLOCKED have no usable delta baseline and need the full command.
+func gateAdvice(command string, status gateStatus, targetName string) string {
+	switch status {
+	case gateStale:
+		return fmt.Sprintf("-> suggestion: re%s@%s (delta recovery)", command, targetName)
+	case gateMissing:
+		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
+	case gateBlocked:
+		return fmt.Sprintf("-> required: %s@%s (full run - resolve P0/P1 first)", command, targetName)
+	default:
+		return ""
+	}
+}
+
+// appendixAdvice renders the recovery suggestion for the appendix gate. The
+// full validate run is required only when the validate cache itself is FRESH:
+// a delta re-run then stops early ("cache is fresh — no incremental re-run
+// needed"), so it cannot pick up newly added appendices. When the validate
+// cache is not FRESH, the delta re-run (revalidate@) restores appendix
+// coverage instead — its rewrite carries a complete files list including
+// every appendix (see framework/verification_scope.md §Delta Runs →
+// Execution). An appendix MISSING state always implies validate MISSING,
+// whose own advice line already demands the full run.
+func appendixAdvice(status, validateStatus gateStatus, unitName string) string {
+	if status == gateStale && validateStatus == gateFresh {
+		return fmt.Sprintf("-> required: validate@%s (full run - appendix coverage)", unitName)
+	}
+	return ""
 }
 
 // freshDetail renders the frontmatter summary of a fresh cache.

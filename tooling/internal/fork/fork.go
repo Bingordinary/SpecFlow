@@ -8,6 +8,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fileops"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 type Result struct {
@@ -102,6 +103,25 @@ func Fork(repoRoot, unitName string) *Result {
 		}
 		rel, _ := filepath.Rel(repoRoot, f.dst)
 		r.Actions = append(r.Actions, fmt.Sprintf("Forked appendix: %s", rel))
+	}
+
+	// Inherit the stable confirmation caches: fork copies the stable content
+	// verbatim (only the version bumps), so pass confirmation conclusions
+	// carry over to the candidate round (rewritten to the candidate layer).
+	// Skipped gates need their full run; inheritance errors are non-fatal —
+	// the fork itself succeeded, and a missing baseline is a safe degradation
+	// (the gate re-runs in full).
+	inheritReport, err := validationcache.InheritStableCaches(repoRoot, unitName)
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to inherit confirmation caches: %v (gates need their full runs)", err))
+	} else {
+		for _, e := range inheritReport.Entries {
+			if e.Inherited {
+				r.Actions = append(r.Actions, fmt.Sprintf("Inherited %s confirmation cache (rewritten to candidate layer)", e.Command))
+			} else {
+				r.Actions = append(r.Actions, fmt.Sprintf("%s: %s", e.Command, e.Reason))
+			}
+		}
 	}
 
 	r.Passed = true

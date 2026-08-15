@@ -1087,6 +1087,118 @@ func readCache(path string) (*cacheFile, error) {
 	return cache, nil
 }
 
+// InheritEntry reports one gate's fork-inheritance outcome.
+type InheritEntry struct {
+	Command   string // validate | verify | review
+	Inherited bool
+	Reason    string // why the cache was not inherited ("" when inherited)
+}
+
+// InheritReport summarizes the fork-inheritance result for one unit.
+type InheritReport struct {
+	Unit    string
+	Entries []InheritEntry
+}
+
+// InheritStableCaches converts the unit's stable confirmation caches
+// (target: stable) into candidate caches for a forked round. Fork copies the
+// stable spec and appendices verbatim (only the version bumps), so the
+// confirmation conclusions carry over: a gate cache with `result: pass`
+// (review additionally `blocking: false`) is rewritten — `target: stable` →
+// `target: candidate` and physical paths under `docs/specs/units/stable/` →
+// `docs/specs/units/candidate/` — and stays valid for the candidate round
+// until its evidence goes stale (the version bump stales the frontmatter
+// declarations; delta re-runs restore the affected gates). Caches that
+// cannot be inherited (missing, non-pass, blocking review) are skipped with
+// a reason — the forked round starts those gates from scratch. Rule forks do
+// not inherit: a rule's cache declares the rule file whole, so the fork's
+// version bump stales it into a full re-run anyway.
+func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
+	report := &InheritReport{Unit: unitName}
+	for _, cmd := range []string{"validate", "verify", "review"} {
+		entry := InheritEntry{Command: cmd}
+		cachePath := cacheFilePath(repoRoot, "unit", unitName, cmd+"_result.md")
+		data, err := os.ReadFile(cachePath)
+		if os.IsNotExist(err) {
+			entry.Reason = "no confirmation cache to inherit"
+			report.Entries = append(report.Entries, entry)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		cache, err := readCache(cachePath)
+		if err != nil {
+			entry.Reason = fmt.Sprintf("confirmation cache unreadable: %v", err)
+			report.Entries = append(report.Entries, entry)
+			continue
+		}
+		switch {
+		case cache.Target != "stable":
+			entry.Reason = fmt.Sprintf("cache target is %q, expected 'stable' — not a stable confirmation cache", cache.Target)
+		case cache.Result != "pass":
+			entry.Reason = fmt.Sprintf("confirmation cache result is %q, expected 'pass'", cache.Result)
+		case cmd == "review" && cache.Blocking:
+			entry.Reason = "confirmation cache is blocking (P0/P1 findings)"
+		default:
+			rewritten, changed := rewriteCacheLayer(string(data))
+			if !changed {
+				entry.Reason = "confirmation cache needs no layer rewrite"
+			} else if err := os.WriteFile(cachePath, []byte(rewritten), 0644); err != nil {
+				return nil, err
+			} else {
+				entry.Inherited = true
+			}
+		}
+		report.Entries = append(report.Entries, entry)
+	}
+	return report, nil
+}
+
+// rewriteCacheLayer rewrites a stable confirmation cache into its candidate
+// form: the `target: stable` declaration becomes `target: candidate`, and
+// every physical path under `docs/specs/units/stable/` in the files list
+// becomes `docs/specs/units/candidate/` (the main spec and appendices move
+// layer with the fork). Logical references (`unit:` / `rule:`) are untouched —
+// they resolve by name to the current layer. Only the frontmatter is edited;
+// the body is preserved verbatim. Returns whether anything changed.
+func rewriteCacheLayer(content string) (string, bool) {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
+		return content, false
+	}
+	endIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx == -1 {
+		return content, false
+	}
+	changed := false
+	for i := 1; i < endIdx; i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "target:") &&
+			strings.TrimSpace(strings.TrimPrefix(trimmed, "target:")) == "stable":
+			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			lines[i] = leading + "target: candidate"
+			changed = true
+		case strings.HasPrefix(trimmed, "- path: docs/specs/units/stable/"):
+			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			newPath := "docs/specs/units/candidate/" + strings.TrimPrefix(
+				strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")),
+				"docs/specs/units/stable/")
+			lines[i] = leading + "- path: " + newPath
+			changed = true
+		}
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
 // fileHash computes the SHA-256 hash of a file's normalized content.
 // Delegates to specpaths.FileHash for the canonical normalization.
 func fileHash(path string) (string, error) {
