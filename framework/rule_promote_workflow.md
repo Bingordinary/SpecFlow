@@ -18,17 +18,19 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 | **MINOR** (0.x.0) | Compatible extension | Assess consumer impact per rule content. Typically none. |
 | **PATCH** (0.0.x) | Wording clarification | Assess consumer impact per rule content. Typically none. |
 | None | Brand new rule (no previous stable) | No consumers exist yet. Rule promoted to stable. |
-| **Retired** (`status: retired`) | Rule is removed from stable | Agent must remove the rule from every unit that explicitly lists it in `rule_refs` before promote (explicit references only — a global rule's default applicability lifts when its file disappears); the CLI rejects a retire while explicit references remain |
 
-## Retirement
+## Rule Removal
 
-A rule whose constraint no longer applies is retired by adding `status: retired` to the candidate rule frontmatter (see `framework/spec_writing_guide.md` §6.5). The retire promote follows the same cache gate, but instead of copying, the CLI removes the stable rule file and the candidate rule file. The version gate is skipped for retired rules (the stable copy is removed, not updated). Retirement is terminal — git history is the only record.
+A rule whose constraint no longer applies is removed with `specflowctl remove --rule <id>` — the `status: retired` declaration flow no longer exists (see `framework/spec_writing_guide.md` §6.5). Removal is the end of the rule: the rule files are deleted and git history is the only record.
 
-### Pre-check for retirement
+### Pre-check for removal
 
-1. Find all current-layer units that explicitly list the rule in `rule_refs`. `specflowctl consumers --rule <id>` does this for bound rules (`b_rule_*`) — its output is the explicit referrers. It must NOT be used for global rules (`g_rule_*`): for those it lists every current-layer unit (default applicability, not a reference). Instead, run `validate@{rule}` and read the retirement note of Check 6 (`unbound_retention` correctness) — it lists every remaining explicit referrer and fails the validate until they are gone. A global rule's default applicability to every unit is not a reference — it lifts automatically when the stable rule file disappears.
-2. Each explicit referrer must drop the rule from its `rule_refs` (and the body explanation if present) and pass its own validate before the rule is retired. The CLI rejects the retire while any reference remains.
-3. After retirement, `specflowctl consumers --rule <id>` reports no consumers for a bound rule (its explicit references were cleared before retire); for a global rule it reports the rule as not found because the rule file no longer exists — the default applicability has already lifted with the file, so no command confirmation is needed.
+1. Find the rule's current-layer (effective) consumers: `specflowctl detect --rule <id>` reports them, or `specflowctl detect --all` lists every removal candidate (bound rules with no consumers and no `unbound_retention` declaration). Global rules (`g_rule_*`) are never listed — they apply to every unit by default.
+2. Each consumer must drop the rule from its `rule_refs` (and the body explanation if present) and pass its own validate before the rule is removed. `remove` rejects the deletion while any current-layer reference remains, listing the referrers.
+3. `unbound_retention` exempts a rule from removal: a rule declaring intentional retention is rejected by `remove` — remove the retention fields first, or keep the rule.
+4. After removal, `specflowctl consumers --rule <id>` reports the rule as not found because the rule file no longer exists — no command confirmation is needed.
+
+Removal is also triggered automatically: a unit promote removes every bound rule its candidate dropped from `rule_refs` that is left with no consumers and no retention declaration (reported explicitly in the promote actions). `fresh` reports embed the removal-candidate list read-only.
 
 ## Workflow
 
@@ -54,6 +56,8 @@ The CLI tool performs:
 6. **Determine version change type** — MAJOR vs MINOR vs PATCH
 7. **Copy candidate→stable** — pure copy (the layer is encoded by the file path — no frontmatter field is transformed)
 8. **Delete candidate** — removes the candidate rule file
+
+Rule removal is a separate command: `specflowctl remove --rule <id>` (see `framework/spec_writing_guide.md` §6.5). A unit promote additionally removes every bound rule its candidate dropped from `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration; the removed rules are listed explicitly in the promote report.
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
 **FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `rule_validate` before retrying. Do not attempt manual promotion.

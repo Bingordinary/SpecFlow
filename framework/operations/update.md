@@ -73,6 +73,7 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 | **Update references** | Bulk-replace old ref format in `rule_refs` / `unit_refs` across all spec files |
 | **Restructure directories** | Move files between directories when path rules change |
 | **Sync template bootstrap rule** | When Step 2 detected a shape change in `templates/docs/specs/rules/stable/g_rule_repository_baseline.md`, migrate the change to the project copy at `docs/specs/rules/stable/g_rule_repository_baseline.md`: apply the template's clause renumbering, version semantics, and prohibition changes, while preserving the project's own filled content (the Tech Stack and Reusable Mechanisms sections are project-owned records — do not overwrite them with the template's blank placeholders). If a change requires business judgment (e.g. renumbering a clause that the project copy references in its own filled content), present the affected file to the user and ask for input |
+| **Migrate retired rule candidates** | When a rule candidate still carries `status: retired`, the retired-status ceremony no longer exists (`framework/spec_writing_guide.md` §6.5) — the declaration no longer drives any removal behavior. Run `specflowctl detect --rule <id>` to confirm no current-layer consumers, then `specflowctl remove --rule <id>` with user confirmation instead of promoting the candidate; remove the `status` field first if the rule is actually being kept |
 
 For each operation:
 

@@ -134,7 +134,7 @@ rule_version: x.y.z
 
 `promotion_owner_unit` is an optional documentation field. It may be present to indicate which unit owns the promotion decision, but it has no effect on tooling behavior.
 
-`unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist.
+`unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist. They also double as the removal exemption: a rule declaring `unbound_retention` is never a removal candidate and `specflowctl remove --rule` rejects it (see §6.5).
 
 ### 6.1 Rule Creation
 
@@ -172,7 +172,7 @@ When extracting existing unit-local formal truth into a rule:
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
 Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
 
-**Current-layer vs file-level semantics:** "current-layer" resolves each unit to its candidate file when one exists, falling back to the stable file (the same resolution `specflowctl deps` uses). The retirement and mechanical validation checks use file-level semantics instead: any existing unit file — including a stable file whose candidate has already dropped the reference — still counts as a consumer, so a retirement cannot leave a dangling stable-layer reference (see §6.5). The divergence scenario is a candidate that removed the rule from `rule_refs` while its stable predecessor still lists it: conceptually the unit is no longer a consumer, mechanically the reference still counts until the unit promotes. `specflowctl consumers` follows the file-level semantics.
+**Current-layer semantics:** consumer discovery resolves each unit to its candidate file when one exists, falling back to the stable file (the same resolution `specflowctl deps` uses). All bound-rule consumer checks — `specflowctl consumers`, `specflowctl detect`, `specflowctl remove --rule`, and the mechanical validate `unbound_retention` check — follow this semantics. (`specflowctl consumers` for a global rule is the exception: it lists every unit with a file in either layer, retiring candidates included — the default applicability has no per-unit reference to resolve; see `framework/verification_scope.md` §Dependency Analysis.) The divergence scenario is a candidate that removed the rule from `rule_refs` while its stable predecessor still lists it: conceptually the unit is no longer a consumer, and mechanically the reference no longer blocks removal — the stale stable file's reference dangles until the unit promotes, and is exposed by the stable confirmation check (`fresh@stable` validate), never silently (see §6.5).
 
 ### 6.4 Rule Version Semantics
 
@@ -196,18 +196,26 @@ When editing an existing rule candidate, bump the version deterministically:
 - If only wording is clarified without meaning change → bump PATCH
 - If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
 
-### 6.5 Rule Retirement
+### 6.5 Rule Removal
 
-A rule can be retired when its constraint no longer applies to any unit. Retirement is the end of the rule: the stable copy is removed by promote and cannot be forked back.
+A rule can be removed when its constraint no longer applies to any current-layer unit. Removal is the end of the rule: the rule files are deleted by `specflowctl remove --rule <id>` and cannot be forked back.
 
-Procedure:
+Two primitives replace the retired-status ceremony (`status: retired` in rule files is no longer a removal mechanism):
 
-1. Remove the rule from every unit's `rule_refs` (a retiring rule is rejected by promote while any current-layer unit still references it — `validate@{rule}` Check 6 (unbound_retention) and `specflowctl promote` both enforce this; other units' `validate` Check 4 (reference integrity) also rejects a `rule_refs` entry pointing at the retiring rule). When a retiring unit also lists the rule in `rule_refs`, retire the unit first: its candidate file still counts as an explicit referrer while it exists, so the rule retire is rejected until the unit's files are gone. For a stable-only unit that references the rule (no candidate file), open a candidate round first: run `specflowctl fork --unit <name>`, remove the rule from the candidate's `rule_refs` (and body explanation if present), run the unit gates (validate / verify / review) and promote the unit — only then does the stable-layer reference disappear and the rule retire stop being rejected. The retirement is rejected mechanically while any existing unit file still lists the rule (file-level semantics, see §6.3).
-2. In the candidate rule frontmatter, add `status: retired`. The rule version is not compared against the stable version for retired rules (the stable copy is removed, not updated).
-3. Run `validate@{rule}`, then `specflowctl promote --rule <id>` with user confirmation.
-4. After promote, the stable rule file is deleted; the candidate rule file is removed. The rule no longer exists in any layer.
+- `specflowctl detect` — read-only scan of removal candidates. `detect --rule <id>` reports one rule's current-layer (effective) consumers and its retention declaration; `detect --all` lists every bound rule (`b_rule_*`) with no consumers and no `unbound_retention` declaration. Global rules (`g_rule_*`) are never listed: they apply to every unit by default, so "no consumers" is not a meaningful state for them.
+- `specflowctl remove --rule <id>` — deletion command. Its final verification reuses the detection primitive: the rule is rejected while any current-layer unit still references it in `rule_refs` (the referrers are listed), and while it declares `unbound_retention` (intentional retention). For a global rule, only explicit references block the removal — the default applicability to every unit lifts automatically when the rule file disappears. On success the stable copy (and the candidate copy if present) is deleted, followed by the rule's baseline and validate cache.
 
-Retirement is a terminal state — git history is the only record of the retired rule.
+Removal is triggered in three ways:
+
+1. **`promote --unit`** — for every bound rule (`b_rule_*`) the unit's candidate dropped from `rule_refs`, promote runs `detect --rule`; a removable rule is deleted with it, and the promote report explicitly lists the removed rules and the verification basis (no current-layer consumers, no `unbound_retention`). Global rules (`g_rule_*`) are never auto-removed — their default applicability lifts only with an explicit user-invoked `remove --rule`.
+2. **`fresh@candidate` / `fresh@stable` / `fresh@all`** — the report embeds the removal-candidate list (read-only; deletion always happens through `remove` after user confirmation).
+3. **User-named** — the agent runs `remove --rule <id>` directly (optionally previewing with `detect --all`).
+
+**`unbound_retention` exemption:** a rule declaring intentional retention is never a removal candidate and `remove` rejects it — rules with no consumers but future value are kept.
+
+**Dangling stale files:** a removed rule's old stable files that still reference it dangle briefly; the stable confirmation check (`fresh@stable` validate) exposes them, and they disappear naturally when the units promote — a promote treats a dropped rule whose file no longer exists as already removed and cleans up residual baseline/cache metadata instead of failing. Removal is never silently unexposed.
+
+Removal is a terminal state — git history is the only record of the removed rule.
 
 ## 7. Acceptance Criteria
 
@@ -426,10 +434,10 @@ The same mechanism retires an appendix while the rest of the unit continues to b
 
 A whole unit (main spec and all its appendices) is retired by marking the candidate main spec with `status: retired`:
 
-1. Remove all references to the unit from other units' `unit_refs` (a retiring unit is rejected by promote while any current-layer unit still references it — `specflowctl validate` Check 4 and `specflowctl promote` both enforce this).
+1. Remove all references to the unit from other units' `unit_refs` (a retiring unit is rejected by promote while any current-layer unit still references it — `specflowctl validate` Check 4 and `specflowctl promote` both enforce this). "Current-layer" resolves each unit to its candidate file when one exists, falling back to the stable file — the same resolution `specflowctl deps` uses: a stale stable file whose candidate has already dropped the reference does not block the retirement, and the dangling reference is exposed by the stable confirmation check (`fresh@stable` validate) until the unit promotes, never silently. A retiring unit's own references disappear with it and are not counted.
 2. In the candidate main spec frontmatter, add `status: retired`. The acceptance item set is not required on a retiring spec.
-3. Run `validate@{unit}`, then `promote@{unit}` with user confirmation. The verify and review gates are skipped for a retiring unit — its content is being removed, not archived, so implementation alignment and code review have no object (promote also runs only the validate cache gate for a retiring unit, matching rule retirement).
-4. On promote, the stable main spec and every stable appendix of the unit (including `status: exempt` ones) are deleted, and all candidate files are removed. After promote the unit exists in no layer; `specflowctl next` reports the empty state, and a new round can only start by designing the unit from scratch.
+3. Run `validate@{unit}`, then `promote@{unit}` with user confirmation. The verify and review gates are skipped for a retiring unit — its content is being removed, not archived, so implementation alignment and code review have no object.
+4. On promote, the stable main spec and every stable appendix of the unit (including `status: exempt` ones) are deleted, and all candidate files are removed. A retiring unit's promote also runs the §6.5 dropped-rule cleanup: every bound rule the candidate no longer lists in `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration is removed with it (stable and candidate copies, baseline, validate cache), and the removed rules are listed explicitly in the promote report. After promote the unit exists in no layer; `specflowctl next` reports the empty state, and a new round can only start by designing the unit from scratch.
 
 Unit retirement is a terminal state — git history is the only record of the retired unit.
 
