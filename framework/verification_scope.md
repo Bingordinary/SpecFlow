@@ -22,7 +22,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 2. **Targeted only on explicit user choice** — `:check-{n}` (validate) and `:{keyword}` (all three commands) scope the run to a user-declared focus.
 3. **Targeted results never satisfy promote** — targeted runs do not write caches. Only a complete-coverage run's cache passes the promote gate.
 4. **Delta only on explicit user choice** — `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` re-run only the judgments whose evidence went stale (plus cross-check — unit targets) and write a cache with `basis: delta`. The incremental scope is derived from the stale cache evidence and reported to the user explicitly (see §Delta Runs).
-5. **Delta restores both layers** — the incremental re-run restores promote eligibility for candidates and a stale confirmation state for stable-only targets (whose confirmation cache exists with `result: pass`, review: `blocking: false`). A delta run against a stable-only target without a usable baseline reports "No usable confirmation baseline. Run the full command" (see §Delta Runs → Layer applicability).
+5. **Delta restores both layers** — the incremental re-run restores promote eligibility for candidates and a stale confirmation state for stable-only targets (whose confirmation cache exists with `result: pass`, review: `blocking: false`); a failure record (BLOCKED cache) is restored by the failure-recovery delta run (`basis: repair`). A delta run against a stable-only target without a usable baseline reports "No usable confirmation baseline. Run the full command" (see §Delta Runs → Layer applicability).
 6. **Keyword means "what the user wants to look at"** — each command resolves the keyword inside its own target domain (see Keyword Resolution).
 7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
 
@@ -32,7 +32,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `validate@{target}` | Full: all 8 checks + cross-check (unit only — rules have no cross-check). Candidate target: writes the validate cache (`mode: full`, promote gate). Stable-only target (no candidate file): the same 8 checks against the stable content and its current dependencies and rules — writes the cache with `target: stable` (confirmation state consumed by `fresh@stable`); on FAIL deletes the cache and recommends forking (see §Stable-only Targets). |
+| `validate@{target}` | Full: all 8 checks + cross-check (unit only — rules have no cross-check). Candidate target: writes the validate cache (`mode: full`, promote gate). Stable-only target (no candidate file): the same 8 checks against the stable content and its current dependencies and rules — writes the cache with `target: stable` (confirmation state consumed by `fresh@stable`); on FAIL writes a failure record and recommends forking (see §Stable-only Targets). |
 | `validate@{target}:check-{n}` | Targeted: single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
 | `validate@{target}:{keyword}` | Targeted: matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3). Does not write a cache. |
 
@@ -40,7 +40,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `verify@{unit}` | Full: verify all spec content (all 7 steps, batch by spec structure) + cross-check. Candidate target: writes the verify cache (`mode: full`, promote gate). Stable-only target (no candidate file): verify the stable spec against the code (drift confirmation) — writes the cache with `target: stable` (VERIFIED state consumed by `fresh@stable`); on MISMATCH deletes the cache, reports the drift, and recommends forking (see §Stable-only Targets). |
+| `verify@{unit}` | Full: verify all spec content (all 7 steps, batch by spec structure) + cross-check. Candidate target: writes the verify cache (`mode: full`, promote gate). Stable-only target (no candidate file): verify the stable spec against the code (drift confirmation) — writes the cache with `target: stable` (VERIFIED state consumed by `fresh@stable`); on MISMATCH writes a failure record, reports the drift, and recommends forking (see §Stable-only Targets). |
 | `verify@{unit}:{keyword}` | Targeted: matches keyword to spec content (section title, feature name, API path, etc.) → verify that content. Does not write a cache. |
 
 ### Spec Review
@@ -64,9 +64,9 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline (see §Delta Runs → Layer applicability). Preconditions and scope rules in §Delta Runs. |
-| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline (rule verify has been removed). |
-| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over. Writes a cache with `mode: full`, `basis: delta`. Candidate targets, plus stable-only targets with a usable confirmation baseline. |
+| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over; a failure-record baseline re-runs the failed checks instead (see §Delta Runs → Failure recovery). Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Candidate targets, plus stable-only targets with a usable baseline (see §Delta Runs → Layer applicability). Preconditions and scope rules in §Delta Runs. |
+| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over; a failure-record baseline re-runs the failed judgments instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Candidate targets, plus stable-only targets with a usable baseline (rule verify has been removed). |
+| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over; a blocking baseline re-runs the failed dimensions instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a blocking cache); delta FAIL writes the blocking cache extended with the per-check status map. Candidate targets, plus stable-only targets with a usable baseline. |
 
 No `:keyword` / `:check-{n}` variant — a delta run is a complete-coverage run, not a targeted one.
 
@@ -91,7 +91,7 @@ No `:keyword` / `:check-{n}` variant — a delta run is a complete-coverage run,
 
 `deps` has no `full`/`targeted` distinction and no `:keyword` variant — it is a read-only structural report. It only reads spec files; it never writes, deletes, or touches caches or baselines, and it never runs validate/verify/review. It complements `next` (single-unit discovery) and `fresh` (gate freshness) without overlap: when `validate` FAILs a unit on a cycle, `deps@all` is the diagnosis step — the cycle members and the full edge set tell the user what to unbind before re-running validate.
 
-Gate status vocabulary: `FRESH` (cache exists and satisfies the gate), `STALE` (cache exists but files changed, coverage is incomplete, or mode/result is invalid — re-running the gate fixes it), `MISSING` (no cache file — never run, or run failed and the cache was deleted), `BLOCKED` (review only: cache declares P0/P1 findings), `OK` (appendix gate: all appendices are covered by the validate cache).
+Gate status vocabulary: `FRESH` (cache exists and satisfies the gate), `STALE` (cache exists but files changed, coverage is incomplete, or mode/result is invalid — re-running the gate fixes it), `MISSING` (no cache file — never run, or a full-run failure deleted the cache), `BLOCKED` (a failure record: validate/verify/review cache declares P0/P1 findings), `OK` (appendix gate: all appendices are covered by the validate cache).
 
 For a retiring unit (`status: retired` in the candidate frontmatter), only the validate gate is reported — verify, review, and appendix are skipped, matching promote.
 
@@ -411,13 +411,13 @@ The delta scope is **derived by mechanism**: the cache's per-check evidence (`ch
 
 ### When delta applies
 
-A delta run is possible only when the previous result is still valid and its evidence can be diffed:
+A delta run has two baseline forms — a **pass baseline** (the stale-cache recovery) and a **failure baseline** (the failure-record recovery, §Failure recovery below):
 
-1. A cache exists for the gate, with `mode: full` and `result: pass` (review: `blocking: false`). A blocked review cache (P0/P1 findings) is not a usable baseline — resolve the findings before re-running.
-2. The cache has at least one stale source — a `files` entry whose declared dependency CID is no longer present. If nothing is stale, report "cache is fresh — no incremental re-run needed" and stop.
+1. **Pass baseline** — a cache exists for the gate, with `mode: full` and `result: pass` (review: `blocking: false`), and it has at least one stale source — a `files` entry whose declared dependency CID is no longer present. If nothing is stale, report "cache is fresh — no incremental re-run needed" and stop. A blocked review cache (P0/P1 findings) is not this baseline — it is the failure baseline instead.
+2. **Failure baseline** — a cache exists for the gate as a **failure record** (`result: fail` + `blocking: true`; for validate/verify: written by a delta re-run's FAIL, for review: the blocking cache). The recovery re-runs the failed judgments plus the newly affected ones — no stale source is required, the failed judgments themselves are the re-run reason.
 3. A MISSING cache has no baseline to carry over from — run the full command instead.
 
-**Degradation is a derived conclusion, not a rule:** the affected check set is the set of checks whose declared dependencies went stale (plus the cross-check, which is always re-run). When that set covers **every** check the cache declares, the incremental scope is the whole run — report this to the user ("the stale sources affect every check — an incremental re-run is a full re-run") and ask whether to proceed or run the full command instead. This is not a special case of own-spec staleness: editing one section of your own spec stales only the checks that declared that section, and the delta re-runs exactly those.
+**Degradation is a derived conclusion, not a rule:** the affected check set is the set of checks whose declared dependencies went stale (plus the cross-check, which is always re-run). When that set covers **every** check the cache declares, the incremental scope is the whole run — report this to the user ("the stale sources affect every check — an incremental re-run is a full re-run") and ask whether to proceed or run the full command instead. This is not a special case of own-spec staleness: editing one section of your own spec stales only the checks that declared that section, and the delta re-runs exactly those. The same degradation conclusion applies to a failure-record recovery when the failed judgments plus the newly affected ones cover every declared check.
 
 ### Incremental scope (mechanism-derived)
 
@@ -436,17 +436,30 @@ A delta run is possible only when the previous result is still valid and its evi
 ### Execution
 
 - Re-run only the scoped judgments. Carried-over judgments are not re-executed — their previous results stand on unchanged evidence.
-- Any P0/P1 finding during the re-run is treated exactly like a full-run FAIL: validate/verify delete the cache; review writes the cache with `blocking: true`. Promote must not proceed.
+- Any P0/P1 finding during the re-run writes a **failure record**: validate/verify/review rewrite the cache with `result: fail`, `blocking: true`, severity counts, a findings body, `basis: delta`, and the per-check `status` map (`fail`/`pass` for the re-run judgments, `carried` for the carried-over ones). Promote must not proceed. (This replaces the old delete-on-delta-FAIL behavior — the record is the failure-recovery baseline.)
 - On PASS, rewrite the cache with `mode: full`, `basis: delta`, a fresh `timestamp`, and a complete `files` list: re-run judgments replace their entries with new evidence (`specflowctl gate-evidence` on the files they read — including the per-check `checks` breakdown for the re-run checks); carried-over judgments keep their entries with the original hash, deps, and checks — their CIDs are unchanged by construction, since they were not stale sources. The files list must stay complete (including the main spec and every appendix) so the appendix and main-file promote checks keep passing.
 - The report uses the standard skeleton with `mode: delta`, an `Incremental scope:` section (re-run checks + carried-over declaration + cross-check — rules have no cross-check), and the cache-write note "cache written with basis: delta".
 
+### Failure recovery
+
+A delta run over a **failure record** (`result: fail` + `blocking: true`; validate/verify delta FAIL writes it, review's blocking cache is the same shape) restores the pass cache incrementally after the findings are resolved. This is the counterpart of the stale-cache recovery — same command, same trust model, different baseline:
+
+1. **Scope derivation** — first, read the record's per-check `checks` entries and determine whether it carries a `status` map:
+   - **No status map on a failure baseline** — the record cannot say which judgments failed, so **nothing may be carried over**: the re-run set is every declared judgment (plus the cross-check for unit targets). Report the degradation ("the failure record carries no per-check status map — the recovery is a full re-run") and ask whether to proceed or run the full command instead. This is the safe path for legacy blocking caches (written before the failure-recovery design) and for any fail/blocking record written without a status map — absent status means **pass** only on a pass baseline, never on a failure baseline.
+   - **Status map present** — the re-run set = {judgments whose `status` is `fail` in the failure record} ∪ {judgments whose declared deps went stale against the current content (the fix changed content)} ∪ {judgments a targeted run has since found P0/P1 in — the targeted finding overrides the recorded status: the record's `pass`/`carried` evidence for that judgment was contradicted by a complete single-check judgment, so the recovery must re-run it} ∪ {the cross-check}. Judgments with `status` `pass`/`carried` are carried over only when their evidence is unchanged by construction — a targeted P0/P1 on a judgment is a change of that kind even when the content did not move, so the judgment joins the re-run set instead of being carried. A targeted finding that cannot be mapped to a recorded judgment (the keyword matched no recorded check key) degrades the recovery to a full re-run — nothing is carried over, matching the no-status-map path. A full-run record's status map has only `pass`/`fail` values (every judgment was re-executed by the full run; `carried` appears only in delta-FAIL records). The same derivation rules as the stale-scope path apply to the newly stale sources (unclaimed entries map by the command's fixed association, §Incremental scope); when the set covers every declared check, report the degradation ("the failed judgments plus the fix's impact cover every check — the recovery is a full re-run").
+2. **Execution** — re-run the derived set. Any P0/P1 finding updates the failure record (fresh evidence, findings body, status map — the record stays). A full pass rewrites the cache with `mode: full`, `basis: repair`: new evidence for the re-run judgments, the original evidence for the carried-over ones, fresh `timestamp`. The report declares the recovery scope explicitly before executing, as for any delta run.
+3. **No stale source required** — the failed judgments are the re-run reason; the "cache is fresh" stop does not apply to a failure baseline.
+4. **Precondition** — the failure record must be present and its dependency evidence must still hold for the carried-over judgments (a stale record's carried-over evidence is untrusted: derive the scope from the stale sources per §Incremental scope and re-check conservatively — declare-heavy). A MISSING record is not a baseline: run the full command. A record without a per-check `status` map is not a failure-recovery baseline for any judgment — step 1's no-status-map path degrades it to a full re-run (fail-closed: carrying over unresolved P0/P1 findings is not allowed).
+
+The failure record's `basis` stays `delta` at write time (the run that produced it was a delta run); the recovery's pass cache is marked `basis: repair` for audit separation. Promote trusts a `basis: repair` cache exactly like `full`/`delta` — the evidence rules are identical (see §Trust statement).
+
 ### Trust statement
 
-A delta cache carries no lower evidence standard than a full cache: every judgment in it is backed by dependency evidence present in the cache at promote time — re-run judgments by their new CIDs, carried-over judgments by their unchanged CIDs. The gate verifies the same mechanical checks for both. `basis: delta` is audit metadata (see `framework/validation_cache.md` §Format); the promote gate does not distinguish full from delta.
+A delta or repair cache carries no lower evidence standard than a full cache: every judgment in it is backed by dependency evidence present in the cache at promote time — re-run judgments by their new CIDs, carried-over judgments by their unchanged CIDs. The gate verifies the same mechanical checks for all three. `basis: delta` / `basis: repair` is audit metadata (see `framework/validation_cache.md` §Format); the promote gate does not distinguish full, delta, or repair.
 
 ### Layer applicability
 
-Delta re-runs apply to **candidate targets** and to **stable-only targets with a usable confirmation baseline**. For a candidate target, a delta run restores promote eligibility, which exists only for the candidate layer. For a stable-only target, a delta run restores the stale confirmation state — it is a recovery, not a complete re-confirmation: it re-runs only the judgments whose dependency evidence went stale and carries the rest over from the pass baseline. The precondition is the same as for candidates — the gate's confirmation cache must exist with `mode: full` and `result: pass` (review: `blocking: false`). A MISSING cache (never confirmed) or a blocked/failed cache has no usable baseline — report: "No usable confirmation baseline. Run the full `validate@{unit}` / `verify@{unit}` / `review@{unit}` (confirmation check) first, or `specflowctl fork` to start a new round." Delta FAIL on a stable-only target behaves exactly like full FAIL: validate/verify delete the confirmation cache and recommend forking; review writes the cache with `blocking: true`.
+Delta re-runs apply to **candidate targets** and to **stable-only targets with a usable baseline**. For a candidate target, a delta run restores promote eligibility, which exists only for the candidate layer. For a stable-only target, a delta run restores the stale confirmation state — it is a recovery, not a complete re-confirmation: it re-runs only the judgments whose dependency evidence went stale and carries the rest over from the pass baseline. The precondition is the same as for candidates — the gate's confirmation cache must exist with `mode: full` and `result: pass` (review: `blocking: false`). A MISSING cache (never confirmed) has no usable baseline — report: "No usable confirmation baseline. Run the full `validate@{unit}` / `verify@{unit}` / `review@{unit}` (confirmation check) first, or `specflowctl fork` to start a new round." A blocked/failed confirmation cache is a failure record: the failure recovery applies to stable-only targets the same way (restoring the confirmation state with `basis: repair`); when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see §Stable-only Targets → On FAIL).
 
 The layer boundary is decided by file existence: a target with a candidate file is a candidate target; a target with only stable files is a stable-only target. A delta run that would apply against the candidate file is valid even when the target's stable counterpart exists — `fresh@` separates the two cache sets with layer-specific checks: the stable validate/verify variants require the stable main spec in the cache's files list (their caches must prove the main file was read), and the stable review variant requires `target: stable` (the review gate has no main-file requirement, so the `target` field carries the layer).
 
@@ -456,13 +469,13 @@ When no candidate file exists for a unit (or rule), the three full commands run 
 
 | Command | Relationship confirmed | Cache on PASS | On FAIL |
 |---------|----------------------|---------------|---------|
-| `validate@{unit}` / `validate@{rule}` | Stable content vs its dependencies and rules (Check 6/7/8: referenced files, cross-unit contracts, global and bound rules) | `target: stable` validate cache | Delete the cache; recommend forking the unit/rule to reconcile the stable content with the changed dependency or rule |
-| `verify@{unit}` | Code vs the stable spec (drift confirmation) | `target: stable` verify cache (VERIFIED state) | Delete the cache; report the drift and recommend forking (do not enter divergence resolution — see `framework/unit_verify_checklist.md` §Stable-only mode) |
+| `validate@{unit}` / `validate@{rule}` | Stable content vs its dependencies and rules (Check 6/7/8: referenced files, cross-unit contracts, global and bound rules) | `target: stable` validate cache | Write a failure record (`result: fail` + `blocking: true`); recommend forking the unit/rule to reconcile the stable content with the changed dependency or rule. The record keeps the confirmation state visible as BLOCKED and is the failure-recovery baseline |
+| `verify@{unit}` | Code vs the stable spec (drift confirmation) | `target: stable` verify cache (VERIFIED state) | Write a failure record; report the drift and recommend forking (do not enter divergence resolution — see `framework/unit_verify_checklist.md` §Stable-only mode) |
 | `review@{unit}` | Code quality with the stable spec as design context | `target: stable` review cache | Write the cache with `blocking: true` (same as candidate review FAIL); implementation-class defects may be fixed in code and re-reviewed, design-class defects lead to forking |
 
 Rule targets have no verify or review (rule verify has been removed; review is unit-only), so the rule confirmation is `validate@` alone.
 
-The confirmation caches go stale when their dependency evidence changes: the validate cache when a dependency unit's contract, a rule, or a referenced file changes; the verify and review caches when the code changes. Recovery from STALE: a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) re-runs only the judgments whose evidence went stale and rewrites the cache with `basis: delta` — the default recovery path when a pass baseline exists (see §Delta Runs → Layer applicability). Recovery from MISSING (never confirmed) or BLOCKED (review P0/P1): the full confirmation run of the same command. Delta FAIL behaves like full FAIL: validate/verify delete the confirmation cache and recommend forking; review writes the cache with `blocking: true`. The stale signal doubles as impact detection: after a rule change, every stable unit bound to the rule shows `validate: STALE` in `fresh@stable`, naming the impact surface.
+The confirmation caches go stale when their dependency evidence changes: the validate cache when a dependency unit's contract, a rule, or a referenced file changes; the verify and review caches when the code changes. Recovery from STALE: a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) re-runs only the judgments whose evidence went stale and rewrites the cache with `basis: delta` — the default recovery path when a pass baseline exists (see §Delta Runs → Layer applicability). Recovery from MISSING (never confirmed): the full confirmation run of the same command. A blocked/failed confirmation cache is a failure record: recover it with the failure-recovery delta run (`basis: repair`), or fork when the stable content itself no longer holds. The stale signal doubles as impact detection: after a rule change, every stable unit bound to the rule shows `validate: STALE` in `fresh@stable`, naming the impact surface.
 
 ## Targeted Runs
 
@@ -475,7 +488,7 @@ Targeted runs are available only through explicit user choice:
 
 When the user explicitly targets, the agent still reads the **full document** for context but only reports on the requested check(s)/content/file.
 
-**Targeted runs never write a cache.** They are iterative feedback only. The promote gate accepts only caches from full runs. If a targeted run finds P0/P1 findings, it deletes the existing cache — blocking findings at any granularity mean promote must not proceed.
+**Targeted runs never write a cache.** They are iterative feedback only. The promote gate accepts only caches from full runs. If a targeted run finds P0/P1 findings, it deletes a pass cache — blocking findings at any granularity mean promote must not proceed; an existing failure record is kept (it is already blocking and is the failure-recovery baseline), but the targeted finding **invalidates the record's `pass`/`carried` status for that judgment** — the failure-recovery delta run must re-run it instead of carrying it over (see §Delta Runs → Failure recovery).
 
 **Targeted execution shape:** targeted runs execute directly in the main agent session — no sub-agent is launched and no prompt is assembled per §Sub-agent Prompt Assembly. They are lightweight single-check feedback outside the promote gate, so the independent-session guarantee does not apply to them.
 
@@ -629,27 +642,29 @@ File-specific format and details:
 | Event | Cache action |
 |-------|-------------|
 | `validate@{target}` full PASS | Write `validate_result.md` with `mode: full`, and `hash` + `deps` dependency evidence for all read files (via `specflowctl gate-evidence`) |
-| `validate@{target}` FAIL | Delete the validate cache |
+| `validate@{target}` full FAIL (candidate) | Delete the validate cache (full-run failure — trust establishment failed; no failure record) |
+| `validate@{target}` full FAIL (stable-only) | Write a failure record (`result: fail` + `blocking: true`) and recommend forking (see §Stable-only Targets) |
 | `verify@{unit}` full PASS (all aligned) | Write `verify_result.md` with `result: pass`, `mode: full`, `blocking: false`, `hash` + `deps` dependency evidence |
 | `verify@{unit}` full PASS (P2/P3 non-blocking findings) | Write `verify_result.md` with `result: pass`, `mode: full`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `hash` + `deps` dependency evidence. Promote may proceed |
-| `verify` FAIL (any P0/P1 findings) | Delete the verify cache. Agent must stop, not proceed to promote |
+| `verify` full FAIL (any P0/P1 findings, candidate) | Delete the verify cache. Agent must stop, not proceed to promote |
+| `verify` full FAIL (stable-only) | Write a failure record; report the drift and recommend forking |
 | `review@{unit}` full PASS | Write `review_result.md` with `mode: full`, `blocking: false`, `hash` + `deps` dependency evidence for all read files, findings body |
-| `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `blocking: true`, finding counts, findings body |
+| `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `blocking: true`, finding counts, findings body, and the per-dimension `status` map (`pass`/`fail` for every review dimension — full runs have no `carried`; the map is the failure-recovery scope input) |
 | `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta PASS | Rewrite the gate's cache with `mode: full`, `basis: delta`: new evidence for re-run judgments, original evidence for carried-over judgments (see §Delta Runs) |
-| Delta run FAIL (P0/P1 findings) | validate/verify: delete the cache. review: write the cache with `blocking: true`. Promote must not proceed |
-| Any targeted run (`:check-{n}` / `:{keyword}`) | PASS with only P2/P3 findings → report findings, write NOTHING. P0/P1 findings → delete the existing cache. Targeted runs never write a cache |
+| Delta run FAIL (P0/P1 findings) | Write a failure record — rewrite the gate's cache with `result: fail`, `blocking: true`, severity counts, findings body, `basis: delta`, and the per-check `status` map. Promote must not proceed (see §Delta Runs → Failure recovery) |
+| Any targeted run (`:check-{n}` / `:{keyword}`) | PASS with only P2/P3 findings → report findings, write NOTHING. P0/P1 findings → delete a pass cache; keep an existing failure record (it is already blocking and is the recovery baseline). Targeted runs never write a cache |
 
 ### Cache semantics
 
-- A cache exists only when a complete-coverage run (full or delta) completed. `mode: full` is the only value ever written; `basis` records whether the cache came from a full run (`full` or absent) or an incremental one (`delta`).
-- A targeted run never writes or downgrades an existing cache — a full/delta cache stays valid unless a targeted run finds P0/P1 (which deletes it).
-- Any FAIL at full or delta granularity deletes the cache (review: writes with `blocking: true`). P0/P1 at any granularity means promote must not proceed.
+- A cache exists only when a complete-coverage run (full or delta) completed. `mode: full` is the only value ever written; `basis` records whether the cache came from a full run (`full` or absent), an incremental one from a pass baseline (`delta`), or an incremental recovery from a failure record (`repair`).
+- A targeted run never writes or downgrades an existing cache — a full/delta cache stays valid unless a targeted run finds P0/P1 (which deletes a pass cache; a failure record is kept).
+- Any FAIL at full granularity deletes the candidate cache for validate/verify (full-run failure — trust establishment failed); any FAIL at delta granularity writes a failure record. P0/P1 at any granularity means promote must not proceed.
 
 ## Relationship with Promote
 
-- `specflowctl promote --unit <name>` requires fresh caches for validate, verify, review, and appendix coverage. Every cache has `mode: full` by construction (targeted runs do not write caches; delta runs keep `mode: full` and record `basis: delta` — the promote gate checks the same evidence for both).
+- `specflowctl promote --unit <name>` requires fresh caches for validate, verify, review, and appendix coverage. Every cache has `mode: full` by construction (targeted runs do not write caches; delta runs keep `mode: full` and record `basis: delta`/`repair` — the promote gate checks the same evidence for all three).
 - The validate cache must have `result: pass`; the verify cache must have `result: pass` (P2/P3 pending items are carried by the severity counts — non-blocking findings pass the promote gate); the review cache must be non-blocking.
-- A verify cache with any other result value is rejected. `result: fail` never appears in a verify cache: P0/P1 findings delete the cache instead of writing it.
+- A failure record (`result: fail` + `blocking: true`) in any gate is rejected as BLOCKED — the findings must be resolved first. A `result: fail` cache without consistent blocking declarations is an invalid write and fails closed.
 - No cache at all → promote rejected.
 
 ## State Transition Disclosure
@@ -660,6 +675,7 @@ File-specific format and details:
 | verify cache fresh | "Verify passed all content" |
 | verify cache fresh (result: pass, blocking: false, p2_count/p3_count > 0) | "Verify passed with P2/P3 pending findings — promote may proceed" |
 | review cache fresh | "Review passed — no P0 or P1 findings" |
+| Failure record (blocking) | "Gate found P0/P1 findings — resolve them, then the delta re-run recovers incrementally" |
 | No cache / stale | "Cache does not exist or is expired, needs re-checking" |
 
 After a targeted run, the agent offers:

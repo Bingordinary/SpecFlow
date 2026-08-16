@@ -104,7 +104,7 @@ After impact_sync completes, it produces:
    (rule targets: `specflowctl fresh --rule <id>`; a whole-scope report `specflowctl fresh --scope all` may replace per-target runs when the affected set is large.)
 2. Classify each affected unit by the reported gate statuses (FRESH / STALE / MISSING / BLOCKED, per `framework/validation_cache.md` §Freshness Check):
    - **FRESH** — all applicable gates have current, non-blocking caches. The unit's truth is mechanically current; fallback cleanup may proceed for this unit.
-   - **STALE / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache never ran, or the review cache declares P0/P1 findings). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
+   - **STALE / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache never ran, or a gate cache declares P0/P1 findings — a failure record). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
 3. Report the classification per unit: `{unit}: {gate status} — cleanup allowed | cleanup blocked ({reason})`.
 
 **Boundaries:**
