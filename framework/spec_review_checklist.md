@@ -367,6 +367,20 @@ After classification, present the findings (§Output Format) and wait for the us
 
 ---
 
+## Post-fix Spec Update Obligation
+
+Fixing a review finding does not automatically create a spec update obligation. The only trigger: the fix changes a behavior the spec declares or implicitly promises — the spec says behavior X holds, the fix makes it Y, and the spec becomes inaccurate. Directional basis: this is the boundary definition of HARD RULE 1's "Create or update spec when design changes" (`framework/concepts.md`).
+
+| Fix effect on the spec | Spec update obligation |
+|------------------------|------------------------|
+| Fix changes a behavior the spec declares or implicitly promises | **Must update** (e.g. RegisterAll pointer zero-value: the spec's fixed semantics implicitly promise "RegisterAll always retained"; the fix changes it to clearing) |
+| Spec is silent on the behavior — it never promised anything | **No update**; the spec stays accurate. Recording the behavior is an optional design-decision note, not an obligation (e.g. consent out-of-range fail-closed default: worth anchoring, but not required by this criterion) |
+| Fix touches internal details (dead code, naming, comments, tests, encapsulation) | **Never update** |
+
+Recording a safety-critical behavior where the spec is silent is advisory, not mandatory — observable behavior must not be automatically elevated to a "must write" obligation. The spec records design decisions and contract boundaries; unspecified behavior is not a spec gap by itself.
+
+Stable-only targets: a triggered spec update goes through `specflowctl fork --unit <name>` — the stable spec is never edited directly (see §8 Stable-only target).
+
 ## 8. Write review cache (main agent)
 
 After cross-check (§7) and batch classification (§Batch classification) complete:
