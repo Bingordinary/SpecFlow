@@ -24,7 +24,8 @@ import (
 //	STALE   cache exists but the gate is not satisfied (files changed,
 //	        coverage incomplete, mode/result invalid) — re-running fixes it
 //	MISSING cache file does not exist (never run, or run failed and cache deleted)
-//	BLOCKED cache exists but declares blocking findings (review P0/P1)
+//	BLOCKED cache exists but declares blocking findings (a failure record —
+//	        validate/verify/review P0/P1)
 //	OK      appendix gate: every appendix is covered by the validate cache
 type gateStatus string
 
@@ -670,7 +671,11 @@ func gatePassed(status gateStatus) bool {
 
 // gateAdvice renders the recovery suggestion for a non-fresh gate. STALE is
 // recoverable by the delta re-run (re* — the default recovery path); MISSING
-// and BLOCKED have no usable delta baseline and need the full command.
+// has no delta baseline and needs the full command; BLOCKED is a failure
+// record (validate/verify/review P0/P1 findings) whose recovery is the delta
+// re-run after the findings are resolved — the failure record is the delta
+// baseline (see framework/verification_scope.md §Delta Runs → Failure
+// recovery).
 func gateAdvice(command string, status gateStatus, targetName string) string {
 	switch status {
 	case gateStale:
@@ -678,7 +683,7 @@ func gateAdvice(command string, status gateStatus, targetName string) string {
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateBlocked:
-		return fmt.Sprintf("-> required: %s@%s (full run - resolve P0/P1 first)", command, targetName)
+		return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (delta recovery from the failure record)", command, targetName)
 	default:
 		return ""
 	}

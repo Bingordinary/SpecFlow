@@ -602,8 +602,8 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache with result: fail (P0/P1 findings — such a cache is
-	// never written by the agent, but promote must reject it if present)
+	// Create verify cache with result: fail (a delta re-run's failure record
+	// — promote must reject it as blocking)
 	verifyCache := fmt.Sprintf(`---
 command: verify
 unit: test_unit

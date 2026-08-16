@@ -575,10 +575,11 @@ func TestFreshUnitDetailStaleBlockedReview(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailInvalidVerifyBlocking verifies that a verify cache
-// declaring blocking (an invalid cache the agent never writes) is reported
-// STALE, never BLOCKED — the BLOCKED vocabulary is review-only.
-func TestFreshUnitDetailInvalidVerifyBlocking(t *testing.T) {
+// TestFreshUnitDetailBlockedVerify verifies that a verify failure record (a
+// delta re-run's fail cache, result: fail + blocking: true) is reported
+// BLOCKED — the failure-recovery design gives validate/verify caches the same
+// blocking vocabulary review has.
+func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
@@ -589,9 +590,50 @@ func TestFreshUnitDetailInvalidVerifyBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh failed: %v", err)
 	}
+	assertGateStatus(t, output, "verify", "BLOCKED")
+	if !strings.Contains(output, "P0") {
+		t.Fatalf("expected P0 finding detail, got:\n%s", output)
+	}
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (delta recovery from the failure record)") {
+		t.Fatalf("expected delta-recovery advice for the blocked gate, got:\n%s", output)
+	}
+}
+
+// TestFreshUnitDetailBlockedValidate verifies that a validate failure record
+// is reported BLOCKED like the verify and review records.
+func TestFreshUnitDetailBlockedValidate(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "BLOCKED")
+}
+
+// TestFreshUnitDetailStaleBlockedVerify verifies that a verify failure record
+// whose files changed since the run is reported STALE, not BLOCKED — the
+// gate needs a re-run, matching promote's own stale reason and the review
+// gate's stale-over-blocking precedence.
+func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+	// The spec changes after the fail record is written: stale, not BLOCKED.
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
 	assertGateStatus(t, output, "verify", "STALE")
 	if strings.Contains(output, "BLOCKED") {
-		t.Fatalf("invalid verify cache must not be BLOCKED:\n%s", output)
+		t.Fatalf("stale+blocking verify cache must not be BLOCKED:\n%s", output)
 	}
 }
 

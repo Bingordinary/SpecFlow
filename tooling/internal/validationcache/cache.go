@@ -85,29 +85,41 @@ type cacheFileEntry struct {
 }
 
 // checkEntry is one check's dependency declaration inside a files entry:
-// the check key (validate: "1"-"8"; verify: acceptance item id; review: the
-// batch/file dimension) and the CIDs the check's judgment actually depended
-// on. The file-level Deps list of the same entry is the union of all check
-// deps plus any undeclared remainder — the promote gate judges freshness on
-// that union; the per-check breakdown exists for delta scope derivation only.
+// the check key (validate: "1"-"8" — unit and rule; verify: acceptance item
+// id; review: the batch/file dimension) and the CIDs the check's judgment
+// actually depended on. The file-level Deps list of the same entry is the
+// union of all check deps plus any undeclared remainder — the promote gate
+// judges freshness on that union; the per-check breakdown exists for delta
+// scope derivation only. Status records the judgment outcome in a
+// failure-record cache (a fail/blocking cache — delta FAIL records, review
+// blocking caches, stable-only confirmation FAIL records): pass (judgment
+// ran and passed), fail (judgment ran and found P0/P1), carried (not re-run —
+// evidence unchanged from the pass baseline; delta records only). Status is
+// required on every fail/blocking cache (the recovery scope input); absent
+// status means pass only on a pass cache — the recovery never treats a
+// failure record without a status map as pass (it degrades to a full re-run).
 type checkEntry struct {
-	Check string   `yaml:"check"`
-	Deps  []string `yaml:"deps"`
+	Check  string   `yaml:"check"`
+	Status string   `yaml:"status,omitempty"` // pass | fail | carried (required on fail/blocking caches)
+	Deps   []string `yaml:"deps"`
 }
 
 // CheckValidate reads and validates the validate cache for the given unit.
 // The cache must list the main candidate spec file; a cache whose files list
-// omits it cannot prove the main spec was validated.
+// omits it cannot prove the main spec was validated. A fail-result cache (a
+// delta re-run's failure record) is rejected as blocking by the same chain
+// review uses.
 func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
 
 // CheckVerify reads and validates the verify cache for the given unit.
-// A verify cache is valid only with result "pass". P0/P1 findings never
-// write a cache (the cache is deleted), and P2/P3 pending findings are
-// carried by the severity counts (blocking: false).
+// A pass-result cache satisfies the gate; a fail-result cache (a delta
+// re-run's failure record) is rejected as blocking by the same chain review
+// uses. P2/P3 pending findings are carried by the severity counts on a pass
+// cache (blocking: false).
 func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
 
 // CheckVerifyStable reads and validates the verify cache for the given unit
@@ -117,7 +129,7 @@ func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 // fresh stable report uses it to silence baseline drift: a fresh stable
 // verify cache means the code was recently confirmed to still conform.
 func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 }
 
 // CheckValidateStable reads and validates the validate cache for the given
@@ -128,7 +140,7 @@ func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
 // check points at the candidate spec). The fresh stable report consumes it
 // as the stable content's dependency/rule confirmation state.
 func CheckValidateStable(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 }
 
 // ReadVerifyDeps returns the declared dependency CIDs per file path from the
@@ -254,7 +266,7 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 // The cache must list the main candidate rule file; a cache whose files list
 // omits it cannot prove the rule was validated.
 func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
-	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))
 }
 
 // CheckRuleValidateStable reads and validates the validate cache for the given
@@ -264,7 +276,7 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 // (its main-file check points at the candidate rule). The fresh stable report
 // consumes it as the stable rule's consumer/consistency confirmation state.
 func CheckRuleValidateStable(repoRoot, ruleID string) (CheckResult, error) {
-	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass"}, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID))
+	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID))
 }
 
 // CheckReview reads and validates the review cache for the given unit.
@@ -286,6 +298,66 @@ func CheckReview(repoRoot, unitName string) (CheckResult, error) {
 // never mislabels a candidate review as the stable confirmation.
 func CheckReviewStable(repoRoot, unitName string) (CheckResult, error) {
 	return checkReview(repoRoot, unitName, "stable")
+}
+
+// blockingCheck validates the blocking declarations of a fail-capable cache
+// (review, and validate/verify failure records written by delta re-runs). It
+// fails closed on a missing `blocking` field or a conflicting result/blocking
+// declaration, and classifies a P0/P1 cache as CategoryBlocked (promote
+// rejected, fresh reports BLOCKED). A nil result means the cache declares a
+// consistent non-blocking state and the caller continues its normal checks.
+func blockingCheck(command string, cache *cacheFile) *CheckResult {
+	// Blocking declaration check — the gate must be able to determine the
+	// blocking status from an explicitly written `blocking` field. A cache
+	// without that field fails closed.
+	if !cache.blockingSeen {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache missing required field `blocking` — cannot determine blocking status", command),
+		}
+	}
+
+	// Result value check — only the documented result values are valid
+	if cache.Result != "pass" && cache.Result != "fail" {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache result is %q, expected 'pass' or 'fail'", command, cache.Result),
+		}
+	}
+
+	// Consistency check — `result: fail` means P0/P1 findings exist
+	// (blocking: true) and `result: pass` means none exist (blocking: false).
+	// A conflicting declaration means the cache was written incorrectly and
+	// the gate cannot trust its blocking status.
+	if (cache.Result == "fail") != cache.Blocking {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("%s cache has conflicting declarations: result %q, blocking %t", command, cache.Result, cache.Blocking),
+		}
+	}
+
+	// Blocking check — P0/P1 findings block promote
+	if cache.Blocking {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryBlocked,
+			Reason:   fmt.Sprintf("%s found %d P0 and %d P1 finding(s). Resolve before promoting.", capitalize(command), cache.P0Count, cache.P1Count),
+		}
+	}
+
+	return nil
+}
+
+// capitalize uppercases the first rune of s (used for command names in gate
+// reason text, e.g. "review" → "Review").
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error) {
@@ -375,46 +447,10 @@ func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error)
 		}, nil
 	}
 
-	// Blocking declaration check — the gate must be able to determine the
-	// blocking status from an explicitly written `blocking` field. A cache
-	// without that field fails closed, matching the verify-cache path.
-	if !cache.blockingSeen {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   "review cache missing required field `blocking` — cannot determine blocking status",
-		}, nil
-	}
-
-	// Result value check — only the documented result values are valid
-	if cache.Result != "pass" && cache.Result != "fail" {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   fmt.Sprintf("review cache result is %q, expected 'pass' or 'fail'", cache.Result),
-		}, nil
-	}
-
-	// Consistency check — per spec_review_checklist.md, `result: fail`
-	// means P0/P1 findings exist (blocking: true) and `result: pass`
-	// means none exist (blocking: false). A conflicting declaration
-	// means the cache was written incorrectly and the gate cannot
-	// trust its blocking status.
-	if (cache.Result == "fail") != cache.Blocking {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   fmt.Sprintf("review cache has conflicting declarations: result %q, blocking %t", cache.Result, cache.Blocking),
-		}, nil
-	}
-
-	// Blocking check — P0/P1 findings block promote
-	if cache.Blocking {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryBlocked,
-			Reason:   fmt.Sprintf("Review found %d P0 and %d P1 finding(s). Resolve before promoting.", cache.P0Count, cache.P1Count),
-		}, nil
+	// Blocking declaration and result checks — shared with the validate/verify
+	// failure-record path (see blockingCheck).
+	if res := blockingCheck("review", cache); res != nil {
+		return *res, nil
 	}
 
 	result := CheckResult{
@@ -804,7 +840,10 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 		}, nil
 	}
 
-	// Validate result is acceptable
+	// Validate result is acceptable. A fail result is a delta re-run's
+	// failure record (validate/verify since the failure-recovery design);
+	// its blocking status is decided after the dependency check below,
+	// matching the review gate's stale-over-blocking precedence.
 	resultOk := false
 	for _, vr := range validResults {
 		if cache.Result == vr {
@@ -893,6 +932,18 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 			Category: CategoryStale,
 			Reason:   fmt.Sprintf("%s cache stale: dependency chunks have changed: %s. Run `%s@%s` again.", command, strings.Join(mismatchedFiles, ", "), command, cache.Unit),
 		}, nil
+	}
+
+	// Blocking check — fail-capable caches (validate/verify failure records
+	// written by delta re-runs, and pass caches that declare a blocking
+	// field) are validated by the same chain review uses. A blocking cache
+	// is CategoryBlocked: promote rejects it and fresh reports BLOCKED. The
+	// dependency check above takes precedence — a stale failure record is
+	// STALE, not BLOCKED, matching the review gate.
+	if cache.blockingSeen || cache.Result == "fail" {
+		if res := blockingCheck(command, cache); res != nil {
+			return *res, nil
+		}
 	}
 
 	result := CheckResult{
@@ -995,6 +1046,17 @@ func readCache(path string) (*cacheFile, error) {
 				}
 				// A non-list line ends the check deps block
 				inCheckDepsBlock = false
+			}
+			// A check entry's status line (pass | fail | carried) may appear
+			// before or after its deps block — the non-list line above already
+			// ended the deps block when the status follows it.
+			if inChecksBlock && strings.HasPrefix(trimmed, "status:") && currentCheck != nil && currentEntry != nil {
+				status := strings.TrimSpace(strings.TrimPrefix(trimmed, "status:"))
+				status = strings.Trim(status, "\"'")
+				currentCheck.Status = status
+				currentEntry.Checks[len(currentEntry.Checks)-1] = *currentCheck
+				cache.Files[len(cache.Files)-1] = *currentEntry
+				continue
 			}
 			if inFilesDepsBlock {
 				if strings.HasPrefix(trimmed, "-") {

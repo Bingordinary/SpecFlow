@@ -94,6 +94,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
+// blockedOrFullAdvice renders the promote-rejection guidance for a gate
+// cache that is not fresh: a BLOCKED failure record is recovered by the
+// delta re-run after the findings are resolved; any other non-fresh state
+// needs the full command.
+func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetName string) string {
+	if category == validationcache.CategoryBlocked {
+		return fmt.Sprintf("Resolve the P0/P1 findings, then run `re%s@%s` to recover incrementally.", command, targetName)
+	}
+	return fmt.Sprintf("Run `%s@%s` first, then retry promote.", command, targetName)
+}
+
 func runPromote(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("promote", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -151,7 +162,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "Run `validate@%s` first, then retry promote.\n", unitName)
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", unitName))
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
@@ -172,7 +183,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		if !verifyResult.Fresh {
 			fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
 			fmt.Fprintln(stdout, "")
-			fmt.Fprintf(stdout, "Run `verify@%s` first, then retry promote.\n", unitName)
+			fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(verifyResult.Category, "verify", unitName))
 			return errors.New("verify cache check failed")
 		}
 		fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
@@ -189,7 +200,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		if !reviewResult.Fresh {
 			fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
 			fmt.Fprintln(stdout, "")
-			fmt.Fprintf(stdout, "Run `review@%s` first, then retry promote.\n", unitName)
+			fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(reviewResult.Category, "review", unitName))
 			return errors.New("review cache check failed")
 		}
 		fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
@@ -241,7 +252,7 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "Run `validate@%s` first, then retry promote.\n", ruleID)
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", ruleID))
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
