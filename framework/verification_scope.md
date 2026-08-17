@@ -203,7 +203,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | check 1-8 (validate) | The eight validate checks: structural integrity, design soundness, scope integrity, evidence-driven vs design-driven consistency, acceptance coverage & correctness, affects-source validity, cross-unit consistency, constraint alignment | `framework/unit_validate_checklist.md` |
 | exempt / retired appendix | Appendix statuses skipped when assembling the spec union (`status: exempt` / `status: retired` files are not read) | `framework/unit_validate_checklist.md` §Prerequisite |
 | resolution type | Each finding's fix classification: `actionable` (concrete repair without user judgment) or `needs_decision` (requires user input) | `framework/unit_validate_checklist.md` §Execution Rules |
-| advisory finding | Taste-level P2/P3 findings from validate Check 2 Step 4, presented on the check line's reason, counted separately, never blocking | `framework/unit_validate_checklist.md` Check 2 Step 4 |
+| advisory finding | validate's non-blocking items: Check 1 step 7 / step 13 hygiene WARNING and Check 2 Step 4 taste-level P2/P3, presented on the check line's reason, counted separately, never blocking | `framework/unit_validate_checklist.md` §Counting rules |
 | extraction artifact | The falsifiable evidence carried by uncovered-domain (5a) and uncarried-contract (5h) FAIL findings, with three parts: the quoted source declaring the behavior domain or contract statement, the granularity/external-visibility judgment, and the absence claim over the covered surface (the item set union / the carriers) | `framework/unit_validate_checklist.md` 5a step 8 / 5h step 4 |
 | external-visibility boundary | The §4 judgment separating contract statements (externally-observable behavior a caller or dependent unit must read to use the unit safely) from internal design expression (internal field names, internal field layouts, internal timing incl. retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout); content on the internal side creates no coverage or carrier obligation | `framework/spec_writing_guide.md` §4 |
 | P0 / P1 severity (validate) | The only severities validate grades: P1 is the contract-decided default for FAIL checks; P0 requires §9 confirmation | `framework/unit_validate_checklist.md` §Severity check |
@@ -346,8 +346,9 @@ Glossary:
   (spec_writing_guide.md §5)
 - resolution type — actionable / needs_decision, the fix classification each
   finding carries (unit_validate_checklist.md §Execution Rules)
-- advisory finding — taste-level P2/P3 findings from Check 2 Step 4, presented on
-  the check line's reason, never blocking (unit_validate_checklist.md Check 2)
+- advisory finding — validate's non-blocking items: Check 1 step 7 / step 13
+  hygiene WARNING, Check 2 Step 4 taste-level P2/P3; presented on the check
+  line's reason, counted separately, never blocking (unit_validate_checklist.md)
 - P0 / P1 severity — the only severities validate grades; P1 is the default, P0
   requires confirmation (unit_validate_checklist.md §Severity check)
 - Dependency scope — per-file line ranges your judgment depended on

@@ -120,7 +120,7 @@ Failed checks: N | Advisory findings: K
 **Counting rules:**
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default, P0 requires severity confirmation per `framework/severity_policy.md` §9 (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- `Advisory findings` (Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- `Advisory findings` (Check 1 step 7 / step 13 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding as an indented numbered sub-line under the check line, in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, and its resolution type:
@@ -181,15 +181,16 @@ When findings mix resolution types (within one check or across checks), the repo
     - **Fenced code blocks are content** — `##`-like lines inside ``` / ~~~ fences must not split regions; when a fence would visually span a section boundary, the spec needs restructuring (a fence cannot cross `##` headings — close the fence before the next heading)
     - **Every region the run will declare is locatable** — for each section the checks will declare (run `--section <heading>` probes), the heading resolves uniquely. A declaration that cannot be located fails closed at cache-write time; this step surfaces it at validate time
     - Fix direction: restructure the spec so the split is semantically clean (cohesion per `framework/spec_writing_guide.md` §13); do not fall back to whole-file declarations as a workaround
-13. **Version Notes check (FAIL):** verify the unit's own main spec complies with the Version Notes convention (see `framework/spec_writing_guide.md` §14). Applies to candidate specs only: stable-only runs skip it (stable content is consensus — the §14 Scope migration rule leaves the section to the unit's next candidate round), and retiring candidates skip it (the spec is being removed, not archived):
-    - Existence and position: the spec must contain a `## Version Notes` heading as its first `##` heading, immediately after the `#` title; a missing heading or a heading in any other position is a FAIL
-    - Lifecycle compliance: the section contains at most two entries — the top entry's version must equal the frontmatter `version` field, followed by at most one line summarizing the previous version; a section with more entries (an untruncated changelog carried over from the stable copy) is a FAIL
-    - Content discipline: entries record design-decision-level changes (behavior, contract, boundary, config semantics) — implementation details, typo fixes, or formatting edits belong to VCS history, not the section
+13. **Version Notes check:** verify the unit's own main spec complies with the Version Notes convention (see `framework/spec_writing_guide.md` §14). Applies to candidate specs only: stable-only runs skip it (stable content is consensus — the §14 Scope migration rule leaves the section to the unit's next candidate round), and retiring candidates skip it (the spec is being removed, not archived). The check separates mechanism-level violations from hygiene-level ones — the former are FAIL (they break section-region locatability or the version authority), the latter are WARNING (pure document hygiene with no mechanism impact):
+    - **Existence and position (FAIL):** the spec must contain a `## Version Notes` heading as its first `##` heading, immediately after the `#` title; a missing heading or a heading in any other position is a FAIL (the heading is part of the section-region content identity per `spec_writing_guide.md` §13 item 5, so a misplaced heading breaks region locatability)
+    - **Version authority (FAIL):** the top entry's version must equal the frontmatter `version` field; a mismatch is a FAIL (the frontmatter `version` is the version authority per `spec_writing_guide.md` §14 — a drifting top entry makes the section claim a version the spec does not carry)
+    - **Lifecycle compliance (WARNING):** the section contains at most two entries — the top entry plus at most one line summarizing the previous version; a section with more entries (an untruncated changelog carried over from the stable copy) is a WARNING, not a FAIL (extra entries are pure document hygiene — they do not affect parsing, behavior, or downstream planning)
+    - **Content discipline (WARNING):** entries record design-decision-level changes (behavior, contract, boundary, config semantics); implementation details, typo fixes, or formatting edits belong to VCS history — recording them is a WARNING, not a FAIL (it degrades the section's clarity, not any mechanism)
     - Fix direction: restructure the spec per `framework/spec_writing_guide.md` §14 (Version Notes)
 
 **PASS:** All format constraints satisfied
 
-**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference
+**WARNING (steps 7, 13):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference; Version Notes hygiene violations (untruncated changelog or implementation-detail entries) — truncate to the current version plus a one-line summary of the previous version, and keep entries at design-decision level
 
 **FAIL:** Any missing field, reference to a non-existent file, or layer-prefixed spec path in prose or structured fields (actionable)
 
@@ -767,7 +768,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Present Findings
 
-Advisory findings from Check 2 Step 4 are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each advisory finding carries its severity confirmation record (`confirmed` / `adjusted: {Px} → {Py}` + evidence) from Check 2 Step 4.
+Advisory findings (Check 1 step 7 / step 13 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding carries its severity confirmation record (`confirmed` / `adjusted: {Px} → {Py}` + evidence).
 
 ### Batch classification (validate)
 
