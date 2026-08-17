@@ -89,23 +89,25 @@ Suppressed by spec (N):
 
 **`{layer}` (skeleton header):** the layer of the spec the review is based on — `candidate`, falling back to `stable` when no candidate exists (§2 Pre-review Setup).
 
-**Architecture assessment (Dimension 8):** The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; taste-level observations appear as P2/P3 findings only. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
+**Architecture assessment (Dimension 8):** The assessment reports the code structure of the reviewed surface per Dimension 8 in §4 below. Gate-level architectural defects (P0/P1) appear both in the assessment's `gate_findings` and in the Findings section; advisory architectural judgments appear as P2 findings, while P3 is limited to objective findings that pass the §5 P3 reportability gate. A spec-recorded architectural decision with a conforming implementation is not re-questioned here.
 
 **Conclusion mapping:** any Dimension 8 P0/P1 gate finding → `unacceptable`; P2/P3 only → `needs_attention`; none → `acceptable`. The conclusion does not change the Gate Rules table — the gate remains decided by P0/P1 findings.
 
 ### Findings section
 
-Each finding uses the unified finding format `[{severity}] {location} — {issue} (actionable | needs_decision)`. The resolution label reflects the recommendation: a single concrete recommendation (rename, remove dead code, fix a call) → `actionable`; a recommendation that requires a user decision (architecture trade-off, accepting tracked debt) → `needs_decision`. `spec_context` and `recommendation` appear as indented detail lines.
+Each finding uses the unified finding format `[{severity}] {location} — {issue} (actionable | needs_decision)`. The resolution label reflects the recommendation: a single concrete recommendation (rename, remove dead code, fix a call) → `actionable`; a recommendation that requires a user decision (architecture trade-off, accepting tracked debt) → `needs_decision`. `spec_context` and `recommendation` appear as indented detail lines. Every P3 finding also includes the `fact_anchor` required by §5.
 
 ```
 Findings:
   Batch group (N items) — fix does not change runtime behavior, suggested for batch handling:
-    - [{P3}] {location} — {issue} (actionable, based on: {evidence location})
+    - [{P3}] {location} — {issue} (actionable)
+          fact_anchor: {reproducible repository fact and evidence locations}
     ...
   Decision group (M items) — decided one by one:
     [{severity}] {location} — {issue} (actionable | needs_decision)
           spec_context: {design context, if any}
           recommendation: {fix suggestion}
+          fact_anchor: {reproducible repository fact and evidence locations, required for P3}
     ...
 ```
 
@@ -116,6 +118,7 @@ Findings:
   [{severity}] {location} — {issue} (actionable | needs_decision)
         spec_context: {design context, if any}
         recommendation: {fix suggestion}
+        fact_anchor: {reproducible repository fact and evidence locations, required for P3}
   ...
 ```
 
@@ -182,6 +185,7 @@ For each file in scope:
         - Covered by `non_goals` → suppress, mark as out_of_scope
         - No match → retain as finding
   3. Grade retained findings P0-P3
+  4. For every finding graded P3, apply the P3 reportability gate below. Remove findings with no valid fact anchor; if the anchored impact exceeds P3, re-grade it under `framework/severity_policy.md` §9 instead of reporting it as P3.
 
 Suppression does not alter severity — severity is code-only. Suppressed findings are simply not reported.
 
@@ -252,7 +256,8 @@ Whether the implemented code structure forms an acceptable architecture for the 
   - Spec-recorded architectural intent (e.g., declared layering, module boundaries) is implemented in a structure that has drifted beyond recognition → P0/P1
   - The unit reaches past the `unit_refs` boundary and reaches into a dependency unit's internal implementation → P1
   - Internal implementation organization is severely disconnected from the unit's declared responsibility (e.g., a "config loading" unit's surface contains business logic) → P1
-- **P2/P3 findings (advisory, taste-level)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
+- **P2 findings (advisory design-quality judgments)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
+- **P3 findings**: only objective, local, low-impact inconsistencies or hygiene defects that pass the P3 reportability gate below; architectural, abstraction, and extension-shape preferences are not P3 findings
 - **Spec interaction**: Spec-recorded architectural decisions with a conforming implementation are NOT re-questioned here — the recorded decision is authoritative (validated by `validate`). Assessment focuses on implementation drift from recorded intent and on code structure the spec does not cover
 - **Not considered**: Design quality of spec-recorded decisions themselves (owned by `validate` Check 2); acceptance alignment (owned by `verify`)
 
@@ -263,9 +268,24 @@ Whether the implemented code structure forms an acceptable architecture for the 
 | **P0** | Definitively causes production misbehavior | Determined from code structure alone, no runtime data needed | Null pointer dereference, deadlock, resource leak, race condition, incorrect lock usage, use-after-close | Block |
 | **P1** | Inevitably causes maintenance pain or high-probability bugs | Latent but will surface over time | Silently swallowed exceptions, broken error propagation paths, large-scale logic duplication | Block |
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
-| **P3** | Style or clarity | Does not affect correctness, does not significantly harm maintainability | Unused import, minor naming inconsistency, stale comment | Don't block |
+| **P3** | Objective, local style, clarity, or hygiene discrepancy | Reproducible from repository facts; does not affect correctness or materially harm maintainability | Unused import, minor established-convention deviation, stale comment with a direct code mismatch | Don't block |
 
 P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted keyword re-reviews do not write a cache, so they never satisfy the gate.
+
+### P3 Reportability Gate
+
+A finding may be reported as P3 only when all of the following are true:
+
+1. It states a present discrepancy or absence, not a preference or a possible improvement.
+2. It includes a `fact_anchor` that a second reviewer can reproduce from repository content. The anchor must identify the governing or comparison reference, the violating location, and the relationship between them. A location reference by itself is not a fact anchor.
+3. The fact anchor uses one of these proof shapes:
+   - **Absence**: a declaration has no caller, reader, or reference within a defined repository scope.
+   - **Contradiction**: a specification, comment, or interface promise conflicts with the implementation.
+   - **Convention deviation**: an explicit repository rule or a repeated same-family pattern is violated at the reported location.
+4. The impact is local and low: it does not affect correctness and does not materially harm maintainability. A material maintainability impact is P2 or higher under `framework/severity_policy.md` §9.3; an impact that cannot be established is not a reportable P3.
+5. The recommendation is either one concrete repair or a clearly identified decision item. A recommendation containing "consider", "or", or "maybe" is not eligible for the batch group; those words do not by themselves invalidate a real P3 decision item.
+
+Dead code, comment/code contradiction, established-convention deviation, and an unreachable comment or interface promise are common examples of these proof shapes, not an exhaustive issue whitelist. If the anchor is missing or fails to establish a present discrepancy, remove the finding rather than demoting it to P2.
 
 ## 6. Finding Output Format
 
@@ -281,6 +301,7 @@ Each finding contains:
 - `issue`: description of the problem
 - `spec_context`: (optional) relevant design context from the spec, helps the user understand the code-design relationship
 - `recommendation`: fix suggestion
+- `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
 
 **Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its slice — per review dimension, for each file it read, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
 
@@ -311,7 +332,9 @@ Every review run needs this:
 
 2. **Cross-document consistency check** — For each finding that relies exclusively on the spec main body, check appendices and related documents for supplementary or overriding references. If the full document set resolves the issue, the finding is invalid.
 
-3. **Remove false positives** — Findings that dissolve under cross-check are removed from output. Not demoted to notes — a false positive has no place in the review result.
+3. **P3 fact-anchor check** — For every P3 finding, read each cited anchor and reproduce the claimed relationship. If the anchor is missing, does not establish a present discrepancy, or relies only on reviewer preference, remove the finding. Do not demote an unsupported P3 to P2.
+
+4. **Remove false positives** — Findings that dissolve under cross-check are removed from output. Not demoted to notes — a false positive has no place in the review result.
 
 ### 7.3 Complexity
 
@@ -370,6 +393,8 @@ After classification, present the findings (§Output Format) and wait for the us
 ## Post-fix Spec Update Obligation
 
 Fixing a review finding does not automatically create a spec update obligation. The only trigger: the fix changes a behavior the spec declares or implicitly promises — the spec says behavior X holds, the fix makes it Y, and the spec becomes inaccurate. Directional basis: this is the boundary definition of HARD RULE 1's "Create or update spec when design changes" (`framework/concepts.md`).
+
+**Judgment basis:** whether the spec declares or is silent on a behavior is judged by the contract statement definition and its external-visibility boundary in `framework/spec_writing_guide.md` §4: a declared externally-observable behavior is a promise; internal implementation detail is design expression and creates no promise.
 
 | Fix effect on the spec | Spec update obligation |
 |------------------------|------------------------|
