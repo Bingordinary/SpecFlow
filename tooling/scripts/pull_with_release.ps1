@@ -108,6 +108,8 @@ try {
     Install-Hook -Src (Join-Path $repoRoot "hooks/hooks.json") -Dst (Join-Path $projectRoot "hooks/hooks.json")
     Install-Hook -Src (Join-Path $repoRoot "templates/.claude-plugin/plugin.json") -Dst (Join-Path $projectRoot ".claude-plugin/plugin.json")
     Install-Hook -Src (Join-Path $repoRoot "templates/.opencode/plugins/specflow.js") -Dst (Join-Path $projectRoot ".opencode/plugins/specflow.js")
+    Install-Hook -Src (Join-Path $repoRoot "templates/.agents/plugins/specflow/plugin.json") -Dst (Join-Path $projectRoot ".agents/plugins/specflow/plugin.json")
+    Install-Hook -Src (Join-Path $repoRoot "templates/.agents/plugins/specflow/hooks.json") -Dst (Join-Path $projectRoot ".agents/plugins/specflow/hooks.json")
     Write-Host "Hook installation complete."
 }
 catch {

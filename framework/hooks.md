@@ -32,6 +32,7 @@ The `session-start` script detects the target platform from environment variable
 |----------|-----------|---------------|
 | Claude Code | `CLAUDE_PLUGIN_ROOT` set AND `COPILOT_CLI` not set | `{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "..." } }` |
 | OpenCode | OpenCode plugin (see below) | Message transform via JS plugin |
+| Antigravity | Argument `antigravity` or `ANTIGRAVITY` set | `{ "injectSteps": [ { "ephemeralMessage": "..." } ] }` |
 
 ==ATOM_BEGIN:specflowctl_location==
 specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. `<tooling-root>` is `specflow/tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
@@ -39,22 +40,24 @@ specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os
 
 ### Hook Configuration Files
 
-Each platform requires a hook configuration JSON file that registers `session-start` as a SessionStart event trigger. These files are installed by `specflowctl init`:
+Each platform requires a hook configuration JSON file that registers `session-start` as a startup or pre-invocation trigger. These files are installed by `specflowctl init`:
 
 | File | Install To | Platform | Command |
 |------|-----------|----------|---------|
 | `hooks/hooks.json` | `hooks/hooks.json` | Claude Code | `"${CLAUDE_PLUGIN_ROOT}/specflow/hooks/run-hook.cmd" session-start` |
+| `templates/.agents/plugins/specflow/hooks.json` | `.agents/plugins/specflow/hooks.json` | Antigravity | `../../../specflow/hooks/run-hook.cmd session-start antigravity` |
 
-Claude Code discovers hooks by convention at `${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json`.
+Claude Code discovers hooks by convention at `${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json`. Antigravity discovers hooks within the plugin directory at `.agents/plugins/specflow/hooks.json`.
 
 ### Platform Plugin Registration
 
-Each platform needs the SpecFlow hooks registered so it knows to trigger `session-start` at startup. The registration mechanism differs by platform:
+Each platform needs the SpecFlow hooks registered so it knows to trigger `session-start` at startup or pre-invocation. The registration mechanism differs by platform:
 
 | Platform | Registration Method | Installed By |
 |----------|-------------------|-------------|
 | Claude Code | `.claude-plugin/plugin.json` (discovers hooks by convention at `hooks/hooks.json`) | `specflowctl` installs the file from `templates/.claude-plugin/plugin.json` |
 | OpenCode | `.opencode/plugins/specflow.js` (auto-discovered by OpenCode) | `specflowctl` installs the file from `templates/.opencode/plugins/specflow.js` |
+| Antigravity | `.agents/plugins/specflow/plugin.json` (auto-discovered by Antigravity) | `specflowctl` installs the file from `templates/.agents/plugins/specflow/plugin.json` |
 
 ## How session-start Works
 
@@ -99,13 +102,14 @@ When a deep-audit review requires hooks system verification, the following check
 For each supported platform, the corresponding hook JSON file exists at the install destination and points to the correct `run-hook.cmd` path:
 
 - Claude Code: `hooks/hooks.json` (project root, per Claude Code convention)
+- Antigravity: `.agents/plugins/specflow/hooks.json` (inside plugin directory)
 
 ### Script Correctness
 
 - `session-start` reads `framework/concepts.md`
 - `session-start` JSON-escapes the content correctly
 - `session-start` wraps the content in the required preamble
-- `session-start` detects platform variables (`CLAUDE_PLUGIN_ROOT`) and outputs the matching JSON format
+- `session-start` detects platform variables or arguments (`CLAUDE_PLUGIN_ROOT`, `antigravity`) and outputs the matching JSON format
 - `run-hook.cmd` is valid cross-platform polyglot (Windows batch + Unix shell)
 
 ### Injected Content Completeness
@@ -116,4 +120,5 @@ For each supported platform, the corresponding hook JSON file exists at the inst
 
 - Claude Code: `.claude-plugin/plugin.json` is the plugin manifest. Hooks are discovered by convention at `hooks/hooks.json`. `specflowctl` installs both.
 - OpenCode: `.opencode/plugins/specflow.js` installed by `specflowctl`. OpenCode auto-discovers plugins in `.opencode/plugins/` at startup — no config file registration needed.
+- Antigravity: `.agents/plugins/specflow/plugin.json` is the plugin manifest and `hooks.json` defines lifecycle hooks. `specflowctl` installs both.
 - **Consumer path validation**: For every platform plugin that reads files from disk (`.opencode/plugins/specflow.js`), verify that its hardcoded file paths resolve correctly from the plugin runtime's working directory or project root, not from the source-repo layout. See `framework/spec_flow_review.md` Section 2.16.

@@ -1,0 +1,11 @@
+{
+  "specflow-bootstrap": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "../../../specflow/hooks/run-hook.cmd session-start antigravity",
+        "timeout": 15
+      }
+    ]
+  }
+}

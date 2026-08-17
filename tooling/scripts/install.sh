@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/Bingordinary/SpecFlow.git"
 TARGET_DIR="specflow"
-IGNORE_ENTRIES=("specflow/" "docs/specs/meta/validation/" ".tmp/" "/meta/" ".claude-plugin/" ".opencode/" "hooks/hooks.json")
+IGNORE_ENTRIES=("specflow/" "docs/specs/meta/validation/" ".tmp/" "/meta/" ".claude-plugin/" ".opencode/" ".agents/" "hooks/hooks.json")
 
 usage() {
   cat >&2 <<'USAGE'

@@ -72,6 +72,8 @@ func InstallHooks(repoRoot string) (HooksResult, error) {
 		{"hooks/session-start", "specflow/hooks/session-start"},
 		{"templates/.claude-plugin/plugin.json", ".claude-plugin/plugin.json"},
 		{"templates/.opencode/plugins/specflow.js", ".opencode/plugins/specflow.js"},
+		{"templates/.agents/plugins/specflow/plugin.json", ".agents/plugins/specflow/plugin.json"},
+		{"templates/.agents/plugins/specflow/hooks.json", ".agents/plugins/specflow/hooks.json"},
 	}
 
 	layout, err := specflowlayout.Resolve(repoRoot)

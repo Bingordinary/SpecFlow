@@ -38,6 +38,7 @@ specFlow currently supports these agent runtimes:
 
 - **OpenCode** — recommended
 - **Claude Code**
+- **Google Antigravity**
 
 Codex support is coming — stay tuned.
 

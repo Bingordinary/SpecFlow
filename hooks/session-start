@@ -20,8 +20,16 @@ escape_for_json() {
 concepts_escaped=$(escape_for_json "$concepts_content")
 session_context="<SPECFLOW_CONCEPTS>\nThis project uses SpecFlow to manage design documents.\n\n**Below is the full SpecFlow framework guide — read it carefully before starting work:**\n\n${concepts_escaped}\n</SPECFLOW_CONCEPTS>"
 
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
+target_platform="${1:-}"
+
+if [ "$target_platform" = "antigravity" ] || [ -n "${ANTIGRAVITY:-}" ]; then
+  printf '{\n  "injectSteps": [\n    {\n      "ephemeralMessage": "%s"\n    }\n  ]\n}\n' "$session_context"
+  exit 0
+fi
+
+if [ "$target_platform" = "claude" ] || ([ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]); then
   printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+  exit 0
 fi
 
 exit 0
