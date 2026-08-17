@@ -115,9 +115,9 @@ func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
 
 // CheckVerify reads and validates the verify cache for the given unit.
 // A pass-result cache satisfies the gate; a fail-result cache (a delta
-// re-run's failure record) is rejected as blocking by the same chain review
-// uses. P2/P3 pending findings are carried by the severity counts on a pass
-// cache (blocking: false).
+// re-run's or a candidate full-run FAIL's failure record) is rejected as
+// blocking by the same chain review uses. P2/P3 pending findings are carried
+// by the severity counts on a pass cache (blocking: false).
 func CheckVerify(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "verify", "verify_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
 }
@@ -301,7 +301,8 @@ func CheckReviewStable(repoRoot, unitName string) (CheckResult, error) {
 }
 
 // blockingCheck validates the blocking declarations of a fail-capable cache
-// (review, and validate/verify failure records written by delta re-runs). It
+// (review, and validate/verify failure records written by delta re-runs or a
+// candidate verify full-run FAIL). It
 // fails closed on a missing `blocking` field or a conflicting result/blocking
 // declaration, and classifies a P0/P1 cache as CategoryBlocked (promote
 // rejected, fresh reports BLOCKED). A nil result means the cache declares a
@@ -935,8 +936,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	}
 
 	// Blocking check — fail-capable caches (validate/verify failure records
-	// written by delta re-runs, and pass caches that declare a blocking
-	// field) are validated by the same chain review uses. A blocking cache
+	// written by delta re-runs or a candidate verify full-run FAIL, and pass
+	// caches that declare a blocking field) are validated by the same chain
+	// review uses. A blocking cache
 	// is CategoryBlocked: promote rejects it and fresh reports BLOCKED. The
 	// dependency check above takes precedence — a stale failure record is
 	// STALE, not BLOCKED, matching the review gate.

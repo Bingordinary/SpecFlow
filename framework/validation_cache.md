@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Cache files record the result and content-addressed dependency evidence (whole-file hash + dependency chunk CIDs) of the last `validate` or `verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?" A failure record (a delta re-run's fail cache) answers the negative variant: "were these files checked and which judgments failed?" — the per-check status map is the failure-recovery baseline (see §Write Rules and `framework/verification_scope.md` §Delta Runs → Failure recovery).
+Cache files record the result and content-addressed dependency evidence (whole-file hash + dependency chunk CIDs) of the last `validate` or `verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?" A failure record (a delta re-run's or a candidate verify full-run FAIL's fail cache) answers the negative variant: "were these files checked and which judgments failed?" — the per-check status map is the failure-recovery baseline (see §Write Rules and `framework/verification_scope.md` §Delta Runs → Failure recovery).
 
 This file is referenced by `framework/concepts.md` §3.
 
@@ -29,7 +29,7 @@ command: validate            # or verify
 unit: user_auth
 mode: full                   # always full — targeted runs (:check-{n}, :{keyword}) do not write caches
 basis: full                  # audit metadata: full | delta | repair (full = full run; delta = re* incremental recovery from a pass baseline; repair = re* recovery from a failure record)
-result: pass                 # pass | fail (fail = a failure record: a delta re-run found P0/P1 and recorded them instead of deleting the cache)
+result: pass                 # pass | fail (fail = a failure record: a delta re-run found P0/P1 and recorded them instead of deleting the cache; a candidate verify full-run FAIL also writes one — see §Failure handling by gate role)
 target: candidate            # the layer the run checked: candidate | stable (all three commands record it; stable-only runs — @stable confirmation checks — write target: stable; the review gate separates the two cache sets by this field — the fresh stable report's review confirmation requires target: stable, see framework/verification_scope.md §Stable-only Targets)
 blocking: false              # required on every fail/blocking-capable cache (validate/verify failure records and review caches): true iff result: fail (P0/P1 findings); pass caches may omit it (absent = not blocking)
 p0_count: 0                  # (verify) severity counts; P2/P3 pending items when > 0
@@ -51,7 +51,7 @@ files:
 Free-form summary of the result.
 ```
 
-**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) for validate/verify, the blocking cache for review (full and delta FAIL), and the confirmation-cache FAIL for stable-only targets (see §Write Rules). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**: after the findings are resolved, the delta re-run re-checks only the failed checks plus the newly affected ones and carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (review full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
+**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) for all three gates, the candidate verify full FAIL, the blocking cache for review (full and delta FAIL), and the confirmation-cache FAIL for stable-only targets (see §Write Rules and §Failure handling by gate role). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**: after the findings are resolved, the delta re-run re-checks only the failed checks plus the newly affected ones and carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (candidate verify full FAIL, review full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
 
 Each `files` entry records two kinds of evidence:
 
@@ -214,7 +214,7 @@ Chunk CIDs are the chunk-boundary granularity (~2 KB, content-defined): a small 
 The verify cache uses the same `pass` / `fail` vocabulary as validate and review, at the gate level:
 
 - `result: pass` — no P0/P1 blocking findings. May carry P2/P3 pending items via `p2_count`/`p3_count` (with `blocking: false`).
-- `result: fail` — a **failure record**: a delta re-run (`reverify@{unit}`) found P0/P1 and recorded the failure instead of deleting the cache. It must declare `blocking: true`; the gate rejects it as `BLOCKED` (promote must not proceed). A fail-result cache without the blocking declarations is an invalid write and fails closed.
+- `result: fail` — a **failure record**: a delta re-run (`reverify@{unit}`) found P0/P1 and recorded the failure instead of deleting the cache, or a candidate verify full-run FAIL wrote one (see §Failure handling by gate role). It must declare `blocking: true`; the gate rejects it as `BLOCKED` (promote must not proceed). A fail-result cache without the blocking declarations is an invalid write and fails closed.
 
 The per-item ALIGNED / MISMATCH / CANNOT_DETERMINE verdicts in the verify report are finding-level vocabulary and are unrelated to the cache `result` field.
 
@@ -357,6 +357,16 @@ changes outside the declared dependencies as an informational note rather
 than a failure; treat the note as a prompt to re-run when semantic coupling
 exists.
 
+## Failure handling by gate role
+
+The three gates handle a candidate full-run FAIL differently, and the split is not historical accident — it follows from what each gate's judgment is anchored to:
+
+- **validate is the upstream root.** Its checks judge the spec itself, with no external anchor. A candidate validate FAIL means the spec was never confirmed sound — and validate's holistic checks are semantically coupled in ways the declared-region mechanism cannot capture (editing acceptance coverage can overturn a design-soundness judgment without any region CID going stale). A `pass` judgment on such a spec has no anchor to trust, so nothing may be carried over: the cache is deleted and the first full confirm must re-run everything. The low token cost of a doc-only review makes this the correct trade.
+- **verify is anchored to a validated spec.** Its trust anchor is the spec, which validate has confirmed sound (promote enforces the validate gate before verify's record matters). verify's mismatches are code-vs-spec mappings, and the coupling between acceptance items runs through shared code functions and spec regions — wide, but mechanically capturable: each item declares the code/spec regions its judgment read, and the delta derivation re-runs exactly the items whose evidence went stale. Because verify's full run is the most expensive (it reads the code surface) and its fixes are the most frequent, a candidate verify full FAIL writes a **failure record** (the per-item `status` map) so the delta re-run (`reverify@{unit}`) can recover incrementally — re-checking the failed items plus the newly affected ones, carrying the `pass` items whose evidence is unchanged.
+- **review is anchored to a spec as design context.** Same as verify: the spec is fixed design context, the review judgments are per-file quality assessments that are self-contained per dimension. A candidate review full FAIL writes the blocking cache with the per-dimension `status` map, recovered by `rereview@{unit}` the same way.
+
+The delta re-run (`re*`) always writes a failure record on FAIL regardless of gate — the split above governs **full-run** FAIL only. A delta FAIL's record is trusted because it carries over only judgments whose dependency evidence is unchanged by construction (`carried`), never judgments whose content moved.
+
 ## Write Rules
 
 ### Agent writes
@@ -365,12 +375,12 @@ exists.
 |-------|--------|
 | `validate@{unit}` full PASS (candidate round) | Write `validate_result.md` with `mode: full`, `target: candidate`, and `hash` + `deps` evidence for every file read (via `specflowctl gate-evidence`) |
 | `validate@{unit}` / `validate@{rule}` full PASS (stable-only target) | Write `validate_result.md` with `mode: full`, `target: stable` — the stable confirmation cache (content vs dependencies/rules), consumed by `fresh@stable` only (see `framework/verification_scope.md` §Stable-only Targets) |
-| `validate` full FAIL / needs_decision (candidate target) | Delete `validate_result.md` if it exists (full run failure — trust establishment failed, no failure record) |
+| `validate` full FAIL / needs_decision (candidate target) | Delete `validate_result.md` if it exists (full run failure — trust establishment failed, no failure record; the candidate's spec was never confirmed sound, so nothing may be carried over — see §Failure handling by gate role) |
 | `validate` full FAIL / needs_decision (stable-only target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried`); recommend forking the unit/rule to reconcile the stable content with the changed dependency or rule. The record keeps the confirmation state visible as BLOCKED and is the failure-recovery baseline |
 | `verify@{unit}` full PASS (all aligned) | Write `verify_result.md` with `result: pass`, severity counts at 0, `mode: full`, `target: candidate`, `blocking: false`, and `hash` + `deps` evidence for every file read |
 | `verify@{unit}` full PASS (P2/P3 non-blocking findings) | Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `mode: full`, `target: candidate`, and `hash` + `deps` evidence. Promote may proceed |
 | `verify@{unit}` full PASS (stable-only target) | Write `verify_result.md` with `target: stable` — the drift confirmation cache (VERIFIED state), consumed by `fresh@stable` only |
-| `verify` full FAIL (any P0/P1 findings, candidate target) | Delete `verify_result.md` if it exists (full run failure — no failure record). Agent must stop, not proceed to promote |
+| `verify` full FAIL (any P0/P1 findings, candidate target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-item `status` map — `pass`/`fail` for every acceptance item; full runs have no `carried`) — the failure-recovery baseline. Agent must stop, not proceed to promote. The record is the reverify baseline: after the findings are resolved, the delta re-run re-checks only the failed items plus the newly affected ones and carries the `pass` items over (see §Failure handling by gate role and `framework/verification_scope.md` §Delta Runs → Failure recovery) |
 | `verify` full FAIL (any P0/P1 findings, stable-only target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-item `status` map — `pass`/`fail` for every acceptance item; full runs have no `carried`); report the drift and recommend forking (do not enter divergence resolution — see `framework/unit_verify_checklist.md` §Stable-only mode) |
 | `review@{unit}` full PASS | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: false`, `hash` + `deps` evidence for every file read, and findings body |
 | `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: true`, includes finding counts, findings body, and the per-dimension `status` map (`pass`/`fail` for every review dimension; full runs have no `carried`) |

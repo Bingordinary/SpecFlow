@@ -361,8 +361,9 @@ func TestCheckVerifyFailResultRejected(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// A fail-result verify cache is a delta re-run's failure record — it is
-	// a valid cache shape since the failure-recovery design. It must declare
+	// A fail-result verify cache is a delta re-run's or a candidate full-run
+	// FAIL's failure record — it is a valid cache shape since the
+	// failure-recovery design. It must declare
 	// its blocking status: `result: fail` + `blocking: true` classifies as
 	// CategoryBlocked (promote rejected, fresh reports BLOCKED).
 	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: fail\ntarget: candidate\nblocking: true\np0_count: 1\np2_count: 1\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, specPath)) + "  - path: src/handler.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nBlocking findings found.\n"
