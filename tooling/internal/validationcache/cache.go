@@ -465,6 +465,342 @@ func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error)
 	return result, nil
 }
 
+// FileEntry is the full content of one cache `files` entry. Hash and Deps are
+// computed by the tooling (contenthash), never supplied by the agent — a
+// manually transcribed CID is the transcription error source this package's
+// cache-write path eliminates. Checks carries the optional per-check
+// breakdown (see the Format section of framework/validation_cache.md).
+type FileEntry struct {
+	Path   string       `json:"path"`
+	Hash   string       `json:"hash,omitempty"`
+	Deps   []string     `json:"deps,omitempty"`
+	Checks []CheckEntry `json:"checks,omitempty"`
+}
+
+// CheckEntry is one per-check dependency declaration inside a files entry
+// (check key + optional status + the CIDs the check's judgment depended on).
+type CheckEntry struct {
+	Check  string   `json:"check"`
+	Status string   `json:"status,omitempty"` // pass | fail | carried (required on fail/blocking caches)
+	Deps   []string `json:"deps,omitempty"`
+}
+
+// EntryDeclaration is the agent-facing declaration for one cache files entry
+// (the input to cache-write). The agent declares the check keys, statuses,
+// and section-region headings / line ranges its judgment depended on; the
+// tooling resolves the declarations to CIDs and computes the whole-file hash.
+// Ranges uses the same START-END,START-END grammar as contenthash.ParseRanges.
+type EntryDeclaration struct {
+	Path            string             `json:"path"`
+	Checks          []CheckDeclaration `json:"checks,omitempty"`
+	Ranges          string             `json:"ranges,omitempty"`
+	Sections        []string           `json:"sections,omitempty"`
+	AcceptanceItems bool               `json:"acceptance_items,omitempty"`
+}
+
+// CheckDeclaration is one per-check declaration inside an entry declaration.
+// Status is pass | fail | carried (required on fail/blocking caches). When
+// Sections, Ranges, and AcceptanceItems are all empty the check declares a
+// whole-file dependency (conservative).
+type CheckDeclaration struct {
+	Check           string   `json:"check"`
+	Status          string   `json:"status,omitempty"`
+	Sections        []string `json:"sections,omitempty"`
+	Ranges          string   `json:"ranges,omitempty"`
+	AcceptanceItems bool     `json:"acceptance_items,omitempty"`
+}
+
+// BuildEntry computes the cache files entry for one declaration: the
+// whole-file hash and the dependency CIDs are computed by the tooling, never
+// supplied by the agent. The file-level deps are the union of every declared
+// per-check dep plus the entry-level declaration (union discipline — the
+// promote gate fails closed on a per-check dep missing from the union). For a
+// logical reference the current-layer file (candidate first, stable fallback)
+// is used — the same resolution freshness checks use.
+func BuildEntry(repoRoot string, d EntryDeclaration) (FileEntry, error) {
+	abs := resolveEntryPath(repoRoot, d.Path)
+	if abs == "" {
+		return FileEntry{}, fmt.Errorf("cannot resolve cache entry %q to a file in any layer", d.Path)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("read %s: %w", d.Path, err)
+	}
+	text := specpaths.NormalizeText(string(data))
+
+	entry := FileEntry{Path: d.Path}
+	hash, entryDeps, err := declarationDeps(text, d.Path, d.Sections, d.Ranges, d.AcceptanceItems)
+	if err != nil {
+		return FileEntry{}, err
+	}
+	entry.Hash = hash
+	union := make(map[string]bool)
+	for _, dep := range entryDeps {
+		union[dep] = true
+	}
+	for _, cd := range d.Checks {
+		check := strings.TrimSpace(cd.Check)
+		if check == "" {
+			return FileEntry{}, fmt.Errorf("entry %q declares a check with an empty key", d.Path)
+		}
+		_, checkDeps, cerr := declarationDeps(text, d.Path, cd.Sections, cd.Ranges, cd.AcceptanceItems)
+		if cerr != nil {
+			return FileEntry{}, cerr
+		}
+		for _, dep := range checkDeps {
+			union[dep] = true
+		}
+		entry.Checks = append(entry.Checks, CheckEntry{Check: check, Status: cd.Status, Deps: checkDeps})
+	}
+
+	// The file-level union preserves declaration order: entry-level deps
+	// first, then check deps not already present (declare-heavy extras are
+	// legal; every check dep must already be in the union).
+	var ordered []string
+	seen := make(map[string]bool)
+	for _, dep := range entryDeps {
+		if !seen[dep] {
+			seen[dep] = true
+			ordered = append(ordered, dep)
+		}
+	}
+	for _, c := range entry.Checks {
+		for _, dep := range c.Deps {
+			if !seen[dep] {
+				seen[dep] = true
+				ordered = append(ordered, dep)
+			}
+		}
+	}
+	entry.Deps = ordered
+	return entry, nil
+}
+
+// declarationDeps computes the dependency CIDs for one declaration (entry or
+// check level): the declared line ranges (chunk CIDs), section regions
+// (region:section:...), and the acceptance-items region
+// (region:acceptance_items:...) are merged into one deps list. When none are
+// given, the whole file is declared (conservative).
+func declarationDeps(text, path string, sections []string, ranges string, acceptanceItems bool) (string, []string, error) {
+	fc := contenthash.ChunkText(text)
+
+	parsed, perr := contenthash.ParseRanges(ranges)
+	if perr != nil {
+		return "", nil, perr
+	}
+
+	nothingDeclared := len(parsed) == 0 && len(sections) == 0 && !acceptanceItems
+	if nothingDeclared {
+		var deps []string
+		for _, c := range fc.Chunks {
+			deps = append(deps, c.CID)
+		}
+		return contenthash.FileHashText(text), deps, nil
+	}
+
+	var deps []string
+	if len(parsed) > 0 {
+		for _, r := range parsed {
+			if r[1] > fc.LineCount() {
+				return "", nil, fmt.Errorf("range %d-%d exceeds the file's line count (%d lines)", r[0], r[1], fc.LineCount())
+			}
+		}
+		deps = append(deps, contenthash.CIDsForRanges(fc, parsed)...)
+	}
+	for _, heading := range sections {
+		dep, derr := sectionDep(text, heading)
+		if derr != nil {
+			return "", nil, derr
+		}
+		deps = append(deps, dep)
+	}
+	if acceptanceItems {
+		region, ok := contenthash.AcceptanceItemsRegion(text)
+		if !ok {
+			return "", nil, fmt.Errorf("acceptance_item_set region not found in %s — cannot declare the structural dependency", path)
+		}
+		deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
+	}
+	return contenthash.FileHashText(text), deps, nil
+}
+
+// sectionDep computes a section-region dependency (or the frontmatter region
+// for the "frontmatter" spelling) for the given normalized text.
+func sectionDep(text, heading string) (string, error) {
+	if heading == "frontmatter" {
+		if _, ok := contenthash.LocateSectionRegion(text, "frontmatter"); ok {
+			return "", fmt.Errorf("reserved heading %q: the file has a real ## frontmatter section, which cannot be declared by --section frontmatter (the spelling names the pre-heading region) — rename the section", heading)
+		}
+		heading = ""
+	}
+	region, ok := contenthash.LocateSectionRegion(text, heading)
+	if !ok {
+		return "", fmt.Errorf("section %q not found (or declared more than once) — list the sections with gate-evidence --sections", heading)
+	}
+	return "region:section:" + heading + ":" + contenthash.RegionCID(region.Text), nil
+}
+
+// CacheWrite is the cache-write parameter bundle. The agent supplies the
+// judgment fields (Result, Basis, severity counts, Target, Timestamp, Body,
+// Entries); Hash/Deps inside Entries are computed by the tooling.
+type CacheWrite struct {
+	Command   string
+	Unit      string
+	Mode      string
+	Basis     string
+	Result    string
+	Target    string
+	Blocking  bool
+	P0Count   int
+	P1Count   int
+	P2Count   int
+	P3Count   int
+	Timestamp string
+	Body      string
+	Entries   []FileEntry
+}
+
+// WriteCache writes a cache file (frontmatter + body) for the given gate and
+// target. targetKind is "unit" or "rule". The files entry list is rendered
+// from the computed evidence; the body is appended verbatim after the closing
+// frontmatter delimiter. It returns the absolute path written.
+func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, error) {
+	var fileName string
+	switch w.Command {
+	case "validate":
+		fileName = "validate_result.md"
+	case "verify":
+		fileName = "verify_result.md"
+	case "review":
+		fileName = "review_result.md"
+	default:
+		return "", fmt.Errorf("unknown cache command %q", w.Command)
+	}
+
+	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return "", fmt.Errorf("create cache directory: %w", err)
+	}
+
+	content, err := renderCacheFrontmatter(w, targetName)
+	if err != nil {
+		return "", err
+	}
+	content += "\n" + w.Body
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if err := os.WriteFile(cachePath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write cache: %w", err)
+	}
+	return cachePath, nil
+}
+
+// CacheResult mirrors CheckResult for cache-write output.
+type CacheResult struct {
+	Fresh    bool
+	Category CheckCategory
+	Reason   string
+}
+
+// CheckWriteResult runs the gate's full freshness chain against a freshly
+// written cache. It re-reads the file and runs the exact checks promote and
+// fresh use, so a cache that passes self-check is accepted by the gates.
+// Layer routing mirrors the promote gate's layer separation: the stable
+// validate/verify variants point the main-file check at the stable spec, and
+// review requires target: stable.
+func CheckWriteResult(repoRoot, targetKind, targetName, command, target string) (CacheResult, error) {
+	var (
+		res CheckResult
+		err error
+	)
+	switch {
+	case targetKind == "unit" && command == "validate" && target == "stable":
+		res, err = CheckValidateStable(repoRoot, targetName)
+	case targetKind == "unit" && command == "validate":
+		res, err = CheckValidate(repoRoot, targetName)
+	case targetKind == "unit" && command == "verify" && target == "stable":
+		res, err = CheckVerifyStable(repoRoot, targetName)
+	case targetKind == "unit" && command == "verify":
+		res, err = CheckVerify(repoRoot, targetName)
+	case targetKind == "unit" && command == "review" && target == "stable":
+		res, err = CheckReviewStable(repoRoot, targetName)
+	case targetKind == "unit" && command == "review":
+		res, err = CheckReview(repoRoot, targetName)
+	case targetKind == "rule" && command == "validate" && target == "stable":
+		res, err = CheckRuleValidateStable(repoRoot, targetName)
+	case targetKind == "rule" && command == "validate":
+		res, err = CheckRuleValidate(repoRoot, targetName)
+	default:
+		return CacheResult{}, fmt.Errorf("unsupported gate %q for %s target %q", command, targetKind, targetName)
+	}
+	if err != nil {
+		return CacheResult{}, err
+	}
+	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason}, nil
+}
+
+// renderCacheFrontmatter renders the YAML frontmatter of a cache file
+// (delimiter lines included). The files block is rendered in the canonical
+// order: file entries in declaration order, hash, per-check checks block,
+// file-level deps union. The body is appended by WriteCache after the closing
+// delimiter.
+func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
+	var b strings.Builder
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "command: %s\n", w.Command)
+	fmt.Fprintf(&b, "unit: %s\n", targetName)
+	fmt.Fprintf(&b, "mode: %s\n", w.Mode)
+	if w.Basis != "" {
+		fmt.Fprintf(&b, "basis: %s\n", w.Basis)
+	}
+	fmt.Fprintf(&b, "result: %s\n", w.Result)
+	if w.Target != "" {
+		fmt.Fprintf(&b, "target: %s\n", w.Target)
+	}
+	fmt.Fprintf(&b, "blocking: %t\n", w.Blocking)
+	fmt.Fprintf(&b, "p0_count: %d\n", w.P0Count)
+	fmt.Fprintf(&b, "p1_count: %d\n", w.P1Count)
+	fmt.Fprintf(&b, "p2_count: %d\n", w.P2Count)
+	fmt.Fprintf(&b, "p3_count: %d\n", w.P3Count)
+	fmt.Fprintf(&b, "timestamp: %q\n", w.Timestamp)
+	if len(w.Entries) == 0 {
+		b.WriteString("files: []\n")
+		b.WriteString("---")
+		return b.String(), nil
+	}
+	b.WriteString("files:\n")
+	for _, e := range w.Entries {
+		fmt.Fprintf(&b, "  - path: %s\n", e.Path)
+		if e.Hash != "" {
+			fmt.Fprintf(&b, "    hash: sha256:%s\n", normalizeHash(e.Hash))
+		}
+		if len(e.Checks) > 0 {
+			b.WriteString("    checks:\n")
+			for _, c := range e.Checks {
+				fmt.Fprintf(&b, "      - check: %q\n", c.Check)
+				if c.Status != "" {
+					fmt.Fprintf(&b, "        status: %s\n", c.Status)
+				}
+				if len(c.Deps) > 0 {
+					b.WriteString("        deps:\n")
+					for _, d := range c.Deps {
+						fmt.Fprintf(&b, "          - %s\n", d)
+					}
+				}
+			}
+		}
+		if len(e.Deps) > 0 {
+			b.WriteString("    deps:\n")
+			for _, d := range e.Deps {
+				fmt.Fprintf(&b, "      - %s\n", d)
+			}
+		}
+	}
+	b.WriteString("---")
+	return b.String(), nil
+}
+
 // CacheSummary is a read-only summary of a cache file's frontmatter,
 // used by freshness reporting. It does not perform any freshness check.
 type CacheSummary struct {

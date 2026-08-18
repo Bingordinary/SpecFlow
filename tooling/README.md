@@ -134,27 +134,32 @@ The tooling layer must not:
     - with `--section <heading>` (repeatable): declares the section region with that heading text as the dependency (`region:section:<heading>:<cid>`), located by heading rather than line numbers — the frontmatter region (file head through the line before the first `##` heading) is named `frontmatter`; a missing or duplicated heading fails closed
     - with `--sections`: lists every section region (heading, line range, CID) without declaring dependencies — the informational output that names the `--section` values
     - corresponds to the `specflowctl gate-evidence` agent-trigger row (see `framework/concepts.md` and `framework/validation_cache.md` §Dependency Declaration)
- 12. `promote`
+  12. `cache-write`
+    - write a gate cache file with the machine-consumed evidence computed by the tooling, then self-check the written file with the gate's own freshness chain
+    - `cache-write --gate validate|verify|review (--unit NAME | --rule ID) --result pass|fail --target candidate|stable [--basis full|delta|repair] [--blocking] [--p0-count N --p1-count N --p2-count N --p3-count N]`: the agent supplies the judgment (result, basis, target, blocking, severity counts, findings body, per-check status map) and declares each files entry with a repeatable `--file '<json>'` — `{"path":"src/auth/login.go","checks":[{"check":"5","status":"pass","sections":["Description"]}],"sections":[...],"ranges":"...","acceptance_items":bool}` (path may be a logical reference `unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`). The tooling computes each entry's whole-file `hash` and `deps` CIDs from the declared scope (same declarations `gate-evidence` accepts; `sections` accepts the reserved spelling `frontmatter` naming the pre-`##` region, same as `gate-evidence --section`; the schema has no hash/deps fields, so a transcribed CID cannot enter the cache), enforces union discipline (every per-check dep joins the file-level `deps`), requires a per-check `status` map on failure records, then re-reads the file and runs the gate's own checks (pass → FRESH; failure record → BLOCKED; a pass validate@ candidate cache additionally requires appendix coverage). A non-accepted result is a write failure (non-zero exit)
+    - rule targets support the validate gate only (rule verify/review removed)
+    - corresponds to the tooled cache-write step of every quality-gate run (see `framework/concepts.md` and `framework/validation_cache.md` §Write Rules → Tooled writes)
+  13. `promote`
     - validate candidate spec format, copy candidate files to stable directories, and remove candidate files
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
- 13. `review collect-default-scope --flow <review_flow>`
+  14. `review collect-default-scope --flow <review_flow>`
     - collect the deterministic default scope for the explicit review flow
- 14. `review run-init --flow <review_flow>`
+  15. `review run-init --flow <review_flow>`
     - create or reuse the full-scope run-state file for the explicit review flow
- 15. `review run-validate --flow <review_flow>`
+  16. `review run-validate --flow <review_flow>`
     - validate required run-state fields, timestamps, all fixed statuses including closed statuses, baseline slices, score state when present, and dynamic slice parent links
- 16. `review run-refresh --flow <review_flow>`
+  17. `review run-refresh --flow <review_flow>`
     - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
- 17. `review run-touch --flow <review_flow>`
+  18. `review run-touch --flow <review_flow>`
     - refresh only `last_updated_at`
- 18. `validate write`
+  19. `validate write`
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
- 19. `validate candidate --unit UNIT`
+  20. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check, dependency cycle check, region locatability)
- 20. `validate rule --id RULE_ID`
+  21. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
     - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
 

@@ -371,6 +371,28 @@ The delta re-run (`re*`) always writes a failure record on FAIL regardless of ga
 
 ### Agent writes
 
+#### Tooled writes
+
+The cache format is a byte-exact machine-consumed contract: `hash` and the dependency CIDs are recorded verbatim, and `fresh`/`promote` compare them byte-for-byte. Hand transcription of those values is the root of transcription errors (a 64-bit CID typo is silently treated as evidence). Since the values are mechanically derived from file content, they are **computed by the tooling, never supplied by the agent**.
+
+`specflowctl cache-write` writes a gate cache from the agent's judgment plus the agent's declared dependency scope, with the machine-consumed evidence computed by the tooling:
+
+```
+specflowctl cache-write --gate validate|verify|review (--unit NAME | --rule ID) \
+  --result pass|fail --target candidate|stable [--basis full|delta|repair] [--blocking] \
+  [--p0-count N --p1-count N --p2-count N --p3-count N] \
+  --file '<json entry>' [--file '<json entry>' ...] [--body TEXT] [--repo-root PATH]
+```
+
+- **Judgment stays with the agent:** `result`, `basis`, `target`, `blocking`, severity counts, the findings body, and the per-check `status` map are agent inputs. The tool never decides PASS/FAIL or assigns severity.
+- **Evidence is computed by the tool:** each `--file` entry declares the file (physical path or logical reference) and the dependency scope its judgment read — `sections` (section-region headings; the reserved spelling `frontmatter` names the pre-`##` region, same as `gate-evidence --section`), `ranges` (line ranges, same grammar as `gate-evidence`), `acceptance_items` — or nothing (whole-file, conservative). The tooling resolves the declarations to CIDs and computes the whole-file hash. A `checks` mapping (`check`, optional `status`, and that check's `sections`/`ranges`/`acceptance_items`) is transcribed the same way, and every check's CIDs join the file-level `deps` union (union discipline). The declaration schema has **no `hash` or `deps` fields** — a transcribed CID cannot enter a cache file.
+- **Write-then-verify:** the tool re-reads the written file and runs the gate's own freshness chain (`CheckValidate`/`CheckVerify`/`CheckReview` and their stable/rule variants). A pass cache must come out `FRESH`; a failure record must come out `BLOCKED` (its designed state — it blocks promote and is the failure-recovery baseline). Any other classification is a write failure (non-zero exit). For a pass `validate@` candidate cache the appendix gate runs too: every non-exempt candidate appendix must be listed.
+- **Delta rewrites:** a delta/repair rewrite declares only the re-run judgments' entries; carried-over judgments' entries are re-declared with their original evidence (the agent reads the old cache's evidence — paths and check keys — and re-declares them; the tooling recomputes the CIDs against the current content, which is unchanged by construction for carried-over judgments). `basis: delta` / `basis: repair` marks the writer.
+
+Each row of the Write Rules table below that says "via `specflowctl gate-evidence`" is assembled with `cache-write`: the agent supplies the judgment and the declared scope, and the tooling computes the evidence and writes the file.
+
+### Agent writes
+
 | Event | Action |
 |-------|--------|
 | `validate@{unit}` full PASS (candidate round) | Write `validate_result.md` with `mode: full`, `target: candidate`, and `hash` + `deps` evidence for every file read (via `specflowctl gate-evidence`) |

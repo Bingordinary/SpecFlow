@@ -77,6 +77,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runRemove(args[1:], stdout, stderr)
 	case "gate-evidence":
 		return runGateEvidence(args[1:], stdout, stderr)
+	case "cache-write":
+		return runCacheWrite(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -555,6 +557,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  detect     Detect removable bound rules (no consumers, no retention)")
 	fmt.Fprintln(w, "  remove     Delete a rule whose constraint no longer applies (bound rules auto-verified; global rules on explicit instruction)")
 	fmt.Fprintln(w, "  gate-evidence Compute dependency CIDs (chunk ranges and/or the acceptance_item_set region) for a file read during a gate run")
+	fmt.Fprintln(w, "  cache-write Write a gate cache file with hash/deps evidence computed by the tooling, then self-check it")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }
 
