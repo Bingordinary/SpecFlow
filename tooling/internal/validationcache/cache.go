@@ -760,10 +760,10 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 type fileFreshnessState int
 
 const (
-	fileMissing   fileFreshnessState = iota // file is gone from disk
-	fileNoDeps                              // entry declares no dependency chunks but the file has content
-	fileDepChanged                          // a declared dependency chunk CID is no longer present
-	fileFresh                               // every declared dependency chunk is unchanged
+	fileMissing    fileFreshnessState = iota // file is gone from disk
+	fileNoDeps                               // entry declares no dependency chunks but the file has content
+	fileDepChanged                           // a declared dependency chunk CID is no longer present
+	fileFresh                                // every declared dependency chunk is unchanged
 )
 
 // fileFreshness re-chunks the current file and checks every declared
