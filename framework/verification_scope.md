@@ -470,6 +470,11 @@ The layer boundary is decided by file existence: a target with a candidate file 
 
 When no candidate file exists for a unit (or rule), the three full commands run as **confirmation checks** of the stable content's continuing relationship with the outside world. They are read-only — they write a confirmation cache (`target: stable`) and never edit any content; changing consensus content is possible only through `fork` (see `framework/concepts.md` §4). The confirmation checks are the stable counterparts of the candidate gates, but they grant no promote eligibility — their caches are consumed only by `fresh@stable`.
 
+Stable confirmation caches have **two producers** with identical semantics:
+
+1. **A `@stable` confirmation run** — an explicit user-triggered `validate@{target}` / `verify@{unit}` / `review@{unit}` against a stable-only target, writing a fresh `target: stable` cache from that run's judgment.
+2. **A successful promote** — `specflowctl promote` rewrites the candidate gate caches into `target: stable` confirmation caches (inverse of the fork rewrite): `target: candidate` → `target: stable`, and every physical path under `docs/specs/.../candidate/` → the `stable/` equivalent (see `framework/validation_cache.md` §Cache lifecycle). The promoted content is byte-identical to the candidate, so the caches' evidence is still valid for the promoted files. This gives every promoted target an immediate stable confirmation baseline and makes the stable-layer delta recovery (`re*`) usable without a full confirmation run first. A retired promote deletes the caches instead (the stable content is gone).
+
 | Command | Relationship confirmed | Cache on PASS | On FAIL |
 |---------|----------------------|---------------|---------|
 | `validate@{unit}` / `validate@{rule}` | Stable content vs its dependencies and rules (Check 6/7/8: referenced files, cross-unit contracts, global and bound rules) | `target: stable` validate cache | Write a failure record (`result: fail` + `blocking: true`); recommend forking the unit/rule to reconcile the stable content with the changed dependency or rule. The record keeps the confirmation state visible as BLOCKED and is the failure-recovery baseline |

@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoUrl = "https://github.com/Bingordinary/SpecFlow.git"
 $TargetDir = "specflow"
-$IgnoreEntries = @("specflow/", "docs/specs/meta/validation/", ".tmp/", "/meta/", ".claude-plugin/", ".opencode/", ".agents/", "hooks/hooks.json")
+$IgnoreEntries = @("specflow/", ".tmp/", "/meta/", ".claude-plugin/", ".opencode/", ".agents/", "hooks/hooks.json")
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"
@@ -15,7 +15,7 @@ Usage: install.ps1
 
 Run from the root of the repository that should adopt specFlow.
 The installer clones SpecFlow into ./specflow, adds ignore entries
-(specflow/, validation caches, build caches, tool configs) to .gitignore,
+(specflow/, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 "@)
 }

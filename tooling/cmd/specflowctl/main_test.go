@@ -218,10 +218,30 @@ No P0/P1 findings.
 		t.Fatal("stable spec was not created after promote")
 	}
 
-	// Verify caches were cleared after successful promote
+	// Verify caches were rewritten after successful promote (not deleted — each
+	// cache becomes a stable-layer confirmation cache).
 	cacheFiles, _ := filepath.Glob(filepath.Join(cacheDir, "*"))
-	if len(cacheFiles) > 0 {
-		t.Fatalf("expected cache cleared after promote, found: %v", cacheFiles)
+	if len(cacheFiles) == 0 {
+		t.Fatal("expected caches to survive promote as stable confirmation caches, but dir is empty")
+	}
+	for _, cf := range cacheFiles {
+		data, err := os.ReadFile(cf)
+		if err != nil {
+			t.Fatalf("failed to read cache %s: %v", cf, err)
+		}
+		// Physical paths must reference stable layer after rewrite (no "candidate"
+		// in any path entry)
+		if strings.Contains(string(data), "candidate/") {
+			t.Fatalf("cache %s still contains candidate-layer path after promote:\n%s", cf, string(data))
+		}
+		// Verify/review caches (which had target: candidate) must get target: stable.
+		// Validate cache (no target field in the test fixture) is accepted without it —
+		// CheckValidateStable does not require the target field.
+		if filepath.Base(cf) != "validate_result.md" {
+			if !strings.Contains(string(data), "target: stable") {
+				t.Fatalf("cache %s was not rewritten to target: stable, content:\n%s", cf, string(data))
+			}
+		}
 	}
 
 	// Verify candidate file was removed after promote (file existence is state)

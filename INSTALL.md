@@ -19,7 +19,7 @@ irm https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts
 The installer:
 
 1. Clones the specFlow repository into `./specflow/`
-2. Adds ignore entries (`specflow/`, validation caches, build caches, tool configs) to `.gitignore`
+2. Adds ignore entries (`specflow/`, build caches, tool configs) to `.gitignore`
 3. Installs the current platform's `specflowctl` binary and `SHA256SUMS`
 4. Runs `specflowctl init` — installs framework files and platform hooks
 

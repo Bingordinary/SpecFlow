@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/Bingordinary/SpecFlow.git"
 TARGET_DIR="specflow"
-IGNORE_ENTRIES=("specflow/" "docs/specs/meta/validation/" ".tmp/" "/meta/" ".claude-plugin/" ".opencode/" ".agents/" "hooks/hooks.json")
+IGNORE_ENTRIES=("specflow/" ".tmp/" "/meta/" ".claude-plugin/" ".opencode/" ".agents/" "hooks/hooks.json")
 
 usage() {
   cat >&2 <<'USAGE'
@@ -11,7 +11,7 @@ Usage: install.sh
 
 Run from the root of the repository that should adopt specFlow.
 The installer clones SpecFlow into ./specflow, adds ignore entries
-(specflow/, validation caches, build caches, tool configs) to .gitignore,
+(specflow/, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 USAGE
 }

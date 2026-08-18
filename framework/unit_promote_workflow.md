@@ -101,7 +101,7 @@ Summary: ...
    - Copies candidate content to stable verbatim (the layer is encoded by the file path — no frontmatter field is transformed, so promoted content is byte-identical and content-addressed caches of dependent units stay fresh)
    - Appendix filenames are preserved since they no longer encode layer
    - Removes the stable copies of retired content (in the same transaction as the copies)
-   - Deletes candidate cache files after success
+   - Rewrites the candidate-layer gate caches into stable confirmation caches (`target: candidate` → `target: stable`, physical paths rewritten from `docs/specs/units/candidate/` to `docs/specs/units/stable/`); for a retired unit the caches are deleted instead (the stable content is gone). The rewritten caches become the delta-recovery baseline: `fresh@stable` reports them, `re*` restores a stale one, and `fork` inherits them into the next round. See `framework/validation_cache.md` §Cache lifecycle.
    - Removes rules the candidate dropped from `rule_refs`: every bound rule left with no current-layer consumers and no `unbound_retention` declaration is deleted with it (stable and candidate copies, baseline, validate cache), and the removed rules are listed explicitly in the promote report (see `framework/spec_writing_guide.md` §6.5)
 
 **PASS:** `specflowctl promote --unit <name>` exits with code 0, all files copied and candidate cleaned up

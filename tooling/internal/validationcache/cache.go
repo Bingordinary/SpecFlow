@@ -1555,14 +1555,90 @@ func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
 	return report, nil
 }
 
-// rewriteCacheLayer rewrites a stable confirmation cache into its candidate
-// form: the `target: stable` declaration becomes `target: candidate`, and
-// every physical path under `docs/specs/units/stable/` in the files list
-// becomes `docs/specs/units/candidate/` (the main spec and appendices move
-// layer with the fork). Logical references (`unit:` / `rule:`) are untouched —
-// they resolve by name to the current layer. Only the frontmatter is edited;
-// the body is preserved verbatim. Returns whether anything changed.
-func rewriteCacheLayer(content string) (string, bool) {
+// PromoteCachesToStableEntry reports one gate's promote-rewrite outcome.
+type PromoteCachesToStableEntry struct {
+	Rewritten bool
+	Reason    string // why the cache was not rewritten ("" when rewritten)
+}
+
+// PromoteCachesToStableReport summarizes the promote-rewrite result.
+type PromoteCachesToStableReport struct {
+	Entries []PromoteCachesToStableEntry
+}
+
+// RewriteCachesToStable rewrites the candidate-layer gate caches for the given
+// target into stable confirmation caches (`target: candidate` → `target: stable`,
+// and every physical path under `docs/specs/.../candidate/` →
+// `docs/specs/.../stable/`). This is the inverse of InheritStableCaches: promote
+// consumes the candidate caches and produces an equivalent stable-layer record
+// so the promoted state is visible in fresh@stable and serves as the delta-
+// recovery baseline for future re* runs. Caches without a usable baseline
+// (missing, failure record, already stable) are skipped with a reason.
+//
+// Rule forks do not inherit, so the rewrite is primarily meaningful for unit
+// caches (validate/verify/review). For rules, only the validate cache is
+// rewritten — the fresh@stable rule report consumes it as the consumer/
+// consistency confirmation state.
+func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCachesToStableReport, error) {
+	var commands []string
+	switch targetKind {
+	case "unit":
+		commands = []string{"validate", "verify", "review"}
+	case "rule":
+		commands = []string{"validate"}
+	default:
+		return nil, fmt.Errorf("unknown target kind %q — expected 'unit' or 'rule'", targetKind)
+	}
+	report := &PromoteCachesToStableReport{}
+	for _, cmd := range commands {
+		entry := PromoteCachesToStableEntry{}
+		cachePath := cacheFilePath(repoRoot, targetKind, targetName, cmd+"_result.md")
+		data, err := os.ReadFile(cachePath)
+		if os.IsNotExist(err) {
+			entry.Reason = fmt.Sprintf("%s cache not found — nothing to rewrite", cmd)
+			report.Entries = append(report.Entries, entry)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read %s cache: %w", cmd, err)
+		}
+		cache, err := readCache(cachePath)
+		if err != nil {
+			entry.Reason = fmt.Sprintf("%s cache unreadable: %v — not rewritten", cmd, err)
+			report.Entries = append(report.Entries, entry)
+			continue
+		}
+		switch {
+		case cache.Target == "stable":
+			entry.Reason = fmt.Sprintf("%s cache already has target: stable — no rewrite needed", cmd)
+		case cache.Result == "fail" || cache.Blocking:
+			entry.Reason = fmt.Sprintf("%s cache is a failure record — not rewritten (blocking state must be resolved first)", cmd)
+		default:
+			rewritten, changed := rewriteCacheLayerToStable(string(data))
+			if !changed {
+				entry.Reason = fmt.Sprintf("%s cache needs no layer rewrite", cmd)
+			} else if err := os.WriteFile(cachePath, []byte(rewritten), 0644); err != nil {
+				return nil, fmt.Errorf("rewrite %s cache: %w", cmd, err)
+			} else {
+				entry.Rewritten = true
+			}
+		}
+		report.Entries = append(report.Entries, entry)
+	}
+	return report, nil
+}
+
+// rewriteLayerFrontmatter transforms a cache file's frontmatter by replacing
+// the `target` value and every physical `path` prefix with the given layer
+// strings. `fromLayer` is the current layer identifier (e.g. "stable" for a
+// stable confirmation cache, "candidate" for a candidate gate cache);
+// `toLayer` is the target layer. Physical paths under
+// `docs/specs/units/{fromLayer}/` and `docs/specs/rules/{fromLayer}/` are
+// rewritten to `docs/specs/units/{toLayer}/` and `docs/specs/rules/{toLayer}/`.
+// Logical references (`unit:` / `rule:`) are untouched — they resolve by name
+// to the current layer. Only the frontmatter (between the two `---` delimiters)
+// is edited; the body is preserved verbatim. Returns whether anything changed.
+func rewriteLayerFrontmatter(content string, fromLayer, toLayer string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
 		return content, false
@@ -1583,20 +1659,43 @@ func rewriteCacheLayer(content string) (string, bool) {
 		trimmed := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(trimmed, "target:") &&
-			strings.TrimSpace(strings.TrimPrefix(trimmed, "target:")) == "stable":
+			strings.TrimSpace(strings.TrimPrefix(trimmed, "target:")) == fromLayer:
 			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			lines[i] = leading + "target: candidate"
+			lines[i] = leading + "target: " + toLayer
 			changed = true
-		case strings.HasPrefix(trimmed, "- path: docs/specs/units/stable/"):
+		case strings.HasPrefix(trimmed, "- path: docs/specs/units/"+fromLayer+"/"):
 			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			newPath := "docs/specs/units/candidate/" + strings.TrimPrefix(
+			newPath := "docs/specs/units/" + toLayer + "/" + strings.TrimPrefix(
 				strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")),
-				"docs/specs/units/stable/")
+				"docs/specs/units/"+fromLayer+"/")
+			lines[i] = leading + "- path: " + newPath
+			changed = true
+		case strings.HasPrefix(trimmed, "- path: docs/specs/rules/"+fromLayer+"/"):
+			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			newPath := "docs/specs/rules/" + toLayer + "/" + strings.TrimPrefix(
+				strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")),
+				"docs/specs/rules/"+fromLayer+"/")
 			lines[i] = leading + "- path: " + newPath
 			changed = true
 		}
 	}
 	return strings.Join(lines, "\n"), changed
+}
+
+// rewriteCacheLayer rewrites a stable confirmation cache into its candidate
+// form: `target: stable` → `target: candidate`, and every physical path under
+// `docs/specs/units/stable/` / `docs/specs/rules/stable/` in the files list
+// becomes `docs/specs/units/candidate/` / `docs/specs/rules/candidate/`.
+func rewriteCacheLayer(content string) (string, bool) {
+	return rewriteLayerFrontmatter(content, "stable", "candidate")
+}
+
+// rewriteCacheLayerToStable rewrites a candidate gate cache into its stable
+// confirmation form: `target: candidate` → `target: stable`, and every physical
+// path under `docs/specs/units/candidate/` / `docs/specs/rules/candidate/` in
+// the files list becomes `docs/specs/units/stable/` / `docs/specs/rules/stable/`.
+func rewriteCacheLayerToStable(content string) (string, bool) {
+	return rewriteLayerFrontmatter(content, "candidate", "stable")
 }
 
 // fileHash computes the SHA-256 hash of a file's normalized content.

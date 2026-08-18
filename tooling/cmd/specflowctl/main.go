@@ -235,13 +235,6 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return errors.New("promote failed")
 	}
 
-	// Clean up cache on successful promote
-	if delErr := validationcache.DeleteAll(absRoot, unitName); delErr != nil {
-		fmt.Fprintf(stderr, "Warning: failed to delete caches: %v\n", delErr)
-	} else {
-		fmt.Fprintln(stdout, "Validate, verify, and review caches cleared.")
-	}
-
 	return nil
 }
 
@@ -270,13 +263,6 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	}
 	if !result.Passed {
 		return errors.New("promote failed")
-	}
-
-	// Clean up cache on successful promote
-	if delErr := validationcache.DeleteRuleCache(absRoot, ruleID, "validate"); delErr != nil {
-		fmt.Fprintf(stderr, "Warning: failed to delete validation cache: %v\n", delErr)
-	} else {
-		fmt.Fprintln(stdout, "Validation cache cleared.")
 	}
 
 	return nil

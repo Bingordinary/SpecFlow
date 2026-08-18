@@ -56,6 +56,7 @@ The CLI tool performs:
 6. **Determine version change type** — MAJOR vs MINOR vs PATCH
 7. **Copy candidate→stable** — pure copy (the layer is encoded by the file path — no frontmatter field is transformed)
 8. **Delete candidate** — removes the candidate rule file
+9. **Rewrite the validate cache** into a stable confirmation cache (`target: candidate` → `target: stable`, physical path from `docs/specs/rules/candidate/` to `docs/specs/rules/stable/`) — consumed by `fresh@stable` as the rule's consumer/consistency confirmation state
 
 Rule removal is a separate command: `specflowctl remove --rule <id>` (see `framework/spec_writing_guide.md` §6.5). A unit promote additionally removes every bound rule its candidate dropped from `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration; the removed rules are listed explicitly in the promote report.
 

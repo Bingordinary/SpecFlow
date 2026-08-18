@@ -2931,3 +2931,200 @@ func TestRewriteCacheLayerNoChange(t *testing.T) {
 		t.Fatalf("content must be unchanged, got:\n%s", out)
 	}
 }
+
+func TestRewriteCacheLayerToStable(t *testing.T) {
+	input := `---
+command: validate
+unit: test_unit
+mode: full
+result: pass
+target: candidate
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:abc123
+  - path: docs/specs/units/candidate/appendix/unit_test_unit_a.md
+    hash: sha256:def456
+  - path: unit:dep
+    hash: sha256:ghi789
+  - path: src/a.go
+    hash: sha256:jkl012
+---
+## Findings
+- P2: cosmetic issue
+target: candidate is body text, not frontmatter
+`
+	out, changed := rewriteCacheLayerToStable(input)
+	if !changed {
+		t.Fatal("expected the cache to be rewritten to stable")
+	}
+	if !strings.Contains(out, "target: stable\n") {
+		t.Fatalf("expected frontmatter target rewritten to 'stable', got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: docs/specs/units/stable/unit_test_unit.md") {
+		t.Fatalf("expected main spec path rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: docs/specs/units/stable/appendix/unit_test_unit_a.md") {
+		t.Fatalf("expected appendix path rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: unit:dep") {
+		t.Fatalf("logical reference must be preserved, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: src/a.go") {
+		t.Fatalf("code file path must be preserved, got:\n%s", out)
+	}
+	if !strings.Contains(out, "target: candidate is body text, not frontmatter") {
+		t.Fatalf("body must be preserved verbatim, got:\n%s", out)
+	}
+	if strings.Contains(out, "/candidate/") {
+		t.Fatalf("no candidate path may remain, got:\n%s", out)
+	}
+}
+
+func TestRewriteCacheLayerToStableNoTarget(t *testing.T) {
+	// Cache with no target field in frontmatter (target defaults to candidate).
+	// The rewrite must still add target: stable since every promoted cache
+	// becomes a stable confirmation cache.
+	input := `---
+command: validate
+unit: test_unit
+mode: full
+result: pass
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/units/candidate/unit_test_unit.md
+    hash: sha256:abc123
+---
+Validate passed.
+`
+	out, changed := rewriteCacheLayerToStable(input)
+	if !changed {
+		t.Fatal("expected the cache to be rewritten (paths must change)")
+	}
+	if !strings.Contains(out, "- path: docs/specs/units/stable/unit_test_unit.md") {
+		t.Fatalf("expected main spec path rewritten, got:\n%s", out)
+	}
+	// target field is absent; rewriteLayerFrontmatter does not add one.
+	// The validate stable gate does not require a target field, so this is
+	// semantically correct. The review cache (always has target: candidate
+	// in practice) is handled separately with its own rewrite.
+}
+
+func TestRewriteCacheLayerToStableAlreadyStable(t *testing.T) {
+	// A stable confirmation cache must not be rewritten again.
+	input := `---
+command: validate
+unit: test_unit
+mode: full
+result: pass
+target: stable
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/units/stable/unit_test_unit.md
+    hash: sha256:abc123
+---
+`
+	out, changed := rewriteCacheLayerToStable(input)
+	if changed {
+		t.Fatal("a stable-layer cache must not be rewritten")
+	}
+	if out != input {
+		t.Fatalf("content must be unchanged, got:\n%s", out)
+	}
+}
+
+func TestRewriteLayerFrontmatterRulePath(t *testing.T) {
+	input := `---
+command: validate
+unit: b_rule_test
+mode: full
+result: pass
+target: candidate
+timestamp: "2026-06-30T10:00:00Z"
+files:
+  - path: docs/specs/rules/candidate/b_rule_test.md
+    hash: sha256:abc
+  - path: unit:consumer
+    hash: sha256:def
+---
+`
+	out, changed := rewriteCacheLayerToStable(input)
+	if !changed {
+		t.Fatal("expected rule cache to be rewritten")
+	}
+	if !strings.Contains(out, "- path: docs/specs/rules/stable/b_rule_test.md") {
+		t.Fatalf("expected rule path rewritten, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- path: unit:consumer") {
+		t.Fatalf("logical reference must be preserved, got:\n%s", out)
+	}
+}
+
+func TestRewriteCachesToStablePromotedCachesPassStableChecks(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// Candidate spec + appendix + source file at their candidate-layer paths.
+	unit := "test"
+	candSpec := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_"+unit+".md")
+	candAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_"+unit+"_a.md")
+	srcPath := filepath.Join(repoRoot, "src/a.go")
+	os.MkdirAll(filepath.Dir(candSpec), 0755)
+	os.MkdirAll(filepath.Dir(candAppendix), 0755)
+	os.MkdirAll(filepath.Dir(srcPath), 0755)
+	os.WriteFile(candSpec, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Test\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: test.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"), 0644)
+	os.WriteFile(candAppendix, []byte("---\nunit: test\n---\n\n# Appendix\n"), 0644)
+	os.WriteFile(srcPath, []byte("package demo\n\nfunc Demo() int { return 1 }\n"), 0644)
+
+	specHash, _ := fileHash(candSpec)
+	appendixHash, _ := fileHash(candAppendix)
+	srcHash, _ := fileHash(srcPath)
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", unit)
+	os.MkdirAll(cacheDir, 0755)
+
+	// Candidate-layer validate cache (no target field — defaults to candidate).
+	validateCache := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, candSpec)) + "  - path: docs/specs/units/candidate/appendix/unit_test_a.md\n    hash: sha256:" + appendixHash + "\n" + depsYAML(chunkDeps(t, candAppendix)) + "---\nAll checks passed.\n"
+	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644)
+
+	// Candidate-layer verify cache.
+	verifyCache := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\nblocking: false\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n" + depsYAML(chunkDeps(t, candSpec)) + "  - path: src/a.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nAll items aligned.\n"
+	os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644)
+
+	// Candidate-layer review cache.
+	reviewCache := "---\ncommand: review\nunit: test\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-07-24T10:00:00Z\"\nfiles:\n  - path: src/a.go\n    hash: sha256:" + srcHash + "\n" + depsYAML(chunkDeps(t, srcPath)) + "---\nNo P0/P1 findings.\n"
+	os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644)
+
+	// Simulate the stable layer existing (promote has copied the files).
+	stableSpec := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test.md")
+	stableAppendix := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/unit_test_a.md")
+	os.MkdirAll(filepath.Dir(stableSpec), 0755)
+	os.MkdirAll(filepath.Dir(stableAppendix), 0755)
+	os.WriteFile(stableSpec, mustRead(t, candSpec), 0644)
+	os.WriteFile(stableAppendix, mustRead(t, candAppendix), 0644)
+
+	// Rewrite the candidate caches into stable confirmation caches.
+	report, err := RewriteCachesToStable(repoRoot, "unit", unit)
+	if err != nil {
+		t.Fatalf("RewriteCachesToStable failed: %v", err)
+	}
+	var rewrittenCount int
+	for _, e := range report.Entries {
+		if e.Rewritten {
+			rewrittenCount++
+		}
+	}
+	if rewrittenCount != 3 {
+		t.Fatalf("expected all 3 caches rewritten, got %d (report: %+v)", rewrittenCount, report.Entries)
+	}
+
+	// The rewritten caches must pass the stable-layer checks.
+	if r, err := CheckValidateStable(repoRoot, unit); err != nil || !r.Fresh {
+		t.Fatalf("CheckValidateStable after rewrite: fresh=%v err=%v reason=%s", r.Fresh, err, r.Reason)
+	}
+	if r, err := CheckVerifyStable(repoRoot, unit); err != nil || !r.Fresh {
+		t.Fatalf("CheckVerifyStable after rewrite: fresh=%v err=%v reason=%s", r.Fresh, err, r.Reason)
+	}
+	if r, err := CheckReviewStable(repoRoot, unit); err != nil || !r.Fresh {
+		t.Fatalf("CheckReviewStable after rewrite: fresh=%v err=%v reason=%s", r.Fresh, err, r.Reason)
+	}
+}

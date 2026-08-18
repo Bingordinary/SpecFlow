@@ -504,6 +504,37 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
 
+	// Step 7b: Rewrite (or delete) the candidate-layer gate caches into stable
+	// confirmation caches. For a non-retired promote the caches become the
+	// delta-recovery baseline for fresh@stable and fork inheritance; for a
+	// retired promote the caches are deleted (the stable content is gone — a
+	// rewritten cache would point at non-existent files and fail closed).
+	if retired {
+		if delErr := validationcache.DeleteAll(repoRoot, unitName); delErr != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to delete retired caches: %v — delete docs/specs/meta/validation/unit/%s/ manually", delErr, unitName))
+			r.Passed = false
+			return r
+		}
+		r.Actions = append(r.Actions, "Removed retired caches (validate, verify, review).")
+	} else {
+		rewriteReport, rewrErr := validationcache.RewriteCachesToStable(repoRoot, "unit", unitName)
+		if rewrErr != nil {
+			// A rewrite failure is non-blocking — the stable content is already
+			// committed and the candidate files removed. The delta-recovery
+			// baseline is missing; fresh@stable reports MISSING until the user
+			// triggers a stable confirmation run.
+			r.Actions = append(r.Actions, fmt.Sprintf("Cache rewrite failed: %v — run validate/verify/review against stable to rebuild the confirmation caches", rewrErr))
+		} else {
+			for _, e := range rewriteReport.Entries {
+				if e.Rewritten {
+					r.Actions = append(r.Actions, "Promoted gate cache to stable confirmation cache")
+				} else {
+					r.Actions = append(r.Actions, e.Reason)
+				}
+			}
+		}
+	}
+
 	// Step 8: Clean up rules this round dropped from rule_refs. A bound rule
 	// left with no current-layer (effective) consumers and no unbound_retention
 	// declaration is removed — stable and candidate copies, baseline, and
@@ -762,6 +793,24 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		return r
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
+
+	// Step 9: Rewrite the candidate validate cache into a stable confirmation
+	// cache. The rule's promote-time dependencies (consumer units, rule file
+	// content) stay valid as the stable-layer consumer/consistency baseline.
+	// Unlike unit caches, only the validate gate applies to rules (verify/review
+	// have been removed for rules — see framework/concepts.md §Gate mapping).
+	rewriteReport, rewrErr := validationcache.RewriteCachesToStable(repoRoot, "rule", ruleID)
+	if rewrErr != nil {
+		r.Actions = append(r.Actions, fmt.Sprintf("Cache rewrite failed: %v — run validate@%s @stable to rebuild the confirmation cache", rewrErr, ruleID))
+	} else {
+		for _, e := range rewriteReport.Entries {
+			if e.Rewritten {
+				r.Actions = append(r.Actions, "Promoted rule validate cache to stable confirmation cache")
+			} else {
+				r.Actions = append(r.Actions, e.Reason)
+			}
+		}
+	}
 
 	r.Passed = true
 	return r
