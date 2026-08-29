@@ -164,7 +164,8 @@ func ChunkText(text string) FileChunks {
 	roll := rabinRolling{}
 	for i := 0; i < len(data); i++ {
 		var h uint64
-		if i < WindowSize {
+		rel := i - start
+		if rel < WindowSize {
 			h = roll.add(data[i], 0, false)
 		} else {
 			h = roll.add(data[i], data[i-WindowSize], true)
