@@ -1,0 +1,20 @@
+name: CDC window reset check
+
+on:
+  push:
+    branches: [fix/cdc-window-reset]
+
+permissions:
+  contents: read
+
+jobs:
+  contenthash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tooling/go.mod
+      - name: Run contenthash tests
+        working-directory: tooling
+        run: go test ./internal/contenthash
