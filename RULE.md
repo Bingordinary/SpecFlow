@@ -126,6 +126,6 @@ Before reporting a finding in any governance review, check `REVIEW_EXPERIENCE_RU
 
 2. When fixing problems, do not apply patch-style fixes. Analyze the essence of the problem based on first principles, and fundamentally redesign and fix from the root.
 
-3. When the user inputs the `spec_flow_push` command, run `./tooling/scripts/push_with_release.sh[.ps1]`. The push machine must have a Go toolchain installed: the script computes the tooling fingerprint via `go run ./cmd/specflowctl tooling-fingerprint` before recording it into `tooling/fingerprint.txt`.
+3. When the user inputs the `spec_flow_push` command, follow `framework/operations/push.md`. It first fetches `origin/main` to check for conflicts, analyzes the solution and waits for user confirmation to fix, and only then runs `./tooling/scripts/push_with_release.sh[.ps1]` to compute the tooling fingerprint via `go run ./cmd/specflowctl tooling-fingerprint` and record it into `tooling/fingerprint.txt`. This command is source-repo-only.
 
 4. When the user inputs the `spec_flow_issues` command, follow `framework/operations/issues.md`. It pulls the GitHub issues of this repository via `gh`, triages each issue (spec + code comparison) to determine whether it is a real problem, and produces a fix plan for real problems. Reports locally only — never writes back to GitHub. Implementation happens only after the user explicitly confirms. This command is source-repo-only.

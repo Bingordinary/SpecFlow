@@ -79,6 +79,16 @@ try {
         throw "push_with_release.ps1 must be run on the main branch. Current branch is $branch."
     }
 
+    & git fetch origin main *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Fetch from origin failed (network or repository unavailable). Retry spec_flow_push after the network recovers."
+    }
+
+    $behind = Invoke-CheckedOutput "git" @("rev-list", "--count", "HEAD..origin/main")
+    if ([int]$behind -gt 0) {
+        throw "Local is behind origin/main by $behind commit(s). Run spec_flow_push (Stage 1) to fetch and resolve before pushing."
+    }
+
     Write-Host "Computing tooling source fingerprint..."
     $toolingRoot = Join-Path $repoRoot "tooling"
     Push-Location $toolingRoot

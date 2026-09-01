@@ -60,6 +60,17 @@ if [[ -z "${remote_url}" ]]; then
   exit 1
 fi
 
+if ! git fetch origin main >/dev/null 2>&1; then
+  echo "Error: fetch from origin failed (network or repository unavailable). Retry spec_flow_push after the network recovers." >&2
+  exit 1
+fi
+
+behind="$(git rev-list --count HEAD..origin/main)"
+if [[ "${behind}" -gt 0 ]]; then
+  echo "Error: local is behind origin/main by ${behind} commit(s). Run spec_flow_push (Stage 1) to fetch and resolve before pushing." >&2
+  exit 1
+fi
+
 echo "Computing tooling source fingerprint..."
 fingerprint="$(cd "${REPO_ROOT}/tooling" && go run ./cmd/specflowctl tooling-fingerprint --repo-root "${REPO_ROOT}")"
 short_fingerprint="${fingerprint:0:12}"
