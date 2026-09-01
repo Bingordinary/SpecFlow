@@ -1,5 +1,7 @@
 param(
-    [switch]$Help
+    [switch]$Help,
+    [switch]$CurrentOnly,
+    [switch]$All
 )
 
 Set-StrictMode -Version Latest
@@ -7,11 +9,16 @@ $ErrorActionPreference = "Stop"
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"
-Usage: pull_with_release.ps1
+Usage: pull_with_release.ps1 [-CurrentOnly] [-All]
 
 Pull the current SpecFlow branch from origin.
-Then run update_tooling_binaries.ps1 to make sure the current platform's
-specflowctl binary matches the pulled tooling source fingerprint.
+Then run update_tooling_binaries.ps1 to make sure specflowctl binaries
+match the pulled tooling source fingerprint. By default downloads all
+platforms so a Syncthing-synced directory stays usable on every machine.
+
+Options:
+  -CurrentOnly    Download only the current platform's binary
+  -All            Download all platforms (default)
 "@)
 }
 
@@ -43,6 +50,11 @@ function Invoke-CheckedOutput {
 if ($Help) {
     Show-Usage
     exit 0
+}
+
+if ($All -and $CurrentOnly) {
+    [Console]::Error.WriteLine("Error: -All and -CurrentOnly are mutually exclusive.")
+    exit 1
 }
 
 $scriptDir = Split-Path -Parent $PSCommandPath
@@ -83,8 +95,11 @@ try {
         Write-Host "Cleared tooling/bin."
     }
 
-    # Delegate binary update to the standalone per-platform script.
-    & (Join-Path $scriptDir "update_tooling_binaries.ps1")
+    # Delegate binary update to the standalone script (defaults to all platforms).
+    $updateArgs = @()
+    if ($CurrentOnly) { $updateArgs += "-CurrentOnly" }
+    elseif ($All) { $updateArgs += "-All" }
+    & (Join-Path $scriptDir "update_tooling_binaries.ps1") @updateArgs
 
     # Install hook files from specflow source to project root
     $projectRoot = (Resolve-Path (Join-Path $repoRoot "..")).Path

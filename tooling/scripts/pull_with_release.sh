@@ -3,19 +3,35 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: pull_with_release.sh
+Usage: pull_with_release.sh [--all] [--current-only]
 
 Pull the current SpecFlow branch from origin.
-Then run update_tooling_binaries.sh to make sure the current platform's
-specflowctl binary matches the pulled tooling source fingerprint.
+Then run update_tooling_binaries.sh to make sure specflowctl binaries
+match the pulled tooling source fingerprint. By default downloads all
+platforms so a Syncthing-synced directory stays usable on every machine.
+
+Options:
+  --all            Download all platforms (default)
+  --current-only   Download only the current platform's binary
 USAGE
 }
 
+UPDATE_ARGS=()
+SEEN_ALL=0
+SEEN_CURRENT=0
 for arg in "$@"; do
   case "${arg}" in
     -h|--help)
       usage
       exit 0
+      ;;
+    --current-only)
+      UPDATE_ARGS+=("--current-only")
+      SEEN_CURRENT=1
+      ;;
+    --all)
+      UPDATE_ARGS+=("--all")
+      SEEN_ALL=1
       ;;
     *)
       usage
@@ -23,6 +39,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "${SEEN_ALL}" == "1" && "${SEEN_CURRENT}" == "1" ]]; then
+  echo "Error: --all and --current-only are mutually exclusive." >&2
+  exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -65,8 +86,8 @@ if [[ -d "${BIN_DIR}" ]]; then
   echo "Cleared tooling/bin."
 fi
 
-# Delegate binary update to the standalone per-platform script.
-"${SCRIPT_DIR}/update_tooling_binaries.sh"
+# Delegate binary update to the standalone script (defaults to all platforms).
+"${SCRIPT_DIR}/update_tooling_binaries.sh" "${UPDATE_ARGS[@]}"
 
 # Install hook files from specflow source to project root
 PROJECT_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"

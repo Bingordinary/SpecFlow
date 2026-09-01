@@ -33,7 +33,7 @@ The release workflow builds binaries from the tagged source and uploads the bina
 The release is tied to the tooling input fingerprint, not to every source commit.
 The fingerprint includes Go command code, Go internal code, and required tooling metadata.
 
-Pull the repository and install the current platform binaries for the pulled tooling source:
+Pull the repository and install specflowctl binaries for the pulled tooling source:
 
 ```bash
 specflow/tooling/scripts/pull_with_release.sh
@@ -45,7 +45,7 @@ PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads the current platform's `specflowctl` and `SHA256SUMS` only when the local binary is missing, stale, or missing checksums. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
+The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads specflowctl binaries and `SHA256SUMS` only when required binaries are missing, stale, or missing checksums. By default downloads binaries for all platforms (linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a Syncthing-synced project directory stays usable on every platform. Use `--current-only` / `-CurrentOnly` to download only the current platform's binary. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
 
 Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag. Must be run on the `main` branch of the SpecFlow source repository — both scripts reject non-main branches:
 
