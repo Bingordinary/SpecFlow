@@ -87,7 +87,7 @@ if [[ -d "${BIN_DIR}" ]]; then
 fi
 
 # Delegate binary update to the standalone script (defaults to all platforms).
-"${SCRIPT_DIR}/update_tooling_binaries.sh" "${UPDATE_ARGS[@]}"
+"${SCRIPT_DIR}/update_tooling_binaries.sh" ${UPDATE_ARGS[@]:+"${UPDATE_ARGS[@]}"}
 
 # Install hook files from specflow source to project root
 PROJECT_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
