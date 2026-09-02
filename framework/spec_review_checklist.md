@@ -68,6 +68,16 @@ Next step: {concrete next command with reason, or "None"}
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. Guidance: fixes applied → "fixes applied — re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}".
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line.
+
+### Completion — Persist Gate Cache
+
+A quality-gate run is complete only when its result is persisted and visible to `fresh`/`promote`. A report alone does not satisfy the gate.
+
+- **Full (`validate@{target}` / `verify@{unit}` / `review@{unit}`, `mode: full`, `basis: full`)** — complete only when: (1) the unified report is produced, (2) the main agent has run `specflowctl cache-write --gate {validate|verify|review} (--unit {name} | --rule {id}) --result {pass|fail} --target {candidate|stable} ... --file '...'` and written `docs/specs/meta/validation/{unit|rule}/{name}/validate_result.md` | `verify_result.md` | `review_result.md`, (3) `fresh@{target}` (`fresh --unit {name}` / `fresh --rule {id}`) shows the expected gate state (`FRESH` for `result: pass` / `blocking: false`, `BLOCKED` for `result: fail` / `blocking: true`). Without the cache write, `fresh` stays `MISSING` (or `BLOCKED` for a prior failure record) and `promote` is rejected. See `framework/validation_cache.md` §Write Rules and §Failure handling by gate role.
+- **Delta (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`, `mode: full`, `basis: delta` or `basis: repair`)** — same three conditions as full, with `--basis delta` (STALE recovery from a `result: pass` baseline) or `--basis repair` (recovery from a `result: fail` / `blocking: true` failure record). See `framework/verification_scope.md` §Delta Runs.
+- **Targeted (`:check-{n}` / `:{keyword}`, no cache)** — complete when the report is produced. Targeted runs intentionally do NOT run `cache-write`; the report ends with `This was a targeted check — no cache was written. Run {command}@{target} for a complete ...` and `fresh` staying `MISSING`/`STALE` is the expected behavior, not a defect. A targeted run never satisfies the promote gate.
+
+**Self-check:** `ls docs/specs/meta/validation/{unit|rule}/{name}/` and `fresh@{target}` (unit: `fresh --unit {name}`, rule: `fresh --rule {id}`).
 ==ATOM_END:report_skeleton==
 
 ### Body format (review)
