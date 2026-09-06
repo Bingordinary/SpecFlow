@@ -18,6 +18,14 @@ Use first-principles thinking. Do not assume that I always know exactly what I w
   - Do not introduce solutions beyond the requirements I provided, such as fallback logic or repair-oriented additions, because that can cause business logic drift.
   - The solution must be logically correct and verified across the full end-to-end chain.
 
+## Spec-First Planning Contract
+
+  When planning or formulating an implementation plan / proposed changes:
+
+  - **Explicit Spec Declaration**: If planned changes affect code belonging to an existing unit (or introduce a new unit), the plan's `Proposed Changes` list MUST explicitly declare the unit's candidate spec (`docs/specs/units/candidate/unit_{name}.md`) and any affected appendices before the code files. If no candidate exists, running `specflowctl fork --unit <name>` must be declared as a prerequisite step.
+  - **No Silent Skip**: If a code modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria declared in the spec, the plan MUST include an explicit one-sentence Spec Impact Assessment explaining why candidate spec modification is not required. Never remain silent on spec impact.
+  - **Spec-First in Execution**: During execution, the agent MUST update the candidate spec first (establishing updated constraints and acceptance items) before modifying code and tests.
+
 ## Document Language Rules
 
   - All other documents (specflow document) must be written in English, because they are delivery documents.

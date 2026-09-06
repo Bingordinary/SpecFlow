@@ -513,6 +513,14 @@ Acceptance items       → minimal verifiable behavior contracts (see §7)
 
 Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
 
+### Spec-First Planning and Execution Lifecycle
+
+A Spec is not a post-hoc implementation journal; it is the upstream design driver that leads development.
+
+1. **Planning Phase (Proposed Changes Mandate):** When an agent or engineer plans a feature, refactoring, or bug fix, any affected unit's candidate spec must be explicitly declared as a first-class change item before code files. If no candidate spec exists yet, running `specflowctl fork --unit <name>` (or creating the candidate spec) is a declared prerequisite. If the modification is evaluated as a pure internal refactor without changing any external contracts, state transitions, or acceptance criteria, an explicit one-sentence Spec Impact Assessment must state that fact. Silence on spec impact is prohibited.
+2. **Execution Phase (Spec-First Order):** When implementing the approved plan, the candidate spec must be updated first (establishing new constraints, updated state flow, and acceptance criteria), and only then may implementation code and tests be written or modified to satisfy the spec.
+3. **Verification Phase:** The candidate spec's acceptance items form the verification baseline against which the implementation is verified (`verify@{unit}`).
+
 ### Appendix Handoff
 
 Appendix files may carry detailed truth for one unit but do not weaken the handoff baseline. An appendix used as implementation truth must not contain only background, motivation, principles, or patch notes — it must state the current rule or design as directly readable truth.
