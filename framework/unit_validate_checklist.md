@@ -196,13 +196,17 @@ When findings mix resolution types (within one check or across checks), the repo
     - **Version authority (FAIL):** the top entry's version must equal the frontmatter `version` field; a mismatch is a FAIL (the frontmatter `version` is the version authority per `spec_writing_guide.md` §14 — a drifting top entry makes the section claim a version the spec does not carry)
     - **Lifecycle compliance (WARNING):** the section contains at most two entries — the top entry plus at most one line summarizing the previous version; a section with more entries (an untruncated changelog carried over from the stable copy) is a WARNING, not a FAIL (extra entries are pure document hygiene — they do not affect parsing, behavior, or downstream planning)
     - **Content discipline (WARNING):** entries record design-decision-level changes (behavior, contract, boundary, config semantics); implementation details, typo fixes, or formatting edits belong to VCS history — recording them is a WARNING, not a FAIL (it degrades the section's clarity, not any mechanism)
-    - Fix direction: restructure the spec per `framework/spec_writing_guide.md` §14 (Version Notes)
+14. **Environment and deployment agnosticism check (FAIL):** Verify that the spec body and acceptance item set remain strictly environment-agnostic per `framework/spec_writing_guide.md` §15.1 (Environment & Temporal Agnosticism Law) and §15.2 (Anti-Pattern E):
+    - Must NOT contain developer-machine absolute paths (e.g. `/Users/...`, `/home/...`, `C:\...`) in narrative text or structured fields (use project-relative paths instead).
+    - Must NOT contain fixed local machine IP addresses or ports (e.g. `127.0.0.1:8080`, `localhost:3000`) as hard requirements (illustrations inside fenced code blocks must be explicitly marked as example placeholders).
+    - Must NOT contain live or environment-specific credentials, tokens, or private secrets.
+    - If found → FAIL with quoted text, section name, and line reference (actionable: replace with project-scoped relative paths, abstract placeholders, or configuration-driven parameters).
 
 **PASS:** All format constraints satisfied
 
 **WARNING (steps 7, 13):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference; Version Notes hygiene violations (untruncated changelog or implementation-detail entries) — truncate to the current version plus a one-line summary of the previous version, and keep entries at design-decision level
 
-**FAIL:** Any missing field, reference to a non-existent file, or layer-prefixed spec path in prose or structured fields (actionable)
+**FAIL:** Any missing field, reference to a non-existent file, layer-prefixed spec path, or environment-specific hardcoding in prose or structured fields (actionable)
 
 **Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
 
@@ -275,11 +279,21 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 
 **FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
-**Step 6 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found
+**Step 6 — Abstraction level & implementation agnosticism (The Truth Ownership Check)**
+Verify that the spec text adheres to `framework/spec_writing_guide.md` §15 (Truth Ownership Framework):
+
+- **Mechanism vs. Behavior (Anti-Pattern B):** Verify the spec does not mandate internal data structures or language-level execution mechanisms (e.g. "must use sync.RWMutex", "must store records in a map[string]any", specific internal channel buffer capacities, or private struct layouts) instead of behavioral invariants and concurrency guarantees (e.g. atomicity, thread-safety, idempotent processing).
+- **Causal Synchronization vs. Brittle Temporal Sleep (Anti-Pattern D):** Verify the design does not specify arbitrary physical wall-clock sleep durations (e.g. "wait 500ms and verify status") for asynchronous workflows. Asynchronous transitions must specify causal state changes ("until status is ready", "upon event reception") with bounded timeout semantics.
+- **Test Double & Fixture Isolation (Anti-Pattern C):** Verify the design does not leak test doubles, mock runner names, or ephemeral test fixtures (`mockRunner`, `test_tool`) into formal architecture or component definitions.
+
+If the spec specifies internal implementation mechanisms, arbitrary physical sleep waits, or leaks test doubles:
+- **FAIL (P1: Over-specification)** (actionable: restate as observable behavioral invariants or causal state transitions)
+
+**Step 7 — Verdict**
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §15
 - FAIL: specific findings reported
 
-**Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification (the subagent makes active engineering judgments)
+**Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification + abstraction boundary check (the subagent makes active engineering judgments)
 
 ---
 
@@ -500,6 +514,7 @@ For each acceptance item:
      - Specific input values or conditions
      - Expected output or state change
      - At least one boundary or edge case
+   - Verify absence of test double/fixture leakage (Anti-Pattern C): Description must NOT hardcode test doubles, mock runner names, or transient test fixtures (e.g. `mockRunner`, `test_tool`) into formal Given/When/Then scenarios — formal acceptance items must describe domain interactions, not test harness artifacts (see `framework/spec_writing_guide.md` §15.2 Anti-Pattern C). Leaking test fixtures → FAIL (actionable: restate using domain roles)
 2. If the description is a single vague sentence with no scenario breakdown → FAIL
 3. If the description is short but specific (e.g., "Returns 201 when valid email and password are provided") → PASS
 4. If the description is long but purely narrative with no testable specifics → FAIL
@@ -519,7 +534,7 @@ For each acceptance item:
 
 **PASS:** All testable items have actionable descriptions
 
-**FAIL:** One or more testable items lack sufficient descriptive detail for test derivation
+**FAIL:** One or more testable items lack sufficient descriptive detail for test derivation or leak test doubles/fixtures (actionable)
 
 **Check method:** Semantic assessment — agent judges whether description is specific enough to derive test inputs and expected outcomes
 
@@ -615,6 +630,8 @@ For each acceptance item, apply the five baseline rules (S1–S5, see `framework
 
 **Relationship to 5e/5f/5g:** 5e judges falsifiability, 5f actionability, 5g information increment — 5i judges **contract information content** (presence of concrete elements, specific values, scenario coverage, boilerplate). The checks are complementary; a single item may fail several at once. When an item fails 5i, quote the violated rule and the offending text.
 
+**Contract substance vs. over-specification boundary:** Specific values mandated by S1 and S2 must represent genuine Contract Anchors owned by this unit or public contracts exported by dependencies per `framework/spec_writing_guide.md` §15 (Truth Ownership Framework). Hardcoding private implementation details, arbitrary wall-clock sleep durations, or collaborating unit unexported fields does NOT satisfy contract substance — it violates abstraction boundaries and is flagged under Check 2 and Check 7.
+
 **PASS:** All items satisfy the Contract Substance Baseline
 
 **FAIL:** One or more items violate S1–S5 (actionable, with the violated rule quoted)
@@ -698,14 +715,21 @@ affects.appendices:
 ```
 6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (actionable: resolve the cross-unit inconsistency)
 7. **Carrier substance warning:** if a dependency unit's carriers (item set or protocol appendices) are compliant but carry no comparable contract statements (e.g. items with no concrete values, codes, or formats to compare against) → WARNING naming the unit and the empty carriers, recommending the dependency unit enrich its acceptance items per `framework/spec_writing_guide.md` §7 Contract Substance Baseline. Not a FAIL — the dependency unit's own validate Check 5i gates empty carriers at promote; this warning surfaces the coupling risk to the user.
+8. **Cross-Unit Private Implementation Leakage (Anti-Shadowing Rule, FAIL):** Enforce the Truth Ownership Visibility Law (`framework/spec_writing_guide.md` §15.1 and §15.2 Anti-Pattern A). A non-owner unit must never enumerate volatile, unexported, or private internal parameters/fields of collaborating units.
+   - For every attribute, parameter, field name, or payload structure cited by the candidate spec regarding a dependency unit, verify that it resolves to one of:
+     - **Public Contract Anchor:** An exported public contract symbol or explicit schema property declared in the dependency's formal behavior carriers (acceptance item set or protocol appendix), such as `contracts.SpanAttr*`, standard exported protocol events, or public REST/gRPC response keys.
+     - **Behavioral Specification:** A behavioral description that does not hardcode unexported parameter names (e.g. "records delegation goal and child execution identifier" instead of literal private parameter names `goal, role, child_run_id`).
+   - **Transitive Penetration Check:** If the candidate spec cites internal fields or types of an indirect dependency (a unit not declared in `unit_refs`), verify whether an explicit contract path exists. Citing internal fields of undeclared transitives without an exported contract anchor is a boundary violation.
+   - If a spec mirrors or hardcodes unexported, private, or volatile internal fields of another unit:
+     - **FAIL (P1: Shadow specification)** (actionable: replace private field enumerations with public contract anchors or behavioral specifications).
 
 **Dependency scope report:** Report the carrier regions actually depended on — the dependency unit's acceptance item set and the whole protocol appendix files. The item set is declared as a **structural region dependency** (`specflowctl gate-evidence --file <path> --acceptance-items`, see `framework/validation_cache.md` §Structural Region Dependencies): it is located by structure, so prose edits elsewhere in the same file — even inside the same content-defined chunk — do not stale this cache. When the no-contradiction assertion also reads a dependency unit's contract section (e.g. a protocol description in a named `##` section), declare that section region too (`--section <heading>`). Protocol appendices are contract files and are declared whole. Cache entries for dependency unit main specs, their protocol appendices, and rule files are written as **logical references** (`unit:{name}`, `unit:{name}:appendix:{file}`, `rule:{id}`) instead of physical paths — freshness resolves them to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
 
-**PASS:** No contradictions across related units; acknowledged contract changes are declared
+**PASS:** No contradictions across related units; acknowledged contract changes are declared; no shadow specifications found
 
 **WARNING (step 7):** Dependency unit carriers carry no comparable contract statements — consider enriching them per the Contract Substance Baseline
 
-**FAIL:** Contradiction found (actionable) or unacknowledged contract breakage (needs_decision)
+**FAIL:** Contradiction found (actionable), shadow specification / private implementation leakage found (actionable), or unacknowledged contract breakage (needs_decision)
 
 **Check method:** Candidate × related candidates × related stables three-way cross-reference over the formal behavior carriers (acceptance item sets + protocol appendices).
 

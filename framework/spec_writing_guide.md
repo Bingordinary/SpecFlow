@@ -6,7 +6,7 @@ Files under `specflow/` are framework and delivery documents and are written in 
 
 Files under `docs/` are project communication documents and are written in Chinese unless a specific delivery artifact requires otherwise.
 
-This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 9.
+This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 9 and the abstraction boundary guidelines in Section 15.
 
 Format compliance does not by itself prove handoff completeness.
 
@@ -354,7 +354,7 @@ Splitting is legitimate when any condition fails. Examples:
 
 ### Contract Substance Baseline
 
-Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them.
+Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §15 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
 
 | Rule | Requirement | Rejected form |
 |---|---|---|
@@ -599,3 +599,49 @@ The `{version}` of the top entry must equal the frontmatter `version` field. Ent
 **Lifecycle:** `specflowctl fork` copies the section verbatim — the tool rewrites only the frontmatter `version` field (a PATCH bump, see §8), never the body content. When the agent starts editing the candidate after fork, it truncates the section to the current version plus a one-line summary of the previous version, then records the new round's changes under the bumped version. `promote` copies the section unchanged — the candidate's Version Notes content becomes the stable content verbatim, matching the byte-identical copy rule of the promote workflow (see `framework/unit_promote_workflow.md`). The section is a writing convention, not a tooling mechanism (see §14 first paragraph): violating the section-content rules (changelog truncation, entry granularity) is a document-hygiene issue that does not affect parsing, behavior, or downstream planning. The mechanism-level violations are the section's identity and authority — a missing or misplaced heading breaks section-region locatability (§13 item 5), and a top-entry version mismatch makes the section claim a version the spec does not carry. validate Check 1 step 13 grades the mechanism-level violations as FAIL and the hygiene-level ones (untruncated changelog, implementation-detail entries) as WARNING — see `framework/unit_validate_checklist.md` §Check 1 step 13.
 
 **Scope:** the convention applies to the unit's own main Spec only. Rule files, appendix files, and protocol appendices are contract files declared whole (§13 item 7) and carry no Version Notes requirement. Specs promoted before this convention carry no section and are not forced to migrate: stable-only validation skips the Version Notes check, and the section is added on the unit's next candidate round (fork).
+
+## 15. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
+
+A specification requires determinism to be verifiable, but over-specification destroys resilience and creates brittle, dangling couplings. This section establishes the **Truth Ownership Framework** to resolve the tension between contract substance (the concrete value requirement of §7 and Check 5i) and unacceptable hardcoding.
+
+### 15.1 The Core Principle: Truth Ownership Laws
+
+Whether a concrete value or assertion is an acceptable **Contract Anchor** or an unacceptable **Over-Specification** is determined by who owns the underlying truth:
+
+1. **Ownership Law**: A unit may declare concrete constants, invariants, and boundaries **only** for the behaviors and data structures that it directly owns.
+   - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), domain boundaries (`maxThinkAttempts = 3`), and exported serialization keys (`session_id`).
+   - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables.
+
+2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** (acceptance item sets or protocol appendices) exported by collaborating units.
+   - *Allowed*: Referencing exported contract constants (e.g. `contracts.SpanAttr*`), standard protocol events (`DELEGATE_TASK_REQUESTED`), or describing behaviorally what must be exchanged.
+   - *Forbidden (Shadow Specifications)*: Non-owner units enumerating internal, volatile, or unexported parameter names/fields of collaborating units.
+
+3. **Behavior vs. Mechanism Law**: Specifications must mandate observable behavior, causal guarantees, and outcome states, not internal execution mechanisms.
+   - *Allowed*: Specifying concurrency safety ("thread-safe across concurrent calls"), idempotency, ordering guarantees, or result formats.
+   - *Forbidden*: Specifying language-level private data structures (e.g. "must use sync.RWMutex", "must store in map[string]any", specific internal channel buffer sizes).
+
+4. **Environment & Temporal Agnosticism Law**: Specifications must hold across any deployment environment, machine, or CI runner, and must not depend on physical wall-clock accidents.
+   - *Allowed*: Causal event-driven or state-driven synchronization conditions (e.g. "when job status transitions to complete"), bounded timeouts with explicit timeout error semantics.
+   - *Forbidden*: Local machine absolute paths (`/Users/...`), fixed local IP/ports (`127.0.0.1:8080`), hardcoded environment secrets, or arbitrary physical sleep durations (e.g. "wait 500ms and check status").
+
+### 15.2 Five Hardcoding Anti-Patterns
+
+| Anti-Pattern | Description | Why It Breaks the System | Correct Remedy |
+|---|---|---|---|
+| **A. Cross-Unit Private Field Enumeration (Shadow Specs)** | An observing/peripheral unit (e.g. `trace`, `logger`, `audit`) hardcodes an attribute table mirroring internal parameters of a core unit (e.g. `agent`, `tool`). | When the core unit refactors away an internal parameter (e.g. `role`), the peripheral spec becomes a regression trap. `verify` divergence analysis tends to recommend `code_gap`, restoring dead code solely to satisfy the shadow spec. | Anchor to exported public constants (`contracts.SpanAttr*`) or describe behavioral requirements without naming private fields. |
+| **B. Implementation Mechanism over Behavioral Contract** | Spec dictates internal data structures or concurrency primitives (e.g. "must use sync.RWMutex", "stored in map[string]any"). | Precludes legitimate implementation refactorings and confuses code verification with design validation. | Specify behavioral guarantees (concurrency safety, lookup complexity bounds, idempotent updates). |
+| **C. Test Double / Fixture Leakage** | Leaking transient mock names (`test_tool`, `mockRunner`), test fixture IDs, or temporary test doubles into formal acceptance items. | Binds the formal specification to test harness scaffolding rather than production domain behavior. | Express scenarios using domain actor roles and realistic domain inputs. |
+| **D. Fragile Temporal Sleep / Wall-Clock Waits** | Specifying arbitrary physical sleep durations (`sleep(500ms)`) as verification pass conditions. | Causes flaky tests on loaded CI systems and fails to verify actual causal event ordering. | Use causal state assertions ("until state reaches X", "upon receiving event Y") with an upper timeout boundary. |
+| **E. Environmental & Deployment Hardcoding** | Hardcoding local filesystem paths (`/Users/dev/...`), fixed host ports (`localhost:8080`), or environment-specific credentials. | Breaks across different machines, stages, and platform configurations. | Use relative project-scoped paths, environment configuration references, or abstract placeholders. |
+
+### 15.3 Contract Anchors vs. Unacceptable Hardcoding: Comparison Table
+
+| Dimension | Acceptable & Encouraged (Contract Anchor) | Prohibited (Over-Specification / Hardcoding) |
+|---|---|---|
+| **API & Endpoints** | `POST /api/v1/sessions` returning `201` | Requiring the internal router to use `chi.Mux` or `gin.Engine` |
+| **Cross-Unit Trace / Audit** | "Records delegation target and run ID, using `contracts.SpanAttr*` anchors" | `delegate \| goal, role, child_run_id \| status` mirroring unexported struct fields |
+| **Concurrency & State** | "Concurrent calls to `Increment()` are atomic and thread-safe" | "Must synchronize using `sync.RWMutex` guarding `map[string]int`" |
+| **Async Operations** | "Waits for `TaskCompleted` event or times out after 10s with `TIMEOUT`" | "Sleeps 500ms then reads database row" |
+| **Acceptance Scenarios** | "Given an authenticated admin user" | "Given `mockRunner` configured with `test_tool_v1`" |
+| **Domain Limits** | `maxRetryAttempts = 3`, `tokenExpiry = 3600s` | Hardcoding developer local machine config file path `/Users/alice/.config` |
+

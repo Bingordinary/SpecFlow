@@ -780,10 +780,12 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - Do they disagree on the goal itself?
    - Is one side clearly wrong (typo, dead code, outdated reference)?
    - Does one side handle edge cases the other misses?
+   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §15).
 
 4. Root cause analysis (choose the best fit):
    - Code is incomplete — spec intent is clear, code hasn't caught up
    - Spec is stale — code has evolved, spec wasn't updated
+   - Shadow specification / over-specification — the spec mirrored private, internal, or obsolete implementation details of another unit that have evolved or been removed
    - Design divergence — both sides made different valid trade-offs
    - Accident — bug, typo, copy-paste error
    - External dependency — blocked on something outside this unit
@@ -793,6 +795,7 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - code_gap: spec's intent is correct, code needs updating
    - needs_design: neither side is clearly right — the design itself needs rethinking
    - blocked: the mismatch depends on an external input or unresolved decision
+   - **Shadow specification anti-regression rule (MANDATORY):** If the root cause is a shadow specification (non-owner unit hardcoding unexported/private parameters of a collaborating unit), the recommended direction MUST be **spec_gap** (update the peripheral spec to restore behavioral abstraction or use public contract anchors). **NEVER recommend code_gap to re-introduce removed parameters or dead code into a collaborating unit solely to satisfy a shadow spec.**
 
 6. Confidence:
    - high: clear evidence supports one direction
@@ -826,7 +829,7 @@ Item: {id}
 Spec intent: {what the spec is trying to achieve, with context}
 Code intent: {what the code does and why}
 Comparison: {goal agreement? implementation difference? edge case handling?}
-Root cause: {incomplete | stale | divergence | accident | blocked}
+Root cause: {incomplete | stale | shadow_spec | divergence | accident | blocked}
 Suggested direction: {spec_gap | code_gap | needs_design | blocked}
 Files involved: {spec and/or code file paths the suggested fix would touch}
   - List every file the fix would modify; the main agent uses this for batch classification scope evaluation
@@ -867,7 +870,7 @@ When MISMATCH items exist, the main agent classifies each finding into a **batch
 **Batch group eligibility (ALL must hold):**
 
 A. **Direction is unambiguous:**
-   - Root cause is `accident` or `incomplete` (exclude `divergence`, `blocked`, `stale`)
+   - Root cause is `accident` or `incomplete` (exclude `divergence`, `blocked`, `stale`, `shadow_spec`)
    - Suggested direction is a single value `code_gap` or `spec_gap` (exclude `needs_design` and any item whose direction is an "either/or" verdict)
    - Confidence is `high`
    - The correct behavior has an undisputed source: the spec states it explicitly (e.g., an error code table) or an existing correct pattern in the codebase (e.g., the same construct written correctly elsewhere). If confirming "what is correct" requires interpretation → exclude.
