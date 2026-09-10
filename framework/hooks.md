@@ -34,6 +34,8 @@ The `session-start` script detects the target platform from environment variable
 | OpenCode | OpenCode plugin (see below) | Message transform via JS plugin |
 | Antigravity | Argument `antigravity` or `ANTIGRAVITY` set | `{ "injectSteps": [ { "ephemeralMessage": "..." } ] }` |
 
+> The `COPILOT_CLI` guard covers Copilot CLI, which also sets `CLAUDE_PLUGIN_ROOT`. When `COPILOT_CLI` is set, the Claude-format JSON output is suppressed so Copilot CLI's own session handling does not receive Claude-specific hook JSON.
+
 ==ATOM_BEGIN:specflowctl_location==
 specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. `<tooling-root>` is `specflow/tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
 ==ATOM_END:specflowctl_location==

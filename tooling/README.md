@@ -85,6 +85,21 @@ The tooling layer must not:
 5. become a second semantic source of truth
 6. write reader-derived conclusions back into project files
 
+### Governed write zones (`validate write`)
+
+`validate write --path <path>` matches the normalized repository-relative path against the following zones in order. Absolute paths are converted to repository-relative before matching; a path that escapes the repository root (or cannot be relativized) is outside the write-zone contract and takes the default result.
+
+| Order | Path prefix | Result |
+|---|---|---|
+| 1 | `framework/` | **denied** — framework files are never writable via `validate write` |
+| 2 | `docs/specs/units/stable/` | **denied** — use `promote` to write stable specs |
+| 3 | `docs/specs/rules/stable/` | **denied** — use the rule governance flows |
+| 4 | `docs/specs/units/candidate/` | **allowed** — candidate spec file |
+| 5 | `docs/specs/rules/candidate/` | **allowed** — candidate rule file |
+| 6 | anything else | **allowed** — "not governed by specFlow write restrictions" (includes implementation source code) |
+
+This table is the authoritative contract for the `validate write` zone check (`tooling/cmd/specflowctl/validate.go` implements it verbatim). Any change to the zone table is a governance-boundary change and must update this section in the same change.
+
 ## Current Command Surface
 
 1. `init`
@@ -141,7 +156,7 @@ The tooling layer must not:
     - corresponds to the tooled cache-write step of every quality-gate run (see `framework/concepts.md` and `framework/validation_cache.md` §Write Rules → Tooled writes)
   13. `promote`
     - validate candidate spec format, copy candidate files to stable directories, remove candidate files, and rewrite the candidate gate caches into stable confirmation caches
-   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache. On success, the candidate gate caches are rewritten into stable confirmation caches (`target: stable`, paths rewritten to `stable/`) — the stable delta-recovery baseline for `fresh@stable`, `re*`, and `fork` (a retired promote deletes them instead)
+   - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache. On success, the candidate gate caches are rewritten into stable confirmation caches (`target: stable`, paths rewritten to `stable/`) — the stable delta-recovery baseline for `fresh@stable`, `re*`, and `fork` (a retired promote deletes them instead). Cleanup side effect: for every bound rule (`b_rule_*`) the unit's candidate dropped from `rule_refs`, promote runs the removable-rule detection — a rule with no remaining consumers (global rules are exempt; an `unbound_retention` record defers deletion) is deleted together with the unit (its stable and candidate copies, baseline, and validate cache), and every deletion is listed explicitly in the promote report (`Removed unbound rule: <id>`; see `framework/spec_writing_guide.md` §6.5)
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate, and rewrites the rule validate cache into a stable confirmation cache. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
   14. `review collect-default-scope --flow <review_flow>`
@@ -156,7 +171,7 @@ The tooling layer must not:
     - refresh only `last_updated_at`
   19. `validate write`
     - check whether a file path may be written under current governance constraints
-    - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones
+    - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones enumerated under §Governed write zones above
   20. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check, dependency cycle check, region locatability)
   21. `validate rule --id RULE_ID`

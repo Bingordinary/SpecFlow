@@ -2,6 +2,8 @@
 
 When the user says `spec_flow_update`, follow this procedure. It pulls the latest SpecFlow framework, detects structural changes in framework rules since the last update, and migrates project spec files to match.
 
+Requests that do not explicitly invoke `spec_flow_update` carry no migration write authority — route them through normal editing instead.
+
 ## Procedure
 
 ### Step 0: Record pre-update state

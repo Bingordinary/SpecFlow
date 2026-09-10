@@ -988,10 +988,19 @@ Every real finding must still contain these information items:
 9. evidence
    - the file refs, block boundary, or tool/runtime result that directly supports the finding
 
-Recommended user-facing shape:
+Recommended user-facing shape: one self-contained narrative paragraph (4-6 sentences, answering the six questions above in plain language) followed by the information items below as labeled fields.
 
 ```text
-(Historical finding F-006 removed — entry files no longer contain routing logic. Agent bootstrap is handled by platform-specific hook injection.)
+## F-XXX (P?, confirmed/adjusted, blocking: yes|no) — {one short problem label}
+{narrative paragraph: who executes, what they try to complete, what the rule should make
+clear, where the path loses direction, how the executor goes wrong, smallest repair point}
+- background: {minimum repository or rule context}
+- what happened: {the concrete mismatch, drift, omission, or conflict}
+- impact: {governance risk, flow break, or downstream instability}
+- recommended fix: {concrete repair direction}
+- why this fix is the minimal correct fix: {why it closes the problem without a wider redesign}
+- blocking: yes|no
+- evidence: {file refs, block boundary, or tool/runtime result}
 ```
 
 Additional rules:

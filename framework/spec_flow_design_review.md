@@ -47,18 +47,19 @@ That default scope includes:
    - `operations/update.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
-  2. process rules
-    - `concepts.md` (the candidate-to-promote process)
-    - `spec_writing_guide.md`
-    - `governance/impact_sync.md`
- The default scope excludes:
+   - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
+2. process rules
+   - `concepts.md` (the candidate-to-promote process)
+   - `spec_writing_guide.md`
+   - `governance/impact_sync.md`
 
- 1. `tooling_execution_policy.md`
- 2. `<tooling-root>/README.md`
- 3. `<tooling-root>/bin/**`
- 4. `<tooling-root>/cmd/**`
- 5. `<tooling-root>/internal/**`
+The default scope excludes:
+
+1. `tooling_execution_policy.md`
+2. `<tooling-root>/README.md`
+3. `<tooling-root>/bin/**`
+4. `<tooling-root>/cmd/**`
+5. `<tooling-root>/internal/**`
 
 If a conclusion, finding, or `pass` claim directly depends on one excluded file, the executor must explicitly widen scope first.
 Do not claim that an excluded file supports the current design conclusion when that file was never made in-scope.
@@ -75,15 +76,17 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `operations/update.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
-    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
-    - `governance/impact_sync.md`
+   - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
+   - `governance/impact_sync.md`
 2. `process_and_gate_design`
    - `concepts.md` (the candidate-to-promote process design)
    - `spec_writing_guide.md`
    - `core/object_model.md`
    - `governance/impact_sync.md`
- 3. `executor_operability_and_extension`
-    - `source_repo` guidance is derived from `concepts.md` and the design-review procedure itself
+3. `executor_operability_and_extension`
+   - `source_repo` guidance is derived from `concepts.md` and the design-review procedure itself
+
+A file listed under more than one block (`concepts.md`, `spec_writing_guide.md`, `core/object_model.md`, `governance/impact_sync.md`) is reviewed in each block's frame; the dual listing is intentional.
 
 The review must judge whether `framework/concepts.md` (the hook-injected instruction source) delivers a self-contained instruction pack to the executor, whether cross-file links are used only for non-essential context, and whether each specFlow process step can be executed without context inherited from prior steps.
 
@@ -130,6 +133,7 @@ Final review conclusions map to run-state status values as follows:
 3. `blocked` -> `closed_blocked`
 
 All three mapped status values are closed run states.
+The open run status values are `in_progress`, `blocked_on_finding`, and `ready_for_final`.
 The startup procedure must delete any closed run state before creating a new full-scope default design review run.
 
 There must be at most one `spec_flow_design_review` run-state file in the repository at any time.

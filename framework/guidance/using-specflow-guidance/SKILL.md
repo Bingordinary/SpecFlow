@@ -38,8 +38,9 @@ Use repository truth and natural-language routing to translate the user's goal i
 1. Do not implement from guidance output.
 2. Do not treat chat-only agreement as durable truth.
 3. Once a conclusion affects behavior, boundary, acceptance, rule truth, or global rule truth, route it into formal specFlow truth writeback before implementation.
-4. Do not turn guidance into a command-alias conversation where the user must choose internal command or object-family names.
-5. Ask only ordinary-language questions about goal, scope, outcome, success meaning, or required human judgment.
+4. The legality basis for every route, target, and next step in these skills is `framework/core/object_model.md` (object family and layer rules), `framework/spec_writing_guide.md` (path, writeback, and rule-scope rules — §10 for rule scope resolution), and the candidate-to-promote workflow in `framework/concepts.md`.
+5. Do not turn guidance into a command-alias conversation where the user must choose internal command or object-family names.
+6. Ask only ordinary-language questions about goal, scope, outcome, success meaning, or required human judgment.
 
 ## Completion
 

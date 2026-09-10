@@ -8,7 +8,7 @@ It owns consumer discovery and fallback reason classification for affected units
 
 Run impact sync when:
 
-1. a stable unit version changes and another current-layer unit references the prior version.
+1. a stable unit version changes and a current-layer consumer's dependency evidence was captured against the prior version's content (unit refs are bare names that resolve to the current version — Trigger 1 detects stale dependency evidence, not a version-pinned reference).
 2. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
 3. a governance flow cannot prove that downstream unit truth remains current.
 
@@ -89,6 +89,8 @@ After impact_sync completes, it produces:
 2. `affected_stable_units` — list of stable units and their applied fallback reason codes
 3. `freshness_review_required` — when set to `true`, at least one affected unit requires the caller to run the Freshness Review procedure below before fallback cleanup. When set to `false` or absent from the output, no freshness review is needed.
 
+Arming rule: `freshness_review_required` is set to `true` whenever `affected_candidate_units` or `affected_stable_units` is non-empty, and to `false` only on the No-affected-units stop. The flag arms the caller's mechanical review; it is not itself a freshness judgment — `impact_sync` does not inspect gate freshness (see the Freshness Review boundary below).
+
 ## Freshness Review (caller-owned)
 
 `impact_sync` itself performs semantic classification only: it decides which units are affected and which fallback reason codes apply. It does not decide whether an affected unit's verification gates are currently fresh — gate freshness is a mechanical fact that the caller confirms with deterministic tooling before executing any fallback cleanup.
@@ -113,6 +115,16 @@ After impact_sync completes, it produces:
 2. The freshness review only decides whether fallback cleanup may proceed. It does not change the fallback reason codes assigned by `impact_sync`, and it does not reclassify affected units semantically.
 3. A unit whose cleanup is blocked by freshness is reported to the user with the blocking gate; re-running the affected gate (validate / verify / review) is user-triggered per HARD RULE 2 in `framework/concepts.md`.
 4. If the affected unit's target has no candidate file and no stable file (the target disappeared during the review), report it as `cleanup blocked (target missing)` and stop for user input — do not guess what the unit's cleanup should mean.
+
+## Fallback Cleanup
+
+"Fallback cleanup" is not a separate write step. After the Freshness Review, the per-unit classification report is the complete deliverable:
+
+1. A unit classified `cleanup allowed` (FRESH) requires no repair action — its durable truth is mechanically current, and any further change happens through the normal candidate workflow.
+2. A unit classified `cleanup blocked` (STALE / MISSING / BLOCKED) has exactly one legal next action: the caller reports the blocking gate to the user, and the affected gate is re-run by the user (HARD RULE 2 in `framework/concepts.md`). The caller must not repair, rewrite, or delete the unit's truth itself.
+3. A target with no candidate and no stable file is reported as `cleanup blocked (target missing)` and stops for user input.
+
+No other cleanup action is defined or permitted.
 
 ## Relationship to Governance Review Run-State
 
