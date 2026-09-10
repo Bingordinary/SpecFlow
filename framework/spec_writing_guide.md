@@ -580,7 +580,7 @@ A spec that fails the structure (no `##` heading, duplicated headings, the reser
 
 ## 14. Version Notes
 
-Every unit main Spec must carry a Version Notes section summarizing the current version's design-level changes. It is a writing convention, not a tooling mechanism: the heading is an ordinary `##` section, the frontmatter `version` field remains the version authority, and VCS history remains the full changelog.
+Every unit main Spec must carry a Version Notes section summarizing the current round's design-level changes. It is a writing convention, not a tooling mechanism: the heading is an ordinary `##` section, the frontmatter `version` field remains the sole version authority, and VCS history remains the full changelog.
 
 **Position:** the section is the independent `## Version Notes` heading — the first `##` heading of the spec, located immediately after the `#` title:
 
@@ -592,19 +592,17 @@ Every unit main Spec must carry a Version Notes section summarizing the current 
 
 The heading text is fixed — always `## Version Notes`, never localized or rephrased: the heading is part of the section region's content identity (§13 item 5), and a fixed spelling keeps the validate expectation single. The section is an ordinary `##` region and is subject to every §13 rule (unique heading, one topic, naming stability). It must not be written as a `> Version Notes` quote or as stray prose in the frontmatter region — §13 item 1 forbids any content there other than the YAML block, the `#` title, and blank lines.
 
-**Semantics:** the section records the current version's design-decision-level changes only — changes to behavior, contract, boundary, or config semantics. It is not a changelog: implementation details, typo fixes, and formatting edits are not recorded, and the full history lives in VCS. Each entry is a single line in the form:
+**Semantics:** the section records the current round's design-decision-level changes only — changes to behavior, contract, boundary, or config semantics. It is not a changelog: implementation details, typo fixes, and formatting edits are not recorded, and the full history lives in VCS. Entries are plain text and carry no version number — the frontmatter `version` field is the sole version authority, so there is no number to keep in sync. The section holds the current round's summary plus at most one line summarizing the previous round's changes, for example:
 
 ```text
 ## Version Notes
 
-{version} — {change summary}
+{summary of this round's design-level changes}
 
-{previous version} — {one-line summary of the previous round's changes}
+Previous round: {one-line summary of the previous round's changes}
 ```
 
-The `{version}` of the top entry must equal the frontmatter `version` field. Entries are ordered newest first.
-
-**Lifecycle:** `specflowctl fork` copies the section verbatim — the tool rewrites only the frontmatter `version` field (a PATCH bump, see §8), never the body content. When the agent starts editing the candidate after fork, it truncates the section to the current version plus a one-line summary of the previous version, then records the new round's changes under the bumped version. `promote` copies the section unchanged — the candidate's Version Notes content becomes the stable content verbatim, matching the byte-identical copy rule of the promote workflow (see `framework/unit_promote_workflow.md`). The section is a writing convention, not a tooling mechanism (see §14 first paragraph): violating the section-content rules (changelog truncation, entry granularity) is a document-hygiene issue that does not affect parsing, behavior, or downstream planning. The mechanism-level violations are the section's identity and authority — a missing or misplaced heading breaks section-region locatability (§13 item 5), and a top-entry version mismatch makes the section claim a version the spec does not carry. validate Check 1 step 13 grades the mechanism-level violations as FAIL and the hygiene-level ones (untruncated changelog, implementation-detail entries) as WARNING — see `framework/unit_validate_checklist.md` §Check 1 step 13.
+**Lifecycle:** `specflowctl fork` copies the section verbatim — the tool rewrites only the frontmatter `version` field (a PATCH bump, see §8), never the body content. When the agent starts editing the candidate after fork, it rewrites the section as the current round's summary plus at most one line summarizing the previous round. `promote` copies the section unchanged — the candidate's Version Notes content becomes the stable content verbatim, matching the byte-identical copy rule of the promote workflow (see `framework/unit_promote_workflow.md`). The section is a writing convention, not a tooling mechanism (see §14 first paragraph): violating the section-content rules (changelog truncation, entry granularity) is a document-hygiene issue that does not affect parsing, behavior, or downstream planning. The only mechanism-level violation is the section's identity — a missing or misplaced heading breaks section-region locatability (§13 item 5). Units have no version-authority check: entries carry no version number, so there is nothing to match against the frontmatter. validate Check 1 step 13 grades the mechanism-level violation as FAIL and the hygiene-level ones (untruncated changelog, implementation-detail entries) as WARNING — see `framework/unit_validate_checklist.md` §Check 1 step 13.
 
 **Scope:** the convention applies to the unit's own main Spec only. Rule files, appendix files, and protocol appendices are contract files declared whole (§13 item 7) and carry no Version Notes requirement. Specs promoted before this convention carry no section and are not forced to migrate: stable-only validation skips the Version Notes check, and the section is added on the unit's next candidate round (fork).
 
