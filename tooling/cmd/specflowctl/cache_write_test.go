@@ -803,3 +803,61 @@ func TestCacheWriteBadRangesWithSections(t *testing.T) {
 		t.Fatalf("expected range parse error, got: %v", err)
 	}
 }
+
+func TestCacheWriteRejectsPhysicalNameResolvedSpecPaths(t *testing.T) {
+	repoRoot := t.TempDir()
+	cwWriteSpec(t, repoRoot, "auth")
+	cwWriteSpec(t, repoRoot, "self")
+
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "cross-unit main spec in unit cache",
+			args: []string{
+				"--gate", "validate", "--unit", "self", "--result", "pass", "--target", "candidate",
+				"--file", cwFileJSON(map[string]any{"path": "docs/specs/units/candidate/unit_auth.md"}),
+			},
+			wantErr: "unit:auth",
+		},
+		{
+			name: "cross-unit appendix in verify cache",
+			args: []string{
+				"--gate", "verify", "--unit", "self", "--result", "pass", "--target", "candidate",
+				"--file", cwFileJSON(map[string]any{"path": "docs/specs/units/candidate/appendix/unit_auth_protocol.md"}),
+			},
+			wantErr: "logical reference",
+		},
+		{
+			name: "rule file in unit cache",
+			args: []string{
+				"--gate", "validate", "--unit", "self", "--result", "pass", "--target", "candidate",
+				"--file", cwFileJSON(map[string]any{"path": "docs/specs/rules/stable/g_rule_repo.md"}),
+			},
+			wantErr: "rule:g_rule_repo",
+		},
+		{
+			name: "unit spec in rule cache",
+			args: []string{
+				"--gate", "validate", "--rule", "g_rule_repo", "--result", "pass", "--target", "candidate",
+				"--file", cwFileJSON(map[string]any{"path": "docs/specs/units/candidate/unit_auth.md"}),
+			},
+			wantErr: "unit:auth",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			args := append([]string{"--repo-root", repoRoot}, tc.args...)
+			err := runCacheWrite(args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected the write to be rejected")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error mentioning %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}

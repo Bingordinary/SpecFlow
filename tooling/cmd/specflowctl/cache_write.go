@@ -101,6 +101,9 @@ func runCacheWrite(args []string, stdout, stderr io.Writer) error {
 		if path == "" {
 			return errors.New("a --file entry is missing its path")
 		}
+		if err := validationcache.ValidateEntryPathForm(targetKind, targetName, path); err != nil {
+			return err
+		}
 		if seen[path] {
 			return fmt.Errorf("duplicate --file entry for path %q", path)
 		}
@@ -278,7 +281,8 @@ func writeCacheWriteUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "--file JSON accepts the entry's declaration (repeatable):")
 	fmt.Fprintln(w, `  {"path":"src/auth/login.go","ranges":"120-180","sections":["Description"],"checks":[{"check":"5","status":"pass","sections":["Description"]}]}`)
-	fmt.Fprintln(w, "  path: physical repo path or logical reference (unit:NAME, unit:NAME:appendix:BASE, rule:ID)")
+	fmt.Fprintln(w, "  path: physical repo path or logical reference (unit:NAME, unit:NAME:appendix:BASE, rule:ID);")
+	fmt.Fprintln(w, "  name-resolved spec objects (cross-unit unit specs/appendices, rule files) must use the logical form")
 fmt.Fprintln(w, "  sections / ranges / acceptance_items: the declared dependency scope (same grammar")
 fmt.Fprintln(w, "  as gate-evidence); empty means the whole file (conservative). sections accepts the")
 fmt.Fprintln(w, "  reserved spelling \"frontmatter\" naming the pre-## region (same as gate-evidence --section).")

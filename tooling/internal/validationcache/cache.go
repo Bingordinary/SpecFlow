@@ -18,6 +18,7 @@ package validationcache
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1767,4 +1768,91 @@ func resolveEntryPath(repoRoot, path string) string {
 		return specpaths.ResolveRuleFile(repoRoot, strings.TrimPrefix(path, "rule:"))
 	}
 	return resolvePath(repoRoot, path)
+}
+
+// ValidateEntryPathForm rejects a cache entry declaration that names a
+// name-resolved spec object (framework/validation_cache.md §Logical
+// References) as a physical path. Such an entry must be a logical reference
+// so freshness resolves it to the current layer and a promote of the
+// referenced target (candidate file deleted, content unchanged) does not
+// fail the cache closed. Physical paths stay correct for the run's own
+// target files — the target unit's main spec and appendices, or the target
+// rule's candidate file and stable sibling — and for code files.
+func ValidateEntryPathForm(targetKind, targetName, entryPath string) error {
+	clean := path.Clean(filepath.ToSlash(strings.TrimSpace(entryPath)))
+	if strings.HasPrefix(clean, "unit:") || strings.HasPrefix(clean, "rule:") {
+		return nil
+	}
+	if targetKind == "rule" {
+		if ref, ok := parseUnitSpecPath(clean); ok {
+			return nameResolvedPhysicalPathError(entryPath, ref.logical())
+		}
+		return nil
+	}
+	if strings.HasPrefix(clean, specpaths.RuleModulesRootDir+"/") {
+		id := strings.TrimSuffix(path.Base(clean), ".md")
+		return fmt.Errorf("cache entry %q is a rule file — declare it as a logical reference (rule:%s) instead of a physical path (see framework/validation_cache.md §Logical References)", entryPath, id)
+	}
+	ref, ok := parseUnitSpecPath(clean)
+	if !ok {
+		return nil
+	}
+	if ref.ownedBy(targetName) {
+		return nil
+	}
+	return nameResolvedPhysicalPathError(entryPath, ref.logical())
+}
+
+func nameResolvedPhysicalPathError(entryPath, logical string) error {
+	return fmt.Errorf("cache entry %q is a spec object resolved by name — declare it as a logical reference (%s) instead of a physical path (see framework/validation_cache.md §Logical References)", entryPath, logical)
+}
+
+// unitSpecRef identifies a unit spec file parsed from a physical path: the
+// unit name for a main spec, or the full appendix file base name (without
+// .md) for an appendix file.
+type unitSpecRef struct {
+	unitName string
+	appendix string
+}
+
+// logical returns the canonical logical reference spelling. The appendix
+// form's unit-name part is contextual (the resolver keys on the appendix
+// base name alone), so the placeholder names that part without guessing it.
+func (r unitSpecRef) logical() string {
+	if r.appendix != "" {
+		return "unit:{name}:appendix:" + r.appendix
+	}
+	return "unit:" + r.unitName
+}
+
+// ownedBy reports whether the file belongs to the target unit's own spec
+// union — its main spec or an appendix named unit_{target}_*.
+func (r unitSpecRef) ownedBy(unitName string) bool {
+	if r.appendix != "" {
+		return strings.HasPrefix(r.appendix, "unit_"+unitName+"_")
+	}
+	return r.unitName == unitName
+}
+
+// parseUnitSpecPath parses a repo-relative slash path as a unit spec file
+// under the candidate or stable layer. Main specs are unit_{name}.md at the
+// layer root; appendix files are unit_{name}_{suffix}.md under appendix/.
+func parseUnitSpecPath(clean string) (unitSpecRef, bool) {
+	for _, dir := range []string{specpaths.CandidateDir, specpaths.StableDir} {
+		rest, found := strings.CutPrefix(clean, dir+"/")
+		if !found {
+			continue
+		}
+		if base, found := strings.CutPrefix(rest, "appendix/"); found {
+			if strings.Contains(base, "/") || !strings.HasPrefix(base, "unit_") || !strings.HasSuffix(base, ".md") {
+				return unitSpecRef{}, false
+			}
+			return unitSpecRef{appendix: strings.TrimSuffix(base, ".md")}, true
+		}
+		if strings.Contains(rest, "/") || !strings.HasPrefix(rest, "unit_") || !strings.HasSuffix(rest, ".md") {
+			return unitSpecRef{}, false
+		}
+		return unitSpecRef{unitName: strings.TrimPrefix(strings.TrimSuffix(rest, ".md"), "unit_")}, true
+	}
+	return unitSpecRef{}, false
 }

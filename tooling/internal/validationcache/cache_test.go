@@ -3128,3 +3128,46 @@ func TestRewriteCachesToStablePromotedCachesPassStableChecks(t *testing.T) {
 		t.Fatalf("CheckReviewStable after rewrite: fresh=%v err=%v reason=%s", r.Fresh, err, r.Reason)
 	}
 }
+
+func TestValidateEntryPathForm(t *testing.T) {
+	cases := []struct {
+		name       string
+		targetKind string
+		targetName string
+		path       string
+		wantErr    string
+	}{
+		{"own main spec", "unit", "self", "docs/specs/units/candidate/unit_self.md", ""},
+		{"own stable main spec", "unit", "self", "docs/specs/units/stable/unit_self.md", ""},
+		{"own appendix", "unit", "self", "docs/specs/units/candidate/appendix/unit_self_protocol.md", ""},
+		{"dot-prefixed own main spec", "unit", "self", "./docs/specs/units/candidate/unit_self.md", ""},
+		{"logical unit reference", "unit", "self", "unit:auth", ""},
+		{"logical appendix reference", "unit", "self", "unit:auth:appendix:unit_auth_protocol", ""},
+		{"code file", "unit", "self", "src/auth/login.go", ""},
+		{"cross-unit main spec", "unit", "self", "docs/specs/units/candidate/unit_auth.md", "unit:auth"},
+		{"cross-unit appendix", "unit", "self", "docs/specs/units/stable/appendix/unit_auth_protocol.md", "unit:{name}:appendix:unit_auth_protocol"},
+		{"unit name prefix is not ownership", "unit", "self", "docs/specs/units/candidate/unit_selfx.md", "unit:selfx"},
+		{"appendix name prefix is not ownership", "unit", "self", "docs/specs/units/candidate/appendix/unit_selfx_contract.md", "logical reference"},
+		{"rule file in unit cache", "unit", "self", "docs/specs/rules/stable/g_rule_repo.md", "rule:g_rule_repo"},
+		{"own rule file", "rule", "g_rule_repo", "docs/specs/rules/candidate/g_rule_repo.md", ""},
+		{"stable sibling rule file", "rule", "g_rule_repo", "docs/specs/rules/stable/g_rule_repo.md", ""},
+		{"unit spec in rule cache", "rule", "g_rule_repo", "docs/specs/units/candidate/unit_auth.md", "unit:auth"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateEntryPathForm(tc.targetKind, tc.targetName, tc.path)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected %q to be accepted, got: %v", tc.path, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected %q to be rejected", tc.path)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error mentioning %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
