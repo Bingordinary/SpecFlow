@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoUrl = "https://github.com/Bingordinary/SpecFlow.git"
 $TargetDir = "specflow"
-$IgnoreEntries = @("specflow/", ".tmp/", "/meta/", ".claude-plugin/", ".opencode/", ".agents/", "hooks/hooks.json")
+$IgnoreEntries = @("specflow/", ".tmp/", "/meta/", ".claude-plugin/", ".opencode/", ".agents/", ".codex/hooks.json", "hooks/hooks.json")
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"

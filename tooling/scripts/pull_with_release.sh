@@ -50,6 +50,34 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 source "${SCRIPT_DIR}/common/layout.sh"
 
+platform_suffix() {
+  local os arch
+  case "$(uname -s)" in
+    Linux) os="linux" ;;
+    Darwin) os="darwin" ;;
+    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+    *)
+      echo "Error: unsupported operating system: $(uname -s)" >&2
+      return 1
+      ;;
+  esac
+
+  case "$(uname -m)" in
+    x86_64|amd64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *)
+      echo "Error: unsupported CPU architecture: $(uname -m)" >&2
+      return 1
+      ;;
+  esac
+
+  if [[ "${os}" == "windows" ]]; then
+    printf '%s-%s.exe\n' "${os}" "${arch}"
+  else
+    printf '%s-%s\n' "${os}" "${arch}"
+  fi
+}
+
 cd "${REPO_ROOT}"
 
 layout="$(detect_layout "${REPO_ROOT}")"
@@ -89,24 +117,15 @@ fi
 # Delegate binary update to the standalone script (defaults to all platforms).
 "${SCRIPT_DIR}/update_tooling_binaries.sh" ${UPDATE_ARGS[@]:+"${UPDATE_ARGS[@]}"}
 
-# Install hook files from specflow source to project root
+# Install hook files from specflow source to project root. The CLI owns the
+# Codex JSON merge so existing project hooks are preserved.
 PROJECT_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
-
-install_hook() {
-  local src="$1" dst="$2"
-  mkdir -p "$(dirname "${dst}")"
-  if [ -f "${src}" ]; then
-    cp "${src}" "${dst}"
-    echo "  Installed: $(basename "${dst}")"
-  else
-    echo "  Warning: source not found: ${src}"
-  fi
-}
-
 echo "Installing hook files..."
-install_hook "${REPO_ROOT}/hooks/hooks.json" "${PROJECT_ROOT}/hooks/hooks.json"
-install_hook "${REPO_ROOT}/templates/.claude-plugin/plugin.json" "${PROJECT_ROOT}/.claude-plugin/plugin.json"
-install_hook "${REPO_ROOT}/templates/.opencode/plugins/specflow.js" "${PROJECT_ROOT}/.opencode/plugins/specflow.js"
-install_hook "${REPO_ROOT}/templates/.agents/plugins/specflow/plugin.json" "${PROJECT_ROOT}/.agents/plugins/specflow/plugin.json"
-install_hook "${REPO_ROOT}/templates/.agents/plugins/specflow/hooks.json" "${PROJECT_ROOT}/.agents/plugins/specflow/hooks.json"
+suffix="$(platform_suffix)"
+specflowctl="${REPO_ROOT}/tooling/bin/specflowctl-${suffix}"
+if [[ ! -x "${specflowctl}" ]]; then
+  echo "Error: expected binary was not installed: ${specflowctl}" >&2
+  exit 1
+fi
+"${specflowctl}" init --hooks-only --repo-root "${PROJECT_ROOT}"
 echo "Hook installation complete."

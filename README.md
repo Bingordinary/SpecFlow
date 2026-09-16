@@ -15,7 +15,7 @@
 
 > ⚠️ **Experimental** — specFlow is still evolving. Fork it and adapt it to how **you** work. Don't treat it as a template — expect things to change.
 
-> In this document, "agent" refers to your AI coding assistant (e.g. OpenCode, Claude Code).
+> In this document, "agent" refers to your AI coding assistant (e.g. OpenCode, Claude Code, Codex).
 
 ## What Problem It Solves
 
@@ -39,8 +39,9 @@ specFlow currently supports these agent runtimes:
 - **OpenCode** — recommended
 - **Claude Code**
 - **Google Antigravity**
+- **Codex** — Codex CLI and the Local environment in the ChatGPT desktop app
 
-Codex support is coming — stay tuned.
+Codex support uses the repository-local `.codex/hooks.json` file. On first use, Codex asks you to review and trust the project hook before it runs. Codex Worktree and Cloud environments are not currently supported.
 
 ## Quick Start
 

@@ -48,6 +48,53 @@ func TestNextCLI(t *testing.T) {
 	}
 }
 
+func TestInitHooksOnlyInstallsHooksWithoutManifest(t *testing.T) {
+	repoRoot := t.TempDir()
+	mustWriteCLITestFile(t, filepath.Join(repoRoot, "specflow/tooling/go.mod"), "module github.com/Bingordinary/SpecFlow/specflow/tooling\n\ngo 1.22.2\n")
+	mustWriteCLITestFile(t, filepath.Join(repoRoot, "specflow/templates/.codex/hooks.json"), `{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "run-hook session-start codex",
+            "additionalContextLimit": 0
+          }
+        ]
+      }
+    ]
+  }
+}
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runInit([]string{"--hooks-only", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("runInit --hooks-only returned error: %v\nstderr=%s", err, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".codex/hooks.json")); err != nil {
+		t.Fatalf("Codex hooks were not installed: %v", err)
+	}
+	if strings.Contains(stdout.String(), "specFlow init completed") {
+		t.Fatalf("hooks-only unexpectedly ran framework initialization: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "hooks installed: copied=1") {
+		t.Fatalf("hooks-only did not report hook installation: %s", stdout.String())
+	}
+}
+
+func mustWriteCLITestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) failed: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) failed: %v", path, err)
+	}
+}
+
 func TestPromoteFailsOnMissingUnit(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	var stdout bytes.Buffer

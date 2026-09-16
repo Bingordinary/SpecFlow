@@ -25,6 +25,8 @@ The installer:
 
 After installation, platform hooks will automatically inject specFlow rules into the agent context at every session start.
 
+For Codex CLI and the Local environment in the ChatGPT desktop app, the installer merges the SpecFlow `SessionStart` hook into `.codex/hooks.json` without replacing other project hooks. Codex will ask you to review and trust a new or changed project hook before running it. Codex Worktree and Cloud environments are not currently supported.
+
 ## Existing Project Adoption
 
 specFlow supports onboarding an existing (already-implemented) project. After installation, perform an adoption check:
@@ -40,6 +42,8 @@ Adoption progress is tracked in-session; the flow can be resumed in later sessio
 ## Verify
 
 After installation, hooks should be active. The agent will automatically load specFlow governance rules and recognize triggers such as `validate`, `verify`, and `promote` on the next session start.
+
+In Codex CLI or the desktop app's Local environment, accept the project-hook trust prompt and then start a new task or resume the task so the `SessionStart` hook runs.
 
 ## Update
 

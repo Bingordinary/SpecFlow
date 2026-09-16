@@ -15,7 +15,7 @@
 
 > ⚠️ **实验项目** — specFlow 还在发展期，结构和规则都可能调整。如果你要用，建议 fork 后按自己的方式改造，而不是直接当作模板使用。
 
-> 本文档中，"agent" 指你的 AI 编码助手（例如 OpenCode、Claude Code）。
+> 本文档中，"agent" 指你的 AI 编码助手（例如 OpenCode、Claude Code、Codex）。
 
 ## 解决的问题
 
@@ -39,8 +39,9 @@ specFlow 目前支持以下 agent runtime：
 - **OpenCode** — 推荐配合使用
 - **Claude Code**
 - **Google Antigravity**
+- **Codex** — Codex CLI，以及 ChatGPT 桌面端 Codex 的 Local 模式
 
-Codex 支持正在推进中，敬请期待。
+Codex 支持使用项目内的 `.codex/hooks.json`。第一次使用时，Codex 会要求你检查并信任该项目 Hook，确认后才会运行。目前不支持 Codex 的 Worktree 和 Cloud 模式。
 
 ## 快速开始
 

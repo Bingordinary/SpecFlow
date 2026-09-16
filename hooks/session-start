@@ -22,13 +22,22 @@ session_context="<SPECFLOW_CONCEPTS>\nThis project uses SpecFlow to manage desig
 
 target_platform="${1:-}"
 
+emit_additional_context() {
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+}
+
 if [ "$target_platform" = "antigravity" ] || [ -n "${ANTIGRAVITY:-}" ]; then
   printf '{\n  "injectSteps": [\n    {\n      "ephemeralMessage": "%s"\n    }\n  ]\n}\n' "$session_context"
   exit 0
 fi
 
+if [ "$target_platform" = "codex" ]; then
+  emit_additional_context
+  exit 0
+fi
+
 if [ "$target_platform" = "claude" ] || ([ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]); then
-  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+  emit_additional_context
   exit 0
 fi
 

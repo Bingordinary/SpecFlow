@@ -274,6 +274,7 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 	repoRoot := fs.String("repo-root", ".", "repository root")
 	force := fs.Bool("force", false, "overwrite framework files")
 	verify := fs.Bool("verify", false, "check project initialization state only (no copy)")
+	hooksOnly := fs.Bool("hooks-only", false, "install platform hooks without framework files")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -281,6 +282,9 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 	absRoot := mustAbs(*repoRoot)
 
 	if *verify {
+		if *hooksOnly {
+			return errors.New("--verify and --hooks-only cannot be used together")
+		}
 		result, err := install.CheckProjectInit(absRoot)
 		if err != nil {
 			return err
@@ -295,13 +299,15 @@ func runInit(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("project initialization check failed: %d missing file(s)", len(result.Failures))
 	}
 
-	result, err := install.Init(absRoot, *force)
-	if err != nil {
-		return err
+	if !*hooksOnly {
+		result, err := install.Init(absRoot, *force)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "specFlow init completed. copied=%d skipped=%d\n", result.Copied, result.Skipped)
 	}
-	fmt.Fprintf(stdout, "specFlow init completed. copied=%d skipped=%d\n", result.Copied, result.Skipped)
 
-	// Always install platform hooks for session injection
+	// Always install platform hooks for session injection.
 	hooksResult, err := install.InstallHooks(absRoot)
 	if err != nil {
 		return fmt.Errorf("install hooks: %w", err)

@@ -47,6 +47,55 @@ function Invoke-CheckedOutput {
     ($output -join "`n").Trim()
 }
 
+function Get-OSArchitecture {
+    $runtimeInfo = [System.Runtime.InteropServices.RuntimeInformation]
+    $property = $runtimeInfo.GetProperty("OSArchitecture")
+    if ($null -ne $property) {
+        return [string]$property.GetValue($null, $null)
+    }
+
+    $arch = [System.Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITEW6432")
+    if ([string]::IsNullOrWhiteSpace($arch)) {
+        $arch = [System.Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($arch)) {
+        return $arch
+    }
+
+    throw "Unable to determine CPU architecture."
+}
+
+function Get-PlatformSuffix {
+    $os = ""
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        $os = "windows"
+    }
+    elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
+        $os = "linux"
+    }
+    elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+        $os = "darwin"
+    }
+    else {
+        throw "Unsupported operating system."
+    }
+
+    $osArchitecture = Get-OSArchitecture
+    $arch = switch ($osArchitecture.ToString().ToUpperInvariant()) {
+        "X64" { "amd64" }
+        "AMD64" { "amd64" }
+        "ARM64" { "arm64" }
+        default { throw "Unsupported CPU architecture: $osArchitecture" }
+    }
+
+    if ($os -eq "windows") {
+        "$os-$arch.exe"
+    }
+    else {
+        "$os-$arch"
+    }
+}
+
 if ($Help) {
     Show-Usage
     exit 0
@@ -101,30 +150,16 @@ try {
     elseif ($All) { $updateArgs += "-All" }
     & (Join-Path $scriptDir "update_tooling_binaries.ps1") @updateArgs
 
-    # Install hook files from specflow source to project root
+    # Install hook files from specflow source to project root. The CLI owns the
+    # Codex JSON merge so existing project hooks are preserved.
     $projectRoot = (Resolve-Path (Join-Path $repoRoot "..")).Path
-
-    function Install-Hook {
-        param([string]$Src, [string]$Dst)
-        $dir = Split-Path -Parent $Dst
-        if (-not (Test-Path -LiteralPath $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        }
-        if (Test-Path -LiteralPath $Src -PathType Leaf) {
-            Copy-Item -LiteralPath $Src -Destination $Dst -Force
-            Write-Host "  Installed: $((Split-Path -Leaf $Dst))"
-        }
-        else {
-            Write-Host "  Warning: source not found: $Src"
-        }
-    }
-
     Write-Host "Installing hook files..."
-    Install-Hook -Src (Join-Path $repoRoot "hooks/hooks.json") -Dst (Join-Path $projectRoot "hooks/hooks.json")
-    Install-Hook -Src (Join-Path $repoRoot "templates/.claude-plugin/plugin.json") -Dst (Join-Path $projectRoot ".claude-plugin/plugin.json")
-    Install-Hook -Src (Join-Path $repoRoot "templates/.opencode/plugins/specflow.js") -Dst (Join-Path $projectRoot ".opencode/plugins/specflow.js")
-    Install-Hook -Src (Join-Path $repoRoot "templates/.agents/plugins/specflow/plugin.json") -Dst (Join-Path $projectRoot ".agents/plugins/specflow/plugin.json")
-    Install-Hook -Src (Join-Path $repoRoot "templates/.agents/plugins/specflow/hooks.json") -Dst (Join-Path $projectRoot ".agents/plugins/specflow/hooks.json")
+    $suffix = Get-PlatformSuffix
+    $specflowctl = Join-Path $repoRoot "tooling/bin/specflowctl-$suffix"
+    if (-not (Test-Path -LiteralPath $specflowctl -PathType Leaf)) {
+        throw "Expected binary was not installed: $specflowctl"
+    }
+    Invoke-CheckedNative $specflowctl @("init", "--hooks-only", "--repo-root", $projectRoot)
     Write-Host "Hook installation complete."
 }
 catch {

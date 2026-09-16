@@ -2,9 +2,11 @@ package install
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
@@ -58,6 +60,13 @@ type HooksResult struct {
 	Copied int
 }
 
+const (
+	codexHooksSource      = "templates/.codex/hooks.json"
+	codexHooksDestination = ".codex/hooks.json"
+	codexHookMarker       = "session-start codex"
+	codexHookRunnerMarker = "specflow/hooks/run-hook.cmd"
+)
+
 func InstallHooks(repoRoot string) (HooksResult, error) {
 	result := HooksResult{}
 
@@ -104,7 +113,163 @@ func InstallHooks(repoRoot string) (HooksResult, error) {
 		}
 	}
 
+	codexUpdated, err := installCodexHooks(repoRoot, layout)
+	if err != nil {
+		return result, err
+	}
+	if codexUpdated {
+		result.Copied++
+	}
+
 	return result, nil
+}
+
+func installCodexHooks(repoRoot string, layout specflowlayout.Layout) (bool, error) {
+	source := filepath.Join(repoRoot, specflowlayout.Relative(layout.ContentRoot, codexHooksSource))
+	template, err := os.ReadFile(source)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", codexHooksSource, err)
+	}
+	if !json.Valid(template) {
+		return false, fmt.Errorf("parse %s: invalid JSON", codexHooksSource)
+	}
+
+	destination := filepath.Join(repoRoot, filepath.FromSlash(codexHooksDestination))
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return false, fmt.Errorf("mkdir %s: %w", codexHooksDestination, err)
+	}
+
+	existing, err := os.ReadFile(destination)
+	if os.IsNotExist(err) {
+		if err := os.WriteFile(destination, template, 0o644); err != nil {
+			return false, fmt.Errorf("write %s: %w", codexHooksDestination, err)
+		}
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", codexHooksDestination, err)
+	}
+
+	merged, err := mergeCodexHooks(existing, template)
+	if err != nil {
+		return false, err
+	}
+	if jsonDocumentsEqual(existing, merged) {
+		return false, nil
+	}
+	if err := os.WriteFile(destination, merged, 0o644); err != nil {
+		return false, fmt.Errorf("write %s: %w", codexHooksDestination, err)
+	}
+	return true, nil
+}
+
+func mergeCodexHooks(existing, template []byte) ([]byte, error) {
+	existingDocument, err := parseJSONDocument(existing, codexHooksDestination)
+	if err != nil {
+		return nil, err
+	}
+	templateDocument, err := parseJSONDocument(template, codexHooksSource)
+	if err != nil {
+		return nil, err
+	}
+
+	existingHooks, err := parseJSONMap(existingDocument["hooks"], codexHooksDestination+" hooks")
+	if err != nil {
+		return nil, err
+	}
+	templateHooks, err := parseJSONMap(templateDocument["hooks"], codexHooksSource+" hooks")
+	if err != nil {
+		return nil, err
+	}
+
+	existingSessionStart, err := parseJSONArray(existingHooks["SessionStart"], codexHooksDestination+" SessionStart")
+	if err != nil {
+		return nil, err
+	}
+	templateSessionStart, err := parseJSONArray(templateHooks["SessionStart"], codexHooksSource+" SessionStart")
+	if err != nil {
+		return nil, err
+	}
+	if len(templateSessionStart) == 0 {
+		return nil, fmt.Errorf("parse %s: missing SessionStart hook", codexHooksSource)
+	}
+
+	mergedSessionStart := make([]json.RawMessage, 0, len(existingSessionStart)+len(templateSessionStart))
+	for _, entry := range existingSessionStart {
+		if !isManagedCodexHook(entry) {
+			mergedSessionStart = append(mergedSessionStart, entry)
+		}
+	}
+	mergedSessionStart = append(mergedSessionStart, templateSessionStart...)
+
+	sessionStartJSON, err := json.Marshal(mergedSessionStart)
+	if err != nil {
+		return nil, fmt.Errorf("encode %s SessionStart: %w", codexHooksDestination, err)
+	}
+	existingHooks["SessionStart"] = sessionStartJSON
+	hooksJSON, err := json.Marshal(existingHooks)
+	if err != nil {
+		return nil, fmt.Errorf("encode %s hooks: %w", codexHooksDestination, err)
+	}
+	existingDocument["hooks"] = hooksJSON
+
+	merged, err := json.MarshalIndent(existingDocument, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode %s: %w", codexHooksDestination, err)
+	}
+	return append(merged, '\n'), nil
+}
+
+func isManagedCodexHook(entry json.RawMessage) bool {
+	return bytes.Contains(entry, []byte(codexHookRunnerMarker)) && bytes.Contains(entry, []byte(codexHookMarker))
+}
+
+func parseJSONDocument(content []byte, name string) (map[string]json.RawMessage, error) {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(content, &document); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if document == nil {
+		return nil, fmt.Errorf("parse %s: expected JSON object", name)
+	}
+	return document, nil
+}
+
+func parseJSONMap(content json.RawMessage, name string) (map[string]json.RawMessage, error) {
+	if len(content) == 0 || bytes.Equal(bytes.TrimSpace(content), []byte("null")) {
+		return map[string]json.RawMessage{}, nil
+	}
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal(content, &value); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	if value == nil {
+		value = map[string]json.RawMessage{}
+	}
+	return value, nil
+}
+
+func parseJSONArray(content json.RawMessage, name string) ([]json.RawMessage, error) {
+	if len(content) == 0 || bytes.Equal(bytes.TrimSpace(content), []byte("null")) {
+		return nil, nil
+	}
+	var value []json.RawMessage
+	if err := json.Unmarshal(content, &value); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return value, nil
+}
+
+func jsonDocumentsEqual(left, right []byte) bool {
+	var leftValue any
+	var rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func Doctor(repoRoot string) (DoctorResult, error) {
