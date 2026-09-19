@@ -179,6 +179,12 @@ func TestSectionRegionsSplit(t *testing.T) {
 	if regions[3].Heading != "Dependencies" {
 		t.Fatalf("expected Dependencies section, got %q", regions[3].Heading)
 	}
+	if regions[3].Start != 26 || regions[3].End != 28 {
+		t.Fatalf("expected the Dependencies region 26-28 (the artificial trailing newline is not a line), got %d-%d", regions[3].Start, regions[3].End)
+	}
+	if strings.HasSuffix(regions[3].Text, "\n") {
+		t.Fatalf("the final region must not include the artificial trailing newline, got %q", regions[3].Text)
+	}
 }
 
 func TestSectionRegionsNoHeadings(t *testing.T) {
@@ -188,6 +194,34 @@ func TestSectionRegionsNoHeadings(t *testing.T) {
 	}
 	if regions[0].Heading != "" {
 		t.Fatalf("expected empty heading, got %q", regions[0].Heading)
+	}
+	if regions[0].Start != 1 || regions[0].End != 2 {
+		t.Fatalf("expected the region 1-2 (the artificial trailing newline is not a line), got %d-%d", regions[0].Start, regions[0].End)
+	}
+	if regions[0].Text != "just prose\nwith no headings" {
+		t.Fatalf("expected the region text without the artificial trailing newline, got %q", regions[0].Text)
+	}
+}
+
+func TestSectionPresenceAndSplittability(t *testing.T) {
+	if IsSectionSplittable("just prose\nwith no headings\n") {
+		t.Fatal("a text with no ## heading must not be section-splittable")
+	}
+	if !IsSectionSplittable("## One\n\ncontent\n") {
+		t.Fatal("a text with a ## heading must be section-splittable")
+	}
+	if !HasSectionHeading("## One\n\ncontent\n", "One") {
+		t.Fatal("expected the heading to be reported present")
+	}
+	if HasSectionHeading("## One\n\ncontent\n", "Two") {
+		t.Fatal("an absent heading must not be reported present")
+	}
+	dup := "## frontmatter\n\nFirst.\n\n## frontmatter\n\nSecond.\n"
+	if !HasSectionHeading(dup, "frontmatter") {
+		t.Fatal("a duplicated real heading must count as present")
+	}
+	if _, ok := LocateSectionRegion(dup, "frontmatter"); ok {
+		t.Fatal("the locator must fail closed on a duplicated heading")
 	}
 }
 
@@ -452,5 +486,225 @@ func TestAcceptanceItemsRegionFenceHeadingDoesNotTruncate(t *testing.T) {
 	}
 	if strings.Contains(region, "## Dependencies") {
 		t.Fatalf("region must end at the real heading, got:\n%s", region)
+	}
+}
+
+func TestAcceptanceItemsRegionEndsAtSectionHeading(t *testing.T) {
+	// `###` and `#` lines belong to their enclosing `##` section and must not
+	// terminate the item set; only the next `##` heading does.
+	spec := "# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n# Not a section\n\n  - id: dep.third\n    description: Third.\n\n## Dependencies\n\nNone.\n"
+	region, ok := AcceptanceItemsRegion(spec)
+	if !ok {
+		t.Fatal("expected acceptance region")
+	}
+	for _, want := range []string{"dep.core", "### Extra structure", "dep.aux", "# Not a section", "dep.third"} {
+		if !strings.Contains(region, want) {
+			t.Fatalf("region must contain %q, got:\n%s", want, region)
+		}
+	}
+	if strings.Contains(region, "## Dependencies") {
+		t.Fatalf("region must end at the next ## heading, got:\n%s", region)
+	}
+	want := []string{"dep.core", "dep.aux", "dep.third"}
+	ids := AcceptanceItemIDs(spec)
+	if len(ids) != len(want) {
+		t.Fatalf("expected ids %v, got %v", want, ids)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("expected ids %v, got %v", want, ids)
+		}
+	}
+}
+
+func TestAcceptanceItemRegionsAcrossSubheading(t *testing.T) {
+	spec := "## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n## Dependencies\n\nNone.\n"
+	regions := AcceptanceItemRegions(spec)
+	if len(regions) != 2 || regions[0].ID != "dep.core" || regions[1].ID != "dep.aux" {
+		t.Fatalf("expected both items across the ### subheading, got %+v", regions)
+	}
+	if !strings.Contains(regions[1].Text, "description: Aux.") {
+		t.Fatalf("second item region must carry its fields, got %q", regions[1].Text)
+	}
+}
+
+func TestAcceptanceItemsRegionIndentedSectionHeading(t *testing.T) {
+	// An indented `##` heading is a section boundary for SectionRegions, so it
+	// terminates the item set the same way — one boundary definition.
+	spec := "## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n  ## Sub\n\n  - id: dep.late\n    description: Late.\n"
+	found := false
+	for _, r := range SectionRegions(spec) {
+		if r.Heading == "Sub" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("SectionRegions must treat the indented heading as a section, got %+v", SectionRegions(spec))
+	}
+	ids := AcceptanceItemIDs(spec)
+	if len(ids) != 1 || ids[0] != "dep.core" {
+		t.Fatalf("the item set must end at the indented ## heading, got %v", ids)
+	}
+}
+
+func TestAcceptanceItemsRegionFinalNewlineNotContent(t *testing.T) {
+	// A set that runs to the end of the file and the same set followed
+	// immediately by a `##` heading have identical region content: the
+	// synthetic file-final newline is not a line.
+	eof := "## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a\n    description: A.\n"
+	adjacent := "## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a\n    description: A.\n## Dependencies\n\nNone.\n"
+	regionEOF, okEOF := AcceptanceItemsRegion(eof)
+	regionAdjacent, okAdjacent := AcceptanceItemsRegion(adjacent)
+	if !okEOF || !okAdjacent {
+		t.Fatal("expected both regions to be found")
+	}
+	if strings.HasSuffix(regionEOF, "\n") {
+		t.Fatalf("the file-final region must not claim the synthetic newline, got %q", regionEOF)
+	}
+	if RegionCID(regionEOF) != RegionCID(regionAdjacent) {
+		t.Fatalf("region content changed without an inside edit:\n%q\nvs\n%q", regionEOF, regionAdjacent)
+	}
+}
+
+// specWithTwoItems carries two acceptance items; dep.aux's description
+// contains a fenced `- id:` example (content, never an item boundary).
+var specWithTwoItems = "# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: The core behavior is provided.\n    pass_condition: Core behavior passes.\n\n  - id: dep.aux\n    description: |\n      Aux behavior.\n\n      ```\n      - id: example.only\n        description: A fenced example, not an item.\n      ```\n    pass_condition: Aux behavior passes.\n\n## Dependencies\n\nThis unit has no external dependencies.\n"
+
+func TestAcceptanceItemRegionsList(t *testing.T) {
+	regions := AcceptanceItemRegions(specWithTwoItems)
+	if len(regions) != 2 {
+		t.Fatalf("expected 2 item regions, got %d: %+v", len(regions), regions)
+	}
+	if regions[0].ID != "dep.core" || regions[1].ID != "dep.aux" {
+		t.Fatalf("unexpected ids: %q, %q", regions[0].ID, regions[1].ID)
+	}
+	if !strings.HasPrefix(regions[0].Text, "  - id: dep.core") {
+		t.Fatalf("region must start at the id line, got %q", regions[0].Text)
+	}
+	if strings.Contains(regions[0].Text, "dep.aux") {
+		t.Fatalf("region must end before the next item, got %q", regions[0].Text)
+	}
+	if regions[0].Start != 6 || regions[0].End != 8 {
+		t.Fatalf("unexpected dep.core line range: %d-%d", regions[0].Start, regions[0].End)
+	}
+	if !strings.Contains(regions[1].Text, "example.only") {
+		t.Fatalf("fenced example stays inside the item content, got %q", regions[1].Text)
+	}
+	ids := AcceptanceItemIDs(specWithTwoItems)
+	if len(ids) != 2 || ids[0] != "dep.core" || ids[1] != "dep.aux" {
+		t.Fatalf("unexpected extraction result: %v", ids)
+	}
+}
+
+func TestAcceptanceItemRegionReorderInvariance(t *testing.T) {
+	blockCore := "  - id: dep.core\n    description: Core behavior.\n    pass_condition: Core passes.\n"
+	blockAux := "  - id: dep.aux\n    description: Aux behavior.\n    pass_condition: Aux passes.\n"
+	header := "# U\n\nacceptance_item_set:\n"
+	plain := header + blockCore + "\n" + blockAux + "\n## Dependencies\n\nNone.\n"
+	swapped := header + blockAux + "\n" + blockCore + "\n## Dependencies\n\nNone.\n"
+
+	for _, id := range []string{"dep.core", "dep.aux"} {
+		a, okA := LocateAcceptanceItemRegion(plain, id)
+		b, okB := LocateAcceptanceItemRegion(swapped, id)
+		if !okA || !okB {
+			t.Fatalf("item %s must locate in both orders", id)
+		}
+		if RegionCID(a.Text) != RegionCID(b.Text) {
+			t.Fatalf("item %s region changed on reorder:\n%q\nvs\n%q", id, a.Text, b.Text)
+		}
+	}
+
+	// The whole-set region is raw text — reordering stales it by design.
+	setPlain, _ := AcceptanceItemsRegion(plain)
+	setSwapped, _ := AcceptanceItemsRegion(swapped)
+	if RegionCID(setPlain) == RegionCID(setSwapped) {
+		t.Fatal("whole-set region is raw text; a reorder must change its CID")
+	}
+}
+
+func TestAcceptanceItemRegionSpacingInvariance(t *testing.T) {
+	blockCore := "  - id: dep.core\n    description: Core behavior.\n    pass_condition: Core passes.\n"
+	blockAux := "  - id: dep.aux\n    description: Aux behavior.\n    pass_condition: Aux passes.\n"
+	header := "# U\n\nacceptance_item_set:\n"
+	normal := header + blockCore + "\n" + blockAux + "\n## Dependencies\n\nNone.\n"
+	spaced := header + blockCore + "\n\n\n" + blockAux + "\n\n\n## Dependencies\n\nNone.\n"
+
+	coreA, _ := LocateAcceptanceItemRegion(normal, "dep.core")
+	auxA, _ := LocateAcceptanceItemRegion(normal, "dep.aux")
+	coreB, okCore := LocateAcceptanceItemRegion(spaced, "dep.core")
+	auxB, okAux := LocateAcceptanceItemRegion(spaced, "dep.aux")
+	if !okCore || !okAux {
+		t.Fatal("items must locate in the spaced variant")
+	}
+	if RegionCID(coreA.Text) != RegionCID(coreB.Text) || RegionCID(auxA.Text) != RegionCID(auxB.Text) {
+		t.Fatal("blank-line spacing between items must not change item region CIDs")
+	}
+}
+
+func TestAcceptanceItemRegionDuplicateFailsClosed(t *testing.T) {
+	dup := "# U\n\nacceptance_item_set:\n  - id: dep.core\n    description: First.\n\n  - id: dep.core\n    description: Second.\n"
+	if _, ok := LocateAcceptanceItemRegion(dup, "dep.core"); ok {
+		t.Fatal("a duplicated id must fail closed")
+	}
+	if ids := AcceptanceItemIDs(dup); len(ids) != 2 {
+		t.Fatalf("listing must still show both duplicated ids, got %v", ids)
+	}
+}
+
+func TestAcceptanceItemRegionMissingFailsClosed(t *testing.T) {
+	if _, ok := LocateAcceptanceItemRegion(specWithTwoItems, "dep.none"); ok {
+		t.Fatal("an unknown id must fail closed")
+	}
+	if _, ok := LocateAcceptanceItemRegion("# U\n\nNo item set here.\n", "dep.core"); ok {
+		t.Fatal("an absent marker must fail closed")
+	}
+	// An empty id line is not an item and never a boundary.
+	empty := "# U\n\nacceptance_item_set:\n  - id:\n    description: No id.\n\n  - id: dep.core\n    description: Real.\n"
+	ids := AcceptanceItemIDs(empty)
+	if len(ids) != 1 || ids[0] != "dep.core" {
+		t.Fatalf("empty id must be skipped, got %v", ids)
+	}
+}
+
+func TestListMissingDepsAcceptanceItem(t *testing.T) {
+	core, ok := LocateAcceptanceItemRegion(specWithTwoItems, "dep.core")
+	if !ok {
+		t.Fatal("expected dep.core region")
+	}
+	aux, ok := LocateAcceptanceItemRegion(specWithTwoItems, "dep.aux")
+	if !ok {
+		t.Fatal("expected dep.aux region")
+	}
+	coreDep := "region:acceptance_item:dep.core:" + RegionCID(core.Text)
+	auxDep := "region:acceptance_item:dep.aux:" + RegionCID(aux.Text)
+	deps := []string{coreDep, auxDep}
+
+	if missing := ListMissingDeps(specWithTwoItems, deps); len(missing) != 0 {
+		t.Fatalf("expected no missing deps, got %v", missing)
+	}
+
+	// Editing dep.core stales only its own item dep.
+	edited := strings.Replace(specWithTwoItems, "The core behavior is provided.", "The core behavior is provided (edited).", 1)
+	missing := ListMissingDeps(edited, deps)
+	if len(missing) != 1 || missing[0] != coreDep {
+		t.Fatalf("expected only the dep.core dep missing, got %v", missing)
+	}
+
+	// Renaming an id makes the old declaration unlocatable (fail closed).
+	renamed := strings.Replace(specWithTwoItems, "- id: dep.core", "- id: dep.renamed", 1)
+	missing = ListMissingDeps(renamed, deps)
+	if len(missing) != 1 || missing[0] != coreDep {
+		t.Fatalf("expected the dep.core dep missing after rename, got %v", missing)
+	}
+
+	// A duplicated id fails closed even when the content is unchanged.
+	dup := strings.Replace(specWithTwoItems, "- id: dep.aux", "- id: dep.core", 1)
+	if missing := ListMissingDeps(dup, []string{auxDep}); len(missing) != 1 {
+		t.Fatalf("duplicate id must be reported missing, got %v", missing)
+	}
+
+	unknown := []string{"region:acceptance_item:dep.none:sha256:abc"}
+	if missing := ListMissingDeps(specWithTwoItems, unknown); len(missing) != 1 {
+		t.Fatalf("unknown item must be reported missing, got %v", missing)
 	}
 }

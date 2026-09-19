@@ -222,6 +222,12 @@ func TestGateEvidenceSections(t *testing.T) {
 	if !strings.Contains(out, "lines: 1-9") {
 		t.Fatalf("expected frontmatter region to end before the first ## heading, got:\n%s", out)
 	}
+	if !strings.Contains(out, "lines: 14-24") {
+		t.Fatalf("expected the final section to end at the last real line, got:\n%s", out)
+	}
+	if strings.Contains(out, "lines: 14-25") {
+		t.Fatalf("the artificial trailing newline must not be a line, got:\n%s", out)
+	}
 	// --sections is an informational probe: it must not declare anything.
 	// A whole-file chunk dep would make the output usable as a declaration,
 	// contradicting the documented "without declaring anything" semantics.
@@ -251,6 +257,46 @@ func TestGateEvidenceSectionFrontmatterCollision(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "reserved heading") {
 		t.Fatalf("expected reserved-heading guidance, got: %v", err)
+	}
+}
+
+func TestGateEvidenceSectionFrontmatterDuplicatedCollision(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	// Two real "frontmatter" sections are still a real collision: presence,
+	// not uniqueness, decides the reserved-spelling rejection.
+	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\n\n## frontmatter\n\nFirst.\n\n## frontmatter\n\nSecond.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--section", "frontmatter"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected an error for the duplicated reserved frontmatter collision")
+	}
+	if !strings.Contains(err.Error(), "reserved heading") {
+		t.Fatalf("expected reserved-heading guidance, got: %v", err)
+	}
+}
+
+func TestGateEvidenceSectionFrontmatterUnstructuredSpec(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	// A spec with no ## heading cannot be declared by section: the frontmatter
+	// spelling would silently alias the whole file.
+	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\n\n# Dep\n\nProse without sections.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--section", "frontmatter"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected a section declaration on a no-## spec to fail closed")
+	}
+	if !strings.Contains(err.Error(), "cannot be declared") {
+		t.Fatalf("expected no-##-heading guidance, got: %v", err)
 	}
 }
 
@@ -364,5 +410,171 @@ func TestGateEvidenceSectionFrontmatter(t *testing.T) {
 	expected := "region:section::" + contenthash.RegionCID(region.Text)
 	if !strings.Contains(out, expected) {
 		t.Fatalf("expected the frontmatter dep %q in output, got:\n%s", expected, out)
+	}
+}
+
+const gateEvidenceTwoItemSpec = "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: dep.aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+
+func writeGateEvidenceTwoItemSpec(t *testing.T, repoRoot string) string {
+	t.Helper()
+	rel := "docs/specs/units/candidate/unit_dep.md"
+	specPath := filepath.Join(repoRoot, filepath.FromSlash(rel))
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	if err := os.WriteFile(specPath, []byte(gateEvidenceTwoItemSpec), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return specPath
+}
+
+func TestGateEvidenceAcceptanceItem(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-item", "dep.aux"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence failed: %v\nstderr=%s", err, stderr.String())
+	}
+	text, _ := contenthash.FileText(specPath)
+	region, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.aux")
+	if !ok {
+		t.Fatal("expected dep.aux region")
+	}
+	expected := "region:acceptance_item:dep.aux:" + contenthash.RegionCID(region.Text)
+	if !strings.Contains(stdout.String(), expected) {
+		t.Fatalf("expected dep %q in output, got:\n%s", expected, stdout.String())
+	}
+}
+
+func TestGateEvidenceAcceptanceItemMissingAndDuplicate(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-item", "dep.none"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for a missing item id")
+	}
+	if !strings.Contains(err.Error(), "dep.none") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dup := strings.Replace(gateEvidenceTwoItemSpec, "- id: dep.aux", "- id: dep.core", 1)
+	if err := os.WriteFile(specPath, []byte(dup), 0644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-item", "dep.core"}, &stdout, &stderr); err == nil {
+		t.Fatal("expected error for a duplicated item id")
+	}
+}
+
+func TestGateEvidenceAcceptanceItemUnionWithWholeSet(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items", "--acceptance-item", "dep.core"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence failed: %v\nstderr=%s", err, stderr.String())
+	}
+	text, _ := contenthash.FileText(specPath)
+	setRegion, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatal("expected the whole-set region")
+	}
+	coreRegion, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.core")
+	if !ok {
+		t.Fatal("expected dep.core region")
+	}
+	for _, want := range []string{
+		"region:acceptance_items:" + contenthash.RegionCID(setRegion),
+		"region:acceptance_item:dep.core:" + contenthash.RegionCID(coreRegion.Text),
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("expected dep %q in output, got:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestGateEvidenceItemsAcrossSubheading(t *testing.T) {
+	// The set region ends at the next `##` heading; a `###` subheading inside
+	// the section is content and must not hide the items after it.
+	repoRoot := t.TempDir()
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
+	os.MkdirAll(filepath.Dir(specPath), 0755)
+	spec := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n## Dependencies\n\nNone.\n"
+	if err := os.WriteFile(specPath, []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--items"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence --items failed: %v\nstderr=%s", err, stderr.String())
+	}
+	text, _ := contenthash.FileText(specPath)
+	for _, id := range []string{"dep.core", "dep.aux"} {
+		region, ok := contenthash.LocateAcceptanceItemRegion(text, id)
+		if !ok {
+			t.Fatalf("expected region for %s", id)
+		}
+		if !strings.Contains(stdout.String(), "  - id: "+id) {
+			t.Fatalf("expected id %q in listing, got:\n%s", id, stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "    cid: "+contenthash.RegionCID(region.Text)) {
+			t.Fatalf("expected cid for %q in listing, got:\n%s", id, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err = runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-item", "dep.aux"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence --acceptance-item failed: %v\nstderr=%s", err, stderr.String())
+	}
+	auxRegion, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.aux")
+	if !ok {
+		t.Fatal("expected dep.aux region")
+	}
+	expected := "region:acceptance_item:dep.aux:" + contenthash.RegionCID(auxRegion.Text)
+	if !strings.Contains(stdout.String(), expected) {
+		t.Fatalf("expected dep %q in output, got:\n%s", expected, stdout.String())
+	}
+}
+
+func TestGateEvidenceItemsListing(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+
+	var stdout, stderr bytes.Buffer
+	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--items"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("gate-evidence failed: %v\nstderr=%s", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "items:") {
+		t.Fatalf("expected an items listing, got:\n%s", out)
+	}
+	text, _ := contenthash.FileText(specPath)
+	for _, id := range []string{"dep.core", "dep.aux"} {
+		region, ok := contenthash.LocateAcceptanceItemRegion(text, id)
+		if !ok {
+			t.Fatalf("expected region for %s", id)
+		}
+		if !strings.Contains(out, "  - id: "+id) {
+			t.Fatalf("expected id %q in listing, got:\n%s", id, out)
+		}
+		if !strings.Contains(out, "    cid: "+contenthash.RegionCID(region.Text)) {
+			t.Fatalf("expected cid for %q in listing, got:\n%s", id, out)
+		}
+	}
+	if !strings.Contains(out, "deps:") {
+		t.Fatalf("expected a deps block, got:\n%s", out)
+	}
+	depsIdx := strings.Index(out, "deps:")
+	if strings.Contains(out[depsIdx:], "- sha256:") || strings.Contains(out[depsIdx:], "region:") {
+		t.Fatalf("listing mode must not declare dependencies, got:\n%s", out)
 	}
 }

@@ -42,7 +42,8 @@ const (
 
 // boundaryMask returns the mask for the rolling-hash boundary test at a
 // given chunk size. The mask grows with size, so the probability of a
-// boundary rises as a chunk grows — chunk sizes stay near ~2 KB and the
+// boundary rises as a chunk grows — chunk sizes stay in the KB range
+// (roughly 2–4 KB on average, larger for big files) and the
 // boundary stays content-driven at every size.
 func boundaryMask(size int) uint64 {
 	switch {
@@ -253,16 +254,33 @@ func CIDsForRanges(fc FileChunks, ranges [][2]int) []string {
 // AcceptanceItemsRegion locates the acceptance_item_set structural region of
 // a spec's normalized text: from the exact marker line (a line whose trimmed
 // form is exactly `acceptance_item_set:` — a prose mention of the marker
-// elsewhere, even at line start, does not start the region) to the next
-// top-level heading (a line starting with `#` and no leading whitespace) or
-// the end of the text. Fenced code blocks (``` or ~~~) are content: a marker
-// or heading line inside one does not start or end the region. The region is
-// located by structure, not by line number, so inserting or deleting content
-// elsewhere only moves the region — its content identity is preserved. ok is
-// false when the marker is absent.
+// elsewhere, even at line start, does not start the region) to the next `##`
+// heading — the enclosing section's end — or the last real line of the text.
+// `###` and deeper headings belong to their `##` section and never terminate
+// the region, and the synthetic file-final newline is not a line (see
+// framework/validation_cache.md §Structural Region Dependencies). Fenced code
+// blocks (``` or ~~~) are content: a marker or heading line inside one does
+// not start or end the region. The region is located by structure, not by
+// line number, so inserting or deleting content elsewhere only moves the
+// region — its content identity is preserved. ok is false when the marker is
+// absent.
 func AcceptanceItemsRegion(text string) (region string, ok bool) {
 	lines := strings.Split(text, "\n")
-	startIdx := -1
+	startIdx, endIdx, ok := acceptanceItemsRegionBounds(lines)
+	if !ok {
+		return "", false
+	}
+	return strings.Join(lines[startIdx:endIdx], "\n"), true
+}
+
+// acceptanceItemsRegionBounds locates the acceptance_item_set structural
+// region of the split text and returns its line bounds: startIdx is the index
+// of the exact marker line, endIdx the index one past the region's last line
+// (the next `##` heading outside a fence, or the last real line of the text —
+// the synthetic file-final newline is not a line). ok is false when the marker
+// is absent.
+func acceptanceItemsRegionBounds(lines []string) (startIdx, endIdx int, ok bool) {
+	startIdx = -1
 	fence := fenceTracker{}
 	for i, line := range lines {
 		if fence.active {
@@ -276,9 +294,9 @@ func AcceptanceItemsRegion(text string) (region string, ok bool) {
 		fence.advance(line)
 	}
 	if startIdx == -1 {
-		return "", false
+		return 0, 0, false
 	}
-	endIdx := len(lines)
+	endIdx = len(lines)
 	fence = fenceTracker{}
 	for i := startIdx + 1; i < len(lines); i++ {
 		line := lines[i]
@@ -286,13 +304,136 @@ func AcceptanceItemsRegion(text string) (region string, ok bool) {
 			fence.advance(line)
 			continue
 		}
-		if line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && strings.HasPrefix(line, "#") {
+		if isSectionHeading(line) {
 			endIdx = i
 			break
 		}
 		fence.advance(line)
 	}
-	return strings.Join(lines[startIdx:endIdx], "\n"), true
+	// Normalized text ends with a newline, so Split yields one artificial
+	// trailing empty element. It is not a line: the file-final region must not
+	// claim it (the same rule SectionRegions applies).
+	if endIdx == len(lines) && len(lines) > 0 && lines[len(lines)-1] == "" {
+		endIdx--
+	}
+	return startIdx, endIdx, true
+}
+
+// AcceptanceItemRegion is one acceptance item's structural region: the item's
+// `- id:` line (outside a fenced code block) through the line before the next
+// item's `- id:` line, or the end of the acceptance item set, with trailing
+// blank lines excluded. The id line is part of the region. The region is
+// located by id, not by position, so reordering items preserves every item
+// region's content identity; renaming an id makes the old region unlocatable.
+type AcceptanceItemRegion struct {
+	ID    string // the item id with surrounding quotes removed
+	Start int    // 1-based line number of the region's first line (inclusive)
+	End   int    // 1-based line number of the region's last line (inclusive)
+	Text  string // the region content
+}
+
+// acceptanceItemID extracts the id from a line whose trimmed form starts with
+// `- id:`. ok is false when the line is not an id line or the id is empty.
+func acceptanceItemID(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "- id:") {
+		return "", false
+	}
+	id := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "- id:")), `"'`)
+	return id, id != ""
+}
+
+// acceptanceItemBoundaries returns the outer region bounds and the line
+// indexes (into lines) where acceptance item blocks start, in document order.
+// A boundary is a `- id:` line with a non-empty id outside a fenced code
+// block — a line inside a fence is content. ok is false when the
+// acceptance_item_set marker is absent.
+func acceptanceItemBoundaries(lines []string) (startIdx, endIdx int, boundaries []int, ok bool) {
+	startIdx, endIdx, ok = acceptanceItemsRegionBounds(lines)
+	if !ok {
+		return 0, 0, nil, false
+	}
+	fence := fenceTracker{}
+	for i := startIdx + 1; i < endIdx; i++ {
+		line := lines[i]
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if _, isID := acceptanceItemID(line); isID {
+			boundaries = append(boundaries, i)
+		}
+		fence.advance(line)
+	}
+	return startIdx, endIdx, boundaries, true
+}
+
+// AcceptanceItemRegions lists every acceptance item region of the given
+// normalized text in document order. A duplicated id yields multiple regions
+// in the list; LocateAcceptanceItemRegion fails closed on it.
+func AcceptanceItemRegions(text string) []AcceptanceItemRegion {
+	lines := strings.Split(text, "\n")
+	_, endIdx, boundaries, ok := acceptanceItemBoundaries(lines)
+	if !ok {
+		return nil
+	}
+	var regions []AcceptanceItemRegion
+	for i, start := range boundaries {
+		end := endIdx // exclusive line index
+		if i+1 < len(boundaries) {
+			end = boundaries[i+1]
+		}
+		// Trailing blank lines separate items — they are not item content,
+		// so reordering or re-spacing items never changes a region's CID.
+		for end-1 > start && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		id, _ := acceptanceItemID(lines[start])
+		regions = append(regions, AcceptanceItemRegion{
+			ID:    id,
+			Start: start + 1,
+			End:   end,
+			Text:  strings.Join(lines[start:end], "\n"),
+		})
+	}
+	return regions
+}
+
+// LocateAcceptanceItemRegion locates the acceptance item region with the
+// given id. ok is false when no item has that id, when more than one item has
+// it (the region cannot be located unambiguously), or when the
+// acceptance_item_set marker is absent — every failure mode fails closed.
+func LocateAcceptanceItemRegion(text, id string) (AcceptanceItemRegion, bool) {
+	var found AcceptanceItemRegion
+	seen := false
+	for _, r := range AcceptanceItemRegions(text) {
+		if r.ID != id {
+			continue
+		}
+		if seen {
+			return AcceptanceItemRegion{}, false
+		}
+		found = r
+		seen = true
+	}
+	if !seen {
+		return AcceptanceItemRegion{}, false
+	}
+	return found, true
+}
+
+// AcceptanceItemIDs returns the id values of all acceptance items in document
+// order, scanning only the acceptance_item_set structural region (the exact
+// marker line; fenced code blocks are content). Empty ids are skipped. This
+// is the single id-space scan shared by extraction (packet generation) and
+// item-region location (cache declarations) — the two must never disagree.
+func AcceptanceItemIDs(text string) []string {
+	regions := AcceptanceItemRegions(text)
+	ids := make([]string, 0, len(regions))
+	for _, r := range regions {
+		ids = append(ids, r.ID)
+	}
+	return ids
 }
 
 // RegionCID computes the content identifier of a structural region's text.
@@ -305,7 +446,8 @@ func RegionCID(regionText string) string {
 // heading section (the heading line through the line before the next `##`
 // heading; `###` and deeper headings belong to their `##` section). The
 // heading line itself is part of the region, so renaming a heading changes
-// the region's content identity.
+// the region's content identity. The artificial trailing newline guaranteed
+// by normalization is not a line, so the final region's End never names it.
 type SectionRegion struct {
 	Heading string // "" for the frontmatter region; the heading text without the `## ` prefix otherwise
 	Start   int    // 1-based line number of the region's first line (inclusive)
@@ -433,13 +575,22 @@ func isClosingFence(line string, char byte, length int) bool {
 // SectionRegions splits normalized text into section regions: one frontmatter
 // region (from the file start to the line before the first `##` heading) plus
 // one region per `##` heading (from the heading line to the line before the
-// next `##` heading, or the end of the text). A text with no `##` heading is
+// next `##` heading, or the last real line of the text — the artificial
+// trailing newline is not a line). A text with no `##` heading is
 // a single frontmatter region. Regions are located by structure, not by line
 // number, so inserting or deleting content elsewhere only moves a region —
 // its content identity is preserved. Fenced code blocks (``` or ~~~) are
 // content: heading lines inside them do not split regions.
 func SectionRegions(text string) []SectionRegion {
 	lines := strings.Split(text, "\n")
+	// Normalized text ends with a newline, so Split yields one artificial
+	// trailing empty element. It is not a line: the file-final region must not
+	// claim it (see framework/validation_cache.md §Structural Region
+	// Dependencies).
+	lineCount := len(lines)
+	if lineCount > 0 && lines[lineCount-1] == "" {
+		lineCount--
+	}
 	first := -1
 	fence := fenceTracker{}
 	for i, line := range lines {
@@ -454,7 +605,7 @@ func SectionRegions(text string) []SectionRegion {
 		fence.advance(line)
 	}
 	if first == -1 {
-		return []SectionRegion{{Start: 1, End: len(lines), Text: text}}
+		return []SectionRegion{{Start: 1, End: lineCount, Text: strings.Join(lines[:lineCount], "\n")}}
 	}
 	regions := []SectionRegion{{Heading: "", Start: 1, End: first, Text: strings.Join(lines[:first], "\n")}}
 	fence = fenceTracker{}
@@ -467,7 +618,11 @@ func SectionRegions(text string) []SectionRegion {
 			fence.advance(lines[j])
 			j++
 		}
-		regions = append(regions, SectionRegion{Heading: headingText(lines[i]), Start: i + 1, End: j, Text: strings.Join(lines[i:j], "\n")})
+		end := j
+		if end == len(lines) {
+			end = lineCount
+		}
+		regions = append(regions, SectionRegion{Heading: headingText(lines[i]), Start: i + 1, End: end, Text: strings.Join(lines[i:end], "\n")})
 		i = j
 	}
 	return regions
@@ -495,10 +650,35 @@ func LocateSectionRegion(text, heading string) (SectionRegion, bool) {
 	return found, true
 }
 
+// HasSectionHeading reports whether any section region has the given heading
+// text (without the `## ` prefix). Duplicated headings count as present — the
+// check is presence, not locatability (LocateSectionRegion is the locatability
+// judge and fails closed on duplicates). The empty heading matches the
+// frontmatter region. A real `## frontmatter` heading must be detected as
+// present even when duplicated, so the reserved spelling cannot silently bind
+// to the wrong region.
+func HasSectionHeading(text, heading string) bool {
+	for _, r := range SectionRegions(text) {
+		if r.Heading == heading {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSectionSplittable reports whether the text carries at least one real `##`
+// section heading, i.e. whether section regions can be located at all. A text
+// with no `##` heading is a single frontmatter region and cannot be declared
+// by section (framework/validation_cache.md §Structural Region Dependencies).
+func IsSectionSplittable(text string) bool {
+	return len(SectionRegions(text)) >= 2
+}
+
 // ListMissingDeps reports which declared dependencies no longer hold for the
 // given normalized text. Chunk CIDs are matched against the text's current
 // content-defined chunk set; structural region dependencies
-// (`region:acceptance_items:<cid>`) and section region dependencies
+// (`region:acceptance_items:<cid>` whole set, `region:acceptance_item:<id>:<cid>`
+// one item) and section region dependencies
 // (`region:section:<heading>:<cid>`) are re-located by structure and compared
 // by content identity. An unknown region type fails closed (reported
 // missing). Missing dependencies are returned in declaration order.
@@ -521,6 +701,17 @@ func ListMissingDeps(text string, deps []string) []string {
 			case "acceptance_items":
 				region, ok := AcceptanceItemsRegion(text)
 				if !ok || stripCIDPrefix(payload) != stripCIDPrefix(RegionCID(region)) {
+					missing = append(missing, dep)
+				}
+			case "acceptance_item":
+				idx := strings.LastIndex(payload, ":sha256:")
+				if idx < 0 {
+					missing = append(missing, dep)
+					continue
+				}
+				id, cid := payload[:idx], payload[idx+1:]
+				region, ok := LocateAcceptanceItemRegion(text, id)
+				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region.Text)) {
 					missing = append(missing, dep)
 				}
 			case "section":
@@ -549,9 +740,10 @@ func ListMissingDeps(text string, deps []string) []string {
 // DepsPresent reports whether every declared dependency still holds for the
 // given normalized text. Chunk CIDs are matched against the text's current
 // content-defined chunk set; structural region dependencies
-// (`region:<type>:<cid>`) are re-located by structure and compared by content
-// identity, so edits outside the region do not invalidate them. An unknown
-// region type fails closed. An empty deps list reports true.
+// (`region:<type>:<cid>` / `region:acceptance_item:<id>:<cid>`) are
+// re-located by structure and compared by content identity, so edits outside
+// the region do not invalidate them. An unknown region type fails closed. An
+// empty deps list reports true.
 func DepsPresent(text string, deps []string) bool {
 	return len(ListMissingDeps(text, deps)) == 0
 }

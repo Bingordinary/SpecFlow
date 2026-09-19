@@ -188,7 +188,7 @@ Flows that currently define an execution position:
 
 The list is a record of current wiring, not the coverage definition. Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, evidence rules, and record contract.
 
-Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
+Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. A contract-decided grade publishes the `confirmed` record its flow's procedure requires (§9.6 defines what that record means); rule validate's contract-decided P1 default is exempt and publishes no record (`framework/rule_validate_checklist.md` §Severity check). Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
 
 ### 9.3 Severity Boundaries
 
@@ -206,23 +206,23 @@ Each severity implies an impact claim. The check verifies the claim against read
 1. **Upgrade requires positive evidence** — the checker must read concrete code or document content proving the impact is larger than graded. "Possible" or "might" reasoning never upgrades.
 2. **Downgrade requires completed reading** — the checker must finish reading the target file and confirm the protective path exists, the consumer is absent, or the impact is contained. "Not found" without reading never downgrades.
 3. **No evidence → keep the original severity.** The check confirms grading; it does not re-guess it.
-4. **One level per adjustment, at most two iterations.** After an adjustment, run the boundary check for the new severity once. The second result is final. A check must not keep moving a finding across levels.
+4. **One level per adjustment, at most two iterations.** A confirmed first result is final. An adjusted first result must be followed by exactly one recorded boundary check for the new severity; that second result may confirm the new severity or adjust it by one more adjacent level, and is final. A check must not omit the required second record or keep moving a finding across levels.
 
 ### 9.5 Execution Rules
 
-1. The checker is the main agent (or reviewer) that already holds the flow's global context; no new subagent is launched for this check.
+1. The checker is the flow's designated confirmation executor. In a packet gate run (`validate`, `verify`, `review`) it is the independent cross packet executor — for rule validate the single checks-packet executor, since rules have no cross packet; the delegation to a gate packet is what keeps the check independent of the context that produced the findings. Advisory findings that never enter the cross synthesis — validate's Check 2 Step 4 advisory findings — are confirmed by the packet executor that produced the check line, and their records stay in the check-line trace; they are never machine `Severity confirmation:` records (see `framework/unit_validate_checklist.md` §Step 4 / §Severity check). In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. No sub-agent is launched for this check beyond the gate's own packet executors.
 2. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
 3. The check runs after existence validation (cross-check) and before the cache write or final output, so adjusted severities determine blocking status and cache content.
 4. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
 
 ### 9.6 Record Contract
 
-Every finding records one of:
+Every finding records a complete confirmation sequence:
 
-1. `confirmed` — severity stays after the boundary check
-2. `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason
+1. `confirmed` — the severity is final with one record: either it stayed after the first boundary check, or it is a contract-decided grade (§9.2 — deterministic mappings and unit validate's contract-decided P1 default) that this check does not re-grade, so no boundary check applies and the record states that the contract-decided grade stands. Rule validate's contract-decided P1 default is exempt from the record (see §9.2)
+2. `adjusted: {Px} → {Py}` — with the evidence file read and a one-line reason, followed by exactly one final record for `{Py}` (`confirmed` or one more adjacent `adjusted` result)
 
-The record must appear in the flow's output (or cache findings body) so the review can trace that the check actually ran. A finding with no record is treated as unconfirmed, unless the flow's procedure file explicitly exempts its severity level from this check; an exempted finding is reported as graded with no confirmation record, and may not claim a blocking status without first being re-graded through the confirmation path.
+Every record in the sequence must appear in the flow's output (or cache findings body) so the review can trace the confirmation the flow actually performed. A finding with no complete sequence is treated as unconfirmed, unless the flow's procedure file explicitly exempts its severity level from this check; an exempted finding is reported as graded with no confirmation record, and may not claim a blocking status without first being re-graded through the confirmation path.
 
 ---
 
@@ -386,12 +386,12 @@ Each finding contains:
 - `recommendation`: fix suggestion
 - `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
 
-**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its slice — per review dimension, for each file it read, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
+**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its packet — for the reviewed file, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
 
 ```
 Dependency scope:
-  {dimension}: {file}: {declaration}   # declaration = section heading, line ranges, or "all"
+  {check key}: {file}: {declaration}   # check key = the reviewed file path; declaration = section heading, line ranges, or "all"
 ```
 
-Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The main agent carries this report over and uses it when writing the review cache — section headings become `--section` declarations for the unit's own main spec (recorded per dimension in the cache's `checks` mapping), line ranges become `--ranges` (see `framework/spec_review_checklist.md` §8); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
+Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The packet report declares the scope; `gate-submit` validates it against that packet's `read_refs` (not merely the run-wide snapshot), and `gate-finalize` computes the CIDs and records the per-check breakdown (check key = the reviewed file path) in the cache's `checks` mapping — section headings become section-region dependencies for the unit's own main spec, line ranges become chunk declarations (see `framework/validation_cache.md` §Format → Per-check evidence); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
 ==ATOM_END:spec_review_standard==

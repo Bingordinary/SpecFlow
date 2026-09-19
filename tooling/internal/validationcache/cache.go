@@ -1,6 +1,6 @@
-// Package validationcache provides cache-freshness checking for validate@
-// and verify@results. Cache files are written by the agent (not the CLI)
-// and read by specflowctl promote to confirm that validate/verify are still fresh.
+// Package validationcache assembles, writes, and checks validate, verify, and
+// review cache records. gate-finalize writes records from accepted gate-run
+// artifacts; freshness and promote commands consume them mechanically.
 //
 // Cache files for units live under docs/specs/meta/validation/unit/{name}/.
 // Cache files for rules live under docs/specs/meta/validation/rule/{id}/.
@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -67,7 +68,18 @@ type cacheFile struct {
 	P2Count      int    `yaml:"p2_count"`
 	P3Count      int    `yaml:"p3_count"`
 	Timestamp    string `yaml:"timestamp"`
-	Files        []cacheFileEntry
+	// GateRun is the audit id of the gate run whose input snapshot this cache
+	// was finalized against (see framework/validation_cache.md §Format → Gate
+	// run binding). It is audit metadata only — freshness checks never read
+	// it, and it proves nothing about who executed the run. Absent on caches
+	// written before gate runs existed.
+	GateRun string `yaml:"gate_run,omitempty"`
+	// InvalidatedChecks records targeted P0/P1 contradictions discovered
+	// after this failure record was written. It is machine-owned recovery
+	// state, separate from the historical per-check status map.
+	InvalidatedChecks []string `yaml:"invalidated_checks,omitempty"`
+	invalidatedSeen   bool     `yaml:"-"`
+	Files             []cacheFileEntry
 }
 
 // cacheFileEntry is one file in a cache's files list. Hash is the whole-file
@@ -87,15 +99,17 @@ type cacheFileEntry struct {
 
 // checkEntry is one check's dependency declaration inside a files entry:
 // the check key (validate: "1"-"8" — unit and rule; verify: acceptance item
-// id; review: the batch/file dimension) and the CIDs the check's judgment
+// id; review: the reviewed file path) and the CIDs the check's judgment
 // actually depended on. The file-level Deps list of the same entry is the
 // union of all check deps plus any undeclared remainder — the promote gate
 // judges freshness on that union; the per-check breakdown exists for delta
 // scope derivation only. Status records the judgment outcome in a
 // failure-record cache (a fail/blocking cache — delta FAIL records, review
 // blocking caches, stable-only confirmation FAIL records): pass (judgment
-// ran and passed), fail (judgment ran and found P0/P1), carried (not re-run —
-// evidence unchanged from the pass baseline; delta records only). Status is
+// ran and passed), fail (judgment ran and retained at least one finding of
+// any severity — P0–P3; the gate result itself is decided by P0/P1), carried
+// (not re-run — evidence unchanged from the pass baseline; delta records
+// only). Status is
 // required on every fail/blocking cache (the recovery scope input); absent
 // status means pass only on a pass cache — the recovery never treats a
 // failure record without a status map as pass (it degrades to a full re-run).
@@ -152,7 +166,10 @@ func CheckValidateStable(repoRoot, unitName string) (CheckResult, error) {
 // into the baseline. Errors are returned as-is — promote fails loudly rather
 // than degrading the baseline.
 func ReadVerifyDeps(repoRoot, unitName string) (map[string][]string, error) {
-	cachePath := cacheFilePath(repoRoot, "unit", unitName, "verify_result.md")
+	cachePath, err := cacheFilePath(repoRoot, "unit", unitName, "verify_result.md")
+	if err != nil {
+		return nil, err
+	}
 	cache, err := readCache(cachePath)
 	if err != nil {
 		return nil, err
@@ -161,7 +178,7 @@ func ReadVerifyDeps(repoRoot, unitName string) (map[string][]string, error) {
 	for _, f := range cache.Files {
 		p := resolveEntryPath(repoRoot, f.Path)
 		if p == "" {
-			continue // logical reference with no current-layer file — nothing to record
+			continue // logical reference with no applicable file — nothing to record
 		}
 		deps[relPath(repoRoot, p)] = f.Deps
 	}
@@ -175,7 +192,10 @@ func ReadVerifyDeps(repoRoot, unitName string) (map[string][]string, error) {
 // the cache's files list, the agent skipped it.
 func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 	// 1. Read validate cache
-	cachePath := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
+	cachePath, err := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
+	if err != nil {
+		return CheckResult{}, err
+	}
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return CheckResult{
 			Fresh:    false,
@@ -190,6 +210,27 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 			Category: CategoryStale,
 			Reason:   fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err),
 		}, nil
+	}
+	return checkAppendicesInCache(repoRoot, unitName, cache)
+}
+
+// CheckAppendicesInRenderedCache applies the appendix coverage gate to a
+// rendered cache candidate before it is published to the canonical path.
+func CheckAppendicesInRenderedCache(repoRoot, unitName string, content []byte) (CheckResult, error) {
+	cache, err := parseCache(content)
+	if err != nil {
+		return CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("cannot read rendered validate cache: %v", err),
+		}, nil
+	}
+	return checkAppendicesInCache(repoRoot, unitName, cache)
+}
+
+func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckResult, error) {
+	if err := specpaths.ValidateTargetName("unit", unitName); err != nil {
+		return CheckResult{}, err
 	}
 	if cache.Command != "validate" {
 		return CheckResult{
@@ -363,7 +404,10 @@ func capitalize(s string) string {
 }
 
 func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error) {
-	cachePath := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
+	cachePath, err := cacheFilePath(repoRoot, "unit", unitName, "review_result.md")
+	if err != nil {
+		return CheckResult{}, err
+	}
 
 	// Existence check — review cache is required for promote
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
@@ -382,7 +426,10 @@ func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error)
 			Reason:   fmt.Sprintf("cannot read review cache: %v", err),
 		}, nil
 	}
+	return checkReviewCache(repoRoot, unitName, requiredTarget, cache)
+}
 
+func checkReviewCache(repoRoot, unitName, requiredTarget string, cache *cacheFile) (CheckResult, error) {
 	if cache.Command != "review" {
 		return CheckResult{
 			Fresh:    false,
@@ -469,7 +516,7 @@ func checkReview(repoRoot, unitName, requiredTarget string) (CheckResult, error)
 // FileEntry is the full content of one cache `files` entry. Hash and Deps are
 // computed by the tooling (contenthash), never supplied by the agent — a
 // manually transcribed CID is the transcription error source this package's
-// cache-write path eliminates. Checks carries the optional per-check
+// gate-finalize path eliminates. Checks carries the optional per-check
 // breakdown (see the Format section of framework/validation_cache.md).
 type FileEntry struct {
 	Path   string       `json:"path"`
@@ -487,28 +534,32 @@ type CheckEntry struct {
 }
 
 // EntryDeclaration is the agent-facing declaration for one cache files entry
-// (the input to cache-write). The agent declares the check keys, statuses,
+// (the input to gate-finalize). The agent declares the check keys, statuses,
 // and section-region headings / line ranges its judgment depended on; the
 // tooling resolves the declarations to CIDs and computes the whole-file hash.
 // Ranges uses the same START-END,START-END grammar as contenthash.ParseRanges.
 type EntryDeclaration struct {
-	Path            string             `json:"path"`
-	Checks          []CheckDeclaration `json:"checks,omitempty"`
-	Ranges          string             `json:"ranges,omitempty"`
-	Sections        []string           `json:"sections,omitempty"`
-	AcceptanceItems bool               `json:"acceptance_items,omitempty"`
+	Path              string             `json:"path"`
+	Checks            []CheckDeclaration `json:"checks,omitempty"`
+	Ranges            string             `json:"ranges,omitempty"`
+	Sections          []string           `json:"sections,omitempty"`
+	AcceptanceItems   bool               `json:"acceptance_items,omitempty"`
+	AcceptanceItemIDs []string           `json:"acceptance_item_ids,omitempty"`
 }
 
 // CheckDeclaration is one per-check declaration inside an entry declaration.
 // Status is pass | fail | carried (required on fail/blocking caches). When
-// Sections, Ranges, and AcceptanceItems are all empty the check declares a
-// whole-file dependency (conservative).
+// Sections, Ranges, AcceptanceItems, and AcceptanceItemIDs are all empty the
+// check declares a whole-file dependency (conservative). AcceptanceItems
+// (the whole set) and AcceptanceItemIDs (specific items) may be combined —
+// the deps are the union (declare-heavy conservatism).
 type CheckDeclaration struct {
-	Check           string   `json:"check"`
-	Status          string   `json:"status,omitempty"`
-	Sections        []string `json:"sections,omitempty"`
-	Ranges          string   `json:"ranges,omitempty"`
-	AcceptanceItems bool     `json:"acceptance_items,omitempty"`
+	Check             string   `json:"check"`
+	Status            string   `json:"status,omitempty"`
+	Sections          []string `json:"sections,omitempty"`
+	Ranges            string   `json:"ranges,omitempty"`
+	AcceptanceItems   bool     `json:"acceptance_items,omitempty"`
+	AcceptanceItemIDs []string `json:"acceptance_item_ids,omitempty"`
 }
 
 // BuildEntry computes the cache files entry for one declaration: the
@@ -516,12 +567,13 @@ type CheckDeclaration struct {
 // supplied by the agent. The file-level deps are the union of every declared
 // per-check dep plus the entry-level declaration (union discipline — the
 // promote gate fails closed on a per-check dep missing from the union). For a
-// logical reference the current-layer file (candidate first, stable fallback)
-// is used — the same resolution freshness checks use.
+// logical reference the applicable file is used: current-layer for units and
+// bound rules, stable-only for global rules. Freshness checks use the same
+// resolution.
 func BuildEntry(repoRoot string, d EntryDeclaration) (FileEntry, error) {
 	abs := resolveEntryPath(repoRoot, d.Path)
 	if abs == "" {
-		return FileEntry{}, fmt.Errorf("cannot resolve cache entry %q to a file in any layer", d.Path)
+		return FileEntry{}, fmt.Errorf("cannot resolve cache entry %q to an applicable file", d.Path)
 	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
@@ -530,7 +582,12 @@ func BuildEntry(repoRoot string, d EntryDeclaration) (FileEntry, error) {
 	text := specpaths.NormalizeText(string(data))
 
 	entry := FileEntry{Path: d.Path}
-	hash, entryDeps, err := declarationDeps(text, d.Path, d.Sections, d.Ranges, d.AcceptanceItems)
+	hash, entryDeps, err := declarationDeps(text, d.Path, declFields{
+		Sections:          d.Sections,
+		Ranges:            d.Ranges,
+		AcceptanceItems:   d.AcceptanceItems,
+		AcceptanceItemIDs: d.AcceptanceItemIDs,
+	})
 	if err != nil {
 		return FileEntry{}, err
 	}
@@ -544,7 +601,12 @@ func BuildEntry(repoRoot string, d EntryDeclaration) (FileEntry, error) {
 		if check == "" {
 			return FileEntry{}, fmt.Errorf("entry %q declares a check with an empty key", d.Path)
 		}
-		_, checkDeps, cerr := declarationDeps(text, d.Path, cd.Sections, cd.Ranges, cd.AcceptanceItems)
+		_, checkDeps, cerr := declarationDeps(text, d.Path, declFields{
+			Sections:          cd.Sections,
+			Ranges:            cd.Ranges,
+			AcceptanceItems:   cd.AcceptanceItems,
+			AcceptanceItemIDs: cd.AcceptanceItemIDs,
+		})
 		if cerr != nil {
 			return FileEntry{}, cerr
 		}
@@ -577,20 +639,33 @@ func BuildEntry(repoRoot string, d EntryDeclaration) (FileEntry, error) {
 	return entry, nil
 }
 
+// declFields carries the declared dependency scope of one entry or check
+// declaration (the zero value declares nothing — the whole-file fallback).
+// The declared forms are merged into one deps list: line ranges (chunk CIDs),
+// section regions (`region:section:...`), the whole acceptance item set
+// (`region:acceptance_items:...`), and specific acceptance items
+// (`region:acceptance_item:<id>:...`).
+type declFields struct {
+	Sections          []string
+	Ranges            string
+	AcceptanceItems   bool
+	AcceptanceItemIDs []string
+}
+
 // declarationDeps computes the dependency CIDs for one declaration (entry or
-// check level): the declared line ranges (chunk CIDs), section regions
-// (region:section:...), and the acceptance-items region
-// (region:acceptance_items:...) are merged into one deps list. When none are
-// given, the whole file is declared (conservative).
-func declarationDeps(text, path string, sections []string, ranges string, acceptanceItems bool) (string, []string, error) {
+// check level). When nothing is declared, the whole file is declared
+// (conservative). A declared section heading or acceptance item id that
+// cannot be located — missing or duplicated — fails closed: the declaration
+// would otherwise silently bind to the wrong region or none at all.
+func declarationDeps(text, path string, d declFields) (string, []string, error) {
 	fc := contenthash.ChunkText(text)
 
-	parsed, perr := contenthash.ParseRanges(ranges)
+	parsed, perr := contenthash.ParseRanges(d.Ranges)
 	if perr != nil {
 		return "", nil, perr
 	}
 
-	nothingDeclared := len(parsed) == 0 && len(sections) == 0 && !acceptanceItems
+	nothingDeclared := len(parsed) == 0 && len(d.Sections) == 0 && !d.AcceptanceItems && len(d.AcceptanceItemIDs) == 0
 	if nothingDeclared {
 		var deps []string
 		for _, c := range fc.Chunks {
@@ -608,19 +683,30 @@ func declarationDeps(text, path string, sections []string, ranges string, accept
 		}
 		deps = append(deps, contenthash.CIDsForRanges(fc, parsed)...)
 	}
-	for _, heading := range sections {
+	for _, heading := range d.Sections {
 		dep, derr := sectionDep(text, heading)
 		if derr != nil {
 			return "", nil, derr
 		}
 		deps = append(deps, dep)
 	}
-	if acceptanceItems {
+	if d.AcceptanceItems {
 		region, ok := contenthash.AcceptanceItemsRegion(text)
 		if !ok {
 			return "", nil, fmt.Errorf("acceptance_item_set region not found in %s — cannot declare the structural dependency", path)
 		}
 		deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
+	}
+	for _, id := range d.AcceptanceItemIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return "", nil, fmt.Errorf("declaration for %s carries an empty acceptance item id", path)
+		}
+		region, ok := contenthash.LocateAcceptanceItemRegion(text, id)
+		if !ok {
+			return "", nil, fmt.Errorf("acceptance item %q not found in %s (or declared more than once) — list the items with `specflowctl gate-evidence --items`", id, path)
+		}
+		deps = append(deps, "region:acceptance_item:"+id+":"+contenthash.RegionCID(region.Text))
 	}
 	return contenthash.FileHashText(text), deps, nil
 }
@@ -628,22 +714,32 @@ func declarationDeps(text, path string, sections []string, ranges string, accept
 // sectionDep computes a section-region dependency (or the frontmatter region
 // for the "frontmatter" spelling) for the given normalized text.
 func sectionDep(text, heading string) (string, error) {
+	requested := heading
 	if heading == "frontmatter" {
-		if _, ok := contenthash.LocateSectionRegion(text, "frontmatter"); ok {
-			return "", fmt.Errorf("reserved heading %q: the file has a real ## frontmatter section, which cannot be declared by --section frontmatter (the spelling names the pre-heading region) — rename the section", heading)
+		// Presence, not uniqueness: a duplicated real heading must be
+		// rejected the same way as a single one, otherwise the reserved
+		// spelling silently binds to the pre-heading region.
+		if contenthash.HasSectionHeading(text, "frontmatter") {
+			return "", fmt.Errorf("reserved heading %q: the file has a real ## frontmatter section, which cannot be declared by --section frontmatter (the spelling names the pre-heading region) — rename the section", requested)
 		}
 		heading = ""
 	}
+	if heading == "" && !contenthash.IsSectionSplittable(text) {
+		// A spec with no ## heading cannot be declared by section at all —
+		// the frontmatter spelling would silently alias the whole file
+		// (framework/validation_cache.md §Structural Region Dependencies).
+		return "", fmt.Errorf("section %q cannot be declared: the file has no ## heading — section regions cannot be located; restructure the spec per framework/spec_writing_guide.md §13 or declare the whole file", requested)
+	}
 	region, ok := contenthash.LocateSectionRegion(text, heading)
 	if !ok {
-		return "", fmt.Errorf("section %q not found (or declared more than once) — list the sections with gate-evidence --sections", heading)
+		return "", fmt.Errorf("section %q not found (or declared more than once) — list the sections with gate-evidence --sections", requested)
 	}
 	return "region:section:" + heading + ":" + contenthash.RegionCID(region.Text), nil
 }
 
-// CacheWrite is the cache-write parameter bundle. The agent supplies the
-// judgment fields (Result, Basis, severity counts, Target, Timestamp, Body,
-// Entries); Hash/Deps inside Entries are computed by the tooling.
+// CacheWrite is the internal gate-finalize rendering bundle. gate-finalize
+// derives the judgment fields from accepted packet artifacts and computes the
+// Hash/Deps inside Entries from their validated declarations.
 type CacheWrite struct {
 	Command   string
 	Unit      string
@@ -657,17 +753,41 @@ type CacheWrite struct {
 	P2Count   int
 	P3Count   int
 	Timestamp string
+	// GateRun is the audit id of the gate run that bracketed this write
+	// (printed by gate-plan, verified by gate-finalize). Rendering is
+	// audit-only — see cacheFile.GateRun.
+	GateRun string
+	// InvalidatedChecks is used only when rendering an existing failure
+	// record's machine-owned targeted invalidation state. Gate-finalize leaves
+	// it empty, which clears every invalidation the completed plan re-ran.
+	InvalidatedChecks []string
+	// Judgments is the machine-readable synthesis baseline JSON. It is stored
+	// in a marked comment block before the human-readable body.
+	Judgments string
 	Body      string
 	Entries   []FileEntry
 }
 
-// WriteCache writes a cache file (frontmatter + body) for the given gate and
-// target. targetKind is "unit" or "rule". The files entry list is rendered
-// from the computed evidence; the body is appended verbatim after the closing
-// frontmatter delimiter. It returns the absolute path written.
-func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, error) {
+// RenderCache renders a complete cache candidate in memory. It performs no
+// filesystem writes; gate-finalize validates these bytes before publishing.
+func RenderCache(targetName string, w CacheWrite) ([]byte, error) {
+	content, err := renderCacheFrontmatter(w, targetName)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(w.Judgments) != "" {
+		content += "\n<!-- GATE_JUDGMENTS_BEGIN\n" + strings.TrimSpace(w.Judgments) + "\nGATE_JUDGMENTS_END -->"
+	}
+	content += "\n" + w.Body
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return []byte(content), nil
+}
+
+func cacheFileName(command string) (string, error) {
 	var fileName string
-	switch w.Command {
+	switch command {
 	case "validate":
 		fileName = "validate_result.md"
 	case "verify":
@@ -675,29 +795,66 @@ func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, 
 	case "review":
 		fileName = "review_result.md"
 	default:
-		return "", fmt.Errorf("unknown cache command %q", w.Command)
+		return "", fmt.Errorf("unknown cache command %q", command)
 	}
+	return fileName, nil
+}
 
-	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
-		return "", fmt.Errorf("create cache directory: %w", err)
-	}
-
-	content, err := renderCacheFrontmatter(w, targetName)
+// PublishCache atomically replaces the canonical cache with bytes that have
+// already passed the full candidate checks. A failed temp write or rename
+// leaves any existing canonical cache untouched.
+func PublishCache(repoRoot, targetKind, targetName, command string, content []byte) (string, error) {
+	fileName, err := cacheFileName(command)
 	if err != nil {
 		return "", err
 	}
-	content += "\n" + w.Body
-	if !strings.HasSuffix(content, "\n") {
-		content += "\n"
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err != nil {
+		return "", err
 	}
-	if err := os.WriteFile(cachePath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write cache: %w", err)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return "", fmt.Errorf("create cache directory: %w", err)
 	}
+	tmp, err := os.CreateTemp(filepath.Dir(cachePath), ".specflow-cache-*")
+	if err != nil {
+		return "", fmt.Errorf("create cache temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("write cache temp file: %w", err)
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("set cache temp file mode: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("close cache temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		return "", fmt.Errorf("publish cache: %w", err)
+	}
+	removeTemp = false
 	return cachePath, nil
 }
 
-// CacheResult mirrors CheckResult for cache-write output.
+// WriteCache is the direct renderer/publisher used by test and setup code.
+// Gate-finalize uses RenderCache, validates the candidate, then PublishCache.
+func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, error) {
+	content, err := RenderCache(targetName, w)
+	if err != nil {
+		return "", err
+	}
+	return PublishCache(repoRoot, targetKind, targetName, w.Command, content)
+}
+
+// CacheResult mirrors CheckResult for gate-finalize output.
 type CacheResult struct {
 	Fresh    bool
 	Category CheckCategory
@@ -741,6 +898,40 @@ func CheckWriteResult(repoRoot, targetKind, targetName, command, target string) 
 	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason}, nil
 }
 
+// CheckRenderedCache runs the same parsed-cache checks used by fresh and
+// promote, but against an in-memory candidate that has not been published.
+func CheckRenderedCache(repoRoot, targetKind, targetName, command, target string, content []byte) (CacheResult, error) {
+	cache, err := parseCache(content)
+	if err != nil {
+		return CacheResult{}, err
+	}
+	var res CheckResult
+	switch {
+	case targetKind == "unit" && command == "validate" && target == "stable":
+		res, err = checkCacheObject(repoRoot, "unit", targetName, "validate", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", targetName), cache)
+	case targetKind == "unit" && command == "validate":
+		res, err = checkCacheObject(repoRoot, "unit", targetName, "validate", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", targetName), cache)
+	case targetKind == "unit" && command == "verify" && target == "stable":
+		res, err = checkCacheObject(repoRoot, "unit", targetName, "verify", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", targetName), cache)
+	case targetKind == "unit" && command == "verify":
+		res, err = checkCacheObject(repoRoot, "unit", targetName, "verify", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", targetName), cache)
+	case targetKind == "unit" && command == "review" && target == "stable":
+		res, err = checkReviewCache(repoRoot, targetName, "stable", cache)
+	case targetKind == "unit" && command == "review":
+		res, err = checkReviewCache(repoRoot, targetName, "", cache)
+	case targetKind == "rule" && command == "validate" && target == "stable":
+		res, err = checkCacheObject(repoRoot, "rule", targetName, "validate", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/rules/stable/%s.md", targetName), cache)
+	case targetKind == "rule" && command == "validate":
+		res, err = checkCacheObject(repoRoot, "rule", targetName, "validate", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/rules/candidate/%s.md", targetName), cache)
+	default:
+		return CacheResult{}, fmt.Errorf("unsupported gate %q for %s target %q", command, targetKind, targetName)
+	}
+	if err != nil {
+		return CacheResult{}, err
+	}
+	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason}, nil
+}
+
 // renderCacheFrontmatter renders the YAML frontmatter of a cache file
 // (delimiter lines included). The files block is rendered in the canonical
 // order: file entries in declaration order, hash, per-check checks block,
@@ -765,6 +956,15 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 	fmt.Fprintf(&b, "p2_count: %d\n", w.P2Count)
 	fmt.Fprintf(&b, "p3_count: %d\n", w.P3Count)
 	fmt.Fprintf(&b, "timestamp: %q\n", w.Timestamp)
+	if w.GateRun != "" {
+		fmt.Fprintf(&b, "gate_run: %s\n", w.GateRun)
+	}
+	if len(w.InvalidatedChecks) > 0 {
+		b.WriteString("invalidated_checks:\n")
+		for _, key := range w.InvalidatedChecks {
+			fmt.Fprintf(&b, "  - %q\n", key)
+		}
+	}
 	if len(w.Entries) == 0 {
 		b.WriteString("files: []\n")
 		b.WriteString("---")
@@ -824,7 +1024,10 @@ type CacheSummary struct {
 // "validate_result.md") and returns its frontmatter summary. It returns
 // an error only if the file is missing or malformed.
 func ReadCacheSummary(repoRoot, targetKind, targetName, fileName string) (*CacheSummary, error) {
-	path := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	path, err := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err != nil {
+		return nil, err
+	}
 	cache, err := readCache(path)
 	if err != nil {
 		return nil, err
@@ -860,32 +1063,194 @@ func deleteCache(repoRoot, targetKind, targetName, command string) error {
 		return fmt.Errorf("unknown cache command %q", command)
 	}
 
-	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		return nil // already gone
 	}
 	return os.Remove(cachePath)
 }
 
+const (
+	InvalidationNoCache       = "no_cache"
+	InvalidationCacheDeleted  = "cache_deleted"
+	InvalidationRecordUpdated = "failure_record_invalidated"
+)
+
+// TargetedInvalidation reports how a targeted P0/P1 changed the canonical
+// cache. The caller owns cross-module coordination such as invalidating an
+// already-open gate run; this function owns only the cache transition.
+type TargetedInvalidation struct {
+	Action string
+	Path   string
+	Added  []string
+}
+
+// InvalidateGateCache records a targeted P0/P1 against one gate identity.
+// A pass cache is deleted. A failure record is preserved byte-for-byte except
+// for its sorted, duplicate-free invalidated_checks frontmatter list. A
+// missing cache is safe: there is no complete result that could satisfy the
+// gate, and a future full run is already required.
+//
+// The caller must hold the repository gate-run mutation lock so this cache
+// transition is serialized with planning and finalization.
+func InvalidateGateCache(repoRoot, targetKind, targetName, command, target string, checkKeys []string) (*TargetedInvalidation, error) {
+	fileName, err := cacheFileName(command)
+	if err != nil {
+		return nil, err
+	}
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(cachePath)
+	if os.IsNotExist(err) {
+		return &TargetedInvalidation{Action: InvalidationNoCache, Path: relPath(repoRoot, cachePath)}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read gate cache for targeted invalidation: %w", err)
+	}
+	cache, err := parseCache(data)
+	if err != nil {
+		return nil, fmt.Errorf("read gate cache for targeted invalidation: %w", err)
+	}
+	if cache.Command != command || cache.Unit != targetName {
+		return nil, fmt.Errorf("cache identity is %s@%s, expected %s@%s", cache.Command, cache.Unit, command, targetName)
+	}
+	cacheTarget := cache.Target
+	if cacheTarget == "" {
+		cacheTarget = "candidate"
+	}
+	if cacheTarget != target {
+		return nil, fmt.Errorf("cache target is %q, expected %q", cacheTarget, target)
+	}
+
+	keys, err := normalizedInvalidationKeys(checkKeys)
+	if err != nil {
+		return nil, err
+	}
+	if cache.Result == "pass" && !cache.Blocking {
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("delete pass cache after targeted P0/P1: %w", err)
+		}
+		return &TargetedInvalidation{Action: InvalidationCacheDeleted, Path: relPath(repoRoot, cachePath)}, nil
+	}
+	if cache.Result != "fail" || !cache.blockingSeen || !cache.Blocking {
+		return nil, fmt.Errorf("cache declarations cannot be invalidated safely (result: %q, blocking: %t)", cache.Result, cache.Blocking)
+	}
+
+	existing := make(map[string]bool, len(cache.InvalidatedChecks))
+	for _, key := range cache.InvalidatedChecks {
+		existing[key] = true
+	}
+	all := append([]string(nil), cache.InvalidatedChecks...)
+	var added []string
+	for _, key := range keys {
+		if existing[key] {
+			continue
+		}
+		existing[key] = true
+		all = append(all, key)
+		added = append(added, key)
+	}
+	sort.Strings(all)
+	rewritten, err := rewriteInvalidatedChecks(string(data), all)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := PublishCache(repoRoot, targetKind, targetName, command, []byte(rewritten)); err != nil {
+		return nil, err
+	}
+	return &TargetedInvalidation{
+		Action: InvalidationRecordUpdated,
+		Path:   relPath(repoRoot, cachePath),
+		Added:  added,
+	}, nil
+}
+
+func normalizedInvalidationKeys(checkKeys []string) ([]string, error) {
+	seen := map[string]bool{}
+	var keys []string
+	for _, raw := range checkKeys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			return nil, fmt.Errorf("targeted invalidation check key must not be empty")
+		}
+		if !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("at least one targeted invalidation check key is required")
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+func rewriteInvalidatedChecks(content string, keys []string) (string, error) {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return "", fmt.Errorf("cannot rewrite targeted invalidations: missing leading frontmatter delimiter")
+	}
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return "", fmt.Errorf("cannot rewrite targeted invalidations: missing closing frontmatter delimiter")
+	}
+
+	block := make([]string, 0, len(keys)+1)
+	block = append(block, "invalidated_checks:")
+	for _, key := range keys {
+		block = append(block, fmt.Sprintf("  - %q", key))
+	}
+	out := make([]string, 0, len(lines)+len(block))
+	out = append(out, lines[0])
+	inserted := false
+	for i := 1; i < end; i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "invalidated_checks:" || trimmed == "invalidated_checks: []" {
+			for i+1 < end && strings.HasPrefix(lines[i+1], "  - ") {
+				i++
+			}
+			continue
+		}
+		if trimmed == "files:" && !inserted {
+			out = append(out, block...)
+			inserted = true
+		}
+		out = append(out, lines[i])
+	}
+	if !inserted {
+		out = append(out, block...)
+	}
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n"), nil
+}
+
 // StaleScope is the mechanism-derived delta scope for one cache file:
 // which declared dependencies went stale and which check keys declared
-// them. Degrades reports that every declared check is affected — the
-// delta re-run would be nearly a full re-run (for rule targets it
-// reports that the rule file itself — a whole-file declaration — went
-// stale, which stales every rule-body check). Unclaimed lists the file
-// entries whose stale dependencies no check declared — the caller must
-// map them to the affected checks by the command's logical-reference
-// rules or by semantic derivation (see framework/verification_scope.md
+// them. Unclaimed lists the file entries whose stale dependencies no check
+// declared — the planner maps them to checks by the command's fixed
+// associations where one exists and degrades conservatively to the full
+// packet set where none does (see framework/verification_scope.md
 // §Delta Runs). Unreadable lists the file entries that could not be
 // resolved or read during derivation — the promote gate reports those;
 // delta derivation works only on files that exist.
 type StaleScope struct {
-	StaleDeps  []string // declared dependency CIDs that no longer hold (deduplicated, declaration order)
-	Affected   []string // check keys with at least one stale dependency (deduplicated, declaration order)
-	Unclaimed  []string // file entries with stale deps no check declared (deduplicated, declaration order)
-	Unreadable []string // file entries that could not be resolved or read (deduplicated, declaration order)
-	HasChecks  bool     // the cache carries per-check declarations (false → file-level derivation only)
-	Degrades   bool     // every declared check is affected — delta ≈ full re-run
+	StaleDeps   []string // declared dependency CIDs that no longer hold (deduplicated, declaration order)
+	Affected    []string // check keys with at least one stale dependency (deduplicated, declaration order)
+	Unclaimed   []string // file entries with stale deps no check declared (deduplicated, declaration order)
+	Unreadable  []string // file entries that could not be resolved or read (deduplicated, declaration order)
+	Untrackable []string // file entries with no dependency chunks over a file with content — the freshness chain can never see them fresh (deduplicated, declaration order)
+	HasChecks   bool     // the cache carries per-check declarations (false → no check association exists)
 }
 
 // checksUnionSubsetOfDeps verifies that every per-check dependency CID in a
@@ -924,27 +1289,28 @@ func checksUnionSubsetOfDeps(entry cacheFileEntry) (bool, string) {
 // whose path resolves to nothing (unresolved logical references) and files
 // that cannot be read are reported in Unreadable — the promote gate reports
 // those; delta derivation works only on files that exist. A cache without
-// per-check declarations (HasChecks false) leaves Affected empty — the
-// caller then derives the scope from the file-level stale sources instead.
-// Entries whose stale dependencies no check declared are reported in
-// Unclaimed — the caller maps them to checks by rule (logical references)
-// or semantic derivation; they are never silently carried over. For rule
-// targets, staleness of the rule file itself (a whole-file declaration)
-// sets Degrades: any change to it stales every rule-body check.
+// per-check declarations (HasChecks false) leaves Affected empty and reports
+// its stale deps as unclaimed: no check association exists, so the planner
+// degrades to the full packet set. Entries whose stale dependencies no check
+// declared are reported in Unclaimed — the planner maps them by the
+// command's fixed associations (logical references) where one exists and
+// degrades conservatively where none does; they are never silently carried
+// over.
 func DeriveStaleScope(repoRoot, targetKind, targetName, command string) (*StaleScope, error) {
-	cachePath := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
+	if err != nil {
+		return nil, err
+	}
 	cache, err := readCache(cachePath)
 	if err != nil {
 		return nil, err
 	}
 	scope := &StaleScope{}
-	var declared []string
-	declaredSeen := make(map[string]bool)
 	affectedSeen := make(map[string]bool)
 	staleSeen := make(map[string]bool)
 	unclaimedSeen := make(map[string]bool)
 	unreadableSeen := make(map[string]bool)
-	ruleFileStale := false
+	untrackableSeen := make(map[string]bool)
 	for _, entry := range cache.Files {
 		if ok, why := checksUnionSubsetOfDeps(entry); !ok {
 			return nil, fmt.Errorf("cache format error in %s: per-check deps missing from the file-level deps union: %s", entry.Path, why)
@@ -966,6 +1332,18 @@ func DeriveStaleScope(repoRoot, targetKind, targetName, command string) (*StaleS
 			continue
 		}
 		text := specpaths.NormalizeText(string(data))
+		if len(entry.Deps) == 0 && len(contenthash.ChunkText(text).Chunks) > 0 {
+			// No dependency chunks over a file with content: no check can
+			// attribute this entry's staleness and the gate's file-level
+			// freshness chain can never see it fresh. Report it so the plan
+			// degrades conservatively instead of carrying an untrackable
+			// entry (see framework/verification_scope.md §Delta Runs →
+			// Incremental scope).
+			if !untrackableSeen[entry.Path] {
+				untrackableSeen[entry.Path] = true
+				scope.Untrackable = append(scope.Untrackable, entry.Path)
+			}
+		}
 		if len(entry.Checks) == 0 {
 			missing := contenthash.ListMissingDeps(text, entry.Deps)
 			for _, m := range missing {
@@ -978,18 +1356,11 @@ func DeriveStaleScope(repoRoot, targetKind, targetName, command string) (*StaleS
 				unclaimedSeen[entry.Path] = true
 				scope.Unclaimed = append(scope.Unclaimed, entry.Path)
 			}
-			if targetKind == "rule" && isRuleFileEntry(repoRoot, fullPath, targetName) && len(missing) > 0 {
-				ruleFileStale = true
-			}
 			continue
 		}
 		scope.HasChecks = true
 		claimed := make(map[string]bool)
 		for _, c := range entry.Checks {
-			if !declaredSeen[c.Check] {
-				declaredSeen[c.Check] = true
-				declared = append(declared, c.Check)
-			}
 			missing := contenthash.ListMissingDeps(text, c.Deps)
 			for _, m := range missing {
 				if !staleSeen[m] {
@@ -1024,47 +1395,7 @@ func DeriveStaleScope(repoRoot, targetKind, targetName, command string) (*StaleS
 			scope.Unclaimed = append(scope.Unclaimed, entry.Path)
 		}
 	}
-	// Degradation: the affected set always includes the cross-check — its
-	// delta re-run is unconditional (see framework/verification_scope.md
-	// §Delta Runs) — so the re-run covers every declared check exactly when
-	// every declared non-cross check is affected. The cross key is a
-	// recording convention: whether it is declared or fresh does not change
-	// the derived scope (see framework/validation_cache.md §Format). A cache
-	// declaring only "cross" degrades too — the single re-run check covers
-	// the whole declaration.
-	if scope.HasChecks && len(declared) > 0 {
-		nonCrossDeclared := 0
-		nonCrossAffected := 0
-		for _, k := range declared {
-			if k != "cross" {
-				nonCrossDeclared++
-			}
-		}
-		for _, k := range scope.Affected {
-			if k != "cross" {
-				nonCrossAffected++
-			}
-		}
-		if nonCrossDeclared == 0 || nonCrossAffected == nonCrossDeclared {
-			scope.Degrades = true
-		}
-	}
-	if targetKind == "rule" && ruleFileStale {
-		scope.Degrades = true
-	}
 	return scope, nil
-}
-
-// isRuleFileEntry reports whether a resolved cache entry path is the rule
-// file itself (candidate or stable layer). The rule file is a whole-file
-// declaration in rule validate caches, so its staleness stales every
-// rule-body check. The comparison runs on the resolved path (filepath.Clean),
-// so the documented path spellings (`./` prefixes, absolute paths, platform
-// separators) are all equivalent here, matching resolveEntryPath.
-func isRuleFileEntry(repoRoot, fullPath, ruleID string) bool {
-	clean := filepath.Clean(fullPath)
-	return clean == filepath.Clean(resolvePath(repoRoot, fmt.Sprintf("docs/specs/rules/candidate/%s.md", ruleID))) ||
-		clean == filepath.Clean(resolvePath(repoRoot, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID)))
 }
 
 // DeleteCache removes a specific cache file (validate or verify) for the given unit.
@@ -1148,7 +1479,10 @@ func fileFreshness(repoRoot string, entry cacheFileEntry) (state fileFreshnessSt
 }
 
 func checkCache(repoRoot, targetKind, targetName, command, fileName string, validResults []string, requiredMainFile string) (CheckResult, error) {
-	cachePath := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, fileName)
+	if err != nil {
+		return CheckResult{}, err
+	}
 
 	// Check existence
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
@@ -1168,7 +1502,10 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 			Reason:   fmt.Sprintf("cannot read %s cache: %v", command, err),
 		}, nil
 	}
+	return checkCacheObject(repoRoot, targetKind, targetName, command, validResults, requiredMainFile, cache)
+}
 
+func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
 	// Validate command matches
 	if cache.Command != command {
 		return CheckResult{
@@ -1302,7 +1639,22 @@ func readCache(path string) (*cacheFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseCache(data)
+}
 
+// unquoteScalar canonicalizes one frontmatter scalar: surrounding quotation
+// marks are removed, then surrounding whitespace (including whitespace the
+// quotes had contained) is trimmed. Every scalar the parser records goes
+// through this one helper, so downstream comparisons and joins always see one
+// value form — a quoted-with-whitespace spelling like `status: " fail "` can
+// never be treated as a valid value by one consumer and an ignored value by
+// another (see framework/verification_scope.md §Delta Runs → Failure
+// recovery).
+func unquoteScalar(value string) string {
+	return strings.TrimSpace(strings.Trim(strings.TrimSpace(value), "\"'"))
+}
+
+func parseCache(data []byte) (*cacheFile, error) {
 	content := string(data)
 
 	// Extract YAML frontmatter between --- markers
@@ -1331,10 +1683,32 @@ func readCache(path string) (*cacheFile, error) {
 	inFilesDepsBlock := false
 	inChecksBlock := false
 	inCheckDepsBlock := false
+	inInvalidatedChecks := false
+	invalidatedChecksSeen := false
 
 	for _, line := range fmLines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
+			continue
+		}
+		if inInvalidatedChecks {
+			if strings.HasPrefix(line, "  - ") {
+				key := unquoteScalar(strings.TrimPrefix(line, "  - "))
+				if key == "" {
+					return nil, fmt.Errorf("cache file has an empty `invalidated_checks` entry")
+				}
+				cache.InvalidatedChecks = append(cache.InvalidatedChecks, key)
+				continue
+			}
+			inInvalidatedChecks = false
+		}
+		if trimmed == "invalidated_checks:" || trimmed == "invalidated_checks: []" {
+			if invalidatedChecksSeen {
+				return nil, fmt.Errorf("cache file declares `invalidated_checks` more than once")
+			}
+			invalidatedChecksSeen = true
+			cache.invalidatedSeen = true
+			inInvalidatedChecks = trimmed == "invalidated_checks:"
 			continue
 		}
 
@@ -1354,8 +1728,7 @@ func readCache(path string) (*cacheFile, error) {
 				inChecksBlock = false
 				inCheckDepsBlock = false
 				currentCheck = nil
-				path := strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:"))
-				path = strings.Trim(path, "\"'")
+				path := unquoteScalar(strings.TrimPrefix(trimmed, "- path:"))
 				currentEntry = &cacheFileEntry{Path: path}
 				cache.Files = append(cache.Files, *currentEntry)
 				continue
@@ -1363,8 +1736,7 @@ func readCache(path string) (*cacheFile, error) {
 			if inChecksBlock && strings.HasPrefix(trimmed, "- check:") {
 				// New check entry inside a checks block
 				inCheckDepsBlock = false
-				check := strings.TrimSpace(strings.TrimPrefix(trimmed, "- check:"))
-				check = strings.Trim(check, "\"'")
+				check := unquoteScalar(strings.TrimPrefix(trimmed, "- check:"))
 				currentCheck = &checkEntry{Check: check}
 				if currentEntry != nil {
 					currentEntry.Checks = append(currentEntry.Checks, *currentCheck)
@@ -1374,8 +1746,7 @@ func readCache(path string) (*cacheFile, error) {
 			}
 			if inCheckDepsBlock {
 				if strings.HasPrefix(trimmed, "-") {
-					dep := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
-					dep = strings.Trim(dep, "\"'")
+					dep := unquoteScalar(strings.TrimPrefix(trimmed, "-"))
 					if currentCheck != nil && currentEntry != nil {
 						currentCheck.Deps = append(currentCheck.Deps, dep)
 						currentEntry.Checks[len(currentEntry.Checks)-1] = *currentCheck
@@ -1390,8 +1761,7 @@ func readCache(path string) (*cacheFile, error) {
 			// before or after its deps block — the non-list line above already
 			// ended the deps block when the status follows it.
 			if inChecksBlock && strings.HasPrefix(trimmed, "status:") && currentCheck != nil && currentEntry != nil {
-				status := strings.TrimSpace(strings.TrimPrefix(trimmed, "status:"))
-				status = strings.Trim(status, "\"'")
+				status := unquoteScalar(strings.TrimPrefix(trimmed, "status:"))
 				currentCheck.Status = status
 				currentEntry.Checks[len(currentEntry.Checks)-1] = *currentCheck
 				cache.Files[len(cache.Files)-1] = *currentEntry
@@ -1399,8 +1769,7 @@ func readCache(path string) (*cacheFile, error) {
 			}
 			if inFilesDepsBlock {
 				if strings.HasPrefix(trimmed, "-") {
-					dep := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
-					dep = strings.Trim(dep, "\"'")
+					dep := unquoteScalar(strings.TrimPrefix(trimmed, "-"))
 					if currentEntry != nil {
 						currentEntry.Deps = append(currentEntry.Deps, dep)
 						cache.Files[len(cache.Files)-1] = *currentEntry
@@ -1424,8 +1793,7 @@ func readCache(path string) (*cacheFile, error) {
 				continue
 			}
 			if strings.HasPrefix(trimmed, "hash:") && currentEntry != nil {
-				hash := strings.TrimSpace(strings.TrimPrefix(trimmed, "hash:"))
-				hash = strings.Trim(hash, "\"'")
+				hash := unquoteScalar(strings.TrimPrefix(trimmed, "hash:"))
 				currentEntry.Hash = hash
 				cache.Files[len(cache.Files)-1] = *currentEntry
 				continue
@@ -1444,8 +1812,7 @@ func readCache(path string) (*cacheFile, error) {
 			parts := strings.SplitN(trimmed, ":", 2)
 			if len(parts) == 2 {
 				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				value = strings.Trim(value, "\"'")
+				value := unquoteScalar(parts[1])
 				switch key {
 				case "command":
 					cache.Command = value
@@ -1476,6 +1843,8 @@ func readCache(path string) (*cacheFile, error) {
 					cache.P3Count, _ = strconv.Atoi(value)
 				case "timestamp":
 					cache.Timestamp = value
+				case "gate_run":
+					cache.GateRun = value
 				}
 			}
 		}
@@ -1483,6 +1852,19 @@ func readCache(path string) (*cacheFile, error) {
 
 	if cache.Command == "" || cache.Result == "" {
 		return nil, fmt.Errorf("cache file missing required frontmatter fields (command, result)")
+	}
+	if cache.invalidatedSeen {
+		if cache.Result != "fail" || !cache.blockingSeen || !cache.Blocking {
+			return nil, fmt.Errorf("`invalidated_checks` is valid only on a failure record (result: fail, blocking: true)")
+		}
+		for i, key := range cache.InvalidatedChecks {
+			if strings.TrimSpace(key) == "" {
+				return nil, fmt.Errorf("cache file has an empty `invalidated_checks` entry")
+			}
+			if i > 0 && cache.InvalidatedChecks[i-1] >= key {
+				return nil, fmt.Errorf("cache file `invalidated_checks` must be sorted and duplicate-free")
+			}
+		}
 	}
 
 	return cache, nil
@@ -1518,7 +1900,10 @@ func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
 	report := &InheritReport{Unit: unitName}
 	for _, cmd := range []string{"validate", "verify", "review"} {
 		entry := InheritEntry{Command: cmd}
-		cachePath := cacheFilePath(repoRoot, "unit", unitName, cmd+"_result.md")
+		cachePath, err := cacheFilePath(repoRoot, "unit", unitName, cmd+"_result.md")
+		if err != nil {
+			return nil, err
+		}
 		data, err := os.ReadFile(cachePath)
 		if os.IsNotExist(err) {
 			entry.Reason = "no confirmation cache to inherit"
@@ -1593,7 +1978,10 @@ func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCac
 	report := &PromoteCachesToStableReport{}
 	for _, cmd := range commands {
 		entry := PromoteCachesToStableEntry{}
-		cachePath := cacheFilePath(repoRoot, targetKind, targetName, cmd+"_result.md")
+		cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, cmd+"_result.md")
+		if err != nil {
+			return nil, err
+		}
 		data, err := os.ReadFile(cachePath)
 		if os.IsNotExist(err) {
 			entry.Reason = fmt.Sprintf("%s cache not found — nothing to rewrite", cmd)
@@ -1706,9 +2094,22 @@ func fileHash(path string) (string, error) {
 }
 
 // cacheFilePath builds the absolute path to a cache file.
-// targetKind is "unit" or "rule".
-func cacheFilePath(repoRoot, targetKind, targetName, fileName string) string {
-	return filepath.Join(repoRoot, "docs/specs/meta/validation", targetKind, targetName, fileName)
+// targetKind is "unit" or "rule". Target names are external input, so they are
+// validated before path construction and the joined path is asserted to stay
+// inside the kind's validation directory: no name (or file name) can traverse
+// into another location (see tooling/README.md §Governed write zones and
+// framework/validation_cache.md §Format).
+func cacheFilePath(repoRoot, targetKind, targetName, fileName string) (string, error) {
+	if err := specpaths.ValidateTargetName(targetKind, targetName); err != nil {
+		return "", err
+	}
+	root := filepath.Join(repoRoot, "docs/specs/meta/validation", targetKind)
+	cachePath := filepath.Join(root, targetName, fileName)
+	rel, err := filepath.Rel(root, cachePath)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("cache path for %s %q escapes %s", targetKind, targetName, filepath.Join("docs/specs/meta/validation", targetKind))
+	}
+	return cachePath, nil
 }
 
 func relPath(repoRoot, absPath string) string {
@@ -1747,12 +2148,12 @@ func resolvePath(repoRoot, filePath string) string {
 }
 
 // resolveEntryPath resolves a cache file entry to an absolute file path.
-// Logical references (`unit:<name>` / `unit:<name>:appendix:<file>` /
-// `rule:<id>`) resolve to the current-layer file (candidate first, stable
-// fallback), so a promote of the referenced unit or rule does not stale
-// caches whose dependency content is unchanged. Physical paths resolve
-// directly. Returns "" when a logical reference resolves to no file in any
-// layer.
+// Logical unit/appendix and bound-rule references resolve to the current-layer
+// file (candidate first, stable fallback), so promotion does not stale caches
+// whose dependency content is unchanged. Logical global-rule references
+// resolve stable-only because candidate globals are unpublished. Physical
+// paths resolve directly. Returns "" when a logical reference resolves to no
+// applicable file.
 func resolveEntryPath(repoRoot, path string) string {
 	if strings.HasPrefix(path, "unit:") {
 		rest := strings.TrimPrefix(path, "unit:")
@@ -1855,4 +2256,139 @@ func parseUnitSpecPath(clean string) (unitSpecRef, bool) {
 		return unitSpecRef{unitName: strings.TrimPrefix(strings.TrimSuffix(rest, ".md"), "unit_")}, true
 	}
 	return unitSpecRef{}, false
+}
+
+// GateBaseline is the read-only view of a gate's existing cache, used by
+// gate-plan to derive delta/repair packet sets and by gate-finalize to merge
+// carried-over evidence. A missing cache is Exists=false.
+type GateBaseline struct {
+	Exists            bool
+	Mode              string
+	Basis             string
+	Result            string
+	Target            string
+	Blocking          bool
+	InvalidatedChecks []string        // persisted targeted P0/P1 contradictions
+	HasChecks         bool            // the cache carries per-check declarations
+	Checks            []BaselineCheck // declared checks (declaration order, first occurrence)
+	Entries           []FileEntry     // full entries, for carried-over evidence merging
+	Judgments         string          // machine-readable synthesis baseline JSON
+}
+
+// BaselineCheck is one declared check key and its recorded status. Status is
+// "" on a pass cache (absent means pass); on a failure record it is
+// pass | fail | carried.
+type BaselineCheck struct {
+	Check  string
+	Status string
+}
+
+// ReadGateBaseline reads the gate's cache file and returns its baseline view.
+// A missing cache returns Exists=false with no error; a malformed cache is an
+// error (the caller fails closed).
+func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBaseline, error) {
+	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		return &GateBaseline{}, nil
+	}
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return nil, fmt.Errorf("read gate baseline %s: %w", cachePath, err)
+	}
+	baseline := &GateBaseline{
+		Exists:            true,
+		Mode:              cache.Mode,
+		Basis:             cache.Basis,
+		Result:            cache.Result,
+		Target:            cache.Target,
+		Blocking:          cache.Blocking,
+		InvalidatedChecks: append([]string(nil), cache.InvalidatedChecks...),
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil, fmt.Errorf("read gate baseline judgments %s: %w", cachePath, err)
+	}
+	baseline.Judgments = extractJudgments(string(data))
+	seen := map[string]bool{}
+	for _, e := range cache.Files {
+		entry := FileEntry{Path: e.Path, Hash: e.Hash, Deps: e.Deps}
+		for _, c := range e.Checks {
+			entry.Checks = append(entry.Checks, CheckEntry{Check: c.Check, Status: c.Status, Deps: c.Deps})
+			baseline.HasChecks = true
+			if !seen[c.Check] {
+				seen[c.Check] = true
+				baseline.Checks = append(baseline.Checks, BaselineCheck{Check: c.Check, Status: c.Status})
+			}
+		}
+		baseline.Entries = append(baseline.Entries, entry)
+	}
+	return baseline, nil
+}
+
+func extractJudgments(content string) string {
+	const begin = "<!-- GATE_JUDGMENTS_BEGIN\n"
+	const end = "\nGATE_JUDGMENTS_END -->"
+	start := strings.Index(content, begin)
+	if start < 0 {
+		return ""
+	}
+	start += len(begin)
+	finish := strings.Index(content[start:], end)
+	if finish < 0 {
+		return ""
+	}
+	return strings.TrimSpace(content[start : start+finish])
+}
+
+// BuildEntryFromChecks computes a cache files entry from per-check
+// declarations only (the packet-report model): every check declares its
+// scope, and the file-level deps are the ordered union of the check deps.
+// Unlike BuildEntry there is no entry-level declaration, so the whole-file
+// fallback applies only to a check that itself declares no scope (the "all"
+// spelling).
+func BuildEntryFromChecks(repoRoot, entryPath string, checks []CheckDeclaration) (FileEntry, error) {
+	if len(checks) == 0 {
+		return FileEntry{}, fmt.Errorf("entry %q has no check declarations", entryPath)
+	}
+	abs := resolveEntryPath(repoRoot, entryPath)
+	if abs == "" {
+		return FileEntry{}, fmt.Errorf("cannot resolve cache entry %q to an applicable file", entryPath)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("read %s: %w", entryPath, err)
+	}
+	text := specpaths.NormalizeText(string(data))
+
+	entry := FileEntry{Path: entryPath}
+	var ordered []string
+	seen := map[string]bool{}
+	for _, cd := range checks {
+		check := strings.TrimSpace(cd.Check)
+		if check == "" {
+			return FileEntry{}, fmt.Errorf("entry %q declares a check with an empty key", entryPath)
+		}
+		hash, checkDeps, cerr := declarationDeps(text, entryPath, declFields{
+			Sections:          cd.Sections,
+			Ranges:            cd.Ranges,
+			AcceptanceItems:   cd.AcceptanceItems,
+			AcceptanceItemIDs: cd.AcceptanceItemIDs,
+		})
+		if cerr != nil {
+			return FileEntry{}, cerr
+		}
+		entry.Hash = hash
+		entry.Checks = append(entry.Checks, CheckEntry{Check: check, Status: cd.Status, Deps: checkDeps})
+		for _, dep := range checkDeps {
+			if !seen[dep] {
+				seen[dep] = true
+				ordered = append(ordered, dep)
+			}
+		}
+	}
+	entry.Deps = ordered
+	return entry, nil
 }

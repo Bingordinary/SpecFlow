@@ -9,7 +9,7 @@
 //  6. Version/ref consistency
 //  7. Body layer-path check (candidate-layer spec paths)
 //  8. Dependency cycle check (unit_refs graph has no cycles through the unit)
-//  9. Region locatability (section regions are splittable and locatable)
+//  9. Region locatability (section and acceptance item regions are splittable and locatable)
 package specvalidation
 
 import (
@@ -19,9 +19,9 @@ import (
 
 // CheckResult describes one check outcome.
 type CheckResult struct {
-	Name    string       // check name
-	Status  CheckStatus  // pass or fail
-	Details string       // human-readable diagnostic
+	Name    string      // check name
+	Status  CheckStatus // pass or fail
+	Details string      // human-readable diagnostic
 }
 
 // CheckStatus is the outcome of a single check.
@@ -45,9 +45,9 @@ func (s CheckStatus) String() string {
 
 // Result holds all check results for a candidate validation.
 type Result struct {
-	Unit       string
-	Passed     bool
-	Checks     []CheckResult
+	Unit   string
+	Passed bool
+	Checks []CheckResult
 }
 
 // ValidateCandidate runs all 9 checks on the given unit's candidate spec.

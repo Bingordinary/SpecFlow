@@ -29,8 +29,14 @@ func runDeps(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("resolve repo root: %w", err)
 	}
 	scope := strings.TrimSpace(strings.ToLower(*scopePtr))
-	unitName := strings.TrimSpace(*unitPtr)
-	ruleID := strings.TrimSpace(*rulePtr)
+	unitName, err := requireTargetName("unit", *unitPtr)
+	if err != nil {
+		return err
+	}
+	ruleID, err := requireTargetName("rule", *rulePtr)
+	if err != nil {
+		return err
+	}
 
 	if unitName != "" && ruleID != "" {
 		writeDepsUsage(stderr)

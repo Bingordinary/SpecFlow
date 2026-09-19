@@ -3,6 +3,10 @@
 # Checks that all target files contain the correct atom content between markers.
 # Returns non-zero exit code if any drift is detected.
 #
+# Also runs a content regression guard on the report skeleton (atom: report_skeleton):
+# the pre-fix claim "fixes applied —" must not reappear in the atom source or its targets,
+# and the three fix-lifecycle state tokens must exist in the atom source.
+#
 # Usage: ./verify.sh [--verbose]
 #   --verbose   Show per-file verification status
 
@@ -16,6 +20,7 @@ PASSED=0
 DRIFTED=0
 MISSING_MARKER=0
 ERRORS=0
+REGRESSION_ERRORS=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -90,6 +95,64 @@ verify_atom() {
   done
 }
 
+# Content regression guard for the report skeleton (issue #38).
+# A gate report is always produced before any fix is applied, so an actionable finding's
+# report-time Next step must use the `finding_open` wording — it must never claim the fix
+# was executed. The old pre-fix claim "fixes applied —" must not reappear anywhere in the
+# atom source or its target files (also catches command-specific templates outside the
+# atom block), and the three fix-lifecycle state tokens must exist in the atom source.
+check_report_skeleton_regression() {
+  local atom_id="report_skeleton"
+  local source_file=""
+  local targets=""
+  local found=false
+
+  while IFS='|' read -r id src tgts; do
+    [[ "$id" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$id" ]] && continue
+    id=$(echo "$id" | xargs)
+    [[ "$id" = "$atom_id" ]] || continue
+    source_file="$SCRIPT_DIR/$(echo "$src" | xargs)"
+    targets=$(echo "$tgts" | xargs)
+    found=true
+  done < "$MANIFEST"
+
+  if ! $found; then
+    echo "ERROR: Atom '$atom_id' not found in manifest — cannot run the report wording regression guard"
+    ERRORS=$((ERRORS + 1))
+    return
+  fi
+
+  local files=("$source_file")
+  IFS=',' read -ra TARGET_ARR <<< "$targets"
+  local target_rel
+  for target_rel in "${TARGET_ARR[@]}"; do
+    target_rel=$(echo "$target_rel" | xargs)
+    files+=("$REPO_ROOT/$target_rel")
+  done
+
+  local f
+  for f in "${files[@]}"; do
+    if [ ! -f "$f" ]; then
+      echo "ERROR: Regression guard target file not found: $f (atom: $atom_id)"
+      ERRORS=$((ERRORS + 1))
+      continue
+    fi
+    if grep -qiF -- 'fixes applied —' "$f" || grep -qiF -- 'fixes applied -' "$f"; then
+      echo "REGRESSION $f — pre-fix claim 'fixes applied —' found (an actionable finding's report must use the finding_open wording)"
+      REGRESSION_ERRORS=$((REGRESSION_ERRORS + 1))
+    fi
+  done
+
+  local token
+  for token in finding_open fixed_pending_recheck verified; do
+    if ! grep -qF -- "$token" "$source_file"; then
+      echo "REGRESSION $source_file — required fix-lifecycle state token '$token' missing"
+      REGRESSION_ERRORS=$((REGRESSION_ERRORS + 1))
+    fi
+  done
+}
+
 echo "=== Atom Verification ==="
 echo "Manifest: $MANIFEST"
 echo "Repo root: $REPO_ROOT"
@@ -106,13 +169,18 @@ while IFS='|' read -r atom_id source_file targets; do
 done < "$MANIFEST"
 
 echo ""
+echo "=== Report wording regression guard ==="
+check_report_skeleton_regression
+
+echo ""
 echo "=== Summary ==="
 echo "Passed:   $PASSED"
 echo "Drifted:  $DRIFTED"
 echo "Missing:  $MISSING_MARKER"
 echo "Errors:   $ERRORS"
+echo "Regression failures: $REGRESSION_ERRORS"
 
-if [ "$DRIFTED" -gt 0 ] || [ "$MISSING_MARKER" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+if [ "$DRIFTED" -gt 0 ] || [ "$MISSING_MARKER" -gt 0 ] || [ "$ERRORS" -gt 0 ] || [ "$REGRESSION_ERRORS" -gt 0 ]; then
   echo "RESULT: VERIFICATION FAILED"
   exit 1
 else

@@ -1,11 +1,33 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func validateTestRepo(t *testing.T) string {
+	t.Helper()
+	repoRoot := createCLITestRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, "tooling"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "tooling", "go.mod"), []byte("module example/source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repoRoot
+}
+
+func mustValidateWrite(t *testing.T, repoRoot, path string) validateResult {
+	t.Helper()
+	result, err := validateWrite(repoRoot, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
 
 func chdir(t *testing.T, dir string) {
 	t.Helper()
@@ -24,7 +46,7 @@ func chdir(t *testing.T, dir string) {
 }
 
 func TestValidateWriteRelativePaths(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
+	repoRoot := validateTestRepo(t)
 	chdir(t, repoRoot)
 
 	cases := []struct {
@@ -43,7 +65,7 @@ func TestValidateWriteRelativePaths(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := validateWrite(repoRoot, tc.path)
+			result := mustValidateWrite(t, repoRoot, tc.path)
 			if result.Allowed != tc.allowed {
 				t.Fatalf("validateWrite(%q) = allowed %t, want %t (reason: %s)", tc.path, result.Allowed, tc.allowed, result.Reason)
 			}
@@ -52,7 +74,7 @@ func TestValidateWriteRelativePaths(t *testing.T) {
 }
 
 func TestValidateWriteAbsolutePathsWithinRepo(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
+	repoRoot := validateTestRepo(t)
 
 	cases := []struct {
 		name    string
@@ -70,7 +92,7 @@ func TestValidateWriteAbsolutePathsWithinRepo(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			abs := filepath.Join(repoRoot, filepath.FromSlash(tc.rel))
-			result := validateWrite(repoRoot, abs)
+			result := mustValidateWrite(t, repoRoot, abs)
 			if result.Allowed != tc.allowed {
 				t.Fatalf("validateWrite(abs %q) = allowed %t, want %t (reason: %s)", abs, result.Allowed, tc.allowed, result.Reason)
 			}
@@ -79,7 +101,7 @@ func TestValidateWriteAbsolutePathsWithinRepo(t *testing.T) {
 }
 
 func TestValidateWriteAbsolutePathOutsideRepo(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
+	repoRoot := validateTestRepo(t)
 	tmp := t.TempDir()
 
 	paths := []string{
@@ -90,7 +112,7 @@ func TestValidateWriteAbsolutePathOutsideRepo(t *testing.T) {
 
 	for _, p := range paths {
 		t.Run(p, func(t *testing.T) {
-			result := validateWrite(repoRoot, p)
+			result := mustValidateWrite(t, repoRoot, p)
 			if !result.Allowed {
 				t.Fatalf("validateWrite(%q) = allowed %t, want true (outside repo root)", p, result.Allowed)
 			}
@@ -102,7 +124,7 @@ func TestValidateWriteAbsolutePathOutsideRepo(t *testing.T) {
 }
 
 func TestValidateWriteEscapingRelativePathFromRepoRoot(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
+	repoRoot := validateTestRepo(t)
 	chdir(t, repoRoot)
 
 	cases := []struct {
@@ -116,7 +138,7 @@ func TestValidateWriteEscapingRelativePathFromRepoRoot(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
-			result := validateWrite(repoRoot, tc.path)
+			result := mustValidateWrite(t, repoRoot, tc.path)
 			if result.Allowed != tc.allowed {
 				t.Fatalf("validateWrite(%q) = allowed %t, want %t (reason: %s)", tc.path, result.Allowed, tc.allowed, result.Reason)
 			}
@@ -128,7 +150,7 @@ func TestValidateWriteEscapingRelativePathFromRepoRoot(t *testing.T) {
 }
 
 func TestValidateWriteEscapingRelativePathFromSubdir(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
+	repoRoot := validateTestRepo(t)
 	subdir := filepath.Join(repoRoot, "tooling")
 	if err := os.MkdirAll(subdir, 0755); err != nil {
 		t.Fatal(err)
@@ -150,10 +172,38 @@ func TestValidateWriteEscapingRelativePathFromSubdir(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
-			result := validateWrite(repoRoot, tc.path)
+			result := mustValidateWrite(t, repoRoot, tc.path)
 			if result.Allowed != tc.allowed {
 				t.Fatalf("validateWrite(%q) = allowed %t, want %t (reason: %s)", tc.path, result.Allowed, tc.allowed, result.Reason)
 			}
 		})
+	}
+}
+
+func TestValidateWriteCLIUsesInstalledProjectFrameworkRoot(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, "specflow", "tooling"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "specflow", "tooling", "go.mod"), []byte("module example/installed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repoRoot, "specflow", "framework", "concepts.md")
+	var stdout, stderr bytes.Buffer
+	err := runValidate([]string{"write", "--repo-root", repoRoot, "--path", path}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "write denied") {
+		t.Fatalf("installed framework path must be denied, err=%v stdout=%s", err, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "allowed: false") || !strings.Contains(stdout.String(), "specflow/framework") {
+		t.Fatalf("unexpected installed-layout result:\n%s", stdout.String())
+	}
+}
+
+func TestValidateWriteCLIFailsClosedWithoutLayout(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	var stdout, stderr bytes.Buffer
+	err := runValidate([]string{"write", "--repo-root", repoRoot, "--path", "src/app.go"}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "layout not found") {
+		t.Fatalf("missing layout must fail closed, got %v", err)
 	}
 }

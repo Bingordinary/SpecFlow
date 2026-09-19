@@ -26,10 +26,19 @@ import (
 // contenthash.AcceptanceItemsRegion) is declared as a structural dependency:
 // the region's content CID is emitted with a `region:acceptance_items:` tag.
 // Structural regions are located by structure rather than line numbers, so
-// edits outside the region — even inside the same content-defined chunk —
-// do not invalidate the dependency. This is the precise declaration mode for
-// cross-unit checks, which depend only on a dependency unit's acceptance
-// item set.
+// edits outside the region — even inside the same content-defined chunk — do
+// not invalidate the dependency. This is the precise declaration mode for
+// checks whose judgment covers the item set as a whole (cross-unit checks
+// reading a dependency unit's items, validate's acceptance coverage check).
+//
+// With --acceptance-item <id>, one acceptance item's structural region (see
+// contenthash.LocateAcceptanceItemRegion) is declared: the region's content
+// CID is emitted with a `region:acceptance_item:<id>:<cid>` tag. The region
+// is located by item id, so reordering items does not invalidate the
+// dependency, while editing or renaming the item does (a missing or
+// duplicated id fails closed). --acceptance-item is repeatable; the declared
+// regions are emitted together with the chunk CIDs as one deps list. This is
+// the precise declaration mode for verify's per-item judgments.
 //
 // With --section <heading>, a section region (see contenthash.SectionRegions)
 // is declared as a structural dependency: the region's content CID is emitted
@@ -42,35 +51,45 @@ import (
 // With --sections, every section region of the file is listed (heading, line
 // range, content CID) without declaring anything — the informational output
 // that lets an agent name the exact section regions its judgment depends on.
+// --items lists every acceptance item region (id, line range, content CID)
+// the same way.
 func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-evidence", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	filePtr := fs.String("file", "", "file path relative to repo root")
 	rangesPtr := fs.String("ranges", "", "line ranges actually read, e.g. 120-180,300-320 (1-based, inclusive); empty means the whole file")
-	acceptanceItemsPtr := fs.Bool("acceptance-items", false, "declare the acceptance_item_set structural region as the dependency (with no --ranges it replaces the whole-file declaration)")
+	acceptanceItemsPtr := fs.Bool("acceptance-items", false, "declare the whole acceptance_item_set structural region as the dependency (with no --ranges it replaces the whole-file declaration)")
 	sectionsPtr := fs.Bool("sections", false, "list every section region of the file (heading, line range, CID) without declaring dependencies")
 	sectionPtr := repeatedString{}
 	fs.Var(&sectionPtr, "section", "declare a section region as the dependency by heading text (repeatable)")
+	acceptanceItemPtr := repeatedString{}
+	fs.Var(&acceptanceItemPtr, "acceptance-item", "declare an acceptance item's structural region as the dependency by item id (repeatable)")
+	itemsPtr := fs.Bool("items", false, "list every acceptance item region of the file (id, line range, CID) without declaring dependencies")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if strings.TrimSpace(*filePtr) == "" {
-		fmt.Fprintln(stderr, "Usage: specflowctl gate-evidence --file <path> [--ranges START-END,START-END] [--acceptance-items] [--section HEADING]... [--sections] [--repo-root PATH]")
+		fmt.Fprintln(stderr, "Usage: specflowctl gate-evidence --file <path> [--ranges START-END,START-END] [--acceptance-items] [--acceptance-item ID]... [--section HEADING]... [--sections] [--items] [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Computes dependency evidence for a file read during validate/verify/review.")
 		fmt.Fprintln(stderr, "The agent declares the line ranges it actually depended on; the CLI maps")
 		fmt.Fprintln(stderr, "them onto content-defined chunks and outputs the chunk CIDs to record")
 		fmt.Fprintln(stderr, "in the cache file. An empty --ranges declares a whole-file dependency.")
-		fmt.Fprintln(stderr, "--acceptance-items declares the acceptance_item_set structural region")
+		fmt.Fprintln(stderr, "--acceptance-items declares the whole acceptance_item_set structural region")
 		fmt.Fprintln(stderr, "(structure-located, independent of chunk boundaries and line numbers) as the")
 		fmt.Fprintln(stderr, "dependency. With an empty --ranges the region replaces the whole-file")
 		fmt.Fprintln(stderr, "declaration; with --ranges both are declared.")
+		fmt.Fprintln(stderr, "--acceptance-item ID declares one acceptance item's region (located by id,")
+		fmt.Fprintln(stderr, "so reordering items keeps it valid); repeatable. Missing or duplicated ids")
+		fmt.Fprintln(stderr, "fail closed.")
 		fmt.Fprintln(stderr, "--section HEADING declares the section region with that heading text")
 		fmt.Fprintln(stderr, "(structure-located by heading, independent of line numbers) as the")
 		fmt.Fprintln(stderr, "dependency; repeatable. --sections lists every section region without")
 		fmt.Fprintln(stderr, "declaring dependencies — use its output to name --section values.")
+		fmt.Fprintln(stderr, "--items lists every acceptance item region (id, line range, CID) without")
+		fmt.Fprintln(stderr, "declaring dependencies — use its output to name --acceptance-item values.")
 		return errors.New("--file is required")
 	}
 
@@ -95,7 +114,7 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 	}
 
 	var deps []string
-	if len(ranges) == 0 && !*acceptanceItemsPtr && len(sectionPtr) == 0 && !*sectionsPtr {
+	if len(ranges) == 0 && !*acceptanceItemsPtr && len(sectionPtr) == 0 && len(acceptanceItemPtr) == 0 && !*sectionsPtr && !*itemsPtr {
 		// Nothing declared: the whole file is the dependency (conservative).
 		for _, c := range fc.Chunks {
 			deps = append(deps, c.CID)
@@ -111,27 +130,48 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 			}
 			deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
 		}
-		for _, heading := range sectionPtr {
+		for _, id := range acceptanceItemPtr {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				return fmt.Errorf("--acceptance-item requires a non-empty item id (%s)", relPath)
+			}
+			region, ok := contenthash.LocateAcceptanceItemRegion(text, id)
+			if !ok {
+				return fmt.Errorf("acceptance item %q not found in %s (or declared more than once) — list the items with --items", id, relPath)
+			}
+			deps = append(deps, "region:acceptance_item:"+id+":"+contenthash.RegionCID(region.Text))
+		}
+		for _, requested := range sectionPtr {
+			heading := requested
 			// The --sections output names the frontmatter region "frontmatter";
 			// accept that spelling as the empty-heading declaration.
 			if heading == "frontmatter" {
 				// "frontmatter" is a reserved spelling for the pre-heading
 				// region — a real section with that heading text would make
-				// the declaration silently bind to the wrong region.
-				if _, ok := contenthash.LocateSectionRegion(text, "frontmatter"); ok {
-					return fmt.Errorf("reserved heading %q: the file has a real ## frontmatter section, which cannot be declared by --section frontmatter (the spelling names the pre-heading region) — rename the section", heading)
+				// the declaration silently bind to the wrong region. Presence
+				// is checked (not uniqueness): a duplicated real heading must
+				// be rejected the same way.
+				if contenthash.HasSectionHeading(text, "frontmatter") {
+					return fmt.Errorf("reserved heading %q: the file has a real ## frontmatter section, which cannot be declared by --section frontmatter (the spelling names the pre-heading region) — rename the section", requested)
 				}
 				heading = ""
 			}
+			if heading == "" && !contenthash.IsSectionSplittable(text) {
+				// A spec with no ## heading cannot be declared by section at
+				// all — the frontmatter spelling would silently alias the
+				// whole file (framework/validation_cache.md §Structural Region
+				// Dependencies).
+				return fmt.Errorf("section %q cannot be declared: %s has no ## heading — section regions cannot be located; restructure the spec per framework/spec_writing_guide.md §13 or declare the whole file", requested, relPath)
+			}
 			region, ok := contenthash.LocateSectionRegion(text, heading)
 			if !ok {
-				return fmt.Errorf("section %q not found in %s (or declared more than once) — list the sections with --sections", heading, relPath)
+				return fmt.Errorf("section %q not found in %s (or declared more than once) — list the sections with --sections", requested, relPath)
 			}
 			deps = append(deps, "region:section:"+heading+":"+contenthash.RegionCID(region.Text))
 		}
 	}
 
-	if len(fc.Chunks) > 0 && len(deps) == 0 && !*sectionsPtr {
+	if len(fc.Chunks) > 0 && len(deps) == 0 && !*sectionsPtr && !*itemsPtr {
 		return fmt.Errorf("no dependency chunks produced: the declared ranges (%s) cover no content of %s — declare the ranges that were actually read", *rangesPtr, relPath)
 	}
 
@@ -147,6 +187,14 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 				heading = "frontmatter"
 			}
 			fmt.Fprintf(stdout, "  - heading: %s\n", heading)
+			fmt.Fprintf(stdout, "    lines: %d-%d\n", r.Start, r.End)
+			fmt.Fprintf(stdout, "    cid: %s\n", contenthash.RegionCID(r.Text))
+		}
+	}
+	if *itemsPtr {
+		fmt.Fprintln(stdout, "items:")
+		for _, r := range contenthash.AcceptanceItemRegions(text) {
+			fmt.Fprintf(stdout, "  - id: %s\n", r.ID)
 			fmt.Fprintf(stdout, "    lines: %d-%d\n", r.Start, r.End)
 			fmt.Fprintf(stdout, "    cid: %s\n", contenthash.RegionCID(r.Text))
 		}

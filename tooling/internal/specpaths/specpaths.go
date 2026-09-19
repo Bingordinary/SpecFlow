@@ -4,18 +4,48 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
 
-const (
-	ModulesRootDir           = "docs/specs/units"
-	CandidateDir             = ModulesRootDir + "/candidate"
-	StableDir                = ModulesRootDir + "/stable"
-	CandidateAppendixDir     = CandidateDir + "/appendix"
-	StableAppendixDir        = StableDir + "/appendix"
+// targetNamePattern is the single naming contract for unit names and rule ids
+// (tooling/README.md §Target names). Target names are external input used to
+// construct repository paths, so every CLI entry that accepts one validates it
+// before construction; the gate-run planner, the validation-cache paths, and
+// the operation-scope target use this same predicate.
+var targetNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
-	RuleModulesRootDir       = "docs/specs/rules"
-	RuleCandidateDir         = RuleModulesRootDir + "/candidate"
-	RuleStableDir            = RuleModulesRootDir + "/stable"
+// ValidateTargetName rejects a unit name or rule id that is not a plain
+// identifier. This is the boundary that keeps external names out of path
+// construction: a name containing a separator, a traversal segment, or
+// whitespace is rejected before it can reach CandidateUnitSpecFileRef /
+// cacheFilePath and therefore cannot escape its governed directory.
+func ValidateTargetName(kind, name string) error {
+	switch kind {
+	case "unit":
+		if !targetNamePattern.MatchString(name) {
+			return fmt.Errorf("unit name %q is invalid: expected letters, digits, '_' or '-' starting with a letter or digit", name)
+		}
+	case "rule":
+		if !targetNamePattern.MatchString(name) {
+			return fmt.Errorf("rule id %q is invalid: expected letters, digits, '_' or '-' starting with a letter or digit", name)
+		}
+	default:
+		return fmt.Errorf("invalid target kind %q: expected 'unit' or 'rule'", kind)
+	}
+	return nil
+}
+
+const (
+	ModulesRootDir       = "docs/specs/units"
+	CandidateDir         = ModulesRootDir + "/candidate"
+	StableDir            = ModulesRootDir + "/stable"
+	CandidateAppendixDir = CandidateDir + "/appendix"
+	StableAppendixDir    = StableDir + "/appendix"
+
+	RuleModulesRootDir = "docs/specs/rules"
+	RuleCandidateDir   = RuleModulesRootDir + "/candidate"
+	RuleStableDir      = RuleModulesRootDir + "/stable"
 )
 
 // CandidateUnitSpecFileRef returns the candidate-layer path of a unit main
@@ -72,10 +102,18 @@ func ResolveUnitAppendix(repoRoot, appendix string) string {
 	return ""
 }
 
-// ResolveRuleFile resolves a rule logical reference to the current-layer rule
-// file (candidate first, stable fallback), or "" when the rule exists in no
-// layer.
+// ResolveRuleFile resolves a rule logical reference according to its
+// applicability. Global rules (g_rule_*) are active only from the stable
+// layer; bound rules keep current-layer semantics (candidate first, stable
+// fallback). It returns "" when no applicable file exists.
 func ResolveRuleFile(repoRoot, ruleID string) string {
+	if strings.HasPrefix(ruleID, "g_rule_") {
+		p := filepath.Join(repoRoot, filepath.FromSlash(RuleStableFileRef(ruleID)))
+		if _, err := os.Stat(p); err == nil {
+			return filepath.ToSlash(p)
+		}
+		return ""
+	}
 	for _, ref := range []string{RuleCandidateFileRef(ruleID), RuleStableFileRef(ruleID)} {
 		p := filepath.Join(repoRoot, filepath.FromSlash(ref))
 		if _, err := os.Stat(p); err == nil {

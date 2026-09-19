@@ -1311,6 +1311,20 @@ func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
 	}
 }
 
+func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "dupitem",
+		"---\nid: dupitem\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"\n# Dup Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n  - id: a.core\n    description: Duplicate id.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+	result := checkRegionLocatability(repoRoot, "dupitem")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a duplicated acceptance item id, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "duplicated acceptance item id") {
+		t.Fatalf("expected duplication detail, got: %s", result.Details)
+	}
+}
+
 func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "reserved",

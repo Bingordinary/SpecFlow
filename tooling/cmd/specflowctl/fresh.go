@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/ruledetect"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -49,8 +50,14 @@ func runFresh(args []string, stdout, stderr io.Writer) error {
 	}
 
 	absRoot := mustAbs(*repoRootPtr)
-	unitName := strings.TrimSpace(*unitPtr)
-	ruleID := strings.TrimSpace(*ruleIDPtr)
+	unitName, err := requireTargetName("unit", *unitPtr)
+	if err != nil {
+		return err
+	}
+	ruleID, err := requireTargetName("rule", *ruleIDPtr)
+	if err != nil {
+		return err
+	}
 	scope := strings.TrimSpace(strings.ToLower(*scopePtr))
 
 	switch scope {
@@ -306,6 +313,9 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	if isRetiringUnit(absRoot, unitName) {
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Unit is retiring — verify, review, and appendix gates are skipped (matching promote).")
+		if vStatus == gateStale {
+			writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "candidate", map[string]gateStatus{"validate": vStatus})
+		}
 		if gatePassed(vStatus) {
 			fmt.Fprintln(stdout, "READY FOR PROMOTE: yes")
 		} else {
@@ -351,7 +361,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
-	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, map[string]gateStatus{
+	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "candidate", map[string]gateStatus{
 		"validate": vStatus,
 		"verify":   vfStatus,
 		"review":   rStatus,
@@ -366,61 +376,100 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	return nil
 }
 
-// writeDeltaScopeSections prints the mechanism-derived delta scope (see
-// validationcache.DeriveStaleScope) for every STALE gate. The scope is the
-// delta re-run input: which checks declared the stale dependencies, which
-// file entries are unclaimed (no check declared their stale deps), which
-// entries could not be resolved or read, and whether every declared check
-// is affected (degradation). Gates that are not STALE print nothing — the
-// fresh report's own gate status already covers them.
-func writeDeltaScopeSections(stdout io.Writer, absRoot, targetKind, targetName string, statuses map[string]gateStatus) {
+// writeDeltaScopeSections prints the mechanism-derived delta scope for every
+// STALE gate. The scope comes from the same derivation gate-plan uses
+// (gaterun.PreviewDeltaScope), so the report and the planner never disagree:
+// which checks declared the stale dependencies, which file entries are
+// unclaimed, which entries could not be resolved, which keys are new since
+// the baseline, and the exact re-run/carry split the plan would fix. Gates
+// that are not STALE print nothing — the fresh report's own gate status
+// already covers them.
+func writeDeltaScopeSections(stdout io.Writer, absRoot, targetKind, targetName, target string, statuses map[string]gateStatus) {
 	commands := []string{"validate", "verify", "review"}
 	for _, cmd := range commands {
 		if statuses[cmd] != gateStale {
 			continue
 		}
-		scope, err := validationcache.DeriveStaleScope(absRoot, targetKind, targetName, cmd)
+		preview, err := gaterun.PreviewDeltaScope(absRoot, cmd, targetKind, targetName, target)
 		if err != nil {
-			fmt.Fprintf(stdout, "\nDELTA SCOPE (%s):\n  cache format error: %v — re-run %s@%s to rewrite the cache\n", cmd, err, cmd, targetName)
+			fmt.Fprintf(stdout, "\nDELTA SCOPE (%s):\n  delta scope unavailable: %v — run the full %s@%s\n", cmd, err, cmd, targetName)
 			continue
 		}
 		fmt.Fprintf(stdout, "\nDELTA SCOPE (%s):\n", cmd)
-		if len(scope.StaleDeps) == 0 {
-			if len(scope.Unreadable) > 0 {
-				fmt.Fprintln(stdout, "  no stale dependency CIDs — staleness comes from missing/unreadable files or cache metadata")
-			} else {
-				fmt.Fprintln(stdout, "  no stale dependencies — staleness comes from a non-dependency cause (cache metadata)")
-			}
-			if len(scope.Unreadable) > 0 {
-				fmt.Fprintf(stdout, "  unreadable entries: %s\n", strings.Join(scope.Unreadable, ", "))
-			}
-			continue
-		}
-		if scope.HasChecks {
-			if len(scope.Affected) > 0 {
-				fmt.Fprintf(stdout, "  affected checks: %s\n", strings.Join(scope.Affected, ", "))
-			} else {
-				fmt.Fprintln(stdout, "  affected checks: none — the stale deps are all unclaimed")
-			}
+		writeDeltaScopeDetail(stdout, preview)
+	}
+}
+
+// writeDeltaScopeDetail renders one gate's stale evidence and plan split.
+func writeDeltaScopeDetail(stdout io.Writer, preview *gaterun.DeltaPreview) {
+	scope := preview.Scope
+	if scope == nil {
+		fmt.Fprintln(stdout, "  stale evidence unavailable — the delta plan degrades to the full packet set")
+		writeDeltaPlanLines(stdout, preview)
+		return
+	}
+	if len(scope.StaleDeps) == 0 {
+		if len(scope.Unreadable) > 0 {
+			fmt.Fprintln(stdout, "  no stale dependency CIDs — staleness comes from missing/unreadable files or cache metadata")
 		} else {
-			fmt.Fprintln(stdout, "  no per-check evidence — derive the scope from the stale entries semantically (legacy cache or whole-file declarations)")
-		}
-		if len(scope.Unclaimed) > 0 {
-			fmt.Fprintf(stdout, "  unclaimed entries: %s\n", strings.Join(scope.Unclaimed, ", "))
+			fmt.Fprintln(stdout, "  no stale dependencies — staleness comes from a non-dependency cause (cache metadata)")
 		}
 		if len(scope.Unreadable) > 0 {
 			fmt.Fprintf(stdout, "  unreadable entries: %s\n", strings.Join(scope.Unreadable, ", "))
 		}
-		fmt.Fprintf(stdout, "  stale deps: %d\n", len(scope.StaleDeps))
-		if scope.Degrades {
-			if targetKind == "rule" {
-				fmt.Fprintln(stdout, "  degrades: yes — the rule file is a whole-file declaration, any change stales every rule-body check")
-			} else {
-				fmt.Fprintln(stdout, "  degrades: yes — every declared check is affected, an incremental re-run is a full re-run")
-			}
-		} else {
-			fmt.Fprintln(stdout, "  degrades: no")
+		if len(scope.Untrackable) > 0 {
+			fmt.Fprintf(stdout, "  untrackable entries (no dependency chunks): %s\n", strings.Join(scope.Untrackable, ", "))
 		}
+		writeDeltaPlanLines(stdout, preview)
+		return
+	}
+	if scope.HasChecks {
+		if len(scope.Affected) > 0 {
+			fmt.Fprintf(stdout, "  affected checks: %s\n", strings.Join(scope.Affected, ", "))
+		} else {
+			fmt.Fprintln(stdout, "  affected checks: none — the stale deps are all unclaimed")
+		}
+	} else {
+		fmt.Fprintln(stdout, "  no per-check evidence — the delta plan degrades to the full packet set")
+	}
+	if len(scope.Unclaimed) > 0 {
+		fmt.Fprintf(stdout, "  unclaimed entries: %s\n", strings.Join(scope.Unclaimed, ", "))
+	}
+	if len(scope.Unreadable) > 0 {
+		fmt.Fprintf(stdout, "  unreadable entries: %s\n", strings.Join(scope.Unreadable, ", "))
+	}
+	if len(scope.Untrackable) > 0 {
+		fmt.Fprintf(stdout, "  untrackable entries (no dependency chunks): %s\n", strings.Join(scope.Untrackable, ", "))
+	}
+	fmt.Fprintf(stdout, "  stale deps: %d\n", len(scope.StaleDeps))
+	writeDeltaPlanLines(stdout, preview)
+}
+
+// writeDeltaPlanLines prints the exact re-run/carry split the planner would
+// fix for this scope, so the reported incremental scope equals the executed
+// plan.
+func writeDeltaPlanLines(stdout io.Writer, preview *gaterun.DeltaPreview) {
+	if len(preview.NewKeys) > 0 {
+		fmt.Fprintf(stdout, "  new checks not in the baseline: %s\n", strings.Join(preview.NewKeys, ", "))
+	}
+	switch {
+	case preview.PlanError != "":
+		// Some refusals already carry the recovery guidance; add it only when
+		// the derivation's own message does not, so the plan line always names
+		// the full-run recovery exactly once.
+		planErr := preview.PlanError
+		if !strings.Contains(planErr, "run the full command") {
+			planErr += "; run the full command"
+		}
+		fmt.Fprintf(stdout, "  plan: unavailable — %s\n", planErr)
+	case preview.Degraded:
+		fmt.Fprintf(stdout, "  plan: full packet set — %s\n", preview.Reason)
+	case preview.CoversFull:
+		fmt.Fprintf(stdout, "  plan: re-run %s; the re-run covers every declared check — no judgment is carried over\n", strings.Join(preview.Rerun, ", "))
+	case len(preview.Carried) > 0:
+		fmt.Fprintf(stdout, "  plan: re-run %s; carried over: %s (their dependency evidence is unchanged)\n", strings.Join(preview.Rerun, ", "), strings.Join(preview.Carried, ", "))
+	default:
+		fmt.Fprintf(stdout, "  plan: re-run %s; nothing carried over\n", strings.Join(preview.Rerun, ", "))
 	}
 }
 
@@ -478,7 +527,7 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		fmt.Fprintln(stdout, "No baseline recorded for this stable unit (promoted before baseline support).")
 	}
 
-	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, map[string]gateStatus{
+	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "stable", map[string]gateStatus{
 		"validate": vaStatus,
 		"verify":   vfStatus,
 		"review":   rStatus,
@@ -509,7 +558,7 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 	}
 	fmt.Fprintln(stdout, "verify and review do not apply to rules.")
 
-	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, map[string]gateStatus{"validate": vStatus})
+	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, "candidate", map[string]gateStatus{"validate": vStatus})
 
 	fmt.Fprintln(stdout)
 	if gatePassed(vStatus) {
@@ -547,7 +596,7 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 		fmt.Fprintln(stdout, "No baseline recorded for this stable rule (promoted before baseline support).")
 	}
 
-	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, map[string]gateStatus{
+	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, "stable", map[string]gateStatus{
 		"validate": vStatus,
 	})
 	return nil

@@ -54,8 +54,8 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 
 	if len(missing) > 0 {
 		return CheckResult{
-			Name:   "Frontmatter completeness",
-			Status: Fail,
+			Name:    "Frontmatter completeness",
+			Status:  Fail,
 			Details: fmt.Sprintf("missing required fields: %s", strings.Join(missing, ", ")),
 		}
 	}
@@ -839,7 +839,23 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		seen[r.Heading] = true
 	}
 
-	// 4. Heading format: `## ` must be followed by heading text. A
+	// 4. Unique acceptance item ids: a duplicated id cannot be located
+	// unambiguously by the item-region locator, so item-region declarations
+	// naming it fail closed. Item ids are required to be unique by
+	// framework/spec_writing_guide.md §7.
+	seenItem := make(map[string]bool)
+	for _, id := range contenthash.AcceptanceItemIDs(content) {
+		if seenItem[id] {
+			return CheckResult{
+				Name:    "Region locatability",
+				Status:  Fail,
+				Details: fmt.Sprintf("duplicated acceptance item id %q — item regions cannot be located unambiguously; make the ids unique (framework/spec_writing_guide.md §7)", id),
+			}
+		}
+		seenItem[id] = true
+	}
+
+	// 5. Heading format: `## ` must be followed by heading text. A
 	// near-miss line (`##x`, or a bare `##`) is content to the splitter but
 	// almost always means the author intended a heading.
 	if malformed := contenthash.MalformedHeadingLines(content); len(malformed) > 0 {

@@ -75,6 +75,7 @@ The tooling layer may:
 10. render read-only local views
 11. maintain mechanical review run-state fields
 12. relation calculation
+13. operation scope state
 
 The tooling layer must not:
 
@@ -87,18 +88,89 @@ The tooling layer must not:
 
 ### Governed write zones (`validate write`)
 
-`validate write --path <path>` matches the normalized repository-relative path against the following zones in order. Absolute paths are converted to repository-relative before matching; a path that escapes the repository root (or cannot be relativized) is outside the write-zone contract and takes the default result.
+`validate write --path <path>` first resolves the repository layout, then matches the normalized repository-relative path against the following zones in order. The classifier evaluates both the lexical repository path and its symlink-resolved repository path whenever either identity is inside the repository; a denied result for either identity is final, so a symlink cannot hide a protected source or target behind an allowed prefix. A path whose symlink identity cannot be resolved — a broken or dangling link on the path — is **denied**, not classified by its lexical identity alone: a write through the link would land in the unresolved location. Absolute paths are converted to repository-relative before matching; a path whose lexical and resolved identities are both outside the repository root (or cannot be relativized) is outside the write-zone contract and takes the default result. A missing or ambiguous SpecFlow layout is an error — the classifier does not guess a layout or fall through to the default allowed result.
 
 | Order | Path prefix | Result |
 |---|---|---|
-| 1 | `framework/` | **denied** — framework files are never writable via `validate write` |
+| 1 | the resolved layout's framework root (`framework/` in `source_repo`; `specflow/framework/` in `installed_project`) | **denied** — framework files are never writable via `validate write` |
 | 2 | `docs/specs/units/stable/` | **denied** — use `promote` to write stable specs |
 | 3 | `docs/specs/rules/stable/` | **denied** — use the rule governance flows |
 | 4 | `docs/specs/units/candidate/` | **allowed** — candidate spec file |
 | 5 | `docs/specs/rules/candidate/` | **allowed** — candidate rule file |
 | 6 | anything else | **allowed** — "not governed by specFlow write restrictions" (includes implementation source code) |
 
-This table is the authoritative contract for the `validate write` zone check (`tooling/cmd/specflowctl/validate.go` implements it verbatim). Any change to the zone table is a governance-boundary change and must update this section in the same change.
+This table is the authoritative contract for the `validate write` zone check (`tooling/internal/writezone/writezone.go` implements it verbatim; `tooling/cmd/specflowctl/validate.go` holds the CLI surface and delegates to it). Any change to the zone table is a governance-boundary change and must update this section in the same change.
+
+The zone table is the **global static policy layer**: it applies at write time and independently of any operation scope. The tooling resolves the layout once for the command and uses that layout's framework root consistently during declaration and final checking. An open operation never weakens it — a changed path inside a denied zone is reported as a static-policy violation by `operation check` even when some declaration allowed it.
+
+### Target names
+
+Unit names and rule ids are external input that the CLI turns into repository paths, so one grammar governs them everywhere:
+
+- **Unit names** match `^[A-Za-z0-9][A-Za-z0-9_-]*$`.
+- **Rule ids** match the same grammar and carry the `g_rule_`/`b_rule_` prefix convention (the operation-scope target contract additionally enforces the prefix).
+
+Every CLI entry that accepts a unit name or rule id (`--unit`, `--rule`, and `validate rule --id`) validates it with `tooling/internal/specpaths.ValidateTargetName` before any path construction or filesystem access; a name outside the grammar fails the command without reading or writing anything. The gate-run planner, the validation-cache paths, and the operation-scope target share the same predicate. A path separator, traversal segment, whitespace, or any character outside the grammar is invalid, not normalized — external names must not reach a path builder unvalidated.
+
+### Operation scope (`operation ...`)
+
+`specflowctl operation` maintains a declared, frozen change scope for one bounded piece of work and verifies the final working-tree change mechanically against that scope. It is runtime-neutral: nothing intercepts writes; the comparison happens when the caller runs the check. The mechanism requires git (baseline diff) and the repository root passed as `--repo-root` must be the git worktree top level.
+
+State is one JSON file per operation at `meta/operations/<operation_id>.json` (local process state, not committed — the same class as `meta/gate_runs/`). Operation ids use the tooling-generated `YYYYMMDD-HHMMSS-<6 lowercase hex>` form. A supplied id that does not match that form, a state file whose embedded `operation_id` does not equal the requested id, or a state path that does not remain inside `meta/operations/` after normalization is malformed state and fails closed before any read-modify-write transition. Normalization resolves symlinks under the same rule as scope entries below: the path's nearest existing ancestor is resolved before the missing suffix is reattached, an unresolvable (dangling) symlink component fails closed, and the resolved location must remain inside the repository — in-repository symlinks whose real target stays inside the repository are valid. Loading also validates the complete state object: unknown JSON fields, invalid status/target/source values, non-canonical paths, invalid required-spec declarations, malformed timestamps, and lifecycle-inconsistent open/closed fields or update history are rejected before the state can be checked, listed, or changed.
+
+`close` and `update` are read-modify-write transitions on one state file. Each enters the repository-local operating-system lock (`meta/.operations.lock`) before loading the state and holds it until the write commits, so concurrent transitions in a shared working tree serialize: an update cannot overwrite a committed close with a stale open snapshot, and no update event is lost. The operating system releases the lock when the process exits, so a crash cannot leave a stale ownership marker.
+
+The state object's exact fields (this table is the schema contract for `operation open` / `update` / `close`):
+
+| Field | Type | Contract |
+|---|---|---|
+| `operation_id` | string | `YYYYMMDD-HHMMSS-<6 lowercase hex>`; must equal the requested id; no surrounding whitespace |
+| `status` | string | `open` or `closed` |
+| `target` | object | `{kind, name?}` — `kind` is `unit`, `rule`, or `none`; `none` must not carry a name; `unit`/`rule` names match §Target names; rule names carry the `g_rule_`/`b_rule_` prefix |
+| `baseline` | object | `{ref, sha, recorded_at}` — `ref` is the requested ref (non-empty); `sha` is the resolved full lowercase commit id (40 or 64 hex); `recorded_at` is UTC `YYYY-MM-DDTHH:MM:SSZ` and not after `opened_at` |
+| `allowed_paths` | array | non-empty, sorted by `path`, no duplicates; each `{path, source}` — `path` is a canonical repository-relative path that resolves inside the repository; `source` is `spec:file` (must match the target's spec path), `spec:implementation_surface` / `spec:affects.files` (unit targets only), or `declared` |
+| `required_spec_paths` | array | canonical candidate spec paths (see Required spec paths), unique and sorted |
+| `parent_operation` | string, optional | id of the predecessor operation; must not equal `operation_id` |
+| `opened_at` / `updated_at` | string | UTC `YYYY-MM-DDTHH:MM:SSZ`; `updated_at` must not be before `opened_at` |
+| `closed_at` | string, optional | required on `closed`; must equal `updated_at` and not be before `opened_at`; forbidden on `open` |
+| `close_outcome` | string, optional | `passed` or `abandoned`; required on `closed`; forbidden on `open` |
+| `updates` | array, optional | one event per `operation update`: `{at, declared_allowed_paths, required_spec_paths}` — each list canonical/unique/sorted, events monotonic in `at` and within the operation timeline, never removing a path recorded by the previous event; the latest event must equal the frozen declared scope (`declared_allowed_paths` = the frozen `declared`-source entries, `required_spec_paths` = the frozen set) |
+
+Unknown JSON fields and trailing JSON values are rejected, so every field a state file carries is defined above.
+
+| Command | Effect |
+|---|---|
+| `operation open` | Declare an operation: resolve the scope sources, freeze the allowed scope, record the baseline commit, write the state file. Prints the operation id. |
+| `operation check` | Read-only evaluation of the frozen scope against the current change set. Exit code 1 when the result is `FAIL`. |
+| `operation close` | The same evaluation as `check`; marks the operation `closed` only on `PASS`. On `FAIL` it refuses the close and leaves the state unchanged (exit code 1). With `--abandon`, a violating operation is ended explicitly: the state records the `abandoned` close outcome and the violation report is printed — an operation is never silently passed, but it is also never a trap. |
+| `operation update` | Add caller-declared scope and/or required spec paths to the frozen values, recording the resulting union as an update event. Only while the operation is open; an update never removes an existing path. |
+| `operation status` | Read-only listing of open operations, or detail for one `--id`. |
+
+**Scope sources (explicit by construction).** `allowed_paths` entries come from exactly two sources, and every entry records its source label:
+
+1. **spec-derived** — from the target's spec: the candidate spec file and its candidate appendix files (`spec:file`), the acceptance items' `implementation_surface` values (`spec:implementation_surface`), and the `affects.files` values (`spec:affects.files`). For a rule target the derived entry is the candidate rule file (`spec:file`). When only a stable spec exists, the scope carries the deterministic candidate paths — the fork targets (candidate main spec and the candidate equivalents of the stable appendices) — instead of the never-writable stable files; the fork is the standard first step of a spec change, so its output must already be in scope. The spec-derived part is frozen at `open` — a later spec edit cannot silently widen an open operation; `operation update` can only add caller-declared paths.
+2. **caller-declared** — repeatable `--allow` flags (`declared`), representing the additional scope explicitly declared in the user-approved plan. `operation update` unions new entries with this frozen part; it never removes an existing entry.
+
+A scope entry is accepted only when both its lexical path and its symlink-resolved location remain inside the repository. For a path that does not exist yet, the nearest existing ancestor is resolved before the missing suffix is reattached, so an escaping parent symlink is still rejected. This containment rule applies to every source: candidate specs and appendices, `implementation_surface`, `affects.files`, `--allow`, and `--require-spec`. It is re-evaluated whenever persisted operation state is loaded, so replacing an allowed directory with an escaping symlink makes `check`/`close` fail closed. In-repository symlinks whose real target remains inside the same repository are valid.
+
+A `--allow` or `--require-spec` entry that falls inside a denied write zone or inside the exclusions below is rejected at `open`/`update` time (fail closed at declaration). Spec-derived entries remain subject to the static policy layer at check time.
+
+**Required spec paths.** Repeatable `--require-spec` entries declare candidate spec files this operation must change. Accepted paths are unit mains under `docs/specs/units/candidate/unit_*.md`, unit appendices under `docs/specs/units/candidate/appendix/unit_*_*.md`, and rule candidates matching `docs/specs/rules/candidate/g_rule_*.md` or `docs/specs/rules/candidate/b_rule_*.md`. Ordinary code, stable specs, meta files, directories, and other Markdown files are rejected at `open`/`update`; the candidate file need not exist yet because creating it may be part of the operation. An update unions new required paths with the frozen set and cannot remove an existing spec-first obligation. `check`/`close` fail when any required path is absent from the change set **or no longer exists in the working tree** — a deletion is not a change of the spec's content, so it satisfies neither half — the spec-first obligation is verified mechanically, not by prose.
+
+**Baseline and change set.** `open` records the baseline commit (`--baseline REF`, default `HEAD`) as the resolved commit SHA. The change set is:
+
+1. tracked changes against the baseline commit — `git diff --name-only --no-renames <sha>` (this includes committed, staged, and unstaged changes and deletions), plus
+2. untracked, non-ignored files — `git ls-files --others --exclude-standard`.
+
+Renames are deliberately decomposed into delete + add (`--no-renames`) so both paths are evaluated. Excluded from the change set: `meta/` and `docs/specs/meta/` — the tooling's own process state and derived caches are not operation deliverables.
+
+**Matching.** Every entry is a path scope, not a file snapshot: a changed path is in scope when it equals the entry or starts with `entry + "/"`. Directory entries therefore cover files created during the operation. There is no glob support.
+
+**Result.** `PASS` requires all three lists empty: out-of-scope changed paths, static-policy violations, and missing required spec paths. On `FAIL` the caller must resolve the violation by one of: reverting the out-of-scope changes; ending the current operation with `operation close --abandon` (the state records the `abandoned` outcome) and opening a new user-authorized operation for the newly authorized target (`--parent` records the lineage); or widening the scope through `operation update` after explicit user approval. Whether that approval happened is declared by the caller — the tooling records the update and cannot verify authorization.
+
+**Concurrency and attribution.** The comparison is a mechanical baseline diff over the shared working tree. When other sessions or processes change the same working tree, `operation check` cannot attribute a change to an author, and it deliberately does not guess: every out-of-scope path is reported conservatively. For reliable attribution, run the operation in a dedicated `git worktree` — operation state is per working tree (`meta/` is local), and the baseline is that worktree's commit.
+
+**Fail closed.** A missing git repository, a missing operation, a missing baseline commit, a malformed state file, an invalid or mismatched operation id, an operation-state path outside `meta/operations/`, a scope path that currently resolves outside the repository, or a git error makes `check`/`close` fail with exit code 1. `check` never modifies project files; `close` changes only its own validated state file (`status`, `close_outcome`, and timestamps).
 
 ## Current Command Surface
 
@@ -143,40 +215,69 @@ This table is the authoritative contract for the `validate write` zone check (`t
     - `remove --rule <id>`: final verification reuses the detection primitive — rejected while any current-layer unit still references the rule in `rule_refs` (referrers listed) and while it declares `unbound_retention` (intentional retention); for a global rule only explicit references block removal, the default applicability lifts with the file. On success deletes the stable copy (and candidate copy if present), then the rule's baseline and validate cache; a rule with no file in either layer degrades to residual metadata cleanup (re-entrant recovery path after a partial deletion)
     - corresponds to the `remove@{rule}` agent trigger (see `framework/concepts.md` and `framework/spec_writing_guide.md` §6.5)
  11. `gate-evidence`
-    - compute the dependency evidence for one file read during a validate/verify/review run
-    - `gate-evidence --file <path>` with optional `--ranges START-END,START-END` (1-based, inclusive; empty means the whole file): maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + the `deps` chunk CIDs to record in the cache's `files` entry
-    - with `--acceptance-items`: declares the `acceptance_item_set` structural region as the dependency (`region:acceptance_items:<cid>`), located by structure rather than line numbers or chunk boundaries; with an empty `--ranges` it replaces the whole-file declaration, with `--ranges` both are declared (see `framework/validation_cache.md` §Structural Region Dependencies)
-    - with `--section <heading>` (repeatable): declares the section region with that heading text as the dependency (`region:section:<heading>:<cid>`), located by heading rather than line numbers — the frontmatter region (file head through the line before the first `##` heading) is named `frontmatter`; a missing or duplicated heading fails closed
-    - with `--sections`: lists every section region (heading, line range, CID) without declaring dependencies — the informational output that names the `--section` values
+    - compute the dependency evidence for one file read during a validate/verify/review run (inspection — the cache evidence is computed by the tooling at `gate-finalize`; nothing is transcribed)
+    - `gate-evidence --file <path>` with optional `--ranges START-END,START-END` (1-based, inclusive; empty means the whole file): maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + the `deps` chunk CIDs
+    - with `--acceptance-items`: emits the `acceptance_item_set` structural region as the dependency (`region:acceptance_items:<cid>`), located by structure (from the marker to the next `##` heading outside a fence, or through the last real line of the file; `###` and deeper headings belong to their `##` section and never terminate the set) rather than line numbers or chunk boundaries; with an empty `--ranges` it replaces the whole-file declaration, with `--ranges` both are declared (see `framework/validation_cache.md` §Structural Region Dependencies)
+    - with `--acceptance-item <id>` (repeatable): emits one acceptance item's region as the dependency (`region:acceptance_item:<id>:<cid>`), located by item id — reordering items changes no item region unless set-level content follows the last item (that content belongs to the last item's region), while a missing or duplicated id fails closed
+    - with `--items`: lists every acceptance item region (id, line range, CID) without declaring dependencies — the informational output that names the `--acceptance-item` values and probes locatability
+    - with `--section <heading>` (repeatable): emits the section region with that heading text as the dependency (`region:section:<heading>:<cid>`), located by heading rather than line numbers — the frontmatter region (file head through the line before the first `##` heading) is named `frontmatter`; a missing or duplicated heading fails closed
+    - with `--sections`: lists every section region (heading, line range, CID) without declaring dependencies — the informational output that names the `--section` values and probes locatability
     - corresponds to the `specflowctl gate-evidence` agent-trigger row (see `framework/concepts.md` and `framework/validation_cache.md` §Dependency Declaration)
-  12. `cache-write`
-    - write a gate cache file with the machine-consumed evidence computed by the tooling, then self-check the written file with the gate's own freshness chain
-    - `cache-write --gate validate|verify|review (--unit NAME | --rule ID) --result pass|fail --target candidate|stable [--basis full|delta|repair] [--blocking] [--p0-count N --p1-count N --p2-count N --p3-count N]`: the agent supplies the judgment (result, basis, target, blocking, severity counts, findings body, per-check status map) and declares each files entry with a repeatable `--file '<json>'` — `{"path":"src/auth/login.go","checks":[{"check":"5","status":"pass","sections":["Description"]}],"sections":[...],"ranges":"...","acceptance_items":bool}` (path may be a logical reference `unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`). The tooling computes each entry's whole-file `hash` and `deps` CIDs from the declared scope (same declarations `gate-evidence` accepts; `sections` accepts the reserved spelling `frontmatter` naming the pre-`##` region, same as `gate-evidence --section`; the schema has no hash/deps fields, so a transcribed CID cannot enter the cache), enforces union discipline (every per-check dep joins the file-level `deps`), rejects a name-resolved spec object declared as a physical path (cross-unit unit specs/appendices, rule files), requires a per-check `status` map on failure records, then re-reads the file and runs the gate's own checks (pass → FRESH; failure record → BLOCKED; a pass validate@ candidate cache additionally requires appendix coverage). A non-accepted result is a write failure (non-zero exit)
+  12. `gate-plan`
+    - fix the immutable input snapshot and generate the deterministic packet plan for a quality-gate run before any executor reads input (see `framework/verification_scope.md` §Gate Work Packets and `framework/validation_cache.md` §Write Rules → Tooled writes)
+    - `gate-plan --gate validate|verify|review (--unit NAME | --rule ID) --target candidate|stable [--mode full|delta|repair] [--input PATH_OR_REF]... [--rerun CHECK_KEY]...`: fixes the snapshot and deterministic packet graph. Unit validate plans resolve `unit_refs` and bound `rule_refs` from the current layer (candidate first, stable fallback), but enumerate global rules only from the stable layer; candidate global rules remain unpublished until promotion. `--input` entries are evidence available to packets; physical paths must resolve inside the project root, and files and recursively expanded directories never create review targets. Packet ids and dependency edges are validated before run state is written; duplicate acceptance-item ids therefore reject the plan instead of aliasing packet state. Packet ids remain logical identities in state; their per-packet filenames are fixed-length lowercase SHA-256 values, so colons, separators, Unicode, and long review paths never become platform-specific filenames. Verify plans `detect:{item}` + `analysis:{item}` pairs and `cross`; analysis is conditionally required by the detection verdict. Delta/repair plans snapshot carried structured judgments for cross; repair automatically unions failure-record `invalidated_checks` into the re-run set. `--rerun` remains an explicit additional override, not the persistence mechanism for targeted findings. The replacement and creation form one repository-locked transition, so concurrent plans cannot leave two live runs.
     - rule targets support the validate gate only (rule verify/review removed)
-    - corresponds to the tooled cache-write step of every quality-gate run (see `framework/concepts.md` and `framework/validation_cache.md` §Write Rules → Tooled writes)
-  13. `promote`
+  13. `gate-packet`
+    - `gate-packet --run RUN_ID --packet PACKET_ID`: emit one packet's exact execution context, including read refs, scope, accepted dependency results/digests, and carried judgments for cross. Read-only; include the output verbatim in the executor prompt
+  14. `gate-status`
+    - read-only report of packet-run progress: without `--run`, every open run with its gate/target and packet counts, filterable with `--gate` / `--unit` / `--rule` (`--unit` and `--rule` are mutually exclusive); with `--run RUN_ID`, per-packet status (`pending` / `accepted` / `rejected` / conditional `not_required`), attempt numbers, the latest rejection reason, result digests, and the next action (`gate-packet` + `gate-submit`, or `gate-finalize`)
+    - the recovery point after an interrupted run — progress is readable from the run state alone
+  15. `gate-submit`
+    - record one packet report after mechanical validation, then make it visible to `gate-status`/`gate-finalize`
+    - `gate-submit --run RUN_ID --packet PACKET_ID --report PATH`: validates against packet-local read refs, persists the verbatim report and parsed result, resolves conditional verify analysis, and binds dependency result digests for analysis/cross. The command holds the gate-run mutation lock from state load through the complete write, so a concurrent submission observes an already accepted/not-required packet as terminal instead of replacing it. Cross submissions must cover every input finding and logical status; every merge chain must terminate at a retained input or new cross finding, and every terminal retained finding must have one complete evidence-backed severity-confirmation sequence. A confirmed first result completes the sequence; an adjusted first result moves one level and requires exactly one final second record for the adjusted severity. Every evidence path must be in the cross packet's read refs and dependency scope. A non-cross key is `fail` if and only if at least one retained finding of any severity affects it. The cross key must mirror the cross verdict. Rule validate has no cross packet, so its single checks packet carries the required sequence for each P0 finding.
+  16. `gate-finalize`
+    - render the gate cache from the run's accepted packet reports after completeness and snapshot checks, validate the candidate with the gate's own freshness chain, then publish it atomically
+    - `gate-finalize --run RUN_ID [--timestamp T]`: reapplies the accepted severity confirmations to the terminal finding set, then derives result, blocking, severity counts, logical statuses, and the judgment baseline from those canonical severities (or the rule-validate packet merged with carried baseline judgments). It holds the gate-run mutation lock from the fresh run load through cache publication and run consumption, so a replacement plan cannot overtake an in-flight finalize and an already replaced run cannot publish. It assembles and validates the complete cache before atomically publishing it. A rejected candidate never changes or removes the prior canonical cache. Rule delta/repair writes all eight logical statuses, not only the re-run subset. The coordinator supplies no judgment values. Candidate validate cache deletion applies only to a full-run FAIL; delta/repair FAIL writes the failure record needed for recovery.
+    - corresponds to the tooled cache write of every complete-coverage quality-gate run (see `framework/concepts.md` and `framework/validation_cache.md` §Write Rules → Tooled writes)
+  17. `gate-invalidate`
+    - `gate-invalidate --gate validate|verify|review (--unit NAME | --rule ID) --target candidate|stable --check CHECK_KEY [--check CHECK_KEY]...`: record a targeted P0/P1 without publishing a targeted result cache
+    - under the gate-run mutation lock, deletes a matching pass cache or persists sorted, duplicate-free `invalidated_checks` on a matching failure record; also marks matching open gate runs `invalidated`, so an earlier plan cannot later overwrite the targeted finding
+    - repair reads the persisted keys automatically. An unmappable key degrades to the full packet set; successful finalize clears the handled invalidations, while rejected finalize leaves the failure record unchanged
+  18. `promote`
     - validate candidate spec format, copy candidate files to stable directories, remove candidate files, and rewrite the candidate gate caches into stable confirmation caches
    - `promote --unit <name>`: runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+review+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The review cache must be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache. On success, the candidate gate caches are rewritten into stable confirmation caches (`target: stable`, paths rewritten to `stable/`) — the stable delta-recovery baseline for `fresh@stable`, `re*`, and `fork` (a retired promote deletes them instead). Cleanup side effect: for every bound rule (`b_rule_*`) the unit's candidate dropped from `rule_refs`, promote runs the removable-rule detection — a rule with no remaining consumers (global rules are exempt; an `unbound_retention` record defers deletion) is deleted together with the unit (its stable and candidate copies, baseline, and validate cache), and every deletion is listed explicitly in the promote report (`Removed unbound rule: <id>`; see `framework/spec_writing_guide.md` §6.5)
    - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate, and rewrites the rule validate cache into a stable confirmation cache. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
-  14. `review collect-default-scope --flow <review_flow>`
+  19. `review collect-default-scope --flow <review_flow>`
     - collect the deterministic default scope for the explicit review flow
-  15. `review run-init --flow <review_flow>`
+  20. `review run-init --flow <review_flow>`
     - create or reuse the full-scope run-state file for the explicit review flow
-  16. `review run-validate --flow <review_flow>`
+  21. `review run-validate --flow <review_flow>`
     - validate required run-state fields, timestamps, all fixed statuses including closed statuses, baseline slices, score state when present, and dynamic slice parent links
-  17. `review run-refresh --flow <review_flow>`
+  22. `review run-refresh --flow <review_flow>`
     - recompute slice input fingerprints for an open run-state file, mark changed `passed` slices as `stale`, and refresh `last_updated_at`
-  18. `review run-touch --flow <review_flow>`
+  23. `review run-touch --flow <review_flow>`
     - refresh only `last_updated_at`
-  19. `validate write`
+  24. `validate write`
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones enumerated under §Governed write zones above
-  20. `validate candidate --unit UNIT`
+  25. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check, dependency cycle check, region locatability)
-  21. `validate rule --id RULE_ID`
+  26. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
     - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
+  27. `operation open`
+    - declare a bounded change scope and freeze it (see §Operation scope): `operation open (--unit NAME | --rule ID)? [--allow PATH]... [--require-spec PATH]... [--baseline REF] [--parent OP_ID]`
+    - resolves the spec-derived scope (target spec files, `implementation_surface`, `affects.files`) plus the caller-declared `--allow` entries, rejects entries inside denied write zones or the exclusions, records the resolved baseline commit, writes `meta/operations/<operation_id>.json`, prints the operation id and the frozen scope, and prints an informational notice when the working tree already contains changes outside the declared scope
+    - a path-only operation (no `--unit`/`--rule`) requires at least one `--allow` entry; `--unit`/`--rule` are mutually exclusive
+  28. `operation check --id OP_ID`
+    - read-only evaluation of the frozen scope against the change set since the baseline: reports out-of-scope paths, static-policy violations, missing required spec paths, and the `PASS`/`FAIL` result; exit code 1 on `FAIL` or on any fail-closed error (missing operation, missing baseline commit, git error)
+  29. `operation close --id OP_ID [--abandon]`
+    - runs the same evaluation; on `PASS` marks the operation `closed` and records `closed_at` with close outcome `passed`; on `FAIL` refuses (exit code 1) and leaves the state unchanged, unless `--abandon` is given — then the operation is ended explicitly, the close outcome `abandoned` is recorded, and the violation report is printed (exit code 0)
+  30. `operation update --id OP_ID [--allow PATH]... [--require-spec PATH]...`
+    - adds caller-declared allowed paths and/or required spec paths to the frozen values while the operation is open, records the resulting union as an update event, and keeps the spec-derived part unchanged; it never removes an existing path and rejects a closed operation, a denied/excluded entry, or an update with neither flag
+  31. `operation status [--id OP_ID]`
+    - read-only: without `--id`, lists every open operation (id, target, baseline, opened_at); with `--id`, prints the full frozen scope, required spec paths, status, and update history
 
 ## Review Run-State Commands
 

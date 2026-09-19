@@ -92,7 +92,7 @@ The commands (next, review/validate, review, promote) form a coherent process. T
 4. `review` (required final quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy promote
 5. `promote` has a complete flow: validate step → verify step → review step → archive step
 6. promote's archive step deterministically copies candidate files to stable directories
-7. promote's validate, verify, and review steps are independent sessions (subagent), not self-approval
+7. promote's validate, verify, and review steps are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
 8. if promote fails (validate, verify, or review finds issues), the outcome is clearly communicated and no files are archived
 
 If a command is missing a required output, has undefined behavior for failure cases, or requires the executor to infer its purpose, the related slice must not be marked `passed`.
@@ -386,7 +386,7 @@ A sub-agent is a zero-context, one-shot worker: it has no conversation history a
 
 **Scope (scenario inventory):** the current framework's sub-agent scenarios are —
 
-1. validate validation sub-agents (independent single-executor session, no batching), verify batch detection sub-agents, and review batch review sub-agents — assembly rules in `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape / verify and review shapes)
+1. validate validation packet sub-agents, verify detection packet sub-agents, and review packet sub-agents — assembly rules in `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape / verify and review shapes)
 2. verify Step 7 mismatch-analysis sub-agents — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
 3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
 
@@ -395,7 +395,7 @@ The reviewer must verify the scenario inventory is complete with a deterministic
 **Checkpoints (executed per scenario):**
 
 1. **Role and mission** — the assembled prompt directly answers "who am I, what am I doing"; the task boundary requires no inference.
-2. **Context and motivation** — the assembled prompt answers "why now, where am I in the flow" (owning command, execution shape, output consumer). Batch-scoped prompts must declare that batch splitting is an internal optimization and the result is independent of it; single-executor prompts (validate) must declare the independent-session guarantee — the sub-agent does not hold the writing context and the main agent does not re-litigate its verdicts.
+2. **Context and motivation** — the assembled prompt answers "why now, where am I in the flow" (owning command, execution shape, output consumer). Packet prompts must declare that packet boundaries are deterministic and the result is independent of execution order (sequential or parallel); validate packet prompts additionally declare the required execution shape — the sub-agent does not hold the writing context and the main agent does not re-litigate its verdicts. The declaration is an instruction to the executor, not a claim that independence was verified (see `framework/verification_scope.md` §Guarantee Boundary).
 3. **Terminology entry** — every framework term that appears in the assembled prompt has a definition or a source reference in the prompt (fine-grained: one-line definition plus source). An undefined term is a finding.
 4. **Protocol location** — the assembled prompt points to a single protocol source, and it contains no restatement of protocol rules (the boundary between rule restatement and context declaration is judged per `framework/verification_scope.md` §Sub-agent Prompt Assembly Prohibitions).
 5. **Permission boundary** — the assembled prompt states the read-only permission and the prohibitions (no file modification, no state-changing commands, no further sub-agent launch).
@@ -406,11 +406,11 @@ The reviewer must verify the scenario inventory is complete with a deterministic
 
 1. **Static rule check** — read each assembly/protocol rule and verify the seven checkpoints are enforced at the rule level (mandatory fields, no vague wording, no gap left for the main agent to improvise).
 2. **Complete assembly exercise (mandatory, at least one per scenario)** — the reviewer assembles a real prompt per each rule and checks every checkpoint against the assembled product with text-level evidence (quote the product text; "it reads fine overall" is not evidence). Partial assembly or skipping the exercise does not count as coverage:
-   - Exercise A: a verify batch prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (verify mission form)
-   - Exercise B: a review batch prompt per the same rule (review mission form)
+   - Exercise A: a verify packet prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (verify mission form)
+   - Exercise B: a review packet prompt per the same rule (review mission form)
    - Exercise C: a Step 7 mismatch-analysis prompt per `framework/unit_verify_checklist.md` Step 7 (full input table, Context scope per the fill rule)
    - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
-   - Exercise E: a validate prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape; unit or rule target)
+   - Exercise E: a validate packet prompt per `framework/verification_scope.md` §Sub-agent Prompt Assembly (validate shape; unit or rule target)
    - Each exercise must use placeholder content different from the rule's own examples, so the reviewer does not reproduce the template example (self-confirmation bias).
 3. **Escalation (optional)** — when a checkpoint is in doubt on an assembled product, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
 
@@ -622,6 +622,10 @@ It must use this shape:
 ```text
 YYYYMMDD-HHMMSS-{scope_label}
 ```
+
+The ID identifies the review round for recovery and audit. It is not executor
+identity and proves nothing about execution shape — it must never be used as
+independence evidence.
 
 There must be at most one `spec_flow_review` run-state file in the repository at any time.
 Starting a new full-scope default review must delete the previous `spec_flow_review` run-state file before writing the new run state.

@@ -153,11 +153,11 @@ Each finding contains:
 - `recommendation`: fix suggestion
 - `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
 
-**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its slice — per review dimension, for each file it read, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
+**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its packet — for the reviewed file, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
 
 ```
 Dependency scope:
-  {dimension}: {file}: {declaration}   # declaration = section heading, line ranges, or "all"
+  {check key}: {file}: {declaration}   # check key = the reviewed file path; declaration = section heading, line ranges, or "all"
 ```
 
-Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The main agent carries this report over and uses it when writing the review cache — section headings become `--section` declarations for the unit's own main spec (recorded per dimension in the cache's `checks` mapping), line ranges become `--ranges` (see `framework/spec_review_checklist.md` §8); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
+Review judgments commonly cover whole files (a code quality assessment has no partial scope) — report `all` honestly in that case; the cache's `deps` then covers the whole file by design. The packet report declares the scope; `gate-submit` validates it against that packet's `read_refs` (not merely the run-wide snapshot), and `gate-finalize` computes the CIDs and records the per-check breakdown (check key = the reviewed file path) in the cache's `checks` mapping — section headings become section-region dependencies for the unit's own main spec, line ranges become chunk declarations (see `framework/validation_cache.md` §Format → Per-check evidence); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.

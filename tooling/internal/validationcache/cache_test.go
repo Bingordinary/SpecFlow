@@ -831,6 +831,31 @@ func TestDeleteRuleCache(t *testing.T) {
 	}
 }
 
+func TestPublishCacheCleansTempFileOnFailure(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/demo")
+	canonical := filepath.Join(cacheDir, "validate_result.md")
+	if err := os.MkdirAll(filepath.Join(canonical, "keep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := PublishCache(repoRoot, "unit", "demo", "validate", []byte("candidate\n")); err == nil {
+		t.Fatal("expected publication over a non-empty directory to fail")
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".specflow-cache-") {
+			t.Fatalf("failed publication left temp file %s", entry.Name())
+		}
+	}
+	if info, err := os.Stat(canonical); err != nil || !info.IsDir() {
+		t.Fatalf("failed publication changed the canonical target: info=%v err=%v", info, err)
+	}
+}
+
 // TestNormalizeConsistency verifies that the hash computed by fileHash
 // is deterministic and matches the expected normalization.
 func TestNormalizeConsistency(t *testing.T) {
@@ -1311,33 +1336,49 @@ func TestCheckRuleValidateMissingMainRuleFails(t *testing.T) {
 	}
 }
 
-func TestCheckAppendicesInCache_GlobErrorFailsClosed(t *testing.T) {
+func TestCheckAppendicesInCache_InvalidNameFailsClosed(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	os.MkdirAll(candidateDir, 0755)
+	// A name that would make filepath.Glob fail is rejected before any path is
+	// built — the name gate is the fail-closed boundary now, so the appendix
+	// check never sees an unvalidated name.
+	if _, err := CheckAppendicesInCache(repoRoot, "test["); err == nil {
+		t.Fatal("expected an invalid unit name to be rejected, got nil error")
+	}
+}
 
-	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+func TestCachePathsRejectInvalidTargetNames(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// The path a traversal name would resolve to: it must stay untouched.
+	victimDir := filepath.Join(repoRoot, "docs", "tmp", "evil")
+	if err := os.MkdirAll(victimDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(victimDir, "validate_result.md")
+	if err := os.WriteFile(victim, []byte("victim"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-
-	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
+	traversal := "../../../../tmp/evil"
+	if err := DeleteRuleCache(repoRoot, traversal, "validate"); err == nil {
+		t.Fatal("expected DeleteRuleCache to reject a traversal rule id")
+	}
+	if err := DeleteCache(repoRoot, "auth/x", "validate"); err == nil {
+		t.Fatal("expected DeleteCache to reject a unit name with a separator")
+	}
+	if _, err := PublishCache(repoRoot, "rule", traversal, "validate", []byte("payload")); err == nil {
+		t.Fatal("expected PublishCache to reject a traversal rule id")
+	}
+	if _, err := ReadGateBaseline(repoRoot, "rule", traversal, "validate"); err == nil {
+		t.Fatal("expected ReadGateBaseline to reject a traversal rule id")
+	}
+	if _, err := ReadCacheSummary(repoRoot, "unit", "..", "validate_result.md"); err == nil {
+		t.Fatal("expected ReadCacheSummary to reject a traversal unit name")
 	}
 
-	// An invalid glob pattern in the unit name makes filepath.Glob fail
-	result, err := CheckAppendicesInCache(repoRoot, "test[")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh {
-		t.Fatal("expected glob failure to reject the gate, got fresh")
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("the traversed target must stay untouched, stat err=%v", err)
 	}
 }
 
@@ -1850,6 +1891,113 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 	}
 }
 
+func TestGlobalRuleLogicalRefUsesStableOnly(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candidateRuleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
+	for _, dir := range []string{candidateUnitDir, candidateRuleDir, stableRuleDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
+	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	if err := os.WriteFile(selfPath, []byte(selfContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stableRulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
+	stableRuleContent := "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 1.0.0\n---\nStable constraint.\n"
+	if err := os.WriteFile(stableRulePath, []byte(stableRuleContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidateRulePath := filepath.Join(candidateRuleDir, "g_rule_http.md")
+	if err := os.WriteFile(candidateRulePath, []byte("candidate draft\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	selfHash, _ := fileHash(selfPath)
+	stableRuleHash, _ := fileHash(stableRulePath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cacheContent := "---\ncommand: validate\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n" + depsYAML(chunkDeps(t, selfPath)) + "  - path: rule:g_rule_http\n    hash: sha256:" + stableRuleHash + "\n" + depsYAML(chunkDeps(t, stableRulePath)) + "---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("candidate sibling must not shadow the stable global rule: %s", result.Reason)
+	}
+
+	if err := os.WriteFile(candidateRulePath, []byte("changed candidate draft\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("candidate global change must not stale the unit cache: %s", result.Reason)
+	}
+
+	if err := os.WriteFile(stableRulePath, []byte(stableRuleContent+"Changed stable constraint.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("stable global change must stale the unit cache")
+	}
+}
+
+func TestGlobalRuleLogicalRefRejectsCandidateOnly(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	candidateRuleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
+	for _, dir := range []string{candidateUnitDir, candidateRuleDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
+	if err := os.WriteFile(selfPath, []byte("---\nid: self\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidateRulePath := filepath.Join(candidateRuleDir, "g_rule_draft.md")
+	if err := os.WriteFile(candidateRulePath, []byte("candidate draft\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	selfHash, _ := fileHash(selfPath)
+	candidateRuleHash, _ := fileHash(candidateRulePath)
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cacheContent := "---\ncommand: validate\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n" + depsYAML(chunkDeps(t, selfPath)) + "  - path: rule:g_rule_draft\n    hash: sha256:" + candidateRuleHash + "\n" + depsYAML(chunkDeps(t, candidateRulePath)) + "---\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh || !strings.Contains(result.Reason, "rule:g_rule_draft") {
+		t.Fatalf("candidate-only global reference must fail closed, got %+v", result)
+	}
+}
+
 func TestLogicalRefSurvivesPromote(t *testing.T) {
 	repoRoot := t.TempDir()
 
@@ -2230,8 +2378,27 @@ func TestReadCacheChecksMapping(t *testing.T) {
 	if len(scope.Affected) != 0 || len(scope.StaleDeps) != 0 {
 		t.Fatalf("expected no stale deps, got affected=%v stale=%v", scope.Affected, scope.StaleDeps)
 	}
-	if scope.Degrades {
-		t.Fatal("expected no degradation")
+}
+
+func TestBuildEntryRejectsSectionDeclarationOnUnstructuredSpec(t *testing.T) {
+	repoRoot := t.TempDir()
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, "unit_plain.md")
+	plain := "---\nid: plain\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\nProse without sections.\n"
+	if err := os.WriteFile(path, []byte(plain), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_plain.md", []CheckDeclaration{{Check: "1", Sections: []string{"frontmatter"}}}); err == nil || !strings.Contains(err.Error(), "cannot be declared") {
+		t.Fatalf("expected a section declaration on a no-## spec to fail closed, got %v", err)
+	}
+
+	dup := "---\nid: plain\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\n## frontmatter\n\nFirst.\n\n## frontmatter\n\nSecond.\n"
+	if err := os.WriteFile(path, []byte(dup), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_plain.md", []CheckDeclaration{{Check: "1", Sections: []string{"frontmatter"}}}); err == nil || !strings.Contains(err.Error(), "reserved heading") {
+		t.Fatalf("expected the duplicated reserved heading to fail closed, got %v", err)
 	}
 }
 
@@ -2266,12 +2433,13 @@ func TestDeriveStaleScopeSectionEdit(t *testing.T) {
 	if len(scope.Affected) != 2 || scope.Affected[0] != "1" || scope.Affected[1] != "7" {
 		t.Fatalf("expected checks 1 and 7 affected, got %v", scope.Affected)
 	}
-	if scope.Degrades {
-		t.Fatal("expected no degradation when check 5 is unaffected")
-	}
 }
 
-func TestDeriveStaleScopeDegrades(t *testing.T) {
+// TestDeriveStaleScopeAllDeclaredAffected verifies the cache-layer evidence
+// for a whole-declaration edit: every declared check is affected, so the
+// caller's plan has nothing to carry over. The plan-coverage conclusion
+// itself is derived by the planner (gaterun), not by this layer.
+func TestDeriveStaleScopeAllDeclaredAffected(t *testing.T) {
 	repoRoot := t.TempDir()
 	specPath := writeSpecWithSections(t, repoRoot, "self", "Prose.")
 	specHash, _ := fileHash(specPath)
@@ -2298,15 +2466,12 @@ func TestDeriveStaleScopeDegrades(t *testing.T) {
 	if len(scope.Affected) != 2 {
 		t.Fatalf("expected both checks affected, got %v", scope.Affected)
 	}
-	if !scope.Degrades {
-		t.Fatal("expected degradation when every declared check is affected")
-	}
 }
 
-// TestDeriveStaleScopeCrossFreshOthersStale verifies that the degradation
-// conclusion treats the cross-check as always affected (its delta re-run is
-// unconditional): every declared non-cross check stale + a fresh cross entry
-// means the delta re-run covers every declared check — the whole run.
+// TestDeriveStaleScopeCrossFreshOthersStale verifies the cache-layer
+// evidence when every declared non-cross check is stale while the cross
+// entry stays fresh: the affected set covers the whole declaration, so the
+// planner carries nothing over (the cross-check always re-runs).
 func TestDeriveStaleScopeCrossFreshOthersStale(t *testing.T) {
 	repoRoot := t.TempDir()
 	specPath := writeSpecWithThreeSections(t, repoRoot, "self")
@@ -2340,9 +2505,6 @@ func TestDeriveStaleScopeCrossFreshOthersStale(t *testing.T) {
 	}
 	if len(scope.Affected) != 2 {
 		t.Fatalf("expected checks 1 and 5 affected (cross stays fresh), got %v", scope.Affected)
-	}
-	if !scope.Degrades {
-		t.Fatal("expected degradation: every declared non-cross check is stale and the cross-check always re-runs — the delta re-run covers every declared check")
 	}
 }
 
@@ -2383,9 +2545,6 @@ func TestDeriveStaleScopeCrossFreshPartialStale(t *testing.T) {
 	}
 	if len(scope.Affected) != 1 || scope.Affected[0] != "1" {
 		t.Fatalf("expected only check 1 affected, got %v", scope.Affected)
-	}
-	if scope.Degrades {
-		t.Fatal("expected no degradation when a declared check (5) stays fresh")
 	}
 }
 
@@ -2657,23 +2816,23 @@ func writeRuleCache(t *testing.T, repoRoot string, ruleHash string, rulePath str
 	}
 }
 
-func TestDeriveStaleScopeRuleFileChangeDegrades(t *testing.T) {
+// TestDeriveStaleScopeRuleFileChangeUnclaimed verifies that a whole-rule-file
+// change leaves the rule file entry unclaimed (no check association): the
+// planner degrades to the full packet set for it.
+func TestDeriveStaleScopeRuleFileChangeUnclaimed(t *testing.T) {
 	repoRoot := t.TempDir()
 	rulePath := writeRuleAndConsumer(t, repoRoot)
 	ruleHash, _ := fileHash(rulePath)
 	writeRuleCache(t, repoRoot, ruleHash, rulePath)
 
-	// The rule file itself changes: it is a whole-file declaration, so every
-	// rule-body check is affected — the delta scope degrades.
+	// The rule file itself changes: it is a whole-file declaration with no
+	// check association, so the entry is unclaimed.
 	ruleContent := string(mustRead(t, rulePath))
 	os.WriteFile(rulePath, []byte(strings.Replace(ruleContent, "Body.", "Body, edited.", 1)), 0644)
 
 	scope, err := DeriveStaleScope(repoRoot, "rule", "g_rule_test", "validate")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !scope.Degrades {
-		t.Fatal("expected degradation when the rule file itself went stale")
 	}
 	if len(scope.Unclaimed) != 1 || scope.Unclaimed[0] != "docs/specs/rules/candidate/g_rule_test.md" {
 		t.Fatalf("expected the rule file entry unclaimed, got %v", scope.Unclaimed)
@@ -2687,16 +2846,13 @@ func TestDeriveStaleScopeRuleConsumerChangeNoDegrades(t *testing.T) {
 	writeRuleCache(t, repoRoot, ruleHash, rulePath)
 
 	// Only the consumer unit spec changes: the rule file entry stays fresh,
-	// so the scope does not degrade.
+	// so the stale evidence stays a consumer-only unclaimed entry.
 	consumerPath := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_consumer.md")
 	os.WriteFile(consumerPath, []byte(strings.Replace(string(mustRead(t, consumerPath)), "Prose.", "Prose, edited.", 1)), 0644)
 
 	scope, err := DeriveStaleScope(repoRoot, "rule", "g_rule_test", "validate")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if scope.Degrades {
-		t.Fatal("expected no degradation when only a consumer changed")
 	}
 	if len(scope.Unclaimed) != 1 || scope.Unclaimed[0] != "unit:consumer" {
 		t.Fatalf("expected the consumer logical reference unclaimed, got %v", scope.Unclaimed)
@@ -2716,16 +2872,13 @@ func TestDeriveStaleScopeRuleFilePrefixedPathDegrades(t *testing.T) {
 	os.WriteFile(filepath.Join(ruleDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The rule file itself changes: the `./`-prefixed entry must still be
-	// recognized as the rule file and set the degradation state.
+	// recognized as an unclaimed whole-file entry.
 	ruleContent := string(mustRead(t, rulePath))
 	os.WriteFile(rulePath, []byte(strings.Replace(ruleContent, "Body.", "Body, edited.", 1)), 0644)
 
 	scope, err := DeriveStaleScope(repoRoot, "rule", "g_rule_test", "validate")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !scope.Degrades {
-		t.Fatal("expected degradation for a ./ -prefixed rule file entry that went stale")
 	}
 	if len(scope.Unclaimed) != 1 || scope.Unclaimed[0] != "./docs/specs/rules/candidate/g_rule_test.md" {
 		t.Fatalf("expected the prefixed rule file entry unclaimed, got %v", scope.Unclaimed)
@@ -2786,12 +2939,12 @@ func TestRuleCacheChecksMapping(t *testing.T) {
 	if !scope.HasChecks {
 		t.Fatal("expected per-check evidence on the rule cache")
 	}
-	if len(scope.Affected) != 0 || len(scope.StaleDeps) != 0 || scope.Degrades {
-		t.Fatalf("expected a clean scope, got affected=%v stale=%v degrades=%v", scope.Affected, scope.StaleDeps, scope.Degrades)
+	if len(scope.Affected) != 0 || len(scope.StaleDeps) != 0 {
+		t.Fatalf("expected a clean scope, got affected=%v stale=%v", scope.Affected, scope.StaleDeps)
 	}
 
 	// The consumer unit changes: only the check that declared it (5) is
-	// affected, the entry is claimed (no longer unclaimed), no degradation.
+	// affected, the entry is claimed (no longer unclaimed).
 	os.WriteFile(consumerPath, []byte(strings.Replace(string(mustRead(t, consumerPath)), "Prose.", "Prose, edited.", 1)), 0644)
 
 	scope, err = DeriveStaleScope(repoRoot, "rule", "g_rule_test", "validate")
@@ -2801,17 +2954,15 @@ func TestRuleCacheChecksMapping(t *testing.T) {
 	if len(scope.Affected) != 1 || scope.Affected[0] != "5" {
 		t.Fatalf("expected only check 5 affected by the consumer change, got %v", scope.Affected)
 	}
-	if scope.Degrades {
-		t.Fatal("expected no degradation for a consumer-only change")
-	}
 	for _, u := range scope.Unclaimed {
 		if u == "unit:consumer" {
 			t.Fatalf("consumer entry must be claimed by check 5, got unclaimed: %v", scope.Unclaimed)
 		}
 	}
 
-	// The rule file itself changes: whole-file declaration — every check is
-	// affected and the scope degrades.
+	// The rule file itself changes: both declared checks (1 and 5) declare
+	// whole-file deps on it, so every declared check is affected — the
+	// planner carries nothing over for this declaration.
 	ruleContent := string(mustRead(t, rulePath))
 	os.WriteFile(rulePath, []byte(strings.Replace(ruleContent, "Body.", "Body, edited.", 1)), 0644)
 
@@ -2819,8 +2970,12 @@ func TestRuleCacheChecksMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !scope.Degrades {
-		t.Fatal("expected degradation when the rule file itself went stale")
+	affected := map[string]bool{}
+	for _, k := range scope.Affected {
+		affected[k] = true
+	}
+	if !affected["1"] || !affected["5"] {
+		t.Fatalf("expected every declared check affected by the rule file change, got %v", scope.Affected)
 	}
 }
 
@@ -2953,6 +3108,9 @@ files:
 ## Findings
 - P2: cosmetic issue
 target: candidate is body text, not frontmatter
+<!-- GATE_JUDGMENTS_BEGIN
+{"schema_version":1,"logical_status":{"1":"pass"},"findings":[],"synthesis_digest":"sha256:abc"}
+GATE_JUDGMENTS_END -->
 `
 	out, changed := rewriteCacheLayerToStable(input)
 	if !changed {
@@ -2975,6 +3133,9 @@ target: candidate is body text, not frontmatter
 	}
 	if !strings.Contains(out, "target: candidate is body text, not frontmatter") {
 		t.Fatalf("body must be preserved verbatim, got:\n%s", out)
+	}
+	if !strings.Contains(out, `{"schema_version":1,"logical_status":{"1":"pass"},"findings":[],"synthesis_digest":"sha256:abc"}`) {
+		t.Fatalf("structured judgment state must survive the layer rewrite, got:\n%s", out)
 	}
 	if strings.Contains(out, "/candidate/") {
 		t.Fatalf("no candidate path may remain, got:\n%s", out)
@@ -3169,5 +3330,354 @@ func TestValidateEntryPathForm(t *testing.T) {
 				t.Fatalf("expected error mentioning %q, got: %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance item-level declarations
+// ---------------------------------------------------------------------------
+
+// writeSpecWithTwoItems writes a spec whose acceptance_item_set carries two
+// items, so tests can edit, rename, or reorder one item independently.
+func writeSpecWithTwoItems(t *testing.T, repoRoot, name string) string {
+	t.Helper()
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, "unit_"+name+".md")
+	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: " + name + ".aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// itemRegionDep computes the item-region dependency string of one item.
+func itemRegionDep(t *testing.T, path, id string) string {
+	t.Helper()
+	text, err := contenthash.FileText(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	region, ok := contenthash.LocateAcceptanceItemRegion(text, id)
+	if !ok {
+		t.Fatalf("item %s not locatable in %s", id, path)
+	}
+	return "region:acceptance_item:" + id + ":" + contenthash.RegionCID(region.Text)
+}
+
+// wholeSetDep computes the whole-set dependency string of a spec.
+func wholeSetDep(t *testing.T, path string) string {
+	t.Helper()
+	text, err := contenthash.FileText(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	region, ok := contenthash.AcceptanceItemsRegion(text)
+	if !ok {
+		t.Fatalf("acceptance item set not locatable in %s", path)
+	}
+	return "region:acceptance_items:" + contenthash.RegionCID(region)
+}
+
+// writeVerifyCacheWithChecks writes a pass verify cache whose per-check deps
+// are given by checkDeps (check key -> dep string), in the given key order.
+func writeVerifyCacheWithChecks(t *testing.T, repoRoot, name, specPath string, checkDeps map[string]string, order []string) {
+	t.Helper()
+	specHash, err := fileHash(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString("---\ncommand: verify\nunit: " + name + "\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_" + name + ".md\n    hash: sha256:" + specHash + "\n    checks:\n")
+	var union []string
+	seen := map[string]bool{}
+	for _, key := range order {
+		dep := checkDeps[key]
+		b.WriteString("      - check: " + key + "\n        deps:\n          - " + dep + "\n")
+		if !seen[dep] {
+			seen[dep] = true
+			union = append(union, dep)
+		}
+	}
+	b.WriteString("    deps:\n")
+	for _, dep := range union {
+		b.WriteString("      - " + dep + "\n")
+	}
+	b.WriteString("---\n")
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", name)
+	os.MkdirAll(cacheDir, 0755)
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildEntryFromChecksAcceptanceItemDeps(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	path := "docs/specs/units/candidate/unit_self.md"
+	coreDep := itemRegionDep(t, specPath, "self.core")
+	auxDep := itemRegionDep(t, specPath, "self.aux")
+	setDep := wholeSetDep(t, specPath)
+
+	entry, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{
+		{Check: "self.core", AcceptanceItemIDs: []string{"self.core"}},
+		{Check: "self.aux", AcceptanceItemIDs: []string{"self.aux"}},
+		{Check: "cross", AcceptanceItems: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Checks) != 3 {
+		t.Fatalf("expected 3 checks, got %d", len(entry.Checks))
+	}
+	if len(entry.Checks[0].Deps) != 1 || entry.Checks[0].Deps[0] != coreDep {
+		t.Fatalf("unexpected self.core deps: %v", entry.Checks[0].Deps)
+	}
+	if len(entry.Checks[1].Deps) != 1 || entry.Checks[1].Deps[0] != auxDep {
+		t.Fatalf("unexpected self.aux deps: %v", entry.Checks[1].Deps)
+	}
+	if len(entry.Checks[2].Deps) != 1 || entry.Checks[2].Deps[0] != setDep {
+		t.Fatalf("unexpected cross deps: %v", entry.Checks[2].Deps)
+	}
+	for _, want := range []string{coreDep, auxDep, setDep} {
+		found := false
+		for _, dep := range entry.Deps {
+			if dep == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("union deps missing %s: %v", want, entry.Deps)
+		}
+	}
+}
+
+func TestBuildEntryFromChecksAcceptanceItemFailClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	path := "docs/specs/units/candidate/unit_self.md"
+
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{
+		{"missing id", []string{"self.none"}},
+		{"empty id", []string{""}},
+		{"blank id", []string{"   "}},
+	} {
+		_, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{{Check: "self.core", AcceptanceItemIDs: tc.ids}})
+		if err == nil {
+			t.Fatalf("%s: expected a fail-closed error", tc.name)
+		}
+	}
+
+	// A duplicated id cannot be located unambiguously — fail closed.
+	dup := strings.Replace(string(mustRead(t, specPath)), "- id: self.aux", "- id: self.core", 1)
+	if err := os.WriteFile(specPath, []byte(dup), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{{Check: "self.core", AcceptanceItemIDs: []string{"self.core"}}}); err == nil {
+		t.Fatal("duplicated id: expected a fail-closed error")
+	}
+}
+
+func TestBuildEntryMixesWholeSetAndItemDeps(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	path := "docs/specs/units/candidate/unit_self.md"
+	coreDep := itemRegionDep(t, specPath, "self.core")
+	setDep := wholeSetDep(t, specPath)
+
+	entry, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{
+		{Check: "cov", AcceptanceItems: true, AcceptanceItemIDs: []string{"self.core"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := entry.Checks[0].Deps
+	if len(deps) != 2 || deps[0] != setDep || deps[1] != coreDep {
+		t.Fatalf("expected the whole-set and item deps unioned, got %v", deps)
+	}
+}
+
+func TestDeriveStaleScopeAcceptanceItemEdit(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	coreDep := itemRegionDep(t, specPath, "self.core")
+	auxDep := itemRegionDep(t, specPath, "self.aux")
+	setDep := wholeSetDep(t, specPath)
+	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
+		"self.core": coreDep,
+		"self.aux":  auxDep,
+		"cross":     setDep,
+	}, []string{"self.core", "self.aux", "cross"})
+
+	// Edit only the self.core item.
+	edited := strings.Replace(string(mustRead(t, specPath)), "description: Core.", "description: Core, edited.", 1)
+	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := DeriveStaleScope(repoRoot, "unit", "self", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !scope.HasChecks {
+		t.Fatal("expected per-check evidence")
+	}
+	hasCore, hasSet, hasAux := false, false, false
+	for _, d := range scope.StaleDeps {
+		switch d {
+		case coreDep:
+			hasCore = true
+		case setDep:
+			hasSet = true
+		case auxDep:
+			hasAux = true
+		}
+	}
+	if !hasCore || !hasSet {
+		t.Fatalf("expected the core item dep and the whole-set dep stale, got %v", scope.StaleDeps)
+	}
+	if hasAux {
+		t.Fatalf("the aux item dep must stay fresh, got %v", scope.StaleDeps)
+	}
+	if len(scope.Affected) != 2 || scope.Affected[0] != "self.core" || scope.Affected[1] != "cross" {
+		t.Fatalf("expected affected [self.core cross], got %v", scope.Affected)
+	}
+}
+
+func TestDeriveStaleScopeAcceptanceItemReorderFresh(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	coreDep := itemRegionDep(t, specPath, "self.core")
+	auxDep := itemRegionDep(t, specPath, "self.aux")
+	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
+		"self.core": coreDep,
+		"self.aux":  auxDep,
+	}, []string{"self.core", "self.aux"})
+
+	// Swap the two item blocks; their contents are unchanged.
+	text, _ := contenthash.FileText(specPath)
+	coreRegion, _ := contenthash.LocateAcceptanceItemRegion(text, "self.core")
+	auxRegion, _ := contenthash.LocateAcceptanceItemRegion(text, "self.aux")
+	swapped := strings.Replace(text, coreRegion.Text+"\n\n"+auxRegion.Text, auxRegion.Text+"\n\n"+coreRegion.Text, 1)
+	if swapped == text {
+		t.Fatal("item swap did not change the file — fixture assumption broken")
+	}
+	if err := os.WriteFile(specPath, []byte(swapped), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := DeriveStaleScope(repoRoot, "unit", "self", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.StaleDeps) != 0 || len(scope.Affected) != 0 {
+		t.Fatalf("reordering items must not stale item deps, got stale=%v affected=%v", scope.StaleDeps, scope.Affected)
+	}
+}
+
+func TestDeriveStaleScopeAcceptanceItemRename(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	coreDep := itemRegionDep(t, specPath, "self.core")
+	auxDep := itemRegionDep(t, specPath, "self.aux")
+	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
+		"self.core": coreDep,
+		"self.aux":  auxDep,
+	}, []string{"self.core", "self.aux"})
+
+	renamed := strings.Replace(string(mustRead(t, specPath)), "- id: self.core", "- id: self.renamed", 1)
+	if err := os.WriteFile(specPath, []byte(renamed), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := DeriveStaleScope(repoRoot, "unit", "self", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.StaleDeps) != 1 || scope.StaleDeps[0] != coreDep {
+		t.Fatalf("a renamed id must stale only its old dep, got %v", scope.StaleDeps)
+	}
+	if len(scope.Affected) != 1 || scope.Affected[0] != "self.core" {
+		t.Fatalf("expected only self.core affected, got %v", scope.Affected)
+	}
+}
+
+func TestDeriveStaleScopeAcceptanceItemDuplicate(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	auxDep := itemRegionDep(t, specPath, "self.aux")
+	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
+		"self.aux": auxDep,
+	}, []string{"self.aux"})
+
+	dup := strings.Replace(string(mustRead(t, specPath)), "- id: self.aux", "- id: self.core", 1)
+	if err := os.WriteFile(specPath, []byte(dup), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := DeriveStaleScope(repoRoot, "unit", "self", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.StaleDeps) != 1 || scope.StaleDeps[0] != auxDep {
+		t.Fatalf("a duplicated id must fail closed to stale, got %v", scope.StaleDeps)
+	}
+}
+
+// TestReadGateBaselineCanonicalizesQuotedScalars pins the one value form the
+// parser guarantees: quotes and surrounding whitespace are stripped before a
+// scalar is recorded, so a quoted-with-whitespace spelling like
+// `status: " fail "` can never be a valid `fail` for one consumer and an
+// ignored value for another (repair must re-run that judgment, not carry it).
+func TestReadGateBaselineCanonicalizesQuotedScalars(t *testing.T) {
+	repoRoot := t.TempDir()
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\n" +
+		"command: \" validate \"\n" +
+		"unit: \" auth \"\n" +
+		"mode: \" full \"\n" +
+		"basis: \" delta \"\n" +
+		"result: \" fail \"\n" +
+		"target: \" candidate \"\n" +
+		"blocking: true\n" +
+		"p0_count: 1\n" +
+		"p1_count: 0\n" +
+		"p2_count: 0\n" +
+		"p3_count: 0\n" +
+		"timestamp: 2026-01-01T00:00:00Z\n" +
+		"files:\n" +
+		"  - path: \" src/auth/login.go \"\n" +
+		"    hash: sha256:1111\n" +
+		"    checks:\n" +
+		"      - check: \" 5 \"\n" +
+		"        status: \" fail \"\n" +
+		"---\n" +
+		"\nbody\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseline, err := ReadGateBaseline(repoRoot, "unit", "auth", "validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !baseline.Exists {
+		t.Fatal("expected the baseline to exist")
+	}
+	if baseline.Mode != "full" || baseline.Basis != "delta" || baseline.Result != "fail" || baseline.Target != "candidate" {
+		t.Fatalf("quoted scalars must canonicalize, got mode=%q basis=%q result=%q target=%q",
+			baseline.Mode, baseline.Basis, baseline.Result, baseline.Target)
+	}
+	if len(baseline.Checks) != 1 || baseline.Checks[0].Check != "5" || baseline.Checks[0].Status != "fail" {
+		t.Fatalf("quoted check/status must canonicalize, got %+v", baseline.Checks)
+	}
+	if len(baseline.Entries) != 1 || baseline.Entries[0].Path != "src/auth/login.go" {
+		t.Fatalf("quoted path must canonicalize, got %+v", baseline.Entries)
 	}
 }

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Cache files record the result and content-addressed dependency evidence (whole-file hash + dependency chunk CIDs) of the last `validate` or `verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?" A failure record (a delta re-run's or a candidate verify full-run FAIL's fail cache) answers the negative variant: "were these files checked and which judgments failed?" — the per-check status map is the failure-recovery baseline (see §Write Rules and `framework/verification_scope.md` §Delta Runs → Failure recovery).
+Cache files record the result and content-addressed dependency evidence (whole-file hash + dependency chunk CIDs) of the last `validate` or `verify` run. They are not a state machine — they do not determine what happens next. They only answer: "were these files checked and were they passing at that time?" — not "who executed the check" (see §Dependency Declaration → Known limit). A failure record (a delta/repair re-run's or a candidate verify full-run FAIL's fail cache) answers the negative variant: "were these files checked and which judgments failed?" — the per-check status map is the failure-recovery baseline (see §Write Rules and `framework/verification_scope.md` §Delta Runs → Failure recovery).
 
 This file is referenced by `framework/concepts.md` §3.
 
@@ -27,9 +27,9 @@ YAML frontmatter + markdown body:
 ---
 command: validate            # or verify
 unit: user_auth
-mode: full                   # always full — targeted runs (:check-{n}, :{keyword}) do not write caches
+mode: full                   # complete results are always full; targeted runs never publish a complete cache
 basis: full                  # audit metadata: full | delta | repair (full = full run; delta = re* incremental recovery from a pass baseline; repair = re* recovery from a failure record)
-result: pass                 # pass | fail (fail = a failure record: a delta re-run found P0/P1 and recorded them instead of deleting the cache; a candidate verify full-run FAIL also writes one — see §Failure handling by gate role)
+result: pass                 # pass | fail (fail = a failure record: a delta/repair re-run found P0/P1 and recorded them instead of deleting the cache; a candidate verify full-run FAIL also writes one — see §Failure handling by gate role)
 target: candidate            # the layer the run checked: candidate | stable (all three commands record it; stable-only runs — @stable confirmation checks — write target: stable; the review gate separates the two cache sets by this field — the fresh stable report's review confirmation requires target: stable, see framework/verification_scope.md §Stable-only Targets)
 blocking: false              # required on every fail/blocking-capable cache (validate/verify failure records and review caches): true iff result: fail (P0/P1 findings); pass caches may omit it (absent = not blocking)
 p0_count: 0                  # (verify) severity counts; P2/P3 pending items when > 0
@@ -37,6 +37,9 @@ p1_count: 0
 p2_count: 1
 p3_count: 0
 timestamp: "2026-06-30T10:00:00Z"
+gate_run: 20260916-120000-3f9a1c   # audit: the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes); never gated
+invalidated_checks:                # failure records only; machine-owned targeted P0/P1 invalidations, omitted when empty
+  - auth.login
 files:
   - path: docs/specs/units/candidate/unit_user_auth.md
     hash: sha256:abc123...
@@ -48,10 +51,17 @@ files:
       - sha256:7890ab...
       - sha256:3456cd...
 ---
-Free-form summary of the result.
+<!-- GATE_JUDGMENTS_BEGIN
+{"schema_version":2,"logical_status":{"1":"pass","cross":"pass"},"findings":[],"synthesis_digest":"sha256:..."}
+GATE_JUDGMENTS_END -->
+Generated human-readable summary of the result.
 ```
 
-**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) for all three gates, the candidate verify full FAIL, the blocking cache for review (full and delta FAIL), and the confirmation-cache FAIL for stable-only targets (see §Write Rules and §Failure handling by gate role). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**: after the findings are resolved, the delta re-run re-checks only the failed checks plus the newly affected ones and carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (candidate verify full FAIL, review full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
+The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair synthesis. Schema version 2 records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, and the accepted synthesis digest. `gate-finalize` generates it; agents never edit it. For rule validate delta/repair runs, `gate-finalize` combines the disjoint carried baseline judgments and re-run packet judgments, so the rewritten block still contains all eight logical check statuses; carried and current findings are de-duplicated by finding id. A check that appears in both sets rejects finalization as corrupted run state. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so cross sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every retained carried finding into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
+
+**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta or repair re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) for all three gates, the candidate verify full FAIL, the blocking cache for review (full and delta FAIL), and the confirmation-cache FAIL for stable-only targets (see §Write Rules and §Failure handling by gate role). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**. A later targeted P0/P1 does not rewrite that historical status map: `specflowctl gate-invalidate` records the contradicted judgment in the machine-owned `invalidated_checks` list. After the findings are resolved, the repair plan re-checks the failed checks, persisted invalidated checks, newly affected checks, current keys the baseline never declared, and any explicit `--rerun` override, then carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (candidate verify full FAIL, review full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
+
+**Gate run binding:** `gate_run` is the audit id of the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes). It identifies the run's fixed inputs — it is not executor identity and proves nothing about the execution shape (see §Dependency Declaration → Known limit (execution shape)). `fresh` and `promote` never read it, and caches written before the field existed remain valid (absent = no run recorded).
 
 Each `files` entry records two kinds of evidence:
 
@@ -63,8 +73,8 @@ Each `files` entry records two kinds of evidence:
   the declared dependency chunks stale the cache; content changes elsewhere
   in the same file do not.
 
-`deps` is produced by `specflowctl gate-evidence --file <path> --ranges <lines>`
-(see [Dependency Declaration](#dependency-declaration)). A `files` entry with
+`deps` is computed by the tooling at `gate-finalize` from the entry's declared
+scope (see [Dependency Declaration](#dependency-declaration)). A `files` entry with
 no `deps` but a non-empty file fails closed (see Staleness Detection).
 
 `files` paths are resolved against the repository root. Dependency matching
@@ -99,27 +109,48 @@ files:
 
 A `checks` entry may additionally declare `status` — the judgment outcome in a
 **failure record**: `pass` (judgment ran and passed), `fail` (judgment ran and
-found P0/P1), or `carried` (not re-run — evidence unchanged from the pass
-baseline; delta-FAIL records only — full-run records have no `carried`). The
-status map is the failure-recovery scope input: the recovery re-run re-executes
-the `fail` checks, derives the newly affected checks from the declared deps
-against the current content, and carries the `pass`/`carried` checks over (see
+retained at least one finding of any severity — P0–P3; the gate result itself
+is still decided by P0/P1), or `carried` (not re-run — evidence unchanged from the pass
+baseline; delta/repair-FAIL records only — full-run records have no `carried`). The
+status map is the failure-recovery scope input, derived mechanically by
+`gate-finalize` from the accepted packet verdicts: the recovery plan
+(`gate-plan --mode repair`) re-runs the `fail` checks, derives the newly
+affected checks from the declared deps against the current content, and
+carries the `pass`/`carried` checks over (see
 `framework/verification_scope.md` §Delta Runs → Failure recovery).
 
 **Status declaration contract:** `status` is **required on every fail/blocking
 cache** (a failure record) — a fail cache without a per-check status map is an
 invalid write, and its recovery degrades to a full re-run (see
-`framework/verification_scope.md` §Delta Runs → Failure recovery). Pass caches
-may omit `status` (absent = pass), keeping pre-failure caches valid — the
-absent-means-pass reading applies only to pass caches, never to fail/blocking
-ones.
+`framework/verification_scope.md` §Delta Runs → Failure recovery). A status map
+is usable only when it covers exactly the checks the record's `GATE_JUDGMENTS`
+baseline holds, every value is `pass`/`fail`/`carried`, and `carried` appears
+only in records written by a delta or repair run (a full-run record —
+`basis: full` — has no carried judgments). A key missing from either side, an
+unknown value, and `carried` in a full-run record are malformed state, and the
+recovery degrades to the full packet set instead of guessing. Pass caches may omit `status` (absent = pass), keeping
+pre-failure caches valid — the absent-means-pass reading applies only to pass
+caches, never to fail/blocking ones.
+
+**Targeted invalidation contract:** `invalidated_checks` is an optional,
+sorted, duplicate-free list present only on a failure record. It records
+judgments whose recorded `pass`/`carried` result was contradicted later by a
+targeted P0/P1 result. The coordinator writes it only through `specflowctl
+gate-invalidate`; agents never edit it. `gate-plan --mode repair` unions these
+keys into the mechanically derived re-run set before carry-over is computed.
+An invalidated key that no longer maps to the current judgment surface makes
+the plan degrade to the full packet set instead of being ignored. A successful
+`gate-finalize` rewrites the complete cache without the field because every
+persisted invalidation in that plan was re-executed; a failed or rejected
+finalize leaves the original failure record unchanged. Pass caches must not
+carry `invalidated_checks`.
 
 - Check keys are command-specific: validate uses the **agent check number**
   `"1"`–`"8"` (the 8 agent checks of `validate@{unit}`; the mechanical
   `specflowctl validate` Check 9 — region locatability — is a gate-evidence
   support check and takes no per-check declaration); verify uses the
   acceptance item id the judgment aligned (e.g. `auth.login`); review uses the
-  batch/file dimension the assessment covered. The per-check granularity is
+  reviewed file path the assessment covered. The per-check granularity is
   the mechanism-derived delta scope input (see `framework/verification_scope.md`
   §Delta Runs) — it exists for delta derivation, not for the promote gate.
   The cross-check (unit validate/verify/review) uses the reserved key `"cross"`
@@ -127,12 +158,13 @@ ones.
   (always part of the affected set), so the key is a recording convention, not
   a derivation input — a `checks` entry with key `"cross"` derives its stale
   deps like any other key (only a stale declared dep puts it in the affected
-  list), and omitting it does not change the derived scope. The degradation
+  list), and omitting it does not change the derived scope. The coverage
   conclusion is the one place the unconditional re-run is material: the
   affected set always includes the cross-check, so a delta run covers every
-  declared check exactly when every declared **non-cross** check is affected —
-  a cache declaring only `"cross"` degrades too. Whether `"cross"` is declared
-  or fresh therefore never changes the degradation conclusion.
+  declared check exactly when nothing is carried over — a cache declaring
+  only `"cross"` covers every declared check too, reported as a full-scope
+  re-run. Whether `"cross"` is declared or fresh therefore never changes the
+  coverage conclusion.
 - **Rule validate caches carry per-check evidence too:** rule check keys are
   the 8 agent checks of `validate@{rule}` (`"1"`–`"8"`; rules have no
   cross-check). The rule file entry keeps its whole-file file-level `deps`
@@ -140,14 +172,14 @@ ones.
   chunks it read, per the whole-body rule below), and consumer-discovery
   entries (`unit:{name}` logical references read by Check 5/7) declare the
   checks that consumed them. This makes a consumer-unit change stale exactly
-  the checks that read it instead of falling back to semantic derivation, and
-  gives rule failure records a per-check `status` carrier.
+  the checks that read it instead of falling back to file-level scope
+  derivation, and gives rule failure records a per-check `status` carrier.
 - The file-level `deps` remains the union of all declared check deps (plus
   any undeclared remainder). **The promote gate judges freshness on that
   union only**, so the gate logic is identical with or without `checks`.
 - A cache written before per-check evidence (no `checks` field) stays fully
-  valid: the gate reads the union `deps` as before, and a delta run degrades
-  to file-level scope derivation (see `framework/verification_scope.md`
+  valid: the gate reads the union `deps` as before, and a delta plan degrades
+  to the full packet set (see `framework/verification_scope.md`
   §Delta Runs → Incremental scope).
 - `checks` is optional per file: code files and contract files (whole-file
   declarations) may omit it — a single judgment surface has nothing to break
@@ -157,8 +189,9 @@ ones.
 - Entries without a per-check breakdown (logical references, contract files,
   whole-file declarations, declare-heavy extras) leave their deps **unclaimed**
   by any check. The delta scope derivation reports such entries when they go
-  stale and maps them to checks by the command's fixed association or by
-  semantic derivation — they are never silently carried over (see
+  stale and maps them by the command's fixed association; where no fixed
+  association exists the plan degrades conservatively to the full packet set —
+  they are never silently carried over (see
   `framework/verification_scope.md` §Delta Runs → Incremental scope).
 - **Union discipline:** every per-check dep must also appear in the entry's
   file-level `deps` union. The promote gate and the delta scope derivation
@@ -190,31 +223,32 @@ files:
     hash: sha256:def456...
     deps:
       - sha256:3456cd...
-  - path: rule:g_rule_http     # logical reference — resolves to the current-layer rule file
+  - path: rule:g_rule_http     # logical reference — global rules resolve only to the stable rule file
     hash: sha256:abc123...
     deps:
       - sha256:3456cd...
 ```
 
-A logical reference resolves at freshness-check time to the **current-layer** file (candidate first, stable fallback), and the recorded `hash`/`deps` come from the file the run actually read. This makes a promote of the referenced unit or rule (which deletes the candidate file without changing content) **not** stale caches whose dependency content is unchanged — a physical path would fail closed the moment the candidate file disappears. The appendix form (`unit:{name}:appendix:{file}`) takes the full appendix file base name without the `.md` extension (`unit_auth_account_token_claims`), resolved the same way (candidate first, stable fallback); the unit name is contextual. Logical references are allowed only for spec objects resolved by name (`unit:`, `unit:{name}:appendix:`, `rule:`); physical paths remain mandatory for every other entry (the unit's own main spec and appendices — the promote appendix gate keys on those physical paths — code files, constraints). An unresolved logical reference (no candidate and no stable file) fails closed.
+Logical references preserve the rule object's applicability semantics. `unit:{name}`, `unit:{name}:appendix:{file}`, and bound-rule references (`rule:b_rule_*`) resolve to the **current-layer** file (candidate first, stable fallback). Global-rule references (`rule:g_rule_*`) resolve only to the stable file: a candidate global rule is unpublished design truth and must not constrain units before promotion. The recorded `hash`/`deps` come from the file the run actually read. Current-layer references therefore stay fresh across promotion when dependency content is unchanged, while stable-global references remain bound to the active stable constraint. The appendix form takes the full appendix file base name without the `.md` extension (`unit_auth_account_token_claims`); the unit name is contextual. Logical references are allowed only for spec objects resolved by name (`unit:`, `unit:{name}:appendix:`, `rule:`); physical paths remain mandatory for every other entry (the unit's own main spec and appendices — the promote appendix gate keys on those physical paths — code files, constraints). An unresolved logical reference fails closed; for `rule:g_rule_*`, a candidate file does not satisfy the reference when no stable file exists.
 
 ### Structural Region Dependencies
 
-Chunk CIDs are the chunk-boundary granularity (~2 KB, content-defined): a small file is a single chunk, so a line-range declaration on it degenerates to the whole file. For spec content whose semantic granularity is finer than a chunk, a **structural region dependency** is used instead:
+Chunk CIDs are the chunk-boundary granularity (roughly 2–4 KB, growing with chunk size; content-defined): a small file is a single chunk, so a line-range declaration on it degenerates to the whole file. For spec content whose semantic granularity is finer than a chunk, a **structural region dependency** is used instead:
 
-- `specflowctl gate-evidence --file <path> --acceptance-items` emits `region:acceptance_items:<cid>`, the content identifier of the `acceptance_item_set` region (from the marker to the next top-level heading).
-- `specflowctl gate-evidence --file <path> --section <heading>` emits `region:section:<heading>:<cid>`, the content identifier of the section region with that heading text — the frontmatter region (heading `""`, from the file start to the line before the first `##` heading) or one `##` heading section (the heading line through the line before the next `##` heading; `###` and deeper headings belong to their `##` section). The heading line is part of the region, so renaming a heading changes its CID. `--section` is repeatable; `--sections` lists every section region (heading, line range, CID) without declaring anything.
-- Freshness re-locates the region by structure (the marker/heading, not line numbers) and compares the region's CID. Edits outside the region — even inside the same content-defined chunk — do not stale the cache; edits inside it do. A section heading that is missing or duplicated fails closed (the section cannot be located unambiguously).
-- Region dependencies are the precise declaration mode for judgments whose read surface is a spec region: cross-unit checks (a dependency unit's acceptance item set — `region:acceptance_items`), and own-spec judgments that read only some sections (e.g. validate Check 5's item region + contract sections — `region:acceptance_items` + `region:section:<heading>`). Rule files and protocol appendices are contract files (the whole file is the carrier) and keep whole-file declarations.
+- `specflowctl gate-evidence --file <path> --acceptance-items` emits `region:acceptance_items:<cid>`, the content identifier of the `acceptance_item_set` region (from the marker to the next `##` heading — the enclosing section's end; `###` and deeper headings belong to their `##` section and never terminate the set — or through the last real line of the file; the synthetic file-final newline is not part of the region). This is the **whole-set** region: it is raw text, so any item content change, item addition/removal, and item reordering all change its CID — the conservative declaration for judgments over the set as a whole. Only a `##` heading ends the region: an item separated from the previous one by a `###` subheading stays in the set, while an item placed after the next `##` heading sits outside it.
+- `specflowctl gate-evidence --file <path> --acceptance-item <id>` emits `region:acceptance_item:<id>:<cid>`, the content identifier of one acceptance item's region: the item's `- id:` line (outside a code fence) through the line before the next `- id:` line, or the end of the acceptance item set, with trailing blank lines excluded. The id is the locator, so reordering items changes no item region (item-level declarations stay fresh) as long as the item set ends at its last item; set-level content that follows the last item but remains inside the set belongs to the last item's region, so moving an item to or from that position changes its CID. Renaming an item id makes the old declaration unlocatable; a missing id, a duplicated id, or an absent marker fails closed. `--acceptance-item` is repeatable; `--items` lists every acceptance item region (id, line range, CID) without declaring anything.
+- `specflowctl gate-evidence --file <path> --section <heading>` emits `region:section:<heading>:<cid>`, the content identifier of the section region with that heading text — the frontmatter region (heading `""`, from the file start to the line before the first `##` heading) or one `##` heading section (the heading line through the line before the next `##` heading, or through the last real line for the final section — the file-final newline is not a line; `###` and deeper headings belong to their `##` section). The heading line is part of the region, so renaming a heading changes its CID. `--section` is repeatable; `--sections` lists every section region (heading, line range, CID) without declaring anything.
+- Freshness re-locates the region by structure (the marker/item id/heading, not line numbers) and compares the region's CID. Edits outside the region — even inside the same content-defined chunk — do not stale the cache; edits inside it do. A section heading that is missing or duplicated fails closed (the section cannot be located unambiguously); an acceptance item id that is missing or duplicated fails closed the same way.
+- Region dependencies are the precise declaration mode for judgments whose read surface is a spec region: cross-unit checks (a dependency unit's acceptance item set — `region:acceptance_items`), own-spec judgments that read specific acceptance items (`region:acceptance_item:<id>` — the default for verify's per-item judgments), and own-spec judgments that read only some sections (e.g. validate Check 5's item region + contract sections — `region:acceptance_items` + `region:section:<heading>`). Rule files and protocol appendices are contract files (the whole file is the carrier) and keep whole-file declarations.
 
-`mode: full` means a complete run of all checks/steps — the judgment set is complete, not a subset. Only complete-coverage runs write caches: full runs (`validate@{target}` / `verify@{unit}` / `review@{unit}`) and delta runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`, see `framework/verification_scope.md` §Delta Runs). Targeted runs (`:check-{n}` / `:{keyword}`) never write, so `mode` is always `full`. The `basis` field distinguishes the three writers for audit: `basis: full` (or absent) means the cache came from a full run; `basis: delta` means a delta run re-executed the stale judgments and carried the rest over from a pass baseline; `basis: repair` means a delta run recovered from a **failure record** — it re-executed the failed checks plus the newly affected ones and carried the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
+`mode: full` means a complete run of all checks/steps — the judgment set is complete, not a subset. Only complete-coverage runs publish caches: full runs (`validate@{target}` / `verify@{unit}` / `review@{unit}`) and delta runs (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`, see `framework/verification_scope.md` §Delta Runs). Targeted runs (`:check-{n}` / `:{keyword}`) never publish a result cache, so `mode` is always `full`; a targeted P0/P1 may only delete a pass cache or add machine-owned invalidation metadata to a failure record through `gate-invalidate`. The `basis` field distinguishes the three complete-result writers for audit: `basis: full` (or absent) means the cache came from a full run; `basis: delta` means a delta run re-executed the stale judgments and carried the rest over from a pass baseline; `basis: repair` means a delta run recovered from a **failure record** — it re-executed the failed checks, persisted invalidated checks, newly affected checks, current keys the baseline never declared, and explicit `--rerun` overrides, then carried the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
 
 ### Verify result semantics
 
 The verify cache uses the same `pass` / `fail` vocabulary as validate and review, at the gate level:
 
 - `result: pass` — no P0/P1 blocking findings. May carry P2/P3 pending items via `p2_count`/`p3_count` (with `blocking: false`).
-- `result: fail` — a **failure record**: a delta re-run (`reverify@{unit}`) found P0/P1 and recorded the failure instead of deleting the cache, or a candidate verify full-run FAIL wrote one (see §Failure handling by gate role). It must declare `blocking: true`; the gate rejects it as `BLOCKED` (promote must not proceed). A fail-result cache without the blocking declarations is an invalid write and fails closed.
+- `result: fail` — a **failure record**: a delta or repair re-run (`reverify@{unit}`) found P0/P1 and recorded the failure instead of deleting the cache, or a candidate verify full-run FAIL wrote one (see §Failure handling by gate role). It must declare `blocking: true`; the gate rejects it as `BLOCKED` (promote must not proceed). A fail-result cache without the blocking declarations is an invalid write and fails closed.
 
 The per-item ALIGNED / MISMATCH / CANNOT_DETERMINE verdicts in the verify report are finding-level vocabulary and are unrelated to the cache `result` field.
 
@@ -286,7 +320,8 @@ comparison:
    ensure a trailing `\n` (append if missing)
 3. Split the normalized text into content-defined chunks using a rolling
    hash (Rabin-style, 64-byte window; the boundary mask grows with chunk
-   size so boundaries are content-driven and average ~2 KB)
+   size so boundaries are content-driven and average roughly 2–4 KB, larger
+   for big files)
 4. Compute the SHA-256 of each chunk's bytes; format as `sha256:<hex>` —
    this is the chunk's **content identifier (CID)**
 5. The whole-file hash is the SHA-256 of the entire normalized text,
@@ -304,17 +339,31 @@ autocrlf settings or the agent's operating system.
 
 ## Dependency Declaration
 
-Freshness is judged on the chunks the run actually depended on. The agent
-declares those dependencies when writing the cache:
+Freshness is judged on the chunks the run actually depended on. The executor
+declares those dependencies in the packet report's `Dependency scope:` lines
+(the same declaration grammar `gate-evidence` accepts; a declaration is the
+literal `all` (whole file), a line-range list, the reserved token
+`acceptance_items` (the spec's whole `acceptance_item_set` structural region),
+one or more acceptance item declarations `acceptance_item:<id>[,<id>...]` (the
+item regions of that set), or a section heading); `gate-submit` validates them
+against that packet's `read_refs` — not merely the run-wide snapshot — and
+the tooling computes the CIDs and writes them into the cache at
+`gate-finalize` (see §Write Rules → Tooled writes):
 
 1. During the validate/verify/review run, keep track of which files were
    read and which line ranges of each file the judgment actually depended on
    (1-based, inclusive; e.g. `auth.go:120-180`).
-2. For each such file, run
-   `specflowctl gate-evidence --file <path> --ranges <lines>` (no `--ranges`
-   means the whole file). It outputs the whole-file `hash` and the `deps`
-   block — the CIDs of the chunks the declared ranges overlap.
-3. Record both in the cache's `files` entry.
+2. Report each such file and its dependency scope in the packet report's
+   `Dependency scope:` lines (the `{check key}: {file}: {declaration}` form).
+   `gate-submit` validates path membership against that packet's `read_refs`; at `gate-finalize`
+   the tooling resolves the declarations to CIDs and computes the whole-file
+   `hash` against the content the gate run bracketed.
+3. `specflowctl gate-evidence` remains the inspection tool for the
+   declaration surface: `--sections` lists every located region,
+   `--section <heading>` probes a heading's locatability, `--items` lists
+   every acceptance item region, and `--acceptance-item <id>` probes an
+   item id's locatability. Its output is never transcribed into a cache —
+   the declaration schema has no `hash`/`deps` fields.
 
 The declared ranges are a means to an end: **only the CIDs are recorded.**
 Line numbers are never persisted, so later insertions/deletions cannot
@@ -350,6 +399,23 @@ file-level `deps` stays whole-file, with the per-check `checks` mapping
 breaking that whole declaration down per rule check (see §Format → Per-check
 evidence → rule validate caches).
 
+**Item-region declarations for unit specs (verify):** a verify judgment for
+one acceptance item declares that item's region (`acceptance_item:<id>`, see
+§Structural Region Dependencies) — located by id, so item reordering never
+stales it, and editing one item stales only the judgments that declared it —
+plus the section regions and code ranges it read. Every item judgment of the
+run declares its own item region: the per-item declarations become the cache
+entry's `checks` mapping (check key = the acceptance item id, see §Format →
+Per-check evidence), and the delta scope derivation re-runs exactly the items
+whose evidence went stale (`framework/verification_scope.md` §Delta Runs).
+The whole-set token `acceptance_items` remains the declaration for judgments
+over the set as a whole — validate Check 5's coverage judgment, the
+cross-check, and cross-unit checks reading a dependency unit's item set. A
+declaration naming an item id that is missing or duplicated fails closed, and
+item-level declarations are optional: an item judgment may fall back to a
+section region or `acceptance_items` (declare-heavy conservatism), at the
+cost of coarser staleness.
+
 **Known limit:** the framework cannot verify that the agent's judgment
 depended only on the declared ranges. Under-declaration can produce a
 false-fresh cache that the mechanical gate cannot detect. The gate reports
@@ -357,64 +423,123 @@ changes outside the declared dependencies as an informational note rather
 than a failure; treat the note as a prompt to re-run when semantic coupling
 exists.
 
+**Known limit (execution shape):** the cache records the run's judgment and
+content evidence only; it carries no execution-shape field. Session identity,
+worker identity, and read-only capability are runtime properties the
+runtime-neutral tooling cannot observe, and a value written by the run itself
+would be a self-report from the party whose independence is in question.
+`fresh` and `promote` therefore cannot distinguish a run executed in an
+independent session from one executed by the main agent. The
+independent-execution requirement is an execution policy (see
+`framework/verification_scope.md` §Guarantee Boundary), not a
+cache-verifiable fact.
+
 ## Failure handling by gate role
 
 The three gates handle a candidate full-run FAIL differently, and the split is not historical accident — it follows from what each gate's judgment is anchored to:
 
 - **validate is the upstream root.** Its checks judge the spec itself, with no external anchor. A candidate validate FAIL means the spec was never confirmed sound — and validate's holistic checks are semantically coupled in ways the declared-region mechanism cannot capture (editing acceptance coverage can overturn a design-soundness judgment without any region CID going stale). A `pass` judgment on such a spec has no anchor to trust, so nothing may be carried over: the cache is deleted and the first full confirm must re-run everything. The low token cost of a doc-only review makes this the correct trade.
-- **verify is anchored to a validated spec.** Its trust anchor is the spec, which validate has confirmed sound (promote enforces the validate gate before verify's record matters). verify's mismatches are code-vs-spec mappings, and the coupling between acceptance items runs through shared code functions and spec regions — wide, but mechanically capturable: each item declares the code/spec regions its judgment read, and the delta derivation re-runs exactly the items whose evidence went stale. Because verify's full run is the most expensive (it reads the code surface) and its fixes are the most frequent, a candidate verify full FAIL writes a **failure record** (the per-item `status` map) so the delta re-run (`reverify@{unit}`) can recover incrementally — re-checking the failed items plus the newly affected ones, carrying the `pass` items whose evidence is unchanged.
-- **review is anchored to a spec as design context.** Same as verify: the spec is fixed design context, the review judgments are per-file quality assessments that are self-contained per dimension. A candidate review full FAIL writes the blocking cache with the per-dimension `status` map, recovered by `rereview@{unit}` the same way.
+- **verify is anchored to a validated spec.** Its trust anchor is the spec, which validate has confirmed sound (promote enforces the validate gate before verify's record matters). verify's mismatches are code-vs-spec mappings, and the coupling between acceptance items runs through shared code functions and spec regions — wide, but mechanically capturable: each item declares the code/spec regions its judgment read, and the delta derivation re-runs exactly the items whose evidence went stale. Because verify's full run is the most expensive (it reads the code surface) and its fixes are the most frequent, a candidate verify full FAIL writes a **failure record** (the per-item `status` map) so the delta re-run (`reverify@{unit}`) can recover incrementally — re-checking the failed items, persisted targeted invalidations, newly affected items, current items the baseline never declared, and explicit `--rerun` overrides while carrying the remaining `pass` items whose evidence is unchanged.
+- **review is anchored to a spec as design context.** Same as verify: the spec is fixed design context, the review judgments are per-file quality assessments that are self-contained per file. A candidate review full FAIL writes the blocking cache with the per-file `status` map, recovered by `rereview@{unit}` the same way.
 
-The delta re-run (`re*`) always writes a failure record on FAIL regardless of gate — the split above governs **full-run** FAIL only. A delta FAIL's record is trusted because it carries over only judgments whose dependency evidence is unchanged by construction (`carried`), never judgments whose content moved.
+The delta and repair re-runs (`re*`) always write or update a failure record on FAIL regardless of gate — the split above governs **full-run** FAIL only. A delta/repair FAIL's record is trusted because it carries over only judgments whose dependency evidence is unchanged by construction (`carried`), never judgments whose content moved.
 
 ## Write Rules
 
-### Agent writes
-
-#### Tooled writes
+### Tooled writes
 
 The cache format is a byte-exact machine-consumed contract: `hash` and the dependency CIDs are recorded verbatim, and `fresh`/`promote` compare them byte-for-byte. Hand transcription of those values is the root of transcription errors (a 64-bit CID typo is silently treated as evidence). Since the values are mechanically derived from file content, they are **computed by the tooling, never supplied by the agent**.
 
-`specflowctl cache-write` writes a gate cache from the agent's judgment plus the agent's declared dependency scope, with the machine-consumed evidence computed by the tooling:
+A promote-consumable cache is written by a **packet gate run**: the input snapshot and the packet plan are fixed before any judgment executes; each packet report is validated and recorded as it is submitted; the cache is written only if every required packet is accepted and the inputs are still unchanged at the end.
 
 ```
-specflowctl cache-write --gate validate|verify|review (--unit NAME | --rule ID) \
-  --result pass|fail --target candidate|stable [--basis full|delta|repair] [--blocking] \
-  [--p0-count N --p1-count N --p2-count N --p3-count N] \
-  --file '<json entry>' [--file '<json entry>' ...] [--body TEXT] [--repo-root PATH]
+gate-plan → immutable input snapshot + packet plan → execute packets → gate-submit (per packet) → gate-finalize
 ```
 
-- **Judgment stays with the agent:** `result`, `basis`, `target`, `blocking`, severity counts, the findings body, and the per-check `status` map are agent inputs. The tool never decides PASS/FAIL or assigns severity.
-- **Evidence is computed by the tool:** each `--file` entry declares the file (physical path or logical reference) and the dependency scope its judgment read — `sections` (section-region headings; the reserved spelling `frontmatter` names the pre-`##` region, same as `gate-evidence --section`), `ranges` (line ranges, same grammar as `gate-evidence`), `acceptance_items` — or nothing (whole-file, conservative). The tooling resolves the declarations to CIDs and computes the whole-file hash. A `checks` mapping (`check`, optional `status`, and that check's `sections`/`ranges`/`acceptance_items`) is transcribed the same way, and every check's CIDs join the file-level `deps` union (union discipline). The declaration schema has **no `hash` or `deps` fields** — a transcribed CID cannot enter a cache file.
+**1. `specflowctl gate-plan` fixes the run's input snapshot and generates the packet plan:**
+
+```
+specflowctl gate-plan --gate validate|verify|review (--unit NAME | --rule ID) \
+  --target candidate|stable [--mode full|delta|repair] [--input PATH_OR_REF]... [--rerun CHECK_KEY]... [--repo-root PATH]
+```
+
+- **Derived input surface:** the tooling resolves the gate's protocol inputs for the target and layer — the target's own files (unit main spec + appendices; for a rule, the rule file and its stable sibling), the dependency spec objects (`unit_refs` units and their appendices, `rule_refs` rules, the stable global rule set; consumer unit specs for rule validate), and, for verify/review, the declared code surface (`implementation_surface` directories expanded recursively, plus `affects.files`). Logical unit and bound-rule references record their current-layer resolution; logical global-rule references record their stable-layer resolution. Candidate-only global rules are not unit-gate inputs. Every physical entry must resolve inside the project root and is recorded by its canonical repo-relative path, resolved file, and content hash; lexical escapes and symlinks that resolve outside the project are rejected before run state is written.
+- **Extra inputs (`--input`):** these are evidence inputs available to every packet, not work targets. Files, recursively expanded directories, and logical references have the same role. Physical inputs must resolve inside the project root; absolute external paths, lexical `..` escapes, and escaping symlinks are rejected. Valid inputs enter the immutable snapshot and packet `read_refs`, but never create review-file, verify-item, or validate-check packets. Only the spec-derived surface determines work packets.
+- **Packet plan:** `gate-plan` generates the deterministic packet set for the gate/target/mode (see `framework/verification_scope.md` §Gate Work Packets → Packet generation rules). `--mode delta` / `--mode repair` derive the re-run set mechanically from the baseline cache (or failure record) and record the carried-over check keys.
+- The tool prints the `run_id`, the snapshot summary, and the packet list, and writes the run state to `meta/gate_runs/{run_id}/run.json`; each submitted packet gets one state file under `meta/gate_runs/{run_id}/packets/` (a pending packet has no file — pending is the absence of state) — local process state, not a spec, not committed. Packet ids are logical identities and may contain file separators, colons, Unicode, or long review paths, so the filename is always `{sha256(packet_id)}.json` (64 lowercase hexadecimal characters); the state object retains the original packet id and loading requires it to match. There is no legacy filename lookup: an unfinished run created by a different state layout is replanned instead of partially interpreted. At most one open run exists per (gate, target, layer); a new `gate-plan` for the same tuple replaces the previous run. Gate-run state mutations are linearized by one repository-local operating-system lock: planning holds it across replacement and creation, submission holds it across terminal-state validation and the complete packet-state transition, and finalization holds it from the fresh run load through cache publication and consumption. The lock is released by the operating system when the process exits, so a crash cannot leave a stale ownership marker. Packet execution remains parallel — only the short local-state transitions are serialized.
+
+**Targeted P0/P1 invalidation:** after a targeted executor reports a P0/P1,
+the coordinator records it before returning control:
+
+```
+specflowctl gate-invalidate --gate validate|verify|review (--unit NAME | --rule ID) \
+  --target candidate|stable --check CHECK_KEY [--check CHECK_KEY]... [--repo-root PATH]
+```
+
+The command runs under the same repository mutation lock as planning and
+finalization. It deletes a matching pass cache, or adds the keys to a matching
+failure record's `invalidated_checks` list. In the same locked transition it
+marks any matching open gate run `invalidated`, so a run planned before the
+targeted finding cannot later overwrite the invalidation with a pass cache.
+An invalidated run rejects submission and finalization; plan a new run. This
+command records recovery state only — it never publishes a targeted result as
+a complete gate cache.
+
+**2. Execution.** Before launching an executor, run `specflowctl gate-packet --run <run_id> --packet <packet_id> [--repo-root PATH]` and include its output verbatim as packet context. The context lists the exact `read_refs`; analysis/cross contexts additionally carry the accepted dependency results and their digests. Each packet is executed independently and reads no file outside its packet-local surface.
+
+**3. `specflowctl gate-submit` records each packet report:**
+
+```
+specflowctl gate-submit --run <run_id> --packet <packet_id> --report <path> [--repo-root PATH]
+```
+
+- **Mechanical validation:** the report must be non-empty and structurally complete; declarations must resolve inside the submitting packet's `read_refs`, not merely somewhere in the run snapshot. The accepted report and its parsed `packet_result` are persisted together.
+- **Dependency order:** verify analysis depends on its detection packet; cross depends on every local and analysis packet. `not_required` satisfies only a conditional analysis dependency.
+- **Result binding:** analysis and cross packet states record the digests of the exact accepted results they consumed. Cross additionally must dispose every input finding, publish every logical judgment's effective status, map each new cross finding to the logical keys it makes fail so repair scope remains derivable, and publish one complete structured severity-confirmation sequence for every terminal retained finding. A confirmed first record completes the sequence; an adjusted first record requires exactly one final second record. Every record names evidence that belongs to the cross packet snapshot and dependency scope. For each non-cross key, the submitted status must be `fail` if and only if a retained finding of any severity affects that key; the cross status must exactly mirror the cross verdict.
+- **Outcome:** a valid report is `accepted` (terminal); an invalid report is `rejected` and may be re-submitted. An analysis packet becomes `not_required` mechanically when its detection verdict is not `MISMATCH`. Terminality is enforced inside the same locked transition that writes the packet state: two concurrent submissions cannot both pass the pre-write status check, and the later transition observes the first terminal result instead of overwriting it.
+
+**4. `specflowctl gate-finalize` writes the cache:**
+
+```
+specflowctl gate-finalize --run <run_id> [--timestamp ...] [--repo-root PATH]
+```
+
+- **Completeness check:** every required packet must be `accepted`; verify analysis packets may instead be `not_required`. Unit targets require an accepted cross result covering every current and carried judgment. Rule validate derives from its accepted packet plus every carried baseline judgment; the combined logical-status map must cover checks `1`–`8` before a cache can be written.
+- **Snapshot check:** the tool re-resolves the input surface and compares every entry — path set, layer resolution, content hash — against the snapshot. Evidence assembly is bound to the same snapshot: every freshly computed cache entry must have the whole-file hash recorded for that declaration at `gate-plan`, and the complete input surface is compared again after the candidate cache has been rendered and checked, immediately before publication. Any divergence (a modified, added, or removed file; evidence computed from different bytes; a logical reference that now resolves to a different layer; a resolution that appeared or disappeared) rejects the finalize: no cache is written, the run state is deleted, and a new `gate-plan` is required. This is the time-of-check/time-of-use closure: recorded evidence can only describe content that was stable for the whole judgment window.
+- **Judgment is closed by accepted artifacts:** local and analysis executors assign their protocol-owned verdicts/severities, cross performs the complete semantic synthesis and confirms or adjusts every terminal retained finding's severity, and `gate-finalize` mechanically derives `result`, `blocking`, severity counts, and the already-validated effective-status map from the canonical adjusted finding set. No logical key can be marked failed without a retained finding, no retained finding can leave an affected key marked passed, and no unconfirmed terminal severity can affect the cache. The adjusted severity is written into `GATE_JUDGMENTS` and is the value carried into a later delta/repair run. The coordinator supplies none of these values and cannot override cross.
+- **Evidence is computed by the tool from the accepted reports:** each report's `Dependency scope:` lines name the files and regions its check keys read (`sections` / `ranges` / `acceptance_items` / `acceptance_item:<id>` — the same grammar `gate-evidence` accepts); the tooling resolves them to CIDs, computes the whole-file hash, builds the `files` entries and the per-check `checks` mapping, and enforces union discipline. The declaration schema has **no `hash` or `deps` fields** — a transcribed CID cannot enter a cache file.
+- **Failure-record status map:** for a derived FAIL cache the tooling copies the cross result's complete effective-status map and marks unchanged baseline judgments `carried`.
+- **Carried-over evidence and judgments (delta/repair):** the tooling copies both the evidence entries and structured judgments into the run at plan time. Cross consumes carried unit judgments; rule finalize combines the disjoint carried and re-run rule judgments and rejects any overlapping key. The executor does not re-declare carried judgments.
 - **Path-form validation:** a name-resolved spec object declared as a physical path is rejected before the write, with the correct logical spelling in the error — in a unit cache: a unit main spec or protocol appendix that is not the target unit's own, and any rule file; in a rule cache: any unit spec file (main or appendix). The run's own target files and code files stay physical (see §Logical References).
-- **Write-then-verify:** the tool re-reads the written file and runs the gate's own freshness chain (`CheckValidate`/`CheckVerify`/`CheckReview` and their stable/rule variants). A pass cache must come out `FRESH`; a failure record must come out `BLOCKED` (its designed state — it blocks promote and is the failure-recovery baseline). Any other classification is a write failure (non-zero exit). For a pass `validate@` candidate cache the appendix gate runs too: every non-exempt candidate appendix must be listed.
-- **Delta rewrites:** a delta/repair rewrite declares only the re-run judgments' entries; carried-over judgments' entries are re-declared with their original evidence (the agent reads the old cache's evidence — paths and check keys — and re-declares them; the tooling recomputes the CIDs against the current content, which is unchanged by construction for carried-over judgments). `basis: delta` / `basis: repair` marks the writer.
+- **Render, validate, then publish:** the tool renders the complete candidate cache in memory and runs the gate's own freshness chain (`CheckValidate`/`CheckVerify`/`CheckReview` and their stable/rule variants) against that candidate. A pass cache must come out `FRESH`; a failure record must come out `BLOCKED` (its designed state — it blocks promote and is the failure-recovery baseline). For a pass `validate@` candidate cache the appendix gate runs too: every non-exempt candidate appendix must be listed. Only after every check succeeds does the tool publish the candidate atomically to the canonical cache path. Any rejection returns non-zero without changing the prior canonical cache; when no prior cache exists, none is created. Candidate validate full-run FAIL remains the explicit exception defined below: it deliberately deletes the prior validate cache because trust establishment failed.
+- **Audit field:** the written cache records `gate_run: <run_id>` (see §Format → Gate run binding). It links the cache to the bracketed run for audit and nothing else — `fresh` and `promote` never read it, and it proves nothing about who executed the run: the run id correlates state, it is not executor identity.
+- **Run lifecycle:** a successful finalize marks the run consumed (kept for audit, replaced by the next `gate-plan` for the same tuple). A targeted P0/P1 marks a matching open run invalidated before it mutates the cache; an invalidated run remains for audit but accepts no submission or finalize. Gate run ids use the tooling-generated `YYYYMMDD-HHMMSS-<6 lowercase hex>` form. Loading requires the requested id, the state file's embedded `run_id`, and the containing run directory name to agree exactly. Every run and packet-state path must remain inside `meta/gate_runs/` after normalization. Invalid or mismatched identity fails closed before any state write or cleanup. A snapshot-divergence rejection deletes only the validated directory of that exact run; a completeness or validation rejection leaves it open so packets can be fixed and re-submitted. A consumed or invalidated run cannot be finalized again.
 
-Each row of the Write Rules table below that says "via `specflowctl gate-evidence`" is assembled with `cache-write`: the agent supplies the judgment and the declared scope, and the tooling computes the evidence and writes the file.
+Each row of the Write Rules table below is assembled with `gate-finalize` from the accepted packet results, the synthesis result, and the run snapshot. The coordinator supplies no judgment fields.
 
-### Agent writes
+### Write matrix (event → cache result)
 
 | Event | Action |
 |-------|--------|
-| `validate@{unit}` full PASS (candidate round) | Write `validate_result.md` with `mode: full`, `target: candidate`, and `hash` + `deps` evidence for every file read (via `specflowctl gate-evidence`) |
+| `validate@{unit}` full PASS (candidate round) | Write `validate_result.md` with `mode: full`, `target: candidate`, and `hash` + `deps` evidence for every file read (the declarations are assembled at `gate-finalize`; see §Write Rules → Tooled writes) |
 | `validate@{unit}` / `validate@{rule}` full PASS (stable-only target) | Write `validate_result.md` with `mode: full`, `target: stable` — the stable confirmation cache (content vs dependencies/rules), consumed by `fresh@stable` only (see `framework/verification_scope.md` §Stable-only Targets) |
-| `validate` full FAIL / needs_decision (candidate target) | Delete `validate_result.md` if it exists (full run failure — trust establishment failed, no failure record; the candidate's spec was never confirmed sound, so nothing may be carried over — see §Failure handling by gate role) |
+| `validate` full FAIL / needs_decision (candidate target) | Delete `validate_result.md` if it exists **only when `basis: full`** (full-run trust establishment failed, so nothing may be carried over). A candidate delta/repair FAIL follows the delta FAIL row and writes a failure record; deleting it would destroy the recovery baseline |
 | `validate` full FAIL / needs_decision (stable-only target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried`); recommend forking the unit/rule to reconcile the stable content with the changed dependency or rule. The record keeps the confirmation state visible as BLOCKED and is the failure-recovery baseline |
 | `verify@{unit}` full PASS (all aligned) | Write `verify_result.md` with `result: pass`, severity counts at 0, `mode: full`, `target: candidate`, `blocking: false`, and `hash` + `deps` evidence for every file read |
 | `verify@{unit}` full PASS (P2/P3 non-blocking findings) | Write `verify_result.md` with `result: pass`, `blocking: false`, severity counts (`p0_count`...`p3_count`), `mode: full`, `target: candidate`, and `hash` + `deps` evidence. Promote may proceed |
 | `verify@{unit}` full PASS (stable-only target) | Write `verify_result.md` with `target: stable` — the drift confirmation cache (VERIFIED state), consumed by `fresh@stable` only |
-| `verify` full FAIL (any P0/P1 findings, candidate target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-item `status` map — `pass`/`fail` for every acceptance item; full runs have no `carried`) — the failure-recovery baseline. Agent must stop, not proceed to promote. The record is the reverify baseline: after the findings are resolved, the delta re-run re-checks only the failed items plus the newly affected ones and carries the `pass` items over (see §Failure handling by gate role and `framework/verification_scope.md` §Delta Runs → Failure recovery) |
+| `verify` full FAIL (any P0/P1 findings, candidate target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-item `status` map — `pass`/`fail` for every acceptance item; full runs have no `carried`) — the failure-recovery baseline. Agent must stop, not proceed to promote. After the findings are resolved, repair re-checks the failed items, persisted invalidated items, newly affected items, current items the baseline never declared, and explicit `--rerun` overrides, then carries the remaining `pass` items over (see §Failure handling by gate role and `framework/verification_scope.md` §Delta Runs → Failure recovery) |
 | `verify` full FAIL (any P0/P1 findings, stable-only target) | Write a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-item `status` map — `pass`/`fail` for every acceptance item; full runs have no `carried`); report the drift and recommend forking (do not enter divergence resolution — see `framework/unit_verify_checklist.md` §Stable-only mode) |
 | `review@{unit}` full PASS | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: false`, `hash` + `deps` evidence for every file read, and findings body |
-| `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: true`, includes finding counts, findings body, and the per-dimension `status` map (`pass`/`fail` for every review dimension; full runs have no `carried`) |
+| `review@{unit}` full FAIL (P0/P1 found) | Write `review_result.md` with `mode: full`, `target: candidate`, `blocking: true`, includes finding counts, findings body, and the per-file `status` map (`pass`/`fail` for every reviewed file; full runs have no `carried`) |
 | `review@{unit}` full run (stable-only target) | Write `review_result.md` with `target: stable` (PASS or FAIL) — the quality confirmation cache, consumed by `fresh@stable` only |
 | `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta PASS | Rewrite the gate's cache with `mode: full`, `basis: delta`: new `hash` + `deps` + `checks` evidence for the re-run judgments' files, the original evidence (including the per-check `checks` breakdown) for carried-over judgments' files, fresh `timestamp` (see `framework/verification_scope.md` §Delta Runs) |
 | `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta PASS (stable-only target) | Rewrite the gate's confirmation cache with `mode: full`, `target: stable`, `basis: delta` — same evidence rules as the candidate delta rewrite; the recovery applies only when the prior cache has `result: pass` (review: `blocking: false`) — a MISSING stable cache needs the full confirmation run, and a BLOCKED stable cache is a failure record recovered by the failure-recovery delta run (`basis: repair`) (see `framework/verification_scope.md` §Delta Runs → Layer applicability) |
-| `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta FAIL (P0/P1) | **Write a failure record** — rewrite the gate's cache with `result: fail`, `blocking: true`, severity counts, a findings body, `mode: full`, `basis: delta`, and the per-check `status` map (`fail` for the failed re-run checks, `pass` for the passed re-run checks, `carried` for the carried-over checks) plus the usual `hash` + `deps` + `checks` evidence. The record is the failure-recovery baseline. Promote must not proceed. (review: this is the existing blocking-cache write, extended with the status map) |
+| `revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}` delta/repair FAIL (P0/P1) | **Write a failure record** — rewrite the gate's cache with `result: fail`, `blocking: true`, severity counts, a findings body, `mode: full`, `basis: delta` (`basis: repair` for a repair-FAIL record), and the per-check `status` map (`fail` for the failed re-run checks, `pass` for the passed re-run checks, `carried` for the carried-over checks) plus the usual `hash` + `deps` + `checks` evidence. The record is the failure-recovery baseline. Promote must not proceed. (review: this is the existing blocking-cache write, extended with the status map) |
 | `specflowctl fork --unit <name>` (with pass stable confirmation caches) | Inherits the confirmation caches into the candidate round: rewrites `target: stable` → `target: candidate` and every physical path under `docs/specs/units/stable/` → `docs/specs/units/candidate/` (the fork copies the stable content verbatim apart from the version bump, so pass conclusions carry over; the version bump stales the frontmatter declarations, which the delta re-runs cover). Gates without a usable baseline (missing, non-pass, blocking review, failure records) are skipped and listed in the fork manifest — their full runs are required in the new round. The inherited cache stays valid until its evidence goes stale (see `framework/concepts.md` §2). The rewrite **consumes** the stable confirmation state: the cache file holds one layer at a time, so after the fork `fresh@stable` reports the unit's gates as STALE (the stable confirmation is not separately retained; the unit is mid-round and the stable layer is replaced at promote — the STALE signal is the expected round-in-progress state) |
-| Delta run FAIL (P0/P1) | validate/verify/review: write a failure record (see the delta FAIL row above). Promote must not proceed |
-| Targeted run (`:check-{n}` / `:{keyword}`) PASS | Report findings only — do NOT write any cache. A targeted run never writes a cache (the promote gate accepts only complete-coverage-run caches, and writing would not downgrade an existing cache) |
-| Targeted run (`:check-{n}` / `:{keyword}`) FAIL (P0/P1) | If the existing cache is a pass cache: delete it (P0/P1 at any granularity means promote must not proceed, and a pass cache must not survive a blocking finding). If the existing cache is already a failure record (`blocking: true` / `result: fail`): **keep it** — it is already blocking (promote already rejects it), it carries the findings, and deleting it would destroy the failure-recovery baseline |
+| Delta/repair run FAIL (P0/P1) | validate/verify/review: write or update a failure record (see the delta/repair FAIL row above). Promote must not proceed |
+| Targeted run (`:check-{n}` / `:{keyword}`) PASS | Report findings only — do not publish or mutate a cache. A targeted run never satisfies the promote gate |
+| Targeted run (`:check-{n}` / `:{keyword}`) FAIL (P0/P1) | Run `gate-invalidate` immediately. It deletes a matching pass cache; for a failure record it preserves the record and persists the contradicted key in `invalidated_checks`; it also invalidates a matching open gate run. The targeted result is not itself a complete cache result |
 
 
 ### Cache lifecycle
@@ -427,15 +552,15 @@ Each row of the Write Rules table below that says "via `specflowctl gate-evidenc
 | `specflowctl promote` with review cache | When review cache is missing, stale, or `blocking: true`, promote is rejected with guidance. |
 | A declared dependency chunk changes (CID no longer present) | Cache becomes stale — detected at promote time (candidate caches) or at fresh time (stable confirmation caches). Recovery: a delta run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`) re-runs only the affected judgments and rewrites the cache with `basis: delta`, or the full command re-runs everything. Delta recovery requires a usable baseline — for a stable confirmation cache, the cache must exist with `result: pass` (review: `blocking: false`); a MISSING stable cache needs the full confirmation run, and a BLOCKED stable cache (failure record) is recovered by the failure-recovery delta run (see `framework/verification_scope.md` §Delta Runs → Layer applicability) |
 | Content changes outside the declared dependency chunks | Cache stays fresh; fresh reports and promote print an informational note |
-| Targeted run when full/delta cache exists | Does NOT touch the cache — a targeted run never writes or downgrades (see below) |
-| Targeted run FAILs (P0/P1 findings) | Deletes a **pass** cache even if a full/delta cache existed; a **failure record** (`blocking: true` / `result: fail`) is kept — it is already blocking and deleting it would destroy the failure-recovery baseline, but the targeted finding invalidates the record's `pass`/`carried` status for that judgment (the recovery must re-run it — see the Targeted-run rule below and `framework/verification_scope.md` §Delta Runs → Failure recovery) |
+| Targeted run when full/delta cache exists | PASS leaves the cache unchanged. P0/P1 runs `gate-invalidate`; targeted execution never publishes a replacement result cache |
+| Targeted run FAILs (P0/P1 findings) | `gate-invalidate` deletes a **pass** cache. A **failure record** (`blocking: true` / `result: fail`) is kept and gains the targeted key in `invalidated_checks`; the next repair plan reads it automatically. A matching open run is invalidated so it cannot overwrite this state |
 | Targeted run PASSes (P2/P3 findings or all aligned) | Does NOT write cache — reports findings; existing cache stays valid |
 
 ### Targeted-run rule
 
-A targeted run (`:check-{n}` / `:{keyword}`) never writes a cache, so it cannot invalidate an already-passed complete verification needed for promote.
+A targeted run (`:check-{n}` / `:{keyword}`) never publishes a complete result cache, so it never satisfies the promote gate. A PASS leaves existing cache state unchanged.
 
-**Exception (blocking):** If a targeted run FAILs (P0/P1 findings), it deletes a pass cache regardless of prior state — P0/P1 at any granularity means promote must not proceed. A failure record is kept (it is already blocking; the gate refuses it either way, and it remains the failure-recovery baseline) — but the targeted finding invalidates the record's `pass`/`carried` status for that judgment: the failure-recovery delta run must re-run it instead of carrying it over, because the recorded pass/carried evidence was contradicted by a complete single-check judgment (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
+**Exception (blocking):** If a targeted run FAILs (P0/P1 findings), the coordinator immediately runs `specflowctl gate-invalidate` for the reported judgment. The command deletes a pass cache regardless of prior state — P0/P1 at any granularity means promote must not proceed. A failure record is kept (it is already blocking; the gate refuses it either way, and it remains the failure-recovery baseline), and the contradicted key is persisted in `invalidated_checks`. The failure-recovery plan reads that list automatically and must re-run the judgment instead of carrying it over. The same transition invalidates a matching open gate run so an earlier plan cannot overwrite the new state (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
 
 Delta runs (`re*`) are not targeted runs: they write a cache with `basis: delta` (from a pass baseline) or `basis: repair` (from a failure record). A delta run's judgment set is complete (stale/failed judgments re-executed + carried-over judgments with unchanged evidence), which is what makes its cache valid for the promote gate.
 
@@ -489,7 +614,7 @@ The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (a failure reco
 
 Stable confirmation states use the same vocabulary: `FRESH` means the stable-layer cache exists and its dependency evidence is unchanged; `STALE` means a declared dependency changed (a rule or dependency contract for validate, code for verify/review); `MISSING` means the stable confirmation was never run; `BLOCKED` means a failure record exists (a stable-only full-run FAIL or a stable delta-run FAIL — `result: fail` + `blocking: true`), recovered by the failure-recovery delta run (`basis: repair`); when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see `framework/verification_scope.md` §Stable-only Targets). The states are informational — they grant nothing and gate nothing.
 
-`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify/review. Its purpose is operational visibility while iterating on multiple units that share files — but a shared-file change stales a cache **only when it falls inside the declared dependency chunks**. Changes outside the declared dependencies keep the cache fresh and surface as an informational note (see Staleness Detection above): visibility is carried by the note, not by an over-broad STALE verdict. Cross-unit and rule dependencies declared as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) stay fresh across a promote of the referenced target when the dependency content is unchanged.
+`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify/review. Its purpose is operational visibility while iterating on multiple units that share files — but a shared-file change stales a cache **only when it falls inside the declared dependency chunks**. Changes outside the declared dependencies keep the cache fresh and surface as an informational note (see Staleness Detection above): visibility is carried by the note, not by an over-broad STALE verdict. Cross-unit and bound-rule dependencies declared as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:b_rule_*`) stay fresh across a promote of the referenced target when the dependency content is unchanged. Global-rule dependencies (`rule:g_rule_*`) remain bound to stable truth, so candidate-global edits do not stale unit caches and stable-global edits do.
 
 ## Stable Drift Baseline
 
@@ -511,7 +636,7 @@ The report states what it mechanically knows: `CHANGED` means "code changed sinc
 
 ## Important
 
-Cache is never refreshed automatically. Only the agent writing a new cache after a fresh validate/verify changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical freshness comparison.
+Cache is never refreshed automatically. Only a new complete-coverage gate run, finalized by `gate-finalize` from its accepted packet reports, changes it. This is because validate and verify are semantic operations that require AI judgment — they cannot be reduced to a mechanical freshness comparison.
 
 A cache answers "were these files checked and were they passing at that time?" A **failure record** extends that answer to the negative: "were these files checked and which judgments failed?" — the per-check `status` map is the failure-recovery baseline (which judgments are trusted, which must be re-run), consumed only by a user-triggered delta re-run. It never grants promote eligibility: a failure record is `BLOCKED` and promote rejects it exactly like a missing cache.
 

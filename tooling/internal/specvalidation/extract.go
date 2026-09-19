@@ -2,154 +2,163 @@ package specvalidation
 
 import (
 	"strings"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 )
 
-// startsNewTopLevelSection reports whether a line begins a new top-level
-// section of the spec document: a markdown heading ("#" at column 0) or a
-// top-level "key:" line. Lines inside the acceptance item set are indented
-// or list items and never match. The acceptance_item_set marker itself is
-// handled by the caller before this check, so it never terminates a scan.
-func startsNewTopLevelSection(line, trimmed string) bool {
-	if trimmed == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+type acceptanceItemFields struct {
+	id                    string
+	implementationSurface string
+	affectsFiles          []string
+}
+
+// parseAcceptanceItems is the single semantic parser for acceptance-item
+// fields. contenthash owns the structural boundary rules (exact marker,
+// headings, item ids, and fences); this package only reads fields inside each
+// located item. Public extractors therefore cannot disagree about which item
+// set they are reading.
+func parseAcceptanceItems(content string) []acceptanceItemFields {
+	regions := contenthash.AcceptanceItemRegions(content)
+	items := make([]acceptanceItemFields, 0, len(regions))
+	for _, region := range regions {
+		item := acceptanceItemFields{id: region.ID}
+		inAffects := false
+		inFiles := false
+		fence := acceptanceFence{}
+		for _, line := range strings.Split(region.Text, "\n") {
+			if fence.active {
+				fence.advance(line)
+				continue
+			}
+			if fence.advance(line) {
+				continue
+			}
+
+			trimmed := strings.TrimSpace(line)
+			indent := leadingSpaces(line)
+			switch {
+			case indent == 4 && strings.HasPrefix(trimmed, "implementation_surface:"):
+				value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "implementation_surface:")), `"'`)
+				if value != "" {
+					item.implementationSurface = value
+				}
+				inAffects = false
+				inFiles = false
+			case indent == 4 && trimmed == "affects:":
+				inAffects = true
+				inFiles = false
+			case indent == 4 && strings.HasSuffix(trimmed, ":"):
+				inAffects = false
+				inFiles = false
+			case inAffects && indent == 6 && strings.HasSuffix(trimmed, ":"):
+				inFiles = trimmed == "files:"
+			case inFiles && indent == 8 && strings.HasPrefix(trimmed, "- "):
+				if value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")); value != "" {
+					item.affectsFiles = append(item.affectsFiles, value)
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func leadingSpaces(line string) int {
+	count := 0
+	for count < len(line) && line[count] == ' ' {
+		count++
+	}
+	return count
+}
+
+// acceptanceFence mirrors the CommonMark fence rules used by contenthash.
+// It is kept private because it is an implementation detail of field parsing.
+type acceptanceFence struct {
+	active bool
+	char   byte
+	length int
+}
+
+// advance consumes line and reports whether it is an opening fence. Closing
+// fences are consumed while active and always return false.
+func (f *acceptanceFence) advance(line string) bool {
+	if f.active {
+		if acceptanceFenceCloses(line, f.char, f.length) {
+			f.active = false
+		}
 		return false
 	}
-	if strings.HasPrefix(trimmed, "-") {
+	char, length, ok := acceptanceFenceInfo(line)
+	if !ok {
 		return false
 	}
-	if strings.HasPrefix(trimmed, "#") {
-		return true
+	f.active = true
+	f.char = char
+	f.length = length
+	return true
+}
+
+func acceptanceFenceInfo(line string) (byte, int, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return 0, 0, false
 	}
-	if strings.HasPrefix(trimmed, "acceptance_item_set") {
-		return false
+	char := trimmed[0]
+	length := 0
+	for length < len(trimmed) && trimmed[length] == char {
+		length++
 	}
-	return strings.Contains(trimmed, ":")
+	if length < 3 || (char == '`' && strings.ContainsRune(trimmed[length:], '`')) {
+		return 0, 0, false
+	}
+	return char, length, true
+}
+
+func acceptanceFenceCloses(line string, char byte, length int) bool {
+	trimmed := strings.TrimSpace(line)
+	count := 0
+	for count < len(trimmed) && trimmed[count] == char {
+		count++
+	}
+	return count >= length && strings.TrimSpace(trimmed[count:]) == ""
 }
 
 // ExtractAffectsFiles returns the file paths declared in the affects.files
-// blocks of the acceptance item set, in document order. The scanner uses a
-// shared indentation convention with checkAnchors: a 6-space "key:" line
-// switches the affects sub-block, and only 8-space-indented "- " entries
-// under the files sub-block are collected. Any other "- " line (e.g. the
-// next acceptance item's "  - id:") ends the block instead of being
-// collected. Scanning stops at the first top-level section after the
-// acceptance item set.
+// blocks of structurally located acceptance items, in document order.
 func ExtractAffectsFiles(content string) []string {
 	var files []string
-	lines := strings.Split(content, "\n")
-	inAcceptanceBlock := false
-	inFilesBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.Contains(trimmed, "acceptance_item_set:") {
-			inAcceptanceBlock = true
-			continue
-		}
-
-		if !inAcceptanceBlock {
-			continue
-		}
-
-		if startsNewTopLevelSection(line, trimmed) {
-			break
-		}
-
-		// A 6-space-indented "key:" line switches the affects sub-block
-		// (files/appendices/rules/dependencies). Only the files sub-block
-		// collects anchors; any other sub-block ends it.
-		if strings.HasPrefix(line, "      ") && strings.HasSuffix(trimmed, ":") {
-			inFilesBlock = trimmed == "files:"
-			continue
-		}
-
-		if inFilesBlock {
-			// Only 8-space-indented "- " entries belong to the files block.
-			// Any other "- " line (e.g. the next acceptance item's "  - id:")
-			// ends the block instead of being collected as an anchor.
-			if strings.HasPrefix(line, "        ") && strings.HasPrefix(trimmed, "- ") {
-				fpath := trimmed[2:]
-				if fpath != "" {
-					files = append(files, fpath)
-				}
-			} else if trimmed != "" && !strings.HasPrefix(line, "        ") {
-				inFilesBlock = false
-			}
-		}
+	for _, item := range parseAcceptanceItems(content) {
+		files = append(files, item.affectsFiles...)
 	}
-
 	return files
 }
 
 // ExtractAcceptanceItemIDs returns the id values of all acceptance items,
-// in document order. Empty values are skipped. Scanning stops at the first
-// top-level section (markdown heading or top-level "key:" line) after the
-// acceptance item set.
+// in document order. Empty values are skipped. The scan is the same
+// structural one item-region location uses (contenthash.AcceptanceItemIDs):
+// only the exact acceptance_item_set marker line outside a code fence starts
+// the set, the set ends at the next top-level heading outside a fence, and a
+// fenced `- id:` example is content, not an item — packet generation and
+// cache-declaration location must share one id space.
 func ExtractAcceptanceItemIDs(content string) []string {
-	var ids []string
-	lines := strings.Split(content, "\n")
-	inAcceptanceBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.Contains(trimmed, "acceptance_item_set:") {
-			inAcceptanceBlock = true
-			continue
-		}
-
-		if !inAcceptanceBlock {
-			continue
-		}
-
-		if startsNewTopLevelSection(line, trimmed) {
-			break
-		}
-
-		if strings.HasPrefix(trimmed, "- id:") {
-			val := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "- id:")), `"'`)
-			if val != "" {
-				ids = append(ids, val)
-			}
-		}
+	items := parseAcceptanceItems(content)
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.id)
 	}
-
 	return ids
 }
 
 // ExtractImplementationSurfaces returns the implementation_surface values of
-// all acceptance items, in document order. Empty values are skipped; the
-// <pending> placeholder is returned as-is (the caller decides how to treat
-// it). Scanning stops at the first top-level section (markdown heading or
-// top-level "key:" line) after the acceptance item set.
+// all structurally located acceptance items, in document order. Empty values
+// are skipped; the <pending> placeholder is returned as-is (the caller
+// decides how to treat it).
 func ExtractImplementationSurfaces(content string) []string {
 	var surfaces []string
-	lines := strings.Split(content, "\n")
-	inAcceptanceBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.Contains(trimmed, "acceptance_item_set:") {
-			inAcceptanceBlock = true
-			continue
-		}
-
-		if !inAcceptanceBlock {
-			continue
-		}
-
-		if startsNewTopLevelSection(line, trimmed) {
-			break
-		}
-
-		if strings.HasPrefix(trimmed, "implementation_surface:") {
-			val := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "implementation_surface:")), `"'`)
-			if val != "" {
-				surfaces = append(surfaces, val)
-			}
+	for _, item := range parseAcceptanceItems(content) {
+		if item.implementationSurface != "" {
+			surfaces = append(surfaces, item.implementationSurface)
 		}
 	}
-
 	return surfaces
 }

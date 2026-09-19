@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/next"
 )
@@ -20,7 +19,10 @@ func runNext(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	unitName := strings.TrimSpace(*unitPtr)
+	unitName, err := requireTargetName("unit", *unitPtr)
+	if err != nil {
+		return err
+	}
 	if unitName == "" {
 		fmt.Fprintln(stderr, "Usage: specflowctl next --unit <name>")
 		fmt.Fprintln(stderr, "")

@@ -92,9 +92,13 @@ The allowed action families are:
    - create, validate, refresh, or touch review slice work-state carriers when the adopting owner defines the exact path, fields, statuses, and stale rules
     - maintain only mechanical data such as timestamps, skeleton rows, input fingerprints, and stale marks
 12. relation calculation
-   - compute candidate readiness, candidate blockers, candidate cycles, and reference-only edges from explicit already-written references
-   - read only declared truth and support-surface files
-   - write no project files and create no durable process artifact
+    - compute candidate readiness, candidate blockers, candidate cycles, and reference-only edges from explicit already-written references
+    - read only declared truth and support-surface files
+    - write no project files and create no durable process artifact
+13. operation scope state
+    - create, read, update, and close a declared operation-scope carrier when the adopting owner (`framework/concepts.md` §Operation Scope) defines the exact path, fields, statuses, and transition rules
+    - compare the frozen allowed scope and the required spec paths against the mechanically computed change set (baseline diff plus untracked files) and report containment, static-policy violations, and missing required paths
+    - write only the declared operation state file; never modify project truth
 Writeback rule:
 
 1. tooling may write only to locations whose writeback contract is already defined by governance rules
@@ -115,6 +119,8 @@ At minimum, tooling must not decide:
 6. whether downgrade or checkpoint handling is required
 7. whether a rule change is only thematically similar or is truly the same rule truth object
 8. whether a tooling function itself is justified under Section 3
+9. whether a run executed in an independent session, by a real worker, or under read-only capability — these are runtime properties the runtime-neutral tooling cannot observe. Tooling must not verify, record, or claim them, and no cache schema or tooling output may carry self-reported execution-shape markers such as `session_id`, `worker_id`, or `read_only`. A future attestation mechanism is admissible only as a property-based interface whose facts are carried by a trusted provider's signature — core verifies the signature, never a platform-specific session field (see `framework/verification_scope.md` §Guarantee Boundary).
+10. whether a scope expansion was user-authorized, whether an out-of-scope change is acceptable or attributable to the operation, or which operation a change belongs to in a shared working tree — operation-scope tooling reports the mechanical containment, static-policy, and required-path results; the caller decides
 
 Additional rule:
 

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/ruledetect"
@@ -31,7 +30,10 @@ func runRemove(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	ruleID := strings.TrimSpace(*ruleIDPtr)
+	ruleID, err := requireTargetName("rule", *ruleIDPtr)
+	if err != nil {
+		return err
+	}
 	if ruleID == "" {
 		writeRemoveUsage(stderr)
 		return errors.New("--rule is required")

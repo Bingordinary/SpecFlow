@@ -20,7 +20,10 @@ func runDetect(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	ruleID := strings.TrimSpace(*ruleIDPtr)
+	ruleID, err := requireTargetName("rule", *ruleIDPtr)
+	if err != nil {
+		return err
+	}
 
 	if ruleID != "" && *allPtr {
 		writeDetectUsage(stderr)

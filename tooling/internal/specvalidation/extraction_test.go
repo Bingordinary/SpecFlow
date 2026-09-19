@@ -104,3 +104,117 @@ func TestExtractImplementationSurfaces_StopsAtLaterSection(t *testing.T) {
 		t.Fatalf("expected %v, got %v", want, got)
 	}
 }
+
+func TestExtractAcceptanceItemIDs_FencedExampleIgnored(t *testing.T) {
+	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: |\n      Real item.\n\n      ```\n      - id: example.only\n        description: A fenced example, not an item.\n      ```\n    verification_type: auto\n    implementation_surface: internal/demo\n  - id: demo.aux\n    description: Real item.\n    verification_type: auto\n    implementation_surface: internal/demo\n"
+	got := ExtractAcceptanceItemIDs(spec)
+	want := []string{"demo.core", "demo.aux"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestExtractAcceptanceItemIDs_ProseMentionNotMarker(t *testing.T) {
+	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Notes\n\nThe acceptance_item_set: marker starts the structured item list.\n\n  - id: not.an.item\n    description: Documentation example, no marker.\n"
+	if got := ExtractAcceptanceItemIDs(spec); len(got) != 0 {
+		t.Fatalf("expected no ids from a prose marker mention, got %v", got)
+	}
+}
+
+func TestExtractAcceptanceFields_FencedSetBeforeRealSetIgnored(t *testing.T) {
+	spec := `# Demo
+
+~~~yaml
+acceptance_item_set:
+  - id: example.only
+    implementation_surface: fake/example
+    affects:
+      files:
+        - fake/example.go
+~~~
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: demo.core
+    implementation_surface: internal/demo
+    affects:
+      files:
+        - internal/demo/handler.go
+`
+	if got, want := ExtractAcceptanceItemIDs(spec), []string{"demo.core"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ids: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractImplementationSurfaces(spec), []string{"internal/demo"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("surfaces: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files: expected %v, got %v", want, got)
+	}
+}
+
+func TestExtractAcceptanceFields_AcrossSubheading(t *testing.T) {
+	// A `###` subheading inside the enclosing `##` section is set content —
+	// items on both sides of it remain part of the item set.
+	spec := `# Demo
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: demo.core
+    implementation_surface: internal/demo
+    affects:
+      files:
+        - internal/demo/handler.go
+
+### Extra structure
+
+  - id: demo.aux
+    implementation_surface: internal/aux
+    affects:
+      files:
+        - internal/aux/aux.go
+
+## Dependencies
+
+None.
+`
+	if got, want := ExtractAcceptanceItemIDs(spec), []string{"demo.core", "demo.aux"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ids: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractImplementationSurfaces(spec), []string{"internal/demo", "internal/aux"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("surfaces: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go", "internal/aux/aux.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files: expected %v, got %v", want, got)
+	}
+}
+
+func TestExtractAcceptanceFields_FencedItemContentIgnored(t *testing.T) {
+	spec := `# Demo
+
+acceptance_item_set:
+  - id: demo.core
+    description: |
+      The following is only an example:
+      ~~~yaml
+    implementation_surface: fake/example
+    affects:
+      files:
+        - fake/example.go
+      ~~~
+    implementation_surface: internal/demo
+    affects:
+      files:
+        - internal/demo/handler.go
+`
+	if got, want := ExtractAcceptanceItemIDs(spec), []string{"demo.core"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ids: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractImplementationSurfaces(spec), []string{"internal/demo"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("surfaces: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files: expected %v, got %v", want, got)
+	}
+}

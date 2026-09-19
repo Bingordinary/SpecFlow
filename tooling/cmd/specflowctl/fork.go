@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/fork"
 )
@@ -21,8 +20,14 @@ func runFork(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	unitName := strings.TrimSpace(*unitPtr)
-	ruleID := strings.TrimSpace(*ruleIDPtr)
+	unitName, err := requireTargetName("unit", *unitPtr)
+	if err != nil {
+		return err
+	}
+	ruleID, err := requireTargetName("rule", *ruleIDPtr)
+	if err != nil {
+		return err
+	}
 
 	if unitName == "" && ruleID == "" {
 		fmt.Fprintln(stderr, "Usage: specflowctl fork (--unit <name> | --rule <id>) [--repo-root PATH]")

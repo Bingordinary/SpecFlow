@@ -5,12 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulevalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/writezone"
 )
 
 func runValidate(args []string, stdout, stderr io.Writer) error {
@@ -33,7 +32,10 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 			return errors.New("path is required")
 		}
 
-		result := validateWrite(mustAbs(*repoRoot), *path)
+		result, err := validateWrite(mustAbs(*repoRoot), *path)
+		if err != nil {
+			return fmt.Errorf("resolve write-zone policy: %w", err)
+		}
 		writeValidateWriteResult(stdout, result)
 		if !result.Allowed {
 			return fmt.Errorf("write denied: %s", result.Reason)
@@ -47,17 +49,21 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 		fs := flag.NewFlagSet("validate candidate", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		repoRoot := fs.String("repo-root", ".", "repository root")
-		unitName := fs.String("unit", "", "unit name")
+		unitNamePtr := fs.String("unit", "", "unit name")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if strings.TrimSpace(*unitName) == "" {
+		unitName, err := requireTargetName("unit", *unitNamePtr)
+		if err != nil {
+			return err
+		}
+		if unitName == "" {
 			writeValidateUsage(stderr)
 			return errors.New("unit is required")
 		}
 
-		result := specvalidation.ValidateCandidate(mustAbs(*repoRoot), *unitName)
-		_, err := fmt.Fprint(stdout, specvalidation.FormatResult(result))
+		result := specvalidation.ValidateCandidate(mustAbs(*repoRoot), unitName)
+		_, err = fmt.Fprint(stdout, specvalidation.FormatResult(result))
 		if err != nil {
 			return err
 		}
@@ -69,17 +75,21 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 		fs := flag.NewFlagSet("validate rule", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		repoRoot := fs.String("repo-root", ".", "repository root")
-		ruleID := fs.String("id", "", "rule id")
+		ruleIDPtr := fs.String("id", "", "rule id")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if strings.TrimSpace(*ruleID) == "" {
+		ruleID, err := requireTargetName("rule", *ruleIDPtr)
+		if err != nil {
+			return err
+		}
+		if ruleID == "" {
 			writeValidateUsage(stderr)
 			return errors.New("--id is required")
 		}
 
-		result := rulevalidation.ValidateRule(mustAbs(*repoRoot), *ruleID)
-		_, err := fmt.Fprint(stdout, rulevalidation.FormatResult(result))
+		result := rulevalidation.ValidateRule(mustAbs(*repoRoot), ruleID)
+		_, err = fmt.Fprint(stdout, rulevalidation.FormatResult(result))
 		if err != nil {
 			return err
 		}
@@ -96,108 +106,14 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-type validateResult struct {
-	Allowed bool
-	Reason  string
-	Path    string
-}
+type validateResult = writezone.Result
 
-func validateWrite(repoRoot, path string) validateResult {
-	// Resolve the path to its real filesystem location before zone matching:
-	// relative paths are resolved against the process working directory, so
-	// a relative path that resolves into a governed zone cannot fall through
-	// to the default allowed branch. If the working directory cannot be
-	// determined, fall back to matching the raw relative path.
-	if !filepath.IsAbs(path) {
-		if cwd, err := os.Getwd(); err == nil {
-			path = filepath.Join(cwd, path)
-		}
+func validateWrite(repoRoot, path string) (validateResult, error) {
+	classifier, err := writezone.New(repoRoot)
+	if err != nil {
+		return validateResult{}, err
 	}
-	// Normalize symlinks so relative-path resolution (e.g. /var -> /private/var
-	// on macOS) does not break the repo-relative conversion below. Paths that
-	// do not exist yet keep their cleaned form.
-	resolvedRoot := repoRoot
-	if r, err := filepath.EvalSymlinks(repoRoot); err == nil {
-		resolvedRoot = r
-	}
-	resolvedPath := path
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		resolvedPath = r
-	}
-	normalizedPath := filepath.ToSlash(filepath.Clean(resolvedPath))
-	if filepath.IsAbs(resolvedPath) {
-		rel, err := filepath.Rel(resolvedRoot, resolvedPath)
-		if err != nil || escapesRoot(rel) {
-			// The path could not be symlink-resolved (e.g. it does not exist
-			// yet): retry against the un-resolved root so the prefix match
-			// stays consistent with the caller-provided repo root.
-			rel, err = filepath.Rel(repoRoot, filepath.Clean(path))
-		}
-		if err == nil && !escapesRoot(rel) {
-			normalizedPath = filepath.ToSlash(rel)
-		}
-	}
-
-	// Deny pattern: framework files are never writable via validate
-	if strings.HasPrefix(normalizedPath, "framework/") {
-		return validateResult{
-			Allowed: false,
-			Reason:  fmt.Sprintf("path %q is under framework/ and is not writable", path),
-			Path:    path,
-		}
-	}
-
-	// Deny pattern: stable spec files are not directly writable (use promote)
-	if strings.HasPrefix(normalizedPath, "docs/specs/units/stable/") {
-		return validateResult{
-			Allowed: false,
-			Reason:  fmt.Sprintf("path %q is under docs/specs/units/stable/; use promote to write stable specs", path),
-			Path:    path,
-		}
-	}
-
-	// Deny pattern: rule files are not directly writable (use rule governance flows)
-	if strings.HasPrefix(normalizedPath, "docs/specs/rules/stable/") {
-		return validateResult{
-			Allowed: false,
-			Reason:  fmt.Sprintf("path %q is under docs/specs/rules/stable/; use rule governance flows", path),
-			Path:    path,
-		}
-	}
-
-	// Candidate spec files are writable
-	if strings.HasPrefix(normalizedPath, "docs/specs/units/candidate/") {
-		return validateResult{
-			Allowed: true,
-			Reason:  fmt.Sprintf("path %q is a candidate spec file and is writable", path),
-			Path:    path,
-		}
-	}
-
-	// Candidate rule files are writable
-	if strings.HasPrefix(normalizedPath, "docs/specs/rules/candidate/") {
-		return validateResult{
-			Allowed: true,
-			Reason:  fmt.Sprintf("path %q is a candidate rule file and is writable", path),
-			Path:    path,
-		}
-	}
-
-	// Source code files are writable by default
-	return validateResult{
-		Allowed: true,
-		Reason:  fmt.Sprintf("path %q is not governed by specFlow write restrictions", path),
-		Path:    path,
-	}
-}
-
-// escapesRoot reports whether a repository-relative path escapes the
-// repository root (e.g. ".." or "../other"). Paths that escape the root
-// are outside the specFlow write-zone contract and must keep the default
-// "not governed" result instead of being matched against write-zone prefixes.
-func escapesRoot(rel string) bool {
-	rel = filepath.Clean(rel)
-	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return classifier.Classify(path), nil
 }
 
 func writeValidateWriteResult(stdout io.Writer, result validateResult) {
@@ -223,6 +139,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  6. Version/ref consistency")
 	fmt.Fprintln(w, "  7. Body layer-path check (candidate-layer spec paths)")
 	fmt.Fprintln(w, "  8. Dependency cycle check (unit_refs graph — a unit on a cycle FAILs)")
+	fmt.Fprintln(w, "  9. Region locatability (section and acceptance item regions resolve unambiguously)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate rule runs mechanical checks on a candidate rule:")
 	fmt.Fprintln(w, "  1. Frontmatter completeness")

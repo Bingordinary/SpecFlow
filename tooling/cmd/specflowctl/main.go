@@ -77,8 +77,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runRemove(args[1:], stdout, stderr)
 	case "gate-evidence":
 		return runGateEvidence(args[1:], stdout, stderr)
-	case "cache-write":
-		return runCacheWrite(args[1:], stdout, stderr)
+	case "gate-plan":
+		return runGatePlan(args[1:], stdout, stderr)
+	case "gate-packet":
+		return runGatePacket(args[1:], stdout, stderr)
+	case "gate-status":
+		return runGateStatus(args[1:], stdout, stderr)
+	case "gate-submit":
+		return runGateSubmit(args[1:], stdout, stderr)
+	case "gate-finalize":
+		return runGateFinalize(args[1:], stdout, stderr)
+	case "gate-invalidate":
+		return runGateInvalidate(args[1:], stdout, stderr)
+	case "operation":
+		return runOperation(args[1:], stdout, stderr)
 	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
 		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
 		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
@@ -117,8 +129,14 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	unitName := strings.TrimSpace(*unitPtr)
-	ruleID := strings.TrimSpace(*ruleIDPtr)
+	unitName, err := requireTargetName("unit", *unitPtr)
+	if err != nil {
+		return err
+	}
+	ruleID, err := requireTargetName("rule", *ruleIDPtr)
+	if err != nil {
+		return err
+	}
 
 	if unitName == "" && ruleID == "" {
 		fmt.Fprintln(stderr, "Usage: specflowctl promote (--unit <name> | --rule <id>) [--repo-root PATH]")
@@ -548,8 +566,14 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  detect     Detect removable bound rules (no consumers, no retention)")
 	fmt.Fprintln(w, "  remove     Delete a rule whose constraint no longer applies (bound rules auto-verified; global rules on explicit instruction)")
-	fmt.Fprintln(w, "  gate-evidence Compute dependency CIDs (chunk ranges and/or the acceptance_item_set region) for a file read during a gate run")
-	fmt.Fprintln(w, "  cache-write Write a gate cache file with hash/deps evidence computed by the tooling, then self-check it")
+	fmt.Fprintln(w, "  gate-evidence Inspect dependency CIDs (chunk ranges, section/item regions, or the whole acceptance item set) for a file read during a gate run")
+	fmt.Fprintln(w, "  gate-plan  Fix the gate run's input snapshot and generate its deterministic packet plan before any executor reads input")
+	fmt.Fprintln(w, "  gate-packet Materialize one packet's read surface and accepted dependency results")
+	fmt.Fprintln(w, "  gate-status Report packet-run progress (open runs, packet states, next action)")
+	fmt.Fprintln(w, "  gate-submit Record one packet report after mechanical validation (accepted or rejected)")
+	fmt.Fprintln(w, "  gate-finalize Write the gate cache from the accepted packet reports, then self-check it")
+	fmt.Fprintln(w, "  gate-invalidate Persist a targeted P0/P1 and invalidate any matching open gate run")
+	fmt.Fprintln(w, "  operation  Declare and verify a bounded change scope (open/check/close/update/status)")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")
 }
 
