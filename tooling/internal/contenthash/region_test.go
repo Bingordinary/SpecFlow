@@ -300,11 +300,11 @@ func TestListMissingDeps(t *testing.T) {
 		t.Fatal("expected section")
 	}
 	sectionDep := "region:section:Description:" + RegionCID(region.Text)
-	itemRegion, ok := AcceptanceItemsRegion(specWithItems)
-	if !ok {
-		t.Fatal("expected acceptance region")
+	itemSetCID, err := AcceptanceItemSetCID(specWithItems)
+	if err != nil {
+		t.Fatalf("expected acceptance item set CID: %v", err)
 	}
-	itemDep := "region:acceptance_items:" + RegionCID(itemRegion)
+	itemDep := "region:acceptance_items:" + itemSetCID
 
 	freshDeps := []string{sectionDep, itemDep}
 	if missing := ListMissingDeps(specWithItems, freshDeps); len(missing) != 0 {
@@ -614,11 +614,16 @@ func TestAcceptanceItemRegionReorderInvariance(t *testing.T) {
 		}
 	}
 
-	// The whole-set region is raw text — reordering stales it by design.
-	setPlain, _ := AcceptanceItemsRegion(plain)
-	setSwapped, _ := AcceptanceItemsRegion(swapped)
-	if RegionCID(setPlain) == RegionCID(setSwapped) {
-		t.Fatal("whole-set region is raw text; a reorder must change its CID")
+	setPlain, err := AcceptanceItemSetCID(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSwapped, err := AcceptanceItemSetCID(swapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setPlain != setSwapped {
+		t.Fatalf("semantic whole-set CID changed on reorder: %s != %s", setPlain, setSwapped)
 	}
 }
 
@@ -638,6 +643,104 @@ func TestAcceptanceItemRegionSpacingInvariance(t *testing.T) {
 	}
 	if RegionCID(coreA.Text) != RegionCID(coreB.Text) || RegionCID(auxA.Text) != RegionCID(auxB.Text) {
 		t.Fatal("blank-line spacing between items must not change item region CIDs")
+	}
+	setA, err := AcceptanceItemSetCID(normal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setB, err := AcceptanceItemSetCID(spaced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setA != setB {
+		t.Fatalf("blank-line spacing changed semantic whole-set CID: %s != %s", setA, setB)
+	}
+}
+
+func TestAcceptanceItemSetCIDTracksSemanticChanges(t *testing.T) {
+	base, err := AcceptanceItemSetCID(specWithTwoItems)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"item content", strings.Replace(specWithTwoItems, "The core behavior is provided.", "The core behavior changed.", 1)},
+		{"item addition", strings.Replace(specWithTwoItems, "\n## Dependencies", "\n  - id: dep.extra\n    description: Extra.\n\n## Dependencies", 1)},
+		{"item removal", strings.Replace(specWithTwoItems, "  - id: dep.core\n    description: The core behavior is provided.\n    pass_condition: Core behavior passes.\n\n", "", 1)},
+		{"item rename", strings.Replace(specWithTwoItems, "- id: dep.core", "- id: dep.renamed", 1)},
+		{"set preamble", strings.Replace(specWithTwoItems, "acceptance_item_set:\n", "acceptance_item_set:\n  policy: exhaustive\n", 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := AcceptanceItemSetCID(tc.text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == base {
+				t.Fatalf("semantic change %q did not change the whole-set CID", tc.name)
+			}
+		})
+	}
+}
+
+func TestAcceptanceItemSetCIDFailsClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"missing marker", "# U\n\nNo set.\n"},
+		{"empty set", "# U\n\nacceptance_item_set:\n\n## Next\n"},
+		{"empty id", "# U\n\nacceptance_item_set:\n  - id:\n    description: Missing.\n"},
+		{"blank quoted id", "# U\n\nacceptance_item_set:\n  - id: \" \"\n    description: Missing.\n"},
+		{"duplicate id", strings.Replace(specWithTwoItems, "- id: dep.aux", "- id: dep.core", 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := AcceptanceItemSetCID(tc.text); err == nil {
+				t.Fatal("expected fail-closed error")
+			}
+		})
+	}
+}
+
+func TestEmptyAcceptanceItemIDLine(t *testing.T) {
+	valid := "# U\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n"
+	if line, found := EmptyAcceptanceItemIDLine(valid); found {
+		t.Fatalf("valid ids must not report an empty id, got line %d", line)
+	}
+	if _, found := EmptyAcceptanceItemIDLine("# U\n\nNo set.\n"); found {
+		t.Fatal("a missing marker must not report an empty id")
+	}
+
+	empty := "# U\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n  - id:\n    description: Missing.\n"
+	line, found := EmptyAcceptanceItemIDLine(empty)
+	if !found {
+		t.Fatal("expected the empty id line to be reported")
+	}
+	if line != 7 {
+		t.Fatalf("unexpected empty id line: %d", line)
+	}
+
+	fenced := "# U\n\nacceptance_item_set:\n  - id: dep.core\n    description: |\n      ```\n      - id:\n      ```\n"
+	if _, found := EmptyAcceptanceItemIDLine(fenced); found {
+		t.Fatal("an empty id inside a fenced block is content, not an item")
+	}
+
+	quoted := "# U\n\nacceptance_item_set:\n  - id: \" \"\n    description: Missing.\n"
+	if _, found := EmptyAcceptanceItemIDLine(quoted); !found {
+		t.Fatal("a blank quoted id must be reported as empty")
+	}
+}
+
+func TestLegacyRawAcceptanceItemsCIDStales(t *testing.T) {
+	region, ok := AcceptanceItemsRegion(specWithTwoItems)
+	if !ok {
+		t.Fatal("expected raw acceptance item region")
+	}
+	legacyDep := "region:acceptance_items:" + RegionCID(region)
+	missing := ListMissingDeps(specWithTwoItems, []string{legacyDep})
+	if len(missing) != 1 || missing[0] != legacyDep {
+		t.Fatalf("legacy raw whole-set CID must stale once, got %v", missing)
 	}
 }
 

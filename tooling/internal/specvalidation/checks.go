@@ -839,7 +839,20 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		seen[r.Heading] = true
 	}
 
-	// 4. Unique acceptance item ids: a duplicated id cannot be located
+	// 4. Non-empty acceptance item ids: an empty id cannot be located as an
+	// item region and makes the whole-set semantic identity uncomputable
+	// (contenthash.AcceptanceItemSetCID fails closed on it), so it is the
+	// same locatability defect as a duplicated id. The scan is shared with
+	// that computation — a duplicated rule would drift.
+	if line, found := contenthash.EmptyAcceptanceItemIDLine(content); found {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: fmt.Sprintf("acceptance item at line %d has an empty id — item regions cannot be located and whole-set declarations fail closed; give every item a non-empty id (framework/spec_writing_guide.md §7)", line),
+		}
+	}
+
+	// 5. Unique acceptance item ids: a duplicated id cannot be located
 	// unambiguously by the item-region locator, so item-region declarations
 	// naming it fail closed. Item ids are required to be unique by
 	// framework/spec_writing_guide.md §7.
@@ -855,7 +868,7 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		seenItem[id] = true
 	}
 
-	// 5. Heading format: `## ` must be followed by heading text. A
+	// 6. Heading format: `## ` must be followed by heading text. A
 	// near-miss line (`##x`, or a bare `##`) is content to the splitter but
 	// almost always means the author intended a heading.
 	if malformed := contenthash.MalformedHeadingLines(content); len(malformed) > 0 {

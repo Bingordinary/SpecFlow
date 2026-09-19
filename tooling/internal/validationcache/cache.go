@@ -691,11 +691,11 @@ func declarationDeps(text, path string, d declFields) (string, []string, error) 
 		deps = append(deps, dep)
 	}
 	if d.AcceptanceItems {
-		region, ok := contenthash.AcceptanceItemsRegion(text)
-		if !ok {
-			return "", nil, fmt.Errorf("acceptance_item_set region not found in %s — cannot declare the structural dependency", path)
+		cid, err := contenthash.AcceptanceItemSetCID(text)
+		if err != nil {
+			return "", nil, fmt.Errorf("acceptance_item_set in %s is not a valid semantic set — cannot declare the structural dependency: %w", path, err)
 		}
-		deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
+		deps = append(deps, "region:acceptance_items:"+cid)
 	}
 	for _, id := range d.AcceptanceItemIDs {
 		id = strings.TrimSpace(id)

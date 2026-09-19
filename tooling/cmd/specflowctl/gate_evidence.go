@@ -22,14 +22,14 @@ import (
 // cannot invalidate the dependency evidence as long as the depended-on
 // content itself is unchanged.
 //
-// With --acceptance-items, the acceptance_item_set structural region (see
-// contenthash.AcceptanceItemsRegion) is declared as a structural dependency:
-// the region's content CID is emitted with a `region:acceptance_items:` tag.
-// Structural regions are located by structure rather than line numbers, so
-// edits outside the region — even inside the same content-defined chunk — do
-// not invalidate the dependency. This is the precise declaration mode for
-// checks whose judgment covers the item set as a whole (cross-unit checks
-// reading a dependency unit's items, validate's acceptance coverage check).
+// With --acceptance-items, the acceptance_item_set semantic identity (see
+// contenthash.AcceptanceItemSetCID) is declared as a structural dependency:
+// the order-insensitive set CID is emitted with a `region:acceptance_items:`
+// tag. Changing membership or item content invalidates the dependency, while
+// reordering otherwise unchanged item blocks does not. This is the precise
+// declaration mode for checks whose judgment covers the item set as a whole
+// (cross-unit checks reading a dependency unit's items, validate's acceptance
+// coverage check).
 //
 // With --acceptance-item <id>, one acceptance item's structural region (see
 // contenthash.LocateAcceptanceItemRegion) is declared: the region's content
@@ -124,11 +124,11 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 			deps = contenthash.CIDsForRanges(fc, ranges)
 		}
 		if *acceptanceItemsPtr {
-			region, ok := contenthash.AcceptanceItemsRegion(text)
-			if !ok {
-				return fmt.Errorf("acceptance_item_set region not found in %s — cannot declare the structural dependency", relPath)
+			cid, err := contenthash.AcceptanceItemSetCID(text)
+			if err != nil {
+				return fmt.Errorf("acceptance_item_set in %s is not a valid semantic set — cannot declare the structural dependency: %w", relPath, err)
 			}
-			deps = append(deps, "region:acceptance_items:"+contenthash.RegionCID(region))
+			deps = append(deps, "region:acceptance_items:"+cid)
 		}
 		for _, id := range acceptanceItemPtr {
 			id = strings.TrimSpace(id)

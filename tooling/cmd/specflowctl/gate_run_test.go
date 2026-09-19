@@ -2899,6 +2899,39 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 		}
 	}
 
+	// Reorder the complete item blocks without changing their content. Both
+	// item-level evidence and the cross-check's semantic whole-set evidence
+	// must stay fresh.
+	text, err := contenthash.FileText(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginRegion, ok := contenthash.LocateAcceptanceItemRegion(text, "auth.login")
+	if !ok {
+		t.Fatal("auth.login region not found")
+	}
+	logoutRegion, ok := contenthash.LocateAcceptanceItemRegion(text, "auth.logout")
+	if !ok {
+		t.Fatal("auth.logout region not found")
+	}
+	swapped := strings.Replace(text, loginRegion.Text+"\n"+logoutRegion.Text, logoutRegion.Text+"\n"+loginRegion.Text, 1)
+	if swapped == text {
+		swapped = strings.Replace(text, loginRegion.Text+"\n\n"+logoutRegion.Text, logoutRegion.Text+"\n\n"+loginRegion.Text, 1)
+	}
+	if swapped == text {
+		t.Fatal("item reorder did not apply — fixture assumption broken")
+	}
+	if err := os.WriteFile(specPath, []byte(swapped), 0644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("verify cache must remain fresh after item reorder: %s", res.Reason)
+	}
+
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
 	data, _ := os.ReadFile(specPath)
 	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Behavior.", "  - id: auth.login\n    description: Behavior, edited.", 1)
@@ -2926,7 +2959,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	if !strings.Contains(cache, "basis: delta") {
 		t.Fatalf("expected basis: delta, got:\n%s", cache)
 	}
-	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	res, err = validationcache.CheckVerify(repoRoot, "auth")
 	if err != nil {
 		t.Fatal(err)
 	}

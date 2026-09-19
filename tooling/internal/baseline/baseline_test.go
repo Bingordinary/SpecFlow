@@ -373,11 +373,10 @@ func writeRegionDepBaseline(t *testing.T, repoRoot, content string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	region, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("test content must contain the acceptance_item_set marker")
+	regionCID, err := contenthash.AcceptanceItemSetCID(text)
+	if err != nil {
+		t.Fatalf("test content must contain a valid acceptance_item_set: %v", err)
 	}
-	regionCID := contenthash.RegionCID(region)
 
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
 	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {

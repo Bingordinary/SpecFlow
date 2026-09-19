@@ -1325,6 +1325,20 @@ func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
 	}
 }
 
+func TestCheckRegionLocatability_EmptyItemIDFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidate(t, repoRoot, "emptyid",
+		"---\nid: emptyid\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
+			"\n# Empty Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id:\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+	result := checkRegionLocatability(repoRoot, "emptyid")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for an empty acceptance item id, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "empty id") {
+		t.Fatalf("expected empty-id detail, got: %s", result.Details)
+	}
+}
+
 func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "reserved",

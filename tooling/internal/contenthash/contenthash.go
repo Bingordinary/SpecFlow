@@ -17,8 +17,10 @@ package contenthash
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -339,7 +341,7 @@ func acceptanceItemID(line string) (string, bool) {
 	if !strings.HasPrefix(trimmed, "- id:") {
 		return "", false
 	}
-	id := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "- id:")), `"'`)
+	id := strings.TrimSpace(strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "- id:")), `"'`))
 	return id, id != ""
 }
 
@@ -434,6 +436,121 @@ func AcceptanceItemIDs(text string) []string {
 		ids = append(ids, r.ID)
 	}
 	return ids
+}
+
+// emptyAcceptanceItemIDLine returns the index (into lines) of the first
+// `- id:` line with an empty id inside the acceptance item set's outer region
+// (lines[startIdx+1:endIdx]) outside a fenced code block. ok is false when no
+// such line exists. This is the single empty-id scan shared by the semantic
+// set CID and validate's region-locatability check.
+func emptyAcceptanceItemIDLine(lines []string, startIdx, endIdx int) (int, bool) {
+	fence := fenceTracker{}
+	for i := startIdx + 1; i < endIdx; i++ {
+		line := lines[i]
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "- id:") {
+			if _, valid := acceptanceItemID(line); !valid {
+				return i, true
+			}
+		}
+		fence.advance(line)
+	}
+	return 0, false
+}
+
+// EmptyAcceptanceItemIDLine reports the 1-based line number of the first
+// `- id:` line with an empty id inside the acceptance item set, outside a
+// fenced code block. An empty id cannot be located as an item region and
+// makes the whole-set semantic identity uncomputable — both fail closed, so
+// mechanical validation rejects the spec. ok is false when the marker is
+// absent or every id is non-empty.
+func EmptyAcceptanceItemIDLine(text string) (line int, ok bool) {
+	lines := strings.Split(text, "\n")
+	startIdx, endIdx, _, found := acceptanceItemBoundaries(lines)
+	if !found {
+		return 0, false
+	}
+	idx, found := emptyAcceptanceItemIDLine(lines, startIdx, endIdx)
+	if !found {
+		return 0, false
+	}
+	return idx + 1, true
+}
+
+// AcceptanceItemSetCID computes the semantic content identifier of the whole
+// acceptance item set. The set is membership- and content-sensitive but
+// order-insensitive: otherwise unchanged item blocks produce the same CID in
+// any document order. The normalized representation includes non-blank
+// preamble content between the marker and first item plus sorted (id, item
+// region CID) members. Missing or empty sets, empty ids, and duplicate ids
+// fail closed.
+func AcceptanceItemSetCID(text string) (string, error) {
+	lines := strings.Split(text, "\n")
+	startIdx, endIdx, boundaries, ok := acceptanceItemBoundaries(lines)
+	if !ok {
+		return "", fmt.Errorf("acceptance_item_set marker not found")
+	}
+
+	if idx, found := emptyAcceptanceItemIDLine(lines, startIdx, endIdx); found {
+		return "", fmt.Errorf("acceptance item at line %d has an empty id", idx+1)
+	}
+
+	if len(boundaries) == 0 {
+		return "", fmt.Errorf("acceptance_item_set has no items")
+	}
+
+	type member struct {
+		ID  string `json:"id"`
+		CID string `json:"cid"`
+	}
+	type fingerprint struct {
+		Kind        string   `json:"kind"`
+		Version     int      `json:"version"`
+		PreambleCID string   `json:"preamble_cid,omitempty"`
+		Items       []member `json:"items"`
+	}
+
+	regions := AcceptanceItemRegions(text)
+	members := make([]member, 0, len(regions))
+	seen := make(map[string]bool, len(regions))
+	for _, region := range regions {
+		if seen[region.ID] {
+			return "", fmt.Errorf("acceptance item id %q is duplicated", region.ID)
+		}
+		seen[region.ID] = true
+		members = append(members, member{ID: region.ID, CID: RegionCID(region.Text)})
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
+
+	preamble := trimBlankLines(lines[startIdx+1 : boundaries[0]])
+	value := fingerprint{
+		Kind:    "acceptance_item_set",
+		Version: 1,
+		Items:   members,
+	}
+	if len(preamble) > 0 {
+		value.PreambleCID = RegionCID(strings.Join(preamble, "\n"))
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode acceptance_item_set fingerprint: %w", err)
+	}
+	return CID(payload), nil
+}
+
+func trimBlankLines(lines []string) []string {
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return lines[start:end]
 }
 
 // RegionCID computes the content identifier of a structural region's text.
@@ -699,8 +816,8 @@ func ListMissingDeps(text string, deps []string) []string {
 			}
 			switch name {
 			case "acceptance_items":
-				region, ok := AcceptanceItemsRegion(text)
-				if !ok || stripCIDPrefix(payload) != stripCIDPrefix(RegionCID(region)) {
+				cid, err := AcceptanceItemSetCID(text)
+				if err != nil || stripCIDPrefix(payload) != stripCIDPrefix(cid) {
 					missing = append(missing, dep)
 				}
 			case "acceptance_item":

@@ -25,6 +25,15 @@ func chunkDeps(t *testing.T, path string) []string {
 	return deps
 }
 
+func acceptanceItemsDep(t *testing.T, text string) string {
+	t.Helper()
+	cid, err := contenthash.AcceptanceItemSetCID(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "region:acceptance_items:" + cid
+}
+
 // depsYAML renders a deps block for a cache file's files entry.
 func depsYAML(deps []string) string {
 	if len(deps) == 0 {
@@ -2246,17 +2255,13 @@ func TestRegionDepUnaffectedByProseEdit(t *testing.T) {
 	os.WriteFile(depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
-	// Region CID of the acceptance item set.
+	// Semantic CID of the acceptance item set.
 	depText, _ := os.ReadFile(depPath)
-	region, ok := contenthash.AcceptanceItemsRegion(string(depText))
-	if !ok {
-		t.Fatal("expected region")
-	}
-	regionCID := contenthash.RegionCID(region)
+	itemsDep := acceptanceItemsDep(t, string(depText))
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n" + depsYAML(chunkDeps(t, selfPath)) + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    deps:\n      - region:acceptance_items:" + regionCID + "\n---\n"
+	cacheContent := "---\ncommand: validate\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n" + depsYAML(chunkDeps(t, selfPath)) + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    deps:\n      - " + itemsDep + "\n---\n"
 	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// Prose edit inside the same content-defined chunk (the file is small —
@@ -2349,8 +2354,7 @@ func TestReadCacheChecksMapping(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -2409,8 +2413,7 @@ func TestDeriveStaleScopeSectionEdit(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -2446,8 +2449,7 @@ func TestDeriveStaleScopeAllDeclaredAffected(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -2479,8 +2481,7 @@ func TestDeriveStaleScopeCrossFreshOthersStale(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 	scopeRegion, _ := contenthash.LocateSectionRegion(text, "Scope")
 	scopeDep := "region:section:Scope:" + contenthash.RegionCID(scopeRegion.Text)
 
@@ -2519,8 +2520,7 @@ func TestDeriveStaleScopeCrossFreshPartialStale(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 	scopeRegion, _ := contenthash.LocateSectionRegion(text, "Scope")
 	scopeDep := "region:section:Scope:" + contenthash.RegionCID(scopeRegion.Text)
 
@@ -2613,8 +2613,7 @@ func TestCheckValidateChecksUnionSubset(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -2646,8 +2645,7 @@ func TestCheckValidateChecksUnionExtraDepsLegal(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -2694,8 +2692,7 @@ func TestDeriveStaleScopeLogicalRefUnclaimed(t *testing.T) {
 	// cross-unit check.
 	writeSpecWithSections(t, repoRoot, "dep", "Dep prose.")
 	depText, _ := contenthash.FileText(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_dep.md"))
-	depItemsRegion, _ := contenthash.AcceptanceItemsRegion(depText)
-	depItemsDep := "region:acceptance_items:" + contenthash.RegionCID(depItemsRegion)
+	depItemsDep := acceptanceItemsDep(t, depText)
 
 	specPath := writeSpecWithSections(t, repoRoot, "self", "Prose.")
 	specHash, _ := fileHash(specPath)
@@ -2738,8 +2735,7 @@ func TestDeriveStaleScopeUnionExtraUnclaimed(t *testing.T) {
 	text, _ := contenthash.FileText(specPath)
 	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, _ := contenthash.AcceptanceItemsRegion(text)
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
@@ -3372,11 +3368,7 @@ func wholeSetDep(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	region, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatalf("acceptance item set not locatable in %s", path)
-	}
-	return "region:acceptance_items:" + contenthash.RegionCID(region)
+	return acceptanceItemsDep(t, text)
 }
 
 // writeVerifyCacheWithChecks writes a pass verify cache whose per-check deps
@@ -3481,6 +3473,36 @@ func TestBuildEntryFromChecksAcceptanceItemFailClosed(t *testing.T) {
 	}
 }
 
+func TestBuildEntryWholeAcceptanceItemSetFailsClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
+	path := "docs/specs/units/candidate/unit_self.md"
+	original := string(mustRead(t, specPath))
+	itemStart := strings.Index(original, "  - id:")
+	if itemStart < 0 {
+		t.Fatal("fixture has no acceptance item")
+	}
+	emptySet := original[:itemStart]
+
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"empty set", emptySet},
+		{"empty id", strings.Replace(original, "- id: self.core", "- id:", 1)},
+		{"duplicate id", strings.Replace(original, "- id: self.aux", "- id: self.core", 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(specPath, []byte(tc.text), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{{Check: "cross", AcceptanceItems: true}}); err == nil {
+				t.Fatal("expected semantic whole-set declaration to fail closed")
+			}
+		})
+	}
+}
+
 func TestBuildEntryMixesWholeSetAndItemDeps(t *testing.T) {
 	repoRoot := t.TempDir()
 	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
@@ -3552,10 +3574,12 @@ func TestDeriveStaleScopeAcceptanceItemReorderFresh(t *testing.T) {
 	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
 	coreDep := itemRegionDep(t, specPath, "self.core")
 	auxDep := itemRegionDep(t, specPath, "self.aux")
+	setDep := wholeSetDep(t, specPath)
 	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
 		"self.core": coreDep,
 		"self.aux":  auxDep,
-	}, []string{"self.core", "self.aux"})
+		"cross":     setDep,
+	}, []string{"self.core", "self.aux", "cross"})
 
 	// Swap the two item blocks; their contents are unchanged.
 	text, _ := contenthash.FileText(specPath)
@@ -3574,7 +3598,14 @@ func TestDeriveStaleScopeAcceptanceItemReorderFresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(scope.StaleDeps) != 0 || len(scope.Affected) != 0 {
-		t.Fatalf("reordering items must not stale item deps, got stale=%v affected=%v", scope.StaleDeps, scope.Affected)
+		t.Fatalf("reordering items must not stale item or whole-set deps, got stale=%v affected=%v", scope.StaleDeps, scope.Affected)
+	}
+	result, err := CheckVerify(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("verify cache must remain fresh after a semantic no-op reorder: %s", result.Reason)
 	}
 }
 
@@ -3583,10 +3614,12 @@ func TestDeriveStaleScopeAcceptanceItemRename(t *testing.T) {
 	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
 	coreDep := itemRegionDep(t, specPath, "self.core")
 	auxDep := itemRegionDep(t, specPath, "self.aux")
+	setDep := wholeSetDep(t, specPath)
 	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
 		"self.core": coreDep,
 		"self.aux":  auxDep,
-	}, []string{"self.core", "self.aux"})
+		"cross":     setDep,
+	}, []string{"self.core", "self.aux", "cross"})
 
 	renamed := strings.Replace(string(mustRead(t, specPath)), "- id: self.core", "- id: self.renamed", 1)
 	if err := os.WriteFile(specPath, []byte(renamed), 0644); err != nil {
@@ -3597,11 +3630,11 @@ func TestDeriveStaleScopeAcceptanceItemRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scope.StaleDeps) != 1 || scope.StaleDeps[0] != coreDep {
-		t.Fatalf("a renamed id must stale only its old dep, got %v", scope.StaleDeps)
+	if len(scope.StaleDeps) != 2 || scope.StaleDeps[0] != coreDep || scope.StaleDeps[1] != setDep {
+		t.Fatalf("a renamed id must stale its old item dep and the whole set, got %v", scope.StaleDeps)
 	}
-	if len(scope.Affected) != 1 || scope.Affected[0] != "self.core" {
-		t.Fatalf("expected only self.core affected, got %v", scope.Affected)
+	if len(scope.Affected) != 2 || scope.Affected[0] != "self.core" || scope.Affected[1] != "cross" {
+		t.Fatalf("expected self.core and cross affected, got %v", scope.Affected)
 	}
 }
 
@@ -3609,9 +3642,11 @@ func TestDeriveStaleScopeAcceptanceItemDuplicate(t *testing.T) {
 	repoRoot := t.TempDir()
 	specPath := writeSpecWithTwoItems(t, repoRoot, "self")
 	auxDep := itemRegionDep(t, specPath, "self.aux")
+	setDep := wholeSetDep(t, specPath)
 	writeVerifyCacheWithChecks(t, repoRoot, "self", specPath, map[string]string{
 		"self.aux": auxDep,
-	}, []string{"self.aux"})
+		"cross":    setDep,
+	}, []string{"self.aux", "cross"})
 
 	dup := strings.Replace(string(mustRead(t, specPath)), "- id: self.aux", "- id: self.core", 1)
 	if err := os.WriteFile(specPath, []byte(dup), 0644); err != nil {
@@ -3622,8 +3657,11 @@ func TestDeriveStaleScopeAcceptanceItemDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scope.StaleDeps) != 1 || scope.StaleDeps[0] != auxDep {
+	if len(scope.StaleDeps) != 2 || scope.StaleDeps[0] != auxDep || scope.StaleDeps[1] != setDep {
 		t.Fatalf("a duplicated id must fail closed to stale, got %v", scope.StaleDeps)
+	}
+	if len(scope.Affected) != 2 || scope.Affected[0] != "self.aux" || scope.Affected[1] != "cross" {
+		t.Fatalf("expected self.aux and cross affected, got %v", scope.Affected)
 	}
 }
 

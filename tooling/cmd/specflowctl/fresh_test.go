@@ -297,11 +297,7 @@ func TestFreshUnitDetailDeltaScope(t *testing.T) {
 		t.Fatal("expected Description section")
 	}
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected acceptance region")
-	}
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
 	os.MkdirAll(cacheDir, 0755)
@@ -361,11 +357,7 @@ func TestFreshUnitDetailDeltaScopeNoJudgments(t *testing.T) {
 		t.Fatal("expected Description section")
 	}
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected acceptance region")
-	}
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
 	os.MkdirAll(cacheDir, 0755)
@@ -419,11 +411,7 @@ func TestFreshUnitDetailDeltaScopeDegrades(t *testing.T) {
 		t.Fatal("expected Description section")
 	}
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected acceptance region")
-	}
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 	scopeRegion, ok := contenthash.LocateSectionRegion(text, "Scope")
 	if !ok {
 		t.Fatal("expected Scope section")
@@ -482,11 +470,7 @@ func TestFreshUnitDetailDeltaScopeAllUnclaimed(t *testing.T) {
 		t.Fatal("expected Description section")
 	}
 	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsRegion, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected acceptance region")
-	}
-	itemsDep := "region:acceptance_items:" + contenthash.RegionCID(itemsRegion)
+	itemsDep := acceptanceItemsDep(t, text)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
 	os.MkdirAll(cacheDir, 0755)

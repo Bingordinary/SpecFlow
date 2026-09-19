@@ -11,6 +11,15 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 )
 
+func acceptanceItemsDep(t *testing.T, text string) string {
+	t.Helper()
+	cid, err := contenthash.AcceptanceItemSetCID(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "region:acceptance_items:" + cid
+}
+
 func TestGateEvidenceBasic(t *testing.T) {
 	repoRoot := t.TempDir()
 	srcDir := filepath.Join(repoRoot, "src")
@@ -162,13 +171,9 @@ func TestGateEvidenceAcceptanceItemsRegion(t *testing.T) {
 		t.Fatalf("expected a region:acceptance_items dep, got:\n%s", out)
 	}
 
-	// The region CID must equal the structural region CID.
+	// The emitted CID must equal the semantic whole-set CID.
 	text, _ := contenthash.FileText(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_dep.md"))
-	region, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected region")
-	}
-	expected := "region:acceptance_items:" + contenthash.RegionCID(region)
+	expected := acceptanceItemsDep(t, text)
 	if !strings.Contains(out, expected) {
 		t.Fatalf("expected dep %q in output, got:\n%s", expected, out)
 	}
@@ -187,8 +192,32 @@ func TestGateEvidenceAcceptanceItemsMissingMarker(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when the acceptance_item_set marker is absent")
 	}
-	if !strings.Contains(err.Error(), "acceptance_item_set region not found") {
+	if !strings.Contains(err.Error(), "acceptance_item_set marker not found") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGateEvidenceAcceptanceItemsSemanticSetFailsClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"empty set", "# Dep\n\nacceptance_item_set:\n"},
+		{"empty id", strings.Replace(gateEvidenceTwoItemSpec, "- id: dep.core", "- id:", 1)},
+		{"duplicate id", strings.Replace(gateEvidenceTwoItemSpec, "- id: dep.aux", "- id: dep.core", 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(specPath, []byte(tc.text), 0644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items"}, &stdout, &stderr); err == nil {
+				t.Fatal("expected semantic whole-set declaration to fail closed")
+			}
+		})
 	}
 }
 
@@ -480,21 +509,61 @@ func TestGateEvidenceAcceptanceItemUnionWithWholeSet(t *testing.T) {
 		t.Fatalf("gate-evidence failed: %v\nstderr=%s", err, stderr.String())
 	}
 	text, _ := contenthash.FileText(specPath)
-	setRegion, ok := contenthash.AcceptanceItemsRegion(text)
-	if !ok {
-		t.Fatal("expected the whole-set region")
-	}
+	setDep := acceptanceItemsDep(t, text)
 	coreRegion, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.core")
 	if !ok {
 		t.Fatal("expected dep.core region")
 	}
 	for _, want := range []string{
-		"region:acceptance_items:" + contenthash.RegionCID(setRegion),
+		setDep,
 		"region:acceptance_item:dep.core:" + contenthash.RegionCID(coreRegion.Text),
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("expected dep %q in output, got:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestGateEvidenceAcceptanceItemsReorderInvariant(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
+	text, err := contenthash.FileText(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDep := acceptanceItemsDep(t, text)
+
+	var stdout, stderr bytes.Buffer
+	if err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), wantDep) {
+		t.Fatalf("expected semantic set dep %q, got:\n%s", wantDep, stdout.String())
+	}
+
+	core, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.core")
+	if !ok {
+		t.Fatal("dep.core region not found")
+	}
+	aux, ok := contenthash.LocateAcceptanceItemRegion(text, "dep.aux")
+	if !ok {
+		t.Fatal("dep.aux region not found")
+	}
+	swapped := strings.Replace(text, core.Text+"\n\n"+aux.Text, aux.Text+"\n\n"+core.Text, 1)
+	if swapped == text {
+		t.Fatal("item reorder did not apply — fixture assumption broken")
+	}
+	if err := os.WriteFile(specPath, []byte(swapped), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "docs/specs/units/candidate/unit_dep.md", "--acceptance-items"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), wantDep) {
+		t.Fatalf("reorder changed the CLI whole-set dependency; expected %q, got:\n%s", wantDep, stdout.String())
 	}
 }
 
