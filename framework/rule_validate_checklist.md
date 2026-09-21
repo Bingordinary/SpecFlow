@@ -1,6 +1,6 @@
 # Rule Validate Checklist
 
-`rule_validate` is the rule-equivalent of `validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
+`validate@{rule}` is the rule path of `validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/commands.md` §Target Resolution).
 
 **Result:** PASS writes `docs/specs/meta/validation/rule/{id}/validate_result.md`.
@@ -10,9 +10,9 @@ A candidate full-run FAIL does not write cache (the validate cache is deleted �
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {rule}` | full | All 8 checks. Quality checks are holistic — always runs full. |
-| `validate@ {rule}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
-| `validate@ {rule}:{keyword}` | targeted | Match keyword to check name. User explicitly chooses focus. Does not write a cache. |
+| `validate@{rule}` | full | All 8 checks. Quality checks are holistic — always runs full. |
+| `validate@{rule}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@{rule}:{keyword}` | targeted | Match keyword to check name. User explicitly chooses focus. Does not write a cache. |
 
 ## Execution Rules
 

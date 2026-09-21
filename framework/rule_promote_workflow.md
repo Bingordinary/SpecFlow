@@ -1,13 +1,13 @@
 # Rule Promote Workflow
 
-`rule_promote` is the rule-equivalent of `promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
+`promote@{rule}` is the rule path of `promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
 
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/commands.md` §Target Resolution).
 
 ## HARD RULES
 
 1. Never call `specflowctl promote --rule <id>` without user confirmation
-2. Before promote, always run `rule_validate`. If it fails, stop and report
+2. Before promote, the `validate@{rule}` cache must be fresh and passing. If it is missing, stale, or blocking, stop and report; do not run the gate — gates are user-triggered
 3. The agent does not decide when to promote — it suggests, the user confirms
 
 ## Version Change Behavior
@@ -42,7 +42,7 @@ The agent may report cache state and version change type to help the user decide
 |-----------|-------------|
 | MINOR/PATCH change, cache fresh | "Compatible change. Rule validate has passed. Ready for promotion — assess consumer impact after promote (typically none)." |
 | MAJOR change, cache fresh | "Breaking change. Rule validate has passed. Ready for promotion — verify consumer impact after promote." |
-| Cache stale/missing | "Cache is missing or expired. Run rule_validate first." |
+| Cache stale/missing | "Cache is missing or expired. Run `validate@{rule}` first." |
 
 ### Step 2 — Run `specflowctl promote --rule <id>`
 
@@ -61,7 +61,7 @@ The CLI tool performs:
 Rule removal is a separate command: `specflowctl remove --rule <id>` (see `framework/spec_writing_guide.md` §6.5). A unit promote additionally removes every bound rule its candidate dropped from `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration; the removed rules are listed explicitly in the promote report.
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
-**FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `rule_validate` before retrying. Do not attempt manual promotion.
+**FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `validate@{rule}` before retrying. Do not attempt manual promotion.
 
 ### Post-promote Consumer Impact
 

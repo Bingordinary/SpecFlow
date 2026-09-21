@@ -19,12 +19,12 @@ The unit's complete spec is the union of the main spec and all non-exempt, non-r
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `verify@ {unit}` | full | Verify all spec content (all 7 steps, one detection packet and one conditional analysis packet per acceptance item) + cross-check |
-| `verify@ {unit}:{keyword}` | targeted | Match keyword to spec content by title, feature name, API path, or structure → verify that content. Does not write a cache. |
+| `verify@{unit}` | full | Verify all spec content (all 7 steps, one detection packet and one conditional analysis packet per acceptance item) + cross-check |
+| `verify@{unit}:{keyword}` | targeted | Match keyword to spec content by title, feature name, API path, or structure → verify that content. Does not write a cache. |
 
 **Keyword domain:** verify keywords resolve to spec content — section titles, feature names, API paths, acceptance item ids, appendix files. A keyword matching no spec content is a no-match — ask the user for clarification.
 
-**Output:** Targeted runs report only the requested content and note "This was a targeted check — no complete cache was written. Run `verify@ {unit}` for a complete verification." A targeted P0/P1 must first be persisted with `gate-invalidate --check {item id}`.
+**Output:** Targeted runs report only the requested content and note "This was a targeted check — no complete cache was written. Run `verify@{unit}` for a complete verification." A targeted P0/P1 must first be persisted with `gate-invalidate --check {item id}`.
 
 **Cache:** see `framework/validation_cache.md` for format.
 

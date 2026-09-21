@@ -19,13 +19,13 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@ {unit}` | full | All 8 checks + cross-check. Quality checks are holistic — always runs full. |
-| `validate@ {unit}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
-| `validate@ {unit}:{keyword}` | targeted | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. Does not write a cache. |
+| `validate@{unit}` | full | All 8 checks + cross-check. Quality checks are holistic — always runs full. |
+| `validate@{unit}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
+| `validate@{unit}:{keyword}` | targeted | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. Does not write a cache. |
 
 **Keyword domain:** validate keywords resolve to check names — `structure` (Check 1), `design` (Check 2), `scope` (Check 3), `evidence` (Check 4), `acceptance`/`coverage` (Check 5), `affects` (Check 6), `cross-unit` (Check 7), `constraint` (Check 8). A keyword matching no check name is a no-match — ask the user for clarification.
 
-**Output:** Targeted runs report only the executed check(s) and note "This was a targeted check — no complete cache was written. Run `validate@ {unit}` for a complete validation." A targeted P0/P1 must first be persisted with `gate-invalidate --check {check key}`.
+**Output:** Targeted runs report only the executed check(s) and note "This was a targeted check — no complete cache was written. Run `validate@{unit}` for a complete validation." A targeted P0/P1 must first be persisted with `gate-invalidate --check {check key}`.
 
 ### Stable-only mode
 
