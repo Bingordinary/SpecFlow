@@ -9,6 +9,51 @@
 Use first-principles thinking. Do not assume that I always know exactly what I want or how to get it. Stay cautious, start from the original requirement and problem, and stop to discuss with me if the motivation or goal is unclear.
 
 
+## Repository Scope and Layout Rule
+
+This repository is the SpecFlow `source_repo`: it develops and distributes the
+SpecFlow framework, but it does **not** use SpecFlow to govern its own
+development. The unit/rule lifecycle described in `framework/concepts.md`
+applies only after SpecFlow is installed in a consumer project
+(`installed_project`).
+
+Before analyzing, planning, proposing changes, or modifying files, distinguish
+these two independent questions:
+
+1. **Development governance** — work performed in this repository is always
+   `source_repo` development and follows this file plus the relevant
+   source-repository owner documents and tests.
+2. **Runtime layout** — deployment artifacts may need to be evaluated as they
+   will run inside an `installed_project`; that runtime context does not change
+   the governance of the source-repository change itself.
+
+For source-repository development:
+
+- **DO NOT** create, fork, update, validate, verify, review, or promote a
+  root-level `docs/specs/` unit or rule as a prerequisite for changing this
+  repository.
+- **DO NOT** require a candidate-spec declaration, candidate-spec update, or
+  Spec Impact Assessment in plans for source-repository changes.
+- **DO NOT** apply candidate/stable workflow requirements from
+  `framework/concepts.md` to changes under `framework/`, `tooling/`,
+  `templates/`, `hooks/`, or other source-repository paths.
+- Spec files under templates, demos, fixtures, or temporary test projects are
+  deployment/test data; they do not govern development of this repository.
+  Tests may still exercise SpecFlow lifecycle commands against those isolated
+  inputs.
+
+Deployment artifacts (files under `templates/`, `hooks/`, and platform plugin
+templates such as `.opencode/plugins/`, `.claude-plugin/`, `.agents/plugins/`)
+are authored in the source repository but executed after installation inside a
+consumer project. Resolve their runtime paths and behavior from the consumer's
+context (the installed layout: `<project>/specflow/...`, `<project>/.agents/...`),
+while treating edits to those artifacts as `source_repo` development. Do not
+apply `installed_project` naming conventions or agent-facing standards to
+`source_repo` mechanism files, or source-repository paths to deployed runtime
+behavior. See `framework/spec_flow_review.md` Section 2.16 for the authoritative
+deployment-layout rule.
+
+
 ## Solution Rules
 
   When you need to provide a modification or refactor plan, it must follow these rules:
@@ -17,14 +62,6 @@ Use first-principles thinking. Do not assume that I always know exactly what I w
   - Do not over-engineer. Keep to the shortest implementation path, and do not violate the first rule above.
   - Do not introduce solutions beyond the requirements I provided, such as fallback logic or repair-oriented additions, because that can cause business logic drift.
   - The solution must be logically correct and verified across the full end-to-end chain.
-
-## Spec-First Planning Contract
-
-  When planning or formulating an implementation plan / proposed changes:
-
-  - **Explicit Spec Declaration**: If planned changes affect code belonging to an existing unit (or introduce a new unit), the plan's `Proposed Changes` list MUST explicitly declare the unit's candidate spec (`docs/specs/units/candidate/unit_{name}.md`) and any affected appendices before the code files. If no candidate exists, running `specflowctl fork --unit <name>` must be declared as a prerequisite step.
-  - **No Silent Skip**: If a code modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria declared in the spec, the plan MUST include an explicit one-sentence Spec Impact Assessment explaining why candidate spec modification is not required. Never remain silent on spec impact.
-  - **Spec-First in Execution**: During execution, the agent MUST update the candidate spec first (establishing updated constraints and acceptance items) before modifying code and tests.
 
 ## Document Language Rules
 
@@ -82,19 +119,6 @@ lost. If you need to change agent instructions, change `RULE.md` and run
 use the runtime's own local-only instruction mechanism instead (e.g. the
 agent's user-global config, not this repository).
 
-
-## Layout Context Rule
-
-Before analyzing any governance file, identify its layout: `source_repo` (this repository) or `installed_project` (a project using SpecFlow). A file's layout determines its reader, its path resolution, and what constitutes a valid finding. Do not apply `installed_project` naming conventions or agent-facing standards to `source_repo` mechanism files, and vice versa. When a finding derives from cross-layout comparison, stop and verify the finding still holds within the target file's own layout.
-
-Deployment artifacts (files under `templates/`, `hooks/`, and platform plugin
-templates such as `.opencode/plugins/`, `.claude-plugin/`, `.agents/plugins/`)
-are authored in the source repository but executed after installation inside a
-consumer project. Always resolve their paths from the consumer's runtime
-context (the installed layout: `<project>/specflow/...`, `<project>/.agents/...`)
-and never judge a deployment artifact using the source-repository path as the
-runtime truth. See `framework/spec_flow_review.md` Section 2.16 for the
-authoritative rule.
 
 ## Governance Review Shortcut
 
