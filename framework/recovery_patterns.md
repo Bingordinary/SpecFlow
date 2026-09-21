@@ -1,6 +1,6 @@
 # Recovery Patterns
 
-Common situations where the standard validate → verify → promote flow diverges. This file is referenced by `framework/concepts.md` §3.
+Common situations where a normal unit's validate → verify → review → promote path diverges. Rules and retiring units use only validate before promote. This file is the recovery package named by `framework/concepts.md`.
 
 ## 1. Code changed without updating candidate
 

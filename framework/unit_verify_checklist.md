@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `verify@ {unit}`, it uses the 7 steps defined in this file (6 analysis + 1 confidence assessment). This file is referenced by `framework/concepts.md` §3 — the agent reads this file at verify time, not proactively.
+When an agent executes `verify@{unit}`, it uses the 7 steps defined here (6 analysis + 1 confidence assessment). The trigger route in `framework/concepts.md` loads this file at verify time, not proactively.
 
 ## Prerequisite — Read all unit files
 

@@ -52,6 +52,13 @@ func TestInitCreatesValidRunState(t *testing.T) {
 	if !containsString(routingSlice.InputFiles, "framework/operations/version.md") {
 		t.Fatalf("expected version policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
+	if !strings.Contains(routingSlice.ReviewQuestion, "next, validate, verify, review, and promote") {
+		t.Fatalf("expected the command policy slice to cover all five workflow commands, got %q", routingSlice.ReviewQuestion)
+	}
+	commandConvergenceSlice := findSlice(t, state, "command_to_process_convergence")
+	if !strings.Contains(commandConvergenceSlice.ReviewQuestion, "next, validate, verify, review, promote") {
+		t.Fatalf("expected the command convergence slice to cover all five workflow commands, got %q", commandConvergenceSlice.ReviewQuestion)
+	}
 
 	truthSlice := findSlice(t, state, "truth_and_implementation_gates")
 
@@ -1107,6 +1114,8 @@ func createReviewRunRepo(t *testing.T) string {
 		"severity_policy.md",
 		"spec_writing_guide.md",
 		"concepts.md",
+		"commands.md",
+		"agent_suggestion_rules.md",
 		"hooks.md",
 		"verification_scope.md",
 		"unit_validate_checklist.md",
@@ -1126,6 +1135,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/governance/review_scope.md",
 		"framework/operations/update.md",
 		"framework/operations/version.md",
+		"framework/operations/operation_scope.md",
 		"framework/guidance/using-specflow-guidance/SKILL.md",
 		"framework/guidance/project-framing/SKILL.md",
 		"framework/guidance/scope-cutting/SKILL.md",

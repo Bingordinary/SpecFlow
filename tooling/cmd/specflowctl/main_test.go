@@ -59,8 +59,7 @@ func TestInitHooksOnlyInstallsHooksWithoutManifest(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "run-hook session-start codex",
-            "additionalContextLimit": 0
+            "command": "run-hook session-start codex"
           }
         ]
       }

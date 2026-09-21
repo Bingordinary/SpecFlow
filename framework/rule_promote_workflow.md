@@ -2,7 +2,7 @@
 
 `rule_promote` is the rule-equivalent of `promote`. It takes a candidate rule and promotes it to stable. The behavior depends on the version change type (MAJOR/MINOR/PATCH).
 
-Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
+Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/commands.md` §Target Resolution).
 
 ## HARD RULES
 
@@ -72,8 +72,8 @@ After the CLI succeeds, the agent must act based on the change type:
 2. For each affected unit that needs a content update:
    - If the unit has no candidate file, fork it first per HARD RULE 5 in `framework/concepts.md` (`specflowctl fork --unit <name>` — stable is never edited directly)
    - Update the candidate content per the rule's new constraint
-   - Suggest running `validate` then `verify` on each affected unit (user-triggered per HARD RULE 2 in `framework/concepts.md`)
-3. Note that the rule promote already made each affected unit's validate cache stale (the cache declares `rule:{id}` as a logical reference), so the unit's promote is mechanically rejected until it is re-validated — no extra action is needed beyond the re-validation above
+   - Suggest running `validate`, `verify`, and `review` on each affected unit (user-triggered per HARD RULE 2 in `framework/concepts.md`)
+3. Note that the rule promote already made each affected unit's validate cache stale (the cache declares `rule:{id}` as a logical reference), so the unit's promote is mechanically rejected until it is re-validated — no extra action is needed beyond the gates above
 4. Report the tool output and the affected-unit plan to the user
 
 **If MINOR/PATCH:**

@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs, appendices, and acceptance items — and flows through the same validate → verify → promote pipeline. The only difference is the starting point: code, not design.
+Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs, appendices, and acceptance items — and follows the normal unit path: validate → verify → review → promote. The only difference is the starting point: code, not design.
 
 ## Trigger
 
 The adoption flow is triggered in two situations:
 
 1. **Install-time (see `INSTALL.md`):** after installing specFlow into a project that contains existing source code, the agent scans the project, reports whether it is a greenfield or an existing project, and asks the user whether to build specs from the existing code. On confirmation, run this flow.
-2. **Session-time (see `framework/concepts.md`):** when the user expresses adoption intent during any later session — e.g. "把这几个模块登记一下", "继续建档", "把现有实现记录一下" — run this flow for the requested scope.
+2. **Session-time (routed by `framework/concepts.md`):** when the user expresses adoption intent during any later session — e.g. "把这几个模块登记一下", "继续建档", "把现有实现记录一下" — run this flow for the requested scope.
 
 Adoption progress is tracked in-session by the agent; there is no adoption state directory. The user drives the pacing: batches are validated, verified, and promoted at the user's own rhythm, possibly across many sessions. The flow can be resumed at any time by telling the agent to continue adoption.
 
@@ -94,5 +94,5 @@ See `framework/unit_validate_checklist.md` Check 4.
 
 1. Evidence appendix content must record directly readable observed behavior — not only background, motivation, or patch notes (`framework/unit_validate_checklist.md` Check 6).
 2. One evidence appendix per unit; the appendix is organized by behavior domain, one section per acceptance item.
-3. Adoption does not create a new spec lifecycle — adoption products flow through the standard validate → verify → promote pipeline.
+3. Adoption does not create a new spec lifecycle — adopted units follow validate → verify → review → promote.
 4. The agent tracks adoption progress in-session; no adoption state directory is created.

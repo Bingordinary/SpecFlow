@@ -9,8 +9,7 @@
             "type": "command",
             "command": "bash \"$(git rev-parse --show-toplevel)/specflow/hooks/run-hook.cmd\" session-start codex",
             "commandWindows": "powershell.exe -NoProfile -Command \"$repo = git rev-parse --show-toplevel; & (Join-Path $repo 'specflow/hooks/run-hook.cmd') session-start codex\"",
-            "async": false,
-            "additionalContextLimit": 0
+            "async": false
           }
         ]
       }

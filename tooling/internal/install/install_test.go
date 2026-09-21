@@ -84,8 +84,8 @@ func TestInstallHooksCreatesCodexHooks(t *testing.T) {
 	if !strings.Contains(string(content), "session-start codex") {
 		t.Fatalf("installed Codex hook is missing the SpecFlow command: %s", content)
 	}
-	if !strings.Contains(string(content), `"additionalContextLimit": 0`) {
-		t.Fatalf("installed Codex hook must disable context truncation: %s", content)
+	if strings.Contains(string(content), "additionalContextLimit") {
+		t.Fatalf("installed Codex hook must use the platform default context limit: %s", content)
 	}
 }
 
@@ -245,8 +245,7 @@ const codexHookTemplateForTest = `{
             "type": "command",
             "command": "bash \"$(git rev-parse --show-toplevel)/specflow/hooks/run-hook.cmd\" session-start codex",
             "commandWindows": "powershell.exe -NoProfile -Command \"$repo = git rev-parse --show-toplevel; & (Join-Path $repo 'specflow/hooks/run-hook.cmd') session-start codex\"",
-            "async": false,
-            "additionalContextLimit": 0
+            "async": false
           }
         ]
       }

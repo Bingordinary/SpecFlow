@@ -1,138 +1,84 @@
-# SpecFlow Concepts
+# SpecFlow Bootstrap
 
-This project uses SpecFlow to manage design documents. SpecFlow maintains spec documents that record accepted design, behavior, boundaries, and shared rules. These documents serve as the consensus protocol between the user and the agent — the user reviews spec documents to confirm intent, and the agent reads spec documents to understand design intent across sessions.
+SpecFlow records accepted design, behavior, boundaries, and shared rules. Specs are the consensus protocol between the user and the agent: users confirm intent; agents carry it across sessions. Identify the trigger, resolve mode/target, then read its route. If unclear, stop and ask.
 
-## Spec Workflow
+Normal user-triggered paths:
 
-Every spec document follows a five-step loop:
+- unit: **fork/create → edit → validate → verify → review → promote**
+- rule: **fork/create → edit → validate → promote**
+- retiring unit: **edit retirement → validate → promote**
 
-**Fork → Edit → Validate → Verify → Promote**
+## State Model
 
-| Step | What happens | Entry condition | Exit condition |
-|-------|-------------|----------------|---------------|
-| **Fork** | Run `specflowctl fork --unit <name>` to copy stable spec + appendices to candidate layer (or create from scratch). | User wants to design or modify a unit. | Candidate file exists at `unit_<name>.md`. |
-| **Edit** | Modify the candidate spec and corresponding code. | Candidate exists (forked or created). | Agent and user agree the design is ready for review. |
-| **Validate** | Check candidate design quality against checklist. Appendix content is part of the unit's design and included in all checks. | Agent triggered by `validate`. | All checks pass. |
-| **Verify** | Check candidate vs code alignment. Appendix content is verified against code alongside the main spec. | Agent triggered by `verify`. | All items aligned. On mismatch, user decides reconciliation direction. |
-| **Promote** | Replace stable with the validated+verified candidate. Checks that all appendix files were included in validation. | User confirms `promote`. | New stable spec at `unit_<name>.md`; candidate files removed. |
+**File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms.
 
-After promote, the new stable becomes the fork source for the next iteration — the cycle repeats.
+Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote except confirmed `remove@{rule}` deletion and exact `spec_flow_update` migration. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
 
-### State by File Existence
+Code is observed behavior, candidate is proposed intent, stable is prior agreement. None wins automatically. During `verify`, present divergence and let the user decide.
 
-There is no status metadata in the files. The file system itself is the state signal:
+Outside `verify`: stable only = recorded truth; both = name the layer, never just "the spec"; candidate only = unverified draft; neither = use code read-only.
 
-| Stable exists | Candidate exists | What it means | What the agent does |
-|:---:|:---:|---|---|
-| No | No | No design recorded for this unit. | Create `unit_<name>.md` from scratch. |
-| Yes | No | Accepted design exists, no changes in progress. | Fork from stable (copy to candidate layer) before editing. |
-| Yes | Yes | Changes are in progress. | Edit the existing candidate; stable is unchanged until promote. |
-| No | Yes | *(transient — the normal flow promotes candidate to stable; the No/No state is also reached legally by a retiring-unit promote or a rule removal, where the target ends with no file in any layer)* | Proceed to promote when ready; after retirement or removal, re-create from scratch if the design is needed again. |
+## Default Editing Workflow
 
-### The Two Layers
+Read-only requests remain read-only. Without a gate trigger, continue the requested discussion/editing without suggesting spec operations or exposing cache state. "Assume editing" selects a workflow, not write permission (`framework/agent_suggestion_rules.md`).
 
-| Layer | Prefix | Directory | Purpose |
-|-------|--------|-----------|---------|
-| **Stable** | `unit_<name>.md` | `docs/specs/units/stable/` | Accepted recorded truth. **Never edit directly.** Only created by promote. |
-| **Candidate** | `unit_<name>.md` | `docs/specs/units/candidate/` | Working draft. Created by fork or from scratch. The only layer the agent edits. |
+For a unit, run `specflowctl next --unit <name>`. For a rule, inspect exact stable and candidate paths.
 
-The relationship is versioned: a candidate is always a proposed next version of its corresponding stable (or the first version if no stable exists).
+Before editing:
 
-## Core Principle
+- Candidate exists: edit it.
+- Stable only: run `specflowctl fork --unit <name>` or `specflowctl fork --rule <id>`. Never use `cp`. Unit fork copies appendices and usable confirmation caches (`framework/validation_cache.md`).
+- Neither exists: create the candidate using `framework/spec_writing_guide.md`; new rules follow its §6.
 
-**File existence is state.** No state machine, no status table, no lifecycle phases. Candidate file exists = being edited. No candidate file = not being edited.
+Plans declare candidate spec and appendices before code; stable-only requires fork first. A pure internal refactor/performance fix changing no contract, state, rule, or acceptance criterion needs a one-sentence Spec Impact Assessment. During execution, update candidate before code/tests.
 
-| Directory | Meaning |
-|-----------|---------|
-| `docs/specs/units/stable/` | Accepted, promoted design truth |
-| `docs/specs/units/candidate/` | Design currently being edited |
-| `docs/specs/rules/stable/` | Accepted shared rules |
-| `docs/specs/rules/candidate/` | Rules being edited |
-| `docs/specs/meta/validation/` | Validate/verify cache files at `docs/specs/meta/validation/unit/{name}/validate_result.md` and `docs/specs/meta/validation/unit/{name}/verify_result.md` (unit); `docs/specs/meta/validation/rule/{id}/validate_result.md` (rule). See `framework/validation_cache.md` for lifecycle details. |
+Do not gate before editing. Read, then write. For "only change X" / "do not touch Y", open an operation before editing and complete its check before reporting done (`framework/operations/operation_scope.md`).
 
-### Truth Hierarchy
+## Trigger Routing
 
-When code, stable spec, and candidate spec disagree, their authority is not equal:
+Resolve gate mode first. Full and delta/repair gates run `specflowctl gate-plan` before packet reads, then obey `framework/verification_scope.md` and `framework/validation_cache.md`. Targeted (`:check-{n}` / `:{keyword}`) runs in the main session: no plan, no complete cache. Then resolve target type and read the entire row.
 
-| Level | Source | Status |
-|-------|--------|--------|
-| 1 — Ground truth | Running code | What the system actually does |
-| 2 — Current design intent | Candidate spec | What the current iteration proposes |
-| 3 — Prior consensus | Stable spec | What was previously accepted (superseded by candidate during active work) |
-
-**Candidate is the current design intent but not automatically correct.** When verify finds a mismatch between candidate and code, the user decides which direction to reconcile. Stable records the prior consensus for reference.
-
-### Spec Reference Priority (Outside Verify)
-
-When referencing spec content in discussion, analysis, or implementation reasoning outside the `verify` workflow, the file system state determines the reference semantics. The state is the same signal used in the [State by File Existence](#state-by-file-existence) table:
-
-| Stable | Candidate | What it means | How to reference |
-|:---:|:---:|---|---|
-| Yes | No | Accepted design, no active changes. | Reference as recorded truth. Layer qualifier optional (only one layer exists). |
-| Yes | Yes | Active development. Candidate is current design intent; stable is prior consensus. | **Must name the layer.** Stable = "accepted spec records..." Candidate = "current draft proposes..." Candidate is a working hypothesis — combine with code to determine truth. Do not use bare "spec says" when both exist. |
-| No | Yes | New design, no prior consensus. | Reference as a working draft. Label content as unverified. |
-| No | No | No design recorded. | No spec to reference. Code is the only truth source. |
-
-## Key Terms
-
-- **unit** — One independently governed engineering responsibility
-- **rule** — A reusable shared constraint that multiple units may follow
-- **stable** — Prior consensus. Superseded by candidate during active work.
-- **candidate** — Current design intent. Working draft, not automatically correct.
-
-## Existing Project Adoption
-
-When the user expresses adoption intent — e.g. "把这几个模块登记一下", "继续建档", "把现有实现记录一下" — the project is being onboarded from existing code. Follow `framework/operations/adopt.md` for the full adoption flow: scan → structure review and alignment decision → unit cut list (with suspicious-point and directory-mapping columns) → user confirmation → batch candidate generation with evidence appendices → guided per-batch validate / verify / review / promote.
-
-Adoption-generated evidence uses per-acceptance-item waiver semantics: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/spec_writing_guide.md` §3 and `framework/unit_validate_checklist.md` Check 4). Zombie, orphan, and residual evidence states are reported by `validate` at default severity P1.
-
-### Automatic Target Type Detection
-
-`validate`, `verify`, and `promote` work for both units and rules.
-The agent automatically detects the target type using a three-stage process.
-
-**Stage 1 — Physical file check.** Must complete both steps before deciding.
-
-Step 1: Glob for unit candidate files — run `Glob "docs/specs/units/candidate/unit_{target}.md"`.
-
-Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/g_rule_{target}.md"` and `Glob "docs/specs/rules/candidate/b_rule_{target}.md"` (both `g_rule_` and `b_rule_` prefixes).
-
-**Decision (use after both steps complete):**
-
-| Unit candidate found | Rule candidate found | Result |
-|:---:|:---:|---|
-| Yes | No | Type = Unit |
-| No | Yes | Type = Rule. Resolve full `rule_id` from matched filename (e.g., matched `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). |
-| Yes | Yes | Ambiguous. List found files and ask user to clarify. |
-| No | No | → Stage 2 |
-
-**Stage 2 — Prefix fallback (new target).** Only reach here if neither unit nor rule files were found in Stage 1:
-
-| Target format | Detected as | Example |
-|---------------|-------------|---------|
-| Name without prefix (`auth`, `user_service`) | Unit | `validate@auth` |
-| Name with `g_rule_` or `b_rule_` prefix | Rule | `validate@b_rule_auth` |
-
-**Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target.
-
-When Stage 2 classifies a no-prefix target as Unit, the agent looks for its unit files (`Glob "docs/specs/units/candidate/unit_{target}.md"` and `Glob "docs/specs/units/stable/unit_{target}.md"`). If **neither** candidate nor stable unit files exist, do not report "does not exist" yet. Instead:
-
-Run `Glob "docs/specs/rules/candidate/*.md"` and `Glob "docs/specs/rules/stable/*.md"`. Scan all filenames for one whose name contains the target (e.g., `b_rule_runtime_model.md` contains `runtime_model`).
-
-| Result | Action |
+| Trigger | First action and required packages |
 |---|---|
-| Matching rule file found | Type = Rule. Resolve full `rule_id` from the matched filename (e.g., `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). Proceed with the rule pipeline. |
-| No matching rule file found | Report: target does not exist. |
+| `validate@{target}` | Resolve unit/rule with `framework/commands.md`; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | Resolve with `framework/commands.md`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `verify@{unit}` | Resolve candidate/stable by existence; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_verify_checklist.md`. |
+| `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md` and `framework/unit_verify_checklist.md`. |
+| `verify@{rule}` | Stop: rule verify was removed; report `validate@{rule}`. Read `framework/verification_scope.md`. |
+| `review@{unit}` | Resolve candidate/stable; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/spec_review_checklist.md`. |
+| `review@{unit}:{keyword}` | Run targeted file review directly; read `framework/verification_scope.md` and `framework/spec_review_checklist.md`. |
+| `revalidate@{target}` | Resolve with `framework/commands.md`; plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `reverify@{unit}` | Plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_verify_checklist.md`. |
+| `rereview@{unit}` | Plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/spec_review_checklist.md`. |
+| `promote@{target}` | Resolve with `framework/commands.md`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
+| `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
+| `detect@{rule}` / `detect@all` | Run read-only `specflowctl detect`; use `framework/spec_writing_guide.md` §6.5. |
+| `remove@{rule}` | Confirm intent; require no consumers/retention; use `framework/spec_writing_guide.md` §6.5. |
+| `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |
+| `spec_flow_update` | Follow `framework/operations/update.md`; only its migration step may edit stable structure. |
+| `spec_flow_version` | Follow `framework/operations/version.md`. |
+| Design, quality-check, code-review, or completion signal | Read `framework/agent_suggestion_rules.md` before responding. |
+| Adoption intent ("把这几个模块登记一下" / "继续建档") | Follow `framework/operations/adopt.md`. |
+| Bounded-task wording | Follow `framework/operations/operation_scope.md` before editing. |
+| "stuck" / "something is wrong" | Diagnose with `framework/recovery_patterns.md`. |
 
-Unit and rule follow the validate→promote pipeline, but each has different internal checks:
+Project entry instructions, not this router, own meta-governance commands.
 
-| Step | Unit executes | Rule executes |
-|-------|--------------|--------------|
-| validate | 8-point unit design checklist (`unit_validate_checklist.md`) | 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`) |
-| verify | 7-step spec-vs-code alignment check (`unit_verify_checklist.md`) | Removed — rule does not need verify. Consumer alignment is the consuming unit's responsibility. Impact analysis (consumer discovery) is a separate mechanism. |
-| promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`) |
+## HARD RULES
 
-## specflowctl Location
+**1. Read specs before discussing/changing a unit or rule.** Read its stable and candidate files and name the quoted layer. If neither exists for a read-only request, say so and use code. If the spec does not cover the topic, say so before new work. Create or update the candidate spec only for requested design changes. Plans declare candidate first or state why spec impact is absent.
+
+**2. Gates are user-triggered; promote checks applicable gates.** Never promote without confirmation. Unit: validate+verify+review. Rule: validate. Retiring unit: validate. Never start/repeat any gate without its trigger. P0/P1 blocks promote (`framework/agent_suggestion_rules.md`, `framework/validation_cache.md`).
+
+**3. Gates do not edit truth.** `validate`/`verify`/`review` write cache only. Normal stable changes use promote. Routed `remove@{rule}` and `spec_flow_update` own their documented exceptions. `next`, `deps`, `doctor`, and `init` are not gates.
+
+**3a. Never resolve divergence yourself.** Follow `framework/unit_verify_checklist.md` Step 7, present the analysis, and wait for the user's decision. Do not silently choose code or spec.
+
+**4. Stop when unclear.** Ask when target, mode, package, permission, or next step is unclear. Use the routed workflow; never invent a substitute audit or reconciliation flow.
+
+**5. Fork only through specflowctl.** Use `specflowctl fork --unit <name>` / `--rule <id>`; never manual `cp`.
+
+## Infrastructure
 
 ==ATOM_BEGIN:specflowctl_location==
 specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os>-<arch>`. `<tooling-root>` is `specflow/tooling`. Replace `<os>` and `<arch>` with your platform (e.g. `linux-amd64`, `darwin-arm64`, `windows-amd64.exe`). Use the full path when running specflowctl commands.
@@ -144,236 +90,4 @@ specflowctl is not on PATH. Its binary is at `<tooling-root>/bin/specflowctl-<os
 Framework documentation files are referenced with the `framework/` prefix (e.g. `framework/operations/update.md`). These files are located at `specflow/framework/`.
 ==ATOM_END:framework_path==
 
-## Workflow
-
-### 1. Discover
-
-Run `specflowctl next --unit <name>` to discover the unit's candidate and stable spec files, appendices, rules, and related units.
-
-### 2. Edit and implement (default mode)
-
-**Fork prerequisite — before editing, determine the candidate state:**
-- **Candidate exists** → edit the existing candidate spec directly.
-- **No candidate, stable exists** → **fork from stable:** run `specflowctl fork --unit <name>` from the repository root. This copies the unit spec and all associated appendix files to the candidate layer (the layer is encoded by the file path — no `layer` frontmatter field exists) and increments the version. The candidate's `## Version Notes` section needs no version-number sync — it is a text-only summary per `framework/spec_writing_guide.md` §14. It reports the complete fork manifest. This is the **only** allowed way to fork. Manual `cp` is not permitted. **Confirmation cache inheritance:** pass stable confirmation caches (`target: stable`, `result: pass`, review non-blocking) are inherited into the candidate round — rewritten to the candidate layer (physical paths + `target`) — so an environment-drift fork (e.g. a dependency contract changed) can restore the affected gates with `revalidate@` / `reverify@` / `rereview@` instead of full re-runs; gates without a usable baseline (missing or blocking) are listed in the manifest and need their full runs. The fork's version bump stales the caches that declared the frontmatter — the delta re-runs cover that with a small scope. The rewrite consumes the stable confirmation state (one cache file per gate, layer decided by its content): after the fork, `fresh@stable` reports the unit's gates as STALE until the round's promote replaces the stable layer — that STALE is the expected round-in-progress signal, not a rule/dependency impact.
-- **No candidate, no stable** → brand-new design. Create `unit_<name>.md` from scratch following `framework/spec_writing_guide.md` or reference existing specs for format. No fork step needed.
-
-**Rule fork — same logic applies to rules:** if a stable rule file exists at `docs/specs/rules/stable/{rule_id}.md` and no candidate exists, run `specflowctl fork --rule <rule_id>` to fork from stable. This copies the rule file to the candidate layer (the layer is encoded by the file path — no `layer` frontmatter field exists) and increments `rule_version`. For brand-new rules (no stable file), create the candidate rule file from scratch following `framework/spec_writing_guide.md` §6.
-
-**Planning-Phase Spec-First Contract:**
-
-When formulating an implementation plan, design proposal, or list of proposed changes:
-
-1. **Explicit Spec Declaration in Proposed Changes:** If the planned work touches code belonging to an existing unit (or introduces a new unit), the plan's `Proposed Changes` list MUST declare the candidate spec (`docs/specs/units/candidate/unit_{name}.md` and any affected appendices) as a first-class change item before the implementation code files. If no candidate exists, the plan must include `specflowctl fork --unit <name>` (or creating the candidate spec) as an explicit prerequisite action.
-2. **No Silent Skip on Spec Impact:** If the agent determines that a code modification is a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria declared in the spec, the plan MUST explicitly state a one-sentence Spec Impact Assessment (e.g. "Internal refactoring only; no declared interface, state behavior, or acceptance criteria in unit_{name} are modified"). Silence regarding spec impact in the plan is prohibited.
-3. **Spec-First in Execution:** During implementation of the approved plan, the agent MUST update the candidate spec first (establishing updated constraints, state flow, and acceptance criteria), and only then modify implementation code and tests to satisfy the spec. Code implementation is driven by the spec, never the reverse.
-
-After the fork (if applicable), update the candidate spec and code according to the Spec-First contract. No gate before editing. Read first, then write.
-
-**Bounded tasks:** when the project's rules or the user place the current task under bounded scope, execute it under an operation scope — open the operation before editing and run the completion check before reporting done (see §Operation Scope). Otherwise the default editing mode is unchanged.
-
-### 3. Validate, verify, promote (triggered by user)
-
-The user can use explicit triggers at any time:
-
-| Trigger | What agent does |
-|---------|-----------------|
-| `validate@{target}` | Read-only subagents (one packet per independent session — assembly per `framework/verification_scope.md` §Sub-agent Prompt Assembly, validate shape). Unit: 8-point validate checklist (`unit_validate_checklist.md`). Rule: 8-point rule metadata & body quality checklist (`rule_validate_checklist.md`). Auto-detects type from target name. Always runs all checks + cross-check (unit targets; rules have no cross-check). A targeted check executes directly in the main agent session and never publishes a complete cache; targeted P0/P1 must immediately run `gate-invalidate` for the affected key. Candidate target writes the validate cache; stable-only target writes a confirmation cache and recommends forking on FAIL. Complete runs use `gate-plan` → `gate-packet` → `gate-submit` → `gate-finalize`; see `framework/verification_scope.md` and `framework/validation_cache.md`. |
-| `verify@{target}` | Read-only subagents (a detection packet and conditional analysis packet per acceptance item), followed by cross. Unit only; rule verify has been removed. A targeted check executes directly, never publishes a complete cache, and on P0/P1 immediately runs `gate-invalidate` for the affected item. Candidate and stable-only complete runs use the packet sequence and write their respective cache/failure record; see `framework/verification_scope.md` and `framework/validation_cache.md`. |
-| `revalidate@{target}` | Read-only packet executors. `gate-plan --mode delta|repair` derives the re-run set from stale evidence, current undeclared keys, persisted `invalidated_checks`, explicit `--rerun` overrides, failed judgments (repair), and cross (unit targets), then carries the rest. Missing/incomplete status evidence or an unmappable invalidation degrades to full scope. Writes `basis: delta|repair` through the packet sequence; see §Delta Runs in `framework/verification_scope.md`. |
-| `reverify@{unit}` | Read-only detection/analysis packet executors for the mechanically derived item set plus cross. Repair automatically includes failed and persisted invalidated items; callers do not need to remember targeted `--rerun` keys. Writes `basis: delta|repair` through the packet sequence; see §Delta Runs in `framework/verification_scope.md`. |
-| `rereview@{unit}` | Read-only file packet executors for the mechanically derived file set plus cross. Repair automatically includes failed and persisted invalidated files; unmappable invalidations degrade to full scope. Writes `basis: delta|repair` through the packet sequence; see §Delta Runs in `framework/verification_scope.md`. |
-| `promote@{target}` | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: candidate→stable archive (`unit_promote_workflow.md`). Rule: version promotion + consumer ref migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. |
-| `fresh@{target}` | Read-only cache freshness report for one target. Runs `specflowctl fresh --unit <name>` (unit) or `--rule <id>` (rule) and reports the status of every applicable gate (validate / verify / review / appendix) plus whether the target is ready for promote. Reports the promote-identical reason for any gate that is not fresh. For every STALE gate (unit validate/verify/review, rule validate), the detail output appends a `DELTA SCOPE (<gate>)` section — the mechanism-derived delta scope from the same derivation `gate-plan` uses: the affected check keys (from the cache's per-check `checks` mapping), the unclaimed entries (stale deps no check declared), the stale-dep count, the current keys the baseline never declared, and the derived re-run/carry split — a re-run covering every declared check is reported as a full-scope re-run (nothing carried over), and where no scope can be derived the report states the conservative full-packet degradation. The report previews the derived split; `gate-plan` can additionally force keys back with `--rerun`, so the plan may re-run more than the report shows. A stable-only target (no candidate file) reports its drift state instead (baseline comparison, see Stable Drift Baseline in `framework/validation_cache.md`). Never runs validate/verify/review and never writes or deletes caches or baselines. No `:keyword` variant. |
-| `fresh@candidate` | Read-only cache freshness report for every active candidate (units and rules with a candidate file). Runs `specflowctl fresh --scope candidate` and reports each target's gate statuses and the overall `READY FOR PROMOTE: N of M` count. Useful while iterating on multiple units that share files: a change to one unit that invalidates another unit's caches shows up as STALE immediately. Never runs validate/verify/review and never writes or deletes caches. |
-| `fresh@stable` | Read-only report of every stable unit and rule. Runs `specflowctl fresh --scope stable` and reports each target's confirmation states (validate: dependencies/rules, verify: code alignment, review: code quality) plus the baseline drift state (`OK` / `CHANGED` / `MISSING`, see Stable Drift Baseline in `framework/validation_cache.md`). Never runs validate/verify/review and never writes or deletes caches or baselines. |
-| `fresh@all` | Read-only freshness report for both active candidates and stable targets. Runs `specflowctl fresh --scope all`; `READY FOR PROMOTE` covers the candidate section only. Never runs validate/verify/review and never writes or deletes caches or baselines. |
-
-**Execution shape vs mechanical guarantee:** the entries above that name an independent read-only sub-agent session (and the matching entries in the Commands Reference below) state the **required execution shape** for judgment quality, not a mechanically verified property. Every complete-coverage `validate`, `verify`, or `review` trigger in either table uses the same packet sequence: plan before any executor reads input, materialize `gate-packet` before every packet executor and include its output verbatim, submit every required packet, then finalize. The tooling verifies results, coverage, and content evidence — it cannot observe session boundaries, worker identity, or read-only capability. Independent execution is `declared`, never mechanically verified; see `framework/verification_scope.md` §Guarantee Boundary.
-
-**Cache lifecycle:** See `framework/validation_cache.md`.
-
-**Recovery patterns:** See `framework/recovery_patterns.md`.
-
-If the user declines a suggestion, continue editing. Do not insist.
-
-### 3.0. Agent suggestion rules
-
-**Default mode: assume editing.** When the user's request does not match an explicit trigger (`validate`, `verify`, `promote`), the agent MUST assume the user is editing or iterating. Do not classify intent. Do not suggest spec operations. Do not disclose cache state.
-
-The agent only reacts to these concrete signals:
-
-| User signal | What the user likely wants | Agent action |
-|-------------|---------------------------|-------------|
-| **design**: "I want to design X", "let's design X", "I need a design for X" | Create or update the candidate spec | Default mode: assume editing. If no candidate exists, offer to start one. If candidate exists, begin editing. If the goal, user, or scope is unclear, route through the guidance skills first (see `framework/guidance/using-specflow-guidance/SKILL.md`) instead of starting a candidate directly. Do not suggest spec operations. |
-| **quality check**: "check this", "is it right?", "review the design", "validate", "verify" | Validate or verify the spec against the code | Clarify: "Did you mean **validate** (check design quality) or **verify** (verify implementation)?" Then disclose relevant cache state (see disclosure table below). |
-| **code review**: "review the code", "code review", "review quality" | Review code quality with spec awareness | Route to `review`. Disclose review cache state. Review must pass before promote. |
-| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote the candidate to stable | Candidate exists → check validate+verify+review cache. All three fresh and non-blocking (validate PASS, verify PASS, review no P0/P1) → suggest `promote`. Any cache missing/stale → "Pre-promote checks are not complete yet. I need to run those first. Shall I?" If review cache has P0/P1 findings, disclose: "Review found P0/P1 finding(s) — resolve before promoting." |
-| **stuck**: "something is wrong", "it's broken", "I'm stuck" | Diagnose and recover | Diagnose first: is it a code bug, design flaw, or external blocker? See `framework/recovery_patterns.md`. |
-
-If none of these signals are present, continue with the conversation without suggesting spec operations.
-
-**State disclosure (only use when triggered by a quality check or completion signal):**
-
-Before suggesting any action, communicate the current file state using concrete, user-understandable language. Never ask vague questions like "Do you want to go through the validate-verify-promote process?". Instead, disclose the state first, then state what is available for the user to choose from.
-
-| State to disclose | What to say |
-|-------------------|-------------|
-| Candidate spec exists for the unit | "A candidate spec (`...`) exists, recording the design you are currently editing" |
-| No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
-| Validate cache fresh | "Validate has passed all checks, and the read files have not changed" |
-| Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
-| Verify cache fresh | "Verify has passed for all items, and the checked files have not changed" |
-| Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
-| Review cache fresh | "Review has passed — no P0 or P1 findings" |
-| Review cache with P0/P1 findings | "Review found {N} P0/P1 finding(s) — review blocks promote until resolved" |
-| Review cache missing/stale | "Review cache does not exist or is expired" |
-| Appendix validate check pass | "All appendix files are included in validation" |
-| Appendix validate check fail | "One or more appendix files were not validated — run `validate@{unit}` before promoting" |
-
-Caches satisfy gates only when a complete-coverage run passed. Targeted runs never publish a complete result cache; a targeted P0/P1 may delete a pass cache or persist `invalidated_checks` on a failure record through `gate-invalidate`. Delta re-runs write caches with `basis: delta`; repair writes `basis: repair`. A delta/repair FAIL writes a **failure record** instead of deleting the cache — `result: fail` + `blocking: true` with a per-check status map, which is the failure-recovery baseline (see `framework/verification_scope.md` §Delta Runs → Failure recovery). Full-run failures delete the cache for validate (candidate targets — the spec is the upstream root) and record a failure record for verify (candidate targets), review, and stable-only targets.
-
-**State transition lookup table (use when the user has triggered a quality check or completion signal):**
-
-This table maps the boolean state dimensions to the exact disclosure text and suggested action. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
-
-Review cache is required for promote: when the review cache is missing, stale, or `blocking: true`, the agent must disclose the gap before promote and advise running `review@{unit}`.
-
-A fresh cache always means a complete-coverage run passed. Targeted runs never publish complete cache results; `gate-invalidate` only records blocking invalidation state. Delta runs write `basis: delta`; a delta FAIL writes a failure record that fresh reports as BLOCKED and repair later recovers with `basis: repair`, automatically re-running persisted invalidations. A repair that fails again keeps the failure record with `basis: repair` and the unaffected checks marked `carried` (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
-
-| candidate_exists | validate_fresh | verify_fresh | Disclose | Then offer |
-|---|---|---|---|---|
-| N | N/A | N/A | "No candidate spec exists" | "You can start writing a candidate spec to record your design." |
-| Y | N | N/A | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
-| Y | Y | N | "Candidate exists, validate has passed all checks, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
-| Y | N | Y | "Candidate exists, verify has passed all items, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
-| Y | Y | Y | "Candidate has passed validate (all checks) and verify (all items)." | "If review cache is missing, stale, or has P0/P1 findings, advise running `review@{unit}` before promote. Otherwise: 'If the design is finalized, you can promote it to stable.'" |
-
-**Example conversations:**
-
-> User: "I want to design user authentication" (design signal)
-> Agent: "OK. There is currently no candidate spec for the user_auth unit, meaning no design has been recorded yet. Here's what I can do: 1. Use guidance to walk through the design, then write it to the candidate. 2. If you already have an idea, I can write the candidate directly. Which do you prefer?"
-
-> User: "Check it" (quality check signal)
-> Agent: "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
-
-> User: "It's done, promote this" (completion signal)
-> Agent: "Candidate exists, validate has passed all checks, verify has passed all items, and review has no P0/P1 findings. Ready to promote. Running `promote@user_auth`..."
-
-**RED FLAGS — common agent mistakes**
-
-| Agent thought | Reality |
-|---------------|---------|
-| "The user finished this change, they might want to check it" | Unless the user explicitly says "check" or "done", assume they are still iterating. Do not proactively suggest. |
-| "Let me give the user an option: verify+promote first, then handle remaining issues" | Remaining issues = still iterating. Do not mention promote during iteration. |
-| "Proactively disclosing cache status helps the user track progress" | When the user hasn't asked, cache status is noise. Only disclose on quality check or completion signals. |
-| "Suggesting validate/verify/promote helps the user maintain quality" | This interrupts the user's flow. They will ask when needed. |
-| "Let me ask if the user wants to finalize" | Do not ask abstract category questions. Detect concrete signals. |
-| "This example is ambiguous, safer to fall back to category questions" | Falling back to abstract categories is the last resort. Check for signals first. If still uncertain, ask a concrete question instead of category questions. |
-| "Fixes are applied, I should re-run validate/verify/review to confirm and restore the cache" | Executing quality-gate commands is user-triggered only (HARD RULE 2). After fixes, guide the user to a targeted re-check (`validate@{unit}:check-{n}`, `verify@{unit}:{keyword}`, `review@{unit}:{keyword}`), a delta re-run (`revalidate@{unit}` / `reverify@{unit}` / `rereview@{unit}` — when the stale source is a dependency, not the unit's own spec; when a gate shows BLOCKED, the delta re-run recovers the failure record after the findings are resolved), or a concrete command with the reason, and wait for the user's decision. Cache expiry during iteration is normal — do not restore it on your own initiative. |
-
-### 4. Promote (only gate)
-
-The detailed promote workflow is defined in `framework/unit_promote_workflow.md` (unit) and `framework/rule_promote_workflow.md` (rule). The unit workflow follows 3 steps: optional agent pre-check, body path check, and `specflowctl promote`. The rule workflow follows 2 steps: optional agent pre-check and `specflowctl promote`.
-
-Key rules that override the checklist:
-
-1. `specflowctl promote --unit <name>` and `specflowctl promote --rule <id>` are the only operations that write to stable; `specflowctl remove --rule <id>` is the rule-deletion command, and for retired unit/appendix content (`status: retired`, see `framework/spec_writing_guide.md` §8) promote is the operation that removes the corresponding stable files. A retiring unit runs only the validate cache gate — the verify and review gates apply to content being archived, not to content being removed. Rule removal is not a promote path: `specflowctl remove --rule <id>` verifies current-layer consumers and `unbound_retention` via the detection primitive and deletes the rule files, baseline, and validate cache (see `framework/spec_writing_guide.md` §6.5).
-2. Unit promote: the CLI independently checks cache freshness (validate, verify, review, and appendix) before promoting. Rule promote: the CLI independently validates rule frontmatter and version.
-3. After promote succeeds, the agent must NOT modify the promoted stable spec. Body text references are maintained as-is because they use concept names (e.g. `auth`) rather than layer-prefixed file names. Body text must never contain layer-prefixed spec paths (`candidate/`, `stable/`, or their `docs/specs/...` absolute forms): candidate paths break after promote (candidate files are deleted), and stable paths point to the prior-consensus layer during an active candidate round. `validate` enforces this at validate time: the validate@ checklist's Check 1 step 10 covers both candidate- and stable-layer forms; `specflowctl validate` Check 7 mechanically rejects candidate-layer forms only — stable-layer spec paths are legal in structured fields, so the mechanical check intentionally leaves stable forms to the checklist.
-
-`specflowctl promote --unit <name>` validates format (frontmatter, required fields), checks appendix validation coverage (every non-exempt appendix must be in the validate cache's file list; retired appendices are exempt), and copies candidate files to stable. The copy is a pure content copy — the layer is encoded by the file path, so no frontmatter field is transformed (this keeps promoted content byte-identical, which is what lets content-addressed caches stay fresh across a promote of a referenced unit). Reference integrity is checked by `validate` before promote runs. `specflowctl promote` additionally rejects `unit_refs`/`rule_refs` that point only to candidate-layer files, and rejects references to retiring units. Appendix filenames are preserved since they no longer encode layer. Candidate content marked `status: retired` is not copied — the corresponding stable file is removed in the same transaction. After promote succeeds, the candidate gate caches are rewritten into stable confirmation caches (`target: candidate` → `target: stable`, physical paths from `candidate/` to `stable/`) — a retired promote deletes them instead. The rewritten caches become the stable delta-recovery baseline: `fresh@stable` reports them, `re*` restores a stale one, and `fork` inherits them. A unit promote also cleans up rules: every bound rule the candidate dropped from `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration is removed with it (stable and candidate copies, baseline, validate cache), and the removed rules are listed explicitly in the promote report.
-
-`specflowctl promote --rule <id>` validates rule frontmatter, copies the candidate rule to stable (pure copy — the layer is encoded by the path), then deletes the candidate rule file and rewrites the rule validate cache into a stable confirmation cache. Consumer impact assessment is the agent's responsibility. Rule removal is a separate command (`specflowctl remove --rule <id>`), never a promote path.
-
-**Truth semantics:** Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus). The level-2 position (current design intent) is vacant because no candidate file exists; it will be recreated when someone forks to start a new editing round. The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see §2 (Edit and implement) for the fork procedure. Before promoting, the CLI verifies that every non-exempt appendix file is listed in the validate cache's file list — ensuring all appendix content was checked. See [Truth Hierarchy](#truth-hierarchy). **Retirement** (candidate content marked `status: retired`, units and appendices only) inverts the promote direction for the declared files: instead of recording a new truth, it removes the corresponding stable truth — the unit or appendix ends with no file in any layer, and git history is the only record. Rules are not retired through promote: they are removed with `specflowctl remove --rule <id>` (see §6.5 of `framework/spec_writing_guide.md`).
-
-### 5. Spec Review (required quality gate, before promote)
-
-`review` is a standalone spec-aware code quality review. It is NOT part of `verify` — the user triggers it independently. `review` inspects the code with the spec's design intent as context and suppresses findings that the spec explains.
-
-The review result is cached independently. P0/P1 findings block promote; a cache from a full run satisfies the promote gate. See `framework/spec_review_checklist.md` and `framework/verification_scope.md` for detail.
-
-## Operation Scope
-
-A bounded task can run under a declared **operation scope**: a frozen change scope that the tooling verifies mechanically against the final working-tree change before the task is reported done. A project uses this mechanism when its rules or the user require work to stay inside declared boundaries — for example, an eval task that must not touch core directories, or a fix authorized for exactly one unit. The mechanism is runtime-neutral: nothing intercepts writes; the comparison runs when the check is invoked (`tooling/README.md` §Operation scope owns the mechanical contract).
-
-**When it applies.** Opening an operation is opt-in at the framework level. When the project's rules or the user's instruction place the current task under bounded scope, the agent MUST open an operation before editing (`specflowctl operation open`), and while an operation is open for the task, the rules below bind.
-
-**Rules while an operation is open:**
-
-1. **The declared scope is the boundary.** The allowed scope is derived from the target's spec-declared surface (frozen at open) plus the paths explicitly declared at open; the resolved layout's framework root (`specflow/framework/` in an installed project, `framework/` in the source repository) and stable spec files are never writable — a spec-derived entry that names one still fails the static policy layer at check time. Layout resolution fails closed when the repository is missing SpecFlow markers or contains both layouts. Every scope path is accepted only when both its lexical path and its symlink-resolved location remain inside the repository; for a missing target the nearest existing ancestor is resolved, so an escaping parent symlink still fails closed. This applies equally to spec files, appendices, `implementation_surface`, `affects.files`, `--allow`, and `--require-spec`, and is re-checked whenever operation state is loaded. A `--require-spec` declaration is limited to a candidate unit main, candidate unit appendix, or candidate rule path under `docs/specs/`; ordinary code and other files cannot satisfy the spec-first requirement. The agent MUST NOT edit outside the declared scope and MUST NOT silently reinterpret it.
-2. **Scope expansion is explicit, monotonic, and user-authorized.** Widening the scope requires `specflowctl operation update`, and the agent runs it only after the user explicitly approves the added paths. Each update unions the new `--allow` and `--require-spec` entries with the frozen values; it never removes an allowed path or an existing spec-first obligation. Narrowing or redefining the boundary requires abandoning the current operation and opening a new user-authorized operation, optionally linked with `--parent`. The tooling records the update; it cannot verify the authorization — authorization is `declared`, not mechanically verified.
-3. **Completion runs the check.** Before reporting the bounded task complete, the agent runs `specflowctl operation check --id <id>` and reports the result. A `FAIL` result is presented to the user, never explained away.
-4. **A failed check is a user decision.** On `FAIL`, the agent presents the out-of-scope paths and the required options and waits: revert the out-of-scope changes; end the current operation with `specflowctl operation close --id <id> --abandon` (the state records the `abandoned` outcome) and open a new operation for the newly authorized target (`--parent` records the lineage); or widen the scope via `operation update` after user approval. The agent does not choose for the user.
-5. **Closing is gated.** `specflowctl operation close --id <id>` marks the operation closed only when the check passes; a violating operation stays open unless the user explicitly ends it with `--abandon`, which records the abandoned outcome rather than ever passing the violation silently.
-
-**Shared working tree.** The check is a mechanical baseline diff and cannot attribute a change to an author: other sessions' or processes' changes are reported exactly like the agent's own, conservatively. When reliable attribution is needed, run the task in a dedicated `git worktree` — operation state is per working tree.
-
-**State trust boundary.** An operation state file is accepted only after the complete persisted object has been validated, not merely its id and baseline. Every read and every state transition rejects unknown JSON fields, invalid enum values, non-canonical paths or source labels, any path whose current real location escapes the repository, invalid required-spec declarations, malformed timestamps, and field combinations that do not match the open/closed lifecycle. A malformed or escaped state therefore cannot become an executable scope or produce a `PASS` result.
-
-**Serialized transitions.** `close` and `update` are read-modify-write transitions on one operation state file; each enters the repository-local operating-system lock before loading the state and holds it until the write commits. Concurrent transitions in a shared working tree therefore cannot lose an update or resurrect a closed operation; the operating system releases the lock when the process exits.
-
-**Guarantee boundary.** The tooling mechanically verifies the final state when the check runs. Whether an operation was opened at all, whether an expansion was authorized, and whether the check actually ran before completion are runtime properties the tooling cannot observe — they are `declared`, never mechanically verified, in the same sense as the independent-execution statements in §3.
-
-## HARD RULES
-
-These override default helpful-assistant behavior. They are not suggestions.
-
-**HARD RULE 1: Read Specs Before Discussing or Changing a Topic**
-Before discussing, analyzing, or modifying any topic related to a unit, first read the unit's stable spec (if it exists) and the candidate spec (if it exists). If both exist, read both — understand that stable records prior consensus and candidate is the current design intent. Their authority differs per the Truth Hierarchy and the [Spec Reference Priority](#spec-reference-priority-outside-verify) table. When summarizing spec content to the user, and both layers exist, name which layer you are quoting. If the spec has no relevant coverage on the topic, state so explicitly before starting new work: "The spec currently has no recorded design content on this topic. We can start designing from scratch." Create or update spec when design changes. When formulating an implementation plan, the affected candidate spec must be explicitly declared before code changes (or a one-sentence rationale given if no spec change is required per the Planning-Phase Spec-First Contract). In execution, the candidate spec must be updated before implementation code. When fixing a review finding, the spec update obligation binds only when the fix makes the spec inaccurate — behavior the spec never declared carries no update obligation (see `framework/spec_review_checklist.md` §Post-fix Spec Update Obligation). If no spec exists for the unit, create one. Read `framework/spec_writing_guide.md` or reference existing specs for format.
-
-**HARD RULE 2: Promote Is the Only Gate to Stable**
-Never call `specflowctl promote` without user confirmation. Before promote, always run validate, verify, and review. If any fails, stop and report. The agent does not decide when to validate, verify, or promote — it suggests, the user confirms. This includes re-runs after a fix: the agent must not re-run validate, verify, or review (full or delta `re*`) on its own initiative to confirm a fix or restore cache freshness. After applying fixes, the agent guides the user to a targeted re-check (`:check-{n}` / `:{keyword}`), a delta re-run (`revalidate@{target}` / `reverify@{unit}` / `rereview@{unit}`), or a concrete full command with the reason, and waits for the user to trigger it. The verify gate's failure record makes BLOCKED recoverable by `reverify@{unit}` even from a full-run FAIL (anchored to the validated spec, see §Failure handling by gate role in `framework/validation_cache.md`); a validate gate has no such baseline — its first full confirm after a FAIL must re-run everything.
-
-validate, verify, and review are quality gates. They write cache files (`docs/specs/meta/validation/`) but never spec or stable files. All three gates share the same severity semantics: P0/P1 findings are blocking (FAIL) and stop promote; P2/P3 findings are non-blocking (PASS with pending items, cache written with severity counts) and do not stop promote. validate grades findings P0/P1 only, so any validate FAIL (P0/P1 findings) stops promote; review FAIL (P0/P1 findings) stops promote. On full runs, cache behavior differs per gate and layer: candidate validate FAIL deletes its cache (full-run failure — trust establishment failed; the spec is the upstream root, nothing may be carried over from an unconfirmed spec); candidate verify FAIL writes a failure record with the per-item `status` map (anchored to the validated spec — the `reverify@{unit}` baseline, see §Failure handling by gate role in `framework/validation_cache.md`); stable-only validate/verify FAIL write a failure record; review FAIL always writes its cache with `blocking: true`. A failure record (`blocking: true` — review full FAIL, stable-only full FAIL, candidate verify full FAIL, and delta-run FAIL at any layer) lets `fresh` and `promote` distinguish BLOCKED (ran with P0/P1 findings) from MISSING (never ran) for all three gates (see `framework/verification_scope.md` §Delta Runs → Failure recovery).
-
-**HARD RULE 3: validate, verify, and review Check Quality, Promote Writes**
-`validate` and `verify` check quality and report findings. They are read-only for spec and stable files — they write cache files (`docs/specs/meta/validation/`) but never modify governance truth or advance governance state. Only `promote` writes to stable. Commands like `next`, `deps`, `doctor`, `init` are for discovery and maintenance and do not check quality.
-
-**HARD RULE 3a: Suggest But Never Decide Divergence Resolution**
-When `verify` reports findings (FAIL with P0/P1 findings, or PASS with pending P2/P3 items), the agent MUST present the findings to the user and wait for a decision. Before presenting, the agent MUST run the first-principles divergence analysis (see `unit_verify_checklist.md` Step 7), which launches a sub-agent per mismatch to analyze spec intent vs code intent using first-principles reasoning. The agent MUST NOT silently choose a direction, proceed to promote, or treat candidate as automatically correct — the suggestion is advisory only, the user decides. Batch grouping (see `unit_verify_checklist.md` §Batch classification, `unit_validate_checklist.md` §Batch classification, and `spec_review_checklist.md` §Batch classification) is a presentation mechanism, not an action authorization: findings remain listed per item, and no fix is applied until the user explicitly agrees to the batch group. When executing an approved fix, the agent MUST follow the Fix execution rules in `unit_verify_checklist.md` — the fix must stay faithful to design intent: code_gap fixes implement the spec's declared behavior; spec_gap fixes keep the spec a design document (deleting or rewriting a behavior declaration requires a design-intent change basis — "the code happens to behave this way" is not one) and never rewrite the spec into an implementation record.
-
-**Decision progress:** While the user works through findings one by one, every decision point must restate the dynamic progress: "this is finding {n} of {N} remaining", where {N} is recomputed at each decision point from the current known state — the initial findings list minus findings already confirmed resolved, including any the user fixed and a re-check has confirmed. Never reuse the original list index, because a single fix can resolve several findings at once. Findings the user touched but has not re-checked stay pending confirmation and still count as unresolved until a re-check confirms them.
-
-**HARD RULE 4: Stop When Unclear**
-Stop and ask when the target unit is unclear, the required spec or framework file cannot be found, or the next workflow step cannot be determined. Do not guess or proceed with incomplete information.
-
-**HARD RULE 5: Fork Must Use `specflowctl fork`**
-All fork operations (stable → candidate) must use `specflowctl fork --unit <name>` or `specflowctl fork --rule <id>`. Manual `cp` of spec files is not permitted. This ensures appendix files are not missed and frontmatter is updated consistently.
-
-## Commands Reference
-
-| Command | What it does | Who calls it |
-|---------|-------------|-------------|
-| `specflowctl fork --unit <name>` | Copy stable unit spec + appendices to candidate layer (pure copy, layer encoded by path) with version bump, and inherit pass stable confirmation caches into the candidate round (rewritten to the candidate layer; gates without a usable baseline are listed in the manifest). Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
-| `specflowctl fork --rule <id>` | Copy stable rule to candidate layer (pure copy, layer encoded by path) with version bump. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
-| `specflowctl next --unit <name>` | Discover unit files and dependencies. When neither a candidate nor a stable spec exists for the unit, reports the empty state (no design recorded) with exit code 0; fails on tool errors. | Agent |
-| `specflowctl promote --unit <name>` | Checks validate+verify+review+appendix cache freshness, validates format + copies candidate→stable, then rewrites the candidate gate caches into stable confirmation caches (`target: stable`, paths rewritten to `stable/`; a retired promote deletes them). Rejects if any cache stale, missing, or blocking. Also rejects if any non-exempt appendix file is missing from the validate cache. | Agent (after user confirmation, after validate+verify+review) |
-| `specflowctl promote --rule <id>` | Checks rule validate cache freshness, validates rule frontmatter, copies candidate rule→stable, deletes candidate, rewrites the rule validate cache into a stable confirmation cache. Rejects if the cache is missing or stale. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §6. | Agent or human maintainer |
-| `specflowctl review run-*` | Governance review run-state management. Subcommands: `collect-default-scope` (collect the deterministic default scope for a review flow), `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
-| `specflowctl operation ...` | Operation-scope state carrier. `open` declares and freezes a bounded change scope (target spec-derived surface + explicit `--allow` paths + `--require-spec` paths + baseline commit); `check` mechanically evaluates the final change set against it (read-only, fail closed); `close` marks it closed only on pass; `update` widens the declared scope explicitly (user-authorized only); `status` inspects open operations. State: `meta/operations/<id>.json` (local process state). See §Operation Scope and `tooling/README.md` §Operation scope. | Agent (when the project rules or the user require bounded scope) |
-| `validate@{target}` (agent trigger) | Complete runs use independent validate packets plus unit cross and write through `gate-finalize`; candidate full FAIL deletes the cache. Targeted checks execute directly and never publish a complete cache. A targeted P0/P1 must immediately run `gate-invalidate --gate validate ... --check {key}` so a pass cache is deleted or a failure-record invalidation is persisted. | User says "validate" or confirms agent suggestion |
-| `verify@{target}` (agent trigger) | Complete unit runs use detection, conditional analysis, and cross packets; rule verify has been removed. Complete FAIL writes the failure record. Targeted checks never publish a complete cache; targeted P0/P1 immediately runs `gate-invalidate --gate verify ... --check {item}`. | User says "verify" or confirms agent suggestion |
-| `review@{target}` (agent trigger) | Complete unit runs use one reviewed-file packet per file plus cross and write the review cache. Targeted file review never publishes a complete cache; targeted P0/P1 immediately runs `gate-invalidate --gate review ... --check {file}`. | User says "review" or confirms agent suggestion |
-| `revalidate@{target}` (agent trigger) | Mechanism-derived delta/repair packet run. Repair includes failed checks and persisted `invalidated_checks` automatically, plus stale/new keys, explicit `--rerun` overrides, and unit cross; unmappable invalidations degrade to full scope. Writes `basis: delta|repair`; FAIL updates the failure record. | User says "revalidate" or confirms agent suggestion |
-| `reverify@{unit}` (agent trigger) | Mechanism-derived detection/analysis packet run for stale, failed, persisted-invalidated, new, and explicitly forced items plus cross. Writes `basis: delta|repair`; FAIL updates the failure record. | User says "reverify" or confirms agent suggestion |
-| `rereview@{unit}` (agent trigger) | Mechanism-derived file packet run for stale, failed, persisted-invalidated, new, and explicitly forced files plus cross. Writes `basis: delta|repair`; FAIL updates the blocking failure record. | User says "rereview" or confirms agent suggestion |
-| `promote@{target}` (agent trigger) | 3-step promote workflow (unit) / 2-step promote workflow (rule). Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body ref cleanup (`rule_promote_workflow.md`). Auto-detects type from target name. On FAIL: rejects if cache stale, format invalid, or copy fails. Reports CLI output. No files archived. Agent recommends re-running the failed quality gate (validate, verify, or review) as indicated by the failure report and waits for the user to trigger it before retrying. | User says "promote" or confirms agent suggestion |
-| `specflowctl init` | Initialize specFlow project | Human |
-| `specflowctl doctor` | Diagnose project setup | Human |
-| `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says "spec_flow_update" |
-| `spec_flow_version` (agent trigger) | Check the installed SpecFlow version against the remote latest and report whether the project is up to date. If behind, recommend running `spec_flow_update`. See `framework/operations/version.md` for full procedure. | User says "spec_flow_version" |
-| `specflowctl consumers --rule <id>` | List all units that reference the given rule in their rule_refs. For global rules (`g_rule_*`): returns every unit with a file in either layer (retiring candidates included) — global rules apply to all units by default and are not repeated in rule_refs. For bound rules (`b_rule_*`): empty output means no consumers. Current-layer (effective) semantics: each unit resolves to its candidate file when one exists, falling back to the stable file (a stale stable file whose candidate dropped the reference no longer counts); `deps --rule` excludes retiring units — see `framework/verification_scope.md` §Dependency Analysis. | Agent for impact analysis |
-| `specflowctl detect` | Read-only detection of removable rules. `--rule <id>`: reports the rule's current-layer (effective) consumers and its `unbound_retention` declaration (removable = no consumers and no retention declaration). `--all`: lists every bound rule (`b_rule_*`) in the candidate and stable layers with no consumers and no retention declaration. Global rules (`g_rule_*`) are never listed — they apply to every unit by default, so "no consumers" is not a meaningful state; they are removed only by an explicit `specflowctl remove --rule`. Pure read-only — never writes or deletes files. See `framework/spec_writing_guide.md` §6.5. | Agent before rule removal (`detect@{rule}` / `detect@all`) |
-| `specflowctl remove --rule <id>` | Delete a rule whose constraint no longer applies. Final verification reuses the detection primitive: rejected while any current-layer unit still references the rule in `rule_refs` (referrers listed), and while it declares `unbound_retention` (intentional retention). For a global rule, only explicit references block removal — the default applicability lifts with the file. On success deletes the stable copy (and candidate copy if present), then the rule's baseline and validate cache. User-confirmed only. See `framework/spec_writing_guide.md` §6.5. | Agent on user instruction |
-| `specflowctl deps` | Read-only dependency analysis. `--scope all` (default, current-layer units — candidate preferred, stable fallback; retiring units with `status: retired` are excluded — their references disappear with them) / `candidate` / `stable`: reports the dependency graph from all in-scope units' `unit_refs`, cycle member lists, and promotion order (dependencies first). `--unit <name>`: the unit's depends-on refs, bound rules, referrers, and cycle state. `--rule <id>`: the units bound to the rule — explicit `rule_refs` consumers for a bound rule (`b_rule_*`), every current-layer unit for a global rule (`g_rule_*`, which applies by default and is not repeated in `rule_refs`); a global rule with no rule file is reported as not found. Pure mechanical computation — never infers dependencies from prose, never writes files. See `framework/verification_scope.md` §Dependency Analysis. | Agent on `deps@all` / `deps@{unit}` / `deps@{rule}` |
-| `specflowctl gate-evidence` | Inspect the dependency evidence for a file read during validate/verify/review: maps the declared line ranges onto content-defined chunks and outputs the whole-file `hash` + `deps` chunk CIDs (inspection only — the cache evidence is computed by the tooling at `gate-finalize`; nothing is transcribed). `--file <path>` required; `--ranges START-END,START-END` optional (empty = whole file); `--acceptance-items` additionally emits the order-insensitive semantic set CID of a spec's `acceptance_item_set` (`region:acceptance_items:<cid>`, computed over the set preamble and the item regions sorted by id) — the precise declaration for cross-unit checks; `--acceptance-item <id>` (repeatable) emits one acceptance item's region (`region:acceptance_item:<id>:<cid>`) — the precise declaration for a per-item judgment; `--section <heading>` (repeatable) declares a section region by heading text (`region:section:<heading>:<cid>`) — the precise declaration for own-spec section judgments (`frontmatter` names the pre-`##` region); `--sections` lists every section region (heading, lines, CID) and `--items` lists every acceptance item region (id, lines, CID), both without declaring anything — the informational outputs that name `--section` / `--acceptance-item` values and probe locatability. See `framework/validation_cache.md` §Dependency Declaration and §Structural Region Dependencies. | Agent when inspecting the declaration surface |
-| `specflowctl gate-plan` | Fix the immutable input snapshot and deterministic packet plan. `--input` adds evidence available to packets but never creates a work packet. Verify plans detection + conditional analysis packets per item; unit gates end in one cross packet. Delta/repair runs also snapshot carried judgments from the baseline. See `framework/verification_scope.md` §Gate Work Packets. | Agent before executing any full/delta/repair quality-gate run that persists a cache |
-| `specflowctl gate-packet` | Materialize one packet's execution context: exact read refs, packet scope, and accepted dependency results/digests (plus carried judgments for cross). `--run RUN_ID --packet PACKET_ID`. Include the output verbatim in the independent executor's prompt. Read-only. | Agent before launching each packet executor |
-| `specflowctl gate-status` | Read-only report of packet-run progress. `--gate` / `--unit` / `--rule` filter the listing; without a filter, every open run with its gate/target and packet counts. `--run RUN_ID`: per-packet status (`pending` / `accepted` / `rejected`, plus verify's conditional `not_required`), attempt numbers, the latest rejection reason, result digests, and the next action (the `gate-packet` + `gate-submit` pair, or `gate-finalize`). Reads run state only — never writes. The recovery point after an interrupted run. | Agent on `gate-status` / after a run interruption |
-| `specflowctl gate-submit` | Validate and record one packet report plus its immutable parsed result. Declarations must belong to that packet's read refs. Verify detection resolves its conditional analysis packet; analysis/cross bind consumed result digests; cross must dispose every finding and publish every effective logical status. | Agent (coordinator) after each packet report is produced |
-| `specflowctl gate-finalize` | `--run RUN_ID` only (plus optional timestamp/repo root). Derives result, blocking, P0–P3 counts, and failure statuses from the accepted synthesis result; the coordinator cannot supply judgment values. Candidate validate cache deletion applies only to a full-run FAIL; delta/repair FAIL writes a recovery record. | Agent after every required packet is resolved |
-| `specflowctl validate` | Validate candidate spec structure (9 checks), rule validation (6 mechanical checks), or file write permissions | Human maintainer or agent |
-| `specflowctl fresh` | Read-only cache freshness report. `--scope candidate` (default): summary for every unit/rule with a candidate file. `--scope stable`: drift state for every stable unit/rule. `--scope all`: both. `--unit <name>` / `--rule <id>`: detail for one target (candidate gate statuses, or stable drift state for a stable-only target). A STALE gate additionally prints its `DELTA SCOPE` section (see `fresh@{target}`). Every summary report (candidate/stable/all) ends with the full removal-candidate list — bound rules with no current-layer consumers and no retention declaration; the list is layer-independent (removability is decided by consumers and the retention declaration alone, not by which layer holds the rule file) and appears exactly once per report, read-only. Never writes/deletes caches or baselines. See `framework/validation_cache.md` §Freshness Check. | Agent on `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` |
-
-Project truth inputs: `docs/specs/`.
+Bootstrap identity (`framework/hooks.md`): installed framework commit plus `tooling/fingerprint.txt`; `spec_flow_version` compares remote.

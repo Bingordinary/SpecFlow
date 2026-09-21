@@ -11,7 +11,7 @@ It answers five questions:
 
 1. whether the main governance design solves real repository problems rather than self-created process problems
 2. whether the object boundaries and process structure still fit real work shape
-3. whether the promote-as-only-gate design creates real downstream control instead of adding formal overhead
+3. whether target-specific gates plus the user-confirmed promote transition create real downstream control instead of adding formal overhead
 4. whether the design remains operable for its governing executor type (LLM agents for specFlow execution, humans for framework maintenance and governance decisions) without excessive cost
 5. whether the repository may still claim that the current `specFlow` design is worth using as designed
 
@@ -44,12 +44,17 @@ That default scope includes:
    - `governance/review.md`
    - `governance/review_scope.md`
    - `concepts.md`
+   - `commands.md`
+   - `agent_suggestion_rules.md`
    - `operations/update.md`
+   - `operations/operation_scope.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
 2. process rules
    - `concepts.md` (the candidate-to-promote process)
+   - `commands.md` (the command surface and target resolution)
+   - `agent_suggestion_rules.md` (the suggestion and disclosure protocol)
    - `spec_writing_guide.md`
    - `governance/impact_sync.md`
 
@@ -73,22 +78,28 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `governance/review.md`
    - `governance/review_scope.md`
    - `concepts.md`
+   - `commands.md`
+   - `agent_suggestion_rules.md`
    - `operations/update.md`
+   - `operations/operation_scope.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
    - `governance/impact_sync.md`
 2. `process_and_gate_design`
    - `concepts.md` (the candidate-to-promote process design)
+   - `commands.md`
+   - `agent_suggestion_rules.md`
+   - `operations/operation_scope.md`
    - `spec_writing_guide.md`
    - `core/object_model.md`
    - `governance/impact_sync.md`
 3. `executor_operability_and_extension`
-   - `source_repo` guidance is derived from `concepts.md` and the design-review procedure itself
+   - `source_repo` guidance is derived from `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, and the design-review procedure itself
 
-A file listed under more than one block (`concepts.md`, `spec_writing_guide.md`, `core/object_model.md`, `governance/impact_sync.md`) is reviewed in each block's frame; the dual listing is intentional.
+A file listed under more than one block (`concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `spec_writing_guide.md`, `core/object_model.md`, `governance/impact_sync.md`) is reviewed in each block's frame; the dual listing is intentional.
 
-The review must judge whether `framework/concepts.md` (the hook-injected instruction source) delivers a self-contained instruction pack to the executor, whether cross-file links are used only for non-essential context, and whether each specFlow process step can be executed without context inherited from prior steps.
+The review must judge whether `framework/concepts.md` (the hook-injected bootstrap) delivers a self-contained routing pack to the executor: after reading it alone, the executor must know what to do now and which command package a trigger requires. Command packages are read on demand when a trigger fires; the review must judge whether each package is self-contained for its phase, and whether cross-file links are used only for non-essential context. Progressive disclosure (routing inline in the bootstrap, phase procedure in the named package) does not fail self-containment; chain reading within a single phase does.
 
 Project-instance migration design must be judged as part of `design_foundation`.
 The review must judge whether `spec_flow_update` solves the real framework-update migration problem without turning old-format compatibility into a permanent second path, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than project-instance format migration requires.
@@ -288,8 +299,8 @@ Every `spec_flow_design_review` must answer and score exactly these eight questi
 
 1. whether the mechanism solves a real problem
 2. whether object boundaries follow real work shape
-3. whether the next→review→promote process steps are necessary and correctly ordered for real progress
-4. whether the promote-as-only-gate creates real downstream gain
+3. whether each target's path is necessary and correctly ordered (normal unit validate→verify→review→promote; rule/retiring unit validate→promote)
+4. whether applicable gates plus the user-confirmed promote transition create real downstream gain
 5. whether the mechanism rewards correct behavior instead of surface compliance
 6. whether the mechanism's instruction design supports reliable executor orientation and following
 7. whether the operational cost matches the size of the work
@@ -318,7 +329,7 @@ For Question 6, the score basis must explicitly evaluate:
 
 **Executor-type preamble:** The primary executors are LLM agents. For LLM executors, "instruction design" cost is measured in: context-window consumption by governance instructions; self-containment (whether each phase carries complete instructions without requiring cross-phase memory); rule explicitness (whether rules are stated directly rather than implied); and stop-condition clarity (whether the executor can deterministically identify when to stop). Document length and chain-reading per se are negligible costs for LLMs. The real concerns are instruction ambiguity, missing rules that force the LLM to guess, and cross-file dependency chains that increase round-trips and risk inconsistency.
 
-The hook-injected content is `framework/concepts.md` only. See `framework/hooks.md` for the injection chain. Chain-reading evaluation in Question 6 must be scoped to that set. Hooks deliver `framework/concepts.md` directly, and user project entry files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) are the user's own project instructions, not part of the governance instruction chain.
+The hook-injected content is `framework/concepts.md` only. See `framework/hooks.md` for the injection chain. Chain-reading evaluation in Question 6 must be scoped to the bootstrap plus the command-package structure it routes to: the bootstrap carries routing-level instructions, and the package named by a routing row carries that phase's full procedure. Hooks deliver `framework/concepts.md` directly, and user project entry files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) are the user's own project instructions, not part of the governance instruction chain.
 
 1. whether Agent-facing instruction files (framework documentation, hook-injected content) are self-contained or require chain-linked reading across multiple files to obtain essential phase instructions
 2. whether each phase delivers a self-contained instruction pack or assumes the executor inherits context and decisions from prior phases
@@ -345,20 +356,20 @@ The `entry_control_chain_check result` must be one of:
 The check must judge these abstract capabilities:
 
 1. `startup_entry_control`
-   - the hook-injected content (`framework/concepts.md`) acts as the first control point for governed work; the opening rules (key terms, triggers, HARD RULES) make the next action clear
+   - the hook-injected bootstrap (`framework/concepts.md`) acts as the first control point for governed work; the opening rules (state model, HARD RULES, trigger routing table) make the next action clear
 2. `first_owner_selection`
-   - before any specFlow action or repository mutation, `concepts.md` tells the executor how to choose the first owning file or trigger (`validate`, `verify`, `promote`)
+   - before any specFlow action or repository mutation, the bootstrap's routing table tells the executor which trigger it faces and which command package it requires (`validate`, `verify`, `promote`)
 3. `owner_only_continuation`
-   - after the first trigger routes the request, `concepts.md` requires the executor to follow only the routed operation or governance path
+   - after the first trigger routes the request, the bootstrap requires the executor to follow only the routed operation or governance path
 4. `pre_action_permission_gate`
-   - before proposing or mutating implementation-side files, `concepts.md` requires the executor to read the relevant spec first (HARD RULE 1)
+   - before proposing or mutating implementation-side files, the bootstrap requires the executor to read the relevant spec first (HARD RULE 1)
 5. `hard_stop_clarity`
    - unclear intent, state, owner, boundary, or conflicting rules force a stop instead of a guessed write or guessed route
 6. `owner_reachability`
-   - `concepts.md` must expose enough first-level routes for the executor to reach the specFlow process, migration, governance review, or rule-governance owner
+   - the bootstrap must expose first-level routes to spec workflow, migration, and rule-governance owners; meta-governance review remains reachable through project entry instructions and must not be duplicated into this router
 7. `no_ad_hoc_flow_substitution`
-   - `concepts.md` must forbid replacing the standard triggers with custom reconciliation, audit, or gap-review flows
- 8. `entry_robustness_probe`
+   - the bootstrap must forbid replacing the standard triggers with custom reconciliation, audit, or gap-review flows
+8. `entry_robustness_probe`
     - the hook injection design must be verified with tool-neutral probes that judge observed routing and mutation control
     - primary: run by an independent executor without project-specific context
     - fallback: conducted by the current reviewer using the same abstract prompt families and record fields, with `executor_independence` marked as `fallback_reviewer_conducted`
@@ -372,6 +383,10 @@ The `entry_robustness_probe` must use abstract prompt families that test the hoo
 5. `clean_implementation_only_control_prompt`
 6. `missing_hooks_prompt` — tests behavior when hooks injection files are absent
 7. `stale_concepts_prompt` — tests behavior when `concepts.md` content is outdated
+8. `targeted_gate_prompt` — verifies direct main-session execution without `gate-plan` or complete-cache publication
+9. `rule_promote_prompt` — verifies that rule promotion requires validate only and does not invent verify/review
+10. `read_only_design_prompt` — verifies that discussing design does not grant write authority
+11. `stable_exception_prompt` — verifies normal design uses promote while routed remove/update retain their narrow stable exceptions
 
 For each prompt family, the probe must record:
 
@@ -392,7 +407,7 @@ Allowed `probe_source` values are `independent_agent_session`, `reviewer_role_pl
 
 1. `confirmed_independent_no_project_specific_context` — primary mode. The probe is run by an executor that has never seen this project's framework or workspace. Any of the five probe source types may be used, as long as the independence requirement is satisfied.
 
-2. `fallback_reviewer_conducted` — fallback mode. The current reviewer runs the 7 abstract prompt families directly in the current session, using the same record fields. The reviewer must document that this is fallback evidence and why the primary mode was not feasible (e.g. no independent executor available, platform constraint, session limitation).
+2. `fallback_reviewer_conducted` — fallback mode. The current reviewer runs all abstract prompt families directly in the current session, using the same record fields. The reviewer must document that this is fallback evidence and why the primary mode was not feasible (e.g. no independent executor available, platform constraint, session limitation).
 
 When `executor_independence` is `fallback_reviewer_conducted`:
 - the probe still provides useful evidence about observable first-owner routing, diagnostic allowance, and mutation control
@@ -494,7 +509,7 @@ Question-specific scoring rules:
 3. Question 3 must judge:
    - whether each specFlow process step corresponds to a real information change
    - whether the order reduces uncertainty rather than merely renaming state
-   - whether the current sequence (next→review→promote) remains the smallest stable path
+   - whether each target-specific path remains the smallest path that safely reaches stable truth
 4. Question 4 must use only these four real-gain signals:
    - later ambiguity is materially reduced
    - the next step can start more directly
@@ -638,7 +653,7 @@ The output must report at least:
 13. the hard-blocker result
 14. the `entry_control_chain_check result`:
    - must be `passed`, `blocked`, or `incomplete`
-   - report evidence for all checked capabilities and the hook injection path (hooks files present, session-start script correctness, concepts.md completeness)
+    - report evidence for all checked capabilities and the hook injection path (hooks files present, session-start script correctness, bootstrap routing closure)
    - report probe evidence using `prompt_family`, `expected_control`, `observed_first_owner`, `diagnostic_allowed`, `mutation_allowed`, `result`, `failure_class`, `probe_source`, and `executor_independence`
    - report the impact on Questions 6, 7, and 8
 15. the `routine_work_path_check` result:

@@ -257,7 +257,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 }
 
 func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
-	// Check validate cache freshness only (rule verify has been removed — see framework/concepts.md)
+	// Check validate cache freshness only (rule verify has been removed — see framework/verification_scope.md)
 	validateResult, err := validationcache.CheckRuleValidate(absRoot, ruleID)
 	if err != nil {
 		return fmt.Errorf("validate cache error: %w", err)

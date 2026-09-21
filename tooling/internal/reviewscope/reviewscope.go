@@ -156,6 +156,9 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("rule_validate_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("concepts.md"),
+		scope.FrameworkPath("commands.md"),
+		scope.FrameworkPath("agent_suggestion_rules.md"),
+		scope.FrameworkPath("operations/operation_scope.md"),
 		scope.FrameworkPath("core/object_model.md"),
 		scope.FrameworkPath("operations/update.md"),
 		scope.FrameworkPath("spec_writing_guide.md"),
@@ -185,9 +188,12 @@ func (scope SpecFlowScope) ToolingPath(relPath string) string {
 func collectAgentOperabilityFiles(scope SpecFlowScope, guidanceSkillFiles, ruleFiles, toolingContractFiles []string) []string {
 	files := []string{
 		scope.FrameworkPath("concepts.md"),
+		scope.FrameworkPath("commands.md"),
+		scope.FrameworkPath("agent_suggestion_rules.md"),
 		scope.FrameworkPath("core/object_model.md"),
 		scope.FrameworkPath("governance/review.md"),
 		scope.FrameworkPath("governance/review_scope.md"),
+		scope.FrameworkPath("operations/operation_scope.md"),
 		scope.FrameworkPath("rule_validate_checklist.md"),
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("operations/update.md"),

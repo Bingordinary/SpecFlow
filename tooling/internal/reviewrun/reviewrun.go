@@ -745,10 +745,13 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "concept_and_command_policy",
 			SliceType:      "local",
-			ReviewQuestion: "Do the specFlow concept file and command rules define correct next, review, and promote behavior.",
+			ReviewQuestion: "Do the session bootstrap, command reference, suggestion rules, and operation-scope rules define correct next, validate, verify, review, and promote behavior.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("concepts.md"),
+					scope.FrameworkPath("commands.md"),
+					scope.FrameworkPath("agent_suggestion_rules.md"),
+					scope.FrameworkPath("operations/operation_scope.md"),
 					scope.FrameworkPath("operations/update.md"),
 					scope.FrameworkPath("operations/version.md"),
 				}, scope.GuidanceSkillFiles)
@@ -799,7 +802,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "hook_check",
 			SliceType:      "local",
-			ReviewQuestion: "Do hook configuration files and concepts.md injection provide correct agent bootstrap for all platforms.",
+			ReviewQuestion: "Do hook configuration files and the bootstrap injection contract provide correct agent bootstrap for all platforms.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return []string{
 					scope.FrameworkPath("concepts.md"),
@@ -842,7 +845,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "command_to_process_convergence",
 			SliceType:      "cross_convergence",
-			ReviewQuestion: "Do the three commands (next, review, promote) converge with process closure rules.",
+			ReviewQuestion: "Do the five commands (next, validate, verify, review, promote) converge with process closure rules.",
 			DependsOn:      []string{"concept_and_command_policy", "review_entry_policy"},
 			InputFiles:     reviewDependencyFiles("concept_and_command_policy", "review_entry_policy"),
 		},
@@ -863,7 +866,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "hook_to_review_convergence",
 			SliceType:      "cross_convergence",
-			ReviewQuestion: "Do hook configurations and concepts.md injection remain visible to full-scope governance review.",
+			ReviewQuestion: "Do hook configurations and the bootstrap injection contract remain visible to full-scope governance review.",
 			DependsOn:      []string{"hook_check", "scope_inventory", "review_entry_policy"},
 			InputFiles:     reviewDependencyFiles("hook_check", "scope_inventory", "review_entry_policy"),
 		},
@@ -891,7 +894,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "agent_operability_path_walk",
 			SliceType:      "cross_convergence",
-			ReviewQuestion: "Can an agent walk from hook-injected concepts.md through triggers, commands, and tooling rules without hidden decisions.",
+			ReviewQuestion: "Can an agent walk from the hook-injected bootstrap through trigger routing, command packages, and tooling rules without hidden decisions.",
 			DependsOn:      []string{"agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "project_instance_contract_compatibility", "supporting_layer_convergence"},
 			InputFiles:     reviewDependencyFiles("agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "project_instance_contract_compatibility", "supporting_layer_convergence"),
 		},
@@ -911,10 +914,13 @@ func specFlowDesignReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "process_and_gate_design",
 			SliceType:      "local",
-			ReviewQuestion: "Do next-review-promote process rules and the promote-as-only-gate design create real downstream control.",
+			ReviewQuestion: "Do the target-specific gate paths and user-confirmed promote transition create real downstream control.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return []string{
 					scope.FrameworkPath("concepts.md"),
+					scope.FrameworkPath("commands.md"),
+					scope.FrameworkPath("agent_suggestion_rules.md"),
+					scope.FrameworkPath("operations/operation_scope.md"),
 					scope.FrameworkPath("spec_writing_guide.md"),
 					scope.FrameworkPath("core/object_model.md"),
 					scope.FrameworkPath("governance/impact_sync.md"),
@@ -928,6 +934,8 @@ func specFlowDesignReviewBaselineDefinitions() []sliceDefinition {
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return []string{
 					scope.FrameworkPath("concepts.md"),
+					scope.FrameworkPath("commands.md"),
+					scope.FrameworkPath("agent_suggestion_rules.md"),
 				}
 			},
 		},

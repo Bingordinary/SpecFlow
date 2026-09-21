@@ -57,7 +57,7 @@ func Canonical(repoRoot, p string) (string, error) {
 // declaration that escapes the repository once the target appears, so it
 // fails closed. This is the shared implementation for every repository-owned
 // path boundary (see tooling/README.md §Operation scope and
-// framework/concepts.md §Operation Scope).
+// framework/operations/operation_scope.md).
 func ResolveExistingAncestor(abs string) (string, error) {
 	probe := abs
 	var suffix []string

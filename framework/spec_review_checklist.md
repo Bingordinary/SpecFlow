@@ -413,7 +413,7 @@ After classification, present the findings (§Output Format) and wait for the us
 
 ## Post-fix Spec Update Obligation
 
-Fixing a review finding does not automatically create a spec update obligation. The only trigger: the fix changes a behavior the spec declares or implicitly promises — the spec says behavior X holds, the fix makes it Y, and the spec becomes inaccurate. Directional basis: this is the boundary definition of HARD RULE 1's "Create or update spec when design changes" (`framework/concepts.md`).
+Fixing a review finding does not automatically create a spec update obligation. The only trigger: the fix changes a behavior the spec declares or implicitly promises — the spec says behavior X holds, the fix makes it Y, and the spec becomes inaccurate. Directional basis: this is the boundary definition of HARD RULE 1's "Create or update the candidate spec only for requested design changes" (`framework/concepts.md`).
 
 **Judgment basis:** whether the spec declares or is silent on a behavior is judged by the contract statement definition and its external-visibility boundary in `framework/spec_writing_guide.md` §4: a declared externally-observable behavior is a promise; internal implementation detail is design expression and creates no promise.
 

@@ -1,7 +1,7 @@
 # Rule Validate Checklist
 
 `rule_validate` is the rule-equivalent of `validate`. It checks rule metadata structural validity (Checks 1-7) and rule body quality (Check 8).
-Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/concepts.md` §Automatic Target Type Detection).
+Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/commands.md` §Target Resolution).
 
 **Result:** PASS writes `docs/specs/meta/validation/rule/{id}/validate_result.md`.
 A candidate full-run FAIL does not write cache (the validate cache is deleted — trust establishment failed). A delta/repair FAIL or a stable-only FAIL writes a failure record — see §Delta re-run and §Stable-only mode. Report per §Output Format.

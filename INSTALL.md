@@ -23,7 +23,7 @@ The installer:
 3. Installs the current platform's `specflowctl` binary and `SHA256SUMS`
 4. Runs `specflowctl init` — installs framework files and platform hooks
 
-After installation, platform hooks will automatically inject specFlow rules into the agent context at every session start.
+After installation, platform hooks will automatically inject the specFlow session bootstrap into the agent context at every session start.
 
 For Codex CLI and the Local environment in the ChatGPT desktop app, the installer merges the SpecFlow `SessionStart` hook into `.codex/hooks.json` without replacing other project hooks. Codex will ask you to review and trust a new or changed project hook before running it. Codex Worktree and Cloud environments are not currently supported.
 
@@ -47,4 +47,4 @@ In Codex CLI or the desktop app's Local environment, accept the project-hook tru
 
 ## Update
 
-To update an existing installation, run `spec_flow_update` in the current agent session, then start a new session for the changes to take effect.
+To update an existing installation, run `spec_flow_update` in the current agent session, then start a new session for the updated bootstrap to be injected. No host process restart is required — command packages and the bootstrap are read fresh from disk.

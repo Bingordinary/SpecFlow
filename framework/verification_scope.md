@@ -14,7 +14,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 **Cache invariant:** only a complete-coverage run (full or delta) writes a cache. A cache exists means a complete check passed (or, for review, a complete review completed). Targeted runs report findings and write nothing.
 
-**Layer roles:** the verification loop — caches, promote eligibility, and delta re-runs — belongs to the candidate layer. The stable layer has no gate; the three full commands run against a stable-only target as **confirmation checks** of the stable content's continuing relationship with the outside world (see §Stable-only Targets). They write a `target: stable` cache consumed by `fresh@stable` and never edit anything — any change to consensus content goes through `fork` (see `framework/concepts.md` §4). Delta re-runs restore a stale confirmation cache when a usable pass baseline exists (see §Delta Runs → Layer applicability).
+**Layer roles:** the verification loop — caches, promote eligibility, and delta re-runs — belongs to the candidate layer. The stable layer has no gate; applicable full commands run against a stable-only target as **confirmation checks** (unit: validate/verify/review; rule: validate). They write `target: stable` caches consumed by `fresh@stable` and never edit truth. Normal design changes first fork stable to candidate (`framework/concepts.md`). Delta re-runs restore a stale confirmation cache when a usable pass baseline exists (see §Delta Runs → Layer applicability).
 
 ## Principles
 
@@ -284,7 +284,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | affects.files | The implementation files an item declares as its scope for verify | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
 | unit_refs | The frontmatter declaration of units this unit depends on (formal behavior contract); validate Check 7 reads the referenced units' contracts | `framework/spec_writing_guide.md` §4 (Unit Dependencies) |
 | rule_refs | The frontmatter declaration of rules bound to this unit; validate Check 8 reads the referenced rules | `framework/spec_writing_guide.md` §5 (Rule References) |
-| candidate / stable layer | The spec layers: candidate is the working draft, stable is accepted truth; the layer is encoded by the file path | `framework/concepts.md` §The Two Layers |
+| candidate / stable layer | The spec layers: candidate is the working draft, stable is accepted truth; the layer is encoded by the file path | `framework/concepts.md` §State Model |
 | ALIGNED / MISMATCH / CANNOT_DETERMINE | The per-claim verdicts; fold order MISMATCH > CANNOT_DETERMINE > ALIGNED | `framework/unit_verify_checklist.md` §Verdict folding |
 | deterministic evidence | A reproducible static check: a grep command with its result, a file existence check, or a file:line read | `framework/unit_verify_checklist.md` Step 2 |
 | Dependency scope | The report's per-check dependency declaration: one line per check stating the file and the section-region headings (or line ranges, acceptance item regions, or `all`) that check's judgment depended on, recorded by `gate-finalize` as the cache's per-check `checks` mapping | `framework/unit_verify_checklist.md` §Output Format |
@@ -369,7 +369,7 @@ Glossary:
 - affects.files — the implementation files an item declares as its scope
   (spec_writing_guide.md §7)
 - candidate / stable layer — candidate is the working draft, stable is accepted
-  truth; the layer is encoded by the file path (concepts.md §The Two Layers)
+  truth; the layer is encoded by the file path (`framework/concepts.md` §State Model)
 - exempt / retired appendix — appendix statuses skipped when assembling the spec
   union; non-exempt, non-retired files are read (unit_validate_checklist.md §Prerequisite)
 - ALIGNED / MISMATCH / CANNOT_DETERMINE — per-claim verdicts; fold order
@@ -440,7 +440,7 @@ payment is the payment processing unit; candidate version 1.3.0.
 
 Glossary:
 - candidate / stable layer — candidate is the working draft, stable is accepted
-  truth; the layer is encoded by the file path (concepts.md §The Two Layers)
+  truth; the layer is encoded by the file path (`framework/concepts.md` §State Model)
 - check 1-8 — the eight validate checks: structural integrity, design soundness,
   scope integrity, evidence-driven vs design-driven consistency, acceptance
   coverage & correctness, affects-source validity, cross-unit consistency,
@@ -588,7 +588,7 @@ The layer boundary is decided by file existence: a target with a candidate file 
 
 ## Stable-only Targets
 
-When no candidate file exists for a unit (or rule), the three full commands run as **confirmation checks** of the stable content's continuing relationship with the outside world. They are read-only — they write a confirmation cache (`target: stable`) and never edit any content; changing consensus content is possible only through `fork` (see `framework/concepts.md` §4). The confirmation checks are the stable counterparts of the candidate gates, but they grant no promote eligibility — their caches are consumed only by `fresh@stable`.
+When no candidate exists, applicable full commands run as **confirmation checks** of stable truth: validate/verify/review for a unit, validate for a rule. They write confirmation caches (`target: stable`) but never edit content. Normal design changes first fork stable to candidate (`framework/concepts.md`). Confirmation caches grant no promote eligibility and are consumed only by `fresh@stable`.
 
 Stable confirmation caches have **two producers** with identical semantics:
 

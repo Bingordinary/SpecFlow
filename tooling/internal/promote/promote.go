@@ -798,7 +798,7 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	// cache. The rule's promote-time dependencies (consumer units, rule file
 	// content) stay valid as the stable-layer consumer/consistency baseline.
 	// Unlike unit caches, only the validate gate applies to rules (verify/review
-	// have been removed for rules — see framework/concepts.md §Gate mapping).
+	// have been removed for rules — see framework/validation_cache.md §Failure handling by gate role).
 	rewriteReport, rewrErr := validationcache.RewriteCachesToStable(repoRoot, "rule", ruleID)
 	if rewrErr != nil {
 		r.Actions = append(r.Actions, fmt.Sprintf("Cache rewrite failed: %v — run validate@%s @stable to rebuild the confirmation cache", rewrErr, ruleID))

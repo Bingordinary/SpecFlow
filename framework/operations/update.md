@@ -42,7 +42,7 @@ Do not read the script's shell implementation. Execute it as-is.
 
 If the command succeeds (exit code 0), proceed to Step 2.
 
-If the command fails (non-zero exit or script not found), report the error output. Tell the user to run the script manually from the project root, then restart the agent session so the updated hooks take effect. Do not proceed.
+If the command fails (non-zero exit or script not found), report the error output. Tell the user to run the script manually from the project root, then start a new agent session so the updated hooks are injected (no process restart is required). Do not proceed.
 
 ### Step 2: Detect framework structural changes (inside specflow/ repository)
 

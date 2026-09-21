@@ -19,7 +19,7 @@
 
 ## What Problem It Solves
 
-specFlow turns AI-assisted development from chat-driven improvisation into engineered delivery — through a spec-driven **validate → verify → promote** pipeline that keeps design, implementation, and verification aligned to the same truth.
+specFlow turns AI-assisted development from chat-driven improvisation into engineered delivery. A normal unit follows **validate → verify → review → promote**; rules and retiring units use **validate → promote**. Each path keeps design, implementation, and verification aligned without inventing irrelevant gates.
 
 - **AI sessions have no memory** → spec files are persistent truth across sessions
 - **Design has no quality gate** → validate catches incomplete design before it lands
@@ -63,7 +63,7 @@ The agent reads the specFlow rules automatically, discovers existing truth, and 
 | **stable** | Accepted truth (`docs/specs/units/stable/`) — never edited directly |
 | **unit** | One independently governable engineering responsibility |
 | **rule** | Formally reusable truth shared across units. Global (`g_`) applies repo-wide; bound (`b_`) applies only to units that reference it via `rule_refs` |
-| **promote** | The only gate — copies candidate → stable |
+| **promote** | The user-confirmed stable transition after the target's applicable gates pass |
 
 **File existence is state.** A candidate spec exists = being edited. No candidate = not being edited.
 
@@ -75,26 +75,28 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 
 | Trigger | What the agent does |
 |---------|---------------------|
-| `validate@ {unit}` | Runs a structured quality check against the spec (read-only, no file changes) |
-| `verify@ {unit}` | Runs a structured implementation check against the spec (read-only, no file changes) |
-| `promote@ {unit}` | Runs validate then verify, then calls `specflowctl promote` if both pass |
+| `validate@{target}` | Checks unit or rule design quality; gate output changes cache state, not spec truth |
+| `verify@{unit}` | Checks unit implementation against spec truth |
+| `review@{unit}` | Runs spec-aware code review; P0/P1 findings block promotion |
+| `promote@{target}` | Confirms intent, checks the target's existing applicable gate results, then transitions candidate truth to stable |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
 | `spec_flow_version` | Checks the installed specFlow version against the remote latest and reports whether the project is up to date |
 
-The agent also proactively suggests these at natural transition points: *"Shall I run validate?"* / *"Ready to promote?"*
+The agent responds to explicit quality or completion signals, but never starts or repeats a gate without your confirmation.
 
 ### Typical Session
 
 ```
 1. Agent creates/edits candidate spec + code (no gate)
-2. You: validate@ → agent checks spec quality
-3. You: verify@ → agent checks implementation against spec
-4. You: promote@ → validates, verifies, then promotes to stable
-5. Next iteration...
+2. You: `validate@unit` → agent checks spec quality
+3. You: `verify@unit` → agent checks implementation against spec
+4. You: `review@unit` → agent checks code quality with spec awareness
+5. You: `promote@unit` → agent checks those gate results, then promotes
+6. Next iteration...
 ```
 
 Natural language works too — describe your goal, and the agent reads repo truth and proposes the next action.
 
 ## Update
 
-Run the trigger `spec_flow_update` in your current agent session. Once the update finishes, **start a new agent session** — hooks and rules are re-injected at session start, ensuring the updated content takes effect.
+Run the trigger `spec_flow_update` in your current agent session. Once the update finishes, **start a new agent session** so the hook platforms (Claude Code, Codex, Antigravity) re-inject the updated bootstrap. The bootstrap is read fresh — no host process restart is required, and OpenCode re-reads it on the next message.

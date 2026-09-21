@@ -18,7 +18,7 @@ escape_for_json() {
 }
 
 concepts_escaped=$(escape_for_json "$concepts_content")
-session_context="<SPECFLOW_CONCEPTS>\nThis project uses SpecFlow to manage design documents.\n\n**Below is the full SpecFlow framework guide — read it carefully before starting work:**\n\n${concepts_escaped}\n</SPECFLOW_CONCEPTS>"
+session_context="<SPECFLOW_CONCEPTS>\nThis project uses SpecFlow to manage design documents.\n\n**Below is the SpecFlow session bootstrap — read it before starting work. It states the operating rules and routes each supported trigger to its command package, which you read on demand:**\n\n${concepts_escaped}\n</SPECFLOW_CONCEPTS>"
 
 target_platform="${1:-}"
 

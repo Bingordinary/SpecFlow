@@ -19,7 +19,7 @@
 
 ## 解决的问题
 
-specFlow 把 AI 辅助开发从聊天驱动的即兴编程变成有门控的工程交付——通过 spec-driven 的 **validate → verify → promote** 流水线，让设计、实现、验证之间的真相始终对齐。
+specFlow 把 AI 辅助开发从聊天驱动的即兴编程变成有门控的工程交付。普通 unit 使用 **validate → verify → review → promote**；rule 和退役 unit 使用 **validate → promote**，不会强行套用无关门控。
 
 - **AI 会话没有记忆** → spec 文件是跨会话的持久真相
 - **设计缺乏质量门控** → validate 在落地前卡住不完整的设计
@@ -63,7 +63,7 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | **stable** | 已通过的真相（`docs/specs/units/stable/`）——从不直接编辑 |
 | **unit** | 一块独立可治理的工程责任 |
 | **rule** | 跨 unit 复用的正式共享约束。全局规则（`g_`）作用于整个仓库；绑定规则（`b_`）只作用于通过 `rule_refs` 引用它的 unit |
-| **promote** | 唯一的门控——candidate → stable |
+| **promote** | 用户确认后执行的稳定层变更；执行前检查目标所需的门控 |
 
 **文件存在即状态。** candidate spec 存在 = 在编辑。不存在 = 没在改。
 
@@ -75,22 +75,24 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 
 | 触发词 | agent 做什么 |
 |--------|-------------|
-| `validate@ {unit}` | 对 spec 执行结构化质量检查（只读，不改文件） |
-| `verify@ {unit}` | 对实现执行结构化一致性检查（只读，不改文件） |
-| `promote@ {unit}` | 先 validate 再 verify，都通过后调 `specflowctl promote` |
+| `validate@{target}` | 检查 unit 或 rule 的设计质量；只改变门控缓存，不改 spec 真相 |
+| `verify@{unit}` | 检查 unit 的实现是否符合 spec |
+| `review@{unit}` | 结合 spec 做代码质量审查；P0/P1 会阻止 promote |
+| `promote@{target}` | 确认用户意图并检查已有的适用门控结果，然后把 candidate 变成 stable |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
 | `spec_flow_version` | 检查本地 specFlow 版本并对比远程最新版本，报告项目是否最新 |
 
-Agent 也会在适当时候主动询问：*"需要跑 validate 吗？"* / *"要 promote 吗？"*
+Agent 只在你明确发出质量检查或完成信号后提出下一步，而且不会在未确认时自行运行或重跑门控。
 
 ### 典型流程
 
 ```
 1. Agent 创建/编辑 candidate spec + 代码（没有门控）
-2. 你说 validate@ → agent 检查 spec 质量
-3. 你说 verify@ → agent 检查实现与 spec 是否一致
-4. 你说 promote@ → 验证后 promote 到 stable
-5. 进入下一轮迭代...
+2. 你说 `validate@unit` → agent 检查 spec 质量
+3. 你说 `verify@unit` → agent 检查实现与 spec 是否一致
+4. 你说 `review@unit` → agent 结合 spec 检查代码质量
+5. 你说 `promote@unit` → agent 检查上述门控结果后 promote
+6. 进入下一轮迭代...
 ```
 
 自然语言也可以——描述你的目标，agent 会读取仓库真相并建议下一步操作。

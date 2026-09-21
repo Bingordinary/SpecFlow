@@ -10,7 +10,7 @@ The only full-scope mechanism review entry is exact `spec_flow_review:full`.
 It answers five questions:
 
 1. whether the framework documents are self-consistent and complete
-2. whether the three commands (next, review, promote) cover the governance needs without gaps or overlap
+2. whether the five commands (next, validate, verify, review, promote) cover the governance needs without gaps or overlap
 3. whether the tooling boundary is correct — specflowctl does deterministic work, LLM does semantic judgment
 4. whether an executor can operate the framework without prior specFlow knowledge
 5. whether all framework files, templates, and governance files agree with each other
@@ -28,7 +28,7 @@ That judgment belongs to `spec_flow_design_review`.
 
 1. **`spec_flow_review`** — the meta-governance command that reviews the framework mechanism itself (Sections 1, 2, 6-9, and the file as a whole). This is a developer command, not part of the user workflow. See `framework/governance/review.md` for routing.
 
-2. **`review`** — one of the three user workflow commands (next, review, promote) defined in Sections 2.3-2.4. This command reviews candidate spec quality and is implemented as `validate`. It has no relation to `spec_flow_review`.
+2. **`review`** — the spec-aware code-quality gate, one of the five user workflow commands (next, validate, verify, review, promote) defined in Sections 2.3-2.4. It has no relation to `spec_flow_review`.
 
 When reading Sections 2.3-2.4, "review" refers to the user workflow command. Everywhere else, "review" or `spec_flow_review` refers to the meta-governance command.
 
@@ -84,16 +84,17 @@ If one of those items is intentionally owned elsewhere, the file must link or na
 
 ### 2.3 Process Closure
 
-The commands (next, review/validate, review, promote) form a coherent process. The review must verify:
+The commands (next, validate, verify, review, promote) form a coherent process. The review must verify:
 
 1. each command has a defined purpose and does not overlap with the others
 2. `next` outputs enough information for the agent to start work
-3. `review` (`validate`) produces a structured output (per-checklist PASS/FAIL) that the agent can act on
-4. `review` (required final quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy promote
-5. `promote` has a complete flow: validate step → verify step → review step → archive step
-6. promote's archive step deterministically copies candidate files to stable directories
-7. promote's validate, verify, and review steps are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
-8. if promote fails (validate, verify, or review finds issues), the outcome is clearly communicated and no files are archived
+3. `validate` produces a structured output (per-checklist PASS/FAIL) that the agent can act on
+4. `verify` (normal-unit implementation-alignment gate) produces structured per-acceptance-item alignment results and divergence analysis that leaves reconciliation direction to the user
+5. `review` (normal-unit code-quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy a normal-unit promote
+6. `promote` applies the target's path: a normal unit runs validate, verify, and review before the archive step; a rule runs validate before version promotion and consumer migration; a retiring unit runs validate before retirement removal
+7. promote's archive step deterministically copies candidate files to stable directories
+8. the applicable gate runs (a normal unit's validate, verify, and review; a rule's or retiring unit's validate) are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
+9. if promote fails (an applicable gate finds issues, or a required cache is missing, stale, or blocking), the outcome is clearly communicated and stable truth is unchanged
 
 If a command is missing a required output, has undefined behavior for failure cases, or requires the executor to infer its purpose, the related slice must not be marked `passed`.
 
@@ -103,16 +104,19 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **review** (implemented as `validate`): given a unit or rule name, reviews the candidate spec quality. Uses a subagent session. Outputs a structured issue list with results per the 8-point checklist from `framework/unit_validate_checklist.md` (or 8-point rule checklist from `framework/rule_validate_checklist.md`) — each category is PASS or FAIL with a reason. Does NOT block the agent from continuing work by itself (promote requires PASS).
+2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 8-point unit or rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
-3. **review** (required final quality gate for promote): given a unit name, runs a spec-aware code quality review. Uses a subagent session. Outputs structured P0-P3 findings with code references. P0 and P1 findings block promote; P2 and P3 are advisory. Always reviews all unit code. Review cache must exist, be full mode, fresh, and non-blocking to satisfy promote.
+3. **verify** (normal-unit implementation-alignment gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user. P0/P1 block normal-unit promote. Verify is not a rule or retiring-unit gate.
 
-4. **promote**: given a unit name or rule id, runs a multi-step process:
-   a. Agent pre-check (optional): reports cache freshness and runnable status
-   b. Agent-side body path pre-check (unit only): scans the candidate spec body for candidate-layer path references that would break after promote (candidate files are deleted). Structured field path occurrences (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `actionable`. Narrative references require user judgment and `needs_decision` until resolved.
-    c. CLI archive step via `specflowctl promote`: independently validates validate+verify+review cache freshness, validates format, copies candidate→stable, removes candidate files
-    
-   Validate, verify, and review are independent prerequisite commands, not phases inside promote (see HARD RULE 2 in concepts.md). Review cache is required for promote — must exist and be non-blocking. The CLI independently verifies cache freshness before archiving. Promote must fail and report findings if validate, verify, or review cache is stale, missing, or blocking. Promote must not archive if any check fails.
+4. **review** (normal-unit code-quality gate): given a unit name, runs a spec-aware code review. Outputs P0-P3 findings with code references. P0/P1 block normal-unit promote; P2/P3 are advisory. Review is not a rule or retiring-unit gate.
+
+5. **promote**: given a unit name or rule id, resolves target type, requires user confirmation, and applies only that target's path:
+   a. Normal unit: validate, verify, and review are independent prerequisites, not phases inside promote. The agent performs the unit body-path pre-check, then the CLI independently checks all three caches before candidate→stable archive.
+   b. Rule: validate is the sole prerequisite. Rule verify/review must not be requested. The rule workflow owns version promotion, consumer migration, and body-reference cleanup.
+   c. Retiring unit: retirement validate is the sole prerequisite. Verify/review must not be requested; successful promote removes retired unit truth as defined by the unit workflow.
+   d. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
+
+   The unit body-path pre-check scans candidate prose for candidate-layer paths that would break after archive. Structured field paths (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `actionable`; narrative references require user judgment and remain `needs_decision` until resolved.
 
 Each command must have:
 1. a defined input (what parameters it accepts)
@@ -194,6 +198,8 @@ A pass claim for an in-scope governance file must not ignore an applicable agent
 ### 2.8.1 Agent Bootstrap Injection Path Review
 
 The agent receives SpecFlow governance content through platform-specific bootstrap injection at session startup, not through entry file reading. The injection chain and verification checklist are defined in `framework/hooks.md`.
+
+The injected content is the session bootstrap (`framework/concepts.md`). Phase execution procedures are **command packages** read from disk when a trigger fires. An acceptable bootstrap therefore delivers **routing closure**: every supported trigger names its command package files, and reading the routing row plus those files carries every instruction the current step needs. The bootstrap must also stay within the payload budget declared in the Bootstrap Contract (`framework/hooks.md`) — the budget keeps the injected payload under the tightest supported platform hook-output cap, and the tooling closure test enforces it mechanically.
 
 A review that does not trace the injection path from the hooks to the agent's runtime context cannot claim that agent operability has been verified.
 
@@ -481,10 +487,10 @@ The default scope covers governance documents and tooling source. Deployable art
 
 Default scope must explicitly cover:
 
-1. the concept and command rule set — at minimum `concepts.md` and `spec_writing_guide.md`
+1. the concept and command rule set — at minimum `concepts.md`, `commands.md`, and `spec_writing_guide.md`
 2. the rule-governance rule set — at minimum `rule_validate_checklist.md` and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
-4. the agent-operability standard — at minimum `concepts.md` (hook-injected content), rule-governance files, and review policy files
+4. the agent-operability standard — at minimum `concepts.md` (hook-injected bootstrap), the command packages it routes to (`commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`), rule-governance files, and review policy files
 5. the project-instance compatibility check — at minimum the layout-selected global rule and formal truth compatibility inputs, limited by Section 2.10
 6. the project-instance migration flow — at minimum `operations/update.md`
 
@@ -512,8 +518,8 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `spec_flow_review.md`, `spec_flow_design_review.md`, `governance/review.md`, `governance/review_scope.md`, and `severity_policy.md`
    - verifies review entry meaning, output contracts, finding contracts, and stop behavior
 3. `concept_and_command_policy`
-   - reviews `concepts.md`, `operations/update.md`, and `guidance/*/SKILL.md`
-   - verifies the three commands (next, review, promote) have defined input, output, and failure behavior per Section 2.4
+   - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `operations/update.md`, and `guidance/*/SKILL.md`
+   - verifies the five commands (next, validate, verify, review, promote) have defined input, output, and failure behavior per Section 2.4
    - verifies project-instance migration routing and guidance entry behavior
 4. `truth_and_implementation_gates`
    - reviews `spec_writing_guide.md` and `concepts.md`
@@ -532,7 +538,10 @@ Local slices review one owner area for internal closure, side effects, contract 
    - must not judge unit, rule, or appendix business truth correctness
  8. `hook_check`
     - reviews `framework/hooks.md` for internal consistency of the hook system description
-    - verifies `framework/concepts.md` contains complete agent governance content (triggers, HARD RULES, commands reference, workflow)
+    - verifies `framework/concepts.md` complies with the Bootstrap Contract in `framework/hooks.md`: it contains the required content categories (identity, state model, default editing mode, HARD RULES, trigger routing table, infrastructure) and no phase execution procedures
+    - verifies routing closure: every trigger in the routing table names command package files that exist and are non-empty, and the package files carry that phase's instructions
+    - verifies the payload budget declared in the Bootstrap Contract matches the tooling closure test constants and that `framework/concepts.md` currently satisfies the enforced payload bound
+    - when the review range includes a bootstrap reduction, verifies content conservation: every removed block is present in, or was relocated in the same change to, a command package named by the routing table (no silent semantic loss)
     - verifies the injected-content summary in `framework/hooks.md` agrees with actual `framework/concepts.md` content (no contract drift per Section 2.6)
     - reference: `framework/hooks.md` for the full verification checklist
     - Deployable hook and plugin artifacts are outside the default scope per Section 3 (Scope Boundary for Deployable Artifacts). Consumer-aware path validation (Section 2.16) applies only when the review explicitly targets the installed-project layout.
@@ -540,8 +549,9 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
    - verifies tooling necessity, allowed mechanical action surface, forbidden semantic judgment, freshness, and document/source agreement
 10. `agent_operability_local`
-    - reviews `concepts.md`, rule-governance files, review policy files, and Spec writing policy files in the current review scope
-    - verifies that `concepts.md` (the hook-injected content) contains self-contained instructions: trigger phrases, HARD RULES, commands, and suggestion flow rules
+    - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, rule-governance files, review policy files, and Spec writing policy files in the current review scope
+    - verifies that `concepts.md` (the hook-injected bootstrap) contains self-contained routing-level instructions: triggers, HARD RULES, state model, and the trigger routing table
+    - verifies that each command package named by the routing table is self-contained for its phase per Section 2.12 (progressive disclosure: entry routing inline, phase procedure in the package)
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
 11. `sub_agent_prompt_assembly`
     - reviews the sub-agent assembly/protocol rules: `verification_scope.md` (§Sub-agent Prompt Assembly — validate, verify, and review shapes), `unit_validate_checklist.md` (8-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (Step 7 sub-agent protocol), `operations/issues.md` (Step 3), and their referenced checklists
@@ -554,13 +564,13 @@ Local slices review one owner area for internal closure, side effects, contract 
 Cross-convergence slices review whether locally correct rules still compose into one coherent governance baseline.
 
 1. `command_to_process_convergence`
-   - verifies the three commands (next, review, promote) converge with process closure rules from Section 2.3
+   - verifies the five commands (next, validate, verify, review, promote) converge with process closure rules from Section 2.3
 2. `truth_to_implementation_convergence`
    - verifies truth writeback, implementation gates, and candidate entry rules converge
 3. `shared_to_impact_convergence`
    - verifies rule-governance changes correctly converge with impact reconciliation
 4. `hook_to_review_convergence`
-   - verifies hook configuration and `concepts.md` injection cannot bypass the framework baseline, narrow default scope silently, or change review meaning without owner rules
+   - verifies hook configuration and bootstrap injection cannot bypass the framework baseline, narrow default scope silently, or change review meaning without owner rules
 5. `tooling_to_rule_convergence`
    - verifies tooling executes only rule-decided mechanical work and does not become a second semantic source of truth
 6. `supporting_layer_convergence`
@@ -569,7 +579,7 @@ Cross-convergence slices review whether locally correct rules still compose into
 7. `project_instance_to_framework_convergence`
    - verifies the project-instance compatibility check and `spec_flow_update` compose with hook and tooling rules without judging business truth content
  8. `agent_operability_path_walk`
-    - walks representative execution paths starting from the hook-injected content (`framework/concepts.md`), through triggers (`validate`, `verify`, `promote`), commands, and tooling rules
+    - walks representative execution paths starting from the hook-injected bootstrap (`framework/concepts.md`), through trigger routing and command packages, to triggers (`validate`, `verify`, `promote`), commands, and tooling rules
     - verifies a new executor can proceed from the injected content to the correct first command without hidden context or prior `specFlow` knowledge
     - injection-to-command alignment under Section 2.8.1 must be explicitly reported for every walked path
     - verifies the injection chain for each supported platform per `framework/hooks.md`

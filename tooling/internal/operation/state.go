@@ -2,7 +2,7 @@
 // frozen change scope for one bounded work item, mechanically evaluated
 // against the working-tree change set at completion. The contract lives in
 // tooling/README.md §Operation scope; the agent-facing behavior rules live in
-// framework/concepts.md §Operation Scope.
+// framework/operations/operation_scope.md.
 //
 // The state is local process state under meta/operations/ — it is not
 // project truth and is never committed.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `promote@{unit}`, it follows the 3 steps defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at promote time, not proactively.
+When an agent executes `promote@{unit}`, it follows the 3 steps defined here. The trigger route in `framework/concepts.md` loads this file at promote time, not proactively.
 
 ## Execution Rules
 
@@ -57,7 +57,7 @@ Summary: ...
 
 ## Step 2 — Body path pre-check
 
-**Purpose:** Scan the candidate spec body for candidate-layer path references that will break after promote (candidate files are deleted). Per `framework/concepts.md` §4, body text should reference specs by concept name rather than layer-prefixed file paths. `validate` Check 1 step 10 already rejects layer-prefixed paths at validate time — this step is the last-resort gate for content that predates or bypassed that check.
+**Purpose:** Scan the candidate spec body for candidate-layer path references that will break after promote (candidate files are deleted). Per `framework/spec_writing_guide.md` §12, body text should reference specs by concept name rather than layer-prefixed file paths. `validate` Check 1 step 10 already rejects layer-prefixed paths at validate time — this step is the last-resort gate for content that predates or bypassed that check.
 
 **Execution steps:**
 
@@ -84,7 +84,7 @@ Summary: ...
 
 ## Step 3 — Run specflowctl promote
 
-**Purpose:** The CLI performs the mechanical candidate-to-stable transition. This is the only gate that writes to stable (and, for retired content, the only gate that removes stable files).
+**Purpose:** The CLI performs the mechanical candidate-to-stable transition. In normal unit development, only promote writes stable; for retired content it removes stable files. Routed rule removal and framework-update migration own their separate narrow exceptions.
 
 **Retirement:** when the candidate main spec or a candidate appendix carries `status: retired` in its frontmatter (see `framework/spec_writing_guide.md` §8), promote removes the corresponding stable copy instead of copying. A retiring unit (retired main spec) removes the stable main spec and every stable appendix of the unit; a retired appendix removes only its own stable copy. The CLI rejects a retire promote while any current-layer unit still references the retiring unit — "current-layer" (effective) semantics: each unit resolves to its candidate file when one exists, falling back to the stable file (the same resolution `deps` uses), so a stale stable file whose candidate has already dropped the reference does not block the retirement; a retiring referrer is not counted (its references disappear with it). A retiring unit runs only the validate cache gate (steps 2a): the content-alignment gates (verify, review) and the appendix coverage check have no object for content that is being removed. (Rules are not retired through promote — see `framework/spec_writing_guide.md` §6.5; a retiring unit's promote does run the §6.5 dropped-rule cleanup, so every bound rule the candidate no longer lists that is left with no current-layer consumers and no `unbound_retention` declaration is removed with it and listed explicitly in the report.) A retired appendix inside an otherwise normal promote (the unit continues) runs all four gates unchanged.
 
@@ -117,4 +117,4 @@ Summary: ...
 
 ## Truth Semantics
 
-Promote is the act of recording a reconciled design as authoritative truth. After promote, the candidate is removed and the stable spec becomes the sole recorded reference (level 3 — prior consensus in the Truth Hierarchy). The old stable is superseded (git history preserves it). Candidate-layer files are removed after promote — this keeps file existence as an unambiguous state signal. To start a new editing round, see the fork prerequisite in concepts.md §2 (Edit and implement).
+Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable version. Removing candidate files keeps file existence unambiguous. A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.

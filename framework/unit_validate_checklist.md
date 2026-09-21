@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `validate@ {unit}`, it uses the 8 checks defined in this file. This file is referenced by `framework/concepts.md` §3 — the agent reads this file at validate time, not proactively.
+When an agent executes `validate@{unit}`, it uses the 8 checks defined here. The trigger route in `framework/concepts.md` loads this file at validate time, not proactively.
 
 ## Prerequisite — Read all unit files
 
@@ -35,7 +35,7 @@ When no candidate spec exists (validate against stable), run the same 8 checks +
 2. Glob all stable appendix files: `docs/specs/units/stable/appendix/unit_{unit}_*.md`, read every non-exempt, non-retired appendix (same skip rules as the candidate path)
 3. Run all 8 checks + cross-check against the stable content — Checks 6/7/8 are the live part: referenced files, dependency-unit contracts, and rules may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does)
 4. **PASS** → `gate-finalize` writes the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; `mode: full`, `hash` + `deps` evidence; same packet sequence as Step 9)
-5. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried` — the confirmation state stays visible as BLOCKED and is the failure-recovery baseline), present the findings (5a/5h FAIL findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit the stable spec directly — promote is the only operation that writes stable files
+5. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried` — the confirmation state stays visible as BLOCKED and is the failure-recovery baseline), present the findings (5a/5h FAIL findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit stable directly; normal candidate-to-stable writes use promote (the routed remove/update procedures own their narrow exceptions)
 
 The stable confirmation cache is read-only state: it grants no promote eligibility (stable has no gate). Delta re-runs (`revalidate`) apply to stable-only targets with a usable baseline — a pass cache (`result: pass`, STALE recovery) or a failure record (failure-record recovery); a MISSING stable cache needs the full confirmation run — see `framework/verification_scope.md` §Stable-only Targets and §Delta Runs → Layer applicability.
 
