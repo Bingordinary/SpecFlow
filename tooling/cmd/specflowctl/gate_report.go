@@ -393,7 +393,7 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 		return fmt.Errorf("analysis packet %q must own exactly one item", spec.PacketID)
 	}
 	item := spec.CheckKeys[0]
-	fields := []string{"Root cause", "Suggested direction", "Severity", "Confidence"}
+	fields := []string{"Problem", "Impact", "Root cause", "Suggested direction", "Severity", "Confidence"}
 	for _, field := range fields {
 		re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*([^\n]+)$`)
 		matches := re.FindAllStringSubmatch(report, -1)
@@ -406,6 +406,10 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 	if len(itemRe.FindAllString(report, -1)) != 1 {
 		return fmt.Errorf("analysis report must declare exactly one `Item: %s` line", item)
 	}
+	evidence, err := analysisEvidenceBlock(report)
+	if err != nil {
+		return fmt.Errorf("analysis %q: %w", item, err)
+	}
 	severity := strings.ToUpper(out.Analysis["Severity"])
 	if severity != "P0" && severity != "P1" && severity != "P2" && severity != "P3" {
 		return fmt.Errorf("analysis %q has invalid Severity %q", item, out.Analysis["Severity"])
@@ -413,19 +417,28 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 	if !oneOf(out.Analysis["Root cause"], "incomplete", "stale", "shadow_spec", "divergence", "accident", "blocked") {
 		return fmt.Errorf("analysis %q has invalid Root cause %q", item, out.Analysis["Root cause"])
 	}
-	if !oneOf(out.Analysis["Suggested direction"], "spec_gap", "code_gap", "needs_design", "blocked") {
-		return fmt.Errorf("analysis %q has invalid Suggested direction %q", item, out.Analysis["Suggested direction"])
+	direction := out.Analysis["Suggested direction"]
+	if !oneOf(direction, "spec_gap", "code_gap", "needs_design", "blocked") {
+		return fmt.Errorf("analysis %q has invalid Suggested direction %q", item, direction)
 	}
 	if !oneOf(strings.ToLower(out.Analysis["Confidence"]), "high", "medium", "low") {
 		return fmt.Errorf("analysis %q has invalid Confidence %q", item, out.Analysis["Confidence"])
 	}
 	out.Verdicts[item] = "MISMATCH"
 	resolution := "actionable"
-	if out.Analysis["Suggested direction"] == "needs_design" || out.Analysis["Suggested direction"] == "blocked" {
+	if direction == "needs_design" || direction == "blocked" {
 		resolution = "needs_decision"
 	}
-	detail := fmt.Sprintf("[%s] %s — verify mismatch analysis (%s)\n  root_cause: %s\n  suggested_direction: %s\n  confidence: %s",
-		severity, item, resolution, out.Analysis["Root cause"], out.Analysis["Suggested direction"], strings.ToLower(out.Analysis["Confidence"]))
+	fixBlock, err := analysisFixBlock(report, resolution)
+	if err != nil {
+		return fmt.Errorf("analysis %q: %w", item, err)
+	}
+	var evidenceRendered strings.Builder
+	for _, line := range evidence {
+		evidenceRendered.WriteString("\n    " + line)
+	}
+	detail := fmt.Sprintf("[%s] %s — verify mismatch analysis (%s)\n  problem: %s\n  evidence:%s\n  impact: %s\n%s\n  root_cause: %s\n  direction: %s (confidence: %s)",
+		severity, item, resolution, out.Analysis["Problem"], evidenceRendered.String(), out.Analysis["Impact"], fixBlock, out.Analysis["Root cause"], direction, strings.ToLower(out.Analysis["Confidence"]))
 	out.Findings = []gaterun.Finding{{
 		ID:        fmt.Sprintf("%s/%s/F1", run.RunID, spec.PacketID),
 		Severity:  severity,
@@ -434,6 +447,80 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 		SourceKey: item,
 	}}
 	return nil
+}
+
+// analysisBlockLines returns the contiguous indented sub-lines that follow the
+// `{name}:` header line of an analysis report. The block ends at the first
+// blank line or line that is not indented; a missing header yields no lines.
+func analysisBlockLines(report, name string) []string {
+	headerRe := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(name) + `:\s*$`)
+	loc := headerRe.FindStringIndex(report)
+	if loc == nil {
+		return nil
+	}
+	lines := strings.Split(report[loc[1]:], "\n")
+	var out []string
+	for _, raw := range lines[1:] {
+		if strings.TrimSpace(raw) == "" || (raw[0] != ' ' && raw[0] != '\t') {
+			break
+		}
+		out = append(out, strings.TrimSpace(raw))
+	}
+	return out
+}
+
+// analysisEvidenceBlock requires the finding block's Evidence section: at least
+// one spec-side and one code-side sub-line (see
+// framework/verification_scope.md §Gate Work Packets → Packet report contract).
+func analysisEvidenceBlock(report string) ([]string, error) {
+	lines := analysisBlockLines(report, "Evidence")
+	hasSpec, hasCode := false, false
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, "- spec:") {
+			hasSpec = true
+		}
+		if strings.HasPrefix(lower, "- code:") {
+			hasCode = true
+		}
+	}
+	if !hasSpec || !hasCode {
+		return nil, fmt.Errorf("Evidence must carry at least one `- spec:` and one `- code:` sub-line")
+	}
+	return lines, nil
+}
+
+// analysisFixBlock requires exactly one of Fix (actionable) or Decision with at
+// least one Options entry (needs_decision), matching the suggested direction.
+func analysisFixBlock(report, resolution string) (string, error) {
+	fixRe := regexp.MustCompile(`(?mi)^[ \t]*Fix:\s*([^\n]+)$`)
+	decisionRe := regexp.MustCompile(`(?mi)^[ \t]*Decision:\s*([^\n]+)$`)
+	fixes := fixRe.FindAllStringSubmatch(report, -1)
+	decisions := decisionRe.FindAllStringSubmatch(report, -1)
+	if resolution == "actionable" {
+		if len(fixes) != 1 || strings.TrimSpace(fixes[0][1]) == "" {
+			return "", fmt.Errorf("actionable analysis must declare exactly one non-empty Fix field")
+		}
+		if len(decisions) != 0 {
+			return "", fmt.Errorf("actionable analysis must not declare a Decision field")
+		}
+		return "  fix: " + strings.TrimSpace(fixes[0][1]), nil
+	}
+	if len(decisions) != 1 || strings.TrimSpace(decisions[0][1]) == "" {
+		return "", fmt.Errorf("needs_decision analysis must declare exactly one non-empty Decision field")
+	}
+	if len(fixes) != 0 {
+		return "", fmt.Errorf("needs_decision analysis must not declare a Fix field")
+	}
+	options := analysisBlockLines(report, "Options")
+	if len(options) == 0 {
+		return "", fmt.Errorf("needs_decision analysis must declare at least one Options entry")
+	}
+	block := "  decision: " + strings.TrimSpace(decisions[0][1]) + "\n  options:"
+	for _, option := range options {
+		block += "\n    " + option
+	}
+	return block, nil
 }
 
 func oneOf(value string, allowed ...string) bool {

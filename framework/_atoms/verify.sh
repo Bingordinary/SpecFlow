@@ -5,7 +5,8 @@
 #
 # Also runs a content regression guard on the report skeleton (atom: report_skeleton):
 # the pre-fix claim "fixes applied —" must not reappear in the atom source or its targets,
-# and the three fix-lifecycle state tokens must exist in the atom source.
+# the three fix-lifecycle state tokens must exist in the atom source, and the shared
+# finding-block field tokens (issue #40) must stay present in the atom source.
 #
 # Usage: ./verify.sh [--verbose]
 #   --verbose   Show per-file verification status
@@ -148,6 +149,16 @@ check_report_skeleton_regression() {
   for token in finding_open fixed_pending_recheck verified; do
     if ! grep -qF -- "$token" "$source_file"; then
       echo "REGRESSION $source_file — required fix-lifecycle state token '$token' missing"
+      REGRESSION_ERRORS=$((REGRESSION_ERRORS + 1))
+    fi
+  done
+
+  # Finding-block contract guard (issue #40): every finding must carry the
+  # self-contained block fields. A deliberate rename must update this guard
+  # together with the contract.
+  for token in 'problem:' 'evidence:' 'impact:' 'fix:' 'decision:' 'options:' 'ref:'; do
+    if ! grep -qF -- "$token" "$source_file"; then
+      echo "REGRESSION $source_file — required finding-block field token '$token' missing"
       REGRESSION_ERRORS=$((REGRESSION_ERRORS + 1))
     fi
   done

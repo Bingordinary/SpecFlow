@@ -133,6 +133,8 @@ When a governed flow assigns a severity to a real problem, the report should exp
 
 Commands or flows may add more required fields, but must not weaken this baseline.
 
+Gate findings (`validate` / `verify` / `review`) carry this baseline through the unified finding block (atom source `framework/_atoms/misc/report_skeleton.md`, delivered into each command checklist): `problem:` states what happened, `evidence:` carries the background and the proof, `impact:` states the impact, `fix:` or `decision:` states the recommended fix or the decision the user must make, and the report header states blocking explicitly. Minimality is governed by the flow's own fix execution rules (e.g. `framework/unit_verify_checklist.md` §Fix execution rules).
+
 ---
 
 ## 7. Relationship To Other Files
@@ -373,18 +375,31 @@ Dead code, comment/code contradiction, established-convention deviation, and an 
 ## 6. Finding Output Format
 
 ```
-{severity} {location} — {issue}
-      spec_context: {relevant design context from spec, if any}
-      recommendation: {fix suggestion}
+[{severity}] {location} — {issue} (actionable | needs_decision)
+  problem: {one-sentence statement naming the concrete subject}
+  evidence:
+    - {verbatim quoted code} — {file:line}
+  impact: {consequence if unaddressed}
+  fix: {concrete repair action}   # actionable
+  # or
+  decision: {the question the user must answer}   # needs_decision
+  options:
+    - {candidate option}
+  spec_context: {relevant design context from spec, if any}
+  ref: {optional tracking anchor}
 ```
 
 Each finding contains:
 - `severity`: P0-P3
 - `location`: file path + line number
 - `issue`: description of the problem
+- `problem`: one sentence naming the concrete subject and what is wrong with it
+- `evidence`: the quoted code that proves the claim; a P3 finding uses its `fact_anchor` line as the evidence form instead
+- `impact`: what goes wrong, or stays undecidable, if the finding is not resolved
+- `fix` (actionable) / `decision` with `options` (needs_decision): the concrete repair action or the decision the user must make
 - `spec_context`: (optional) relevant design context from the spec, helps the user understand the code-design relationship
-- `recommendation`: fix suggestion
 - `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
+- `ref`: (optional) anchor or line reference for tracking only — it carries no meaning the rest of the finding does not already state
 
 **Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its packet — for the reviewed file, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
 

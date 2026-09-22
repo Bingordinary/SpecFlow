@@ -337,7 +337,8 @@ func grVerifyItemBody(item, verdict, evidence string) string {
 }
 
 func grVerifyAnalysisReport(item, specPath, codeFile, severity string) string {
-	return fmt.Sprintf("Item: %s\nRoot cause: incomplete\nSuggested direction: code_gap\nSeverity: %s\nConfidence: high\n\n%s: %s: acceptance_item:%s\n%s: %s: all\n", item, severity, item, specPath, item, item, codeFile)
+	return fmt.Sprintf("Item: %s\nProblem: the declared behavior disagrees with the implementation for %s\nEvidence:\n  - spec: declared behavior — %s: acceptance item %s\n  - code: implemented behavior — %s:1\nImpact: the acceptance surface cannot be satisfied as declared\nFix: align the implementation with the declared behavior\nRoot cause: incomplete\nSuggested direction: code_gap\nSeverity: %s\nConfidence: high\n\n%s: %s: acceptance_item:%s\n%s: %s: all\n",
+		item, item, specPath, item, codeFile, severity, item, specPath, item, item, codeFile)
 }
 
 func grReviewArchitecture(conclusion string) string {
@@ -1692,6 +1693,14 @@ func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
 	}
 	if len(analysisState.Result.Findings) != 1 || analysisState.Result.Findings[0].ID != grRunFindingID(runID, "analysis:auth.core", 1) {
 		t.Fatalf("expected the synthesized analysis finding to carry the run-scoped id, got %+v", analysisState.Result.Findings)
+	}
+	// The finding must be self-contained (issue #40): the detail carries the
+	// shared finding block, not only the analysis enums.
+	detail := analysisState.Result.Findings[0].Detail
+	for _, want := range []string{"problem:", "evidence:", "- spec:", "- code:", "impact:", "fix:", "root_cause:", "direction:"} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("expected the analysis finding detail to carry the self-contained finding block (%q), got:\n%s", want, detail)
+		}
 	}
 
 	var contextOut, contextErr bytes.Buffer

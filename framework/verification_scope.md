@@ -185,12 +185,13 @@ Each packet report is the packet-scoped fragment of the command's report. `gate-
 - gate-specific packet structure is complete: unit validate Check 5 reports sub-checks `5a` through `5i`; verify detection reports an `evidence` line, a `deterministic` line, `Part A`, and `Part B` (using an explicit `skipped` reason when Part B does not apply); review file packets report `conclusion`, all six Dimension 8 assessment lines with non-empty bases, `gate_findings`, and `Suppressed by spec (N)`;
 - every check key declares at least one `Dependency scope:` line whose file resolves inside that packet's `read_refs` and whose declaration parses;
 - local findings receive stable run-scoped ids `{run_id}/{packet_id}/F{n}` in report order (the run id is printed in the packet context — the `Run:` line of `gate-packet`);
-- verify analysis reports must identify their item and carry root cause, suggested direction, severity, confidence, and dependency scope;
+- findings authored in a packet report carry the shared finding block from the unified report skeleton (`problem:` / `evidence:` / `impact:` / `fix:` or `decision:` — with command-specific extra lines; review P3 findings use their `fact_anchor:` line as the evidence form). The block's detail lines are contiguous indented lines directly under the finding's entry line; `gate-submit` stores them verbatim and `gate-finalize` re-renders them when a finding is carried into a delta/repair run;
+- verify analysis reports must identify their item and carry the finding block (`Problem:`, `Evidence:` with at least one spec-side and one code-side sub-line (each present side quoted verbatim; when a side is absent, its sub-line states the absence and the searched scope), `Impact:`, and exactly one of `Fix:` / `Decision:` matching the suggested direction, with at least one `Options:` entry for `Decision:`), plus root cause, suggested direction, severity, confidence, and dependency scope;
 - cross reports must bind every dependency result digest, publish one disposition (`retained`, `suppressed`, or `merged`) for every input finding, publish one effective `pass|fail` status for every logical judgment plus `cross`, describe every cross-created finding together with its affected logical keys, and publish one complete severity-confirmation sequence for every terminal retained finding. Suppression/merge requires a reason; every merge chain must terminate at a retained input finding or a new cross finding (never at a suppressed finding, a missing target, or a cycle); a failed cross rule requires a retained P0/P1 cross finding (the gate result is derived from P0/P1 findings — a `FAIL` verdict backed only by advisory retained findings would contradict the derived result).
 
 The main agent presents the unified report generated from the accepted artifacts. `gate-finalize` derives the run-level header (`Result`, `Blocking promote`, `Key counts`) and cache body; the main agent does not supply or recompute those values.
 
-**Verify analysis report fields:** exactly one `Item: {id}`, `Root cause: ...`, `Suggested direction: ...`, `Severity: P0|P1|P2|P3`, and `Confidence: high|medium|low`, followed by the item's dependency-scope lines. Root cause and direction values are the Step 7 vocabulary in `framework/unit_verify_checklist.md`.
+**Verify analysis report fields:** exactly one `Item: {id}`, `Problem: ...`, `Evidence:` followed by at least one spec-side and one code-side sub-line (each present side quoted verbatim; when a side is absent, its sub-line states the absence and the searched scope), `Impact: ...`, exactly one of `Fix: ...` (spec_gap / code_gap) or `Decision: ...` (needs_design / blocked) with at least one `Options:` entry, `Root cause: ...`, `Suggested direction: ...`, `Severity: P0|P1|P2|P3`, and `Confidence: high|medium|low`, followed by the item's dependency-scope lines. Root cause and direction values are the Step 7 vocabulary in `framework/unit_verify_checklist.md`. `gate-submit` renders the finding block into the finding's detail lines: the entry line plus `problem:` / `evidence:` / `impact:` / `fix:` or `decision:` / `options:` / `root_cause:` / `direction:` / `confidence:`.
 
 **Cross synthesis lines:** in addition to the command's `Cross-check:` verdict and dependency scopes, cross reports:
 
@@ -210,7 +211,7 @@ Severity confirmation: {retained_finding_id} = confirmed {Py} — evidence: {rea
 Severity confirmation: {retained_finding_id} = adjusted {Py} -> {Pz} — evidence: {read_ref}; reason: {one line}
 ```
 
-There is exactly one disposition per input finding and one effective status per logical check/item/file plus `cross`. Bracketed findings in a cross report are new cross findings; each must name at least one affected non-cross logical key. Retained local findings are referenced by disposition instead of copied. A `merged` disposition identifies a duplicate, not a removal: following its target repeatedly must reach a finding that is retained in the final result. A target that is suppressed, missing, self-referential, or part of a merge cycle rejects the cross report. The terminal retained finding is counted once, and its final affected-key set is the union of its own keys and the source keys of every finding merged into it.
+There is exactly one disposition per input finding and one effective status per logical check/item/file plus `cross`. Bracketed findings in a cross report are new cross findings; each carries the shared finding block on the indented lines directly under its entry line and must name at least one affected non-cross logical key. Retained local findings are referenced by disposition instead of copied. A `merged` disposition identifies a duplicate, not a removal: following its target repeatedly must reach a finding that is retained in the final result. A target that is suppressed, missing, self-referential, or part of a merge cycle rejects the cross report. The terminal retained finding is counted once, and its final affected-key set is the union of its own keys and the source keys of every finding merged into it.
 
 Every terminal retained finding — current, carried, or cross-created — has one complete `Severity confirmation` sequence. A first `confirmed` record is final and the sequence contains one line. A first `adjusted` record must be followed by exactly one second record for the adjusted severity; that second record is final and may either confirm the new severity or adjust it by one more adjacent level. A suppressed or non-terminal merged finding has no sequence. Finding ids are already visible in dependency results; a finding created by the report being authored uses the deterministic run-scoped id `{run_id}/{packet_id}/F{n}` from its finding order (for example `20260916-101112-abc123/cross/F1`). The run prefix is the run id printed in the packet context — the executor copies it and must never invent an id. Run-scoped ids are unique by construction across runs: a finding authored by the current report can never collide with a carried finding from an earlier run. Every `confirmed` record must start and end at the finding's current severity. Every `adjusted` record must start at the current severity and move to the immediately adjacent level; its result becomes the starting severity for the next record or the finding's final canonical severity. Each record's evidence path must belong to the cross packet's `read_refs` and must also be covered by a `cross` dependency-scope declaration in the same report. Empty reasons, unknown finding ids, missing or incomplete sequences, records for non-terminal findings, broken severity chains, non-adjacent adjustments, and third records reject the submission.
 
@@ -313,7 +314,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | P0 / P1 severity (validate) | The only severities validate grades: P1 is the contract-decided default for FAIL checks (recorded as `confirmed` without a §9 boundary check); P0 requires the §9 boundary check | `framework/unit_validate_checklist.md` §Severity check |
 | Dimension 8 (module_boundaries / responsibility_organization / dependency_clarity / abstraction_level / extension_landing_points / engineering_patterns) | The architectural design quality assessment of the reviewed code surface: per-packet lines reporting module boundaries, responsibility organization, dependency clarity, abstraction levels, extension landing points, and engineering patterns, each with an assessment and basis | `framework/spec_review_checklist.md` §4 (Dimension 8) / §Body format |
 | spec_context | The finding's attached relevant design context from the spec, helping the user understand the code-design relationship | `framework/spec_review_checklist.md` §Findings section / §6 |
-| recommendation | The finding's fix suggestion | `framework/spec_review_checklist.md` §Findings section / §6 |
+| recommendation | The finding's fix suggestion — written as the block's `fix:` (actionable) or `decision:` with `options:` (needs_decision) | `framework/spec_review_checklist.md` §Findings section / §6 |
 
 **File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 3-5. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing. For validate, the same command output supplies the spec, the appendix directory, and the dependency targets (`unit_refs` / `rule_refs`) that make up the read surface. For `validate@{rule}` — `specflowctl next` supports unit targets only — the mechanical baseline is the command target file `docs/specs/rules/candidate/{rule_id}.md`, its stable sibling `docs/specs/rules/stable/{rule_id}.md` if present (Check 4), and the unit spec files globbed under `docs/specs/units/` (Checks 5/7).
 
@@ -637,6 +638,8 @@ Result: PASS
 Blocking promote: no
 Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
+Findings: none
+────────────────────────────────────────────
 Items:
   - AUTH-AC-001: ALIGNED — src/auth/login.go:42
   ...
@@ -644,8 +647,6 @@ Coverage:
   - items_with_deterministic_evidence: 10/10
   - items_reading_only: 0
 Cross-check: 5/5 PASS
-────────────────────────────────────────────
-Findings: none
 ────────────────────────────────────────────
 Next step: if the design is finalized, run `promote@user_auth`
 ────────────────────────────────────────────
@@ -659,6 +660,8 @@ verify@user_auth · targeted (user requested: login) · candidate
 Result: PASS
 Blocking promote: no
 Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
+────────────────────────────────────────────
+Findings: none
 ────────────────────────────────────────────
 Content checked:
   - POST /login — login.go, token.go
@@ -682,17 +685,56 @@ Result: PASS
 Blocking promote: no
 Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
+Findings: none
+────────────────────────────────────────────
 1. Structural integrity: PASS
 2. Design soundness: PASS
 ...
 Cross-check: 3/3 PASS
 Failed checks: 0 | Advisory findings: 0
 ────────────────────────────────────────────
-Findings: none
-────────────────────────────────────────────
 Next step: None
 ────────────────────────────────────────────
 Full validation passed.
+```
+
+### Full result with a finding (validate)
+
+```
+────────────────────────────────────────────
+validate@user_auth · full · candidate
+Result: FAIL
+Blocking promote: yes
+Key counts: Findings: 1 (P0: 0 | P1: 1 | P2: 0 | P3: 0)
+────────────────────────────────────────────
+Findings:
+  Decision group (1 item) — need confirmation:
+    1. [P1] AUTH-AC-003 — SessionErrorCode enumeration disagrees between the spec body and the acceptance item (needs_decision)
+      problem: the body declares six SessionErrorCode values (including session_not_ready) while the item's pass_condition claims exactly five (without session_not_ready).
+      evidence:
+        - body: `type SessionErrorCode = "session_not_found" | ... | "session_not_ready";` — unit_user_auth.md, item AUTH-AC-003
+        - item: `pass_condition: "SessionErrorCode is exactly session_not_found / ... / session_capacity (five values)"` — unit_user_auth.md, item AUTH-AC-003
+      impact: the acceptance surface cannot cover session_not_ready; the implementation and the body semantics cannot both hold.
+      decision: should the item be extended to six values, or should the recovery path stop returning session_not_ready?
+      options:
+        - extend the item's description and pass_condition to six values
+        - remove session_not_ready from the recovery path
+      ref: unit_user_auth.md, item AUTH-AC-003
+────────────────────────────────────────────
+1. Structural integrity: PASS
+...
+5b. Content alignment: FAIL — body/acceptance item conflict (finding AUTH-AC-003)
+Failed checks: 1 | Advisory findings: 0
+────────────────────────────────────────────
+Dependency scope:
+  check-5: docs/specs/units/candidate/unit_user_auth.md: acceptance_items
+────────────────────────────────────────────
+Severity check:
+  confirmed: 1 | adjusted: 0
+  Severity confirmation: {finding_id} = confirmed P1 — evidence: docs/specs/units/candidate/unit_user_auth.md; reason: contract-decided default
+────────────────────────────────────────────
+Next step: Resolve the findings, then re-run `validate@user_auth:check-5` to confirm
+────────────────────────────────────────────
 ```
 
 ### Validate targeted
@@ -703,6 +745,8 @@ validate@user_auth · targeted (user requested: check-3 — scope integrity) · 
 Result: PASS
 Blocking promote: no
 Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
+────────────────────────────────────────────
+Findings: none
 ────────────────────────────────────────────
 Check(s) executed:
   - check-1 (structural integrity): PASS — prerequisite
@@ -727,6 +771,8 @@ Result: PASS
 Blocking promote: no
 Key counts: Findings: 0 (P0: 0 | P1: 0 | P2: 0 | P3: 0)
 ────────────────────────────────────────────
+Findings: none
+────────────────────────────────────────────
 Incremental scope:
   - check-7 (cross-unit): re-run — dependency unit auth's acceptance item set changed (AC-003)
   - checks 1-6, 8: carried over — dependency evidence unchanged
@@ -735,8 +781,6 @@ Cross-check: 3/3 PASS
 Dependency scope:
   check-7: docs/specs/units/candidate/unit_user_auth.md: all
   check-7: unit:auth: acceptance_item:AUTH-AC-003
-────────────────────────────────────────────
-Findings: none
 ────────────────────────────────────────────
 Next step: if the design is finalized, run `promote@user_auth`
 ────────────────────────────────────────────

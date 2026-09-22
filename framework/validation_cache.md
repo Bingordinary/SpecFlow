@@ -276,13 +276,20 @@ files:
 ## Findings
 
 ### P1 - src/auth/login.go:42 — Missing input validation on email field
-  The email field lacks input validation, potential XSS risk.
+  problem: the email field is written to the response without input validation.
+  evidence:
+    - `email := r.FormValue("email")` — src/auth/login.go:42
+    - `pass_condition: "invalid email input is rejected with HTTP 400"` — unit_user_auth.md item AUTH-AC-001
+  impact: malformed input reaches the response path; the declared rejection behavior is not implemented.
+  fix: validate the email field and reject invalid input with HTTP 400.
   spec_context: Spec prioritizes shipping speed over input sanitization (accepted_tradeoff)
-  recommendation: Add input validation middleware
 
 ### P2 - src/auth/config.go:88 — Hardcoded secret key
-  Secret key is hardcoded instead of using environment variable.
-  recommendation: Use os.Getenv() to load from environment
+  problem: the signing key is a hardcoded string instead of environment-loaded configuration.
+  evidence:
+    - `const signingKey = "dev-secret"` — src/auth/config.go:88
+  impact: the key cannot be rotated per environment.
+  fix: load the key with os.Getenv().
 ```
 
 A PASS review cache follows the same shape with `result: pass`, `blocking: false`, and
