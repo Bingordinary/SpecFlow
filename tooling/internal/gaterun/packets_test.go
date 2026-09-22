@@ -370,6 +370,7 @@ func TestDerivedPlanDeltaRequiresPassBaseline(t *testing.T) {
 func TestDerivedPlanReviewDeltaRejectsConflictingBaseline(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
 	if err != nil {
 		t.Fatal(err)
@@ -387,8 +388,12 @@ func TestDerivedPlanReviewDeltaRejectsConflictingBaseline(t *testing.T) {
 }
 
 // writeUnitItemsSpec writes a unit spec with the given acceptance item ids.
+// The items declare implementation_surface src, so the helper also creates a
+// real file there — verify/review planning rejects a surface that does not
+// resolve.
 func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string {
 	t.Helper()
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_auth.md")
 	if err := os.MkdirAll(filepath.Dir(specPath), 0755); err != nil {
 		t.Fatal(err)

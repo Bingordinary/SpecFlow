@@ -170,6 +170,124 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 	}
 }
 
+// TestPlanVerifyRejectsUnresolvableImplementationSurface verifies the
+// fail-closed planning precondition: a non-<pending> implementation_surface
+// that cannot resolve to a code file rejects the plan before any run state is
+// written, with the item id and the reason.
+func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	pending := "  - id: auth.pending\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/demo/a.go; internal/demo/b.go", pending)
+	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "path does not exist") {
+		t.Fatalf("expected the item-granular surface rejection, got %v", err)
+	}
+	if strings.Contains(err.Error(), "auth.pending") {
+		t.Fatalf("the <pending> placeholder must not be reported, got %v", err)
+	}
+	runs, listErr := ListRuns(repoRoot)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
+	}
+}
+
+// TestPlanReviewRejectsUnresolvableImplementationSurface verifies the review
+// gate applies the same precondition as verify.
+func TestPlanReviewRejectsUnresolvableImplementationSurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/tool/**", "")
+	writeFile(t, repoRoot, "internal/tool/main.go", "package tool\n")
+
+	_, err := Plan(repoRoot, GateReview, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "path does not exist") {
+		t.Fatalf("expected the unresolvable-pattern rejection, got %v", err)
+	}
+}
+
+// TestPlanVerifyReadsItemRelativeIndentSurface verifies a consistently nested
+// item block contributes its declared surface to the plan: the reader follows
+// the item's own indent instead of assuming the canonical column.
+func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n    - id: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
+	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
+	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := surfaceByPath(run, "internal/demo/a.go"); !ok {
+		t.Fatalf("expected the item-relative surface in the plan, got %+v", run.Surfaces)
+	}
+}
+
+// TestPlanVerifyRejectsEmptyDirectorySurface verifies a directory that
+// expands to zero files is rejected rather than silently producing an empty
+// code surface.
+func TestPlanVerifyRejectsEmptyDirectorySurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/empty", "")
+	if err := os.MkdirAll(filepath.Join(repoRoot, "internal/empty"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "directory contains no files") {
+		t.Fatalf("expected the empty-directory rejection, got %v", err)
+	}
+}
+
+// TestPlanValidateIgnoresCodeSurfaceResolution verifies the precondition is
+// verify/review-only: the validate gate derives no code surface and plans
+// normally for a spec whose surface is still the <pending> placeholder.
+func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "<pending>", "")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err != nil {
+		t.Fatalf("validate planning must not require a resolvable code surface, got %v", err)
+	}
+	if len(run.Surfaces) != 0 {
+		t.Fatalf("validate runs declare no code surface, got %+v", run.Surfaces)
+	}
+}
+
+// TestPlanCodeGatesRejectEmptyAcceptanceItemSet verifies the work-set
+// precondition: a verify/review plan for a spec with an empty
+// acceptance_item_set is rejected before any run state is written — an empty
+// item set has no verifiable object and would plan only the cross packet.
+// The validate gate still plans it, because reporting the empty set as a
+// check failure is the validate gate's job.
+func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
+		"---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
+
+	for _, gate := range []string{GateVerify, GateReview} {
+		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
+			t.Fatalf("expected the empty-item-set rejection for %s, got %v", gate, err)
+		}
+	}
+	runs, err := ListRuns(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
+	}
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err != nil {
+		t.Fatalf("validate planning must still plan an empty item set so Check 2 can report it, got %v", err)
+	}
+}
+
 func TestOpenDerivesRuleValidateSurface(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeRule(t, repoRoot, "candidate", "b_rule_http")

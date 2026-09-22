@@ -52,6 +52,16 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 	return path
 }
 
+// grWriteSpecSurface writes a candidate unit spec whose single acceptance
+// item declares the given implementation_surface (plus optional extra item
+// content).
+func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) string {
+	t.Helper()
+	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
+		"  - id: " + name + ".core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
+}
+
 // grWriteFile writes one repo file.
 func grWriteFile(t *testing.T, repoRoot, rel, content string) string {
 	t.Helper()
@@ -466,6 +476,108 @@ func TestGatePlanVerifyAndReviewPlans(t *testing.T) {
 	}
 	if len(run.Packets) != 2 || run.Packets[0].PacketID != "src/auth.go" || run.Packets[1].PacketID != "cross" {
 		t.Fatalf("expected per-file packets + cross, got %+v", packetIDsOf(run))
+	}
+}
+
+// TestGatePlanRejectsUnresolvedImplementationSurface verifies the end-to-end
+// fail-closed path: a non-<pending> implementation_surface that cannot
+// resolve to a code file rejects verify/review planning with the item id and
+// the reason, and leaves no run state behind. The declared files exist — the
+// value is rejected because a semicolon list is not a path.
+func TestGatePlanRejectsUnresolvedImplementationSurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	grWriteFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	grWriteFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
+	grWriteSpecSurface(t, repoRoot, "demo", "internal/demo/a.go; internal/demo/b.go", "")
+
+	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
+	if err == nil || !strings.Contains(err.Error(), "demo.core") || !strings.Contains(err.Error(), "path does not exist") {
+		t.Fatalf("expected the item-granular surface rejection, got %v", err)
+	}
+	entries, readErr := os.ReadDir(filepath.Join(repoRoot, "meta/gate_runs"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a rejected verify plan must not persist run state, found %d entries", len(entries))
+	}
+}
+
+// TestGatePlanRejectsEmptyAcceptanceItemSet verifies the end-to-end work-set
+// precondition: a verify plan for a spec whose acceptance_item_set has no
+// items is rejected before any run state is written, while the validate gate
+// still plans the same spec so its Check 2 can report the empty set.
+func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
+	repoRoot := t.TempDir()
+	grWriteSpecItems(t, repoRoot, "demo", "none", "none", nil)
+
+	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
+	if err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
+		t.Fatalf("expected the empty-item-set rejection, got %v", err)
+	}
+	entries, readErr := os.ReadDir(filepath.Join(repoRoot, "meta/gate_runs"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a rejected verify plan must not persist run state, found %d entries", len(entries))
+	}
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "demo", "--target", "candidate"); err != nil {
+		t.Fatalf("validate planning must still plan an empty item set, got %v", err)
+	}
+}
+
+// TestGatePlanVerifyAcceptsLiteralMetacharacterSurface verifies the
+// end-to-end positive path for a real path containing glob metacharacters:
+// the value is matched literally, so a bracketed route file is planned and
+// reaches the packet read refs instead of being misread as a wildcard
+// pattern.
+func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
+	repoRoot := t.TempDir()
+	grWriteFile(t, repoRoot, "app/[id]/route.ts", "export {}\n")
+	grWriteSpecSurface(t, repoRoot, "demo", "app/[id]/route.ts", "")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
+
+	var stdout, stderr bytes.Buffer
+	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", runID, "--packet", "detect:demo.core"}, &stdout, &stderr); err != nil {
+		t.Fatalf("gate-packet failed: %v (stderr=%s)", err, strings.TrimSpace(stderr.String()))
+	}
+	if out := stdout.String(); !strings.Contains(out, "  - app/[id]/route.ts\n") {
+		t.Fatalf("expected the literal bracketed path in the packet read refs, got:\n%s", out)
+	}
+}
+
+// TestGatePlanVerifySurfaceExpansionIncludesCodeFiles verifies the positive
+// path: a directory surface plus affects.files expands to real code files in
+// the packet read refs.
+func TestGatePlanVerifySurfaceExpansionIncludesCodeFiles(t *testing.T) {
+	repoRoot := t.TempDir()
+	grWriteFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	grWriteFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
+	extra := "    affects:\n      files:\n        - internal/demo/a.go\n        - internal/demo/b.go\n"
+	grWriteSpecSurface(t, repoRoot, "demo", "internal/demo", extra)
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
+
+	var stdout, stderr bytes.Buffer
+	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", runID, "--packet", "detect:demo.core"}, &stdout, &stderr); err != nil {
+		t.Fatalf("gate-packet failed: %v (stderr=%s)", err, strings.TrimSpace(stderr.String()))
+	}
+	out := stdout.String()
+	for _, want := range []string{"internal/demo/a.go", "internal/demo/b.go"} {
+		if !strings.Contains(out, "  - "+want+"\n") {
+			t.Fatalf("expected %s in the packet read refs, got:\n%s", want, out)
+		}
+	}
+
+	reviewID := grPlan(t, repoRoot, "--gate", "review", "--unit", "demo", "--target", "candidate")
+	reviewRun, err := gaterun.Load(repoRoot, reviewID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviewRun.Packets) != 3 {
+		t.Fatalf("expected two file packets + cross, got %+v", packetIDsOf(reviewRun))
 	}
 }
 
@@ -2702,14 +2814,17 @@ func containsStr(values []string, want string) bool {
 
 func TestGateRunStableReview(t *testing.T) {
 	repoRoot := t.TempDir()
-	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n\n## Description\n\nProse.\n")
+	main := "docs/specs/units/stable/unit_auth.md"
+	grWriteFile(t, repoRoot, main, "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/auth.go\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "auth", "--target", "stable")
 	run := mustLoadRun(t, repoRoot, runID)
-	if len(run.Packets) != 1 || run.Packets[0].PacketID != "cross" {
-		t.Fatalf("expected a cross-only plan for a surface-less stable review, got %v", packetIDsOf(run))
+	if len(run.Packets) != 2 || run.Packets[0].PacketID != "src/auth.go" || run.Packets[1].PacketID != "cross" {
+		t.Fatalf("expected a file packet + cross for a stable review, got %v", packetIDsOf(run))
 	}
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport("docs/specs/units/stable/unit_auth.md", "Description"))
+	grSubmitOK(t, repoRoot, runID, "src/auth.go", grReviewReport("src/auth.go", main))
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
 	res, err := validationcache.CheckReviewStable(repoRoot, "auth")

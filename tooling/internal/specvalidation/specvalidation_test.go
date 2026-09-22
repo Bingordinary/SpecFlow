@@ -169,7 +169,7 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 	}
 }
 
-func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
+func TestCheckAcceptanceItems_EmptyImplementationSurfacePass(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
@@ -182,9 +182,10 @@ func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
 			"    verification_method: check\n"+
 			"    pass_condition: ok\n"+
 			"    runnable: yes\n")
+	// The empty value is a path-resolution defect: Check 3 reports it.
 	result := checkAcceptanceItems(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatal("expected FAIL for empty implementation_surface value")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for Check 2 (empty surface is Check 3's concern), got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -1022,6 +1023,13 @@ func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
 // createFullCandidate writes a candidate spec that passes all checks.
 func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 	t.Helper()
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	writeCandidate(t, repoRoot, unitName,
 		"---\nid: "+unitName+"\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs: none\n---\n"+

@@ -133,7 +133,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "Validate candidate runs the full validation on a candidate spec:")
 	fmt.Fprintln(w, "  1. Frontmatter completeness")
 	fmt.Fprintln(w, "  2. Acceptance items format")
-	fmt.Fprintln(w, "  3. Anchor integrity (affects.files paths)")
+	fmt.Fprintln(w, "  3. Anchor integrity (affects.files paths exist; implementation_surface values resolve)")
 	fmt.Fprintln(w, "  4. Reference integrity (unit_refs/rule_refs)")
 	fmt.Fprintln(w, "  5. Appendix files")
 	fmt.Fprintln(w, "  6. Version/ref consistency")

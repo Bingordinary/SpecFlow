@@ -3,7 +3,7 @@
 //
 //  1. Frontmatter completeness
 //  2. Acceptance items format
-//  3. Anchor integrity (affects.files paths exist)
+//  3. Anchor integrity (affects.files paths exist; implementation_surface values resolve to real code)
 //  4. Reference integrity (unit_refs/rule_refs files exist)
 //  5. Appendix files exist
 //  6. Version/ref consistency

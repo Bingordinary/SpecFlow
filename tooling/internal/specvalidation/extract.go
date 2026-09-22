@@ -17,11 +17,18 @@ type acceptanceItemFields struct {
 // headings, item ids, and fences); this package only reads fields inside each
 // located item. Public extractors therefore cannot disagree about which item
 // set they are reading.
+//
+// Item fields are read relative to the item's own nesting: the region starts
+// at the `- id:` line, its fields sit two columns deeper, and the
+// affects.files list two columns deeper again. No document-absolute column is
+// assumed, so a consistently nested item block reads the same however far the
+// list is indented.
 func parseAcceptanceItems(content string) []acceptanceItemFields {
 	regions := contenthash.AcceptanceItemRegions(content)
 	items := make([]acceptanceItemFields, 0, len(regions))
 	for _, region := range regions {
 		item := acceptanceItemFields{id: region.ID}
+		fieldIndent := leadingSpaces(region.Text) + 2
 		inAffects := false
 		inFiles := false
 		fence := acceptanceFence{}
@@ -37,22 +44,22 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 			trimmed := strings.TrimSpace(line)
 			indent := leadingSpaces(line)
 			switch {
-			case indent == 4 && strings.HasPrefix(trimmed, "implementation_surface:"):
+			case indent == fieldIndent && strings.HasPrefix(trimmed, "implementation_surface:"):
 				value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "implementation_surface:")), `"'`)
 				if value != "" {
 					item.implementationSurface = value
 				}
 				inAffects = false
 				inFiles = false
-			case indent == 4 && trimmed == "affects:":
+			case indent == fieldIndent && trimmed == "affects:":
 				inAffects = true
 				inFiles = false
-			case indent == 4 && strings.HasSuffix(trimmed, ":"):
+			case indent == fieldIndent && strings.HasSuffix(trimmed, ":"):
 				inAffects = false
 				inFiles = false
-			case inAffects && indent == 6 && strings.HasSuffix(trimmed, ":"):
+			case inAffects && indent == fieldIndent+2 && strings.HasSuffix(trimmed, ":"):
 				inFiles = trimmed == "files:"
-			case inFiles && indent == 8 && strings.HasPrefix(trimmed, "- "):
+			case inFiles && indent == fieldIndent+4 && strings.HasPrefix(trimmed, "- "):
 				if value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")); value != "" {
 					item.affectsFiles = append(item.affectsFiles, value)
 				}

@@ -171,26 +171,9 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	// Validate implementation_surface values (must be non-empty; <pending>
-	// is the legal design-first placeholder — verify blocks on any leftover
-	// <pending>, see framework/unit_verify_checklist.md Step 6)
-	var emptySurface int
-	for _, line := range itemLines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "implementation_surface:") {
-			parts := strings.SplitN(trimmed, ":", 2)
-			if len(parts) == 2 && strings.TrimSpace(parts[1]) == "" {
-				emptySurface++
-			}
-		}
-	}
-	if emptySurface > 0 {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Fail,
-			Details: fmt.Sprintf("%d item(s) have an empty implementation_surface; use the <pending> placeholder during design-first rounds", emptySurface),
-		}
-	}
+	// implementation_surface values are validated by Check 3 (anchor
+	// integrity): each value must be the exact <pending> design-first
+	// placeholder or a path that resolves to a real file.
 
 	return CheckResult{
 		Name:    "Acceptance items",
@@ -200,7 +183,8 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 3: Anchor integrity (affects.files paths exist)
+// Check 3: Anchor integrity (affects.files paths exist and
+// implementation_surface values resolve to real code)
 // ------------------------------------------------------------
 func checkAnchors(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)
@@ -227,15 +211,18 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	anchorFiles := ExtractAffectsFiles(content)
+	var problems []string
 
-	if len(anchorFiles) == 0 {
-		return CheckResult{
-			Name:    "Anchor integrity",
-			Status:  Pass,
-			Details: "no affects.files entries to check",
-		}
+	// implementation_surface values must be the exact <pending> design-first
+	// placeholder or a single path resolving to at least one real file. A
+	// non-pending value that resolves to nothing would silently derive an
+	// empty code surface, so it fails here (same check gate-plan applies
+	// before planning a verify/review run).
+	for _, surfaceProblem := range CheckImplementationSurfaces(repoRoot, content) {
+		problems = append(problems, surfaceProblem.String())
 	}
+
+	anchorFiles := ExtractAffectsFiles(content)
 
 	var missingFiles []string
 	for _, af := range anchorFiles {
@@ -246,17 +233,29 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	}
 
 	if len(missingFiles) > 0 {
+		problems = append(problems, fmt.Sprintf("affects.files paths not found: %s", strings.Join(missingFiles, ", ")))
+	}
+
+	if len(problems) > 0 {
 		return CheckResult{
 			Name:    "Anchor integrity",
 			Status:  Fail,
-			Details: fmt.Sprintf("affects.files paths not found: %s", strings.Join(missingFiles, ", ")),
+			Details: strings.Join(problems, "; "),
+		}
+	}
+
+	if len(anchorFiles) == 0 {
+		return CheckResult{
+			Name:    "Anchor integrity",
+			Status:  Pass,
+			Details: "no affects.files entries to check; implementation_surface values resolve",
 		}
 	}
 
 	return CheckResult{
 		Name:    "Anchor integrity",
 		Status:  Pass,
-		Details: fmt.Sprintf("%d affects.files path(s) exist", len(anchorFiles)),
+		Details: fmt.Sprintf("%d affects.files path(s) exist; implementation_surface values resolve", len(anchorFiles)),
 	}
 }
 

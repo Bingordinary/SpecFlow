@@ -160,6 +160,8 @@ The delta re-run set is the complete definition: the checks whose declared deps 
 
 Stable-only targets use the same rules with `target: stable`. Rule targets have no cross-check and no verify/review. Analysis packets are planned up front so the run graph stays deterministic; no packet is added after execution begins.
 
+**Verify/review planning requires at least one acceptance item.** A verify/review run's work set is the acceptance items, so `gate-plan` locates them structurally (the same id space the packet plan uses) and rejects a spec with an empty item set before any run state is written — a plan with no item packets would carry only the `cross` packet and could finalize a pass cache with no code evidence. The mechanical `specflowctl validate` Check 2 rejects the same spec.
+
 ### Input roles
 
 The derived target surface and `--input` have different roles:
@@ -168,6 +170,8 @@ The derived target surface and `--input` have different roles:
 - `--input` adds evidence entries that every packet may read and declare, but it never creates a check, item, or review-file packet;
 - file, directory, and logical-reference forms of `--input` have the same semantics; directories expand into evidence files only. Every physical path, including spec-derived paths, must resolve inside the project root; absolute external paths, lexical `..` escapes, and in-project symlinks that resolve outside the project are rejected before run state is written;
 - cross receives the complete snapshot plus all accepted/current and carried judgment results.
+
+**Verify/review planning rejects an unresolvable code surface.** Before a verify/review run's input snapshot is fixed, `gate-plan` validates every acceptance item's `implementation_surface`: the exact `<pending>` placeholder is skipped (design-first), and every other value must be a single repository-relative file or directory path that resolves to at least one real file (a directory expands recursively). A semicolon list, wildcard pattern, nonexistent path, or empty directory rejects the plan with the item id, the value, and the reason — the declared surface can never silently expand to zero files. The mechanical `specflowctl validate` Check 3 applies the same rule.
 
 This separation is part of the interface. A report declaration that belongs to the run snapshot but not to the submitting packet's `read_refs` is rejected.
 
@@ -223,7 +227,7 @@ The gate chain combines two property classes. Only the first is mechanically che
 **Core-mechanical guarantees** — verified from artifacts at gate-plan, gate-submit, gate-finalize, `fresh`, and `promote` time:
 
 1. **Input snapshot consistency** — a cache is written only by a gate run whose input snapshot (fixed at `gate-plan`, before execution) was byte-unchanged at `gate-finalize`; every declared file or region resolves to the recorded content CIDs, compared byte-for-byte
-2. **Coverage** — every required check key, acceptance item, or review file is present in the cache (validate additionally requires every non-exempt appendix). Verify analysis packets are accepted or mechanically `not_required`; cross covers every current and carried judgment and every finding
+2. **Coverage** — every required check key, acceptance item, or review file is present in the cache (validate additionally requires every non-exempt appendix). Verify analysis packets are accepted or mechanically `not_required`; cross covers every current and carried judgment and every finding. The code surface cannot be empty by accident: verify/review planning rejects any non-`<pending>` `implementation_surface` that does not resolve to a real file (§Gate Work Packets → Input roles), so a file set can be empty only for `<pending>` items — a state verify Step 6 judges as MISMATCH
 3. **Output structure** — the report and cache carry the required fields per the gate's own checklist
 4. **Result closure** — cross is bound to the accepted dependency-result digests; `gate-finalize` derives result, blocking, counts, and statuses without coordinator-supplied judgment
 5. **Cache closure** — the derived result is persisted and checked through the fresh → promote chain
@@ -280,7 +284,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 | acceptance item | An entry in the spec's `acceptance_item_set` (in the `Testability / Acceptance Criteria` section), carrying id, description, verification_type, pass_condition and other fields | `framework/spec_writing_guide.md` §7 |
 | pass_condition | The condition an item must satisfy, written as verifiable assertions (e.g. "Returns HTTP 201") | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
 | verification_type | The item's verification mode: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
-| implementation_surface | The per-item code surface path the item's implementation lives under; `<pending>` is a placeholder that verify reports as MISMATCH | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
+| implementation_surface | The per-item code surface path the item's implementation lives under — a single file or directory; `<pending>` is a placeholder that verify reports as MISMATCH, and any other value that does not resolve to a real file is rejected at verify/review planning time | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
 | affects.files | The implementation files an item declares as its scope for verify | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
 | unit_refs | The frontmatter declaration of units this unit depends on (formal behavior contract); validate Check 7 reads the referenced units' contracts | `framework/spec_writing_guide.md` §4 (Unit Dependencies) |
 | rule_refs | The frontmatter declaration of rules bound to this unit; validate Check 8 reads the referenced rules | `framework/spec_writing_guide.md` §5 (Rule References) |
@@ -313,7 +317,7 @@ A sub-agent prompt is a **mission package for a zero-context worker**: the sub-a
 
 **File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 3-5. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing. For validate, the same command output supplies the spec, the appendix directory, and the dependency targets (`unit_refs` / `rule_refs`) that make up the read surface. For `validate@{rule}` — `specflowctl next` supports unit targets only — the mechanical baseline is the command target file `docs/specs/rules/candidate/{rule_id}.md`, its stable sibling `docs/specs/rules/stable/{rule_id}.md` if present (Check 4), and the unit spec files globbed under `docs/specs/units/` (Checks 5/7).
 
-An `implementation_surface` value of `<pending>` produces no file-list entry — the placeholder declares an unknown implementation surface; its judgment belongs to verify Step 6 (MISMATCH), it is never collected as a file.
+An `implementation_surface` value of `<pending>` produces no file-list entry — the placeholder declares an unknown implementation surface; its judgment belongs to verify Step 6 (MISMATCH), it is never collected as a file. A non-`<pending>` value always expands to at least one real file (planning rejects it otherwise), so an empty file list can only come from `<pending>` items.
 
 **Prohibitions:**
 

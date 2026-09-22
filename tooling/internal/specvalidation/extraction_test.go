@@ -218,3 +218,35 @@ acceptance_item_set:
 		t.Fatalf("files: expected %v, got %v", want, got)
 	}
 }
+
+// TestExtractAcceptanceFields_ItemRelativeIndent verifies item fields are read
+// at the item's own nesting: the block-sequence form (dash at the set indent)
+// and a consistently deeper item block both read the surface and the
+// affects.files list.
+func TestExtractAcceptanceFields_ItemRelativeIndent(t *testing.T) {
+	cases := []struct {
+		name  string
+		item  string
+		field string
+	}{
+		{"block sequence at the set indent", "- id: demo.core", "  "},
+		{"item block nested deeper", "    - id: demo.core", "      "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := "# Demo\n\nacceptance_item_set:\n" +
+				tc.item + "\n" +
+				tc.field + "description: Demo behavior.\n" +
+				tc.field + "implementation_surface: internal/demo\n" +
+				tc.field + "affects:\n" +
+				tc.field + "  files:\n" +
+				tc.field + "    - internal/demo/handler.go\n"
+			if got, want := ExtractImplementationSurfaces(spec), []string{"internal/demo"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("surfaces: expected %v, got %v", want, got)
+			}
+			if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("files: expected %v, got %v", want, got)
+			}
+		})
+	}
+}

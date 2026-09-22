@@ -717,6 +717,13 @@ Blocking findings found.
 func TestValidateCandidateFrontmatterDeprecated(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
+	// Create a valid candidate spec whose implementation_surface resolves.
+	internalDir := filepath.Join(repoRoot, "internal")
+	os.MkdirAll(internalDir, 0755)
+	if err := os.WriteFile(filepath.Join(internalDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Create a valid candidate spec
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
