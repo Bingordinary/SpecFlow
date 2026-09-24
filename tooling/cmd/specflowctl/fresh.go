@@ -351,6 +351,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
+	writeDeferredFindingsNote(stdout, absRoot, unitName)
 
 	aStatus, aDetail := checkAppendixGate(absRoot, unitName)
 	if aStatus != gateOK {
@@ -511,6 +512,7 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
+	writeDeferredFindingsNote(stdout, absRoot, unitName)
 
 	result := baseline.CheckUnitBaseline(absRoot, unitName)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
@@ -644,6 +646,26 @@ func checkStableRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
 		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
 	}
 	return classifyGate(result), result.Reason, result.Note
+}
+
+// writeDeferredFindingsNote reports the unit's pending deferred findings —
+// review findings another unit's synthesis routed here by recorded ownership.
+// The next review of this unit (either layer) disposes them; a malformed
+// ledger is reported instead of silently ignored.
+func writeDeferredFindingsNote(stdout io.Writer, repoRoot, unitName string) {
+	ledger, err := validationcache.ReadDeferredLedger(repoRoot)
+	if err != nil {
+		fmt.Fprintf(stdout, "  Note: %v\n", err)
+		return
+	}
+	pending := ledger.PendingForUnit(unitName)
+	if len(pending) == 0 {
+		return
+	}
+	fmt.Fprintf(stdout, "  Note: %d deferred finding(s) pending from other units — the next review@%s disposes them:\n", len(pending), unitName)
+	for _, entry := range pending {
+		fmt.Fprintf(stdout, "    [%s] %s — from %s run %s: %s\n", entry.Severity, entry.FindingID, entry.SourceUnit, entry.SourceRun, entry.Text)
+	}
 }
 
 // checkUnitGate classifies one of the unit gates (validate/verify/review)

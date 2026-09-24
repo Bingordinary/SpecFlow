@@ -81,7 +81,58 @@ func runGatePacket(args []string, stdout, stderr io.Writer) error {
 			fmt.Fprintf(stdout, "  - %s (%s):\n    %s\n", result.PacketID, result.ReportDigest, data)
 		}
 	}
+	deferred := deferredFindingsForPacket(run, spec)
+	if len(deferred) > 0 {
+		fmt.Fprintf(stdout, "Pending deferred findings (%d) — another unit's review routed them here by recorded ownership; the cross synthesis must dispose each one (retained | suppressed | merged) and may re-defer it with a `Finding ownership:` record:\n", len(deferred))
+		for _, entry := range deferred {
+			fmt.Fprintf(stdout, "  - %s [%s] — from %s run %s\n", entry.Finding.ID, entry.Finding.Severity, entry.SourceUnit, entry.SourceRun)
+			fmt.Fprintf(stdout, "    ownership reason: %s\n", entry.Reason)
+			fmt.Fprintf(stdout, "    ownership evidence: %s\n", entry.EvidencePath)
+			fmt.Fprintln(stdout, "    finding:")
+			fmt.Fprintln(stdout, indentPacketContext(entry.Finding.Detail, "      "))
+		}
+	}
 	return nil
+}
+
+// deferredFindingsForPacket selects the pending deferrals a packet executor
+// must see: the cross packet receives every pending deferral (its synthesis
+// disposes them all); a file packet receives the deferrals whose affected keys
+// name the file it reviews.
+func deferredFindingsForPacket(run *gaterun.Run, spec *gaterun.PacketSpec) []gaterun.DeferredFinding {
+	if len(run.DeferredFindings) == 0 {
+		return nil
+	}
+	switch spec.Kind {
+	case gaterun.PacketKindCross:
+		return run.DeferredFindings
+	case gaterun.PacketKindFile:
+		var out []gaterun.DeferredFinding
+		for _, deferred := range run.DeferredFindings {
+			if deferredCoversKeys(deferred, spec.CheckKeys) {
+				out = append(out, deferred)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// deferredCoversKeys reports whether a deferred finding affects one of the
+// packet's keys.
+func deferredCoversKeys(deferred gaterun.DeferredFinding, keys []string) bool {
+	for _, key := range keys {
+		if key == deferred.Finding.SourceKey {
+			return true
+		}
+		for _, affected := range deferred.Finding.AffectedKeys {
+			if affected == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func indentPacketContext(value, prefix string) string {

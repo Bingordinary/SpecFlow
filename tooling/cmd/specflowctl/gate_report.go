@@ -19,6 +19,7 @@ type parsedReport struct {
 	EffectiveStatus map[string]string
 	Dispositions    []gaterun.FindingDisposition
 	SeverityChecks  []gaterun.SeverityConfirmation
+	Ownerships      []gaterun.FindingOwnership
 	Analysis        map[string]string
 	GateFindings    string // review file packets: the gate_findings line content (`none` or [P0|P1] entries)
 }
@@ -54,6 +55,8 @@ var (
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
 	severityCheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:\s*(\S+)\s*=\s*(confirmed|adjusted)\s+(P0|P1|P2|P3)(?:\s*->\s*(P0|P1|P2|P3))?\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
 	severityCheckLineRe = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:`)
+	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
+	ownershipLineRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:`)
 )
 
 // itemDeclPrefix is the reserved declaration prefix for acceptance item
@@ -586,6 +589,24 @@ func parseCrossSynthesis(report string, out *parsedReport) error {
 				finding.AffectedKeys = append(finding.AffectedKeys, key)
 			}
 		}
+	}
+	ownershipMatches := ownershipRe.FindAllStringSubmatch(report, -1)
+	if len(ownershipMatches) != len(ownershipLineRe.FindAllString(report, -1)) {
+		return fmt.Errorf("cross report carries a malformed Finding ownership line — expected `Finding ownership: {finding_id} = owned_by {unit} — evidence: {read_ref}; reason: {one line}`")
+	}
+	ownershipSeen := map[string]bool{}
+	for _, m := range ownershipMatches {
+		id := strings.TrimSpace(m[1])
+		if ownershipSeen[id] {
+			return fmt.Errorf("cross report declares ownership for finding %q more than once", id)
+		}
+		ownershipSeen[id] = true
+		out.Ownerships = append(out.Ownerships, gaterun.FindingOwnership{
+			FindingID:    id,
+			OwnerUnit:    strings.TrimSpace(m[2]),
+			EvidencePath: strings.TrimSpace(m[3]),
+			Reason:       strings.TrimSpace(m[4]),
+		})
 	}
 	return nil
 }

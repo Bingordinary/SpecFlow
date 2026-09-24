@@ -88,6 +88,59 @@ func rewriteFindingDetailSeverity(detail, from, to string) string {
 	return detail[:idx] + "[" + to + "]" + detail[idx+len(needle):]
 }
 
+// applyOwnerships validates the cross report's ownership records against the
+// terminal retained findings and stamps each finding's OwnedBy. A finding
+// without a record stays unassigned (empty) and drives this unit's gate; a
+// record naming another unit defers the finding (see
+// framework/verification_scope.md §Gate Work Packets → Deferred findings).
+func applyOwnerships(findings []gaterun.Finding, ownerships []gaterun.FindingOwnership) ([]gaterun.Finding, error) {
+	out := append([]gaterun.Finding(nil), findings...)
+	index := make(map[string]int, len(out))
+	for i, finding := range out {
+		if _, exists := index[finding.ID]; exists {
+			return nil, fmt.Errorf("retained finding %q appears more than once", finding.ID)
+		}
+		index[finding.ID] = i
+	}
+	seen := map[string]bool{}
+	for _, ownership := range ownerships {
+		i, ok := index[ownership.FindingID]
+		if !ok {
+			return nil, fmt.Errorf("ownership record names non-terminal finding %q", ownership.FindingID)
+		}
+		if seen[ownership.FindingID] {
+			return nil, fmt.Errorf("finding %q declares ownership more than once", ownership.FindingID)
+		}
+		seen[ownership.FindingID] = true
+		if strings.TrimSpace(ownership.OwnerUnit) == "" || strings.TrimSpace(ownership.EvidencePath) == "" || strings.TrimSpace(ownership.Reason) == "" {
+			return nil, fmt.Errorf("ownership record for finding %q requires an owner unit, evidence, and reason", ownership.FindingID)
+		}
+		out[i].OwnedBy = ownership.OwnerUnit
+	}
+	return out, nil
+}
+
+// gateDriving reports whether a terminal retained finding drives the run's
+// gate: unassigned findings and findings owned by the run's own unit do;
+// findings owned by another unit are deferred — recorded, routed to the
+// owner's review, and not blocking here.
+func gateDriving(finding gaterun.Finding, unit string) bool {
+	return finding.OwnedBy == "" || finding.OwnedBy == unit
+}
+
+// splitDeferred partitions terminal retained findings into the gate-driving
+// set and the deferred set (owned by another unit). Order is preserved.
+func splitDeferred(findings []gaterun.Finding, unit string) (driving, deferred []gaterun.Finding) {
+	for _, finding := range findings {
+		if gateDriving(finding, unit) {
+			driving = append(driving, finding)
+			continue
+		}
+		deferred = append(deferred, finding)
+	}
+	return driving, deferred
+}
+
 func severityRank(severity string) (int, bool) {
 	switch severity {
 	case "P0":

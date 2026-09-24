@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,11 +25,13 @@ type reportRef struct {
 }
 
 type gateOutcome struct {
-	Result          string
-	Counts          [4]int
-	Findings        []gaterun.Finding
-	EffectiveStatus map[string]string
-	SynthesisDigest string
+	Result           string
+	Counts           [4]int
+	Findings         []gaterun.Finding
+	DeferredFindings []gaterun.Finding
+	Ownerships       []gaterun.FindingOwnership
+	EffectiveStatus  map[string]string
+	SynthesisDigest  string
 }
 
 // runGateFinalize writes the gate cache from the run's accepted packet
@@ -167,19 +170,23 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		}
 		body.WriteString(strings.TrimRight(rep.text, "\n"))
 	}
-	carriedDetails, err := retainedCarriedFindingDetails(run, reports, outcome.Findings)
+	retainedFindings := make([]gaterun.Finding, 0, len(outcome.Findings)+len(outcome.DeferredFindings))
+	retainedFindings = append(retainedFindings, outcome.Findings...)
+	retainedFindings = append(retainedFindings, outcome.DeferredFindings...)
+	retainedDetails, err := retainedFindingDetails(reports, retainedFindings)
 	if err != nil {
 		return err
 	}
-	if len(carriedDetails) > 0 {
-		body.WriteString("\n\nCarried retained findings:\n")
-		body.WriteString(strings.Join(carriedDetails, "\n\n"))
+	if len(retainedDetails) > 0 {
+		body.WriteString("\n\nAdditional retained findings:\n")
+		body.WriteString(strings.Join(retainedDetails, "\n\n"))
 	}
 	judgmentData, err := json.Marshal(gaterun.JudgmentBaseline{
-		SchemaVersion:   2,
-		LogicalStatus:   outcome.EffectiveStatus,
-		Findings:        outcome.Findings,
-		SynthesisDigest: outcome.SynthesisDigest,
+		SchemaVersion:    2,
+		LogicalStatus:    outcome.EffectiveStatus,
+		Findings:         outcome.Findings,
+		SynthesisDigest:  outcome.SynthesisDigest,
+		DeferredFindings: outcome.DeferredFindings,
 	})
 	if err != nil {
 		return fmt.Errorf("encode judgment baseline: %w", err)
@@ -248,6 +255,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := updateDeferredLedger(absRoot, run, outcome); err != nil {
+		return fmt.Errorf("%v — the cache at %s was written and is valid, but the deferred-findings ledger could not be updated; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
+	}
 	if expectedBlocked {
 		fmt.Fprintf(stdout, "Self-check: BLOCKED (result: fail — the failure record blocks promote and is the failure-recovery baseline)\n")
 	} else {
@@ -262,24 +272,123 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	return nil
 }
 
-// retainedCarriedFindingDetails returns only retained findings whose canonical
-// detail is not already present in a current packet report. Each finding id is
-// rendered once even when the baseline associated it with multiple carried
-// logical keys.
-func retainedCarriedFindingDetails(run *gaterun.Run, reports []reportRef, retained []gaterun.Finding) ([]string, error) {
+// updateDeferredLedger synchronizes the repository's deferred-findings ledger
+// with one finalized review run. It (1) consumes the owner-side entries the run
+// disposed — every pending deferral loaded at plan time is an input finding the
+// cross synthesis must dispose — and (2) supersedes this unit's own older
+// deferrals for files the run re-reviewed, then (3) records this run's new
+// deferrals. The write is idempotent: a retried finalize re-applies the same
+// removals and upserts the same entries by finding id.
+func updateDeferredLedger(absRoot string, run *gaterun.Run, outcome *gateOutcome) error {
+	if run.Gate != gaterun.GateReview || run.TargetKind != gaterun.TargetKindUnit {
+		return nil
+	}
+	ledger, err := validationcache.ReadDeferredLedger(absRoot)
+	if err != nil {
+		return err
+	}
+	current := map[string]bool{}
+	for _, spec := range run.Packets {
+		if spec.Kind == gaterun.PacketKindCross {
+			continue
+		}
+		for _, key := range spec.CheckKeys {
+			current[key] = true
+		}
+	}
+	consumed := map[string]bool{}
+	for _, deferred := range run.DeferredFindings {
+		consumed[deferred.Finding.ID] = true
+	}
+	var kept []validationcache.DeferredEntry
+	for _, entry := range ledger.Entries {
+		if entry.OwnerUnit == run.TargetName && consumed[entry.FindingID] {
+			continue
+		}
+		if entry.SourceUnit == run.TargetName && entryCoversCurrent(entry, current) {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	ownershipByID := map[string]gaterun.FindingOwnership{}
+	for _, ownership := range outcome.Ownerships {
+		ownershipByID[ownership.FindingID] = ownership
+	}
+	for _, finding := range outcome.DeferredFindings {
+		ownership, ok := ownershipByID[finding.ID]
+		if !ok {
+			return fmt.Errorf("deferred finding %q has no ownership record", finding.ID)
+		}
+		entry := validationcache.DeferredEntry{
+			FindingID:    finding.ID,
+			OwnerUnit:    ownership.OwnerUnit,
+			SourceUnit:   run.TargetName,
+			SourceRun:    run.RunID,
+			Severity:     finding.Severity,
+			Text:         finding.Text,
+			Detail:       finding.Detail,
+			SourceKey:    finding.SourceKey,
+			AffectedKeys: append([]string(nil), finding.AffectedKeys...),
+			EvidencePath: ownership.EvidencePath,
+			Reason:       ownership.Reason,
+		}
+		replaced := false
+		for i := range kept {
+			if kept[i].FindingID == entry.FindingID {
+				kept[i] = entry
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			kept = append(kept, entry)
+		}
+	}
+	if sameDeferredEntries(kept, ledger.Entries) {
+		return nil
+	}
+	return validationcache.WriteDeferredLedger(absRoot, validationcache.DeferredLedger{Entries: kept})
+}
+
+// sameDeferredEntries reports whether two entry slices are equal in order and
+// content — a finalize that changes nothing must not rewrite the ledger.
+func sameDeferredEntries(a, b []validationcache.DeferredEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !reflect.DeepEqual(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// entryCoversCurrent reports whether any of the entry's affected keys was
+// re-reviewed by the run (its current file packets).
+func entryCoversCurrent(entry validationcache.DeferredEntry, current map[string]bool) bool {
+	if current[entry.SourceKey] {
+		return true
+	}
+	for _, key := range entry.AffectedKeys {
+		if current[key] {
+			return true
+		}
+	}
+	return false
+}
+
+// retainedFindingDetails returns the renderable block of every terminal
+// retained finding whose canonical detail is not already present in a current
+// packet report — a finding carried over from the baseline, deferred by this
+// run's cross synthesis, or routed in from another unit's review. Every
+// terminal retained finding keeps its complete block in the human-readable
+// body exactly once; a finding already rendered by a packet report is skipped.
+func retainedFindingDetails(reports []reportRef, retained []gaterun.Finding) ([]string, error) {
 	current := map[string]bool{}
 	for _, report := range reports {
 		for _, finding := range resultFindings(report.result) {
 			current[finding.ID] = true
-		}
-	}
-	carried := map[string]gaterun.Finding{}
-	for i := range run.CarriedResults {
-		for _, finding := range resultFindings(&run.CarriedResults[i]) {
-			if prior, ok := carried[finding.ID]; ok && prior.Detail != finding.Detail {
-				return nil, fmt.Errorf("carried finding %q has conflicting renderable detail", finding.ID)
-			}
-			carried[finding.ID] = finding
 		}
 	}
 	seen := map[string]bool{}
@@ -288,13 +397,9 @@ func retainedCarriedFindingDetails(run *gaterun.Run, reports []reportRef, retain
 		if seen[finding.ID] || current[finding.ID] {
 			continue
 		}
-		_, ok := carried[finding.ID]
-		if !ok {
-			continue
-		}
 		detail := strings.TrimSpace(finding.Detail)
 		if detail == "" {
-			return nil, fmt.Errorf("carried finding %q has no renderable detail — run the full command", finding.ID)
+			return nil, fmt.Errorf("retained finding %q has no renderable detail — run the full command", finding.ID)
 		}
 		seen[finding.ID] = true
 		details = append(details, detail)
@@ -425,6 +530,9 @@ func deriveGateOutcome(_ string, run *gaterun.Run, reports []reportRef) (*gateOu
 		for i := range run.CarriedResults {
 			inputFindings = append(inputFindings, resultFindings(&run.CarriedResults[i])...)
 		}
+		for _, deferred := range run.DeferredFindings {
+			inputFindings = append(inputFindings, deferred.Finding)
+		}
 		retained, err := resolveCrossFindings(inputFindings, cross.result.Findings, cross.result.Dispositions)
 		if err != nil {
 			return nil, fmt.Errorf("gate-finalize rejected invalid cross synthesis: %w", err)
@@ -433,7 +541,15 @@ func deriveGateOutcome(_ string, run *gaterun.Run, reports []reportRef) (*gateOu
 		if err != nil {
 			return nil, fmt.Errorf("gate-finalize rejected invalid severity synthesis: %w", err)
 		}
-		out.Findings = retained
+		if len(cross.result.Ownerships) > 0 && run.Gate != gaterun.GateReview {
+			return nil, fmt.Errorf("gate-finalize rejected invalid ownership synthesis: ownership records are review-only — the %s gate has no ownership dimension", run.Gate)
+		}
+		retained, err = applyOwnerships(retained, cross.result.Ownerships)
+		if err != nil {
+			return nil, fmt.Errorf("gate-finalize rejected invalid ownership synthesis: %w", err)
+		}
+		out.Findings, out.DeferredFindings = splitDeferred(retained, run.TargetName)
+		out.Ownerships = cross.result.Ownerships
 		for key, status := range cross.result.EffectiveStatus {
 			out.EffectiveStatus[key] = status
 		}

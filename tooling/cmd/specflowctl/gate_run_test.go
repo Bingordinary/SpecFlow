@@ -1533,7 +1533,7 @@ func TestReviewDeltaRendersRetainedCarriedFindingExactlyOnce(t *testing.T) {
 		t.Fatalf("cache has no judgment marker: %s", cache)
 	}
 	body := parts[1]
-	if strings.Count(body, findingLine) != 1 || !strings.Contains(body, detailLines) || !strings.Contains(body, "Carried retained findings:") {
+	if strings.Count(body, findingLine) != 1 || !strings.Contains(body, detailLines) || !strings.Contains(body, "Additional retained findings:") {
 		t.Fatalf("expected the complete carried finding exactly once in the human-readable body, got:\n%s", body)
 	}
 }

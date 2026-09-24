@@ -146,6 +146,22 @@ type Finding struct {
 	Detail       string   `json:"detail"`
 	SourceKey    string   `json:"source_key,omitempty"`
 	AffectedKeys []string `json:"affected_keys,omitempty"`
+	// OwnedBy is the unit whose behavior the finding belongs to, set by the
+	// cross synthesis's ownership records. Empty means unassigned: the finding
+	// drives this unit's gate. A finding owned by another unit is deferred —
+	// recorded and routed to the owner's review, not blocking this run (see
+	// framework/verification_scope.md §Gate Work Packets → Deferred findings).
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+// FindingOwnership is the cross synthesis's evidence-backed ownership record
+// for one terminal retained finding: the recorded ownership statement that
+// routes a finding to another unit. A finding without a record is unassigned.
+type FindingOwnership struct {
+	FindingID    string `json:"finding_id"`
+	OwnerUnit    string `json:"owner_unit"`
+	EvidencePath string `json:"evidence_path"`
+	Reason       string `json:"reason"`
 }
 
 // Scope is one dependency declaration parsed from a packet report.
@@ -189,6 +205,7 @@ type PacketResult struct {
 	EffectiveStatus map[string]string      `json:"effective_status,omitempty"`
 	Dispositions    []FindingDisposition   `json:"dispositions,omitempty"`
 	SeverityChecks  []SeverityConfirmation `json:"severity_confirmations,omitempty"`
+	Ownerships      []FindingOwnership     `json:"ownerships,omitempty"`
 	Analysis        map[string]string      `json:"analysis,omitempty"`
 	ReportDigest    string                 `json:"report_digest"`
 }
@@ -200,6 +217,24 @@ type JudgmentBaseline struct {
 	LogicalStatus   map[string]string `json:"logical_status"`
 	Findings        []Finding         `json:"findings"`
 	SynthesisDigest string            `json:"synthesis_digest"`
+	// DeferredFindings records the run's findings whose ownership points at
+	// another unit. They are audit state, not carry state: routing lives in the
+	// deferred-findings ledger, and a later run of this unit must not re-dispose
+	// them (see framework/validation_cache.md §Format → Deferred-findings ledger).
+	DeferredFindings []Finding `json:"deferred_findings,omitempty"`
+}
+
+// DeferredFinding is one pending review finding routed to this run's unit by
+// another unit's review synthesis. The plan loads it from the deferred-
+// findings ledger, the cross synthesis must dispose it, and gate-finalize
+// consumes the ledger entry it resolved (see framework/verification_scope.md
+// §Gate Work Packets → Deferred findings).
+type DeferredFinding struct {
+	SourceUnit   string  `json:"source_unit"`
+	SourceRun    string  `json:"source_run"`
+	EvidencePath string  `json:"evidence_path"`
+	Reason       string  `json:"reason"`
+	Finding      Finding `json:"finding"`
 }
 
 // Attempt is one submission of a packet report. Every submission is recorded —
@@ -266,6 +301,9 @@ type Run struct {
 	RerunKeys       []string               `json:"rerun_keys,omitempty"`
 	Packets         []PacketSpec           `json:"packets"`
 	CarriedResults  []PacketResult         `json:"carried_results,omitempty"`
+	// DeferredFindings are the pending deferrals this run's unit must dispose,
+	// loaded from the deferred-findings ledger at plan time (review runs only).
+	DeferredFindings []DeferredFinding `json:"deferred_findings,omitempty"`
 	// Notices records plan-time disclosures (delta scope derivation, carried
 	// checks, conservative degradations) for gate-status and the plan output.
 	Notices []string `json:"notices,omitempty"`
@@ -488,6 +526,18 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	}
 	run.RequiredFiles = required
 	run.Notices = notices
+
+	// A review run consumes the unit's pending deferrals: findings another
+	// unit's review routed here by recorded ownership. Loading them at plan
+	// time makes them part of the run's immutable input — the cross synthesis
+	// must dispose every one of them, exactly like a carried judgment.
+	if gate == GateReview && targetKind == TargetKindUnit {
+		deferred, derr := loadDeferredFindings(repoRoot, targetName)
+		if derr != nil {
+			return nil, derr
+		}
+		run.DeferredFindings = deferred
+	}
 
 	if err := removeRunsFor(repoRoot, gate, targetKind, targetName, target); err != nil {
 		return nil, err

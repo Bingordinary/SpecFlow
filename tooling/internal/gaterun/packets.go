@@ -12,6 +12,35 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
+// loadDeferredFindings materializes the unit's pending deferred findings from
+// the repository's deferred-findings ledger. A malformed ledger fails the
+// plan closed: a corrupted routing state must never silently drop a finding.
+func loadDeferredFindings(repoRoot, unitName string) ([]DeferredFinding, error) {
+	ledger, err := validationcache.ReadDeferredLedger(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	var out []DeferredFinding
+	for _, entry := range ledger.PendingForUnit(unitName) {
+		out = append(out, DeferredFinding{
+			SourceUnit:   entry.SourceUnit,
+			SourceRun:    entry.SourceRun,
+			EvidencePath: entry.EvidencePath,
+			Reason:       entry.Reason,
+			Finding: Finding{
+				ID:           entry.FindingID,
+				Severity:     entry.Severity,
+				Text:         entry.Text,
+				Detail:       entry.Detail,
+				SourceKey:    entry.SourceKey,
+				AffectedKeys: append([]string(nil), entry.AffectedKeys...),
+				OwnedBy:      entry.OwnerUnit,
+			},
+		})
+	}
+	return out, nil
+}
+
 func loadCarriedResults(repoRoot string, run *Run, carried []string) ([]PacketResult, error) {
 	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {

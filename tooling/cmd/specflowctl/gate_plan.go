@@ -82,6 +82,13 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	if len(run.CarriedKeys) > 0 {
 		fmt.Fprintf(stdout, "Carried over: %s\n", strings.Join(run.CarriedKeys, ", "))
 	}
+	if len(run.DeferredFindings) > 0 {
+		fmt.Fprintf(stdout, "Pending deferred findings (%d) — this review must dispose them in the cross synthesis:\n", len(run.DeferredFindings))
+		for _, deferred := range run.DeferredFindings {
+			fmt.Fprintf(stdout, "  [%s] %s — from %s run %s: %s\n",
+				deferred.Finding.Severity, deferred.Finding.ID, deferred.SourceUnit, deferred.SourceRun, deferred.Finding.Text)
+		}
+	}
 	for _, notice := range run.Notices {
 		fmt.Fprintf(stdout, "Notice: %s\n", notice)
 	}

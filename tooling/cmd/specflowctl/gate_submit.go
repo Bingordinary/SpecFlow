@@ -158,6 +158,9 @@ func normalizeDeclaredPaths(absRoot string, parsed *parsedReport) {
 	for i := range parsed.SeverityChecks {
 		parsed.SeverityChecks[i].EvidencePath = gaterun.CanonicalDeclPath(absRoot, parsed.SeverityChecks[i].EvidencePath)
 	}
+	for i := range parsed.Ownerships {
+		parsed.Ownerships[i].EvidencePath = gaterun.CanonicalDeclPath(absRoot, parsed.Ownerships[i].EvidencePath)
+	}
 }
 
 // validatePacketDeclarations validates every dependency-scope line's path
@@ -211,6 +214,9 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport) error {
 	if len(parsed.SeverityChecks) > 0 && spec.Kind != gaterun.PacketKindCross && !(spec.Kind == gaterun.PacketKindChecks && run.TargetKind == gaterun.TargetKindRule) {
 		return errors.New("severity confirmations belong to the unit cross packet or the single rule-validate checks packet")
+	}
+	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.PacketKindCross {
+		return errors.New("ownership records belong to the cross packet")
 	}
 	switch spec.Kind {
 	case gaterun.PacketKindItem:
@@ -319,6 +325,9 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 			inputFindings = append(inputFindings, finding)
 		}
 	}
+	for _, deferred := range run.DeferredFindings {
+		inputFindings = append(inputFindings, deferred.Finding)
+	}
 
 	for key := range expectedStatus {
 		if _, ok := parsed.EffectiveStatus[key]; !ok {
@@ -344,6 +353,10 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 	if err != nil {
 		return err
 	}
+	retained, err = validateOwnerships(absRoot, run, run.PacketByID(gaterun.CrossKey), parsed, retained)
+	if err != nil {
+		return err
+	}
 	wantStatus := make(map[string]string, len(expectedStatus))
 	for key := range expectedStatus {
 		if key != gaterun.CrossKey {
@@ -355,7 +368,9 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 			if !expectedStatus[key] || key == gaterun.CrossKey {
 				return fmt.Errorf("retained finding %q affects invalid logical key %q", finding.ID, key)
 			}
-			wantStatus[key] = "fail"
+			if gateDriving(finding, run.TargetName) {
+				wantStatus[key] = "fail"
+			}
 		}
 	}
 	for key, want := range wantStatus {
@@ -374,12 +389,12 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 		}
 		var canonicalCrossFindings []gaterun.Finding
 		for _, finding := range retained {
-			if newIDs[finding.ID] {
+			if newIDs[finding.ID] && gateDriving(finding, run.TargetName) {
 				canonicalCrossFindings = append(canonicalCrossFindings, finding)
 			}
 		}
 		if blockingFindingCount(canonicalCrossFindings) == 0 {
-			return errors.New("Cross-check FAIL requires at least one new P0/P1 cross finding")
+			return errors.New("Cross-check FAIL requires at least one new P0/P1 cross finding owned by this unit or unassigned")
 		}
 	}
 	if parsed.EffectiveStatus[gaterun.CrossKey] != wantCrossStatus {
@@ -401,18 +416,53 @@ func validateSeverityConfirmations(absRoot string, run *gaterun.Run, spec *gater
 		if !run.PacketAllowsDeclaration(absRoot, spec, confirmation.EvidencePath) {
 			return nil, fmt.Errorf("severity confirmation for finding %q cites %q outside packet %q's read refs", confirmation.FindingID, confirmation.EvidencePath, spec.PacketID)
 		}
-		declared := false
-		for _, scope := range parsed.Scopes {
-			if scope.Path != confirmation.EvidencePath {
-				continue
-			}
-			if spec.Kind != gaterun.PacketKindCross || scope.Key == gaterun.CrossKey {
-				declared = true
-				break
-			}
-		}
-		if !declared {
+		if !packetDeclaresPath(spec, parsed, confirmation.EvidencePath) {
 			return nil, fmt.Errorf("severity confirmation for finding %q cites %q without a matching Dependency scope declaration", confirmation.FindingID, confirmation.EvidencePath)
+		}
+	}
+	return canonical, nil
+}
+
+// packetDeclaresPath reports whether the report carries a Dependency scope
+// declaration for path. A cross packet's evidence must be covered by a `cross`
+// scope line; other packet kinds match any of their own declarations.
+func packetDeclaresPath(spec *gaterun.PacketSpec, parsed *parsedReport, path string) bool {
+	for _, scope := range parsed.Scopes {
+		if scope.Path != path {
+			continue
+		}
+		if spec.Kind != gaterun.PacketKindCross || scope.Key == gaterun.CrossKey {
+			return true
+		}
+	}
+	return false
+}
+
+// validateOwnerships applies the cross report's ownership records to the
+// terminal retained findings. Each record must cite evidence inside the cross
+// packet's read refs, covered by a `cross` dependency-scope declaration, and
+// name a unit that exists in the repository — a deferral to a nonexistent
+// unit would route the finding nowhere, so it fails closed here.
+func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport, findings []gaterun.Finding) ([]gaterun.Finding, error) {
+	if len(parsed.Ownerships) > 0 && run.Gate != gaterun.GateReview {
+		return nil, fmt.Errorf("ownership records are review-only — the %s gate has no ownership dimension", run.Gate)
+	}
+	canonical, err := applyOwnerships(findings, parsed.Ownerships)
+	if err != nil {
+		return nil, err
+	}
+	for _, ownership := range parsed.Ownerships {
+		if !run.PacketAllowsDeclaration(absRoot, spec, ownership.EvidencePath) {
+			return nil, fmt.Errorf("ownership record for finding %q cites %q outside packet %q's read refs", ownership.FindingID, ownership.EvidencePath, spec.PacketID)
+		}
+		if !packetDeclaresPath(spec, parsed, ownership.EvidencePath) {
+			return nil, fmt.Errorf("ownership record for finding %q cites %q without a matching Dependency scope declaration", ownership.FindingID, ownership.EvidencePath)
+		}
+		if err := specpaths.ValidateTargetName("unit", ownership.OwnerUnit); err != nil {
+			return nil, fmt.Errorf("ownership record for finding %q: %w", ownership.FindingID, err)
+		}
+		if specpaths.ResolveUnitFile(absRoot, ownership.OwnerUnit) == "" {
+			return nil, fmt.Errorf("ownership record for finding %q names unit %q, which exists in no layer — a deferral must route to a real unit", ownership.FindingID, ownership.OwnerUnit)
 		}
 	}
 	return canonical, nil
@@ -452,6 +502,7 @@ func packetResult(spec *gaterun.PacketSpec, parsed *parsedReport, digest string)
 		EffectiveStatus: parsed.EffectiveStatus,
 		Dispositions:    parsed.Dispositions,
 		SeverityChecks:  parsed.SeverityChecks,
+		Ownerships:      parsed.Ownerships,
 		Analysis:        parsed.Analysis,
 		ReportDigest:    digest,
 	}
