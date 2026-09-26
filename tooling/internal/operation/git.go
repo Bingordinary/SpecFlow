@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 )
 
 // git runs one read-only git command in dir and returns stdout.
@@ -27,30 +29,9 @@ func git(dir string, args ...string) (string, error) {
 
 // requireWorkTreeTop verifies that repoRoot is the git worktree top level, so
 // the repository-relative paths reported by git match the operation state's
-// path space. The comparison resolves symlinks on both sides (macOS /var ->
-// /private/var).
+// path space.
 func requireWorkTreeTop(repoRoot string) error {
-	out, err := git(repoRoot, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return fmt.Errorf("resolve git worktree: %w", err)
-	}
-	top := strings.TrimSpace(out)
-	if top == "" {
-		return fmt.Errorf("resolve git worktree: empty top-level path")
-	}
-	top = filepath.Clean(top)
-	resolvedRoot := repoRoot
-	if r, err := filepath.EvalSymlinks(repoRoot); err == nil {
-		resolvedRoot = r
-	}
-	resolvedTop := top
-	if r, err := filepath.EvalSymlinks(top); err == nil {
-		resolvedTop = r
-	}
-	if resolvedRoot != resolvedTop {
-		return fmt.Errorf("--repo-root %q is not the git worktree top level (%q); run from the repository root", repoRoot, top)
-	}
-	return nil
+	return repofiles.RequireWorkTreeTop(repoRoot)
 }
 
 // resolveCommit resolves a git ref to the full commit SHA.

@@ -2,11 +2,11 @@ package specvalidation
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 )
 
@@ -44,15 +44,16 @@ func FormatSurfaceProblems(problems []SurfaceProblem) string {
 // item's implementation_surface against the working tree. The exact
 // <pending> placeholder is the legal design-first value and is skipped; every
 // other item must declare a single repository-relative path that resolves, as
-// written, to at least one real file (a directory is expanded recursively, so
-// an empty directory is not a usable surface). Resolution is the only
-// judgment: the value is matched literally, so an existing path is accepted
-// whatever characters it contains, and a value that does not resolve — a
-// semicolon list or wildcard pattern is not a path — is reported with the
-// item id and the mechanical reason. An empty result means every declared
-// surface is usable. Mechanical validate Check 3 and gate-plan share this
-// check, so a declared surface that cannot expand to a code file never
-// silently produces an empty file set.
+// written, to at least one real file (a directory expands to the files Git
+// tracks or leaves untracked and unignored, so a directory holding only
+// ignored files is not a usable surface). Resolution is the only judgment:
+// the value is matched literally, so an existing path is accepted whatever
+// characters it contains, and a value that does not resolve — a semicolon
+// list or wildcard pattern is not a path — is reported with the item id and
+// the mechanical reason. An empty result means every declared surface is
+// usable. Mechanical validate Check 3 and gate-plan share this check, so a
+// declared surface that cannot expand to a code file never silently produces
+// an empty file set.
 func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem {
 	var problems []SurfaceProblem
 	for _, item := range parseAcceptanceItems(specContent) {
@@ -95,22 +96,12 @@ func surfaceValueProblem(repoRoot, value string) string {
 	if !info.IsDir() {
 		return ""
 	}
-	found := false
-	walkErr := filepath.WalkDir(abs, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			found = true
-			return fs.SkipAll
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return fmt.Sprintf("cannot be expanded: %v", walkErr)
+	files, err := repofiles.ExpandDir(repoRoot, canonical)
+	if err != nil {
+		return fmt.Sprintf("cannot be expanded: %v", err)
 	}
-	if !found {
-		return "directory contains no files"
+	if len(files) == 0 {
+		return "directory contains no files — a directory surface expands to the files Git tracks or leaves untracked and unignored"
 	}
 	return ""
 }

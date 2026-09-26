@@ -51,7 +51,7 @@ func writeCandidate(t *testing.T, repoRoot, unitName, content string) {
 // ---------------------------------------------------------------------------
 
 func TestCheckFrontmatter_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	result := checkFrontmatter(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -63,7 +63,7 @@ func TestCheckFrontmatter_Pass(t *testing.T) {
 }
 
 func TestCheckFrontmatter_MissingSpec(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	result := checkFrontmatter(repoRoot, "nonexistent")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for missing spec file")
@@ -71,7 +71,7 @@ func TestCheckFrontmatter_MissingSpec(t *testing.T) {
 }
 
 func TestCheckFrontmatter_WrongID(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: other_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	result := checkFrontmatter(repoRoot, "test_unit")
@@ -81,7 +81,7 @@ func TestCheckFrontmatter_WrongID(t *testing.T) {
 }
 
 func TestCheckFrontmatter_MissingField(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Missing version field
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n")
@@ -96,7 +96,7 @@ func TestCheckFrontmatter_MissingField(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckAcceptanceItems_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -115,7 +115,7 @@ func TestCheckAcceptanceItems_Pass(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_MissingSet(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit") // no acceptance_item_set
 	result := checkAcceptanceItems(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -124,7 +124,7 @@ func TestCheckAcceptanceItems_MissingSet(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n")
@@ -136,7 +136,7 @@ func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -151,7 +151,7 @@ func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -170,7 +170,7 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_EmptyImplementationSurfacePass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -190,7 +190,7 @@ func TestCheckAcceptanceItems_EmptyImplementationSurfacePass(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// <pending> is the legal design-first placeholder — the path is not yet
 	// known; verify blocks on any leftover <pending>.
 	writeCandidate(t, repoRoot, "test_unit",
@@ -215,7 +215,7 @@ func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestCheckAnchors_NoEntriesPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit") // no affects.files
 	result := checkAnchors(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -224,7 +224,7 @@ func TestCheckAnchors_NoEntriesPass(t *testing.T) {
 }
 
 func TestCheckAnchors_ExistingFilePass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Create a source file that will be referenced
 	srcDir := filepath.Join(repoRoot, "src")
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
@@ -254,7 +254,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 }
 
 func TestCheckAnchors_MissingFileFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -276,7 +276,7 @@ func TestCheckAnchors_MissingFileFail(t *testing.T) {
 }
 
 func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
 		t.Fatal(err)
@@ -315,7 +315,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 }
 
 func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 }
 
 func TestCheckAnchors_RetiredSpecExempt(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// A retiring spec is removed from stable — its affects.files anchors are
 	// not required, even when the referenced implementation is gone.
 	writeCandidate(t, repoRoot, "test_unit",
@@ -376,7 +376,7 @@ func TestCheckAnchors_RetiredSpecExempt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckReferences_PassNone(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit") // unit_refs: none
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -385,7 +385,7 @@ func TestCheckReferences_PassNone(t *testing.T) {
 }
 
 func TestCheckReferences_MissingRefFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - auth@0.1.0\nrule_refs: none\n---\n")
@@ -397,7 +397,7 @@ func TestCheckReferences_MissingRefFail(t *testing.T) {
 }
 
 func TestCheckReferences_CandidateRefPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Create the referenced candidate unit (candidate-first resolution)
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(candidateDir, 0755); err != nil {
@@ -417,7 +417,7 @@ func TestCheckReferences_CandidateRefPass(t *testing.T) {
 }
 
 func TestCheckReferences_StableRefPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Create the referenced stable unit (no candidate, fallback to stable)
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
@@ -437,7 +437,7 @@ func TestCheckReferences_StableRefPass(t *testing.T) {
 }
 
 func TestCheckReferences_RefNotFoundFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs:\n  - nonexistent_unit\nrule_refs: none\n---\n")
@@ -448,7 +448,7 @@ func TestCheckReferences_RefNotFoundFail(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredTargetFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// The referenced unit exists in the candidate layer but is being retired
 	// — its stable copy will be deleted on promote, so the reference cannot
 	// survive.
@@ -473,7 +473,7 @@ func TestCheckReferences_RetiredTargetFail(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredStatusIgnoredForRules(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	if err := os.MkdirAll(ruleDir, 0755); err != nil {
 		t.Fatal(err)
@@ -496,7 +496,7 @@ func TestCheckReferences_RetiredStatusIgnoredForRules(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredAppendixInAffectsFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// An acceptance item references a candidate appendix that is being
 	// retired — the reference breaks on promote and must be rejected.
 	writeAppendix(t, repoRoot, "test_unit", "legacy",
@@ -525,7 +525,7 @@ func TestCheckReferences_RetiredAppendixInAffectsFail(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredEvidenceRefFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// evidence_appendix_ref points at a candidate appendix that is being
 	// retired — the field must be dropped before the appendix retires.
 	writeAppendix(t, repoRoot, "test_unit", "evidence",
@@ -543,7 +543,7 @@ func TestCheckReferences_RetiredEvidenceRefFail(t *testing.T) {
 }
 
 func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// An affects.appendices entry pointing at an active appendix is legal.
 	writeAppendix(t, repoRoot, "test_unit", "api",
 		"unit: test_unit\n")
@@ -557,7 +557,7 @@ func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredAppendixInAffectsInlineFlowFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// The inline YAML flow form of affects.appendices must be rejected like
 	// the block form when it references a retiring appendix.
 	writeAppendix(t, repoRoot, "test_unit", "legacy",
@@ -676,7 +676,7 @@ func TestExtractAffectsAppendices(t *testing.T) {
 }
 
 func TestCheckReferences_RetiredSpecOwnRefsExempt(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// A retiring spec's own references disappear with it — referencing a
 	// retiring appendix from a retiring spec is not checked.
 	writeAppendix(t, repoRoot, "test_unit", "evidence",
@@ -708,7 +708,7 @@ func writeAppendix(t *testing.T, repoRoot, unitName, appendixName, frontmatter s
 }
 
 func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -717,7 +717,7 @@ func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
 }
 
 func TestCheckAppendices_CorrectFrontmatterPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "api",
 		"unit: test_unit\n")
@@ -728,7 +728,7 @@ func TestCheckAppendices_CorrectFrontmatterPass(t *testing.T) {
 }
 
 func TestCheckAppendices_WrongUnitFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "api",
 		"unit: wrong_unit\n")
@@ -742,7 +742,7 @@ func TestCheckAppendices_WrongUnitFail(t *testing.T) {
 }
 
 func TestCheckAppendices_ExemptAppendixSkip(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
 		"unit: test_unit\nstatus: exempt\n")
@@ -753,7 +753,7 @@ func TestCheckAppendices_ExemptAppendixSkip(t *testing.T) {
 }
 
 func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
 		"unit: wrong_unit\nstatus: exempt\n")
@@ -764,7 +764,7 @@ func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
 }
 
 func TestCheckAppendices_RetiredAppendixSkip(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
 		"unit: wrong_unit\nstatus: retired\n")
@@ -775,7 +775,7 @@ func TestCheckAppendices_RetiredAppendixSkip(t *testing.T) {
 }
 
 func TestCheckAcceptanceItems_RetiredSpecExempt(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\n"+
 			"unit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
@@ -790,7 +790,7 @@ func TestCheckAcceptanceItems_RetiredSpecExempt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckVersionConsistency_PassNoVersionRefs(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit") // unit_refs: none
 	result := checkVersionConsistency(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -799,7 +799,7 @@ func TestCheckVersionConsistency_PassNoVersionRefs(t *testing.T) {
 }
 
 func TestCheckVersionConsistency_MismatchFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Create stable unit with version 0.2.0
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
@@ -820,7 +820,7 @@ func TestCheckVersionConsistency_MismatchFail(t *testing.T) {
 }
 
 func TestCheckVersionConsistency_MatchPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// Create stable unit with version 0.1.0
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
@@ -841,7 +841,7 @@ func TestCheckVersionConsistency_MatchPass(t *testing.T) {
 }
 
 func TestCheckVersionConsistency_RetiredSpecExempt(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// The referenced unit has moved to 0.2.0, leaving the retiring spec's
 	// version pin stale — the pin disappears with the retiring spec, so the
 	// version-consistency check is skipped like the reference-integrity check.
@@ -867,7 +867,7 @@ func TestCheckVersionConsistency_RetiredSpecExempt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckLayerPaths_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nThis unit depends on the token claims design of unit_auth_account_token_claims.\n")
@@ -878,7 +878,7 @@ func TestCheckLayerPaths_Pass(t *testing.T) {
 }
 
 func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/candidate/unit_auth.md for details.\n")
@@ -889,7 +889,7 @@ func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
 }
 
 func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nApplies docs/specs/rules/candidate/g_rule_naming.md.\n")
@@ -900,7 +900,7 @@ func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
 }
 
 func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee candidate/unit_auth.md for details.\n")
@@ -911,7 +911,7 @@ func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 }
 
 func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nClaims structure: candidate/appendix/unit_auth_account_token_claims.md\n")
@@ -922,7 +922,7 @@ func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
 }
 
 func TestCheckLayerPaths_CodePathNoFalsePositive(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nThe handler lives at src/candidate/handler.go.\n")
@@ -936,7 +936,7 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 	// Stable-layer spec paths are legal in structured fields (they stay
 	// valid after promote) and are not mechanically distinguishable from
 	// prose by a string-level check — the agent checklist covers prose.
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/stable/unit_payment.md.\n")
@@ -947,7 +947,7 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 }
 
 func TestCheckLayerPaths_AppendixFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
@@ -965,7 +965,7 @@ func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 }
 
 func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
@@ -983,7 +983,7 @@ func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
 }
 
 func TestCheckLayerPaths_RetiredSpecExempt(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// A retiring spec is removed from stable — layer-prefix references in its
 	// body have no post-promote target and are not checked.
 	writeCandidate(t, repoRoot, "test_unit",
@@ -996,7 +996,7 @@ func TestCheckLayerPaths_RetiredSpecExempt(t *testing.T) {
 }
 
 func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// A retiring unit takes every appendix with it: the appendix layer-path
 	// scan has no post-promote target and must be skipped together with the
 	// main spec (unit_validate_checklist.md: a retiring spec skips Check 7).
@@ -1047,7 +1047,7 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 }
 
 func TestValidateCandidate_IntegrationPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "test_unit")
 
 	result := ValidateCandidate(repoRoot, "test_unit")
@@ -1065,7 +1065,7 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 }
 
 func TestValidateCandidate_UnitNameInOutput(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "my_unit")
 
 	result := ValidateCandidate(repoRoot, "my_unit")
@@ -1075,7 +1075,7 @@ func TestValidateCandidate_UnitNameInOutput(t *testing.T) {
 }
 
 func TestFormatResult_Output(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "test_unit")
 
 	result := ValidateCandidate(repoRoot, "test_unit")
@@ -1100,7 +1100,7 @@ func TestFormatResult_Output(t *testing.T) {
 }
 
 func TestValidateCandidate_PassOutput(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "test_unit")
 
 	result := ValidateCandidate(repoRoot, "test_unit")
@@ -1145,7 +1145,7 @@ func writeCandidateWithRefs(t *testing.T, repoRoot, unitName, unitRefs, ruleRefs
 }
 
 func TestCheckDependencyCycles_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
 	writeCandidateWithRefs(t, repoRoot, "payment", "none", "none")
 
@@ -1156,7 +1156,7 @@ func TestCheckDependencyCycles_Pass(t *testing.T) {
 }
 
 func TestCheckDependencyCycles_FailsBothCycleMembers(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
 	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
 
@@ -1175,7 +1175,7 @@ func TestCheckDependencyCycles_FailsBothCycleMembers(t *testing.T) {
 }
 
 func TestCheckDependencyCycles_OutsideUnitUnaffected(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
 	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
 	writeCandidateWithRefs(t, repoRoot, "session", "[auth]", "none")
@@ -1187,7 +1187,7 @@ func TestCheckDependencyCycles_OutsideUnitUnaffected(t *testing.T) {
 }
 
 func TestCheckDependencyCycles_TransitiveCycle(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "a", "[b]", "none")
 	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
 	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
@@ -1202,7 +1202,7 @@ func TestCheckDependencyCycles_TransitiveCycle(t *testing.T) {
 }
 
 func TestCheckDependencyCycles_RetiringSpecSkipped(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "auth", "---\nid: auth\nstatus: retired\nversion: 1.0.0\nunit_refs: [payment]\nrule_refs: none\n---\n")
 	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
 
@@ -1219,7 +1219,7 @@ func TestCheckDependencyCycles_RetiringSpecSkipped(t *testing.T) {
 // The unit that does reference the retiring unit ("c") is still rejected —
 // but by the reference-integrity check (Check 4), not by the cycle check.
 func TestCheckDependencyCycles_RetiringUnitEdgesDoNotAffectOthers(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "a", "---\nid: a\nstatus: retired\nversion: 1.0.0\nunit_refs: [b]\nrule_refs: none\n---\n")
 	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
 	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
@@ -1238,7 +1238,7 @@ func TestCheckDependencyCycles_RetiringUnitEdgesDoNotAffectOthers(t *testing.T) 
 }
 
 func TestCheckDependencyCycles_BuildFailureCarriesGuidance(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "auth", "none", "none")
 	// Make the stable units path a regular file so graph build fails for a
 	// reason unrelated to the validated unit (ReadDir yields ENOTDIR).
@@ -1259,7 +1259,7 @@ func TestCheckDependencyCycles_BuildFailureCarriesGuidance(t *testing.T) {
 }
 
 func TestValidateCandidate_FailsOnCycle(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
 	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
 
@@ -1283,7 +1283,7 @@ func TestValidateCandidate_FailsOnCycle(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckRegionLocatability_Pass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "ok",
 		"---\nid: ok\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"\n# OK Unit\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
@@ -1294,7 +1294,7 @@ func TestCheckRegionLocatability_Pass(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_NoHeadingFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "flat",
 		"---\nid: flat\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "flat")
@@ -1307,7 +1307,7 @@ func TestCheckRegionLocatability_NoHeadingFails(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "dup",
 		"---\nid: dup\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Notes\n\nFirst.\n\n## Notes\n\nSecond.\n")
 	result := checkRegionLocatability(repoRoot, "dup")
@@ -1320,7 +1320,7 @@ func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "dupitem",
 		"---\nid: dupitem\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"\n# Dup Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n  - id: a.core\n    description: Duplicate id.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
@@ -1334,7 +1334,7 @@ func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_EmptyItemIDFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "emptyid",
 		"---\nid: emptyid\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"+
 			"\n# Empty Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id:\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
@@ -1348,7 +1348,7 @@ func TestCheckRegionLocatability_EmptyItemIDFails(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "reserved",
 		"---\nid: reserved\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## frontmatter\n\nReal section prose.\n\n## Description\n\nProse.\n")
 	result := checkRegionLocatability(repoRoot, "reserved")
@@ -1361,7 +1361,7 @@ func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
 }
 
 func TestCheckRegionLocatability_InlineMarkerFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "inline",
 		"---\nid: inline\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set: [a, b]\n")
 	result := checkRegionLocatability(repoRoot, "inline")
@@ -1377,7 +1377,7 @@ func TestCheckRegionLocatability_FencedOnlyMarkerFails(t *testing.T) {
 	// The only exact-form marker sits inside a code fence — the structural
 	// region locator never matches inside a fence, so the spec cannot be
 	// located even though a naive exact-line scan would pass it.
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "fencedmarker",
 		"---\nid: fencedmarker\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nReal item prose without a marker.\n")
 	result := checkRegionLocatability(repoRoot, "fencedmarker")
@@ -1392,7 +1392,7 @@ func TestCheckRegionLocatability_FencedOnlyMarkerFails(t *testing.T) {
 func TestCheckRegionLocatability_FencedExamplePlusRealMarkerPasses(t *testing.T) {
 	// A fenced example with an exact marker is content; the real marker
 	// outside the fence is what the locator finds.
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "both",
 		"---\nid: both\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: real.core\n    description: Real.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "both")
@@ -1402,7 +1402,7 @@ func TestCheckRegionLocatability_FencedExamplePlusRealMarkerPasses(t *testing.T)
 }
 
 func TestCheckRegionLocatability_MalformedHeadingFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "malformed",
 		"---\nid: malformed\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n##NoSpace\n")
 	result := checkRegionLocatability(repoRoot, "malformed")
@@ -1417,7 +1417,7 @@ func TestCheckRegionLocatability_MalformedHeadingFails(t *testing.T) {
 func TestCheckRegionLocatability_FencedHeadingDoesNotFail(t *testing.T) {
 	// A fenced `##`-like line is content — it must not be reported as a
 	// heading problem and must not break region splitting.
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "fenced",
 		"---\nid: fenced\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\n##inside fence\n## not a real heading\n```\n\n## Next\n")
 	result := checkRegionLocatability(repoRoot, "fenced")
@@ -1430,7 +1430,7 @@ func TestCheckRegionLocatability_RetiredSpecPasses(t *testing.T) {
 	// A retiring spec is exempt from section structure — its content is
 	// being removed, so region locatability must not be required (same
 	// exemption as the other mechanical checks).
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "retiring",
 		"---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
 	result := checkRegionLocatability(repoRoot, "retiring")
@@ -1442,7 +1442,7 @@ func TestCheckRegionLocatability_RetiredSpecPasses(t *testing.T) {
 func TestValidateCandidate_RetiredSpecPassesAllChecks(t *testing.T) {
 	// End-to-end: a retiring spec (no ## headings, no acceptance items)
 	// must pass every mechanical check — Check 9 is skipped like the rest.
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "retiring",
 		"---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
 	result := ValidateCandidate(repoRoot, "retiring")

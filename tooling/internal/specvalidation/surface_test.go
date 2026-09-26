@@ -3,10 +3,25 @@ package specvalidation
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// newRepo returns a temporary directory that is a git worktree. Directory code
+// surfaces expand over Git repository content, so a test project root must be
+// a worktree; files written into it are untracked and unignored, which is
+// repository content.
+func newRepo(t *testing.T) string {
+	t.Helper()
+	repoRoot := t.TempDir()
+	cmd := exec.Command("git", "-C", repoRoot, "init", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return repoRoot
+}
 
 // surfaceSpec builds a candidate spec whose acceptance items carry the given
 // implementation_surface values, in order (item_1, item_2, ...).
@@ -52,7 +67,7 @@ func TestCheckImplementationSurfaces_PendingSkipped(t *testing.T) {
 }
 
 func TestCheckImplementationSurfaces_ResolvableFileAndDirectoryPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeSurfaceFile(t, repoRoot, "internal/demo/sub/b.go", "package sub\n")
 
@@ -63,7 +78,7 @@ func TestCheckImplementationSurfaces_ResolvableFileAndDirectoryPass(t *testing.T
 }
 
 func TestCheckImplementationSurfaces_MixedItemsReportsBadOnly(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 
 	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec("<pending>", "internal/demo/a.go", "internal/missing"))
@@ -82,7 +97,7 @@ func TestCheckImplementationSurfaces_EmptyValueFails(t *testing.T) {
 }
 
 func TestCheckImplementationSurfaces_SemicolonListFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeSurfaceFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
 
@@ -94,7 +109,7 @@ func TestCheckImplementationSurfaces_SemicolonListFails(t *testing.T) {
 }
 
 func TestCheckImplementationSurfaces_WildcardFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/tool/main.go", "package tool\n")
 
 	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec("internal/tool/**"))
@@ -109,7 +124,7 @@ func TestCheckImplementationSurfaces_WildcardFails(t *testing.T) {
 // characters it contains, so a real bracketed route path is not misread as a
 // wildcard pattern.
 func TestCheckImplementationSurfaces_LiteralMetacharacterPathPasses(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "app/[id]/route.ts", "export {}\n")
 
 	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec("app/[id]/route.ts", "app/[id]"))
@@ -127,7 +142,7 @@ func TestCheckImplementationSurfaces_PlaceholderVariantFails(t *testing.T) {
 }
 
 func TestCheckImplementationSurfaces_EmptyDirectoryFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	if err := os.MkdirAll(filepath.Join(repoRoot, "internal/empty"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +152,35 @@ func TestCheckImplementationSurfaces_EmptyDirectoryFails(t *testing.T) {
 		t.Fatalf("expected one problem, got %v", problems)
 	}
 	mustSurfaceReason(t, problems, "item_1", "directory contains no files")
+}
+
+// TestCheckImplementationSurfaces_OnlyIgnoredFilesFails verifies a directory
+// whose files are all Git-ignored is not a usable surface: it expands to zero
+// repository-content files.
+func TestCheckImplementationSurfaces_OnlyIgnoredFilesFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, ".gitignore", "dist/\n")
+	writeSurfaceFile(t, repoRoot, "dist/bundle.js", "bundle\n")
+
+	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec("dist"))
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %v", problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "directory contains no files")
+}
+
+// TestCheckImplementationSurfaces_NonWorktreeRootFailsClosed verifies
+// directory expansion fails closed outside a git worktree instead of falling
+// back to a filesystem walk.
+func TestCheckImplementationSurfaces_NonWorktreeRootFailsClosed(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeSurfaceFile(t, repoRoot, "src/a.go", "package src\n")
+
+	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec("src"))
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %v", problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "cannot be expanded")
 }
 
 func TestCheckImplementationSurfaces_OutsideRepositoryFails(t *testing.T) {
@@ -150,7 +194,7 @@ func TestCheckImplementationSurfaces_OutsideRepositoryFails(t *testing.T) {
 // TestCheckAnchors_UnresolvableImplementationSurfaceFails verifies the
 // mechanical validate surfaces the defect that gate-plan rejects.
 func TestCheckAnchors_UnresolvableImplementationSurfaceFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("internal/demo/a.go; internal/demo/b.go"))
 
 	result := checkAnchors(repoRoot, "test_unit")
@@ -166,7 +210,7 @@ func TestCheckAnchors_UnresolvableImplementationSurfaceFails(t *testing.T) {
 // item fields at the item's own nesting: a consistently nested item block
 // resolves its surface instead of reporting it as empty.
 func TestCheckAnchors_ItemRelativeIndentSurfaceResolves(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n"+
@@ -187,7 +231,7 @@ func TestCheckAnchors_ItemRelativeIndentSurfaceResolves(t *testing.T) {
 }
 
 func TestCheckAnchors_EmptyImplementationSurfaceFails(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit", surfaceSpec(""))
 
 	result := checkAnchors(repoRoot, "test_unit")
@@ -200,7 +244,7 @@ func TestCheckAnchors_EmptyImplementationSurfaceFails(t *testing.T) {
 }
 
 func TestCheckAnchors_PlaceholderOnlyPass(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("<pending>", "<pending>"))
 
 	result := checkAnchors(repoRoot, "test_unit")
@@ -210,7 +254,7 @@ func TestCheckAnchors_PlaceholderOnlyPass(t *testing.T) {
 }
 
 func TestCheckAnchors_ResolvableSurfaceAndMissingAnchorFail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("internal/demo/a.go")+
 		"    affects:\n      files:\n        - internal/demo/gone.go\n")

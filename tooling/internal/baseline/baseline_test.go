@@ -3,6 +3,7 @@ package baseline
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,6 +42,10 @@ acceptance_item_set:
 func setupRepo(t *testing.T) string {
 	t.Helper()
 	repoRoot := t.TempDir()
+	cmd := exec.Command("git", "-C", repoRoot, "init", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
 	files := map[string]string{
 		"internal/demo/handler.go": "package demo\n",
 		"internal/demo/util.go":    "package demo\n",
@@ -62,6 +67,56 @@ func writeUnitBaseline(t *testing.T, repoRoot string) {
 	t.Helper()
 	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, nil); err != nil {
 		t.Fatalf("WriteUnitBaseline: %v", err)
+	}
+}
+
+func writeBaselineTestFile(t *testing.T, repoRoot, rel, content string) {
+	t.Helper()
+	path := filepath.Join(repoRoot, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCheckUnitBaseline_ExcludesGitIgnoredFiles verifies the baseline records
+// repository content only: ignored dependencies and build output are neither
+// snapshotted at promote nor reported as drift when they appear later, while
+// untracked non-ignored files still are.
+func TestCheckUnitBaseline_ExcludesGitIgnoredFiles(t *testing.T) {
+	repoRoot := setupRepo(t)
+	writeBaselineTestFile(t, repoRoot, ".gitignore", "internal/demo/node_modules/\ninternal/demo/build/\n")
+	writeBaselineTestFile(t, repoRoot, "internal/demo/node_modules/dep/index.js", "module.exports = {};\n")
+	writeBaselineTestFile(t, repoRoot, "internal/demo/build/out.js", "out\n")
+
+	writeUnitBaseline(t, repoRoot)
+
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	data, err := os.ReadFile(basePath)
+	if err != nil {
+		t.Fatalf("baseline not written: %v", err)
+	}
+	if strings.Contains(string(data), "node_modules") || strings.Contains(string(data), "build/") {
+		t.Fatalf("ignored files must not enter the baseline:\n%s", data)
+	}
+	if !strings.Contains(string(data), "internal/demo/handler.go") {
+		t.Fatalf("repository-content files must enter the baseline:\n%s", data)
+	}
+	if result := CheckUnitBaseline(repoRoot, "demo"); result.Status != StatusOK {
+		t.Fatalf("expected OK, got %s: %s", result.Status, result.Details)
+	}
+
+	writeBaselineTestFile(t, repoRoot, "internal/demo/node_modules/dep/new.js", "new\n")
+	if result := CheckUnitBaseline(repoRoot, "demo"); result.Status != StatusOK {
+		t.Fatalf("a new ignored file is not drift, got %s: %s", result.Status, result.Details)
+	}
+
+	writeBaselineTestFile(t, repoRoot, "internal/demo/new.go", "package demo\n")
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusChanged || !strings.Contains(result.Details, "internal/demo/new.go") {
+		t.Fatalf("expected the untracked non-ignored addition to be drift, got %s: %s", result.Status, result.Details)
 	}
 }
 

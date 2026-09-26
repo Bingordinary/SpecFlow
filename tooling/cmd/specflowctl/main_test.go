@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -981,7 +982,19 @@ func createCLITestRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
+	initCLITestGitRepo(t, dir)
 	return dir
+}
+
+// initCLITestGitRepo makes dir a git worktree, the deployment layout every
+// SpecFlow project has: a directory code surface expands over Git repository
+// content, so a test project root must be a worktree.
+func initCLITestGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", dir, "init", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init %s: %v\n%s", dir, err, out)
+	}
 }
 
 // computeHash computes the SHA-256 hash using the same normalization as validationcache.

@@ -3,12 +3,27 @@ package gaterun
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+// newRepo returns a temporary directory that is a git worktree. Directory code
+// surfaces expand over Git repository content, so a test project root must be
+// a worktree; files written into it are untracked and unignored, which is
+// repository content.
+func newRepo(t *testing.T) string {
+	t.Helper()
+	repoRoot := t.TempDir()
+	cmd := exec.Command("git", "-C", repoRoot, "init", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return repoRoot
+}
 
 func writeFile(t *testing.T, repoRoot, rel, content string) string {
 	t.Helper()
@@ -67,7 +82,7 @@ func mustContain(t *testing.T, lines []string, want string) {
 }
 
 func TestOpenDerivesUnitValidateSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	extra := "    affects:\n      files:\n        - docs/notes.md\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_x", "src", extra)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
@@ -118,7 +133,7 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 }
 
 func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	extra := "    affects:\n      files:\n        - docs/design.md\n  - id: auth.pending\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", extra)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
@@ -150,7 +165,7 @@ func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 }
 
 func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
@@ -175,7 +190,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 // that cannot resolve to a code file rejects the plan before any run state is
 // written, with the item id and the reason.
 func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	pending := "  - id: auth.pending\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/demo/a.go; internal/demo/b.go", pending)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
@@ -200,7 +215,7 @@ func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 // TestPlanReviewRejectsUnresolvableImplementationSurface verifies the review
 // gate applies the same precondition as verify.
 func TestPlanReviewRejectsUnresolvableImplementationSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/tool/**", "")
 	writeFile(t, repoRoot, "internal/tool/main.go", "package tool\n")
 
@@ -214,7 +229,7 @@ func TestPlanReviewRejectsUnresolvableImplementationSurface(t *testing.T) {
 // item block contributes its declared surface to the plan: the reader follows
 // the item's own indent instead of assuming the canonical column.
 func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n    - id: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
@@ -232,7 +247,7 @@ func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 // expands to zero files is rejected rather than silently producing an empty
 // code surface.
 func TestPlanVerifyRejectsEmptyDirectorySurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/empty", "")
 	if err := os.MkdirAll(filepath.Join(repoRoot, "internal/empty"), 0755); err != nil {
 		t.Fatal(err)
@@ -244,11 +259,66 @@ func TestPlanVerifyRejectsEmptyDirectorySurface(t *testing.T) {
 	}
 }
 
+// TestPlanVerifyExcludesIgnoredFilesFromSurface verifies a declared directory
+// expands over Git repository content: ignored dependencies and build output
+// stay out of the snapshot, its read refs, and the packet plan, while
+// untracked non-ignored files remain part of the surface.
+func TestPlanVerifyExcludesIgnoredFilesFromSurface(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, ".gitignore", "web/node_modules/\nweb/dist/\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "web", "")
+	writeFile(t, repoRoot, "web/app.js", "export {};\n")
+	writeFile(t, repoRoot, "web/lib/util.js", "export {};\n")
+	writeFile(t, repoRoot, "web/node_modules/dep/index.js", "module.exports = {};\n")
+	writeFile(t, repoRoot, "web/dist/bundle.js", "bundle\n")
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface, ok := surfaceByPath(run, "web")
+	if !ok {
+		t.Fatalf("expected the declared directory surface, got %+v", run.Surfaces)
+	}
+	var got []string
+	for _, entry := range surface.Entries {
+		got = append(got, entry.Path)
+	}
+	if strings.Join(got, ",") != "web/app.js,web/lib/util.js" {
+		t.Fatalf("ignored dependencies and build output must not enter the surface, got %v", got)
+	}
+	if len(run.Packets) == 0 {
+		t.Fatal("expected the verify packet plan")
+	}
+	for _, packet := range run.Packets {
+		for _, ref := range packet.ReadRefs {
+			if strings.Contains(ref, "node_modules") || strings.Contains(ref, "dist/") {
+				t.Fatalf("packet %s must not list ignored files in its read refs: %s", packet.PacketID, ref)
+			}
+		}
+	}
+}
+
+// TestPlanVerifyRejectsDirectoryWithOnlyIgnoredFiles verifies the fail-closed
+// precondition applies to repository content: a directory whose files are all
+// ignored expands to zero files and rejects the plan.
+func TestPlanVerifyRejectsDirectoryWithOnlyIgnoredFiles(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, ".gitignore", "dist/\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "dist", "")
+	writeFile(t, repoRoot, "dist/bundle.js", "bundle\n")
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "directory contains no files") {
+		t.Fatalf("expected the only-ignored-files directory rejection, got %v", err)
+	}
+}
+
 // TestPlanValidateIgnoresCodeSurfaceResolution verifies the precondition is
 // verify/review-only: the validate gate derives no code surface and plans
 // normally for a spec whose surface is still the <pending> placeholder.
 func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "<pending>", "")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
@@ -267,7 +337,7 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 // The validate gate still plans it, because reporting the empty set as a
 // check failure is the validate gate's job.
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
 		"---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
 
@@ -289,7 +359,7 @@ func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 }
 
 func TestOpenDerivesRuleValidateSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeRule(t, repoRoot, "stable", "b_rule_http")
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
@@ -312,7 +382,7 @@ func TestOpenDerivesRuleValidateSurface(t *testing.T) {
 }
 
 func TestOpenTargetLayerRules(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeUnit(t, repoRoot, "stable", "auth", "none", "none", "src", "")
 
@@ -328,7 +398,7 @@ func TestOpenTargetLayerRules(t *testing.T) {
 }
 
 func TestOpenReplacesPreviousRunForSameTuple(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	first, err := open(t, repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, nil, time.Now())
@@ -351,7 +421,7 @@ func TestOpenReplacesPreviousRunForSameTuple(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidAndMismatchedRunIDs(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	if _, err := Load(repoRoot, "../../outside"); err == nil || !strings.Contains(err.Error(), "invalid local-state id") {
 		t.Fatalf("expected traversal-shaped id to be rejected, got %v", err)
 	}
@@ -414,7 +484,7 @@ func TestPacketStateFilenameIsFixedLengthAndFilesystemSafe(t *testing.T) {
 }
 
 func TestPacketStateRoundTripsReservedAndLongIDs(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	run := &Run{RunID: "20260917-123456-a0b1c2"}
 	ids := []string{
 		"detect:auth.core",
@@ -439,7 +509,7 @@ func TestPacketStateRoundTripsReservedAndLongIDs(t *testing.T) {
 }
 
 func TestDeleteRejectsInvalidRunIDWithoutRemovingOutsideState(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	sentinel := writeFile(t, repoRoot, "meta/sentinel.txt", "keep\n")
 	if err := Delete(repoRoot, &Run{RunID: "../.."}); err == nil || !strings.Contains(err.Error(), "invalid local-state id") {
 		t.Fatalf("expected invalid run id to be rejected, got %v", err)
@@ -450,7 +520,7 @@ func TestDeleteRejectsInvalidRunIDWithoutRemovingOutsideState(t *testing.T) {
 }
 
 func TestCompareDetectsRefDivergences(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_x", "src", "")
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
 	writeRule(t, repoRoot, "candidate", "b_rule_x")
@@ -512,7 +582,7 @@ func TestCompareDetectsRefDivergences(t *testing.T) {
 }
 
 func TestCompareTracksOnlyStableGlobalRules(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeRule(t, repoRoot, "stable", "g_rule_active")
 	writeRule(t, repoRoot, "candidate", "g_rule_active")
@@ -541,7 +611,7 @@ func TestCompareTracksOnlyStableGlobalRules(t *testing.T) {
 }
 
 func TestCompareDetectsSurfaceDivergences(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	writeFile(t, repoRoot, "src/sub/util.go", "package sub\n")
@@ -582,7 +652,7 @@ func TestCompareDetectsSurfaceDivergences(t *testing.T) {
 }
 
 func TestCompareDetectsMissingSpec(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 
@@ -599,7 +669,7 @@ func TestCompareDetectsMissingSpec(t *testing.T) {
 }
 
 func TestAllowsDeclaration(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "none", "src", "")
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
@@ -631,7 +701,7 @@ func TestAllowsDeclaration(t *testing.T) {
 }
 
 func TestExtraInputs(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	writeFile(t, repoRoot, "tests/unit_test.go", "package tests\n")
@@ -669,7 +739,7 @@ func TestExtraInputs(t *testing.T) {
 }
 
 func TestConsumeDeleteAndLoad(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	run, err := open(t, repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, nil, time.Now())
@@ -708,7 +778,7 @@ func TestConsumeDeleteAndLoad(t *testing.T) {
 }
 
 func TestOpenLogicalInputRef(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
 
@@ -729,7 +799,7 @@ func open(t *testing.T, repoRoot, gate, targetKind, targetName, target string, e
 }
 
 func TestPlanRejectsInvalidTargetName(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	// The traversed rule file exists, so only the name gate can reject the
 	// traversal that previously reached validateTargetLayer.
 	writeFile(t, repoRoot, "tmp/evil.md", "---\nid: evil\nversion: 0.1.0\nscope: unit\n---\n\n# evil\n")
@@ -750,7 +820,7 @@ func TestPlanRejectsInvalidTargetName(t *testing.T) {
 }
 
 func TestConcurrentPlansLeaveOneOpenRun(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	start := make(chan struct{})

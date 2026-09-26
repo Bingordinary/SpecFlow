@@ -81,7 +81,7 @@ func grReadCacheBody(t *testing.T, repoRoot, rel string) string {
 // ------------------------------------------------------------
 
 func TestReviewOwnershipDefersFindingToAnotherUnit(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	runID, id := grDeferSharedFinding(t, repoRoot)
 
@@ -122,7 +122,7 @@ func TestReviewOwnershipDefersFindingToAnotherUnit(t *testing.T) {
 }
 
 func TestReviewOwnershipMixedWithGateDrivingFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "tool", "--target", "candidate")
 
@@ -169,7 +169,7 @@ func TestReviewOwnershipMixedWithGateDrivingFinding(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestOwnerReviewDisposesDeferredFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
 
@@ -227,7 +227,7 @@ func TestOwnerReviewDisposesDeferredFinding(t *testing.T) {
 }
 
 func TestOwnerReviewMustDisposeDeferredFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
 
@@ -243,7 +243,7 @@ func TestOwnerReviewMustDisposeDeferredFinding(t *testing.T) {
 }
 
 func TestOwnerReviewSuppressesDeferredFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
 
@@ -271,7 +271,7 @@ func TestOwnerReviewSuppressesDeferredFinding(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestOwnershipRecordsAreMechanicallyValidated(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "tool", "--target", "candidate")
 	report := grReviewArchitecture("unacceptable — shared-file defect") + "\n[P1] src/shared.go:1 — shared-file defect (actionable)" +
@@ -327,7 +327,7 @@ func TestOwnershipRecordsAreMechanicallyValidated(t *testing.T) {
 }
 
 func TestOwnershipRecordsAreReviewOnly(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "tool")
 	grWriteSpec(t, repoRoot, "agent")
 	grWriteFile(t, repoRoot, "src/a.go", "package src\n")
@@ -340,7 +340,7 @@ func TestOwnershipRecordsAreReviewOnly(t *testing.T) {
 }
 
 func TestDeferredFindingMustNameAValidKey(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "tool", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "src/shared.go", grReviewReport("src/shared.go", grToolMain))
@@ -358,7 +358,7 @@ func TestDeferredFindingMustNameAValidKey(t *testing.T) {
 }
 
 func TestCrossFailRequiresGateDrivingCrossFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "tool", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "src/shared.go", grReviewReport("src/shared.go", grToolMain))
@@ -381,7 +381,7 @@ func TestCrossFailRequiresGateDrivingCrossFinding(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestDeferredFindingIsNotCarriedIntoDelta(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
 
@@ -417,7 +417,7 @@ func TestDeferredFindingIsNotCarriedIntoDelta(t *testing.T) {
 }
 
 func TestFreshReportsPendingDeferrals(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
 
@@ -439,7 +439,7 @@ func TestFreshReportsPendingDeferrals(t *testing.T) {
 }
 
 func TestReDeferralMovesLedgerEntryToTheNewOwner(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 	grWriteSpec(t, repoRoot, "contracts")
 	_, deferredID := grDeferSharedFinding(t, repoRoot)
@@ -472,7 +472,7 @@ func TestReDeferralMovesLedgerEntryToTheNewOwner(t *testing.T) {
 // packet report authors the finding, yet its complete block must stay in the
 // human-readable body exactly once (the machine block alone is not the record).
 func TestDeferredCarriedFindingRendersIntoCacheBody(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSharedUnits(t, repoRoot)
 
 	fullID := grPlan(t, repoRoot, "--gate", "review", "--unit", "tool", "--target", "candidate")

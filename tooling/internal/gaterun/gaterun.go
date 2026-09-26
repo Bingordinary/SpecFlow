@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
@@ -119,7 +120,8 @@ type Entry struct {
 }
 
 // Surface is one declared code surface path (a file or a directory expanded
-// recursively at snapshot time; the entries are the files under it).
+// to its repository-content files at snapshot time; the entries are those
+// files).
 type Surface struct {
 	Path    string  `json:"path"`
 	Entries []Entry `json:"entries"`
@@ -1074,9 +1076,9 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 
 // deriveUnitCodeGate resolves a verify/review unit run's inputs: the unit's
 // own spec files in the target layer plus the declared code surface
-// (implementation_surface directories expanded recursively + affects.files).
-// It fails closed before any run state is written on a spec with no
-// acceptance items or an unresolvable declared surface.
+// (implementation_surface directories expanded to their repository-content
+// files + affects.files). It fails closed before any run state is written on
+// a spec with no acceptance items or an unresolvable declared surface.
 func deriveUnitCodeGate(repoRoot, unitName, target string) ([]Ref, []Surface, error) {
 	var unitMain string
 	if target == TargetCandidate {
@@ -1132,16 +1134,17 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 }
 
 // codeSurfaces resolves the spec's declared code surface: implementation
-// surface paths (directories expand recursively) and affects.files. A
-// missing affects.files path is recorded with no entries — a later
-// appearance is a divergence. A declared implementation_surface gets no such
-// tolerance: the fail-closed check below rejects an unresolvable value, so
-// the no-entries divergence semantics apply to affects.files only.
+// surface paths (directories expand to their repository-content files) and
+// affects.files. A missing affects.files path is recorded with no entries — a
+// later appearance is a divergence. A declared implementation_surface gets no
+// such tolerance: the fail-closed check below rejects an unresolvable value,
+// so the no-entries divergence semantics apply to affects.files only.
 func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
 	// Fail closed before expanding anything: a non-<pending>
-	// implementation_surface that cannot resolve to a real file would expand
-	// to zero entries, producing a plan (and later a pass cache) with no code
-	// evidence at all. The same check runs in mechanical validate Check 3.
+	// implementation_surface that yields no file — an unresolvable path, or a
+	// directory with no repository-content files — would expand to zero
+	// entries, producing a plan (and later a pass cache) with no code evidence
+	// at all. The same check runs in mechanical validate Check 3.
 	if problems := specvalidation.CheckImplementationSurfaces(repoRoot, specContent); len(problems) > 0 {
 		return nil, fmt.Errorf("declared implementation_surface cannot resolve to a code file — fix the acceptance items before planning a verify/review run: %s", specvalidation.FormatSurfaceProblems(problems))
 	}
@@ -1173,11 +1176,12 @@ func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
 	return surfaces, nil
 }
 
-// resolveSurface fills a surface's entries from the current filesystem: a
-// directory is expanded recursively, a file becomes a single entry, and a
-// missing path keeps no entries. A path that exists but cannot be hashed is
-// an error — no entry can be recorded for it, so the caller must not proceed
-// with a partial surface.
+// resolveSurface fills a surface's entries from the current repository
+// content: a directory expands to the files Git tracks or leaves untracked and
+// unignored, a file becomes a single entry, and a missing path keeps no
+// entries. A path that exists but cannot be expanded is an error — no entry
+// can be recorded for it, so the caller must not proceed with a partial
+// surface.
 func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
 	canonical, err := repopath.Canonical(repoRoot, surface.Path)
 	if err != nil {
@@ -1191,9 +1195,13 @@ func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
 		return surface, nil
 	}
 	if info.IsDir() {
-		entries, err := expandDir(repoRoot, surface.Path)
+		files, err := repofiles.ExpandDir(repoRoot, surface.Path)
 		if err != nil {
-			return Surface{}, err
+			return Surface{}, fmt.Errorf("declared code surface %q: %w", surface.Path, err)
+		}
+		var entries []Entry
+		for _, f := range files {
+			entries = append(entries, Entry{Path: f.Path, Hash: f.Hash})
 		}
 		surface.Entries = entries
 		return surface, nil
@@ -1204,34 +1212,6 @@ func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
 	}
 	surface.Entries = []Entry{{Path: surface.Path, Hash: hash}}
 	return surface, nil
-}
-
-// expandDir lists every file under dir with its hash, sorted by path.
-func expandDir(repoRoot, dir string) ([]Entry, error) {
-	var entries []Entry
-	err := filepath.WalkDir(filepath.Join(repoRoot, filepath.FromSlash(dir)), func(p string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, relErr := repopath.Canonical(repoRoot, p)
-		if relErr != nil {
-			return fmt.Errorf("directory input %q contains an invalid path: %w", dir, relErr)
-		}
-		hash, hashErr := specpaths.FileHash(p)
-		if hashErr != nil {
-			return hashErr
-		}
-		entries = append(entries, Entry{Path: rel, Hash: hash})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	return entries, nil
 }
 
 // unitAppendices lists a unit's appendix files in one layer.

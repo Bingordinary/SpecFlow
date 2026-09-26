@@ -11,7 +11,7 @@ import (
 )
 
 func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", []validationcache.CheckDeclaration{{
 		Check:    "auth.core",
@@ -61,7 +61,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 }
 
 func TestGateInvalidateRequiresCheck(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	var stdout, stderr bytes.Buffer
 	err := runGateInvalidate([]string{
@@ -76,7 +76,7 @@ func TestGateInvalidateRequiresCheck(t *testing.T) {
 }
 
 func TestGateInvalidatePreventsOlderRunFromFinalizing(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 
@@ -99,7 +99,7 @@ func TestGateInvalidatePreventsOlderRunFromFinalizing(t *testing.T) {
 }
 
 func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteSpec(t, repoRoot, "auth")
 

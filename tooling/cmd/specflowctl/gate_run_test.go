@@ -400,7 +400,7 @@ func grRefByName(run *gaterun.Run, name string) (gaterun.Ref, bool) {
 // ------------------------------------------------------------
 
 func TestGatePlanValidateUnitPlan(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -430,7 +430,7 @@ func TestGatePlanValidateUnitPlan(t *testing.T) {
 }
 
 func TestGatePacketStructuralContextIncludesUnresolvedLogicalReference(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecWithRefs(t, repoRoot, "auth", "missing", "none")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -456,7 +456,7 @@ func TestGatePacketStructuralContextIncludesUnresolvedLogicalReference(t *testin
 }
 
 func TestGatePlanVerifyAndReviewPlans(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -486,7 +486,7 @@ func TestGatePlanVerifyAndReviewPlans(t *testing.T) {
 // the reason, and leaves no run state behind. The declared files exist — the
 // value is rejected because a semicolon list is not a path.
 func TestGatePlanRejectsUnresolvedImplementationSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	grWriteFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
 	grWriteSpecSurface(t, repoRoot, "demo", "internal/demo/a.go; internal/demo/b.go", "")
@@ -509,7 +509,7 @@ func TestGatePlanRejectsUnresolvedImplementationSurface(t *testing.T) {
 // items is rejected before any run state is written, while the validate gate
 // still plans the same spec so its Check 2 can report the empty set.
 func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "demo", "none", "none", nil)
 
 	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
@@ -534,7 +534,7 @@ func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
 // reaches the packet read refs instead of being misread as a wildcard
 // pattern.
 func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteFile(t, repoRoot, "app/[id]/route.ts", "export {}\n")
 	grWriteSpecSurface(t, repoRoot, "demo", "app/[id]/route.ts", "")
 
@@ -553,7 +553,7 @@ func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
 // path: a directory surface plus affects.files expands to real code files in
 // the packet read refs.
 func TestGatePlanVerifySurfaceExpansionIncludesCodeFiles(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	grWriteFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
 	extra := "    affects:\n      files:\n        - internal/demo/a.go\n        - internal/demo/b.go\n"
@@ -583,7 +583,7 @@ func TestGatePlanVerifySurfaceExpansionIncludesCodeFiles(t *testing.T) {
 }
 
 func TestGatePlanRejectsDuplicateAcceptanceItemIDsBeforePersistingRun(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.login"})
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -600,7 +600,7 @@ func TestGatePlanRejectsDuplicateAcceptanceItemIDsBeforePersistingRun(t *testing
 }
 
 func TestGatePlanRejectsPhysicalInputsOutsideProject(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	external := grWriteFile(t, t.TempDir(), "outside.txt", "outside\n")
 
@@ -626,7 +626,7 @@ func packetIDsOf(run *gaterun.Run) []string {
 }
 
 func TestGatePlanRulePlan(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
@@ -647,7 +647,7 @@ func TestGatePlanRulePlan(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateRunValidatePassBasic(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -673,7 +673,7 @@ func TestGateRunValidatePassBasic(t *testing.T) {
 }
 
 func TestGateRunComputesHashAndDeps(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -711,7 +711,7 @@ func TestGateRunComputesHashAndDeps(t *testing.T) {
 }
 
 func TestGateRunSectionAndRangeDeclarations(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	text, err := contenthash.FileText(specPath)
 	if err != nil {
@@ -766,7 +766,7 @@ func TestGateRunSectionAndRangeDeclarations(t *testing.T) {
 }
 
 func TestGateRunLogicalReference(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth") // dependency unit
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
 
@@ -805,7 +805,7 @@ func TestGateRunLogicalReference(t *testing.T) {
 }
 
 func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	mainPath := grWriteSpec(t, repoRoot, "self")
 	stableRulePath := grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 1.0.0\n---\nStable constraint.\n")
 	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 2.0.0\n---\nCandidate draft.\n")
@@ -862,7 +862,7 @@ func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 }
 
 func TestGateRunVerifyFlow(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
 
@@ -885,7 +885,7 @@ func TestGateRunVerifyFlow(t *testing.T) {
 }
 
 func TestGateRunReviewFlow(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -909,7 +909,7 @@ func TestGateRunReviewFlow(t *testing.T) {
 
 func TestGateSubmitRejectsIncompletePacketBodies(t *testing.T) {
 	t.Run("review dimensions", func(t *testing.T) {
-		repoRoot := t.TempDir()
+		repoRoot := createCLITestRepo(t)
 		grWriteSpec(t, repoRoot, "auth")
 		main := "docs/specs/units/candidate/unit_auth.md"
 		grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -928,7 +928,7 @@ func TestGateSubmitRejectsIncompletePacketBodies(t *testing.T) {
 	})
 
 	t.Run("verify evidence blocks", func(t *testing.T) {
-		repoRoot := t.TempDir()
+		repoRoot := createCLITestRepo(t)
 		grWriteSpec(t, repoRoot, "auth")
 		main := "docs/specs/units/candidate/unit_auth.md"
 		grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -940,7 +940,7 @@ func TestGateSubmitRejectsIncompletePacketBodies(t *testing.T) {
 	})
 
 	t.Run("validate Check 5 sub-checks", func(t *testing.T) {
-		repoRoot := t.TempDir()
+		repoRoot := createCLITestRepo(t)
 		grWriteSpec(t, repoRoot, "auth")
 		main := "docs/specs/units/candidate/unit_auth.md"
 		runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -953,7 +953,7 @@ func TestGateSubmitRejectsIncompletePacketBodies(t *testing.T) {
 }
 
 func TestGateRunRuleTarget(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
@@ -978,7 +978,7 @@ func TestGateRunRuleTarget(t *testing.T) {
 }
 
 func TestGateRunRuleWithConsumerRef(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
@@ -1012,7 +1012,7 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateRunFailureRecordDerivesStatus(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1039,7 +1039,7 @@ func TestGateRunFailureRecordDerivesStatus(t *testing.T) {
 }
 
 func TestGateFinalizeDerivesResultAndRejectsJudgmentFlags(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1062,7 +1062,7 @@ func TestGateFinalizeDerivesResultAndRejectsJudgmentFlags(t *testing.T) {
 }
 
 func TestGateCrossFailureForcesDerivedFailure(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1093,7 +1093,7 @@ func TestGateCrossFailureForcesDerivedFailure(t *testing.T) {
 }
 
 func TestGateCrossMustDisposeEveryInputFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1108,7 +1108,7 @@ func TestGateCrossMustDisposeEveryInputFinding(t *testing.T) {
 }
 
 func TestGateCrossRejectsFailStatusWithoutRetainedFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1122,7 +1122,7 @@ func TestGateCrossRejectsFailStatusWithoutRetainedFinding(t *testing.T) {
 }
 
 func TestGateCrossRequiresNonBlockingRetainedFindingToFailItsKey(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1147,7 +1147,7 @@ func TestGateCrossRequiresNonBlockingRetainedFindingToFailItsKey(t *testing.T) {
 }
 
 func TestGateCrossRequiresOneSeverityConfirmationPerTerminalFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1174,7 +1174,7 @@ func TestGateCrossRequiresOneSeverityConfirmationPerTerminalFinding(t *testing.T
 }
 
 func TestGateReviewIndentedFindingsAreNotSwallowedAsDetail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1214,7 +1214,7 @@ func TestGateReviewIndentedFindingsAreNotSwallowedAsDetail(t *testing.T) {
 }
 
 func TestGateVerifyItemIDWithRegexMetacharacterSubmits(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	main := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core", "auth.co(re"})
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -1223,7 +1223,7 @@ func TestGateVerifyItemIDWithRegexMetacharacterSubmits(t *testing.T) {
 }
 
 func TestGateReviewConclusionMappingIsMechanical(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1260,7 +1260,7 @@ func TestGateReviewConclusionMappingIsMechanical(t *testing.T) {
 }
 
 func TestGateVerifyMismatchRequiresStructuredType(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1279,7 +1279,7 @@ func TestGateVerifyMismatchRequiresStructuredType(t *testing.T) {
 }
 
 func TestGateVerifyPartBSkippedRequiresReason(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1294,7 +1294,7 @@ func TestGateVerifyPartBSkippedRequiresReason(t *testing.T) {
 }
 
 func TestGateFindingsRequireResolutionLabel(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -1308,7 +1308,7 @@ func TestGateFindingsRequireResolutionLabel(t *testing.T) {
 }
 
 func TestGateReviewP3RequiresFactAnchor(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1420,7 +1420,7 @@ func TestGateCrossSeverityAdjustmentControlsFinalOutcome(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repoRoot := t.TempDir()
+			repoRoot := createCLITestRepo(t)
 			grWriteSpec(t, repoRoot, "auth")
 			main := "docs/specs/units/candidate/unit_auth.md"
 			grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1446,7 +1446,7 @@ func TestGateCrossSeverityAdjustmentControlsFinalOutcome(t *testing.T) {
 }
 
 func TestGateCrossTwoSeverityAdjustmentsUseFinalSeverity(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1469,7 +1469,7 @@ func TestGateCrossTwoSeverityAdjustmentsUseFinalSeverity(t *testing.T) {
 }
 
 func TestRuleValidateRequiresConfirmationForP0(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
@@ -1495,7 +1495,7 @@ func TestRuleValidateRequiresConfirmationForP0(t *testing.T) {
 }
 
 func TestReviewDeltaRendersRetainedCarriedFindingExactlyOnce(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
@@ -1539,7 +1539,7 @@ func TestReviewDeltaRendersRetainedCarriedFindingExactlyOnce(t *testing.T) {
 }
 
 func TestReviewCrossSuppressionRemovesFindingFromDerivedCounts(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1563,7 +1563,7 @@ func TestReviewCrossSuppressionRemovesFindingFromDerivedCounts(t *testing.T) {
 // status `fail` — it did not run in this attempt, and the repair plan must
 // carry it (not re-execute it) after the findings are resolved.
 func TestDeltaFailRecordMarksCarriedKeysCarried(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
@@ -1621,7 +1621,7 @@ func TestDeltaFailRecordMarksCarriedKeysCarried(t *testing.T) {
 }
 
 func TestReviewCrossMergeMustTerminateAtRetainedFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
@@ -1676,7 +1676,7 @@ func TestReviewCrossMergeMustTerminateAtRetainedFinding(t *testing.T) {
 }
 
 func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1726,7 +1726,7 @@ func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
 // consumed digests must not include the run's carried judgments (only cross
 // consumes those).
 func TestVerifyAnalysisBindsOnlyDetectionDigestInDelta(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
@@ -1771,7 +1771,7 @@ func TestVerifyAnalysisBindsOnlyDetectionDigestInDelta(t *testing.T) {
 // deps union — including the declare-heavy remainder no check owns, which the
 // promote gate judges freshness on.
 func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	data, err := os.ReadFile(specPath)
@@ -1874,7 +1874,7 @@ func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
 }
 
 func TestGateFinalizeRejectsCrossDigestMismatch(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -1900,7 +1900,7 @@ func TestGateFinalizeRejectsCrossDigestMismatch(t *testing.T) {
 }
 
 func TestGateRunValidateCandidateFailDeletesCache(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -1936,7 +1936,7 @@ func TestGateRunValidateCandidateFailDeletesCache(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateSubmitValidation(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -1997,7 +1997,7 @@ func TestGateSubmitValidation(t *testing.T) {
 }
 
 func TestConcurrentGateSubmitKeepsFirstTerminalResult(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -2056,7 +2056,7 @@ func TestConcurrentGateSubmitKeepsFirstTerminalResult(t *testing.T) {
 }
 
 func TestGateFinalizeLoadsRunInsideMutationLock(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitValidatePackets(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
@@ -2112,7 +2112,7 @@ func mustLoadRun(t *testing.T, repoRoot, runID string) *gaterun.Run {
 // ------------------------------------------------------------
 
 func TestGateRunAppendixCoverage(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
@@ -2181,7 +2181,7 @@ func TestGateRunAppendixCoverage(t *testing.T) {
 }
 
 func TestGateRunRequiresMainFileCoverage(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "self")
 	main := "docs/specs/units/candidate/unit_self.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_self_protocol.md"
@@ -2217,7 +2217,7 @@ func TestGateRunRequiresMainFileCoverage(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestEvidenceSnapshotDivergencesBindsEntryHash(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -2253,7 +2253,7 @@ func TestEvidenceSnapshotDivergencesBindsEntryHash(t *testing.T) {
 }
 
 func TestGateRunSnapshotDivergences(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
@@ -2331,7 +2331,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 }
 
 func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
 	main := "docs/specs/units/candidate/unit_self.md"
@@ -2374,7 +2374,7 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateRunDeltaFlow(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -2437,7 +2437,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 }
 
 func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	consumerPath := grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
@@ -2546,7 +2546,7 @@ func TestRuleOutcomeDeduplicatesCarriedFindings(t *testing.T) {
 }
 
 func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -2593,7 +2593,7 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 }
 
 func TestGateRunRepairFlow(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -2635,7 +2635,7 @@ func TestGateRunRepairFlow(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateStatusReportsProgress(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -2667,7 +2667,7 @@ func TestGateStatusReportsProgress(t *testing.T) {
 }
 
 func TestGateRunUsageErrors(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 
 	planCases := []struct {
@@ -2717,7 +2717,7 @@ func TestGateRunUsageErrors(t *testing.T) {
 }
 
 func TestGateRunConsumedRunCloses(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -2734,7 +2734,7 @@ func TestGateRunConsumedRunCloses(t *testing.T) {
 }
 
 func TestGateRunReplanReplacesPreviousRun(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 
 	first := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -2750,7 +2750,7 @@ func TestGateRunReplanReplacesPreviousRun(t *testing.T) {
 }
 
 func TestGateRunRecordsAuditRunID(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -2764,7 +2764,7 @@ func TestGateRunRecordsAuditRunID(t *testing.T) {
 }
 
 func TestGateRunRoundTripWithFresh(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -2781,7 +2781,7 @@ func TestGateRunRoundTripWithFresh(t *testing.T) {
 }
 
 func TestGateRunContentEditStales(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -2822,7 +2822,7 @@ func containsStr(values []string, want string) bool {
 // ------------------------------------------------------------
 
 func TestGateRunStableReview(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	main := "docs/specs/units/stable/unit_auth.md"
 	grWriteFile(t, repoRoot, main, "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/auth.go\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -2846,7 +2846,7 @@ func TestGateRunStableReview(t *testing.T) {
 }
 
 func TestGatePlanStableRequiresStableOnly(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n")
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "stable"); err == nil || !strings.Contains(err.Error(), "stable-only") {
@@ -2859,7 +2859,7 @@ func TestGatePlanStableRequiresStableOnly(t *testing.T) {
 // ------------------------------------------------------------
 
 func TestGateSubmitRejectsPhysicalNameResolvedPaths(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpec(t, repoRoot, "self")
 	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_repo.md", "---\nid: g_rule_repo\nversion: 0.1.0\nscope: global\n---\n\n# Rule\n")
@@ -2907,7 +2907,7 @@ func TestGateSubmitRejectsPhysicalNameResolvedPaths(t *testing.T) {
 }
 
 func TestGateRunExtraInputRequiredForOutsideReads(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -2929,7 +2929,7 @@ func TestGateRunExtraInputRequiredForOutsideReads(t *testing.T) {
 }
 
 func TestGateRunExtraInputsAreEvidenceNotReviewTargets(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
@@ -2949,7 +2949,7 @@ func TestGateRunExtraInputsAreEvidenceNotReviewTargets(t *testing.T) {
 }
 
 func TestGateRunOverlappingExtraInputIsAvailableToEveryPacket(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "src/helper.go", "package auth\n")
@@ -2970,7 +2970,7 @@ func TestGateRunOverlappingExtraInputIsAvailableToEveryPacket(t *testing.T) {
 }
 
 func TestGateRunOverlappingLogicalInputIsAvailableToEveryPacket(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
 
@@ -2985,7 +2985,7 @@ func TestGateRunOverlappingLogicalInputIsAvailableToEveryPacket(t *testing.T) {
 }
 
 func TestGateSubmitEnforcesPacketLocalReadRefs(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "src/helper.go", "package auth\n")
@@ -3005,7 +3005,7 @@ func grVerifyItemRegionReport(item, specPath, codeFile string) string {
 }
 
 func TestGateRunVerifyItemLevelDelta(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
@@ -3093,7 +3093,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 }
 
 func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	depPath := grWriteSpec(t, repoRoot, "auth") // dependency unit
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
 	main := "docs/specs/units/candidate/unit_self.md"
@@ -3196,7 +3196,7 @@ func TestParseDecl(t *testing.T) {
 // {current_run}/..., the carried id is {earlier_run}/..., so the submission
 // cannot collide with itself.
 func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.alpha", "auth.beta"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3251,7 +3251,7 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 // evidence is fixed at plan time: finalize merges the snapshot and still
 // succeeds after the baseline cache file is gone.
 func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.alpha", "auth.beta"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3297,7 +3297,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 // affects.files evidence file is part of the local validate packets' read
 // refs: a check may read it and declare it in its Dependency scope.
 func TestValidatePacketDeclaresAffectsEvidence(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
 	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
 		"  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n"
@@ -3339,7 +3339,7 @@ func TestValidatePacketDeclaresAffectsEvidence(t *testing.T) {
 // class where the input surface no longer resolves at all (e.g. the main spec
 // was removed after plan): finalize must reject the write and discard the run.
 func TestFinalizeDiscardsRunWhenInputSurfaceUnresolvable(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3365,7 +3365,7 @@ func TestFinalizeDiscardsRunWhenInputSurfaceUnresolvable(t *testing.T) {
 // gate-finalize coverage and the cache entries stay consistent (see
 // framework/validation_cache.md §Format path equivalence).
 func TestGateSubmitNormalizesDeclarationPaths(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -3406,7 +3406,7 @@ func TestGateSubmitNormalizesDeclarationPaths(t *testing.T) {
 // affected non-cross logical key, so the effective-status closure stays
 // derivable (see framework/verification_scope.md §Gate Work Packets).
 func TestGateCrossNewFindingRequiresNonCrossAffectedKey(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3430,7 +3430,7 @@ func TestGateCrossNewFindingRequiresNonCrossAffectedKey(t *testing.T) {
 // not_required analysis packet is terminal: a manual submission is rejected
 // and the state stays not_required, so the run remains finalizable.
 func TestGateSubmitRejectsNotRequiredPacket(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3516,7 +3516,7 @@ func grNoticeContains(notices []string, want string) bool {
 // that begins with blank lines (or has a blank line before the verdict) must
 // be accepted, not misread as a missing reason.
 func TestGateSubmitAcceptsLeadingWhitespaceBeforeVerdicts(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3574,7 +3574,7 @@ func TestParseGateFindingsGrammar(t *testing.T) {
 // declared dependency chunks keeps its baseline evidence (a documented fresh
 // state) and must not block a delta finalize.
 func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.one", "auth.two"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	specPath := filepath.Join(repoRoot, filepath.FromSlash(main))
@@ -3639,7 +3639,7 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 // reference whose resolution escapes the repository root is rejected before
 // run state is written (the same containment rule physical inputs obey).
 func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
@@ -3669,7 +3669,7 @@ func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 // validate severity adjustment (P0 -> P1) persists the whole canonical finding
 // — severity and the rewritten detail prefix — into the judgment baseline.
 func TestGateRuleSeverityAdjustmentPersistsCanonicalDetail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
@@ -3728,7 +3728,7 @@ func TestGateRuleSeverityAdjustmentPersistsCanonicalDetail(t *testing.T) {
 // repair plan to the full packet set instead of trusting the first occurrence
 // and possibly carrying a failed judgment over.
 func TestGateRepairDegradesOnConflictingStatusMap(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.one", "auth.two"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -3776,7 +3776,7 @@ func TestGateRepairDegradesOnConflictingStatusMap(t *testing.T) {
 // a `carried` status degrades the repair plan to the full packet set: a full
 // record has no carried judgments.
 func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.one", "auth.two"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	specPath := filepath.Join(repoRoot, filepath.FromSlash(main))

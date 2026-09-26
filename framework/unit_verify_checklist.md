@@ -700,7 +700,7 @@ Do not classify the resolution direction — defer to Step 7.
 
 1. **Spec-side placeholder check (before collecting files):** For each acceptance item, read the `implementation_surface` value:
    - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled — the mapping must be completed before verify can locate the implementation (do not classify yet — defer to Step 7)
-   - Value is not `<pending>` but does not resolve to at least one real file (missing path, empty directory) → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
+   - Value is not `<pending>` but resolves to no file — a missing path, or a directory with no repository-content files (the files Git tracks plus untracked files that are not ignored) → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
 
 2. Collect all implementation files from `implementation_surface` paths and `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
 

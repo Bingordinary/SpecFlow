@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,6 +13,17 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
+
+// initGitRepo makes repoRoot a git worktree so directory code surfaces can
+// expand over Git repository content, the deployment layout of every real
+// project.
+func initGitRepo(t *testing.T, repoRoot string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", repoRoot, "init", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+}
 
 func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	t.Helper()
@@ -1219,6 +1231,7 @@ func TestPromoteRuleCandidateRemovalFailure(t *testing.T) {
 
 func TestPromoteUnit_WritesBaseline(t *testing.T) {
 	repoRoot := t.TempDir()
+	initGitRepo(t, repoRoot)
 	writeCandidateUnit(t, repoRoot, "demo")
 
 	// Code surface: the candidate's implementation_surface (internal/demo).

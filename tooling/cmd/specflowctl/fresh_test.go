@@ -850,7 +850,7 @@ func writeStableRuleSpec(t *testing.T, repoRoot, id string) string {
 // its drift state and --scope all shows both sections without counting stable
 // targets in READY FOR PROMOTE.
 func TestFreshStableScope(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 
 	// A candidate (for the all-scope readiness count) and two stable units:
 	// one with a matching baseline, one with no baseline.
@@ -914,7 +914,7 @@ func TestFreshStableScope(t *testing.T) {
 // informational note when the code surface changed outside the declared
 // dependency chunks.
 func TestFreshStableScope_OKWithNote(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
 	var sb strings.Builder
@@ -982,7 +982,7 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 // independent: "surface changed since promote" and "recently confirmed to
 // still conform" are both true.
 func TestFreshStableScope_VerifiedSilence(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
 	// Baseline says the surface is unchanged...
@@ -1030,7 +1030,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 // TestFreshStableScope_Changed verifies a changed surface reports CHANGED
 // with the offending files when no fresh verify cache exists.
 func TestFreshStableScope_Changed(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
 	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
@@ -1070,7 +1070,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 // three confirmation states (validate/verify/review) plus the drift column
 // when the stable-layer caches exist.
 func TestFreshStableScope_Confirmations(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
 	specHash := computeHash(specPath)
 
@@ -1101,7 +1101,7 @@ func TestFreshStableScope_Confirmations(t *testing.T) {
 // cache (target: candidate); only a cache recorded with `target: stable` by an
 // @stable review run proves the stable quality confirmation.
 func TestFreshStableScope_ReviewSeparatesLayers(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
 	specHash := computeHash(specPath)
 
@@ -1136,7 +1136,7 @@ func TestFreshStableScope_ReviewSeparatesLayers(t *testing.T) {
 // TestFreshStableScope_RuleValidate verifies a stable-layer rule validate
 // cache shows in the stable summary.
 func TestFreshStableScope_RuleValidate(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	rulePath := writeStableRuleSpec(t, repoRoot, "g_rule_demo")
 	ruleHash := computeHash(rulePath)
 
@@ -1157,7 +1157,7 @@ func TestFreshStableScope_RuleValidate(t *testing.T) {
 // TestFreshStableUnitDetail verifies --unit on a stable-only unit reports the
 // drift detail.
 func TestFreshStableUnitDetail(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
 	out, err := freshRun(t, repoRoot, "--unit", "settled")
@@ -1176,7 +1176,7 @@ func TestFreshStableUnitDetail(t *testing.T) {
 // recovery command per gate state: MISSING gates need the full confirmation
 // run, STALE gates suggest the delta re-run.
 func TestFreshStableDetailAdvice(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
 	out, err := freshRun(t, repoRoot, "--unit", "settled")
@@ -1197,7 +1197,7 @@ func TestFreshStableDetailAdvice(t *testing.T) {
 // TestFreshStableDetailDeltaScope verifies a STALE stable confirmation gate
 // shows its DELTA SCOPE section and the delta recovery suggestion.
 func TestFreshStableDetailDeltaScope(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
 	specHash := computeHash(specPath)
 
@@ -1226,7 +1226,7 @@ func TestFreshStableDetailDeltaScope(t *testing.T) {
 // TestFreshCandidateDetailAdvice verifies the candidate detail report suggests
 // the recovery command per gate state, symmetric with the stable report.
 func TestFreshCandidateDetailAdvice(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
 
@@ -1258,7 +1258,7 @@ func TestFreshCandidateDetailAdvice(t *testing.T) {
 // early and cannot pick up a newly added appendix, so the full validate run
 // is the only recovery.
 func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
 
@@ -1295,7 +1295,7 @@ func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
 // restores appendix coverage through its complete files list, so only the
 // delta recovery suggestion is printed.
 func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
 
@@ -1330,7 +1330,7 @@ func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
 
 // TestFreshInvalidScope verifies an invalid scope is rejected.
 func TestFreshInvalidScope(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	_, err := freshRun(t, repoRoot, "--scope", "bogus")
 	if err == nil {
 		t.Fatal("expected error for invalid scope")
@@ -1342,7 +1342,7 @@ func TestFreshInvalidScope(t *testing.T) {
 
 // TestFreshStableRules verifies stable rules appear in the stable scope.
 func TestFreshStableRules(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	writeStableRuleSpec(t, repoRoot, "g_rule_demo")
 
 	out, err := freshRun(t, repoRoot, "--scope", "stable")

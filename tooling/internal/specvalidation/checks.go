@@ -214,10 +214,11 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	var problems []string
 
 	// implementation_surface values must be the exact <pending> design-first
-	// placeholder or a single path resolving to at least one real file. A
-	// non-pending value that resolves to nothing would silently derive an
-	// empty code surface, so it fails here (same check gate-plan applies
-	// before planning a verify/review run).
+	// placeholder or a single path that yields at least one file — a declared
+	// file, or a directory's repository-content files (the files Git tracks
+	// plus untracked files that are not ignored). A non-pending value that
+	// yields none would silently derive an empty code surface, so it fails
+	// here (same check gate-plan applies before planning a verify/review run).
 	for _, surfaceProblem := range CheckImplementationSurfaces(repoRoot, content) {
 		problems = append(problems, surfaceProblem.String())
 	}

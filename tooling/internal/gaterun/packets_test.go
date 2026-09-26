@@ -65,7 +65,7 @@ func packetIDsOf(run *Run) []string {
 }
 
 func TestUnitValidatePacketReadRefsMatchOwnedChecks(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/dep", "")
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_http", "src/auth", "")
@@ -99,7 +99,7 @@ func TestUnitValidatePacketReadRefsMatchOwnedChecks(t *testing.T) {
 }
 
 func TestUnitValidateStructuralPacketCarriesUnresolvedReference(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "missing", "none", "src/auth", "")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
@@ -113,7 +113,7 @@ func TestUnitValidateStructuralPacketCarriesUnresolvedReference(t *testing.T) {
 }
 
 func TestUnitValidateDeltaStructuralPacketCarriesLogicalReferences(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/dep", "")
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_http", "src/auth", "")
@@ -140,7 +140,7 @@ func TestUnitValidateDeltaStructuralPacketCarriesLogicalReferences(t *testing.T)
 }
 
 func TestLoadCarriedResultsAssociatesCrossFindingWithAffectedKey(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
 	if err != nil {
@@ -193,7 +193,7 @@ func TestLoadCarriedResultsAssociatesCrossFindingWithAffectedKey(t *testing.T) {
 }
 
 func TestLoadCarriedResultsRejectsOldJudgmentSchema(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
 	if err != nil {
@@ -225,7 +225,7 @@ func TestLoadCarriedResultsRejectsOldJudgmentSchema(t *testing.T) {
 }
 
 func TestDerivedPlanMapsUnclaimedDependencyUnit(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "none", "src", "")
 
@@ -261,7 +261,7 @@ func TestDerivedPlanMapsUnclaimedDependencyUnit(t *testing.T) {
 }
 
 func TestDerivedPlanRerunForcesGroup(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "none", "src", "")
 
@@ -291,7 +291,7 @@ func TestDerivedPlanRerunForcesGroup(t *testing.T) {
 }
 
 func TestDerivedPlanDegradesWithoutEvidence(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	// A pass cache without per-check evidence cannot be derived from.
@@ -314,7 +314,7 @@ func TestDerivedPlanDegradesWithoutEvidence(t *testing.T) {
 }
 
 func TestDerivedPlanRepairWithoutStatusMapDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
@@ -339,7 +339,7 @@ func TestDerivedPlanRepairWithoutStatusMapDegrades(t *testing.T) {
 // a baseline that is not a pass cache and degrades a status-less failure record
 // to the full plan.
 func TestDerivedPlanDeltaRequiresPassBaseline(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "no baseline cache") {
@@ -368,7 +368,7 @@ func TestDerivedPlanDeltaRequiresPassBaseline(t *testing.T) {
 // baseline whose result and blocking declarations disagree is rejected instead
 // of being accepted as a pass baseline.
 func TestDerivedPlanReviewDeltaRejectsConflictingBaseline(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
@@ -436,7 +436,7 @@ func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, bl
 // re-runs acceptance items the baseline never declared: a new item has no
 // evidence to carry over, so it must execute like a stale judgment.
 func TestDerivedPlanVerifyPlansNewItems(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	specPath := writeUnitItemsSpec(t, repoRoot, "auth.core", "auth.aux")
 
 	decls := []validationcache.CheckDeclaration{
@@ -480,7 +480,7 @@ func TestDerivedPlanVerifyPlansNewItems(t *testing.T) {
 // only stale declaration belongs to the cross-check plans the single cross
 // packet and carries every declared check over.
 func TestDerivedPlanDeltaCrossOnlyPlansCrossPacket(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "\n## Scope\n\nIn scope.\n")
 
 	var decls []validationcache.CheckDeclaration
@@ -527,7 +527,7 @@ func TestDerivedPlanDeltaCrossOnlyPlansCrossPacket(t *testing.T) {
 // repair path: a failure record that declares a status for only some checks
 // must not carry the status-less ones over.
 func TestDerivedPlanRepairPartialStatusMapDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -562,7 +562,7 @@ func TestDerivedPlanRepairPartialStatusMapDegrades(t *testing.T) {
 // repair path: a status value outside pass/fail/carried cannot say which
 // judgments failed, so nothing may be carried over.
 func TestDerivedPlanRepairInvalidStatusValueDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -598,7 +598,7 @@ func TestDerivedPlanRepairInvalidStatusValueDegrades(t *testing.T) {
 // state: a full run re-executed every judgment, so the entry cannot be
 // trusted and the plan degrades to the full packet set.
 func TestDerivedPlanRepairCarriedInFullRunRecordDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -633,7 +633,7 @@ func TestDerivedPlanRepairCarriedInFullRunRecordDegrades(t *testing.T) {
 // status map and the record's structured judgment baseline must agree on the
 // key set: a disagreement cannot say which judgments failed.
 func TestDerivedPlanRepairStatusMapJudgmentMismatchDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -665,7 +665,7 @@ func TestDerivedPlanRepairStatusMapJudgmentMismatchDegrades(t *testing.T) {
 // positive repair path: a complete, valid status map keeps the incremental
 // plan and carries the passing groups over.
 func TestDerivedPlanRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -706,7 +706,7 @@ func TestDerivedPlanRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
 // repair plan must read the persisted invalidation and exclude that judgment
 // from carry-over.
 func TestDerivedPlanRepairUsesPersistedTargetedInvalidation(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -745,7 +745,7 @@ func TestDerivedPlanRepairUsesPersistedTargetedInvalidation(t *testing.T) {
 }
 
 func TestDerivedPlanRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -780,7 +780,7 @@ func TestDerivedPlanRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
 }
 
 func TestInvalidateTargetedMarksMatchingOpenRunOnly(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 
@@ -819,7 +819,7 @@ func TestInvalidateTargetedMarksMatchingOpenRunOnly(t *testing.T) {
 // baseline declaring only the cross-check is reported as a full-scope re-run:
 // nothing is carried over, so the re-run covers every declared check.
 func TestDerivedPlanDeltaCrossOnlyBaselineReportsFullScope(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "\n## Scope\n\nIn scope.\n")
 
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md",
@@ -849,7 +849,7 @@ func TestDerivedPlanDeltaCrossOnlyBaselineReportsFullScope(t *testing.T) {
 // no check can attribute its staleness and the freshness chain can never see
 // it fresh.
 func TestDerivedPlanDeltaDegradesOnUntrackableEntry(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	if err := os.MkdirAll(filepath.Join(repoRoot, "src"), 0755); err != nil {
 		t.Fatal(err)
@@ -882,7 +882,7 @@ func TestDerivedPlanDeltaDegradesOnUntrackableEntry(t *testing.T) {
 // when the per-check derivation found a re-run reason: the finalize
 // main-file check would reject the partial run.
 func TestDerivedPlanDeltaDegradesWhenMainFileMissingEvenWithReRuns(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	if err := os.MkdirAll(filepath.Join(repoRoot, "src"), 0755); err != nil {
 		t.Fatal(err)
@@ -929,7 +929,7 @@ func TestDerivedPlanDeltaDegradesWhenMainFileMissingEvenWithReRuns(t *testing.T)
 // with the reserved cross-check key is rejected before any run state is
 // written (reserved-id collision).
 func TestPlanRejectsReservedCrossItemID(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnitItemsSpec(t, repoRoot, "cross", "auth.core")
 
 	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
@@ -942,7 +942,7 @@ func TestPlanRejectsReservedCrossItemID(t *testing.T) {
 // target with no usable confirmation baseline gets the documented message
 // (full confirmation run or fork) in both delta and repair modes.
 func TestDerivedPlanStableMissingBaselineMessage(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "stable", "auth", "none", "none", "src", "")
 
 	for _, mode := range []string{ModeDelta, ModeRepair} {
@@ -961,7 +961,7 @@ func TestDerivedPlanStableMissingBaselineMessage(t *testing.T) {
 // baseline — the recovery mode gate-plan requires — so the report and the
 // planner never disagree (see framework/verification_scope.md §Delta Runs).
 func TestPreviewDeltaScopeFailureRecordUsesRepair(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
@@ -1004,7 +1004,7 @@ func TestPreviewDeltaScopeFailureRecordUsesRepair(t *testing.T) {
 // still previews the delta plan, and that the preview equals the plan the
 // planner generates for the same baseline.
 func TestPreviewDeltaScopePassBaselineUsesDelta(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
 	if err != nil {
@@ -1055,7 +1055,7 @@ func TestPreviewDeltaScopePassBaselineUsesDelta(t *testing.T) {
 // judgments when the baseline cache has no structured judgment state — the
 // preview must report the refusal instead of a carry plan the planner rejects.
 func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "\n## Scope\n\nIn scope.\n")
 
 	var decls []validationcache.CheckDeclaration
@@ -1110,7 +1110,7 @@ func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 // that refusal: a re-run that covers every declared check carries nothing, so
 // it needs no judgment state and must still plan.
 func TestDeltaPlanWithoutJudgmentsWhenNothingIsCarried(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
 	if err != nil {
@@ -1152,7 +1152,7 @@ func TestDeltaPlanWithoutJudgmentsWhenNothingIsCarried(t *testing.T) {
 // (framework/verification_scope.md §Input roles: --input evidence is readable
 // and declarable by every packet).
 func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeRule(t, repoRoot, "stable", "b_rule_http")
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
@@ -1181,7 +1181,7 @@ func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
 // TestRuleDeltaPlanIncludesDirectoryInputEvidence covers the delta/repair
 // rule plan path: the re-run packet must expose the same --input evidence.
 func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeRule(t, repoRoot, "stable", "b_rule_http")
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
@@ -1262,7 +1262,7 @@ func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 // while the raw union comparison missed it (see framework/verification_scope.md
 // §Delta Runs → Failure recovery).
 func TestDerivedPlanRepairQuotedStatusStillReruns(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration

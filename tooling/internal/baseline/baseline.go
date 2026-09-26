@@ -6,7 +6,6 @@ package baseline
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
@@ -53,17 +53,20 @@ func baselinePath(repoRoot, kind, name string) string {
 }
 
 // WriteUnitBaseline records the hash snapshot of the code surface declared by
-// the unit spec (implementation_surface + affects.files). Directories are
-// expanded recursively so that later additions are detected as drift too.
-// The <pending> placeholder is not a real surface and is skipped. verifyDeps
-// carries the dependency chunk CIDs declared by the promote-time verify run
-// (path -> deps, keys in canonical repo-relative slash form as returned by
-// ReadVerifyDeps): files with declared dependencies are judged on chunk
-// existence, files without them on the whole-file hash.
+// the unit spec (implementation_surface + affects.files). Directories expand
+// to their repository-content files so that later additions are detected as
+// drift too. The <pending> placeholder is not a real surface and is skipped.
+// verifyDeps carries the dependency chunk CIDs declared by the promote-time
+// verify run (path -> deps, keys in canonical repo-relative slash form as
+// returned by ReadVerifyDeps): files with declared dependencies are judged on
+// chunk existence, files without them on the whole-file hash.
 func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) error {
-	surfaces := collectSurfaces(repoRoot,
+	surfaces, err := collectSurfaces(repoRoot,
 		specvalidation.ExtractImplementationSurfaces(specContent),
 		specvalidation.ExtractAffectsFiles(specContent))
+	if err != nil {
+		return err
+	}
 	for i := range surfaces {
 		for j := range surfaces[i].Entries {
 			if deps, ok := verifyDeps[surfaces[i].Entries[j].Path]; ok {
@@ -113,13 +116,13 @@ func CheckRuleBaseline(repoRoot, ruleID string) CheckResult {
 // Surface collection
 // ------------------------------------------------------------
 
-func collectSurfaces(repoRoot string, surfacePaths, filePaths []string) []surface {
+func collectSurfaces(repoRoot string, surfacePaths, filePaths []string) ([]surface, error) {
 	var surfaces []surface
 	seen := make(map[string]bool)
-	add := func(p string) {
+	add := func(p string) error {
 		p = strings.TrimSpace(strings.Trim(p, `"'`))
 		if p == "" || p == "<pending>" || seen[p] {
-			return
+			return nil
 		}
 		seen[p] = true
 		full := filepath.Join(repoRoot, filepath.FromSlash(p))
@@ -128,45 +131,39 @@ func collectSurfaces(repoRoot string, surfacePaths, filePaths []string) []surfac
 			// Surface missing at promote time (defensive): record an empty
 			// surface — a later check then reports any current files as added.
 			surfaces = append(surfaces, surface{Path: p})
-			return
+			return nil
 		}
 		if info.IsDir() {
-			surfaces = append(surfaces, surface{Path: p, Entries: expandDir(repoRoot, full)})
-			return
+			files, err := repofiles.ExpandDir(repoRoot, p)
+			if err != nil {
+				return err
+			}
+			var entries []entry
+			for _, f := range files {
+				entries = append(entries, entry{Path: f.Path, Hash: f.Hash})
+			}
+			surfaces = append(surfaces, surface{Path: p, Entries: entries})
+			return nil
 		}
 		rel, _ := filepath.Rel(repoRoot, full)
 		hash, err := specpaths.FileHash(full)
 		if err != nil {
-			return
+			return nil
 		}
 		surfaces = append(surfaces, surface{Path: p, Entries: []entry{{Path: filepath.ToSlash(rel), Hash: hash}}})
+		return nil
 	}
 	for _, p := range surfacePaths {
-		add(p)
+		if err := add(p); err != nil {
+			return nil, err
+		}
 	}
 	for _, p := range filePaths {
-		add(p)
+		if err := add(p); err != nil {
+			return nil, err
+		}
 	}
-	return surfaces
-}
-
-// expandDir lists every file under dir with its hash, sorted by path.
-func expandDir(repoRoot, dir string) []entry {
-	var entries []entry
-	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		rel, _ := filepath.Rel(repoRoot, path)
-		hash, err := specpaths.FileHash(path)
-		if err != nil {
-			return nil
-		}
-		entries = append(entries, entry{Path: filepath.ToSlash(rel), Hash: hash})
-		return nil
-	})
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	return entries
+	return surfaces, nil
 }
 
 // ------------------------------------------------------------
@@ -293,9 +290,13 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 			for _, e := range s.Entries {
 				baselineEntries[e.Path] = e
 			}
+			files, err := repofiles.ExpandDir(repoRoot, s.Path)
+			if err != nil {
+				return CheckResult{Status: StatusChanged, Details: fmt.Sprintf("cannot expand surface %q: %v", s.Path, err)}
+			}
 			currentEntries := make(map[string]string)
-			for _, e := range expandDir(repoRoot, full) {
-				currentEntries[e.Path] = e.Hash
+			for _, f := range files {
+				currentEntries[f.Path] = f.Hash
 			}
 			for p, be := range baselineEntries {
 				ce, ok := currentEntries[p]

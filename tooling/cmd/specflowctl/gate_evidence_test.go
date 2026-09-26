@@ -21,7 +21,7 @@ func acceptanceItemsDep(t *testing.T, text string) string {
 }
 
 func TestGateEvidenceBasic(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	path := filepath.Join(srcDir, "auth.go")
@@ -53,7 +53,7 @@ func TestGateEvidenceBasic(t *testing.T) {
 }
 
 func TestGateEvidenceWholeFile(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	path := filepath.Join(srcDir, "auth.go")
@@ -83,7 +83,7 @@ func TestGateEvidenceWholeFile(t *testing.T) {
 }
 
 func TestGateEvidenceRangeCoversContent(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "auth.go"), []byte("package main\n"), 0644)
@@ -103,7 +103,7 @@ func TestGateEvidenceRangeCoversContent(t *testing.T) {
 }
 
 func TestGateEvidenceRangeOutOfBounds(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "auth.go"), []byte("package main\n"), 0644)
@@ -129,7 +129,7 @@ func TestGateEvidenceMissingFileFlag(t *testing.T) {
 }
 
 func TestGateEvidenceMissingFile(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	err := runGateEvidence([]string{"--repo-root", repoRoot, "--file", "src/nope.go"}, &stdout, &stderr)
@@ -139,7 +139,7 @@ func TestGateEvidenceMissingFile(t *testing.T) {
 }
 
 func TestGateEvidenceMalformedRanges(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "auth.go"), []byte("package main\n"), 0644)
@@ -153,7 +153,7 @@ func TestGateEvidenceMalformedRanges(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemsRegion(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
@@ -180,7 +180,7 @@ func TestGateEvidenceAcceptanceItemsRegion(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemsMissingMarker(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\nNo items.\n"), 0644); err != nil {
@@ -198,7 +198,7 @@ func TestGateEvidenceAcceptanceItemsMissingMarker(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemsSemanticSetFailsClosed(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 
 	for _, tc := range []struct {
@@ -222,7 +222,7 @@ func TestGateEvidenceAcceptanceItemsSemanticSetFailsClosed(t *testing.T) {
 }
 
 func TestGateEvidenceSections(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
@@ -269,7 +269,7 @@ func TestGateEvidenceSections(t *testing.T) {
 }
 
 func TestGateEvidenceSectionFrontmatterCollision(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	// A real section literally named "frontmatter" must fail the --section
@@ -290,7 +290,7 @@ func TestGateEvidenceSectionFrontmatterCollision(t *testing.T) {
 }
 
 func TestGateEvidenceSectionFrontmatterDuplicatedCollision(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	// Two real "frontmatter" sections are still a real collision: presence,
@@ -310,7 +310,7 @@ func TestGateEvidenceSectionFrontmatterDuplicatedCollision(t *testing.T) {
 }
 
 func TestGateEvidenceSectionFrontmatterUnstructuredSpec(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	// A spec with no ## heading cannot be declared by section: the frontmatter
@@ -330,7 +330,7 @@ func TestGateEvidenceSectionFrontmatterUnstructuredSpec(t *testing.T) {
 }
 
 func TestGateEvidenceSection(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
@@ -357,7 +357,7 @@ func TestGateEvidenceSection(t *testing.T) {
 }
 
 func TestGateEvidenceSectionWithRangesUnion(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
@@ -380,7 +380,7 @@ func TestGateEvidenceSectionWithRangesUnion(t *testing.T) {
 }
 
 func TestGateEvidenceSectionMissingHeading(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\n\n## Description\n\nProse.\n"), 0644); err != nil {
@@ -398,7 +398,7 @@ func TestGateEvidenceSectionMissingHeading(t *testing.T) {
 }
 
 func TestGateEvidenceSectionDuplicatedHeading(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	if err := os.WriteFile(specPath, []byte("---\nid: dep\n---\n\n## Notes\n\nFirst.\n\n## Notes\n\nSecond.\n"), 0644); err != nil {
@@ -416,7 +416,7 @@ func TestGateEvidenceSectionDuplicatedHeading(t *testing.T) {
 }
 
 func TestGateEvidenceSectionFrontmatter(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n"
@@ -456,7 +456,7 @@ func writeGateEvidenceTwoItemSpec(t *testing.T, repoRoot string) string {
 }
 
 func TestGateEvidenceAcceptanceItem(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 
 	var stdout, stderr bytes.Buffer
@@ -476,7 +476,7 @@ func TestGateEvidenceAcceptanceItem(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemMissingAndDuplicate(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 
 	var stdout, stderr bytes.Buffer
@@ -500,7 +500,7 @@ func TestGateEvidenceAcceptanceItemMissingAndDuplicate(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemUnionWithWholeSet(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 
 	var stdout, stderr bytes.Buffer
@@ -525,7 +525,7 @@ func TestGateEvidenceAcceptanceItemUnionWithWholeSet(t *testing.T) {
 }
 
 func TestGateEvidenceAcceptanceItemsReorderInvariant(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 	text, err := contenthash.FileText(specPath)
 	if err != nil {
@@ -570,7 +570,7 @@ func TestGateEvidenceAcceptanceItemsReorderInvariant(t *testing.T) {
 func TestGateEvidenceItemsAcrossSubheading(t *testing.T) {
 	// The set region ends at the next `##` heading; a `###` subheading inside
 	// the section is content and must not hide the items after it.
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
 	spec := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n## Dependencies\n\nNone.\n"
@@ -614,7 +614,7 @@ func TestGateEvidenceItemsAcrossSubheading(t *testing.T) {
 }
 
 func TestGateEvidenceItemsListing(t *testing.T) {
-	repoRoot := t.TempDir()
+	repoRoot := createCLITestRepo(t)
 	specPath := writeGateEvidenceTwoItemSpec(t, repoRoot)
 
 	var stdout, stderr bytes.Buffer
