@@ -128,7 +128,7 @@ load_configured_suffixes() {
         return 1
         ;;
     esac
-    case " ${TARGET_SUFFIXES[*]} " in
+    case " ${TARGET_SUFFIXES[*]:+${TARGET_SUFFIXES[*]}} " in
       *" ${suffix} "*) ;;
       *) TARGET_SUFFIXES+=("${suffix}") ;;
     esac
