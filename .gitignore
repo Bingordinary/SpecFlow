@@ -1,4 +1,5 @@
 tooling/bin/
+tooling/platforms.txt
 tooling/specflowctl
 tooling/*.test
 tooling/*.test.exe

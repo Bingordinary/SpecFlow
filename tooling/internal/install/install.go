@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
@@ -341,6 +342,18 @@ func copyFile(source, dest string) error {
 
 func checkBinary(repoRoot string, layout specflowlayout.Layout, result *DoctorResult) {
 	checkOneBinary(repoRoot, specflowlayout.Relative(layout.ToolingRoot, filepath.ToSlash(filepath.Join("bin", buildrelease.CurrentBinaryName()))), result)
+	checkLauncher(repoRoot, layout, result)
+}
+
+func checkLauncher(repoRoot string, layout specflowlayout.Layout, result *DoctorResult) {
+	launcherName := buildrelease.PosixLauncherName
+	if runtime.GOOS == "windows" {
+		launcherName = buildrelease.WindowsLauncherName
+	}
+	relPath := specflowlayout.Relative(layout.ToolingRoot, filepath.ToSlash(filepath.Join("bin", launcherName)))
+	if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relPath))); err != nil {
+		result.Failures = append(result.Failures, fmt.Sprintf("MISSING %s (run update_tooling_binaries to restore the specflowctl launcher)", relPath))
+	}
 }
 
 func checkOneBinary(repoRoot, relPath string, result *DoctorResult) {

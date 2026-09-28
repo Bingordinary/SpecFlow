@@ -18,6 +18,13 @@ By default downloads binaries for all platforms (linux-amd64, linux-arm64,
 darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a
 Syncthing-synced project directory stays usable on every platform.
 
+If tooling/platforms.txt exists, only the platforms listed there are
+downloaded (one per line, '#' comments allowed, the 'windows-*.exe'
+suffix is optional). The file is a local per-checkout preference: it
+lives inside the SpecFlow checkout, is not committed, and survives
+pulls. A missing file or an explicit -All / -CurrentOnly flag falls
+back to the default behavior (all platforms).
+
 Options:
   -All            Download all platforms (default)
   -CurrentOnly    Download only the current platform's binary
@@ -111,6 +118,76 @@ function Get-AllPlatformSuffixes {
         "windows-amd64.exe",
         "windows-arm64.exe"
     )
+}
+
+function Write-Launchers {
+    param(
+        [string]$BinDir
+    )
+
+    New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+
+    $posixLauncher = @'
+#!/bin/sh
+set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+uname_os=$(uname -s)
+uname_arch=$(uname -m)
+case "${uname_os}" in
+  Linux) os_name="linux" ;;
+  Darwin) os_name="darwin" ;;
+  MINGW*|MSYS*|CYGWIN*) os_name="windows" ;;
+  *)
+    echo "Error: unsupported operating system: ${uname_os}" >&2
+    exit 1
+    ;;
+esac
+case "${uname_arch}" in
+  x86_64|amd64) arch_name="amd64" ;;
+  aarch64|arm64) arch_name="arm64" ;;
+  *)
+    echo "Error: unsupported CPU architecture: ${uname_arch}" >&2
+    exit 1
+    ;;
+esac
+if [ "${os_name}" = "windows" ]; then
+  target="${script_dir}/specflowctl-${os_name}-${arch_name}.exe"
+else
+  target="${script_dir}/specflowctl-${os_name}-${arch_name}"
+fi
+if [ ! -x "${target}" ]; then
+  echo "Error: specflowctl binary is missing or not executable: ${target}" >&2
+  echo "Run update_tooling_binaries or build-release to install specflowctl binaries." >&2
+  exit 1
+fi
+exec "${target}" "$@"
+'@
+
+    $windowsLauncher = @'
+@echo off
+setlocal
+set "specflowctl_arch=%PROCESSOR_ARCHITECTURE%"
+if /I "%specflowctl_arch%"=="ARM64" (
+  set "specflowctl_target=%~dp0specflowctl-windows-arm64.exe"
+) else (
+  set "specflowctl_target=%~dp0specflowctl-windows-amd64.exe"
+)
+if not exist "%specflowctl_target%" (
+  echo Error: specflowctl binary is missing: "%specflowctl_target%" 1>&2
+  echo Run update_tooling_binaries or build-release to install specflowctl binaries. 1>&2
+  exit /b 1
+)
+"%specflowctl_target%" %*
+'@
+
+    $posixPath = Join-Path $BinDir "specflowctl"
+    [System.IO.File]::WriteAllText($posixPath, ($posixLauncher -replace "`r`n", "`n"))
+    if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        Invoke-CheckedNative "chmod" @("+x", $posixPath)
+    }
+
+    $windowsPath = Join-Path $BinDir "specflowctl.cmd"
+    [System.IO.File]::WriteAllText($windowsPath, ($windowsLauncher -replace "`r`n", "`n"))
 }
 
 function Read-BinaryFingerprint {
@@ -266,6 +343,7 @@ if ($All) { $downloadAll = $true }
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
 $binDir = Join-Path $repoRoot "tooling/bin"
+$platformsFile = Join-Path $repoRoot "tooling/platforms.txt"
 $downloadDir = $null
 
 try {
@@ -279,13 +357,51 @@ try {
     $shortFingerprint = $fingerprint.Substring(0, 12)
     $tag = "specflow-tooling-$shortFingerprint"
 
+    $targetSuffixes = @()
+    $useConfiguredSet = $false
+    if ($downloadAll -and -not $All -and (Test-Path -LiteralPath $platformsFile -PathType Leaf)) {
+        $useConfiguredSet = $true
+        foreach ($rawLine in Get-Content -LiteralPath $platformsFile) {
+            $line = ($rawLine -split "#", 2)[0].Trim()
+            if ($line -eq "") { continue }
+            $normalized = $line
+            if ($normalized -cmatch '^windows-(amd64|arm64)$') { $normalized = "$normalized.exe" }
+            if ((Get-AllPlatformSuffixes) -cnotcontains $normalized) {
+                throw "Unknown platform '$line' in $platformsFile. Valid platforms: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64, windows-arm64."
+            }
+            if ($targetSuffixes -cnotcontains $normalized) { $targetSuffixes += $normalized }
+        }
+        if ($targetSuffixes.Count -eq 0) {
+            throw "$platformsFile exists but lists no platform."
+        }
+        Write-Host "Platform set from $platformsFile: $($targetSuffixes -join ', ')"
+        try {
+            $currentCanonical = (Get-PlatformSuffix) -replace '\.exe$', ''
+            $configuredCanonical = $targetSuffixes | ForEach-Object { $_ -replace '\.exe$', '' }
+            if ($configuredCanonical -cnotcontains $currentCanonical) {
+                [Console]::Error.WriteLine("Warning: current platform ($currentCanonical) is not listed in $platformsFile; no binary for this machine will be installed.")
+            }
+        } catch { }
+    }
+
     if ($downloadAll) {
-        $allSuffixes = Get-AllPlatformSuffixes
+        if ($useConfiguredSet) {
+            $allSuffixes = $targetSuffixes
+        }
+        else {
+            $allSuffixes = Get-AllPlatformSuffixes
+        }
         $allNames = @()
         foreach ($s in $allSuffixes) { $allNames += "specflowctl-$s" }
 
         if (-not (Test-NeedsDownloadAll $fingerprint $binDir $allSuffixes)) {
-            Write-Host "Local binaries already match $tag (all platforms)."
+            Write-Launchers -BinDir $binDir
+            if ($useConfiguredSet) {
+                Write-Host "Local binaries already match $tag ($($allSuffixes.Count) platforms: $($allSuffixes -join ', '))."
+            }
+            else {
+                Write-Host "Local binaries already match $tag (all platforms)."
+            }
             exit 0
         }
 
@@ -298,7 +414,7 @@ try {
         New-Item -ItemType Directory -Path $downloadDir | Out-Null
         $base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
 
-        Write-Host "Downloading $tag binaries for all platforms..."
+        Write-Host "Downloading $tag binaries for $($allSuffixes.Count) platform(s): $($allSuffixes -join ', ')..."
         Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile (Join-Path $downloadDir "SHA256SUMS")
         foreach ($suffix in $allSuffixes) {
             $ctlName = "specflowctl-$suffix"
@@ -320,6 +436,7 @@ try {
         }
         Move-Item -LiteralPath (Join-Path $downloadDir "SHA256SUMS") -Destination (Join-Path $binDir "SHA256SUMS") -Force
 
+        Write-Launchers -BinDir $binDir
         Write-Host "Installed $($allNames.Count) binaries and SHA256SUMS from $tag."
         exit 0
     }
@@ -330,6 +447,7 @@ try {
     $ctlPath = Join-Path $binDir $ctlName
 
     if (-not (Test-NeedsDownload $fingerprint $ctlPath $binDir $ctlName)) {
+        Write-Launchers -BinDir $binDir
         Write-Host "Local binary already matches $tag."
         exit 0
     }
@@ -359,6 +477,7 @@ try {
         Invoke-CheckedNative "chmod" @("+x", $ctlPath)
     }
 
+    Write-Launchers -BinDir $binDir
     Write-Host "Installed $ctlName and SHA256SUMS from $tag."
 }
 finally {

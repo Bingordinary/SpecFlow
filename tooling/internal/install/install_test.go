@@ -65,6 +65,29 @@ func TestDoctorFailsForStaleBinary(t *testing.T) {
 	}
 }
 
+func TestDoctorFailsForMissingLauncher(t *testing.T) {
+	repoRoot := t.TempDir()
+	setupDoctorRepo(t, repoRoot)
+	writeFingerprintProbeBinary(t, repoRoot, "fresh-fingerprint")
+
+	launcherName := buildrelease.PosixLauncherName
+	if runtime.GOOS == "windows" {
+		launcherName = buildrelease.WindowsLauncherName
+	}
+	if err := os.Remove(filepath.Join(repoRoot, "specflow/tooling/bin", launcherName)); err != nil {
+		t.Fatalf("Remove launcher failed: %v", err)
+	}
+
+	result, err := Doctor(repoRoot)
+	if err != nil {
+		t.Fatalf("Doctor returned unexpected error: %v", err)
+	}
+	joined := strings.Join(result.Failures, "\n")
+	if !strings.Contains(joined, "MISSING specflow/tooling/bin/"+launcherName) {
+		t.Fatalf("expected missing launcher failure, got %v", result.Failures)
+	}
+}
+
 func TestInstallHooksCreatesCodexHooks(t *testing.T) {
 	repoRoot := t.TempDir()
 	setupCodexHookRepo(t, repoRoot)
@@ -307,6 +330,9 @@ func writeFingerprintProbeBinary(t *testing.T, repoRoot, fingerprint string) {
 	}
 	script := "#!/usr/bin/env bash\nif [[ \"$1\" == \"" + toolingfreshness.HiddenBuildFingerprintCommand + "\" ]]; then\n  printf '%s\\n' \"" + fingerprint + "\"\n  exit 0\nfi\nexit 0\n"
 	mustWriteExecutableFile(t, filepath.Join(repoRoot, "specflow/tooling/bin", buildrelease.CurrentBinaryName()), script)
+	if err := buildrelease.WriteLaunchers(filepath.Join(repoRoot, "specflow/tooling/bin")); err != nil {
+		t.Fatalf("WriteLaunchers failed: %v", err)
+	}
 }
 
 func TestCheckProjectInitPassesWhenProjectFilesPresent(t *testing.T) {

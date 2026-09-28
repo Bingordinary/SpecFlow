@@ -38,6 +38,8 @@ This script:
 - Downloads matching tooling binaries
 - Installs hook files to the project root
 
+By default the script downloads binaries for all platforms. If `specflow/tooling/platforms.txt` exists, only the platforms listed there are downloaded. The file is a user-owned local preference (inside the git-ignored `specflow/` directory). Do not create or edit this file during the update.
+
 Do not read the script's shell implementation. Execute it as-is.
 
 If the command succeeds (exit code 0), proceed to Step 2.

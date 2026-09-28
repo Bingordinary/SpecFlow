@@ -12,6 +12,8 @@ Installed-project usage examples below continue to show `specflow/tooling/...` d
 
 `<tooling-root>/bin/` is a local binary cache.
 It is ignored by git and must not be committed.
+Besides the `specflowctl-<os>-<arch>` binaries it holds two generated launchers, `specflowctl` (POSIX shell) and `specflowctl.cmd` (Windows batch), written by `build-release` and `update_tooling_binaries`.
+The launchers detect the current platform and execute the matching binary; they carry no governance logic.
 
 Installed-project rebuild example from the repository root:
 
@@ -45,7 +47,7 @@ PowerShell:
 .\specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads specflowctl binaries and `SHA256SUMS` only when required binaries are missing, stale, or missing checksums. By default downloads binaries for all platforms (linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a Syncthing-synced project directory stays usable on every platform. Use `--current-only` / `-CurrentOnly` to download only the current platform's binary. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
+The script runs a fast-forward pull (fetch + reset to the remote branch), reads the recorded tooling fingerprint from `tooling/fingerprint.txt`, and downloads specflowctl binaries and `SHA256SUMS` only when required binaries are missing, stale, or missing checksums. By default downloads binaries for all platforms (linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a Syncthing-synced project directory stays usable on every platform. If `tooling/platforms.txt` exists inside the SpecFlow checkout, only the platforms listed there are downloaded (one per line, `#` comments allowed, the `windows-*.exe` suffix is optional; unknown platform names fail the run, an empty file is an error). The file is a local per-checkout preference — it is itself git-ignored (`.gitignore`: `tooling/platforms.txt`), is not committed, and may differ per user or per checkout; it survives pulls and is shared by directory-sync tools. A missing file or an explicit `--current-only` / `-CurrentOnly` / `--all` / `-All` flag falls back to the default all-platforms behavior. Use `--current-only` / `-CurrentOnly` to download only the current platform's binary. Note that the pull resets the local SpecFlow repository to the remote branch; unpushed local commits in `specflow/` are discarded.
 
 Push the current branch and publish a tooling release when the current `main` fingerprint has no release tag. Must be run on the `main` branch of the SpecFlow source repository — both scripts reject non-main branches:
 
@@ -365,9 +367,10 @@ The tooling source fingerprint has a single authoritative implementation: `tooli
 
 ## Usage Examples
 
-Run ordinary governance commands from the repository root using the matching platform binary under `specflow/tooling/bin/`.
-For normal use, download the matching `specflowctl-*` files from the GitHub Release for the installed tooling fingerprint.
-For local tooling development, rebuild them with `build-release`.
+Run ordinary governance commands from the repository root through the stable launcher `<tooling-root>/bin/specflowctl` (`specflowctl.cmd` on Windows).
+The launcher detects the current platform and dispatches to the matching `specflowctl-<os>-<arch>` binary in the same directory, so commands never need a platform suffix.
+For normal use, install the binaries with `update_tooling_binaries`, which also writes the launchers.
+For local tooling development, rebuild them with `build-release`, which also writes the launchers.
 
 When developing the tooling itself, do not assume that ordinary commands may run through `go run`.
 The freshness gate requires an embedded build fingerprint for ordinary governance actions.
@@ -376,16 +379,16 @@ The commands that may still run through `go run` are exactly the recovery and in
 Examples:
 
 ```bash
-./specflow/tooling/bin/specflowctl-linux-amd64 doctor
-./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review collect-default-scope --flow spec_flow_design_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review run-init --flow spec_flow_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review run-init --flow spec_flow_design_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review run-validate --flow spec_flow_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review run-refresh --flow spec_flow_design_review
-./specflow/tooling/bin/specflowctl-linux-amd64 review run-touch --flow spec_flow_design_review
-./specflow/tooling/bin/specflowctl-linux-amd64 next --unit ai
-./specflow/tooling/bin/specflowctl-linux-amd64 promote --unit ai
+./specflow/tooling/bin/specflowctl doctor
+./specflow/tooling/bin/specflowctl review collect-default-scope --flow spec_flow_review
+./specflow/tooling/bin/specflowctl review collect-default-scope --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl review run-init --flow spec_flow_review
+./specflow/tooling/bin/specflowctl review run-init --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl review run-validate --flow spec_flow_review
+./specflow/tooling/bin/specflowctl review run-refresh --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl review run-touch --flow spec_flow_design_review
+./specflow/tooling/bin/specflowctl next --unit ai
+./specflow/tooling/bin/specflowctl promote --unit ai
 ```
 
 ## Freshness Rule
@@ -393,6 +396,7 @@ Examples:
 Compiled binaries under `<tooling-root>/bin/` are local cache files.
 They must fail closed when the embedded tooling fingerprint no longer matches current source.
 The fingerprint hashes tooling-root-relative keys such as `cmd/...`, `internal/...`, `go.mod`, and `manifest.tsv`, so identical tooling content has one fingerprint in both layouts.
+The launchers beside them are generated content without an embedded fingerprint; a missing launcher is reported by `doctor`.
 
 The local development recovery path is:
 
