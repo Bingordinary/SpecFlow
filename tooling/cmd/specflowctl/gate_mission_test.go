@@ -199,7 +199,8 @@ func TestGateMissionsCoverRuleVerifyAnalysisReviewAndCross(t *testing.T) {
 	}
 	grSubmitOK(t, root, reviewRun, "src/auth.go", grReviewReport("src/auth.go", main))
 	cross := missionJSON(t, root, reviewRun, "cross")
-	if len(cross.Packets[0].Dependencies) != 1 || cross.Packets[0].Dependencies[0].Digest == "" || len(cross.Packets[0].AdditionalRefs) != 2 || !strings.Contains(cross.Packets[0].ReportContract.Template, "Effective status:") {
+	if len(cross.Packets[0].Dependencies) != 1 || cross.Packets[0].Dependencies[0].Digest == "" || len(cross.Packets[0].Dependencies[0].Verdicts) == 0 ||
+		cross.Packets[0].Dependencies[0].Report != "" || len(cross.Packets[0].AdditionalRefs) != 2 || !strings.Contains(cross.Packets[0].ReportContract.Template, "Effective status:") {
 		t.Fatalf("wrong cross mission: %+v", cross.Packets[0])
 	}
 }
@@ -249,7 +250,7 @@ func TestGateMissionReportLineFormsMatchValidator(t *testing.T) {
 func renderMissionPrompt(t *testing.T, run *gaterun.Run, packet *gaterun.PacketSpec) string {
 	t.Helper()
 	mission := gateMission{
-		SchemaVersion: 1, RunID: "20260101-000000-abc123", Gate: run.Gate,
+		SchemaVersion: 2, RunID: "20260101-000000-abc123", Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target, Mode: run.Mode,
 		SpecSource: "docs/specs/units/candidate/unit_auth.md",
 		Packets: []missionPacket{{

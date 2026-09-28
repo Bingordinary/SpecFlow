@@ -1763,9 +1763,20 @@ func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
 	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", runID, "--packet", "cross"}, &contextOut, &contextErr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(contextOut.String(), "detect:auth.core") || !strings.Contains(contextOut.String(), "analysis:auth.core") ||
-		!strings.Contains(contextOut.String(), "MISMATCH (acceptance) — broken") || !strings.Contains(contextOut.String(), "Root cause: incomplete") {
-		t.Fatalf("expected cross context to include both structured results and verbatim accepted reports, got:\n%s", contextOut.String())
+	contextText := contextOut.String()
+	for _, want := range []string{
+		"detect:auth.core",
+		"analysis:auth.core",
+		"verdicts: auth.core=MISMATCH",
+		"root_cause: incomplete",
+		grRunFindingID(runID, "analysis:auth.core", 1),
+	} {
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("expected the cross context to carry the compact judgment record (%q), got:\n%s", want, contextText)
+		}
+	}
+	if strings.Contains(contextText, "broken at src/auth.go:1") {
+		t.Fatalf("the cross context must not embed the accepted detection report, got:\n%s", contextText)
 	}
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	state, err := gaterun.LoadPacketState(repoRoot, mustLoadRun(t, repoRoot, runID), "cross")
@@ -1774,6 +1785,100 @@ func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
 	}
 	if len(state.ConsumedResultDigests) != 2 {
 		t.Fatalf("expected cross to bind both result digests, got %v", state.ConsumedResultDigests)
+	}
+}
+
+// TestCrossMissionCarriesCompactJudgmentsWithoutReports pins the cross-mission
+// input contract: every dependency arrives as a compact judgment record
+// (verdicts, findings with their stored details, digests), and the verbatim
+// accepted reports are never embedded — the reports stay in run state and the
+// reviewer reads the target files for evidence.
+func TestCrossMissionCarriesCompactJudgmentsWithoutReports(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	main := "docs/specs/units/candidate/unit_auth.md"
+	extra := "    affects:\n      files:\n        - src/a.go\n        - src/b.go\n"
+	grWriteSpecSurface(t, repoRoot, "auth", "src", extra)
+	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
+	grWriteFile(t, repoRoot, "src/b.go", "package auth\n")
+
+	const marker = "REPORT-PROSE-MARKER-9f2c"
+	cleanReport := strings.Replace(grReviewReport("src/a.go", main), "reviewed module boundary", "reviewed module boundary "+marker, 1)
+	findingLine := "[P1] src/b.go:42 — swallowed error (actionable)"
+	detailLines := "  problem: the error value is discarded\n  evidence: src/b.go:42 returns without recording the failure\n  impact: failures become silent\n  fix: propagate the error"
+	findingReport := grReviewArchitecture("unacceptable — broken boundary") + "\n" + findingLine + "\n" + detailLines + "\n\nsrc/b.go: " + main + ": Description\nsrc/b.go: src/b.go: all\n"
+
+	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "src/a.go", cleanReport)
+	grSubmitOK(t, repoRoot, runID, "src/b.go", findingReport)
+
+	var out, errOut bytes.Buffer
+	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", runID, "--packet", "cross"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	prompt := out.String()
+	findingID := grRunFindingID(runID, "src/b.go", 1)
+	for _, want := range []string{
+		"verdicts: src/a.go=acceptable",
+		"verdicts: src/b.go=unacceptable",
+		"findings:",
+		findingID,
+		"problem: the error value is discarded",
+		"evidence: src/b.go:42 returns without recording the failure",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("cross mission lost judgment content %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, marker) || strings.Contains(prompt, "Accepted report:") {
+		t.Fatalf("cross mission embedded report prose:\n%s", prompt)
+	}
+
+	mission := missionJSON(t, repoRoot, runID, "cross")
+	var dep *missionDependency
+	for i := range mission.Packets[0].Dependencies {
+		if mission.Packets[0].Dependencies[i].PacketID == "src/b.go" {
+			dep = &mission.Packets[0].Dependencies[i]
+		}
+	}
+	if dep == nil || dep.Report != "" || dep.Digest == "" || len(dep.Verdicts) != 1 || len(dep.Findings) != 1 || dep.Findings[0].ID != findingID {
+		t.Fatalf("cross dependency is not a compact judgment record: %+v", mission.Packets[0].Dependencies)
+	}
+}
+
+// TestCrossMissionSizeIndependentOfReportProse pins the scaling property of
+// the compact mission: a report padded with thousands of characters of
+// justification prose must not change the cross mission's size — the mission
+// carries judgments, not report text.
+func TestCrossMissionSizeIndependentOfReportProse(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	main := "docs/specs/units/candidate/unit_auth.md"
+	extra := "    affects:\n      files:\n        - src/a.go\n        - src/b.go\n"
+	grWriteSpecSurface(t, repoRoot, "auth", "src", extra)
+	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
+	grWriteFile(t, repoRoot, "src/b.go", "package auth\n")
+
+	crossPromptLen := func(pad string) int {
+		runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "auth", "--target", "candidate")
+		reports := map[string]string{
+			"src/a.go": strings.Replace(grReviewReport("src/a.go", main), "reviewed module boundary", "reviewed module boundary"+pad, 1),
+			"src/b.go": strings.Replace(grReviewReport("src/b.go", main), "reviewed dependency direction", "reviewed dependency direction"+pad, 1),
+		}
+		for file, report := range reports {
+			grSubmitOK(t, repoRoot, runID, file, report)
+		}
+		var out, errOut bytes.Buffer
+		if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", runID, "--packet", "cross"}, &out, &errOut); err != nil {
+			t.Fatal(err)
+		}
+		return out.Len()
+	}
+
+	plain := crossPromptLen("")
+	padded := crossPromptLen(" " + strings.Repeat("x", 4000))
+	if padded != plain {
+		t.Fatalf("cross mission size changed with report prose length: plain=%d padded=%d", plain, padded)
 	}
 }
 

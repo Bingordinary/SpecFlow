@@ -4,18 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specflowlayout"
 )
 
+// missionDependency is one compact judgment record in a packet mission: the
+// synthesis-relevant projection of an accepted packet result (dependency
+// results) or of a carried baseline judgment (carried results). It carries the
+// verdicts, findings with their stored details, and analysis fields a
+// result-consuming packet synthesizes over — never the verbatim accepted
+// report, which stays in run state and is assembled into the published cache
+// body. The one exception is a verify analysis packet's single detection
+// dependency, whose report is the documented input of the analysis step.
 type missionDependency struct {
-	PacketID string                `json:"packet_id"`
-	Status   string                `json:"status"`
-	Digest   string                `json:"digest,omitempty"`
-	Result   *gaterun.PacketResult `json:"result,omitempty"`
-	Report   string                `json:"accepted_report,omitempty"`
+	PacketID        string            `json:"packet_id"`
+	Kind            string            `json:"kind,omitempty"`
+	Status          string            `json:"status"`
+	Digest          string            `json:"digest,omitempty"`
+	Verdicts        map[string]string `json:"verdicts,omitempty"`
+	Findings        []gaterun.Finding `json:"findings,omitempty"`
+	Analysis        map[string]string `json:"analysis,omitempty"`
+	EffectiveStatus map[string]string `json:"effective_status,omitempty"`
+	Report          string            `json:"accepted_report,omitempty"`
 }
 
 type missionTerm struct {
@@ -39,7 +52,7 @@ type missionPacket struct {
 	ReadInputs       []missionReadInput        `json:"read_inputs"`
 	DependsOn        []string                  `json:"depends_on"`
 	Dependencies     []missionDependency       `json:"dependency_results"`
-	CarriedResults   []gaterun.PacketResult    `json:"carried_results"`
+	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
 	ProtocolRef      string                    `json:"protocol_ref"`
 	ProtocolScope    string                    `json:"protocol_scope"`
@@ -91,7 +104,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 		ReadInputs:       missionInputs(run, spec),
 		DependsOn:        append([]string{}, spec.DependsOn...),
 		Dependencies:     []missionDependency{},
-		CarriedResults:   []gaterun.PacketResult{},
+		CarriedResults:   []missionDependency{},
 		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForPacket(run, spec)...),
 		ProtocolRef:      specflowlayout.Relative(layout.FrameworkRoot, protocol),
 		ProtocolScope:    protocolScopeFor(spec.Kind, spec.CheckKeys),
@@ -138,24 +151,30 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 		if state.Status != gaterun.PacketAccepted && state.Status != gaterun.PacketNotRequired {
 			return gateMission{}, fmt.Errorf("packet %q is not ready: dependency %q is %s", spec.PacketID, dep, state.Status)
 		}
-		entry := missionDependency{PacketID: dep, Status: state.Status}
-		if state.Status == gaterun.PacketAccepted {
-			if state.Result == nil {
-				return gateMission{}, fmt.Errorf("dependency %q has no accepted result", dep)
-			}
-			entry.Digest, entry.Result, entry.Report = state.Result.ReportDigest, state.Result, state.Report
+		if state.Status == gaterun.PacketAccepted && state.Result == nil {
+			return gateMission{}, fmt.Errorf("dependency %q has no accepted result", dep)
+		}
+		entry := missionJudgmentFor(dep, state.Status, state.Result)
+		if spec.Kind == gaterun.PacketKindAnalysis {
+			// The analysis step's documented input is the accepted detection
+			// report carrying the detector's evidence lines (see
+			// framework/unit_verify_checklist.md Step 7). Every other
+			// dependency carries its compact judgment record only.
+			entry.Report = state.Report
 		}
 		packet.Dependencies = append(packet.Dependencies, entry)
 	}
 	if spec.Kind == gaterun.PacketKindCross {
-		packet.CarriedResults = append(packet.CarriedResults, run.CarriedResults...)
+		for i := range run.CarriedResults {
+			packet.CarriedResults = append(packet.CarriedResults, missionJudgmentFor(run.CarriedResults[i].PacketID, "", &run.CarriedResults[i]))
+		}
 	}
 	constraints := []string{"independent read-only reviewer session without the author's context", "packet boundaries are deterministic; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from packet read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
 	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.PacketKindItem || spec.Kind == gaterun.PacketKindAnalysis) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
 	return gateMission{
-		SchemaVersion: 1, RunID: run.RunID, Gate: run.Gate,
+		SchemaVersion: 2, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target, Mode: run.Mode,
 		SpecSource:  run.RequiredFiles[0],
 		Packets:     []missionPacket{packet},
@@ -190,17 +209,9 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		fmt.Fprintln(w)
 	}
 	if len(p.Dependencies) > 0 {
-		fmt.Fprintln(w, "Dependency results:")
+		fmt.Fprintln(w, "Dependency results (each accepted packet's verdicts, findings, and analysis):")
 		for _, dep := range p.Dependencies {
-			fmt.Fprintf(w, "  - %s: %s", dep.PacketID, dep.Status)
-			if dep.Digest != "" {
-				fmt.Fprintf(w, " (digest %s)", dep.Digest)
-			}
-			fmt.Fprintln(w)
-			if dep.Result != nil {
-				data, _ := json.MarshalIndent(dep.Result, "    ", "  ")
-				fmt.Fprintf(w, "    Parsed result: %s\n", data)
-			}
+			writeMissionJudgment(w, dep)
 			if dep.Report != "" {
 				fmt.Fprintf(w, "    Accepted report:\n%s\n", indentPacketContext(dep.Report, "      "))
 			}
@@ -209,8 +220,7 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 	if len(p.CarriedResults) > 0 {
 		fmt.Fprintln(w, "Carried judgments:")
 		for _, result := range p.CarriedResults {
-			data, _ := json.MarshalIndent(result, "    ", "  ")
-			fmt.Fprintf(w, "  - %s (%s): %s\n", result.PacketID, result.ReportDigest, data)
+			writeMissionJudgment(w, result)
 		}
 	}
 	if len(p.DeferredFindings) > 0 {
@@ -247,6 +257,84 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 	fmt.Fprintf(w, "If you cannot complete: %s\n", mission.FailurePath)
 	fmt.Fprintln(w, "Return the report text only. The main agent will submit it with:")
 	fmt.Fprintln(w, mission.Submission)
+}
+
+// missionJudgmentFor projects an accepted packet result into the compact
+// judgment record a mission carries. A nil result (a not-required conditional
+// dependency) yields the identity fields only. The verbatim accepted report is
+// never part of the projection — a mission carries judgments, not the
+// reviewers' narratives; evidence is read from the packet's read refs.
+func missionJudgmentFor(packetID, status string, result *gaterun.PacketResult) missionDependency {
+	entry := missionDependency{PacketID: packetID, Status: status}
+	if result == nil {
+		return entry
+	}
+	entry.Kind = result.Kind
+	entry.Digest = result.ReportDigest
+	entry.Verdicts = result.Verdicts
+	entry.Findings = result.Findings
+	entry.Analysis = result.Analysis
+	entry.EffectiveStatus = result.EffectiveStatus
+	return entry
+}
+
+// writeMissionJudgment renders one compact judgment record: the packet header
+// line, its verdicts or effective statuses, analysis fields, and every finding
+// with its stored detail block. Map keys are sorted so the mission text is
+// deterministic for a given run state.
+func writeMissionJudgment(w io.Writer, dep missionDependency) {
+	header := dep.PacketID
+	if dep.Status != "" {
+		header += ": " + dep.Status
+	}
+	var meta []string
+	if dep.Kind != "" {
+		meta = append(meta, "kind "+dep.Kind)
+	}
+	if dep.Digest != "" {
+		meta = append(meta, "digest "+dep.Digest)
+	}
+	if len(meta) > 0 {
+		header += " (" + strings.Join(meta, ", ") + ")"
+	}
+	fmt.Fprintf(w, "  - %s\n", header)
+	if len(dep.Verdicts) > 0 {
+		fmt.Fprintf(w, "    verdicts: %s\n", joinSortedPairs(dep.Verdicts))
+	}
+	if len(dep.EffectiveStatus) > 0 {
+		fmt.Fprintf(w, "    effective status: %s\n", joinSortedPairs(dep.EffectiveStatus))
+	}
+	if len(dep.Analysis) > 0 {
+		fmt.Fprintln(w, "    analysis:")
+		for _, key := range sortedStringKeys(dep.Analysis) {
+			fmt.Fprintf(w, "      %s: %s\n", key, dep.Analysis[key])
+		}
+	}
+	if len(dep.Findings) > 0 {
+		fmt.Fprintln(w, "    findings:")
+		for _, finding := range dep.Findings {
+			fmt.Fprintf(w, "      - %s [%s]:\n", finding.ID, finding.Severity)
+			fmt.Fprintf(w, "%s\n", indentPacketContext(finding.Detail, "        "))
+		}
+	}
+}
+
+func sortedStringKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func joinSortedPairs(values map[string]string) string {
+	keys := sortedStringKeys(values)
+	pairs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, key+"="+values[key])
+	}
+	return strings.Join(pairs, ", ")
 }
 
 func missionInputs(run *gaterun.Run, spec *gaterun.PacketSpec) []missionReadInput {
