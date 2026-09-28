@@ -27,7 +27,6 @@ type missionTerm struct {
 type missionReadInput struct {
 	Ref      string `json:"ref"`
 	Resolved string `json:"resolved,omitempty"`
-	Hash     string `json:"hash,omitempty"`
 }
 
 type missionPacket struct {
@@ -189,9 +188,6 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 			fmt.Fprintf(w, " -> %s", input.Resolved)
 		}
 		fmt.Fprintln(w)
-		if input.Hash != "" {
-			fmt.Fprintf(w, "    snapshot hash: %s\n", input.Hash)
-		}
 	}
 	if len(p.Dependencies) > 0 {
 		fmt.Fprintln(w, "Dependency results:")
@@ -256,11 +252,11 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 func missionInputs(run *gaterun.Run, spec *gaterun.PacketSpec) []missionReadInput {
 	refs := make(map[string]missionReadInput)
 	for _, ref := range run.Refs {
-		refs[ref.Ref] = missionReadInput{Ref: ref.Ref, Resolved: ref.Resolved, Hash: ref.Hash}
+		refs[ref.Ref] = missionReadInput{Ref: ref.Ref, Resolved: ref.Resolved}
 	}
 	for _, surface := range run.Surfaces {
 		for _, entry := range surface.Entries {
-			refs[entry.Path] = missionReadInput{Ref: entry.Path, Resolved: entry.Path, Hash: entry.Hash}
+			refs[entry.Path] = missionReadInput{Ref: entry.Path, Resolved: entry.Path}
 		}
 	}
 	out := make([]missionReadInput, 0, len(spec.ReadRefs))
