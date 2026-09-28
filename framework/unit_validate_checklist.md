@@ -163,7 +163,7 @@ Failed checks: N | Advisory findings: K
 **Counting rules:**
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default and its required `confirmed` record states that the default stands without a §9 boundary check; a P0 grade requires the §9 boundary check (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- `Advisory findings` (Check 1 step 7 / step 13 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- `Advisory findings` (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding under the check line as its own entry in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`, followed by the shared finding block (§Output Format). The entry line must begin with the bracketed severity after optional indentation — the parser accepts indentation or a single leading `-`, but not a numbered prefix, so the packet report keeps entries as standalone lines; the presented summary may re-number them (`5a-1`, `5a-2`, ...) as presentation only. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, its resolution type, and the block fields:
@@ -231,11 +231,7 @@ When findings mix resolution types (within one check or across checks), the repo
     - **Fenced code blocks are content** — `##`-like lines inside ``` / ~~~ fences must not split regions; when a fence would visually span a section boundary, the spec needs restructuring (a fence cannot cross `##` headings — close the fence before the next heading)
     - **Every region the run will declare is locatable** — for each section the checks will declare (run `--section <heading>` probes), the heading resolves uniquely. A declaration that cannot be located fails closed at gate-finalize time; this step surfaces it at validate time
     - Fix direction: restructure the spec so the split is semantically clean (cohesion per `framework/spec_writing_guide.md` §13); do not fall back to whole-file declarations as a workaround
-13. **Version Notes check:** verify the unit's own main spec complies with the Version Notes convention (see `framework/spec_writing_guide.md` §14). Applies to candidate specs only: stable-only runs skip it (stable content is consensus — the §14 Scope migration rule leaves the section to the unit's next candidate round), and retiring candidates skip it (the spec is being removed, not archived). The check separates mechanism-level violations from hygiene-level ones — the former are FAIL (they break section-region locatability), the latter are WARNING (pure document hygiene with no mechanism impact). There is no version-authority check: entries carry no version number, so nothing is compared against the frontmatter `version` field.
-    - **Existence and position (FAIL):** the spec must contain a `## Version Notes` heading as its first `##` heading, immediately after the `#` title; a missing heading or a heading in any other position is a FAIL (the heading is part of the section-region content identity per `spec_writing_guide.md` §13 item 5, so a misplaced heading breaks region locatability)
-    - **Lifecycle compliance (WARNING):** the section contains the current round's summary plus at most one line summarizing the previous round; a section with more entries (an untruncated changelog carried over from the stable copy) is a WARNING, not a FAIL (extra entries are pure document hygiene — they do not affect parsing, behavior, or downstream planning)
-    - **Content discipline (WARNING):** entries record design-decision-level changes (behavior, contract, boundary, config semantics); implementation details, typo fixes, or formatting edits belong to VCS history — recording them is a WARNING, not a FAIL (it degrades the section's clarity, not any mechanism)
-14. **Environment and deployment agnosticism check (FAIL):** Verify that the spec body and acceptance item set remain strictly environment-agnostic per `framework/spec_writing_guide.md` §15.1 (Environment & Temporal Agnosticism Law) and §15.2 (Anti-Pattern E):
+13. **Environment and deployment agnosticism check (FAIL):** Verify that the spec body and acceptance item set remain strictly environment-agnostic per `framework/spec_writing_guide.md` §14.1 (Environment & Temporal Agnosticism Law) and §14.2 (Anti-Pattern E):
     - Must NOT contain developer-machine absolute paths (e.g. `/Users/...`, `/home/...`, `C:\...`) in narrative text or structured fields (use project-relative paths instead).
     - Must NOT contain fixed local machine IP addresses or ports (e.g. `127.0.0.1:8080`, `localhost:3000`) as hard requirements (illustrations inside fenced code blocks must be explicitly marked as example placeholders).
     - Must NOT contain live or environment-specific credentials, tokens, or private secrets.
@@ -243,7 +239,7 @@ When findings mix resolution types (within one check or across checks), the repo
 
 **PASS:** All format constraints satisfied
 
-**WARNING (steps 7, 13):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference; Version Notes hygiene violations (untruncated changelog or implementation-detail entries) — truncate to the current round's summary plus a one-line summary of the previous round, and keep entries at design-decision level
+**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference
 
 **FAIL:** Any missing field, reference to a non-existent file, layer-prefixed spec path, or environment-specific hardcoding in prose or structured fields (actionable)
 
@@ -319,7 +315,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 **FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
 **Step 6 — Abstraction level & implementation agnosticism (The Truth Ownership Check)**
-Verify that the spec text adheres to `framework/spec_writing_guide.md` §15 (Truth Ownership Framework):
+Verify that the spec text adheres to `framework/spec_writing_guide.md` §14 (Truth Ownership Framework):
 
 - **Mechanism vs. Behavior (Anti-Pattern B):** Verify the spec does not mandate internal data structures or language-level execution mechanisms (e.g. "must use sync.RWMutex", "must store records in a map[string]any", specific internal channel buffer capacities, or private struct layouts) instead of behavioral invariants and concurrency guarantees (e.g. atomicity, thread-safety, idempotent processing).
 - **Causal Synchronization vs. Brittle Temporal Sleep (Anti-Pattern D):** Verify the design does not specify arbitrary physical wall-clock sleep durations (e.g. "wait 500ms and verify status") for asynchronous workflows. Asynchronous transitions must specify causal state changes ("until status is ready", "upon event reception") with bounded timeout semantics.
@@ -329,7 +325,7 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 - **FAIL (P1: Over-specification)** (actionable: restate as observable behavioral invariants or causal state transitions)
 
 **Step 7 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §15
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §14
 - FAIL: specific findings reported
 
 **Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification + abstraction boundary check (the subagent makes active engineering judgments)
@@ -553,7 +549,7 @@ For each acceptance item:
      - Specific input values or conditions
      - Expected output or state change
      - At least one boundary or edge case
-   - Verify absence of test double/fixture leakage (Anti-Pattern C): Description must NOT hardcode test doubles, mock runner names, or transient test fixtures (e.g. `mockRunner`, `test_tool`) into formal Given/When/Then scenarios — formal acceptance items must describe domain interactions, not test harness artifacts (see `framework/spec_writing_guide.md` §15.2 Anti-Pattern C). Leaking test fixtures → FAIL (actionable: restate using domain roles)
+   - Verify absence of test double/fixture leakage (Anti-Pattern C): Description must NOT hardcode test doubles, mock runner names, or transient test fixtures (e.g. `mockRunner`, `test_tool`) into formal Given/When/Then scenarios — formal acceptance items must describe domain interactions, not test harness artifacts (see `framework/spec_writing_guide.md` §14.2 Anti-Pattern C). Leaking test fixtures → FAIL (actionable: restate using domain roles)
 2. If the description is a single vague sentence with no scenario breakdown → FAIL
 3. If the description is short but specific (e.g., "Returns 201 when valid email and password are provided") → PASS
 4. If the description is long but purely narrative with no testable specifics → FAIL
@@ -669,7 +665,7 @@ For each acceptance item, apply the five baseline rules (S1–S5, see `framework
 
 **Relationship to 5e/5f/5g:** 5e judges falsifiability, 5f actionability, 5g information increment — 5i judges **contract information content** (presence of concrete elements, specific values, scenario coverage, boilerplate). The checks are complementary; a single item may fail several at once. When an item fails 5i, quote the violated rule and the offending text.
 
-**Contract substance vs. over-specification boundary:** Specific values mandated by S1 and S2 must represent genuine Contract Anchors owned by this unit or public contracts exported by dependencies per `framework/spec_writing_guide.md` §15 (Truth Ownership Framework). Hardcoding private implementation details, arbitrary wall-clock sleep durations, or collaborating unit unexported fields does NOT satisfy contract substance — it violates abstraction boundaries and is flagged under Check 2 and Check 7.
+**Contract substance vs. over-specification boundary:** Specific values mandated by S1 and S2 must represent genuine Contract Anchors owned by this unit or public contracts exported by dependencies per `framework/spec_writing_guide.md` §14 (Truth Ownership Framework). Hardcoding private implementation details, arbitrary wall-clock sleep durations, or collaborating unit unexported fields does NOT satisfy contract substance — it violates abstraction boundaries and is flagged under Check 2 and Check 7.
 
 **PASS:** All items satisfy the Contract Substance Baseline
 
@@ -754,7 +750,7 @@ affects.appendices:
 ```
 6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (actionable: resolve the cross-unit inconsistency)
 7. **Carrier substance warning:** if a dependency unit's carriers (item set or protocol appendices) are compliant but carry no comparable contract statements (e.g. items with no concrete values, codes, or formats to compare against) → WARNING naming the unit and the empty carriers, recommending the dependency unit enrich its acceptance items per `framework/spec_writing_guide.md` §7 Contract Substance Baseline. Not a FAIL — the dependency unit's own validate Check 5i gates empty carriers at promote; this warning surfaces the coupling risk to the user.
-8. **Cross-Unit Private Implementation Leakage (Anti-Shadowing Rule, FAIL):** Enforce the Truth Ownership Visibility Law (`framework/spec_writing_guide.md` §15.1 and §15.2 Anti-Pattern A). A non-owner unit must never enumerate volatile, unexported, or private internal parameters/fields of collaborating units.
+8. **Cross-Unit Private Implementation Leakage (Anti-Shadowing Rule, FAIL):** Enforce the Truth Ownership Visibility Law (`framework/spec_writing_guide.md` §14.1 and §14.2 Anti-Pattern A). A non-owner unit must never enumerate volatile, unexported, or private internal parameters/fields of collaborating units.
    - For every attribute, parameter, field name, or payload structure cited by the candidate spec regarding a dependency unit, verify that it resolves to one of:
      - **Public Contract Anchor:** An exported public contract symbol or explicit schema property declared in the dependency's formal behavior carriers (acceptance item set or protocol appendix), such as `contracts.SpanAttr*`, standard exported protocol events, or public REST/gRPC response keys.
      - **Behavioral Specification:** A behavioral description that does not hardcode unexported parameter names (e.g. "records delegation goal and child execution identifier" instead of literal private parameter names `goal, role, child_run_id`).
@@ -844,7 +840,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Present Findings
 
-Advisory findings (Check 1 step 7 / step 13 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding records its §9 confirmation in the same check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with evidence). Advisory findings never produce machine `Severity confirmation:` records and must never be emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
+Advisory findings (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding records its §9 confirmation in the same check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with evidence). Advisory findings never produce machine `Severity confirmation:` records and must never be emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
 
 ### Batch classification (validate)
 

@@ -792,7 +792,7 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - Do they disagree on the goal itself?
    - Is one side clearly wrong (typo, dead code, outdated reference)?
    - Does one side handle edge cases the other misses?
-   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §15).
+   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §14).
 
 4. Root cause analysis (choose the best fit):
    - Code is incomplete — spec intent is clear, code hasn't caught up

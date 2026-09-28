@@ -6,7 +6,7 @@ Files under `specflow/` are framework and delivery documents and are written in 
 
 Files under `docs/` are project communication documents and are written in Chinese unless a specific delivery artifact requires otherwise.
 
-This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 9 and the abstraction boundary guidelines in Section 15.
+This file defines formal Spec shape and reference rules, including the semantic authoring baseline in Section 9 and the abstraction boundary guidelines in Section 14.
 
 Format compliance does not by itself prove handoff completeness.
 
@@ -356,7 +356,7 @@ Splitting is legitimate when any condition fails. Examples:
 
 ### Contract Substance Baseline
 
-Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §15 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
+Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §14 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
 
 | Rule | Requirement | Rejected form |
 |---|---|---|
@@ -580,39 +580,11 @@ The unit's own main spec is declared by **section regions** in validation caches
 
 A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, or stray pre-heading content) cannot be declared by section regions — validate Check 1/9 reports it and the fix direction is restructuring the spec per this section, not falling back to whole-file declarations.
 
-## 14. Version Notes
-
-Every unit main Spec must carry a Version Notes section summarizing the current round's design-level changes. It is a writing convention, not a tooling mechanism: the heading is an ordinary `##` section, the frontmatter `version` field remains the sole version authority, and VCS history remains the full changelog.
-
-**Position:** the section is the independent `## Version Notes` heading — the first `##` heading of the spec, located immediately after the `#` title:
-
-```text
-# {unit} Spec
-## Version Notes
-## 1. ...
-```
-
-The heading text is fixed — always `## Version Notes`, never localized or rephrased: the heading is part of the section region's content identity (§13 item 5), and a fixed spelling keeps the validate expectation single. The section is an ordinary `##` region and is subject to every §13 rule (unique heading, one topic, naming stability). It must not be written as a `> Version Notes` quote or as stray prose in the frontmatter region — §13 item 1 forbids any content there other than the YAML block, the `#` title, and blank lines.
-
-**Semantics:** the section records the current round's design-decision-level changes only — changes to behavior, contract, boundary, or config semantics. It is not a changelog: implementation details, typo fixes, and formatting edits are not recorded, and the full history lives in VCS. Entries are plain text and carry no version number — the frontmatter `version` field is the sole version authority, so there is no number to keep in sync. The section holds the current round's summary plus at most one line summarizing the previous round's changes, for example:
-
-```text
-## Version Notes
-
-{summary of this round's design-level changes}
-
-Previous round: {one-line summary of the previous round's changes}
-```
-
-**Lifecycle:** `specflowctl fork` copies the section verbatim — the tool rewrites only the frontmatter `version` field (a PATCH bump, see §8), never the body content. When the agent starts editing the candidate after fork, it rewrites the section as the current round's summary plus at most one line summarizing the previous round. `promote` copies the section unchanged — the candidate's Version Notes content becomes the stable content verbatim, matching the byte-identical copy rule of the promote workflow (see `framework/unit_promote_workflow.md`). The section is a writing convention, not a tooling mechanism (see §14 first paragraph): violating the section-content rules (changelog truncation, entry granularity) is a document-hygiene issue that does not affect parsing, behavior, or downstream planning. The only mechanism-level violation is the section's identity — a missing or misplaced heading breaks section-region locatability (§13 item 5). Units have no version-authority check: entries carry no version number, so there is nothing to match against the frontmatter. validate Check 1 step 13 grades the mechanism-level violation as FAIL and the hygiene-level ones (untruncated changelog, implementation-detail entries) as WARNING — see `framework/unit_validate_checklist.md` §Check 1 step 13.
-
-**Scope:** the convention applies to the unit's own main Spec only. Rule files, appendix files, and protocol appendices are contract files declared whole (§13 item 7) and carry no Version Notes requirement. Specs promoted before this convention carry no section and are not forced to migrate: stable-only validation skips the Version Notes check, and the section is added on the unit's next candidate round (fork).
-
-## 15. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
+## 14. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
 
 A specification requires determinism to be verifiable, but over-specification destroys resilience and creates brittle, dangling couplings. This section establishes the **Truth Ownership Framework** to resolve the tension between contract substance (the concrete value requirement of §7 and Check 5i) and unacceptable hardcoding.
 
-### 15.1 The Core Principle: Truth Ownership Laws
+### 14.1 The Core Principle: Truth Ownership Laws
 
 Whether a concrete value or assertion is an acceptable **Contract Anchor** or an unacceptable **Over-Specification** is determined by who owns the underlying truth:
 
@@ -632,7 +604,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
    - *Allowed*: Causal event-driven or state-driven synchronization conditions (e.g. "when job status transitions to complete"), bounded timeouts with explicit timeout error semantics.
    - *Forbidden*: Local machine absolute paths (`/Users/...`), fixed local IP/ports (`127.0.0.1:8080`), hardcoded environment secrets, or arbitrary physical sleep durations (e.g. "wait 500ms and check status").
 
-### 15.2 Five Hardcoding Anti-Patterns
+### 14.2 Five Hardcoding Anti-Patterns
 
 | Anti-Pattern | Description | Why It Breaks the System | Correct Remedy |
 |---|---|---|---|
@@ -642,7 +614,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 | **D. Fragile Temporal Sleep / Wall-Clock Waits** | Specifying arbitrary physical sleep durations (`sleep(500ms)`) as verification pass conditions. | Causes flaky tests on loaded CI systems and fails to verify actual causal event ordering. | Use causal state assertions ("until state reaches X", "upon receiving event Y") with an upper timeout boundary. |
 | **E. Environmental & Deployment Hardcoding** | Hardcoding local filesystem paths (`/Users/dev/...`), fixed host ports (`localhost:8080`), or environment-specific credentials. | Breaks across different machines, stages, and platform configurations. | Use relative project-scoped paths, environment configuration references, or abstract placeholders. |
 
-### 15.3 Contract Anchors vs. Unacceptable Hardcoding: Comparison Table
+### 14.3 Contract Anchors vs. Unacceptable Hardcoding: Comparison Table
 
 | Dimension | Acceptable & Encouraged (Contract Anchor) | Prohibited (Over-Specification / Hardcoding) |
 |---|---|---|
