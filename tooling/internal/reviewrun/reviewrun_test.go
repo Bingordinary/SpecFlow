@@ -223,6 +223,25 @@ func TestInitHookCheckSliceIncludesHooksFile(t *testing.T) {
 	}
 }
 
+func TestInitSubAgentSliceIncludesMissionGenerator(t *testing.T) {
+	_, file, _ := createInitializedRun(t)
+	state := mustParse(t, file)
+	slice := findSlice(t, state, "sub_agent_prompt_assembly")
+
+	for _, input := range []string{
+		"framework/verification_scope.md",
+		"tooling/cmd/specflowctl/gate_mission.go",
+		"tooling/cmd/specflowctl/gate_report_contract.go",
+	} {
+		if !containsString(slice.InputFiles, input) {
+			t.Fatalf("expected sub_agent_prompt_assembly input %s, got %+v", input, slice.InputFiles)
+		}
+	}
+	if !strings.Contains(slice.ReviewQuestion, "generated gate missions") {
+		t.Fatalf("expected the slice to review generated gate missions, got %q", slice.ReviewQuestion)
+	}
+}
+
 func TestInitCreatesValidDesignReviewRunState(t *testing.T) {
 	repoRoot := createReviewRunRepo(t)
 	now := time.Date(2026, 4, 26, 10, 30, 0, 0, time.UTC)
@@ -1156,6 +1175,8 @@ func createReviewRunRepo(t *testing.T) string {
 		"example.md",
 		"tooling/README.md",
 		"tooling/cmd/specflowctl/main.go",
+		"tooling/cmd/specflowctl/gate_mission.go",
+		"tooling/cmd/specflowctl/gate_report_contract.go",
 		"tooling/internal/demo/demo.go",
 		"tooling/internal/processcleanup/processcleanup.go",
 		"tooling/go.mod",

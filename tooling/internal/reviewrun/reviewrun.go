@@ -829,7 +829,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "sub_agent_prompt_assembly",
 			SliceType:      "local",
-			ReviewQuestion: "Do the sub-agent assembly rules satisfy the seven Section 2.17 checkpoints with complete assembly exercises.",
+			ReviewQuestion: "Do the generated gate missions and the triage prompt satisfy the seven Section 2.17 checkpoints with complete mission exercises.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("verification_scope.md"),
@@ -839,6 +839,8 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 					scope.FrameworkPath("operations/issues.md"),
 					scope.FrameworkPath("spec_review_checklist.md"),
 					scope.FrameworkPath("_atoms/misc/report_skeleton.md"),
+					scope.ToolingPath("cmd/specflowctl/gate_mission.go"),
+					scope.ToolingPath("cmd/specflowctl/gate_report_contract.go"),
 				})
 			},
 		},

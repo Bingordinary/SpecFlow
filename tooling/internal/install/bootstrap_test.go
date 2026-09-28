@@ -229,14 +229,23 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 		}
 	}
 
-	assertRoute("validate@{target}", []string{"framework/commands.md", "framework/verification_scope.md", "framework/validation_cache.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "plan full run"}, nil)
+	for _, step := range []string{"gate-plan --format json", "gate-status --format json", "gate-packet --format prompt", "gate-submit", "gate-finalize"} {
+		requireText(t, section, step)
+	}
+	requireText(t, section, "independent reviewer")
+	requireText(t, section, "specflowctl next --unit <name>")
+	requireText(t, section, "re-plan with all inputs")
+
+	assertRoute("validate@{target}", []string{"framework/commands.md", "full run", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
 	assertRoute("validate@{target}:check-{n}", []string{"framework/commands.md", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
-	assertRoute("verify@{unit}", []string{"framework/verification_scope.md", "framework/validation_cache.md", "framework/unit_verify_checklist.md", "plan full run"}, nil)
+	assertRoute("verify@{unit}", []string{"discover paths", "full run", "--input", "framework/unit_verify_checklist.md"}, nil)
 	assertRoute("verify@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/unit_verify_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("verify@{rule}", []string{"rule verify was removed", "validate@{rule}", "framework/verification_scope.md"}, nil)
-	assertRoute("review@{unit}", []string{"framework/verification_scope.md", "framework/validation_cache.md", "framework/spec_review_checklist.md", "plan full run"}, nil)
+	assertRoute("review@{unit}", []string{"framework/spec_review_checklist.md", "full run"}, nil)
 	assertRoute("review@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/spec_review_checklist.md", "targeted file review directly"}, []string{"framework/validation_cache.md", "gate-plan"})
-	assertRoute("revalidate@{target}", []string{"framework/commands.md", "framework/verification_scope.md", "framework/validation_cache.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "plan delta/repair"}, nil)
+	assertRoute("revalidate@{target}", []string{"framework/commands.md", "delta/repair", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
+	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta/repair", "--input", "framework/unit_verify_checklist.md"}, nil)
+	assertRoute("rereview@{unit}", []string{"Delta/repair", "framework/spec_review_checklist.md"}, nil)
 	assertRoute("promote@{target}", []string{"framework/commands.md", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
 	assertRoute("fresh@{target}", []string{"For `{target}`, resolve via `framework/commands.md`", "`specflowctl fresh`", "framework/validation_cache.md"}, nil)
 

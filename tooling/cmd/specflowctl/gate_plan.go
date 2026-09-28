@@ -31,6 +31,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	ruleIDPtr := fs.String("rule", "", "rule id")
 	targetPtr := fs.String("target", "", "layer checked: candidate | stable")
 	modePtr := fs.String("mode", "full", "run mode: full | delta | repair")
+	formatPtr := fs.String("format", "text", "output format: text | json")
 	inputPtr := repeatedString{}
 	fs.Var(&inputPtr, "input", "extra read input the derived surface cannot see: a path, a directory, or a logical reference (repeatable)")
 	rerunPtr := repeatedString{}
@@ -44,6 +45,9 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	ruleID := strings.TrimSpace(*ruleIDPtr)
 	target := strings.TrimSpace(*targetPtr)
 	mode := strings.TrimSpace(*modePtr)
+	if *formatPtr != "text" && *formatPtr != "json" {
+		return fmt.Errorf("invalid --format %q: must be text or json", *formatPtr)
+	}
 
 	if err := requireGateTarget(gate, unitName, ruleID, target, stderr); err != nil {
 		return err
@@ -66,6 +70,13 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	run, err := gaterun.Plan(absRoot, gate, targetKind, targetName, target, mode, inputPtr, rerunPtr, time.Now().UTC())
 	if err != nil {
 		return err
+	}
+	if *formatPtr == "json" {
+		view, err := gateRunSnapshot(absRoot, run)
+		if err != nil {
+			return err
+		}
+		return writeGateJSON(stdout, view)
 	}
 
 	fmt.Fprintf(stdout, "Gate run planned: %s\n", run.RunID)
@@ -93,7 +104,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "Notice: %s\n", notice)
 	}
 	fmt.Fprintf(stdout, "Run state: %s\n", gaterun.StateRelPath(run.RunID))
-	fmt.Fprintf(stdout, "Next: inspect each ready packet with `specflowctl gate-packet --run %s --packet <id>`, submit its report, then run `specflowctl gate-finalize --run %s` after all required packets resolve\n", run.RunID, run.RunID)
+	fmt.Fprintf(stdout, "Next: use `specflowctl gate-status --run %s --format json` for ready packets; send each `specflowctl gate-packet --run %s --packet <id> --format prompt` output to an independent reviewer, submit its report, and finalize when status says finalize\n", run.RunID, run.RunID)
 	return nil
 }
 
@@ -127,7 +138,7 @@ func requireGateTarget(gate, unitName, ruleID, target string, stderr io.Writer) 
 
 func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify|review (--unit NAME | --rule ID) --target candidate|stable [--mode full|delta|repair] [--input PATH_OR_REF]... [--rerun CHECK_KEY]... [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify|review (--unit NAME | --rule ID) --target candidate|stable [--mode full|delta|repair] [--input PATH_OR_REF]... [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Fixes the immutable input snapshot and the deterministic packet plan for a")
 	fmt.Fprintln(w, "quality-gate run before any executor reads input. The tooling resolves the")
@@ -167,5 +178,6 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --input REF      extra read input: path, directory, or logical reference")
 	fmt.Fprintln(w, "                   (unit:{name} / unit:{name}:appendix:{file} / rule:{id}); repeatable")
 	fmt.Fprintln(w, "  --rerun KEY      delta/repair only: explicit additional re-run override; repeatable")
+	fmt.Fprintln(w, "  --format F       text | json (default: text)")
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")
 }

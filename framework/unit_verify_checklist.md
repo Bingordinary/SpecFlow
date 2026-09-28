@@ -334,6 +334,8 @@ This sub-check has two parts: **A — coverage completeness** (tests exist for i
 
 **Language-agnostic approach:** The agent reads test files and self-identifies the testing framework (mock libraries, assertion libraries, test runner conventions) rather than relying on a hardcoded language list. When a test framework or assertion style is unfamiliar, the agent reports CANNOT_DETERMINE rather than guessing.
 
+For a packet run, the coordinator locates relevant test and code-context file paths before `gate-plan`, without assessing their behavior, and passes every discovered file as an `--input` value. Include files already in the declared implementation surface so delta/repair can detect evidence missing from the baseline. This discovery covers every acceptance item in full, delta, and repair modes. The independent detection reviewer reads and declares the relevant tests from its packet `read_refs`; a required test or context file missing from those refs is an incomplete packet, not evidence that no test exists.
+
 ---
 
 ### Part A — Coverage completeness
@@ -754,27 +756,9 @@ For each MISMATCH item detected in Steps 1-6, launch a **read-only analysis sub-
 
 ### Sub-agent protocol
 
-**Prompt assembly (main agent):** first run `specflowctl gate-packet --run {run_id} --packet analysis:{item.id}` and include its output verbatim. Then assemble the remaining mission fields per `framework/verification_scope.md` §Sub-agent Prompt Assembly:
+For a required `analysis:{item.id}` packet, the main agent sends the output of `specflowctl gate-packet --run {run_id} --packet analysis:{item.id} --format prompt` verbatim to one independent read-only analysis reviewer. The tool supplies the accepted detection result and report, exact packet input paths, Step 7 as the semantic protocol, the text report contract, and the submission command. The main agent does not assemble another prompt or copy a mismatch table.
 
-- Role line: "read-only analysis sub-agent for mismatch {item.id}"
-- Mission: "Analyze this mismatch per the protocol: determine root cause and suggested direction, and produce the Step 7 output format."
-- Context: "You are part of the `verify@{unit}` run (full or delta mode). The main agent collects your output verbatim into the final report; follow the protocol's output format exactly."
-- Data payload: the input table below, passed verbatim (Context scope filled per the fill rule below)
-- Protocol reference: Step 7 of this file — the only protocol source; the prompt contains no restatement of protocol rules
-- Permissions (verbatim): "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
-- Glossary: one line per framework term used in the assembled prompt (mismatch type values, suggested directions, Dependency scope, and any other term the prompt or the protocol steps it executes use), each with a one-sentence definition and its source reference in this file — a term with no definition or source is a prompt defect
-
-**Input provided by main agent:**
-
-| Field | Description |
-|-------|-------------|
-| Item ID | Identifier from the spec |
-| Mismatch type | structural / acceptance / scope / stub / surplus |
-| Spec content | Exact spec text (section, pass_condition, or declaration) with file path and line |
-| Code content | Exact code that differs, with file path and line |
-| Context scope | Instructions on what to read beyond the mismatch point |
-
-**Context scope fill rule (main agent):** the scope is the mismatch point's enclosing function or structure, its direct callers and callees, the tests covering the behavior, and the spec section containing the item plus its sibling items and shared definitions (error codes, types, enums, data models, rationale). When unsure whether a region is relevant, include it — declare-heavy, same principle as dependency declaration. The sub-agent reads the stated scope in addition to the exact mismatch content (fields above); it does not re-verify the mismatch itself.
+The analysis reviewer uses the accepted detection report to locate the mismatch. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its packet read refs. When unsure whether a region informed the judgment, it declares more in `Dependency scope:`. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it discovers the missing path, re-plans with all accumulated `--input` paths, and re-executes the replacement run. The reviewer analyzes root cause and repair direction rather than re-running detection. It must not modify files, run state-changing commands, or launch sub-agents.
 
 For surplus mismatches, the first-principles analysis additionally evaluates:
 - Is this a genuine design decision that belongs in the spec? → **spec_gap**

@@ -16,7 +16,7 @@ A candidate full-run FAIL does not write cache (the validate cache is deleted �
 
 ## Execution Rules
 
-- **Subagent permissions:** rule validate executes in an independent read-only sub-agent session (the validate shape of `framework/verification_scope.md` §Sub-agent Prompt Assembly — rules have no cross-check, so the Check scope is "all 8 checks"). The sub-agent may read rule files, search text patterns, check file existence; it must NOT modify files, execute commands (beyond read-only tools), or delegate to other agents. Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead (see §Targeted Runs in `framework/verification_scope.md`).
+- **Subagent permissions:** rule validate executes in an independent read-only sub-agent session using the generated `specflowctl gate-packet --format prompt` mission (rules have no cross-check). The sub-agent may read rule files, search text patterns, check file existence; it must NOT modify files, execute commands (beyond read-only tools), or delegate to other agents. Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
 - On FAIL: identify which checks failed and the contradictory information
 - Resolution types (each finding is labeled with one):
   - **actionable** — A concrete repair can be made inside the current candidate rule file without user judgment.

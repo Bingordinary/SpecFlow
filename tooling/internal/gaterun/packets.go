@@ -602,6 +602,21 @@ func deriveDeltaRerun(repoRoot string, run *Run) (*scopeDerivation, error) {
 			}
 		}
 	}
+	if run.Gate == GateVerify {
+		recorded := make(map[string]bool, len(baseline.Entries))
+		for _, entry := range baseline.Entries {
+			recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+		}
+		var newEvidence []string
+		for _, path := range extraInputPaths(run) {
+			if !isLogicalRef(path) && !recorded[filepath.ToSlash(filepath.Clean(path))] {
+				newEvidence = append(newEvidence, path)
+			}
+		}
+		if len(newEvidence) > 0 {
+			return degraded("verify evidence absent from the baseline cache: "+strings.Join(newEvidence, ", "), nil), nil
+		}
+	}
 
 	scope, err := validationcache.DeriveStaleScope(repoRoot, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {

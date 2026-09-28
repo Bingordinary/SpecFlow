@@ -32,7 +32,7 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `validate@{target}` | Full: all 8 checks + cross-check (unit only — rules have no cross-check). Candidate target: writes the validate cache (`mode: full`, promote gate). Stable-only target (no candidate file): the same 8 checks against the stable content and its current dependencies and rules — writes the cache with `target: stable` (confirmation state consumed by `fresh@stable`); on FAIL writes a failure record and recommends forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/unit_validate_checklist.md` §Completion — Persist Gate Cache. |
+| `validate@{target}` | Full: all 8 checks + cross-check (unit only — rules have no cross-check). Candidate target: writes the validate cache (`mode: full`, promote gate). Stable-only target (no candidate file): the same 8 checks against the stable content and its current dependencies and rules — writes the cache with `target: stable` (confirmation state consumed by `fresh@stable`); on FAIL writes a failure record and recommends forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/unit_validate_checklist.md` §Completion — Persist Gate Cache. |
 | `validate@{target}:check-{n}` | Targeted: single check `{n}` only. User explicitly chooses focus. Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/unit_validate_checklist.md` §Completion — Persist Gate Cache). |
 | `validate@{target}:{keyword}` | Targeted: matches keyword to a check name (e.g., "design" → Check 2, "scope" → Check 3). Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/unit_validate_checklist.md` §Completion — Persist Gate Cache). |
 
@@ -40,21 +40,21 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `verify@{unit}` | Full: verify all spec content (all 7 steps, a detection packet and conditional analysis packet per acceptance item) + cross-check. Candidate target: writes the verify cache (`mode: full`, promote gate); on FAIL (P0/P1) writes a failure record with the per-item `status` map — the `reverify@{unit}` failure-recovery baseline (see §Failure handling by gate role in `framework/validation_cache.md`). Stable-only target (no candidate file): verify the stable spec against the code (drift confirmation) — writes the cache with `target: stable` (VERIFIED state consumed by `fresh@stable`); on MISMATCH writes a failure record, reports the drift, and recommends forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every required packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/unit_verify_checklist.md` §Completion — Persist Gate Cache. |
+| `verify@{unit}` | Full: verify all spec content (all 7 steps, a detection packet and conditional analysis packet per acceptance item) + cross-check. Candidate target: writes the verify cache (`mode: full`, promote gate); on FAIL (P0/P1) writes a failure record with the per-item `status` map — the `reverify@{unit}` failure-recovery baseline (see §Failure handling by gate role in `framework/validation_cache.md`). Stable-only target (no candidate file): verify the stable spec against the code (drift confirmation) — writes the cache with `target: stable` (VERIFIED state consumed by `fresh@stable`); on MISMATCH writes a failure record, reports the drift, and recommends forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every required packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/unit_verify_checklist.md` §Completion — Persist Gate Cache. |
 | `verify@{unit}:{keyword}` | Targeted: matches keyword to spec content (section title, feature name, API path, etc.) → verify that content. Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/unit_verify_checklist.md` §Completion — Persist Gate Cache). |
 
 ### Spec Review
 
 | User says | What agent does |
 |-----------|-----------------|
-| `review@{unit}` | Full: read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context. Candidate target: writes the review cache (promote gate). Stable-only target (no candidate file): review with the stable spec as design context (code-quality confirmation) — writes the cache with `target: stable`; implementation-class defects may be fixed in code and re-reviewed, design-class defects lead to forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/spec_review_checklist.md` §Completion — Persist Gate Cache. |
+| `review@{unit}` | Full: read all files referenced in the candidate spec's `affects.files` and `implementation_surface` across all acceptance items → review those files with spec context. Candidate target: writes the review cache (promote gate). Stable-only target (no candidate file): review with the stable spec as design context (code-quality confirmation) — writes the cache with `target: stable`; implementation-class defects may be fixed in code and re-reviewed, design-class defects lead to forking (see §Stable-only Targets). Writes via the packet-run sequence (`specflowctl gate-plan` before the executor reads any input, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Main agent MUST plan the gate run before the executor reads any input and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/spec_review_checklist.md` §Completion — Persist Gate Cache. |
 | `review@{unit}:{keyword}` | Targeted: matches keyword to a file name in `affects.files` or `implementation_surface` → review that file. Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/spec_review_checklist.md` §Completion — Persist Gate Cache). |
 
 ### Rule (validate only, verify removed)
 
 | User says | What agent does |
 |-----------|-----------------|
-| `validate@{rule}` | Full: all 8 checks (7 metadata + 1 body quality). Writes the validate cache (`mode: full`, promote gate) via the packet-run sequence (`specflowctl gate-plan` before execution, `specflowctl gate-packet` before the packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` for the single required report, `specflowctl gate-finalize` after that packet is accepted; `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules. Main agent MUST plan the gate run before the executor reads any input and finalize it only after the packet is accepted; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/rule_validate_checklist.md` §Completion — Persist Gate Cache. |
+| `validate@{rule}` | Full: all 8 checks (7 metadata + 1 body quality). Writes the validate cache (`mode: full`, promote gate) via the packet-run sequence (`specflowctl gate-plan` before execution, `specflowctl gate-packet --format prompt` before the packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` for the single required report, `specflowctl gate-finalize` after that packet is accepted; `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules. Main agent MUST plan the gate run before the executor reads any input and finalize it only after the packet is accepted; otherwise `fresh` stays `MISSING` (or `BLOCKED` for a failure record) and `promote` is rejected — see `framework/rule_validate_checklist.md` §Completion — Persist Gate Cache. |
 | `validate@{rule}:check-{n}` | Targeted: single check `{n}` only. User explicitly chooses focus. Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/rule_validate_checklist.md` §Completion — Persist Gate Cache). |
 | `validate@{rule}:{keyword}` | Targeted: matches keyword to a check name. Does not write a cache. Targeted runs intentionally do NOT write a cache; completion is the report alone (see `framework/rule_validate_checklist.md` §Completion — Persist Gate Cache). |
 
@@ -64,9 +64,9 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 | User says | What agent does |
 |-----------|-----------------|
-| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over; a failure-record baseline re-runs the failed checks instead (see §Delta Runs → Failure recovery). Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline (see §Delta Runs → Layer applicability). Preconditions and scope rules in §Delta Runs. Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see the target-appropriate checklist §Completion — Persist Gate Cache. |
-| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over; a failure-record baseline re-runs the failed judgments instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline (rule verify has been removed). Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see `framework/unit_verify_checklist.md` §Completion — Persist Gate Cache. |
-| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over; a blocking baseline re-runs the failed files instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a blocking cache); delta FAIL writes the blocking cache extended with the per-check status map. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet` before every packet executor with its output included verbatim in that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline. Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see `framework/spec_review_checklist.md` §Completion — Persist Gate Cache. |
+| `revalidate@{target}` | Delta: re-run only the checks whose dependency evidence went stale + cross-check (unit targets), carry the rest over; a failure-record baseline re-runs the failed checks instead (see §Delta Runs → Failure recovery). Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline (see §Delta Runs → Layer applicability). Preconditions and scope rules in §Delta Runs. Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see the target-appropriate checklist §Completion — Persist Gate Cache. |
+| `reverify@{unit}` | Delta: re-verify only the spec content whose evidence went stale + cross-check, carry the rest over; a failure-record baseline re-runs the failed judgments instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a failure record); delta FAIL writes a failure record. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline (rule verify has been removed). Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see `framework/unit_verify_checklist.md` §Completion — Persist Gate Cache. |
+| `rereview@{unit}` | Delta: re-review only the files whose evidence went stale + cross-check, carry the rest over; a blocking baseline re-runs the failed files instead. Writes a cache with `mode: full`, `basis: delta` (`repair` from a blocking cache); delta FAIL writes the blocking cache extended with the per-check status map. Writes via the packet-run sequence (`specflowctl gate-plan --mode delta` (or `--mode repair` from a failure record) before the re-run, `specflowctl gate-packet --format prompt` before every packet executor with its output sent verbatim as that executor's prompt, one `specflowctl gate-submit` per required packet report, `specflowctl gate-finalize` after every packet is resolved — `specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`) — see §Gate Work Packets and `framework/validation_cache.md` §Write Rules (Tooled writes). Candidate targets, plus stable-only targets with a usable baseline. Main agent MUST plan the re-run before it starts and finalize it only after every packet is resolved; otherwise `fresh` stays `MISSING`/`BLOCKED` and `promote` is rejected — see `framework/spec_review_checklist.md` §Completion — Persist Gate Cache. |
 
 No `:keyword` / `:check-{n}` variant — a delta run is a complete-coverage run, not a targeted one.
 
@@ -128,9 +128,13 @@ A gate run is a deterministic set of **work packets** generated and persisted by
 2. **Independent completion.** Each packet is a self-contained work unit: it carries its check keys, its read surface, its dependencies, and its report schema. Any executor can complete it — one agent, several parallel workers, a human, or CI — provided it is an independent context that does not hold the context in which the spec was written (see §Guarantee Boundary).
 3. **Mechanical tracking.** Packet state lives in the run state under `meta/gate_runs/<run_id>/` (see `framework/validation_cache.md` §Write Rules → Tooled writes). A packet id is a logical identity, not a filesystem name: each packet state filename is the lowercase hexadecimal SHA-256 of the complete UTF-8 packet id plus `.json`, while the original id remains embedded in and validated against the state object. This single fixed-length mapping is valid on every supported platform, including Windows, and prevents long review paths or reserved filename characters from entering the state path. `specflowctl gate-submit` validates each report mechanically, parses it once into an immutable `packet_result`, and records the report text, parsed verdicts/findings/scopes/severity confirmations, and digest together. A rejected packet can be re-submitted; every attempt is kept. An accepted packet is terminal. Every mutating gate command enters the same repository-local operating-system lock before it loads mutable run state and holds that lock until the whole transition is committed. This makes plan replacement, terminal packet acceptance, and finalize publication linearizable across independent processes while leaving packet execution itself parallel. Finalize therefore either publishes before a later plan replaces its run, or loads after replacement and fails because the old run no longer exists; a replaced in-memory run cannot publish afterward.
 4. **Formal verify analysis.** A verify plan contains a detection packet and an analysis packet for every planned item. Detection `MISMATCH` makes its analysis packet required; `ALIGNED` or `CANNOT_DETERMINE` marks it `not_required`. A cross packet is not ready until every analysis packet is either `accepted` or `not_required`.
-5. **Result-consuming cross-check.** `specflowctl gate-packet --run <id> --packet <id>` materializes the packet context. For `cross` it includes every accepted packet result and every carried baseline judgment, with digests. Cross submission binds those exact digests into its accepted state and must dispose every input finding and publish an effective status for every logical judgment.
+5. **Result-consuming cross-check.** `specflowctl gate-packet --run <id> --packet <id> --format prompt` materializes the reviewer mission. For `cross` it includes every accepted packet result and every carried baseline judgment, with digests. Cross submission binds those exact digests into its accepted state and must dispose every input finding and publish an effective status for every logical judgment.
 6. **Resume from disk.** Run progress and parsed results are readable from run state alone: `specflowctl gate-status` reports every packet's status, attempts, and next action, so an interrupted run resumes without conversation context. Run identity is path-bound: the requested run id, containing directory, and embedded `run_id` must match the tooling-generated id form exactly, and every state path must remain under `meta/gate_runs/`; malformed identity fails before any write or cleanup.
 7. **Mechanical completion.** `gate-finalize --run <id>` accepts no judgment flags. It derives the gate result, blocking state, severity counts, and per-check statuses from the accepted synthesis result (or the single rule-validate packet), then writes the cache only when the input snapshot is unchanged and the assembled evidence covers the run plan.
+
+**Verify evidence discovery before planning.** For full, delta, and repair verify runs, the coordinator first uses `specflowctl next --unit <name>` to locate the selected spec and declared implementation paths. It then searches repository-content files for related tests, direct callers and callees, and context dependencies for every acceptance item, including items that a delta/repair run might carry. This pass collects repo-relative file paths only; it makes no alignment or severity judgment. Pass every discovered file as a separate `gate-plan --input` value, including files already in the declared code surface; the latter are already readable, but the explicit inputs let delta/repair compare the discovered evidence with the baseline. The independent detection and analysis reviewers make the judgments after the plan fixes the file hashes. A newly discovered file absent from a delta/repair baseline's recorded evidence makes the plan cover the full verify scope, so no old judgment is carried against evidence it never considered.
+
+If a reviewer discovers that a required file was missed, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that text as a packet report. It locates the missing file, re-runs `gate-plan` with the union of previously discovered and new paths, and executes the replacement run's required packets again. A file that cannot be located must be reported as an incomplete verification, not treated as absent evidence for a PASS. `gate-plan` replaces the earlier open run; its accepted packet reports are not carried into the replacement run.
 
 ### Packet record
 
@@ -188,6 +192,7 @@ Each packet report is the packet-scoped fragment of the command's report. `gate-
 - findings authored in a packet report carry the shared finding block from the unified report skeleton (`problem:` / `evidence:` / `impact:` / `fix:` or `decision:` — with command-specific extra lines; review P3 findings use their `fact_anchor:` line as the evidence form). The block's detail lines are contiguous indented lines directly under the finding's entry line; `gate-submit` stores them verbatim and `gate-finalize` re-renders them when a finding is carried into a delta/repair run;
 - verify analysis reports must identify their item and carry the finding block (`Problem:`, `Evidence:` with at least one spec-side and one code-side sub-line (each present side quoted verbatim; when a side is absent, its sub-line states the absence and the searched scope), `Impact:`, and exactly one of `Fix:` / `Decision:` matching the suggested direction, with at least one `Options:` entry for `Decision:`), plus root cause, suggested direction, severity, confidence, and dependency scope;
 - cross reports must bind every dependency result digest, publish one disposition (`retained`, `suppressed`, or `merged`) for every input finding, publish one effective `pass|fail` status for every logical judgment plus `cross`, describe every cross-created finding together with its affected logical keys, and publish one complete severity-confirmation sequence for every terminal retained finding. Review runs additionally carry one `Finding ownership` record for every finding they defer to another unit (see §Deferred findings). Suppression/merge requires a reason; every merge chain must terminate at a retained input finding or a new cross finding (never at a suppressed finding, a missing target, or a cycle); a failed cross rule requires a retained P0/P1 cross finding owned by this unit or unassigned (the gate result is derived from the gate-driving P0/P1 findings — a `FAIL` verdict backed only by advisory or deferred retained findings would contradict the derived result).
+- unit validate and verify cross reports must state every fixed cross item exactly once as `Cross item: {key} = PASS|FAIL — {reason}`. Each failed item also states `Cross item finding: {key} = {finding_id}`, naming a new finding from this cross report that remains retained after synthesis and has a complete severity confirmation. Passing items have no finding link; multiple failed items may name the same retained finding. Missing, duplicate, unknown, malformed, or non-retained links reject submission. The keys are the gate-specific lists under §Cross-check. Their `Cross-check: N/M PASS|FAIL — {reason}` summary uses `M` equal to the number of fixed items and `N` equal to the number reported `PASS`; missing, duplicate, unknown, malformed, or unreasoned items and a mismatched count reject submission. The overall verdict is `FAIL` exactly when a new retained gate-driving P0/P1 cross finding exists; a failed verify item supported only by P2/P3 can leave the overall verdict `PASS`. Validate findings remain P0/P1 only.
 
 The main agent presents the unified report generated from the accepted artifacts. `gate-finalize` derives the run-level header (`Result`, `Blocking promote`, `Key counts`) and cache body; the main agent does not supply or recompute those values.
 
@@ -203,6 +208,8 @@ Effective status: {logical_check_key} = pass | fail
 Effective status: cross = pass | fail
 [P0|P1|P2|P3] {location} — {new cross finding}
 Finding affects: {cross_finding_id} = {logical_key}[, {logical_key}...]
+# Validate/verify only, exactly once for every failed fixed cross item:
+Cross item finding: {failed_item_key} = {new_retained_cross_finding_id}
 Severity confirmation: {retained_finding_id} = confirmed {Px} — evidence: {read_ref}; reason: {one line}
 Severity confirmation: {retained_finding_id} = adjusted {Px} -> {Py} — evidence: {read_ref}; reason: {one line}
 # After an adjusted first result, exactly one final second result follows:
@@ -260,254 +267,19 @@ Session, worker, and permission are runtime-internal concepts; runtime-neutral t
 
 ## Sub-agent Prompt Assembly
 
-The sub-agent prompt assembly structure is shared by the three quality-gate commands. The main agent assembles the prompt from the target's files and the command's own checklist, following this fixed structure. Command-specific values are listed per field below.
+For full, delta, and repair runs, `specflowctl` generates the packet mission. The main agent does not assemble a prompt from this document or from `framework/validation_cache.md`. It plans the run with `gate-plan --format json`, reads `gate-status --run {run_id} --format json`, and launches one independent read-only reviewer for each `ready_packet_ids` entry. Before each launch it runs `gate-packet --run {run_id} --packet {packet_id} --format prompt` and passes that output verbatim. A rejected packet's regenerated mission includes the latest `gate-submit` rejection reason so the independent reviewer can correct the complete report. It submits the returned text with `gate-submit`, repeats status/packet execution, and runs `gate-finalize` only when `next_action` is `finalize`. The coordinator never supplies gate verdicts or cache fields.
 
-The three commands execute **one packet per independent read-only session** (see §Gate Work Packets). Before assembling the prompt, the coordinator runs `specflowctl gate-packet --run {run_id} --packet {packet_id}` and includes that output verbatim as the packet context; this is how analysis and cross executors receive the accepted results they consume. The executor never holds the context in which the spec was written. Independence is a required execution shape, declared but not mechanically verifiable (see §Guarantee Boundary); the tooling verifies the submitted artifact and its bound inputs, not who executed it.
+`gate-plan` and `gate-status` JSON expose the run identity, packet states, ready packet ids, and next action. `gate-packet --format json` exposes the same mission as structured data (`schema_version: 1`): run and target, a one-element `packets` array, exact `check_keys`, `read_refs`, dependencies and accepted results, carried judgments, pending deferred findings, semantic checklist location, read-only constraints, report contract, and submission command. A rejected packet additionally has `last_rejection` with the latest rejection reason; a first-attempt packet omits it. The array preserves packet-level evidence semantics if a future scheduler groups packets; this version still executes one packet per independent session. `--format prompt` renders the same mission as text ready for the reviewer. The default packet format is `prompt`.
 
-A sub-agent prompt is a **mission package for a zero-context worker**: the sub-agent has no conversation history and no framework knowledge beyond this prompt and the files it is told to read. The prompt must therefore answer five questions without requiring inference — who am I, what am I doing, why, what counts as done, and who consumes my output. The mandatory fields below guarantee this.
+### Check / Packet scope
 
-**Mandatory fields:**
+The packet's `check_keys` are the only current judgments to execute. Delta and repair missions never ask a reviewer to repeat a carried judgment. `read_refs` are the packet's evidence inputs; the semantic checklist path is a protocol reference, not an evidence declaration. The reviewer declares `Dependency scope:` only for executed keys and only for files in that packet's `read_refs`. `gate-submit` rejects missing, malformed, or out-of-scope declarations.
 
-1. **Role line** —
-   - validate: "read-only validation sub-agent for {unit|rule} {name}, packet {packet_id} of run {run_id}", followed by "You are an independent read-only session: you do not hold the context in which this spec was written, and the main agent does not re-litigate your verdicts — it collects your output verbatim into the final report."
-   - verify: "read-only detection sub-agent for verify packet {packet_id} of run {run_id}", followed by "You are one of the run's independent read-only workers; the main agent collects all packet results verbatim into the final report."
-   - review: "read-only review sub-agent for review packet {packet_id} of run {run_id}", followed by the same independent-worker sentence.
-2. **Mission statement** — one sentence stating the deliverable, fixed form:
-   - validate: "Validate {target} per the protocol: execute each check in Packet scope, report PASS / WARNING / FAIL per check with a reason (FAIL reasons identify the contradicting information sources), and report findings with P0/P1 severity and resolution type."
-   - verify: "Verify each item in Packet scope: decide ALIGNED / MISMATCH / CANNOT_DETERMINE per the protocol, with deterministic evidence for every claim."
-   - review: "Review the file in Packet scope per the protocol and report findings with P0-P3 severity."
-3. **Spec source** — main spec path + version, plus the appendix directory (all non-exempt, non-retired appendices are part of the spec, per the checklist prerequisites)
-4. **Check / Packet scope** —
-   - validate: the packet's check keys (e.g. the `structural` packet owns checks 1, 3, 6; the `cross` packet owns the cross-check); the packet record is authoritative — read it with `specflowctl gate-status --run {run_id}`; validate targeted (`:check-{n}` / `:{keyword}`): executed directly by the main agent, no sub-agent is launched and no packet is generated (see §Targeted Runs)
-   - verify: the packet's acceptance item id (the item id itself is the anchor — not line numbers; the spec is a moving target)
-   - review: the packet's file path (the file itself is the anchor)
-   - **Delta / repair runs:** the prompt's Check / Packet scope lists the packet's re-run keys only; the sub-agent reports `Dependency scope` for the checks it actually executed — carried-over checks are not re-executed and get no new scope declaration (their evidence stays in the cache unchanged). The packet set of a delta/repair run is planned by `gate-plan` (see §Delta Runs).
-5. **Read surface** — the files the sub-agent may need:
-   - validate (unit): packet-local inputs are derived from the checks the packet owns. Every packet receives the unit's own spec and appendices, explicit `--input` evidence, and the shared `affects.files` evidence surface; `structural` additionally receives the resolved `unit_refs` / `rule_refs` needed by Check 1, and `dependencies` receives those logical references for Checks 7-8. Implementation code is not read
-   - validate (rule): the candidate rule file, its stable sibling if present (Check 4), and the unit spec files under `docs/specs/units/` (Check 5 existence check and Check 7 consumer discovery)
-   - verify / review: from `implementation_surface` and `affects.files`
-6. **Protocol reference** — the command's own checklist, as the only protocol source: validate unit → `framework/unit_validate_checklist.md` (all 8 checks, cross-check included); validate rule → `framework/rule_validate_checklist.md` (all 8 checks, no cross-check); verify → `framework/unit_verify_checklist.md` Steps 1-6 (Step 2's Part A/B sub-checks included); review → `framework/spec_review_checklist.md`
-7. **Context** — the background the sub-agent needs to orient itself, four fixed sentences: which command and target this run serves ("You are part of the `validate@{unit}` full run (packet {packet_id})"); execution-shape declaration (validate: "You are an independent read-only session — your verdicts are not self-approval, and the main agent collects them verbatim; packet boundaries are deterministic — your result is the same whether the run executes packets sequentially or in parallel"; verify/review: "Packet boundaries are deterministic — your result is the same whether the run executes packets sequentially or in parallel"); output consumption ("Your output is collected verbatim by the main agent into the final report; follow the protocol's output format exactly"); unit orientation ("{unit} is {one-sentence description}; candidate version {version}"). The one-sentence unit description is distilled from the spec's goal/responsibility sections (spec path from `specflowctl next` output); the version comes from the spec frontmatter.
-8. **Glossary** — one line per term used in this prompt or in the protocol steps this sub-agent executes. Each line: term — one-sentence definition — source reference. The canonical glossary below is the full set for the three quality-gate commands; the main agent includes every term that appears in the assembled prompt and no others. Scenarios outside the three commands (e.g. the `spec_flow_issues` triage prompt) define their own glossary in their protocol file (`framework/operations/issues.md` Step 3).
-9. **Permissions** — verbatim: "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
+The reviewer reads the named checklist for semantic judgment: unit/rule validate checks, verify detection or Step 7 analysis, or review. Cross additionally reads §Cross-check below and `framework/severity_policy.md` §9. The mission supplies execution instructions and the text report contract, including the required fields and conditional lines. Report-contract data and `gate-submit` share the same fixed-field definitions; dynamic cross-synthesis consistency remains mechanically checked at submission. A generated template is a filling aid, not evidence or a second semantic protocol.
 
-   **Assembly rule — tooling binary path:** When the main agent assembles the sub-agent prompt, it MUST resolve `specflow/tooling/bin/specflowctl-<os>-<arch>` to the concrete binary for the current execution environment (e.g. `darwin-arm64`, `linux-amd64`, `windows-amd64.exe` — list `specflow/tooling/bin/specflowctl-*` to find the installed binary; `uname -s`/`uname -m` mapping is the fallback). The placeholder `<os>-<arch>` MUST NOT appear in the assembled prompt. The sub-agent MUST NOT attempt to infer or construct the tool path.
+The main agent launches the reviewer in a genuinely separate read-only session, sends the generated prompt verbatim, and collects the report verbatim. The reviewer may read files, search by pattern, and run read-only git queries; it must not modify files, run state-changing commands, or launch sub-agents. Tooling checks the submitted artifact and its bound inputs, but cannot observe who executed the session (see §Guarantee Boundary). Reviewers never write cache or run-state files.
 
-**Canonical glossary** (source references are authoritative; a definition is a locating aid, not a rule restatement):
-
-| Term | Definition | Source |
-|---|---|---|
-| acceptance item | An entry in the spec's `acceptance_item_set` (in the `Testability / Acceptance Criteria` section), carrying id, description, verification_type, pass_condition and other fields | `framework/spec_writing_guide.md` §7 |
-| pass_condition | The condition an item must satisfy, written as verifiable assertions (e.g. "Returns HTTP 201") | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
-| verification_type | The item's verification mode: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
-| implementation_surface | The per-item code surface path the item's implementation lives under — a single file or directory (a directory expands to its repository-content files: the files Git tracks plus untracked files that are not ignored); `<pending>` is a placeholder that verify reports as MISMATCH, and any other value that resolves to no file — a missing path, or a directory with no repository-content files — is rejected at verify/review planning time | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
-| affects.files | The implementation files an item declares as its scope for verify | `framework/spec_writing_guide.md` §7 (Acceptance Item Fields) |
-| unit_refs | The frontmatter declaration of units this unit depends on (formal behavior contract); validate Check 7 reads the referenced units' contracts | `framework/spec_writing_guide.md` §4 (Unit Dependencies) |
-| rule_refs | The frontmatter declaration of rules bound to this unit; validate Check 8 reads the referenced rules | `framework/spec_writing_guide.md` §5 (Rule References) |
-| candidate / stable layer | The spec layers: candidate is the working draft, stable is accepted truth; the layer is encoded by the file path | `framework/concepts.md` §State Model |
-| ALIGNED / MISMATCH / CANNOT_DETERMINE | The per-claim verdicts; fold order MISMATCH > CANNOT_DETERMINE > ALIGNED | `framework/unit_verify_checklist.md` §Verdict folding |
-| deterministic evidence | A reproducible static check: a grep command with its result, a file existence check, or a file:line read | `framework/unit_verify_checklist.md` Step 2 |
-| Dependency scope | The report's per-check dependency declaration: one line per check stating the file and the section-region headings (or line ranges, acceptance item regions, or `all`) that check's judgment depended on, recorded by `gate-finalize` as the cache's per-check `checks` mapping | `framework/unit_verify_checklist.md` §Output Format |
-| section region | A content region of a markdown file located by heading: the frontmatter region (file head through the line before the first `##` heading, heading `""`) or one `##` heading section (heading line through the line before the next `##` heading; deeper headings belong to their `##` section). Declared as `region:section:<heading>:<cid>` | `framework/validation_cache.md` §Structural Region Dependencies |
-| structural region | Content located by structure rather than line numbers: the whole acceptance item set (`region:acceptance_items:<cid>`, an order-insensitive semantic CID over its set preamble and sorted item members), one acceptance item (`region:acceptance_item:<id>:<cid>`, from its `- id:` line to the next item), or a section region; edits outside the declared structure do not stale it | `framework/validation_cache.md` §Structural Region Dependencies |
-| Part A / Part B | The two parts of the test design sub-check: coverage completeness / test meaningfulness | `framework/unit_verify_checklist.md` Step 2 |
-| B1-B6 | The six Part B checks: mock density, assertion authenticity, tautological assertions, all-happy-path, mock-through, test naming | `framework/unit_verify_checklist.md` Step 2 |
-| stub | A placeholder or debt marker in implementation code (Step 6 grep findings; RELEVANT hits are MISMATCH) | `framework/unit_verify_checklist.md` Step 6 |
-| surplus | Code structure with no spec correspondence (reported as MISMATCH type: surplus) | `framework/unit_verify_checklist.md` Step 5 |
-| structural / acceptance / scope | The remaining MISMATCH type values: structural (Step 1 declaration mismatch), acceptance (Step 2 pass_condition mismatch), scope (Step 3 affects declaration mismatch) | `framework/unit_verify_checklist.md` Steps 1-3 |
-| severity (verify / review) | The P0-P3 grade of a finding; blocking semantics per the shared severity policy | `framework/severity_policy.md` §4 |
-| ownership record (review) | The cross synthesis's evidence-backed `Finding ownership:` declaration that routes a terminal retained finding to the unit whose spec records the behavior; a finding without one is unassigned and blocks | `framework/verification_scope.md` §Gate Work Packets → Deferred findings |
-| deferred finding | A terminal retained review finding owned by another unit: recorded in the report and the cache's `deferred_findings` audit array, excluded from counts, blocking, and the per-key status closure, and routed to the owner's review through the deferred-findings ledger | `framework/verification_scope.md` §Gate Work Packets → Deferred findings |
-| gate-driving finding | A terminal retained finding owned by this run's unit or unassigned; only gate-driving P0/P1 findings make the run FAIL and mark their keys `fail` | `framework/verification_scope.md` §Gate Work Packets → Deferred findings |
-| deferred-findings ledger | The durable `docs/specs/meta/validation/deferred_findings.json` handoff of pending deferrals, keyed by owner unit; written and consumed by `gate-finalize`, loaded by the owner's review plan | `framework/validation_cache.md` §Format → Deferred-findings ledger |
-| fact anchor | A reproducible repository fact that proves a P3 discrepancy by identifying its governing or comparison reference, violating location, and relationship | `framework/spec_review_checklist.md` §5 P3 Reportability Gate |
-| P3 reportability gate | The review gate that permits a P3 finding only when its discrepancy is objective, local, low-impact, and supported by a reproducible fact anchor | `framework/spec_review_checklist.md` §5 P3 Reportability Gate |
-| §9 severity confirmation | The severity consistency check the cross executor records before its synthesis result is accepted | `framework/severity_policy.md` §9 |
-| cross-check | The final consistency check over all content after individual checks pass | `framework/verification_scope.md` §Cross-check |
-| check 1-8 (validate) | The eight validate checks: structural integrity, design soundness, scope integrity, evidence-driven vs design-driven consistency, acceptance coverage & correctness, affects-source validity, cross-unit consistency, constraint alignment | `framework/unit_validate_checklist.md` |
-| exempt / retired appendix | Appendix statuses skipped when assembling the spec union (`status: exempt` / `status: retired` files are not read) | `framework/unit_validate_checklist.md` §Prerequisite |
-| resolution type | Each finding's fix classification: `actionable` (concrete repair without user judgment) or `needs_decision` (requires user input) | `framework/unit_validate_checklist.md` §Execution Rules |
-| advisory finding | validate's non-blocking items: Check 1 step 7 / step 13 hygiene WARNING and Check 2 Step 4 taste-level P2/P3, presented on the check line's reason, counted separately, never blocking | `framework/unit_validate_checklist.md` §Counting rules |
-| extraction artifact | The falsifiable evidence carried by uncovered-domain (5a) and uncarried-contract (5h) FAIL findings, with three parts: the quoted source declaring the behavior domain or contract statement, the granularity/external-visibility judgment, and the absence claim over the covered surface (the item set union / the carriers) | `framework/unit_validate_checklist.md` 5a step 8 / 5h step 4 |
-| external-visibility boundary | The §4 judgment separating contract statements (externally-observable behavior a caller or dependent unit must read to use the unit safely) from internal design expression (internal field names, internal field layouts, internal timing incl. retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout); content on the internal side creates no coverage or carrier obligation | `framework/spec_writing_guide.md` §4 |
-| P0 / P1 severity (validate) | The only severities validate grades: P1 is the contract-decided default for FAIL checks (recorded as `confirmed` without a §9 boundary check); P0 requires the §9 boundary check | `framework/unit_validate_checklist.md` §Severity check |
-| Dimension 8 (module_boundaries / responsibility_organization / dependency_clarity / abstraction_level / extension_landing_points / engineering_patterns) | The architectural design quality assessment of the reviewed code surface: per-packet lines reporting module boundaries, responsibility organization, dependency clarity, abstraction levels, extension landing points, and engineering patterns, each with an assessment and basis | `framework/spec_review_checklist.md` §4 (Dimension 8) / §Body format |
-| spec_context | The finding's attached relevant design context from the spec, helping the user understand the code-design relationship | `framework/spec_review_checklist.md` §Findings section / §6 |
-| recommendation | The finding's fix suggestion — written as the block's `fix:` (actionable) or `decision:` with `options:` (needs_decision) | `framework/spec_review_checklist.md` §Findings section / §6 |
-
-**File-list baseline:** the main agent runs `specflowctl next --unit <name>` and uses its output (spec file, appendices, implementation surface, affects files, acceptance item ids) as the mechanical baseline for fields 3-5. Test files are collected by globbing `*_test.go` next to each implementation file — never by guessing. For validate, the same command output supplies the spec, the appendix directory, and the dependency targets (`unit_refs` / `rule_refs`) that make up the read surface. For `validate@{rule}` — `specflowctl next` supports unit targets only — the mechanical baseline is the command target file `docs/specs/rules/candidate/{rule_id}.md`, its stable sibling `docs/specs/rules/stable/{rule_id}.md` if present (Check 4), and the unit spec files globbed under `docs/specs/units/` (Checks 5/7).
-
-An `implementation_surface` value of `<pending>` produces no file-list entry — the placeholder declares an unknown implementation surface; its judgment belongs to verify Step 6 (MISMATCH), it is never collected as a file. A non-`<pending>` value always yields at least one file entry — the declared file itself, or a directory's repository-content files (planning rejects a value that yields none) — so an empty file list can only come from `<pending>` items.
-
-**Prohibitions:**
-
-1. No inline restatement of protocol rules (severity tables, evidence thresholds, Part B check definitions) — the sub-agent reads the checklist itself. This prohibition covers protocol rules only: the context declarations above (fields 1-9) are mandatory and are not restatements — they locate the protocol, they do not replace it. When any prompt text conflicts with the protocol, the protocol wins and the sub-agent reports the conflict.
-2. No severity assignment outside the command's own rules — validate sub-agents grade findings P0/P1 with a resolution type per `framework/unit_validate_checklist.md`; verify detection sub-agents report MISMATCH type only and Step 7 analysis packets assign severity/direction; review sub-agents grade findings P0-P3. The cross executor performs the required §9 confirmation while synthesizing retained findings; the coordinator never re-grades them.
-3. No behavior summary presented as normative — the spec is the only normative source; a prompt summary that conflicts with the spec is reported as a prompt/spec discrepancy, spec wins
-4. No cache or run-state writes by sub-agents — sub-agents MUST NOT write cache files or run state and MUST only report findings plus `Dependency scope:` lines; the main agent plans the gate run before any executor reads input (`specflowctl gate-plan`), materializes every packet's context and includes it verbatim in that executor's prompt (`specflowctl gate-packet`), submits each packet report verbatim (`specflowctl gate-submit`), and assembles the cache at `specflowctl gate-finalize` (`specflow/tooling/bin/specflowctl-<os>-<arch>`, `<tooling-root>` is `specflow/tooling`, resolved to the concrete binary by the main agent — see `framework/validation_cache.md` §Write Rules → Tooled writes). The declaration schema has no `hash`/`deps` fields — a transcribed CID cannot enter a cache file. The sub-agent MUST NOT attempt to infer or construct the tool path.
-
-**Required output fields:**
-
-- validate per check: `{n}. {check name}: PASS | WARNING | FAIL — reason`; unit Check 5 additionally reports every sub-check `5a` through `5i` with its own verdict and reason; FAIL reasons identify the contradicting information sources per the checklist's Execution Rules; findings use the unified format `[{P0|P1}] {location} — {issue} (actionable | needs_decision)`; cross-check line for unit full runs
-- validate extraction evidence: sub-check 5a uncovered-domain and sub-check 5h uncarried-contract FAIL findings must include the extraction artifact defined in the checklist (5a step 8 / 5h step 4) — the quoted source declaring the behavior domain or contract statement, the granularity/external-visibility judgment, and the absence claim over the covered surface (the item set union / the carriers) — so the main agent can re-verify the claim before presenting the finding
-- verify per item: `{item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE — {code references or explicit determination gap}`, followed by exactly one non-empty `evidence:` line, one `deterministic: true|false` line, one `Part A:` result, and one `Part B:` result (an explicit `skipped — {reason}` is the result when Part B does not apply); detection sub-agents do not assign severity; Step 7 analysis packets grade mismatches and cross confirms retained grades before finalization; review findings follow the review checklist's output format, with a `fact_anchor` on every P3 finding
-- review packet assessment: each review packet reports exactly one `conclusion`, the six Dimension 8 assessment lines (`module_boundaries`, `responsibility_organization`, `dependency_clarity`, `abstraction_level`, `extension_landing_points`, `engineering_patterns`, each with a non-empty assessment and basis), one `gate_findings` line, and one `Suppressed by spec (N)` block for the file in its packet, per `framework/spec_review_checklist.md` §Body format; the main agent aggregates the per-packet assessments into the final report's Architecture assessment block
-- `Dependency scope:` one line per check the run executed — `{check key}: {file}: {declaration}` where `{check key}` is the command's check identifier (validate: the check number `{n}` — a scope line may spell it `check-{n}:`; verify: the acceptance item id; review: the packet's file path), `{file}` is the file the judgment read, and `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`, or the frontmatter region as `frontmatter`), `acceptance_item:<id>[,<id>...]` (specific item regions — the verify item judgment's declaration for its own spec block), the reserved token `acceptance_items` (the order-insensitive whole item set), 1-based closed line ranges, or `all` for whole-file judgments. A judgment that depends on item presentation order must declare a containing section, ranges, or `all`, not `acceptance_items`. This is the sub-agent's only evidence declaration — it MUST NOT write `hash`/`deps` values. The packet report carries the declaration; `gate-submit` validates it against that packet's `read_refs` (not merely the run snapshot) and `gate-finalize` computes the CIDs when it assembles the cache's per-check `checks` mapping (see the unified report skeleton and `framework/validation_cache.md` §Format). Delta runs report the scope of the re-run checks only (see Check / Packet scope above)
-- failure path: "Validation could not complete — {reason}" (verify: "Verification could not complete — {reason}"; review: "Review could not complete — {reason}")
-
-**Assembly example (verify)** — a complete assembled verify prompt. `{unit}`/paths are placeholders the main agent fills in; the glossary shows only the terms used in this prompt:
-
-```
-You are a read-only detection sub-agent for verify packet AUTH-AC-003 of run
-20260916-101112-abc123. You are one of the run's independent read-only workers;
-the main agent collects all packet results verbatim into the final report.
-
-Mission: Verify the item in Packet scope: decide ALIGNED / MISMATCH /
-CANNOT_DETERMINE per the protocol, with deterministic evidence for every claim.
-
-Spec source: docs/specs/units/candidate/unit_auth.md (candidate, version 0.2.1);
-appendices: docs/specs/units/candidate/appendix/unit_auth_*.md (non-exempt,
-non-retired only).
-
-Packet scope: AUTH-AC-003 (login section).
-
-Implementation surface: src/api/login.go, src/api/token.go, src/store/session.go.
-
-Protocol: framework/unit_verify_checklist.md Steps 1-6 (including Step 2's
-Part A/B sub-checks). This is the only protocol source — follow it exactly.
-
-Context: You are part of the `verify@auth` full run (packet AUTH-AC-003). Packet
-boundaries are deterministic — your result is the same whether the run executes
-packets sequentially or in parallel. Your output is collected verbatim by the
-main agent into the final report; follow the protocol's output format exactly.
-auth is the user authentication unit; candidate version 0.2.1.
-
-Glossary:
-- acceptance item — an entry in the spec's `acceptance_item_set`, carrying id,
-  description, verification_type, pass_condition (spec_writing_guide.md §7)
-- pass_condition — the condition an item must satisfy, written as verifiable
-  assertions (spec_writing_guide.md §7)
-- verification_type — the item's verification mode: testable / inspectable /
-  reviewable (spec_writing_guide.md §7)
-- implementation_surface — the per-item code surface path (spec_writing_guide.md §7)
-- affects.files — the implementation files an item declares as its scope
-  (spec_writing_guide.md §7)
-- candidate / stable layer — candidate is the working draft, stable is accepted
-  truth; the layer is encoded by the file path (`framework/concepts.md` §State Model)
-- exempt / retired appendix — appendix statuses skipped when assembling the spec
-  union; non-exempt, non-retired files are read (unit_validate_checklist.md §Prerequisite)
-- ALIGNED / MISMATCH / CANNOT_DETERMINE — per-claim verdicts; fold order
-  MISMATCH > CANNOT_DETERMINE > ALIGNED (unit_verify_checklist.md §Verdict folding)
-- deterministic evidence — a reproducible static check: a grep command with its
-  result, or a file:line read (unit_verify_checklist.md Step 2)
-- Dependency scope — the files and regions your judgment depended on: the
-  item's own region (`acceptance_item:{item.id}`) for the unit's own main
-  spec, section headings, or per-file line ranges
-  (unit_verify_checklist.md §Output Format)
-- Part A / Part B — the two parts of the test design sub-check
-  (unit_verify_checklist.md Step 2)
-- mock density / B1-B6 — Part B's six checks (unit_verify_checklist.md Step 2)
-- stub — placeholder or debt marker in code (unit_verify_checklist.md Step 6)
-- surplus — code structure with no spec correspondence (unit_verify_checklist.md Step 5)
-
-Permissions: You may read files, search text by pattern, glob for files, and
-run read-only git queries. You must NOT modify any file, run any command that
-changes state, or launch further sub-agents.
-
-Required output:
-- Per item: {item.id}: ALIGNED | MISMATCH (type) | CANNOT_DETERMINE — with code
-  references and deterministic evidence (grep command + result, or file:line
-  reads); type is the detection verdict (structural / acceptance / scope /
-  stub / surplus); severity is not reported by detection sub-agents — the Step 7
-  analysis packets assign it and the cross executor confirms retained grades per §9; plus
-  Part A and Part B findings per acceptance item
-- Dependency scope: one line per item aligned — {item.id}: {file}: {declaration}
-  where the item's own spec block is declared as `acceptance_item:{item.id}`
-  (the item region, located by id), and additional reads are declared as a
-  section heading, line ranges, the whole-set token `acceptance_items`, or
-  "all" (the regions of the spec the item's judgment depended on)
-- If you could not complete: "Verification could not complete — {reason}"
-```
-
-**Assembly example (validate)** — a complete assembled validate prompt for a unit full run. `{unit}`/paths are placeholders the main agent fills in; the glossary shows only the terms used in this prompt:
-
-```
-You are a read-only validation sub-agent for unit payment, packet structural of
-run 20260916-101112-def456. You are an independent
-read-only session: you do not hold the context in which this spec was written,
-and the main agent does not re-litigate your verdicts — it collects your output
-verbatim into the final report.
-
-Mission: Validate unit payment per the protocol: execute each check in Packet
-scope, report PASS / WARNING / FAIL per check with a reason (FAIL reasons identify
-the contradicting information sources), and report findings with P0/P1 severity
-and resolution type.
-
-Spec source: docs/specs/units/candidate/unit_payment.md (candidate, version 1.3.0);
-appendices: docs/specs/units/candidate/appendix/unit_payment_*.md (non-exempt,
-non-retired only).
-
-Packet scope: checks 1, 3, 6 (structural integrity, scope integrity,
-affects-source validity).
-
-Read surface: the spec above plus its referenced dependency files (unit_refs,
-rule_refs, affects.files document targets). Implementation code is not read.
-
-Protocol: framework/unit_validate_checklist.md — the checks in Packet scope.
-This is the only protocol source — follow it exactly.
-
-Context: You are part of the `validate@payment` full run (packet structural). You
-are an independent read-only session — your verdicts are not self-approval, and
-the main agent collects them verbatim. Your output is collected verbatim by the
-main agent into the final report; follow the protocol's output format exactly.
-payment is the payment processing unit; candidate version 1.3.0.
-
-Glossary:
-- candidate / stable layer — candidate is the working draft, stable is accepted
-  truth; the layer is encoded by the file path (`framework/concepts.md` §State Model)
-- check 1-8 — the eight validate checks: structural integrity, design soundness,
-  scope integrity, evidence-driven vs design-driven consistency, acceptance
-  coverage & correctness, affects-source validity, cross-unit consistency,
-  constraint alignment (unit_validate_checklist.md)
-- exempt / retired appendix — appendix statuses skipped when assembling the spec
-  union (unit_validate_checklist.md §Prerequisite)
-- unit_refs — the units this unit depends on (formal behavior contract); read by
-  Check 7 (spec_writing_guide.md §4)
-- rule_refs — the rules bound to this unit; read by Check 8
-  (spec_writing_guide.md §5)
-- resolution type — actionable / needs_decision, the fix classification each
-  finding carries (unit_validate_checklist.md §Execution Rules)
-- advisory finding — validate's non-blocking items: Check 1 step 7 / step 13
-  hygiene WARNING, Check 2 Step 4 taste-level P2/P3; presented on the check
-  line's reason, counted separately, never blocking (unit_validate_checklist.md)
-- P0 / P1 severity — the only severities validate grades; P1 is the default, P0
-  requires confirmation (unit_validate_checklist.md §Severity check)
-- Dependency scope — per-file line ranges your judgment depended on
-  (unit_validate_checklist.md §Output Format)
-- cross-check — the final consistency check over all content after individual
-  checks pass (verification_scope.md §Cross-check)
-
-Permissions: You may read files, search text by pattern, glob for files, and
-run read-only git queries. You must NOT modify any file, run any command that
-changes state, or launch further sub-agents.
-
-Required output:
-- Per check: {n}. {check name}: PASS | WARNING | FAIL — reason; FAIL reasons
-  identify the contradicting information sources; findings in the unified format
-  [{P0|P1}] {location} — {issue} (actionable | needs_decision)
-- Cross-check: N/N PASS — per-check results (the `cross` packet only)
-- Failed checks: N | Advisory findings: K
-- Dependency scope: one line per check executed — check-{n}: {file}: {declaration}
-  where {declaration} is a section heading, line ranges, the whole-set token
-  `acceptance_items`, item declarations `acceptance_item:<id>`, or "all" (the
-  sections/regions of the spec the check's judgment depended on; for the unit's
-  own main spec, name the section-region headings, e.g. "Description" or
-  "Testability / Acceptance Criteria"; the frontmatter region is "frontmatter";
-  Check 5's coverage judgment declares `acceptance_items`; cross-check reports
-  its scope like any other line, with check key `cross` (see
-  `framework/validation_cache.md` §Format → Per-check evidence)
-- If you could not complete: "Validation could not complete — {reason}"
-```
+Targeted checks remain in the main agent session: they do not have a packet run or a generated mission (§Targeted Runs).
 
 ## Cross-check
 
@@ -535,7 +307,9 @@ Checks for consistency across different parts of the spec:
 | Error code conflict | Same error code assigned to different error conditions? |
 | Cross-reference integrity | Section A references a claim or definition in Section B that doesn't exist? |
 
-**Output:** the five per-check results, finding dispositions, effective logical statuses, and any cross-created findings. The summary `Cross-check:` line is derived from the five results.
+**Output:** the five per-check results, a finding link for each failed result, finding dispositions, effective logical statuses, and any cross-created findings. The summary `Cross-check:` line is derived from the five results.
+
+Fixed report keys, in table order: `contract_consistency`, `data_definition_drift`, `state_machine_coherence`, `error_code_conflict`, `cross_reference_integrity`.
 
 ### Validate cross-check
 
@@ -547,7 +321,9 @@ After the local validate packets resolve:
 | Coverage × Scope | Does the acceptance coverage (Check 5) actually prove the declared scope (Check 3)? |
 | Cross-unit cohesion | Do individual unit decisions (Check 7) align with the combined design intent? |
 
-**Output:** the three per-check results plus the same complete disposition/effective-status synthesis contract. A local failure may be suppressed only when the cross packet demonstrates that it is a false positive against the complete source set; the suppression remains visible in the audit body but is excluded from retained finding counts.
+**Output:** the three per-check results, a finding link for each failed result, plus the same complete disposition/effective-status synthesis contract. A local failure may be suppressed only when the cross packet demonstrates that it is a false positive against the complete source set; the suppression remains visible in the audit body but is excluded from retained finding counts.
+
+Fixed report keys, in table order: `design_constraints`, `coverage_scope`, `cross_unit_cohesion`.
 
 ### Review cross-check
 

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -170,17 +172,47 @@ func TestReviewOwnershipMixedWithGateDrivingFinding(t *testing.T) {
 
 func TestOwnerReviewDisposesDeferredFinding(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteSharedUnits(t, repoRoot)
-	_, deferredID := grDeferSharedFinding(t, repoRoot)
+	sourceRunID, deferredID := grDeferSharedFinding(t, repoRoot)
 
-	agentRunID := grPlan(t, repoRoot, "--gate", "review", "--unit", "agent", "--target", "candidate")
+	var planOut, statusOut, errOut bytes.Buffer
+	if err := runGatePlan([]string{"--repo-root", repoRoot, "--gate", "review", "--unit", "agent", "--target", "candidate", "--format", "json"}, &planOut, &errOut); err != nil {
+		t.Fatalf("gate-plan failed: %v (stderr=%s)", err, errOut.String())
+	}
+	var planned gateRunView
+	if err := json.Unmarshal(planOut.Bytes(), &planned); err != nil {
+		t.Fatal(err)
+	}
+	agentRunID := planned.RunID
 	agentRun := mustLoadRun(t, repoRoot, agentRunID)
 	if len(agentRun.DeferredFindings) != 1 || agentRun.DeferredFindings[0].Finding.ID != deferredID {
 		t.Fatalf("expected the plan to load the pending deferral, got %+v", agentRun.DeferredFindings)
 	}
+	if !reflect.DeepEqual(planned.DeferredFindings, agentRun.DeferredFindings) || planned.DeferredFindings[0].SourceUnit != "tool" || planned.DeferredFindings[0].SourceRun != sourceRunID || planned.DeferredFindings[0].Finding.Detail == "" {
+		t.Fatalf("plan JSON lost pending deferral details: %+v", planned.DeferredFindings)
+	}
+	if err := runGateStatus([]string{"--repo-root", repoRoot, "--run", agentRunID, "--format", "json"}, &statusOut, &errOut); err != nil {
+		t.Fatalf("gate-status failed: %v (stderr=%s)", err, errOut.String())
+	}
+	var current gateRunView
+	if err := json.Unmarshal(statusOut.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(current.DeferredFindings, planned.DeferredFindings) {
+		t.Fatalf("status JSON changed pending deferrals: %+v", current.DeferredFindings)
+	}
 
 	// The cross synthesis must dispose the pending deferral: retaining it makes
 	// it the owner's finding and blocks the owner's gate.
+	// The file packet that reviews the deferred finding's file also carries it.
+	var fileOut, fileErr bytes.Buffer
+	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", agentRunID, "--packet", "src/shared.go"}, &fileOut, &fileErr); err != nil {
+		t.Fatalf("gate-packet failed: %v (stderr=%s)", err, strings.TrimSpace(fileErr.String()))
+	}
+	if !strings.Contains(fileOut.String(), deferredID) {
+		t.Fatalf("expected the deferred finding in the matching file packet context, got:\n%s", fileOut.String())
+	}
 	grSubmitOK(t, repoRoot, agentRunID, "src/shared.go", grReviewReport("src/shared.go", grAgentMain))
 	grSubmitOK(t, repoRoot, agentRunID, "src/tool_only.go", grReviewReport("src/tool_only.go", grAgentMain))
 
@@ -190,15 +222,6 @@ func TestOwnerReviewDisposesDeferredFinding(t *testing.T) {
 	}
 	if !strings.Contains(packetOut.String(), deferredID) || !strings.Contains(packetOut.String(), "Pending deferred findings") {
 		t.Fatalf("expected the deferred finding in the cross packet context, got:\n%s", packetOut.String())
-	}
-
-	// The file packet that reviews the deferred finding's file also carries it.
-	var fileOut, fileErr bytes.Buffer
-	if err := runGatePacket([]string{"--repo-root", repoRoot, "--run", agentRunID, "--packet", "src/shared.go"}, &fileOut, &fileErr); err != nil {
-		t.Fatalf("gate-packet failed: %v (stderr=%s)", err, strings.TrimSpace(fileErr.String()))
-	}
-	if !strings.Contains(fileOut.String(), deferredID) {
-		t.Fatalf("expected the deferred finding in the matching file packet context, got:\n%s", fileOut.String())
 	}
 
 	cross := "Cross-check: 4/4 PASS — consistent\n\n" +

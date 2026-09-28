@@ -357,6 +357,9 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 	if err != nil {
 		return err
 	}
+	if err := validateCrossItemFindingLinks(run.Gate, parsed, retained); err != nil {
+		return err
+	}
 	wantStatus := make(map[string]string, len(expectedStatus))
 	for key := range expectedStatus {
 		if key != gaterun.CrossKey {
@@ -381,26 +384,56 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 
 	crossVerdict := parsed.Verdicts[gaterun.CrossKey]
 	wantCrossStatus := "pass"
+	newIDs := map[string]bool{}
+	for _, finding := range parsed.Findings {
+		newIDs[finding.ID] = true
+	}
+	var canonicalCrossFindings []gaterun.Finding
+	for _, finding := range retained {
+		if newIDs[finding.ID] && gateDriving(finding, run.TargetName) {
+			canonicalCrossFindings = append(canonicalCrossFindings, finding)
+		}
+	}
+	blockingCross := blockingFindingCount(canonicalCrossFindings) > 0
 	if crossVerdict == "FAIL" {
 		wantCrossStatus = "fail"
-		newIDs := map[string]bool{}
-		for _, finding := range parsed.Findings {
-			newIDs[finding.ID] = true
-		}
-		var canonicalCrossFindings []gaterun.Finding
-		for _, finding := range retained {
-			if newIDs[finding.ID] && gateDriving(finding, run.TargetName) {
-				canonicalCrossFindings = append(canonicalCrossFindings, finding)
-			}
-		}
-		if blockingFindingCount(canonicalCrossFindings) == 0 {
+		if !blockingCross {
 			return errors.New("Cross-check FAIL requires at least one new P0/P1 cross finding owned by this unit or unassigned")
 		}
+	}
+	if run.Gate != gaterun.GateReview && crossVerdict == "PASS" && blockingCross {
+		return errors.New("Cross-check PASS contradicts a retained gate-driving P0/P1 cross finding")
 	}
 	if parsed.EffectiveStatus[gaterun.CrossKey] != wantCrossStatus {
 		return fmt.Errorf("cross verdict %s requires `Effective status: cross = %s`", crossVerdict, wantCrossStatus)
 	}
 
+	return nil
+}
+
+func validateCrossItemFindingLinks(gate string, parsed *parsedReport, retained []gaterun.Finding) error {
+	newIDs := make(map[string]bool, len(parsed.Findings))
+	for _, finding := range parsed.Findings {
+		newIDs[finding.ID] = true
+	}
+	retainedNew := make(map[string]gaterun.Finding)
+	for _, finding := range retained {
+		if newIDs[finding.ID] {
+			retainedNew[finding.ID] = finding
+		}
+	}
+	for item, id := range parsed.CrossItemFindings {
+		if !newIDs[id] {
+			return fmt.Errorf("Cross item %q refers to %q, which is not a finding created by this cross report", item, id)
+		}
+		finding, ok := retainedNew[id]
+		if !ok {
+			return fmt.Errorf("Cross item %q refers to cross finding %q, which is not retained", item, id)
+		}
+		if gate == gaterun.GateValidate && finding.Severity != "P0" && finding.Severity != "P1" {
+			return fmt.Errorf("validate Cross item %q refers to %s finding %q; validate findings must be P0 or P1", item, finding.Severity, id)
+		}
+	}
 	return nil
 }
 

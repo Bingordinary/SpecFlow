@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -75,6 +76,11 @@ func grWriteFile(t *testing.T, repoRoot, rel, content string) string {
 	return path
 }
 
+func grEnableMissionLayout(t *testing.T, repoRoot string) {
+	t.Helper()
+	grWriteFile(t, repoRoot, "tooling/manifest.tsv", "tooling fixture\n")
+}
+
 // grPlan runs gate-plan and returns the run id.
 func grPlan(t *testing.T, repoRoot string, args ...string) string {
 	t.Helper()
@@ -108,10 +114,20 @@ func grSubmit(t *testing.T, repoRoot, runID, packetID, report string) (string, e
 		if run.PacketByID(packetID) == nil && run.PacketByID("detect:"+packetID) != nil {
 			packetID = "detect:" + packetID
 		}
+		if packetID == "cross" {
+			report = grWithCrossItems(run, report)
+		}
 		if packetID == "cross" && !strings.Contains(report, "Effective status:") {
 			report = grCompleteCrossReport(t, repoRoot, run, report)
 		}
 	}
+	return grSubmitRaw(t, repoRoot, runID, packetID, report)
+}
+
+// grSubmitRaw submits the exact report supplied by a test without fixture
+// completion. Contract-rejection tests use it to exercise missing fields.
+func grSubmitRaw(t *testing.T, repoRoot, runID, packetID, report string) (string, error) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "report.md")
 	if err := os.WriteFile(path, []byte(report), 0644); err != nil {
 		t.Fatal(err)
@@ -201,6 +217,42 @@ func grValidateReport(checks []string, scopes map[string][]string) string {
 // grCrossReport builds a cross-check packet report.
 func grCrossReport(scopeFile, scopeDecl string) string {
 	return fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: %s\n", scopeFile, scopeDecl)
+}
+
+// grWithCrossItems upgrades shared fixture reports to the complete unit cross
+// contract. Tests of malformed cross-item reports submit their text directly.
+func grWithCrossItems(run *gaterun.Run, report string) string {
+	items := crossItemsFor(run.Gate)
+	if len(items) == 0 || strings.Contains(report, "Cross item:") {
+		return report
+	}
+	match := crossSummaryRe.FindStringSubmatch(report)
+	if match == nil {
+		return report
+	}
+	passed, _ := strconv.Atoi(match[1])
+	total, _ := strconv.Atoi(match[2])
+	if passed == total {
+		passed = len(items)
+	}
+	if passed > len(items) {
+		passed = len(items)
+	}
+	var lines strings.Builder
+	hasCrossFinding := len(extractFindings(report)) > 0
+	for index, item := range items {
+		verdict := "FAIL"
+		if index < passed {
+			verdict = "PASS"
+		}
+		fmt.Fprintf(&lines, "Cross item: %s = %s — fixture judgment\n", item, verdict)
+		if verdict == "FAIL" && hasCrossFinding {
+			fmt.Fprintf(&lines, "Cross item finding: %s = %s/cross/F1\n", item, run.RunID)
+		}
+	}
+	report = strings.Replace(report, match[0], fmt.Sprintf("Cross-check: %d/%d %s — %s", passed, len(items), match[3], match[4]), 1)
+	index := strings.Index(report, "Cross-check:")
+	return report[:index] + lines.String() + report[index:]
 }
 
 // grRunFindingID renders the run-scoped finding id the parser assigns to the
@@ -431,6 +483,7 @@ func TestGatePlanValidateUnitPlan(t *testing.T) {
 
 func TestGatePacketStructuralContextIncludesUnresolvedLogicalReference(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteSpecWithRefs(t, repoRoot, "auth", "missing", "none")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
@@ -535,6 +588,7 @@ func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
 // pattern.
 func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteFile(t, repoRoot, "app/[id]/route.ts", "export {}\n")
 	grWriteSpecSurface(t, repoRoot, "demo", "app/[id]/route.ts", "")
 
@@ -554,6 +608,7 @@ func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
 // the packet read refs.
 func TestGatePlanVerifySurfaceExpansionIncludesCodeFiles(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	grWriteFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
 	extra := "    affects:\n      files:\n        - internal/demo/a.go\n        - internal/demo/b.go\n"
@@ -1677,6 +1732,7 @@ func TestReviewCrossMergeMustTerminateAtRetainedFinding(t *testing.T) {
 
 func TestGateVerifyAnalysisIsFormalDependency(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -2259,6 +2315,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
 	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Protocol\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
 
 	cases := []struct {
 		name    string
@@ -2299,6 +2356,16 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 			},
 			mutate: func() { grWriteFile(t, repoRoot, "src/auth.go", "package auth // edited\n") },
 			want:   "modified: src/auth.go",
+		},
+		{
+			name: "modified discovered test input",
+			plan: []string{"--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "tests/auth_test.go"},
+			packets: func(runID string) {
+				grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+				grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+			},
+			mutate: func() { grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests // edited\n") },
+			want:   "modified: tests/auth_test.go",
 		},
 		{
 			name: "added surface file",
@@ -2375,6 +2442,7 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 
 func TestGateRunDeltaFlow(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
@@ -2394,6 +2462,10 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	if strings.Join(run.CarriedKeys, ",") != "5" {
 		t.Fatalf("expected check 5 carried over, got %v", run.CarriedKeys)
 	}
+	deltaMission := missionJSON(t, repoRoot, deltaRun, "structural")
+	if deltaMission.Mode != "delta" || strings.Join(deltaMission.Packets[0].CheckKeys, ",") != "1,3,6" {
+		t.Fatalf("delta mission repeats a carried check: %+v", deltaMission)
+	}
 
 	// Only the planned packets may be submitted.
 	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
@@ -2412,6 +2484,10 @@ func TestGateRunDeltaFlow(t *testing.T) {
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
+	deltaCross := missionJSON(t, repoRoot, deltaRun, "cross")
+	if len(deltaCross.Packets[0].CarriedResults) == 0 || len(deltaCross.Packets[0].Dependencies) != 3 {
+		t.Fatalf("delta cross mission lost carried or dependency results: %+v", deltaCross.Packets[0])
+	}
 	grSubmitOK(t, repoRoot, deltaRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
@@ -2594,6 +2670,7 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 
 func TestGateRunRepairFlow(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
@@ -2613,7 +2690,15 @@ func TestGateRunRepairFlow(t *testing.T) {
 	if strings.Join(run.CarriedKeys, ",") != "auth.logout" {
 		t.Fatalf("expected auth.logout carried over, got %v", run.CarriedKeys)
 	}
+	repairMission := missionJSON(t, repoRoot, repairRun, "detect:auth.login")
+	if repairMission.Mode != "repair" || strings.Join(repairMission.Packets[0].CheckKeys, ",") != "auth.login" {
+		t.Fatalf("repair mission repeats a carried check: %+v", repairMission)
+	}
 	grSubmitOK(t, repoRoot, repairRun, "auth.login", grVerifyItemReport("auth.login", main, "src/auth.go"))
+	repairCross := missionJSON(t, repoRoot, repairRun, "cross")
+	if len(repairCross.Packets[0].CarriedResults) == 0 || len(repairCross.Packets[0].Dependencies) != 2 || repairCross.Packets[0].Dependencies[1].Status != "not_required" {
+		t.Fatalf("repair cross mission lost carried or dependency results: %+v", repairCross.Packets[0])
+	}
 	grSubmitOK(t, repoRoot, repairRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, repairRun, "--result", "pass")
 
@@ -3282,7 +3367,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	}
 
 	grSubmitOK(t, repoRoot, deltaID, "auth.beta", grVerifyItemReport("auth.beta", main, "src/beta.go"))
-	deltaCross := "Cross-check: 4/5 PASS — combined context clarified\n\ncross: " + main + ": Description\n" +
+	deltaCross := "Cross-check: 5/5 PASS — combined context clarified\n\ncross: " + main + ": Description\n" +
 		"Effective status: auth.alpha = pass\nEffective status: auth.beta = pass\nEffective status: cross = pass\n"
 	grSubmitOK(t, repoRoot, deltaID, "cross", deltaCross)
 	grFinalizeOK(t, repoRoot, deltaID)

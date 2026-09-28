@@ -476,6 +476,90 @@ func TestDerivedPlanVerifyPlansNewItems(t *testing.T) {
 	}
 }
 
+func TestVerifyNewEvidenceForcesFullScopeInDeltaAndRepair(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		result   string
+		blocking bool
+		newPath  string
+	}{
+		{"delta outside surface", ModeDelta, "pass", false, "tests/new_test.go"},
+		{"repair outside surface", ModeRepair, "fail", true, "tests/new_test.go"},
+		{"delta inside surface", ModeDelta, "pass", false, "src/helper.go"},
+		{"repair inside surface", ModeRepair, "fail", true, "src/helper.go"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := newRepo(t)
+			writeUnitItemsSpec(t, repoRoot, "auth.core", "auth.aux")
+			writeFile(t, repoRoot, "tests/existing_test.go", "package tests\n")
+			writeFile(t, repoRoot, tc.newPath, "package fixture\n")
+			coreStatus := "pass"
+			if tc.blocking {
+				coreStatus = "fail"
+			}
+			mainEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", []validationcache.CheckDeclaration{
+				{Check: "auth.core", Status: coreStatus, AcceptanceItemIDs: []string{"auth.core"}},
+				{Check: "auth.aux", Status: "pass", AcceptanceItemIDs: []string{"auth.aux"}},
+				{Check: CrossKey, Status: "pass", Sections: []string{"Description"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			testEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "tests/existing_test.go", []validationcache.CheckDeclaration{{Check: "auth.core", Status: coreStatus}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeGateBaseline(t, repoRoot, "verify", tc.result, "full", tc.blocking, []validationcache.FileEntry{mainEntry, testEntry},
+				map[string]string{"auth.core": coreStatus, "auth.aux": "pass", CrossKey: "pass"})
+
+			run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, tc.mode,
+				[]string{"tests/existing_test.go", tc.newPath}, nil, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(packetIDsOf(run), ","); got != "detect:auth.core,analysis:auth.core,detect:auth.aux,analysis:auth.aux,cross" {
+				t.Fatalf("new evidence did not re-run every item: %s", got)
+			}
+			if len(run.CarriedKeys) != 0 || !strings.Contains(strings.Join(run.Notices, " "), tc.newPath) {
+				t.Fatalf("new evidence must prevent carry-over and name its cause: carried=%v notices=%v", run.CarriedKeys, run.Notices)
+			}
+		})
+	}
+}
+
+func TestVerifyRecordedEvidenceKeepsDeltaScope(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core", "auth.aux")
+	writeFile(t, repoRoot, "tests/existing_test.go", "package tests\n")
+	mainEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", []validationcache.CheckDeclaration{
+		{Check: "auth.core", AcceptanceItemIDs: []string{"auth.core"}},
+		{Check: "auth.aux", AcceptanceItemIDs: []string{"auth.aux"}},
+		{Check: CrossKey, Sections: []string{"Description"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "tests/existing_test.go", []validationcache.CheckDeclaration{{Check: "auth.core"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeGateBaseline(t, repoRoot, "verify", "pass", "full", false, []validationcache.FileEntry{mainEntry, testEntry},
+		map[string]string{"auth.core": "pass", "auth.aux": "pass", CrossKey: "pass"})
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeDelta,
+		[]string{"tests/existing_test.go"}, []string{"auth.core"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(packetIDsOf(run), ","); got != "detect:auth.core,analysis:auth.core,cross" {
+		t.Fatalf("recorded evidence widened the delta run: %s", got)
+	}
+	if got := strings.Join(run.CarriedKeys, ","); got != "auth.aux" {
+		t.Fatalf("unaffected item was not carried: %s", got)
+	}
+}
+
 // TestDerivedPlanDeltaCrossOnlyPlansCrossPacket verifies that a delta whose
 // only stale declaration belongs to the cross-check plans the single cross
 // packet and carries every declared check over.

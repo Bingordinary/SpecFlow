@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
@@ -13,15 +14,17 @@ import (
 // verdicts, dependency declarations, findings, synthesis records, and
 // evidence-backed severity confirmations.
 type parsedReport struct {
-	Verdicts        map[string]string // check key -> verdict token
-	Scopes          []parsedScope
-	Findings        []gaterun.Finding
-	EffectiveStatus map[string]string
-	Dispositions    []gaterun.FindingDisposition
-	SeverityChecks  []gaterun.SeverityConfirmation
-	Ownerships      []gaterun.FindingOwnership
-	Analysis        map[string]string
-	GateFindings    string // review file packets: the gate_findings line content (`none` or [P0|P1] entries)
+	Verdicts          map[string]string // check key -> verdict token
+	CrossItems        map[string]string // fixed cross item -> PASS | FAIL
+	CrossItemFindings map[string]string // failed cross item -> new cross finding id
+	Scopes            []parsedScope
+	Findings          []gaterun.Finding
+	EffectiveStatus   map[string]string
+	Dispositions      []gaterun.FindingDisposition
+	SeverityChecks    []gaterun.SeverityConfirmation
+	Ownerships        []gaterun.FindingOwnership
+	Analysis          map[string]string
+	GateFindings      string // review file packets: the gate_findings line content (`none` or [P0|P1] entries)
 }
 
 // parsedScope is one `{check key}: {file}: {declaration}` line.
@@ -34,13 +37,13 @@ type parsedScope struct {
 // verifyMismatchTypes is the fixed MISMATCH type vocabulary of the verify
 // detection verdict (`MISMATCH (type)`; see framework/verification_scope.md
 // §Sub-agent Prompt Assembly).
-var verifyMismatchTypes = map[string]bool{
-	"structural": true,
-	"acceptance": true,
-	"scope":      true,
-	"stub":       true,
-	"surplus":    true,
-}
+var verifyMismatchTypes = func() map[string]bool {
+	out := make(map[string]bool, len(mismatchTypes))
+	for _, value := range mismatchTypes {
+		out[value] = true
+	}
+	return out
+}()
 
 var (
 	rangeDeclRe         = regexp.MustCompile(`^\d+-\d+(,\d+-\d+)*$`)
@@ -50,13 +53,16 @@ var (
 	gateFindingsRe      = regexp.MustCompile(`(?mi)^[ \t]*gate_findings:\s*(\S[^\n]*)$`)
 	gateFindingsEntryRe = regexp.MustCompile(`^\[(?:P0|P1)\][ \t]+\S`)
 	alnumRe             = regexp.MustCompile(`[A-Za-z0-9]`)
-	effectiveStatusRe   = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Effective status:\s*(.+?)\s*=\s*(pass|fail)\s*$`)
-	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(retained|suppressed|merged)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
+	effectiveStatusRe   = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Effective status:\s*(.+?)\s*=\s*(` + strings.Join(crossStatuses, "|") + `)\s*$`)
+	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(` + strings.Join(crossDispositions, "|") + `)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
-	severityCheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:\s*(\S+)\s*=\s*(confirmed|adjusted)\s+(P0|P1|P2|P3)(?:\s*->\s*(P0|P1|P2|P3))?\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
+	severityCheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:\s*(\S+)\s*=\s*(` + strings.Join(severityOutcomes, "|") + `)\s+(` + strings.Join(severityLevels, "|") + `)(?:\s*->\s*(` + strings.Join(severityLevels, "|") + `))?\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
 	severityCheckLineRe = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:`)
 	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
 	ownershipLineRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:`)
+	crossItemLineRe     = regexp.MustCompile(`^Cross item:\s*([a-z][a-z0-9_]*)\s*=\s*(PASS|FAIL)\s+[—-]\s+(\S.*)$`)
+	crossItemFindingRe  = regexp.MustCompile(`^Cross item finding:\s*([a-z][a-z0-9_]*)\s*=\s*(\S+)\s*$`)
+	crossSummaryRe      = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Cross-check:[ \t]*(\d+)[ \t]*/[ \t]*(\d+)[ \t]+(PASS|FAIL)[ \t]+[—-][ \t]+(\S[^\n]*)$`)
 )
 
 // itemDeclPrefix is the reserved declaration prefix for acceptance item
@@ -147,7 +153,7 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 			out.Verdicts[key] = token
 			verdictLines[lineIdx] = true
 		}
-		if err := validatePacketBodyStructure(run, spec, report); err != nil {
+		if err := validatePacketBodyStructure(run, spec, report, out); err != nil {
 			return nil, err
 		}
 	}
@@ -218,7 +224,7 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 	return out, nil
 }
 
-func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, report string) error {
+func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, report string, out *parsedReport) error {
 	switch {
 	case run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && spec.Kind == gaterun.PacketKindChecks && stringInList(spec.CheckKeys, "5"):
 		return validateUnitAcceptanceBody(report)
@@ -226,17 +232,92 @@ func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, rep
 		return validateVerifyItemBody(report)
 	case run.Gate == gaterun.GateReview && spec.Kind == gaterun.PacketKindFile:
 		return validateReviewFileBody(report)
+	case spec.Kind == gaterun.PacketKindCross && len(crossItemsFor(run.Gate)) > 0:
+		return validateCrossItemBody(run.Gate, report, out)
 	default:
 		return nil
 	}
 }
 
-func validateUnitAcceptanceBody(report string) error {
-	for _, subcheck := range []string{"5a", "5b", "5c", "5d", "5e", "5f", "5g", "5h", "5i"} {
-		allowed := "PASS|FAIL"
-		if subcheck == "5a" {
-			allowed = "PASS|WARNING|FAIL"
+func validateCrossItemBody(gate, report string, out *parsedReport) error {
+	items := crossItemsFor(gate)
+	seen := make(map[string]bool, len(items))
+	links := make(map[string]string, len(items))
+	out.CrossItems = make(map[string]string, len(items))
+	passed := 0
+	summaryLines := 0
+	for _, line := range strings.Split(report, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Cross-check:") || strings.HasPrefix(line, "- Cross-check:") {
+			summaryLines++
 		}
+		if strings.HasPrefix(line, "Cross item finding:") {
+			match := crossItemFindingRe.FindStringSubmatch(line)
+			if match == nil {
+				return fmt.Errorf("malformed Cross item finding line %q: expected `Cross item finding: <key> = <finding_id>`", line)
+			}
+			if !stringInList(items, match[1]) {
+				return fmt.Errorf("unknown Cross item finding key %q for %s", match[1], gate)
+			}
+			if _, exists := links[match[1]]; exists {
+				return fmt.Errorf("duplicate Cross item finding for %q", match[1])
+			}
+			links[match[1]] = match[2]
+			continue
+		}
+		if !strings.HasPrefix(line, "Cross item:") {
+			continue
+		}
+		match := crossItemLineRe.FindStringSubmatch(line)
+		if match == nil {
+			return fmt.Errorf("malformed Cross item line %q: expected `Cross item: <key> = PASS|FAIL — <reason>`", line)
+		}
+		key := match[1]
+		if !stringInList(items, key) {
+			return fmt.Errorf("unknown Cross item %q for %s", key, gate)
+		}
+		if seen[key] {
+			return fmt.Errorf("duplicate Cross item %q", key)
+		}
+		seen[key] = true
+		out.CrossItems[key] = match[2]
+		if match[2] == "PASS" {
+			passed++
+		}
+	}
+	for _, item := range items {
+		if !seen[item] {
+			return fmt.Errorf("missing Cross item %q", item)
+		}
+		if out.CrossItems[item] == "FAIL" && links[item] == "" {
+			return fmt.Errorf("failed Cross item %q has no Cross item finding", item)
+		}
+		if out.CrossItems[item] == "PASS" && links[item] != "" {
+			return fmt.Errorf("passing Cross item %q must not declare a Cross item finding", item)
+		}
+	}
+	summaries := crossSummaryRe.FindAllStringSubmatch(report, -1)
+	if summaryLines != 1 || len(summaries) != 1 {
+		return fmt.Errorf("%s cross report requires exactly one `Cross-check: N/%d PASS|FAIL — <reason>` summary", gate, len(items))
+	}
+	gotPassed, err := strconv.Atoi(summaries[0][1])
+	if err != nil {
+		return fmt.Errorf("invalid Cross-check passed count %q: %w", summaries[0][1], err)
+	}
+	gotTotal, err := strconv.Atoi(summaries[0][2])
+	if err != nil {
+		return fmt.Errorf("invalid Cross-check total count %q: %w", summaries[0][2], err)
+	}
+	if gotPassed != passed || gotTotal != len(items) {
+		return fmt.Errorf("Cross-check count %d/%d contradicts Cross item results: expected %d/%d", gotPassed, gotTotal, passed, len(items))
+	}
+	out.CrossItemFindings = links
+	return nil
+}
+
+func validateUnitAcceptanceBody(report string) error {
+	for _, subcheck := range unitAcceptanceSubchecks {
+		allowed := strings.Join(unitAcceptanceAllowed(subcheck), "|")
 		re := regexp.MustCompile(`(?m)^[ \t]*` + subcheck + `\.[^\n:]*:\s*(` + allowed + `)\b[^\n]*$`)
 		matches := re.FindAllStringSubmatch(report, -1)
 		if len(matches) != 1 {
@@ -250,18 +331,16 @@ func validateUnitAcceptanceBody(report string) error {
 }
 
 func validateVerifyItemBody(report string) error {
-	required := []struct {
-		name string
-		pat  string
-	}{
-		{"evidence", `(?mi)^[ \t]*-?[ \t]*evidence:\s*(\S[^\n]*)$`},
-		{"deterministic", `(?mi)^[ \t]*-?[ \t]*deterministic:\s*(true|false)\s*$`},
-		{"Part A", `(?mi)^[ \t]*Part A:\s*(\S[^\n]*)$`},
-		{"Part B", `(?mi)^[ \t]*Part B:\s*(\S[^\n]*)$`},
-	}
-	for _, field := range required {
-		if count := len(regexp.MustCompile(field.pat).FindAllStringSubmatch(report, -1)); count != 1 {
-			return fmt.Errorf("verify item report must declare exactly one non-empty %s field", field.name)
+	for _, field := range verifyItemFields {
+		pat := `(?mi)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*)$`
+		if field == "deterministic" {
+			pat = `(?mi)^[ \t]*-?[ \t]*deterministic:\s*(true|false)\s*$`
+		}
+		if field == "Part A" || field == "Part B" {
+			pat = `(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*)$`
+		}
+		if count := len(regexp.MustCompile(pat).FindAllStringSubmatch(report, -1)); count != 1 {
+			return fmt.Errorf("verify item report must declare exactly one non-empty %s field", field)
 		}
 	}
 	// When Part B does not apply, the report must use the explicit
@@ -280,7 +359,7 @@ func validateVerifyItemBody(report string) error {
 }
 
 func validateReviewFileBody(report string) error {
-	for _, field := range []string{"module_boundaries", "responsibility_organization", "dependency_clarity", "abstraction_level", "extension_landing_points", "engineering_patterns"} {
+	for _, field := range reviewDimensions {
 		re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*?)\s+[—-]\s+(\S[^\n]*)$`)
 		if count := len(re.FindAllStringSubmatch(report, -1)); count != 1 {
 			return fmt.Errorf("review file report must declare exactly one %s assessment with a non-empty basis", field)
@@ -396,8 +475,7 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 		return fmt.Errorf("analysis packet %q must own exactly one item", spec.PacketID)
 	}
 	item := spec.CheckKeys[0]
-	fields := []string{"Problem", "Impact", "Root cause", "Suggested direction", "Severity", "Confidence"}
-	for _, field := range fields {
+	for _, field := range analysisFields {
 		re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*([^\n]+)$`)
 		matches := re.FindAllStringSubmatch(report, -1)
 		if len(matches) != 1 || strings.TrimSpace(matches[0][1]) == "" {
@@ -414,17 +492,17 @@ func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report stri
 		return fmt.Errorf("analysis %q: %w", item, err)
 	}
 	severity := strings.ToUpper(out.Analysis["Severity"])
-	if severity != "P0" && severity != "P1" && severity != "P2" && severity != "P3" {
+	if !oneOf(severity, analysisAllowed("Severity")...) {
 		return fmt.Errorf("analysis %q has invalid Severity %q", item, out.Analysis["Severity"])
 	}
-	if !oneOf(out.Analysis["Root cause"], "incomplete", "stale", "shadow_spec", "divergence", "accident", "blocked") {
+	if !oneOf(out.Analysis["Root cause"], analysisAllowed("Root cause")...) {
 		return fmt.Errorf("analysis %q has invalid Root cause %q", item, out.Analysis["Root cause"])
 	}
 	direction := out.Analysis["Suggested direction"]
-	if !oneOf(direction, "spec_gap", "code_gap", "needs_design", "blocked") {
+	if !oneOf(direction, analysisAllowed("Suggested direction")...) {
 		return fmt.Errorf("analysis %q has invalid Suggested direction %q", item, direction)
 	}
-	if !oneOf(strings.ToLower(out.Analysis["Confidence"]), "high", "medium", "low") {
+	if !oneOf(strings.ToLower(out.Analysis["Confidence"]), analysisAllowed("Confidence")...) {
 		return fmt.Errorf("analysis %q has invalid Confidence %q", item, out.Analysis["Confidence"])
 	}
 	out.Verdicts[item] = "MISMATCH"
@@ -656,15 +734,16 @@ func gateFindingsDeclareBlocking(content string) bool {
 // the token, the line text, and its index.
 func extractVerdict(spec *gaterun.PacketSpec, key, report string) (string, string, int, error) {
 	var pat string
+	allowed := strings.Join(verdictContractFor(spec.Kind, key).Allowed, "|")
 	switch spec.Kind {
 	case gaterun.PacketKindChecks:
-		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(PASS|WARNING|FAIL)\b`
+		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(` + allowed + `)\b`
 	case gaterun.PacketKindItem:
-		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(ALIGNED|MISMATCH|CANNOT_DETERMINE)\b(?:\s*\(([^)\n]*)\))?`
+		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b(?:\s*\(([^)\n]*)\))?`
 	case gaterun.PacketKindFile:
-		pat = `(?m)^[ \t]*-?[ \t]*conclusion:\s*((?i:acceptable|needs_attention|unacceptable))\b`
+		pat = `(?m)^[ \t]*-?[ \t]*conclusion:\s*((?i:` + allowed + `))\b`
 	case gaterun.PacketKindCross:
-		pat = `(?m)^[ \t]*-?[ \t]*Cross-check:\s*(?:\d+\s*/\s*\d+\s+)?(PASS|FAIL)\b`
+		pat = `(?m)^[ \t]*-?[ \t]*Cross-check:\s*(?:\d+\s*/\s*\d+\s+)?(` + allowed + `)\b`
 	default:
 		return "", "", 0, fmt.Errorf("unknown packet kind %q", spec.Kind)
 	}
@@ -717,15 +796,7 @@ func lineEnd(s string, pos int) int {
 
 // needsReason reports whether a verdict token requires a non-empty reason.
 func needsReason(spec *gaterun.PacketSpec, token string) bool {
-	switch spec.Kind {
-	case gaterun.PacketKindChecks, gaterun.PacketKindCross:
-		return true
-	case gaterun.PacketKindItem:
-		return true
-	case gaterun.PacketKindFile:
-		return token == "unacceptable"
-	}
-	return false
+	return stringInList(verdictContractFor(spec.Kind, "").ReasonRequiredFor, token)
 }
 
 // hasReason reports whether text follows a verdict token: at least one

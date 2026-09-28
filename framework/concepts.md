@@ -36,20 +36,20 @@ Do not gate before editing. Read, then write. For "only change X" / "do not touc
 
 ## Trigger Routing
 
-Resolve gate mode first. Full and delta/repair gates run `specflowctl gate-plan` before packet reads, then obey `framework/verification_scope.md` and `framework/validation_cache.md`. Targeted (`:check-{n}` / `:{keyword}`) runs in the main session: no plan, no complete cache. Then resolve target type and read the entire row.
+Resolve mode first. Full/delta/repair: `gate-plan --format json` → `gate-status --format json` → send ready `gate-packet --format prompt` verbatim to an independent reviewer → `gate-submit` → `gate-finalize` only on status `finalize`. Before verify/reverify, use `specflowctl next --unit <name>`; find every item's related test, caller, callee, and dependency paths only and pass each as `--input` (declared files included). Missing verify read ref: do not submit a partial report; add the path, re-plan with all inputs, and re-execute. Do not assemble this sequence from gate/cache docs. Targeted: main session, no plan/cache. Read the target row.
 
 | Trigger | First action and required packages |
 |---|---|
-| `validate@{target}` | Resolve unit/rule with `framework/commands.md`; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `validate@{target}` | Resolve `framework/commands.md`; full run. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | Resolve with `framework/commands.md`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `verify@{unit}` | Resolve candidate/stable by existence; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_verify_checklist.md`. |
+| `verify@{unit}` | Resolve candidate/stable; discover paths, then full run with `--input`. Protocol: `framework/unit_verify_checklist.md`. |
 | `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md` and `framework/unit_verify_checklist.md`. |
 | `verify@{rule}` | Stop: rule verify was removed; report `validate@{rule}`. Read `framework/verification_scope.md`. |
-| `review@{unit}` | Resolve candidate/stable; plan full run; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/spec_review_checklist.md`. |
+| `review@{unit}` | Resolve candidate/stable; full run. Protocol: `framework/spec_review_checklist.md`. |
 | `review@{unit}:{keyword}` | Run targeted file review directly; read `framework/verification_scope.md` and `framework/spec_review_checklist.md`. |
-| `revalidate@{target}` | Resolve with `framework/commands.md`; plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `reverify@{unit}` | Plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/unit_verify_checklist.md`. |
-| `rereview@{unit}` | Plan delta/repair; read `framework/verification_scope.md`, `framework/validation_cache.md`, and `framework/spec_review_checklist.md`. |
+| `revalidate@{target}` | Resolve `framework/commands.md`; delta/repair. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `reverify@{unit}` | Discover paths for all items, including carried; delta/repair with `--input`. Protocol: `framework/unit_verify_checklist.md`. |
+| `rereview@{unit}` | Delta/repair. Protocol: `framework/spec_review_checklist.md`. |
 | `promote@{target}` | Resolve with `framework/commands.md`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
 | `detect@{rule}` / `detect@all` | Run read-only `specflowctl detect`; use `framework/spec_writing_guide.md` §6.5. |

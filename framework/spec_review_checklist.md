@@ -24,7 +24,7 @@ When an agent executes `review@{unit}`, it uses the spec-aware code quality revi
 - **Failure Behavior:** If subagent encounters an error (cannot read target files, target unit not found, review checklist missing), report "Review could not complete — <reason>". Do not write review cache. Advise resolving the issue before retrying. This is distinct from review findings — when the review runs and finds P0/P1 issues, the subagent completed normally (the output is PASS or FAIL per the gate rules below), not a subagent failure.
 - Each finding reports P0-P3 severity with code references.
 - Suppressed findings are listed separately under "Suppressed by spec".
-- **Sub-agent prompts:** prompts for review sub-agents must point to the spec file for design context, not restate it — a restated prompt is a second spec source, and suppression decisions must be read from the spec itself. File lists for review sub-agents come from `specflowctl next --unit <name>` output (implementation surface + affects files), following the sub-agent prompt assembly rules in `framework/verification_scope.md` §Sub-agent Prompt Assembly — with the role line "read-only review sub-agent for review packet {packet_id} of run {run_id}" and the protocol reference pointing to this checklist (`framework/spec_review_checklist.md`).
+- **Sub-agent prompts:** `specflowctl gate-packet --format prompt` supplies the packet's spec path, exact code read refs, review mission, and this checklist path; the main agent sends it verbatim. The prompt points to the spec for design context instead of restating it — a restatement would become a second spec source. Suppression decisions must be read from the spec itself.
 
 ## Output Format
 

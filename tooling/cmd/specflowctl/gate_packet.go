@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +20,7 @@ func runGatePacket(args []string, stdout, stderr io.Writer) error {
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	runIDPtr := fs.String("run", "", "gate run id printed by gate-plan")
 	packetIDPtr := fs.String("packet", "", "packet id from the run plan")
+	formatPtr := fs.String("format", "prompt", "output format: prompt | json")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -28,6 +28,9 @@ func runGatePacket(args []string, stdout, stderr io.Writer) error {
 	packetID := strings.TrimSpace(*packetIDPtr)
 	if runID == "" || packetID == "" {
 		return errors.New("--run and --packet are required")
+	}
+	if *formatPtr != "prompt" && *formatPtr != "json" {
+		return fmt.Errorf("invalid --format %q: must be prompt or json", *formatPtr)
 	}
 	absRoot := mustAbs(*repoRootPtr)
 	run, err := gaterun.Load(absRoot, runID)
@@ -45,53 +48,17 @@ func runGatePacket(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if state.Status == gaterun.PacketNotRequired {
-		return fmt.Errorf("packet %q is not required for this run", packetID)
+	if state.Status != gaterun.PacketPending && state.Status != gaterun.PacketRejected {
+		return fmt.Errorf("packet %q is %s — only pending or rejected packets can receive a mission", packetID, state.Status)
 	}
-
-	fmt.Fprintf(stdout, "Run: %s\nPacket: %s\nKind: %s\nChecks: %s\n", run.RunID, spec.PacketID, spec.Kind, strings.Join(spec.CheckKeys, ", "))
-	fmt.Fprintln(stdout, "Read refs:")
-	for _, ref := range spec.ReadRefs {
-		fmt.Fprintf(stdout, "  - %s\n", ref)
+	mission, err := buildGateMission(absRoot, run, spec, state)
+	if err != nil {
+		return err
 	}
-	if len(spec.DependsOn) > 0 {
-		fmt.Fprintln(stdout, "Dependency results:")
-		for _, dep := range spec.DependsOn {
-			depState, derr := gaterun.LoadPacketState(absRoot, run, dep)
-			if derr != nil {
-				return derr
-			}
-			if depState.Status == gaterun.PacketNotRequired {
-				fmt.Fprintf(stdout, "  - %s: not_required\n", dep)
-				continue
-			}
-			if depState.Status != gaterun.PacketAccepted || depState.Result == nil {
-				return fmt.Errorf("packet %q is not ready: dependency %q is %s", packetID, dep, depState.Status)
-			}
-			data, _ := json.MarshalIndent(depState.Result, "    ", "  ")
-			fmt.Fprintf(stdout, "  - %s (%s):\n    %s\n", dep, depState.Result.ReportDigest, data)
-			fmt.Fprintln(stdout, "    Accepted report:")
-			fmt.Fprintln(stdout, indentPacketContext(depState.Report, "      "))
-		}
+	if *formatPtr == "json" {
+		return writeGateJSON(stdout, mission)
 	}
-	if spec.Kind == gaterun.PacketKindCross && len(run.CarriedResults) > 0 {
-		fmt.Fprintln(stdout, "Carried judgments:")
-		for _, result := range run.CarriedResults {
-			data, _ := json.MarshalIndent(result, "    ", "  ")
-			fmt.Fprintf(stdout, "  - %s (%s):\n    %s\n", result.PacketID, result.ReportDigest, data)
-		}
-	}
-	deferred := deferredFindingsForPacket(run, spec)
-	if len(deferred) > 0 {
-		fmt.Fprintf(stdout, "Pending deferred findings (%d) — another unit's review routed them here by recorded ownership; the cross synthesis must dispose each one (retained | suppressed | merged) and may re-defer it with a `Finding ownership:` record:\n", len(deferred))
-		for _, entry := range deferred {
-			fmt.Fprintf(stdout, "  - %s [%s] — from %s run %s\n", entry.Finding.ID, entry.Finding.Severity, entry.SourceUnit, entry.SourceRun)
-			fmt.Fprintf(stdout, "    ownership reason: %s\n", entry.Reason)
-			fmt.Fprintf(stdout, "    ownership evidence: %s\n", entry.EvidencePath)
-			fmt.Fprintln(stdout, "    finding:")
-			fmt.Fprintln(stdout, indentPacketContext(entry.Finding.Detail, "      "))
-		}
-	}
+	writeGatePrompt(stdout, mission)
 	return nil
 }
 

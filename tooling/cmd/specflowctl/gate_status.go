@@ -22,8 +22,12 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 	gatePtr := fs.String("gate", "", "filter: gate name")
 	unitPtr := fs.String("unit", "", "filter: unit name")
 	ruleIDPtr := fs.String("rule", "", "filter: rule id")
+	formatPtr := fs.String("format", "text", "output format: text | json")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *formatPtr != "text" && *formatPtr != "json" {
+		return fmt.Errorf("invalid --format %q: must be text or json", *formatPtr)
 	}
 
 	absRoot := mustAbs(*repoRootPtr)
@@ -32,6 +36,13 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 		run, err := gaterun.Load(absRoot, runID)
 		if err != nil {
 			return err
+		}
+		if *formatPtr == "json" {
+			view, err := gateRunSnapshot(absRoot, run)
+			if err != nil {
+				return err
+			}
+			return writeGateJSON(stdout, view)
 		}
 		return writeRunStatus(stdout, absRoot, run)
 	}
@@ -51,6 +62,20 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 	runs, err := gaterun.ListRuns(absRoot)
 	if err != nil {
 		return err
+	}
+	if *formatPtr == "json" {
+		views := []gateRunView{}
+		for _, run := range runs {
+			if run.Status != gaterun.StatusOpen || (gate != "" && run.Gate != gate) || (unitName != "" && !(run.TargetKind == gaterun.TargetKindUnit && run.TargetName == unitName)) || (ruleID != "" && !(run.TargetKind == gaterun.TargetKindRule && run.TargetName == ruleID)) {
+				continue
+			}
+			view, err := gateRunSnapshot(absRoot, run)
+			if err != nil {
+				return err
+			}
+			views = append(views, view)
+		}
+		return writeGateJSON(stdout, views)
 	}
 	var listed int
 	for _, run := range runs {
@@ -170,11 +195,11 @@ func gateNextStep(absRoot string, run *gaterun.Run) string {
 			}
 		}
 		if ready {
-			verb := "inspect the packet context, execute it, then submit:"
+			verb := "send the generated mission to an independent reviewer, then submit its report:"
 			if state.Status == gaterun.PacketRejected {
-				verb = "inspect the packet context again, fix the rejection reason, then re-submit:"
+				verb = "generate the mission again, fix the rejection reason, then re-submit:"
 			}
-			return fmt.Sprintf("%s `specflowctl gate-packet --run %s --packet %s`; `specflowctl gate-submit --run %s --packet %s --report PATH`", verb, run.RunID, spec.PacketID, run.RunID, spec.PacketID)
+			return fmt.Sprintf("%s `specflowctl gate-packet --run %s --packet %s --format prompt`; `specflowctl gate-submit --run %s --packet %s --report PATH`", verb, run.RunID, spec.PacketID, run.RunID, spec.PacketID)
 		}
 	}
 	return fmt.Sprintf("all required packets are resolved — `specflowctl gate-finalize --run %s`", run.RunID)
