@@ -29,7 +29,14 @@ type File struct {
 
 // RequireWorkTreeTop verifies that repoRoot is the git worktree top level, so
 // the repository-relative paths reported by Git match repoRoot's path space.
-// The comparison resolves symlinks on both sides (macOS /var -> /private/var).
+// The comparison resolves symlinks on both sides (macOS /var -> /private/var)
+// and then checks directory identity (os.SameFile) instead of string
+// equality: on case-insensitive filesystems (macOS, Windows) a repoRoot whose
+// spelling differs only in letter case from the worktree top — for example a
+// host shell whose PWD environment variable disagrees with the on-disk case —
+// is the same directory and must be accepted, while on case-sensitive
+// filesystems a case variant either does not exist or is genuinely a
+// different directory and still fails closed.
 func RequireWorkTreeTop(repoRoot string) error {
 	out, err := runGit(repoRoot, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -48,7 +55,15 @@ func RequireWorkTreeTop(repoRoot string) error {
 	if r, err := filepath.EvalSymlinks(top); err == nil {
 		resolvedTop = r
 	}
-	if resolvedRoot != resolvedTop {
+	rootInfo, err := os.Stat(resolvedRoot)
+	if err != nil {
+		return fmt.Errorf("--repo-root %q is not accessible: %w", repoRoot, err)
+	}
+	topInfo, err := os.Stat(resolvedTop)
+	if err != nil {
+		return fmt.Errorf("git worktree top level %q is not accessible: %w", top, err)
+	}
+	if !os.SameFile(rootInfo, topInfo) {
 		return fmt.Errorf("--repo-root %q is not the git worktree top level (%q); run from the repository root", repoRoot, top)
 	}
 	return nil
