@@ -42,7 +42,7 @@ The stable confirmation cache is read-only state: it grants no promote eligibili
 ## Execution Rules
 
 - **Subagent permissions:** validate executes one packet per independent read-only sub-agent session — the sub-agent may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents. The main agent sends `specflowctl gate-packet --format prompt` output verbatim; its check keys are the packet scope (see `framework/verification_scope.md` §Sub-agent Prompt Assembly). Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
-- Each check reports **PASS** or **FAIL** with a reason.
+- Each check reports **PASS**, **WARNING**, or **FAIL** with a reason.
 - On FAIL, the agent must identify **which information sources contradict each other** (e.g., "spec body describes auto-retry logic but no acceptance item covers it") in the FAIL reason, and record the fix in the FAIL reason. When the finding is written out, its `evidence:` block quotes the contradicting sources verbatim and its `fix:` (or `decision:`) field states the repair — the entry line's location reference is a pointer, not the evidence.
 - Resolution types:
   - **actionable** — A concrete repair can be made inside the current candidate spec without user judgment.
@@ -136,7 +136,7 @@ One line per check, numbered as in this file:
 ```
 1. Structural integrity: PASS | WARNING | FAIL — reason
 2. Design soundness: PASS | FAIL — reason
-3. Scope integrity: PASS | FAIL — reason
+3. Scope integrity: PASS | WARNING | FAIL — reason
 4. Evidence-driven vs design-driven consistency: PASS | FAIL — reason
 5. Acceptance coverage & correctness: PASS | FAIL — reason
   5a. Coverage & item-set correspondence: PASS | WARNING | FAIL — reason
@@ -149,7 +149,7 @@ One line per check, numbered as in this file:
   5h. Contract statement carry-over: PASS | FAIL — reason
   5i. Contract substance: PASS | FAIL — reason
 6. Affects-source validity: PASS | FAIL — reason
-7. Cross-unit consistency: PASS | FAIL — reason
+7. Cross-unit consistency: PASS | WARNING | FAIL — reason
 8. Constraint alignment: PASS | FAIL — reason
 ```
 
@@ -163,7 +163,7 @@ Failed checks: N | Advisory findings: K
 **Counting rules:**
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default and its required `confirmed` record states that the default stands without a §9 boundary check; a P0 grade requires the §9 boundary check (see Severity check below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- `Advisory findings` (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- `Advisory findings` (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding under the check line as its own entry in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`, followed by the shared finding block (§Output Format). The entry line must begin with the bracketed severity after optional indentation — the parser accepts indentation or a single leading `-`, but not a numbered prefix, so the packet report keeps entries as standalone lines; the presented summary may re-number them (`5a-1`, `5a-2`, ...) as presentation only. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, its resolution type, and the block fields:
@@ -351,12 +351,23 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
    - Do non-goals conflict with any described behavior? (non-goal says "not doing X" but behavior describes X)
    - Are the boundaries respected by the behavior descriptions? (e.g., boundary is "client-side validation only" but behavior describes server-side logic)
 5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (actionable: move content to the correct unit or declare scope expansion)
+6. **Unit cohesion / split-candidate detection (WARNING):** Judge whether the unit's content resolves into two or more responsibility clusters that are independently governable. A split candidate is reported as WARNING only when all three conditions hold:
+   - **Distinct responsibility subjects** — the clusters' behavior subjects belong to different domains (e.g. authentication vs. notifications), not multiple scenarios of one subject.
+   - **No shared design center** — no shared state, no shared actor journey, and no contract the clusters jointly define links them: a designed change in one cluster does not require a change in the other. Constraint-type content the clusters share (protocols, component contracts) is not a design center: it is extracted as a shared rule at split time (`framework/spec_writing_guide.md` §2 item 3).
+   - **Independently governable** — each cluster could carry its own acceptance item set and be validated, verified, reviewed, and promoted without editing the other cluster's content (constraints shared between them would be extracted as a rule, `framework/spec_writing_guide.md` §2 item 3).
+   Spanning multiple directories is not a signal by itself (`framework/spec_writing_guide.md` §2 item 2 allows cross-directory units) — the judgment reads coupling and governance lifecycle, not directory layout. This step is the unit-level mirror of sub-check 5a step 7 (over-split items are merge candidates): 5a detects one behavior domain split across items; this step detects independently governable responsibilities merged into one unit.
+   A reported WARNING carries:
+   - **Required evidence (no artifact, no WARNING):** quote each cluster's declared responsibility statement or behavior subjects (from the body and the acceptance item set) and state the independence judgment — which shared-state, shared-contract, and shared-journey surfaces were checked and why none links the clusters (same evidence discipline as Check 2 Step 1 and sub-check 5a step 9).
+   - **Recommendation:** split the unit — one unit per responsibility (a user-confirmed structure change per `framework/spec_writing_guide.md` §2, never an automatic edit) — and extract constraints shared between the parts as rules. Do not satisfy this finding by moving content into appendices: non-exempt appendices stay inside the same unit's validation union and reduce neither its gate work set nor its governance weight.
+   - **Resolution:** advisory WARNING only — it never causes FAIL, never blocks promote, is presented on the check line's reason, and is counted under `Advisory findings`. It is not a cross-synthesized finding and must never be emitted as a bracketed `[Px]` entry (validate grades findings P0/P1 only).
 
 **PASS:** Scope is clear and self-consistent; no non-goal is violated; appendix content stays within unit scope
 
+**WARNING (step 6):** The unit's content resolves into independently governable responsibility clusters — split candidate. Recommendation: split into one unit per responsibility (user-confirmed structure change, `framework/spec_writing_guide.md` §2); extract shared constraints as rules; non-exempt appendix offload does not reduce the unit's governance weight
+
 **FAIL:** Ambiguous scope, goal/non-goal contradiction, boundary violation, or out-of-scope appendix content (actionable)
 
-**Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content)
+**Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content) + unit-cohesion judgment (responsibility-cluster independence)
 
 ---
 
@@ -848,7 +859,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Present Findings
 
-Advisory findings (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding records its §9 confirmation in the same check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with evidence). Advisory findings never produce machine `Severity confirmation:` records and must never be emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
+Advisory findings (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding records its §9 confirmation in the same check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with evidence). Advisory findings never produce machine `Severity confirmation:` records and must never be emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
 
 ### Batch classification (validate)
 
