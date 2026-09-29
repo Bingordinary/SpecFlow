@@ -35,7 +35,7 @@ When no candidate spec exists (validate against stable), run the same 8 checks +
 2. Glob all stable appendix files: `docs/specs/units/stable/appendix/unit_{unit}_*.md`, read every non-exempt, non-retired appendix (same skip rules as the candidate path)
 3. Run all 8 checks + cross-check against the stable content — Checks 6/7/8 are the live part: referenced files, dependency-unit contracts, and rules may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does)
 4. **PASS** → `gate-finalize` writes the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; `mode: full`, `hash` + `deps` evidence; same packet sequence as Step 9)
-5. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried` — the confirmation state stays visible as BLOCKED and is the failure-recovery baseline), present the findings (5a/5h FAIL findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit stable directly; normal candidate-to-stable writes use promote (the routed remove/update procedures own their narrow exceptions)
+5. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried` — the confirmation state stays visible as BLOCKED and is the failure-recovery baseline), present the findings (Check 2 Step 1 and 5a/5h FAIL findings re-verified per §Step 9 → Extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit stable directly; normal candidate-to-stable writes use promote (the routed remove/update procedures own their narrow exceptions)
 
 The stable confirmation cache is read-only state: it grants no promote eligibility (stable has no gate). Delta re-runs (`revalidate`) apply to stable-only targets with a usable baseline — a pass cache (`result: pass`, STALE recovery) or a failure record (failure-record recovery); a MISSING stable cache needs the full confirmation run — see `framework/verification_scope.md` §Stable-only Targets and §Delta Runs → Layer applicability.
 
@@ -139,7 +139,7 @@ One line per check, numbered as in this file:
 3. Scope integrity: PASS | FAIL — reason
 4. Evidence-driven vs design-driven consistency: PASS | FAIL — reason
 5. Acceptance coverage & correctness: PASS | FAIL — reason
-  5a. Coverage completeness: PASS | WARNING | FAIL — reason
+  5a. Coverage & item-set correspondence: PASS | WARNING | FAIL — reason
   5b. Content alignment: PASS | FAIL — reason
   5c. Internal consistency: PASS | FAIL — reason
   5d. Description format compliance: PASS | FAIL — reason
@@ -169,7 +169,7 @@ Failed checks: N | Advisory findings: K
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding under the check line as its own entry in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`, followed by the shared finding block (§Output Format). The entry line must begin with the bracketed severity after optional indentation — the parser accepts indentation or a single leading `-`, but not a numbered prefix, so the packet report keeps entries as standalone lines; the presented summary may re-number them (`5a-1`, `5a-2`, ...) as presentation only. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, its resolution type, and the block fields:
 
 ```
-5a. Coverage completeness: FAIL — 3 findings
+5a. Coverage & item-set correspondence: FAIL — 3 findings
   [P1] {location} — {finding} (actionable)
     problem: ...
     evidence:
@@ -264,6 +264,11 @@ When findings mix resolution types (within one check or across checks), the repo
 - Check whether any behavior violates a stated non-goal (e.g., non-goal says "no multi-tenancy this round" but the behavior describes tenant isolation)
 - **Proportionality check:** Is the design complexity proportional to the stated goal? If the same goal could be achieved with significantly less design surface area → flag (possible over-engineering)
 
+Each Step 1 flag is a FAIL finding at **default severity P1** and must carry an extraction artifact that makes the claim falsifiable:
+- **Source quotes:** the goal or non-goal declaration, and the flagged behavior or design surface, each quoted from the spec union.
+- **Connection judgment:** why the behavior serves no stated goal / why the described behaviors cannot meet the goal / why the behavior violates the non-goal. For the proportionality flag: the smaller design surface that would achieve the same goal, and why the goal still holds under it.
+- A finding without this artifact is not presented — the independent cross packet re-verifies the artifact before classification and marks unfaithful claims suppressed (see §Step 9 → Extraction re-verification; e.g. a behavior that does serve a stated goal, or a proportionality claim that rests on preference rather than an establishable smaller surface, drops the finding).
+
 **Step 2 — Design rationale review**
 - **Evidence-driven precondition (per acceptance item):** The waiver is decided per acceptance item, not per spec. Read the spec frontmatter's `evidence_appendix_ref` field and each acceptance item's `affects.appendices`.
   - For each acceptance item: if `evidence_appendix_ref` is PRESENT and not `none` AND the item's `affects.appendices` references the evidence appendix → the item is evidence-driven (its behavior domain is recorded from existing implementation). The code behavior itself constitutes the design rationale. **Skip** the rationale review below for this item. Report per item: "Step 2: waived (evidence-driven — rationale is implicit in existing code)".
@@ -312,7 +317,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 - If a decision is intentionally not made, the spec must state that boundary and explain why (per `framework/spec_writing_guide.md` §9, the "If a decision is intentionally not made" rule). An open decision without a stated boundary is a FAIL.
 - Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual. Coverage obligations are limited to formal behavior domains (see Check 5a Step 2 extraction premise); narrative elaboration in the body does not add coverage obligations.
 
-**FAIL:** any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
+**FAIL:** a Step 1 goal-means flag (default severity P1; extraction artifact required), a Step 2 rationale gap, a Step 3 critical flaw; or any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
 **Step 6 — Abstraction level & implementation agnosticism (The Truth Ownership Check)**
 Verify that the spec text adheres to `framework/spec_writing_guide.md` §14 (Truth Ownership Framework):
@@ -388,13 +393,13 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 
 ## Check 5 — Acceptance coverage & correctness
 
-**Purpose:** The spec body and acceptance items must cover each other bidirectionally, match semantically (5b), and contain no internal contradictions (5c). Acceptance items must also have falsifiable pass_conditions (5e), actionable descriptions (5f), and coupled pass_condition/description pairs that add value (5g).
+**Purpose:** The spec body and acceptance items must cover each other bidirectionally — every designed behavior has an item (5a forward coverage), every design-driven item maps back to a designed behavior (5a orphan detection; evidence-driven and replacement/cleanup items excepted), over-split items are merge candidates (5a) — match semantically (5b), and contain no internal contradictions (5c). Acceptance items must also have falsifiable pass_conditions (5e), actionable descriptions (5f), and coupled pass_condition/description pairs that add value (5g).
 
 **Execution steps:**
 
-### Sub-check 5a — Coverage completeness
+### Sub-check 5a — Coverage & item-set correspondence
 
-**Purpose:** Every behavior domain in the spec body and appendices must have at least one corresponding acceptance item, and the item's surface fields must be consistent with the behavior type. Granularity baseline: behavior domains as defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity — one item = one behavior domain with its full scenario set (happy path + error paths + boundary cases). Enhanced from the original forward coverage check to a bidirectional check.
+**Purpose:** Every behavior domain in the spec body and appendices must have at least one corresponding acceptance item, every design-driven acceptance item must correspond to a designed behavior (orphan detection, step 8), and the item's surface fields must be consistent with the behavior type. Granularity baseline: behavior domains as defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity — one item = one behavior domain with its full scenario set (happy path + error paths + boundary cases). Enhanced from the original forward coverage check to a bidirectional check.
 
 **Execution steps:**
 
@@ -405,20 +410,21 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
 6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files — for contract content, apply the external-visibility boundary of `framework/spec_writing_guide.md` §4 first: internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, and configuration layout are design expression, not contract content, and create no coverage obligation. For each extracted domain or contract, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (actionable)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (actionable)
 7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
-8. **Extraction evidence (required for every uncovered-domain FAIL):** Each uncovered-domain finding (steps 3, 5, and step 6's uncovered-content case) must carry an extraction artifact that makes the claim falsifiable:
-   - **Source quote:** the section heading and quoted text in the spec body or appendix that declares the behavior domain
-   - **Granularity judgment:** why the quoted text is formal behavior (per the extraction premise in step 2, including the §4 external-visibility boundary applied to both body behavior domains and appendix contract content) rather than non-constraining narrative or internal design detail, and why its behavior variants form one domain (per the four granularity conditions in `framework/spec_writing_guide.md` §Acceptance Item Granularity) rather than scenarios of an already-covered domain
-   - **Absence claim:** the covered surface checked (the union of every item's `description` and `pass_condition`, per step 1) and how the absence of any covering item was verified
+8. **Orphan item detection (reverse check, FAIL):** For each design-driven acceptance item — an item whose `affects.appendices` does not reference the evidence appendix (Check 4 step 1) — verify the item's behavior subject (endpoint, function, state machine, or flow entry point, per the extraction premise in step 2) appears as a designed behavior somewhere in the candidate spec union: the main spec body or a non-evidence, non-exempt appendix. The subject may be designed as part of a larger flow; the test is subject presence, not narrative repetition of every contract element — the carrier obligation runs only one way, and contract elements are carried by the item itself under `framework/spec_writing_guide.md` §4. Exclusions: evidence-driven items are out of scope (their correspondence partner is the evidence appendix, enforced by Check 4); replacement/cleanup items are out of scope — `verification_type: inspectable` items whose `evidence_requirements` include `old_code_deleted` and `no_remaining_refs` are round-transitional verification requirements, not behavior declarations (the Check 4 step 1 replacement signal). If the subject appears in no designed behavior → **FAIL (P1, actionable):** retire the item together with its surviving narrative and appendix content (`framework/spec_writing_guide.md` §9 Cleanup obligation), or restore the behavior's design if it was dropped by mistake.
+9. **Extraction evidence (required for every uncovered-domain and orphan-item FAIL):** Each uncovered-domain finding (steps 3, 5, and step 6's uncovered-content case) and each orphan-item finding (step 8) must carry an extraction artifact that makes the claim falsifiable:
+   - **Source quote:** for an uncovered domain, the section heading and quoted text in the spec body or appendix that declares the behavior domain; for an orphan item, the item id and the quoted subject terms from its `description` / `pass_condition`
+   - **Granularity judgment:** for an uncovered domain, why the quoted text is formal behavior (per the extraction premise in step 2, including the §4 external-visibility boundary applied to both body behavior domains and appendix contract content) rather than non-constraining narrative or internal design detail, and why its behavior variants form one domain (per the four granularity conditions in `framework/spec_writing_guide.md` §Acceptance Item Granularity) rather than scenarios of an already-covered domain; for an orphan item, why the quoted terms name a formal behavior subject of this unit (endpoint, function, state machine, or flow entry point) rather than a scenario of a designed domain or a dependency's behavior
+   - **Absence claim:** for an uncovered domain, the covered surface checked (the union of every item's `description` and `pass_condition`, per step 1) and how the absence of any covering item was verified; for an orphan item, the surfaces checked (the main spec body and every non-evidence, non-exempt appendix) and how the absence of a designed behavior for that subject was verified
    A step-6 contradiction finding (appendix content contradicting an acceptance item) carries the two-sided quoted evidence step 6 itself requires — it is a conflict claim, not an uncovered-domain claim, and is not subject to this template.
-   A finding without this artifact is not presented — the independent cross packet re-verifies the artifact before classification and marks unfaithful claims suppressed (a subject actually mentioned in an item, or variants split out of a covered domain — see §Step 9 → Check 5 extraction re-verification).
+   A finding without this artifact is not presented — the independent cross packet re-verifies the artifact before classification and marks unfaithful claims suppressed (a subject actually mentioned in an item, or variants split out of a covered domain, or a designed behavior whose subject matches an allegedly orphaned item — see §Step 9 → Extraction re-verification).
 
-**PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; no merge candidates found
+**PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; every design-driven item corresponds to a designed behavior; no merge candidates found
 
 **WARNING:** Merge candidates (over-split acceptance items)
 
-**FAIL:** Uncovered behavior domain or surface type mismatch (actionable); appendix contract/behavior content without item coverage (actionable); appendix-main spec contradiction (actionable); contract statement without carrier coverage (5h, actionable); item violating the Contract Substance Baseline (5i, actionable)
+**FAIL:** Uncovered behavior domain or surface type mismatch (actionable); orphan design-driven item with no corresponding designed behavior (step 8, actionable); appendix contract/behavior content without item coverage (actionable); appendix-main spec contradiction (actionable); contract statement without carrier coverage (5h, actionable); item violating the Contract Substance Baseline (5i, actionable)
 
-**Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for over-splitting detection)
+**Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for orphan and over-splitting detection)
 
 ---
 
@@ -639,7 +645,7 @@ PASS — pass_condition provides complementary information:
    - **Source quote:** the section heading and quoted sentence in the spec body or appendix that states the contract
    - **External-visibility judgment:** why the statement declares externally-observable behavior (per the §4 external-visibility boundary) rather than internal design detail
    - **Absence claim:** the carrier surface checked (the acceptance item set and every protocol appendix) and how the absence of any carrier at comparable granularity was verified
-   A finding without this artifact is not presented — the independent cross packet re-verifies the artifact before classification and marks unfaithful claims suppressed (a value actually carried, or a statement reclassified as internal detail — see §Step 9 → Check 5 extraction re-verification).
+   A finding without this artifact is not presented — the independent cross packet re-verifies the artifact before classification and marks unfaithful claims suppressed (a value actually carried, or a statement reclassified as internal detail — see §Step 9 → Extraction re-verification).
 
 **PASS:** Every contract statement in prose is carried by an item or protocol appendix
 
@@ -799,17 +805,19 @@ affects.appendices:
 
 ## Step 9 — Write validate cache (tooling finalize)
 
-After all local check packets complete, the independent cross packet re-verifies the extraction artifacts of Check 5 FAIL findings (sub-check 5a step 8 / 5h step 4), performs the three validate cross-checks, and publishes the complete effective check-status/finding synthesis. `gate-finalize` then decides the cache mechanically from that accepted synthesis:
+After all local check packets complete, the independent cross packet re-verifies the extraction artifacts of Check 2 Step 1 and Check 5 FAIL findings (sub-check 5a step 9 / sub-check 5h step 4), performs the three validate cross-checks, and publishes the complete effective check-status/finding synthesis. `gate-finalize` then decides the cache mechanically from that accepted synthesis:
 
 ==ATOM_BEGIN:cache_evidence_path_forms==
 **Declaring cache evidence — path forms:** spec objects resolved by name other than the run's own target files are declared as **logical references** instead of physical paths — `unit:{name}` for a unit main spec, `unit:{name}:appendix:{file}` for a unit protocol appendix (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file — with the `hash` + `deps` of the file actually read. The run's own target files (the unit's own main spec and appendices; for a rule target, the candidate rule file and its stable sibling) and code files keep physical paths. A logical reference resolves at freshness time to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
 ==ATOM_END:cache_evidence_path_forms==
 
-### Check 5 extraction re-verification
+### Extraction re-verification (Check 2 Step 1, Check 5)
 
-Uncovered-domain findings (sub-check 5a step 8) and uncarried-contract findings (sub-check 5h step 4) carry an extraction artifact. Before classification (cross synthesis), the independent cross packet re-verifies each artifact with deterministic checks:
+Step 1 goal-means findings (Check 2), uncovered-domain and orphan-item findings (sub-check 5a, step 9 artifact), and uncarried-contract findings (sub-check 5h step 4) carry an extraction artifact. Before classification (cross synthesis), the independent cross packet re-verifies each artifact with deterministic checks:
 
+- Sub-agent claims a Check 2 Step 1 flag holds ("the flagged behavior serves no stated goal", "the described behaviors cannot meet the goal", "the behavior violates a non-goal", or "a smaller design surface would achieve the same goal") → re-read the goal or non-goal declaration and the flagged behavior or design surface; a quote that does not establish the claimed relationship — including a proportionality claim resting on preference rather than an establishable smaller surface — drops the finding
 - Sub-agent claims "no item covers behavior subject X" → re-read the item set (the union of every item's `description` and `pass_condition`) and confirm X's quoted subject terms are really absent; a subject actually mentioned, or behavior variants split out of a covered domain (granularity violation), drops the finding
+- Sub-agent claims "no designed behavior matches item X" (orphan item) → re-read the spec union (main spec body and every non-evidence, non-exempt appendix) and confirm X's quoted subject terms are really absent as a designed behavior; a designed behavior whose subject matches, or terms naming a scenario of a designed domain, drops the finding
 - Sub-agent claims "no carrier states contract value Y" → grep the item set and the protocol appendices for the quoted value; a value actually carried at comparable granularity drops the finding
 - Sub-agent claims "Z is a behavior domain" (5a step 2), "Z is a contract statement" (5h), or "Z is appendix contract content requiring acceptance coverage" (5a step 6) → check the classification against the external-visibility boundary of `framework/spec_writing_guide.md` §4 (externally-observable behavior vs internal design detail); content reclassified as internal detail drops the finding
 
@@ -833,7 +841,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 1. **Preconditions** — the existing cache must have `mode: full` and one of the two baselines: `result: pass` (stale-cache recovery) or `result: fail` + `blocking: true` (failure-record recovery, §Failure recovery). A MISSING cache has no usable baseline — run the full command instead.
 2. **Plan (mechanism-derived)** — run `specflowctl gate-plan --gate validate (--unit {name} | --rule {id}) --target {candidate|stable} --mode delta` (or `--mode repair` for a failure record). The planner derives the re-run set from the cache's per-check `checks` mapping — affected = {checks whose declared deps went stale} ∪ {current checks the baseline never declared} ∪ {persisted `invalidated_checks`} ∪ {explicit `--rerun` overrides} ∪ {cross-check} — maps unclaimed deps by the fixed associations (a `unit:` entry → Check 7; a `rule:` entry → Check 8), and reports the re-run packets, carried-over checks (`carried_keys`), and any degradation or full-scope coverage statement. After a targeted P0/P1, the coordinator runs `gate-invalidate --check {check key}` immediately; repair reads that state automatically and never carries the contradicted judgment. Legacy caches without per-check evidence and invalidated keys that cannot map to the current surface degrade to the full packet set. The plan is the scope; the executor does not re-derive or extend it.
-3. **Execution** — execute the planned packets (protocol: `framework/verification_scope.md` §Gate Work Packets; packet reports carry the `Dependency scope:` lines per §Output Format), submitting each report with `specflowctl gate-submit --run <run_id> --packet <packet_id> --report PATH`. Any P0/P1 finding during the re-run makes the finalize write a **failure record** (`result: fail`, `blocking: true`, severity counts, findings body, `mode: full`, `basis: delta`, and the per-check `status` map — `fail`/`pass` for the re-run checks, `carried` for the carried-over ones, derived by `gate-finalize` from the accepted packet verdicts). Stop, present findings (same as full FAIL — 5a/5h findings re-verified per §Step 9 → Check 5 extraction re-verification before presentation).
+3. **Execution** — execute the planned packets (protocol: `framework/verification_scope.md` §Gate Work Packets; packet reports carry the `Dependency scope:` lines per §Output Format), submitting each report with `specflowctl gate-submit --run <run_id> --packet <packet_id> --report PATH`. Any P0/P1 finding during the re-run makes the finalize write a **failure record** (`result: fail`, `blocking: true`, severity counts, findings body, `mode: full`, `basis: delta`, and the per-check `status` map — `fail`/`pass` for the re-run checks, `carried` for the carried-over ones, derived by `gate-finalize` from the accepted packet verdicts). Stop, present findings (same as full FAIL — Check 2 Step 1 and 5a/5h findings re-verified per §Step 9 → Extraction re-verification before presentation).
 4. **On PASS** — `gate-finalize` rewrites `validate_result.md` with `mode: full`, `basis: delta` (or `basis: repair` when recovering from a failure record), `target: candidate` (stable-only target: `target: stable`), a fresh `timestamp`, and a **complete** `files` list: new `hash` + `deps` + per-check `checks` evidence (computed by the tooling from the accepted packet reports) for the re-run checks' files, and the original evidence for the carried-over checks' files, merged by the tooling from the baseline cache (their CIDs are unchanged by construction). Logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) are carried over the same way.
 
 ---
@@ -932,7 +940,7 @@ Next step: {actionable (finding_open) → "Resolve the findings, then re-run `va
 
 `Findings` (N) equals the sum of batch group items and decision group items.
 
-Suppressed findings from the Check 5 extraction re-verification are dispositioned in the cross report's audit artifact (see Step 9 → Check 5 extraction re-verification) and do not appear in the report or its counts.
+Suppressed findings from the extraction re-verification (Check 2 Step 1, Check 5) are dispositioned in the cross report's audit artifact (see Step 9 → Extraction re-verification) and do not appear in the report or its counts.
 
 When no finding qualifies for the batch group, present flat:
 
