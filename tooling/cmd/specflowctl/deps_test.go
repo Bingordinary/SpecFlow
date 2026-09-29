@@ -16,7 +16,7 @@ func writeUnitSpecRefs(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs s
 	if ruleRefs == "" {
 		ruleRefs = "none"
 	}
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n"
+	content := "---\nid: " + name + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

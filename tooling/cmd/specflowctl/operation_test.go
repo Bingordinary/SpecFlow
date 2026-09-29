@@ -36,7 +36,7 @@ func opTestGitRepo(t *testing.T) (string, string) {
 	if err := os.MkdirAll(filepath.Dir(specPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: internal/demo\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: internal/demo\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}

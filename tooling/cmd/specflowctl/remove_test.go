@@ -80,7 +80,7 @@ func TestRemoveRuleWithConsumersRejected(t *testing.T) {
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_x\n---\n"
+	unit := "---\nid: consumer\nunit_refs: none\nrule_refs: b_rule_x\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestRemoveRuleGlobalRuleWithExplicitConsumerRejected(t *testing.T) {
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs: g_rule_http\n---\n"
+	unit := "---\nid: consumer\nunit_refs: none\nrule_refs: g_rule_http\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}

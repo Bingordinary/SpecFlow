@@ -89,7 +89,7 @@ func writeFile(t *testing.T, repoRoot, rel, content string) {
 // the given implementation surface and optional affects.files entries.
 func unitSpecContent(unit, implSurface string, affects []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "---\nid: %s\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# %s\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", unit, unit)
+	fmt.Fprintf(&b, "---\nid: %s\nunit_refs: none\nrule_refs: none\n---\n\n# %s\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", unit, unit)
 	fmt.Fprintf(&b, "  - id: %s.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: %s\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", unit, implSurface)
 	if len(affects) > 0 {
 		b.WriteString("    affects:\n      files:\n")
@@ -216,7 +216,7 @@ func TestOpenDerivesUnitScope(t *testing.T) {
 
 func TestOpenIgnoresFencedAcceptanceSetWhenDerivingScope(t *testing.T) {
 	repoRoot := newGitRepo(t)
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n    affects:\n      files:\n        - fake/file.go\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    implementation_surface: internal/demo\n    affects:\n      files:\n        - docs/design.md\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n    affects:\n      files:\n        - fake/file.go\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    implementation_surface: internal/demo\n    affects:\n      files:\n        - docs/design.md\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_demo.md", spec)
 	commitAll(t, repoRoot, "fixture")
 

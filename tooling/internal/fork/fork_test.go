@@ -15,7 +15,6 @@ func TestForkUnit(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	stableContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -47,9 +46,8 @@ Appendix content.
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
-	if !strings.Contains(content, "version: 1.0.1") {
-		t.Fatalf("expected version: 1.0.1, got:\n%s", content)
+	if string(data) != stableContent {
+		t.Fatalf("expected the candidate to be a verbatim copy of the stable spec, got:\n%s", string(data))
 	}
 
 	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
@@ -86,7 +84,7 @@ func TestForkUnitCandidateExists(t *testing.T) {
 
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte("---\nid: test_unit\nversion: 1.0.0\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte("---\nid: test_unit\n---\n"), 0644)
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
@@ -115,7 +113,6 @@ func TestForkUnitExemptAppendix(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	stableContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -243,7 +240,7 @@ func writeStableUnitForFork(t *testing.T, repoRoot string) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: test_unit\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

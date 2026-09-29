@@ -32,7 +32,7 @@ func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	if err := os.MkdirAll(appendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: " + unit + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + unit + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: " + unit + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + unit + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_"+unit+".md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestPromoteUnitBodyAbsoluteLayerPathWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nSee docs/specs/units/candidate/unit_auth.md.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nSee docs/specs/units/candidate/unit_auth.md.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestPromoteUnitBodyCodePathNoWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nThe handler lives at src/candidate/handler.go.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nThe handler lives at src/candidate/handler.go.\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestPromoteUnitRetiredAppendix(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	stableSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
 	stableExtra := "---\nunit: demo\n---\n\nOld extra content\n"
 	stableLegacy := "---\nunit: demo\n---\n\nOld legacy content\n"
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
@@ -292,7 +292,7 @@ func TestPromoteUnitRetiredAppendix(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nNew extra content\n"), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_legacy.md"), []byte("---\nunit: demo\nstatus: retired\n---\n\nTo be retired\n"), 0644)
@@ -346,7 +346,7 @@ func TestPromoteUnitRetiredSpec(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	stableSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
 	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nExtra\n"), 0644)
 	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_exempt.md"), []byte("---\nunit: demo\nstatus: exempt\n---\n\nExempt\n"), 0644)
@@ -359,7 +359,7 @@ func TestPromoteUnitRetiredSpec(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\nstatus: retired\n---\n\nExtra\n"), 0644)
 
@@ -406,7 +406,7 @@ func TestRetiredUnitBackupFailureRollbackPreservesStableAppendix(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte("---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte("---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
 	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nORIGINAL EXTRA\n"), 0644)
 
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -414,7 +414,7 @@ func TestRetiredUnitBackupFailureRollbackPreservesStableAppendix(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte("---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"), 0644)
+	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte("---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n"), 0644)
 
 	// Sabotage the backup phase: a directory occupying the main spec's backup
@@ -448,7 +448,7 @@ func TestPromoteUnitRetiredKeepsNoCandidateAppendix(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	stableSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
 	os.WriteFile(filepath.Join(stableAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nExtra\n"), 0644)
 
@@ -460,7 +460,7 @@ func TestPromoteUnitRetiredKeepsNoCandidateAppendix(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nExtra\n"), 0644)
 
@@ -501,7 +501,7 @@ func TestPromoteUnitRetiredNeverPromoted(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 	os.WriteFile(filepath.Join(candAppendixDir, "unit_demo_extra.md"), []byte("---\nunit: demo\n---\n\nExtra\n"), 0644)
 
@@ -535,9 +535,9 @@ func TestPromoteUnitRetiredReferrerBlocked(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
-	consumer := "---\nid: consumer\nversion: 0.1.0\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
+	consumer := "---\nid: consumer\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
 	os.WriteFile(filepath.Join(candDir, "unit_consumer.md"), []byte(consumer), 0644)
 
 	result := Promote(repoRoot, "demo")
@@ -562,16 +562,16 @@ func TestPromoteUnitRetiredStaleStableRefDoesNotBlock(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableRef := "---\nid: consumer\nversion: 0.1.0\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
+	stableRef := "---\nid: consumer\nunit_refs: demo\nrule_refs: none\n---\n\n# consumer\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_consumer.md"), []byte(stableRef), 0644)
 
 	candUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dropped := "---\nid: consumer\nversion: 0.2.0\nunit_refs: none\nrule_refs: none\n---\n\n# consumer\n"
+	dropped := "---\nid: consumer\nunit_refs: none\nrule_refs: none\n---\n\n# consumer\n"
 	os.WriteFile(filepath.Join(candUnitDir, "unit_consumer.md"), []byte(dropped), 0644)
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 
 	result := Promote(repoRoot, "demo")
@@ -593,9 +593,9 @@ func TestPromoteUnitRetiredRetiringReferrerDoesNotBlock(t *testing.T) {
 	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiringRef := "---\nid: consumer\nversion: 0.1.1\nunit_refs: demo\nrule_refs: none\nstatus: retired\n---\n\n# consumer\n"
+	retiringRef := "---\nid: consumer\nunit_refs: demo\nrule_refs: none\nstatus: retired\n---\n\n# consumer\n"
 	os.WriteFile(filepath.Join(candUnitDir, "unit_consumer.md"), []byte(retiringRef), 0644)
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 
 	result := Promote(repoRoot, "demo")
@@ -613,7 +613,7 @@ func TestPromoteUnitRetiredReferrerCheckFailureFailsClosed(t *testing.T) {
 	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candUnitDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 
 	// The stable layer is a file, not a directory — the graph build cannot
@@ -641,7 +641,7 @@ func writePromotableUnit(t *testing.T, repoRoot, unit, unitRefs, ruleRefs string
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: " + unit + "\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n" +
+	spec := "---\nid: " + unit + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: " + unit + ".core\n" +
 		"    description: Behavior.\n" +
@@ -663,7 +663,7 @@ func TestPromoteUnitRefToRetiringCandidateRejects(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
+	retiredSpec := "---\nid: retiring\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
 	os.WriteFile(filepath.Join(candDir, "unit_retiring.md"), []byte(retiredSpec), 0644)
 	writePromotableUnit(t, repoRoot, "consumer", "retiring", "none")
 
@@ -686,12 +686,12 @@ func TestPromoteUnitRefToRetiringUnitWithStableRejects(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(stableDir, "unit_retiring.md"), []byte("---\nid: retiring\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# retiring\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_retiring.md"), []byte("---\nid: retiring\nunit_refs: none\nrule_refs: none\n---\n\n# retiring\n"), 0644)
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: retiring\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
+	retiredSpec := "---\nid: retiring\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# retiring\n"
 	os.WriteFile(filepath.Join(candDir, "unit_retiring.md"), []byte(retiredSpec), 0644)
 	writePromotableUnit(t, repoRoot, "consumer", "retiring", "none")
 
@@ -712,7 +712,7 @@ func TestPromoteRejectsRetiringAppendixRef(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n" +
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n" +
 		"evidence_appendix_ref: unit_demo_evidence.md\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: demo.core\n" +
@@ -746,7 +746,7 @@ func TestPromoteRejectsRetiringAppendixInlineFlowRef(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: demo.core\n" +
 		"    description: Behavior.\n" +
@@ -780,7 +780,7 @@ func TestPromoteRetiredUnitWithOwnAppendixRefs(t *testing.T) {
 	if err := os.MkdirAll(candAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n" +
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n" +
 		"status: retired\nevidence_appendix_ref: unit_demo_evidence.md\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: demo.core\n" +
@@ -858,7 +858,7 @@ func TestPromoteUnitDroppedRuleRefAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_old\n---\n\n# demo\n"
+	stableUnit := "---\nid: demo\nunit_refs: none\nrule_refs: b_rule_old\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
 	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -882,7 +882,7 @@ func TestPromoteUnitDroppedRuleRefAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -917,7 +917,7 @@ func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_ghost\n---\n\n# demo\n"
+	stableUnit := "---\nid: demo\nunit_refs: none\nrule_refs: b_rule_ghost\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_ghost.yaml")
@@ -935,7 +935,7 @@ func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -964,7 +964,7 @@ func TestPromoteUnitDroppedRuleRefRetainedNotRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_kept\n---\n\n# demo\n"
+	stableUnit := "---\nid: demo\nunit_refs: none\nrule_refs: b_rule_kept\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
 	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -979,7 +979,7 @@ func TestPromoteUnitDroppedRuleRefRetainedNotRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -1002,7 +1002,7 @@ func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# demo\n"
+	stableUnit := "---\nid: demo\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
 	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -1016,10 +1016,10 @@ func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
 	if err := os.MkdirAll(otherUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	other := "---\nid: other\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# other\n"
+	other := "---\nid: other\nunit_refs: none\nrule_refs: b_rule_shared\n---\n\n# other\n"
 	os.WriteFile(filepath.Join(otherUnitDir, "unit_other.md"), []byte(other), 0644)
 
-	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(otherUnitDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -1042,7 +1042,7 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableUnit := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: g_rule_governance\n---\n\n# demo\n"
+	stableUnit := "---\nid: demo\nunit_refs: none\nrule_refs: g_rule_governance\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableUnitDir, "unit_demo.md"), []byte(stableUnit), 0644)
 
 	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -1055,7 +1055,7 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -1081,9 +1081,9 @@ func TestPromoteUnitRetiredOwnRefsExempt(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: only_candidate\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
+	retiredSpec := "---\nid: demo\nunit_refs: only_candidate\nrule_refs: none\nstatus: retired\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
-	os.WriteFile(filepath.Join(candDir, "unit_only_candidate.md"), []byte("---\nid: only_candidate\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# only_candidate\n"), 0644)
+	os.WriteFile(filepath.Join(candDir, "unit_only_candidate.md"), []byte("---\nid: only_candidate\nunit_refs: none\nrule_refs: none\n---\n\n# only_candidate\n"), 0644)
 
 	result := Promote(repoRoot, "demo")
 	if !result.Passed {
@@ -1297,7 +1297,7 @@ func TestPromoteUnitRetired_RemovesBaseline(t *testing.T) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
+	stableSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n"
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(stableSpec), 0644)
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
 	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
@@ -1309,7 +1309,7 @@ func TestPromoteUnitRetired_RemovesBaseline(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: demo\nversion: 0.1.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
+	retiredSpec := "---\nid: demo\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# demo\n\nThe unit is retired.\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(retiredSpec), 0644)
 
 	result := Promote(repoRoot, "demo")

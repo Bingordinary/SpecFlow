@@ -154,27 +154,19 @@ func readNode(path, name, layer string) (*Node, error) {
 	node := &Node{Name: name, Layer: layer}
 	if raw := fm["unit_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 		for _, ref := range specpaths.ParseRefList(raw) {
-			if refName := stripVersion(ref); refName != "" {
-				node.UnitRefs = append(node.UnitRefs, refName)
+			if ref != "" {
+				node.UnitRefs = append(node.UnitRefs, ref)
 			}
 		}
 	}
 	if raw := fm["rule_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 		for _, ref := range specpaths.ParseRefList(raw) {
-			if refID := stripVersion(ref); refID != "" {
-				node.RuleRefs = append(node.RuleRefs, refID)
+			if ref != "" {
+				node.RuleRefs = append(node.RuleRefs, ref)
 			}
 		}
 	}
 	return node, nil
-}
-
-func stripVersion(ref string) string {
-	ref = strings.TrimSpace(ref)
-	if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
-		return ref[:atIdx]
-	}
-	return ref
 }
 
 // Nodes returns all nodes sorted by unit name.

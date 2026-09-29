@@ -80,7 +80,6 @@ func TestNextRelatedUnitsBlockList(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs:
   - payment
   - auth
@@ -113,7 +112,6 @@ func TestNextRelatedUnitsInlineList(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs: [payment, auth]
 rule_refs: none
 ---
@@ -141,7 +139,6 @@ func TestNextRelatedUnitsStableFallback(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs:
   - payment
 rule_refs: none
@@ -173,7 +170,6 @@ func TestNextEmitsAcceptanceItemFields(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -250,7 +246,6 @@ func TestNextOmitsAcceptanceItemFieldsWhenAbsent(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -280,7 +275,6 @@ func TestNextAcceptanceItemFieldsStableFallback(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(`---
 id: demo
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---

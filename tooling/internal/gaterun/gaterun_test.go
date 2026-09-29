@@ -40,7 +40,7 @@ func writeFile(t *testing.T, repoRoot, rel, content string) string {
 // unitSpec builds a minimal candidate/stable unit spec. The acceptance item
 // carries the given implementation_surface and optional extra body content.
 func unitSpec(name, unitRefs, ruleRefs, implSurface, extra string) string {
-	return "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+	return "---\nid: " + name + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 }
 
 func writeUnit(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs, implSurface, extra string) {
@@ -50,7 +50,7 @@ func writeUnit(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs, implSurf
 
 func writeRule(t *testing.T, repoRoot, layer, id string) {
 	t.Helper()
-	writeFile(t, repoRoot, "docs/specs/rules/"+layer+"/"+id+".md", "---\nid: "+id+"\nversion: 0.1.0\nscope: unit\n---\n\n# "+id+"\n\n## Constraint\n\nMust use TLS.\n")
+	writeFile(t, repoRoot, "docs/specs/rules/"+layer+"/"+id+".md", "---\nid: "+id+"\nscope: unit\n---\n\n# "+id+"\n\n## Constraint\n\nMust use TLS.\n")
 }
 
 func refByRef(run *Run, ref string) (Ref, bool) {
@@ -166,7 +166,7 @@ func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 
 func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 
@@ -230,7 +230,7 @@ func TestPlanReviewRejectsUnresolvableImplementationSurface(t *testing.T) {
 // the item's own indent instead of assuming the canonical column.
 func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n    - id: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
+	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n    - id: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 
@@ -339,7 +339,7 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
-		"---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
+		"---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
 
 	for _, gate := range []string{GateVerify, GateReview} {
 		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
@@ -802,7 +802,7 @@ func TestPlanRejectsInvalidTargetName(t *testing.T) {
 	repoRoot := newRepo(t)
 	// The traversed rule file exists, so only the name gate can reject the
 	// traversal that previously reached validateTargetLayer.
-	writeFile(t, repoRoot, "tmp/evil.md", "---\nid: evil\nversion: 0.1.0\nscope: unit\n---\n\n# evil\n")
+	writeFile(t, repoRoot, "tmp/evil.md", "---\nid: evil\nscope: unit\n---\n\n# evil\n")
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 
 	ruleNames := []string{"../../../../tmp/evil", "a/b", "..", "with space", "trailing "}

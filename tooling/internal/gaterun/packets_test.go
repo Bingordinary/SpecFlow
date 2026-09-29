@@ -398,7 +398,7 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 	if err := os.MkdirAll(filepath.Dir(specPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n"
+	content := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n"
 	for _, id := range itemIDs {
 		content += "  - id: " + id + "\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	}

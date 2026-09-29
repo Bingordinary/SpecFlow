@@ -138,7 +138,7 @@ func TestCheckUnboundRetention_BoundRuleWithConsumerPassesWithoutFields(t *testi
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
+	unit := "---\nid: consumer\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestCheckUnboundRetention_BoundRuleWithConsumerAndFieldsFail(t *testing.T) 
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
+	unit := "---\nid: consumer\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestCheckUnboundRetention_EffectiveSemanticsIgnoresStaleStableRef(t *testin
 	if err := os.MkdirAll(candUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dropped := "---\nid: consumer\nversion: 0.2.0\nunit_refs: none\nrule_refs: none\n---\n"
+	dropped := "---\nid: consumer\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(filepath.Join(candUnitDir, "unit_consumer.md"), []byte(dropped), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestCheckUnboundRetention_EffectiveSemanticsIgnoresStaleStableRef(t *testin
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stale := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
+	stale := "---\nid: consumer\nunit_refs: none\nrule_refs:\n  - b_rule_test\n---\n"
 	if err := os.WriteFile(filepath.Join(stableUnitDir, "unit_consumer.md"), []byte(stale), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestCheckUnboundRetention_GlobalRuleSkipped(t *testing.T) {
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	unit := "---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"
+	unit := "---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_consumer.md"), []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}

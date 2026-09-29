@@ -6,10 +6,9 @@
 //  3. Anchor integrity (affects.files paths exist; implementation_surface values resolve to real code)
 //  4. Reference integrity (unit_refs/rule_refs files exist)
 //  5. Appendix files exist
-//  6. Version/ref consistency
-//  7. Body layer-path check (candidate-layer spec paths)
-//  8. Dependency cycle check (unit_refs graph has no cycles through the unit)
-//  9. Region locatability (section and acceptance item regions are splittable and locatable)
+//  6. Body layer-path check (candidate-layer spec paths)
+//  7. Dependency cycle check (unit_refs graph has no cycles through the unit)
+//  8. Region locatability (section and acceptance item regions are splittable and locatable)
 package specvalidation
 
 import (
@@ -50,7 +49,7 @@ type Result struct {
 	Checks []CheckResult
 }
 
-// ValidateCandidate runs all 9 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 8 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -59,7 +58,6 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkAnchors(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkReferences(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
-	r.Checks = append(r.Checks, checkVersionConsistency(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkDependencyCycles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkRegionLocatability(repoRoot, unitName))

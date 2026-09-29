@@ -135,7 +135,6 @@ func TestPromoteWithValidSpec(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -352,7 +351,6 @@ func TestForkUnit(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	specContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -401,8 +399,8 @@ Appendix for test.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(candidateData), "version: 1.0.1") {
-		t.Fatalf("expected version: 1.0.1, got:\n%s", string(candidateData))
+	if string(candidateData) != specContent {
+		t.Fatalf("expected the candidate to be a verbatim copy of the stable spec, got:\n%s", string(candidateData))
 	}
 
 	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
@@ -466,7 +464,6 @@ func TestPromoteWithNonBlockingVerifyMismatch(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -604,7 +601,6 @@ func TestPromoteWithBlockingVerifyMismatch(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -730,7 +726,6 @@ func TestValidateCandidateFrontmatterDeprecated(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	specContent := `---
 id: test_unit
-version: 1.0.0
 unit_refs: none
 rule_refs: none
 ---
@@ -780,7 +775,7 @@ func TestPromoteRetiredUnitEndToEnd(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: test_unit\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
+	stableSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -794,7 +789,7 @@ func TestPromoteRetiredUnitEndToEnd(t *testing.T) {
 	if err := os.MkdirAll(candidateDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: test_unit\nversion: 1.0.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
+	retiredSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
 	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
 		t.Fatal(err)
@@ -850,7 +845,7 @@ func TestPromoteRetiredUnitValidateCacheOnly(t *testing.T) {
 	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableSpec := "---\nid: test_unit\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
+	stableSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -866,7 +861,7 @@ func TestPromoteRetiredUnitValidateCacheOnly(t *testing.T) {
 	if err := os.MkdirAll(candidateAppendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	retiredSpec := "---\nid: test_unit\nversion: 1.0.1\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
+	retiredSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
 	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
 	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
 		t.Fatal(err)
@@ -933,7 +928,7 @@ func TestConsumers_GlobalRuleListsAllUnits(t *testing.T) {
 	}
 	for _, name := range []string{"unit_a.md", "unit_b.md"} {
 		if err := os.WriteFile(filepath.Join(unitDir, name),
-			[]byte("---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+			[]byte("---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -960,7 +955,7 @@ func TestConsumers_GlobalRuleMissingFileErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_a.md"),
-		[]byte("---\nid: a\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+		[]byte("---\nid: a\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

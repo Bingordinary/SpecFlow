@@ -8,7 +8,7 @@ It owns consumer discovery and fallback reason classification for affected units
 
 Run impact sync when:
 
-1. a stable unit version changes and a current-layer consumer's dependency evidence was captured against the prior version's content (unit refs are bare names that resolve to the current version — Trigger 1 detects stale dependency evidence, not a version-pinned reference).
+1. a stable unit's content changes and a current-layer consumer's dependency evidence was captured against the prior content (unit refs are bare names that resolve to the current truth — Trigger 1 detects stale dependency evidence by content, not by a reference marker).
 2. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
 3. a governance flow cannot prove that downstream unit truth remains current.
 
@@ -17,7 +17,7 @@ Run impact sync when:
 Use the smallest durable truth that can prove affected consumers:
 
 1. changed rule or global rule truth.
-2. promoted stable unit reference and release version.
+2. promoted stable unit reference and its changed content.
 3. current-layer unit frontmatter and dependency fields.
 4. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
 
@@ -28,7 +28,7 @@ Do not infer consumers from implementation directories alone.
 
 Rule change impact is self-contained and does not route through `impact_sync`. For non-promote rule edits, the agent updates affected unit `rule_refs` directly per `spec_writing_guide.md` §6; cache staleness is detected at promote time.
 
-The consumer discovery rules below apply only when `impact_sync` is triggered by a non-rule change (stable unit version change or governance-flow fallback).
+The consumer discovery rules below apply only when `impact_sync` is triggered by a non-rule change (stable unit change or governance-flow fallback).
 
 Rule consumers are derived from current-layer unit frontmatter:
 

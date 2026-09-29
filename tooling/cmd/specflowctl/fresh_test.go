@@ -33,7 +33,7 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func writeRetiringUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nstatus: retired\nversion: 1.0.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nstatus: retired\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", files)
 	// Deliberately stale verify cache: the spec changes after the cache is written,
 	// so the declared dependency chunk is gone.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -286,7 +286,7 @@ func TestFreshUnitDetailDeltaScope(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestFreshUnitDetailDeltaScopeNoJudgments(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestFreshUnitDetailDeltaScopeDegrades(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestFreshUnitDetailDeltaScopeAllUnclaimed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -512,7 +512,7 @@ func TestFreshUnitDetailDeltaScopeUnionViolation(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +601,7 @@ func TestFreshUnitDetailStaleBlockedReview(t *testing.T) {
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
 	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
 	// The spec changes after the review cache is written: stale, not BLOCKED.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -675,7 +675,7 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
 	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
 	// The spec changes after the fail record is written: stale, not BLOCKED.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -774,7 +774,7 @@ func TestFreshUnitDetailDeltaScopeDegradesForMetadataStale(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -825,7 +825,7 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +858,7 @@ func TestFreshStableScope(t *testing.T) {
 	writeStableUnitSpec(t, repoRoot, "settled")
 	writeStableUnitSpec(t, repoRoot, "legacy")
 
-	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -936,7 +936,7 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 	}
 	mid := fc.Chunks[len(fc.Chunks)/2]
 
-	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -988,7 +988,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	// Baseline says the surface is unchanged...
 	specPath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_settled.md")
 	specHash := computeHash(specPath)
-	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -1033,7 +1033,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
-	spec := "---\nid: settled\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -1481,7 +1481,7 @@ func TestFreshOmitsConsumedRule(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
 	writeRuleSpec(t, repoRoot, "b_rule_auth")
-	unit := "---\nid: user_auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: b_rule_auth\n---\n"
+	unit := "---\nid: user_auth\nunit_refs: none\nrule_refs: b_rule_auth\n---\n"
 	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)

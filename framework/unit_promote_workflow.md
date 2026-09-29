@@ -117,4 +117,4 @@ Summary: ...
 
 ## Truth Semantics
 
-Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable version. Removing candidate files keeps file existence unambiguous. A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.
+Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable content. Removing candidate files keeps file existence unambiguous. A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.

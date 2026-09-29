@@ -1885,17 +1885,17 @@ type InheritReport struct {
 
 // InheritStableCaches converts the unit's stable confirmation caches
 // (target: stable) into candidate caches for a forked round. Fork copies the
-// stable spec and appendices verbatim (only the version bumps), so the
-// confirmation conclusions carry over: a gate cache with `result: pass`
-// (review additionally `blocking: false`) is rewritten — `target: stable` →
-// `target: candidate` and physical paths under `docs/specs/units/stable/` →
+// stable spec and appendices verbatim, so the confirmation conclusions carry
+// over: a gate cache with `result: pass` (review additionally
+// `blocking: false`) is rewritten — `target: stable` → `target: candidate`
+// and physical paths under `docs/specs/units/stable/` →
 // `docs/specs/units/candidate/` — and stays valid for the candidate round
-// until its evidence goes stale (the version bump stales the frontmatter
-// declarations; delta re-runs restore the affected gates). Caches that
-// cannot be inherited (missing, non-pass, blocking review) are skipped with
-// a reason — the forked round starts those gates from scratch. Rule forks do
-// not inherit: a rule's cache declares the rule file whole, so the fork's
-// version bump stales it into a full re-run anyway.
+// until the round's edits stale its evidence (delta re-runs restore the
+// affected gates). Caches that cannot be inherited (missing, non-pass,
+// blocking review) are skipped with a reason — the forked round starts those
+// gates from scratch. Rule forks do not inherit: a rule's cache declares the
+// rule file whole, and the fork's `rule_version` bump stales it into a full
+// re-run anyway.
 func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
 	report := &InheritReport{Unit: unitName}
 	for _, cmd := range []string{"validate", "verify", "review"} {

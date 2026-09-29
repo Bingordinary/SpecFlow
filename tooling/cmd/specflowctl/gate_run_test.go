@@ -43,7 +43,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
 	var b strings.Builder
-	fmt.Fprintf(&b, "---\nid: %s\nversion: 0.1.0\nunit_refs: %s\nrule_refs: %s\n---\n\n# %s\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", name, unitRefs, ruleRefs, name)
+	fmt.Fprintf(&b, "---\nid: %s\nunit_refs: %s\nrule_refs: %s\n---\n\n# %s\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", name, unitRefs, ruleRefs, name)
 	for _, item := range items {
 		fmt.Fprintf(&b, "  - id: %s\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item)
 	}
@@ -58,7 +58,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 // content).
 func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) string {
 	t.Helper()
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
 		"  - id: " + name + ".core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
 }
@@ -682,7 +682,7 @@ func packetIDsOf(run *gaterun.Run) []string {
 
 func TestGatePlanRulePlan(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	run, err := gaterun.Load(repoRoot, runID)
@@ -1010,7 +1010,7 @@ func TestGateSubmitRejectsIncompletePacketBodies(t *testing.T) {
 func TestGateRunRuleTarget(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
@@ -1035,7 +1035,7 @@ func TestGateRunRuleTarget(t *testing.T) {
 func TestGateRunRuleWithConsumerRef(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
@@ -1526,7 +1526,7 @@ func TestGateCrossTwoSeverityAdjustmentsUseFinalSeverity(t *testing.T) {
 func TestRuleValidateRequiresConfirmationForP0(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
 	for c := 1; c <= 8; c++ {
@@ -2620,7 +2620,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	consumerPath := grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
@@ -3014,7 +3014,7 @@ func containsStr(values []string, want string) bool {
 func TestGateRunStableReview(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	main := "docs/specs/units/stable/unit_auth.md"
-	grWriteFile(t, repoRoot, main, "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/auth.go\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
+	grWriteFile(t, repoRoot, main, "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/auth.go\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "review", "--unit", "auth", "--target", "stable")
@@ -3038,7 +3038,7 @@ func TestGateRunStableReview(t *testing.T) {
 func TestGatePlanStableRequiresStableOnly(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
-	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n")
+	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n")
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "stable"); err == nil || !strings.Contains(err.Error(), "stable-only") {
 		t.Fatalf("expected a stable-only error, got %v", err)
 	}
@@ -3052,7 +3052,7 @@ func TestGateSubmitRejectsPhysicalNameResolvedPaths(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpec(t, repoRoot, "self")
-	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_repo.md", "---\nid: g_rule_repo\nversion: 0.1.0\nscope: global\n---\n\n# Rule\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_repo.md", "---\nid: g_rule_repo\nscope: global\n---\n\n# Rule\n")
 
 	cases := []struct {
 		name    string
@@ -3489,7 +3489,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 func TestValidatePacketDeclaresAffectsEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
-	spec := "---\nid: auth\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
+	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
 		"  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n"
 	grWriteFile(t, repoRoot, specPath, spec)
 	grWriteFile(t, repoRoot, "docs/notes/auth_contract.md", "# Auth contract\n")
@@ -3861,7 +3861,7 @@ func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 func TestGateRuleSeverityAdjustmentPersistsCanonicalDetail(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 
 	passReport := func() string {
 		var b strings.Builder
@@ -3879,7 +3879,7 @@ func TestGateRuleSeverityAdjustmentPersistsCanonicalDetail(t *testing.T) {
 
 	// Change the rule body so the delta run re-executes the checks, then fail
 	// check 8 with a P0 finding that the confirmation sequence adjusts to P1.
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS everywhere.\n")
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS everywhere.\n")
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "delta")
 	findingID := grRunFindingID(deltaRun, "checks", 1)
 

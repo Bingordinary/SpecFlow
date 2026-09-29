@@ -187,7 +187,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
    - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, related units, and the acceptance-item-derived fields (implementation surfaces, affects files, acceptance item ids — when the spec declares them)
    - this is a render action: read-only, does not modify any project file
 5. `fork`
-   - copy a stable spec/rule (and appendix files for units) to the candidate layer with a version bump
+   - copy a stable spec/rule (and appendix files for units) to the candidate layer (a rule fork bumps its `rule_version`)
    - `fork --unit <name>` / `fork --rule <id>`: rejects if a candidate already exists or the stable source does not exist
    - this is the only allowed fork path (see HARD RULE 5 in `framework/concepts.md`)
 6. `consumers`
@@ -265,7 +265,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones enumerated under §Governed write zones above
   25. `validate candidate --unit UNIT`
-    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, version consistency, body layer-path check, dependency cycle check, region locatability)
+    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, body layer-path check, dependency cycle check, region locatability)
   26. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields, unbound_retention correctness)
     - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command

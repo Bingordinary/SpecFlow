@@ -171,7 +171,7 @@ func missionJSON(t *testing.T, root, runID, packetID string) gateMission {
 func TestGateMissionsCoverRuleVerifyAnalysisReviewAndCross(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
-	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nversion: 0.1.0\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	ruleRun := grPlan(t, root, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	rule := missionJSON(t, root, ruleRun, "checks")
 	if rule.Packets[0].ProtocolRef != "framework/rule_validate_checklist.md" || len(rule.Packets[0].ReportContract.Verdicts) != 8 {

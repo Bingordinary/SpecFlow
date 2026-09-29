@@ -120,7 +120,6 @@ func discoverRelatedUnits(repoRoot, unitName, specPath string) []string {
 	var refs []string
 	seen := map[string]bool{}
 	for _, ref := range specpaths.ParseRefList(raw) {
-		ref = strings.TrimSpace(strings.Split(ref, "@")[0])
 		if ref != "" && ref != unitName && !seen[ref] {
 			seen[ref] = true
 			refs = append(refs, ref)

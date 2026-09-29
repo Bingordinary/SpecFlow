@@ -156,7 +156,7 @@ func TestGateEvidenceAcceptanceItemsRegion(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestGateEvidenceSections(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -248,13 +248,13 @@ func TestGateEvidenceSections(t *testing.T) {
 	if !strings.Contains(out, "heading: Testability / Acceptance Criteria") {
 		t.Fatalf("expected Testability section, got:\n%s", out)
 	}
-	if !strings.Contains(out, "lines: 1-9") {
+	if !strings.Contains(out, "lines: 1-8") {
 		t.Fatalf("expected frontmatter region to end before the first ## heading, got:\n%s", out)
 	}
-	if !strings.Contains(out, "lines: 14-24") {
+	if !strings.Contains(out, "lines: 13-23") {
 		t.Fatalf("expected the final section to end at the last real line, got:\n%s", out)
 	}
-	if strings.Contains(out, "lines: 14-25") {
+	if strings.Contains(out, "lines: 13-24") {
 		t.Fatalf("the artificial trailing newline must not be a line, got:\n%s", out)
 	}
 	// --sections is an informational probe: it must not declare anything.
@@ -333,7 +333,7 @@ func TestGateEvidenceSection(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestGateEvidenceSectionWithRangesUnion(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestGateEvidenceSectionFrontmatter(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n"
+	specContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Description\n\nProse about the unit.\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestGateEvidenceSectionFrontmatter(t *testing.T) {
 	}
 }
 
-const gateEvidenceTwoItemSpec = "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: dep.aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+const gateEvidenceTwoItemSpec = "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: dep.aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 
 func writeGateEvidenceTwoItemSpec(t *testing.T, repoRoot string) string {
 	t.Helper()
@@ -573,7 +573,7 @@ func TestGateEvidenceItemsAcrossSubheading(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_dep.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	spec := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n## Dependencies\n\nNone.\n"
+	spec := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n# Dep Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core.\n\n### Extra structure\n\n  - id: dep.aux\n    description: Aux.\n\n## Dependencies\n\nNone.\n"
 	if err := os.WriteFile(specPath, []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ func writeUnit(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs string) {
 	if ruleRefs == "" {
 		ruleRefs = "none"
 	}
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n"
+	content := "---\nid: " + name + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -124,22 +124,6 @@ func TestBuildSelfCycle(t *testing.T) {
 	}
 }
 
-func TestBuildVersionPinnedRefs(t *testing.T) {
-	repo := t.TempDir()
-	writeUnit(t, repo, "candidate", "alpha", "[beta@1.2.0]", "b_rule_x@0.3.0")
-
-	g, err := Build(repo, "all")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := g.Node("alpha").UnitRefs; !reflect.DeepEqual(got, []string{"beta"}) {
-		t.Fatalf("unit refs = %v, want version stripped", got)
-	}
-	if got := g.Node("alpha").RuleRefs; !reflect.DeepEqual(got, []string{"b_rule_x"}) {
-		t.Fatalf("rule refs = %v, want version stripped", got)
-	}
-}
-
 func TestBuildCrossLayerCandidatePreferred(t *testing.T) {
 	repo := t.TempDir()
 	writeUnit(t, repo, "candidate", "alpha", "[beta]", "none")
@@ -201,7 +185,7 @@ func TestBuildInvalidScope(t *testing.T) {
 
 func writeRetiringUnit(t *testing.T, repoRoot, layer, name, unitRefs string) {
 	t.Helper()
-	content := "---\nid: " + name + "\nstatus: retired\nversion: 1.0.0\nunit_refs: " + unitRefs + "\nrule_refs: none\n---\n\n# " + name + "\n"
+	content := "---\nid: " + name + "\nstatus: retired\nunit_refs: " + unitRefs + "\nrule_refs: none\n---\n\n# " + name + "\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

@@ -7,7 +7,6 @@ import (
 
 const extractionSpec = `---
 id: demo
-version: 0.1.0
 unit_refs: none
 rule_refs: none
 ---
@@ -106,7 +105,7 @@ func TestExtractImplementationSurfaces_StopsAtLaterSection(t *testing.T) {
 }
 
 func TestExtractAcceptanceItemIDs_FencedExampleIgnored(t *testing.T) {
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: |\n      Real item.\n\n      ```\n      - id: example.only\n        description: A fenced example, not an item.\n      ```\n    verification_type: auto\n    implementation_surface: internal/demo\n  - id: demo.aux\n    description: Real item.\n    verification_type: auto\n    implementation_surface: internal/demo\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: demo.core\n    description: |\n      Real item.\n\n      ```\n      - id: example.only\n        description: A fenced example, not an item.\n      ```\n    verification_type: auto\n    implementation_surface: internal/demo\n  - id: demo.aux\n    description: Real item.\n    verification_type: auto\n    implementation_surface: internal/demo\n"
 	got := ExtractAcceptanceItemIDs(spec)
 	want := []string{"demo.core", "demo.aux"}
 	if !reflect.DeepEqual(got, want) {
@@ -115,7 +114,7 @@ func TestExtractAcceptanceItemIDs_FencedExampleIgnored(t *testing.T) {
 }
 
 func TestExtractAcceptanceItemIDs_ProseMentionNotMarker(t *testing.T) {
-	spec := "---\nid: demo\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Notes\n\nThe acceptance_item_set: marker starts the structured item list.\n\n  - id: not.an.item\n    description: Documentation example, no marker.\n"
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# Demo\n\n## Notes\n\nThe acceptance_item_set: marker starts the structured item list.\n\n  - id: not.an.item\n    description: Documentation example, no marker.\n"
 	if got := ExtractAcceptanceItemIDs(spec); len(got) != 0 {
 		t.Fatalf("expected no ids from a prose marker mention, got %v", got)
 	}

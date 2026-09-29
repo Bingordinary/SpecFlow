@@ -13,7 +13,6 @@ import (
 
 const unitSpec = `---
 id: demo
-version: 0.1.0
 unit_refs: none
 rule_refs: none
 ---
@@ -391,7 +390,6 @@ func TestCheckUnitBaseline_DepOutsideChangeOKWithNote(t *testing.T) {
 // edits outside the region must not drift the baseline.
 const regionDepContent = `---
 id: demo
-version: 0.1.0
 unit_refs: none
 rule_refs: none
 ---

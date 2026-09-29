@@ -40,7 +40,6 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 		label string
 	}{
 		{"id", "id"},
-		{"version", "version"},
 		{"unit_refs", "unit_refs"},
 		{"rule_refs", "rule_refs"},
 	}
@@ -295,12 +294,7 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 	if unitRefs != "" && !strings.EqualFold(unitRefs, "none") {
 		refs := specpaths.ParseRefList(unitRefs)
 		for _, ref := range refs {
-			refName := ref
-			if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
-				refName = ref[:atIdx]
-			}
-
-			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", refName))
+			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", ref))
 			if _, err := os.Stat(candidatePath); err == nil {
 				// A referenced unit that is being retired loses its stable copy
 				// on promote — the reference cannot survive the retirement.
@@ -313,7 +307,7 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 				continue
 			}
 
-			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", refName))
+			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", ref))
 			if _, err := os.Stat(stablePath); err == nil {
 				continue
 			}
@@ -326,17 +320,12 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 	if ruleRefs != "" && !strings.EqualFold(ruleRefs, "none") {
 		refs := specpaths.ParseRefList(ruleRefs)
 		for _, ref := range refs {
-			refName := ref
-			if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
-				refName = ref[:atIdx]
-			}
-
-			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("%s.md", refName))
+			candidatePath := filepath.Join(repoRoot, "docs/specs/rules/candidate", fmt.Sprintf("%s.md", ref))
 			if _, err := os.Stat(candidatePath); err == nil {
 				continue
 			}
 
-			stablePath := filepath.Join(repoRoot, "docs/specs/rules/stable", fmt.Sprintf("%s.md", refName))
+			stablePath := filepath.Join(repoRoot, "docs/specs/rules/stable", fmt.Sprintf("%s.md", ref))
 			if _, err := os.Stat(stablePath); err == nil {
 				continue
 			}
@@ -515,79 +504,7 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 6: Version/ref consistency
-// ------------------------------------------------------------
-func checkVersionConsistency(repoRoot, unitName string) CheckResult {
-	path := specPath(repoRoot, unitName)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return CheckResult{
-			Name:    "Version consistency",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
-		}
-	}
-
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-
-	// A retiring spec's own version-pinned references disappear with it —
-	// same exemption as the reference-integrity check (Check 4).
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Version consistency",
-			Status:  Pass,
-			Details: "spec is marked retired — own version refs not checked",
-		}
-	}
-
-	unitRefs := fm["unit_refs"]
-	var versionMismatches []string
-
-	if unitRefs != "" && !strings.EqualFold(unitRefs, "none") {
-		refs := specpaths.ParseRefList(unitRefs)
-		for _, ref := range refs {
-			refName := ref
-			expectedVersion := ""
-			if atIdx := strings.LastIndex(ref, "@"); atIdx > 0 {
-				refName = ref[:atIdx]
-				expectedVersion = ref[atIdx+1:]
-			}
-			if expectedVersion == "" {
-				continue
-			}
-
-			targetFile := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", refName))
-			targetData, err := os.ReadFile(targetFile)
-			if err != nil {
-				targetFile = filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", refName))
-				targetData, err = os.ReadFile(targetFile)
-				if err != nil {
-					versionMismatches = append(versionMismatches, fmt.Sprintf("%s: cannot read target spec", ref))
-					continue
-				}
-			}
-			targetFM := specpaths.ReadFrontmatterStringMap(string(targetData))
-			actualVersion := strings.TrimSpace(targetFM["version"])
-			if actualVersion != expectedVersion {
-				versionMismatches = append(versionMismatches, fmt.Sprintf("%s: expected version %q, target has %q", refName, expectedVersion, actualVersion))
-			}
-		}
-	}
-
-	if len(versionMismatches) > 0 {
-		return CheckResult{
-			Name:    "Version consistency",
-			Status:  Fail,
-			Details: strings.Join(versionMismatches, "; "),
-		}
-	}
-
-	return CheckResult{Name: "Version consistency", Status: Pass}
-}
-
-// ------------------------------------------------------------
-// Check 7: Body layer-path check
+// Check 6: Body layer-path check
 // ------------------------------------------------------------
 //
 // Candidate-layer spec paths are invalid anywhere in the spec body:
@@ -652,7 +569,7 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 	// A retiring spec is removed from stable — layer-prefix references in its
 	// body and in its appendices have no post-promote target and are not
 	// checked (matching unit_validate_checklist.md: a retiring spec skips
-	// Check 7 entirely, including its appendices).
+	// Check 6 entirely, including its appendices).
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
 	if strings.TrimSpace(fm["status"]) == "retired" {
 		return CheckResult{
@@ -693,7 +610,7 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 8: Dependency cycles (unit_refs graph)
+// Check 7: Dependency cycles (unit_refs graph)
 // ------------------------------------------------------------
 
 // cycleGuidance is the standard resolution guidance attached to every cycle
@@ -705,7 +622,7 @@ const cycleGuidance = "Resolve by extracting the shared contract into a rule (st
 // failure cause is unrelated to the validated unit — any unreadable unit
 // spec blocks the whole graph — so the guidance must point at the reported
 // file rather than at cycle resolutions.
-const cycleBuildGuidance = "Check 8 reads every current-layer unit spec to build the graph — an unreadable spec (permission, corruption) blocks all units, not just this one. Repair the reported file and re-run validate; run `deps@all` to reproduce the failure."
+const cycleBuildGuidance = "Check 7 reads every current-layer unit spec to build the graph — an unreadable spec (permission, corruption) blocks all units, not just this one. Repair the reported file and re-run validate; run `deps@all` to reproduce the failure."
 
 // checkDependencyCycles derives the dependency graph from all current-layer
 // units' unit_refs and FAILS when the validated unit participates in a cycle.
@@ -763,7 +680,7 @@ func checkDependencyCycles(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 9: Region locatability
+// Check 8: Region locatability
 // ------------------------------------------------------------
 func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)

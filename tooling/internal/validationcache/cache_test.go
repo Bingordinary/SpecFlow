@@ -55,7 +55,7 @@ func TestCheckValidate(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestCheckValidateStale(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestCheckValidateDeltaBasis(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestCheckVerify(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestCheckValidateMissingMode(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestCheckVerifyInvalidMode(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestCheckVerifyNonBlockingFindings(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestCheckVerifyFailResultRejected(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestCheckVerifyFailRecordMissingBlocking(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestCheckVerifyFailRecordConflictingBlocking(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestCheckVerifyInvalidBlockingValue(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +619,7 @@ func TestCheckAppendicesInCache_AllInCachePass(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +668,7 @@ func TestCheckAppendicesInCache_MissingAppendixFails(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -710,7 +710,7 @@ func TestCheckAppendicesInCache_ExemptAppendixNotInCachePass(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -748,7 +748,7 @@ func TestCheckAppendicesInCache_RetiredAppendixNotInCachePass(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -785,7 +785,7 @@ func TestCheckAppendicesInCache_ValidateCacheNotPassFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1226,7 +1226,7 @@ func TestCheckValidateMissingMainSpecFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1259,7 +1259,7 @@ func TestCheckValidateEmptyFilesListFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1289,7 +1289,7 @@ func TestCheckVerifyMissingMainSpecFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1400,7 +1400,7 @@ func TestCheckVerifyStable(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1451,7 +1451,7 @@ func TestCheckVerifyStable_CodeChanged(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	os.WriteFile(specPath, []byte("---\nid: test\nversion: 0.1.0\n---\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: test\n---\n"), 0644)
 
 	srcPath := filepath.Join(srcDir, "handler.go")
 	os.WriteFile(srcPath, []byte("package main\nfunc main() {}\n"), 0644)
@@ -1486,7 +1486,7 @@ func TestCheckValidateStable(t *testing.T) {
 	os.MkdirAll(rulesStableDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	os.WriteFile(specPath, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	// The rule file is an external dependency of the stable content: when it
 	// changes, the validate@stable confirmation goes stale.
@@ -1530,7 +1530,7 @@ func TestCheckValidateStable_RuleChanged(t *testing.T) {
 	os.MkdirAll(rulesStableDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	os.WriteFile(specPath, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	os.WriteFile(specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
 	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
@@ -1569,7 +1569,7 @@ func TestCheckRuleValidateStable(t *testing.T) {
 	// A consumer unit is an external dependency of the stable rule: when the
 	// consumer changes, the rule's validate@stable confirmation goes stale.
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
-	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
 	consumerHash, _ := fileHash(consumerPath)
@@ -1612,7 +1612,7 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	os.WriteFile(rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
-	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.1.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
 	consumerHash, _ := fileHash(consumerPath)
@@ -1623,7 +1623,7 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The consumer changes (e.g. its rule_refs) -> the confirmation goes stale.
-	os.WriteFile(consumerPath, []byte("---\nid: consumer\nversion: 0.2.0\nunit_refs: none\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
+	os.WriteFile(consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
 
 	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
 	if err != nil {
@@ -1669,7 +1669,7 @@ func TestCheckVerifyDepOutsideChangeStaysFresh(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	os.WriteFile(specPath, []byte(specContent), 0644)
 
 	// Unit A depends only on the first 10 lines of the shared file.
@@ -1719,7 +1719,7 @@ func TestCheckVerifyDepChangeStales(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	os.WriteFile(specPath, []byte(specContent), 0644)
 
 	sharedPath := makeSharedFile(t, srcDir)
@@ -1760,7 +1760,7 @@ func TestCheckNoDepsFailsClosed(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
 	os.WriteFile(specPath, []byte(specContent), 0644)
 	specHash, _ := fileHash(specPath)
 
@@ -1863,7 +1863,7 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 
 	// Self spec
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	if err := os.WriteFile(selfPath, []byte(selfContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1874,7 +1874,7 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 
 	// Dependency unit (candidate layer)
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(depPath, []byte(depContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1912,7 +1912,7 @@ func TestGlobalRuleLogicalRefUsesStableOnly(t *testing.T) {
 	}
 
 	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: none\nrule_refs: none\n---\n"
 	if err := os.WriteFile(selfPath, []byte(selfContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1979,7 +1979,7 @@ func TestGlobalRuleLogicalRefRejectsCandidateOnly(t *testing.T) {
 	}
 
 	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
-	if err := os.WriteFile(selfPath, []byte("---\nid: self\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(selfPath, []byte("---\nid: self\nunit_refs: none\nrule_refs: none\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	candidateRulePath := filepath.Join(candidateRuleDir, "g_rule_draft.md")
@@ -2017,11 +2017,11 @@ func TestLogicalRefSurvivesPromote(t *testing.T) {
 
 	// Self spec and dependency unit, both candidate.
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(depPath, []byte(depContent), 0644)
 	depHash, err := fileHash(depPath)
 	if err != nil {
@@ -2058,12 +2058,12 @@ func TestPhysicalRefStalesAfterPromote(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n"
 	os.WriteFile(depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2097,7 +2097,7 @@ func TestLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2129,13 +2129,13 @@ func TestAppendixLogicalRefSurvivesPromote(t *testing.T) {
 
 	// Self spec.
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	// Dependency unit main spec + protocol appendix, both candidate.
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n"
 	os.WriteFile(depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2183,7 +2183,7 @@ func TestAppendixLogicalRefStalesAfterContentChange(t *testing.T) {
 	os.MkdirAll(filepath.Join(candidateDir, "appendix"), 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2217,7 +2217,7 @@ func TestAppendixLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	os.MkdirAll(filepath.Join(candidateDir, "appendix"), 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2246,12 +2246,12 @@ func TestRegionDepUnaffectedByProseEdit(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nBackground prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nBackground prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	os.WriteFile(depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2296,12 +2296,12 @@ func TestRegionDepMissingMarkerFailsClosed(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nversion: 0.1.0\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
 	os.WriteFile(selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\nNo acceptance items.\n"
+	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\nNo acceptance items.\n"
 	os.WriteFile(depPath, []byte(depContent), 0644)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
@@ -2325,7 +2325,7 @@ func writeSpecWithSections(t *testing.T, repoRoot, name, descBody string) string
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\n" + descBody + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\n" + descBody + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2340,7 +2340,7 @@ func writeSpecWithThreeSections(t *testing.T, repoRoot, name string) string {
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2389,7 +2389,7 @@ func TestBuildEntryRejectsSectionDeclarationOnUnstructuredSpec(t *testing.T) {
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_plain.md")
-	plain := "---\nid: plain\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\nProse without sections.\n"
+	plain := "---\nid: plain\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\nProse without sections.\n"
 	if err := os.WriteFile(path, []byte(plain), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2397,7 +2397,7 @@ func TestBuildEntryRejectsSectionDeclarationOnUnstructuredSpec(t *testing.T) {
 		t.Fatalf("expected a section declaration on a no-## spec to fail closed, got %v", err)
 	}
 
-	dup := "---\nid: plain\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\n## frontmatter\n\nFirst.\n\n## frontmatter\n\nSecond.\n"
+	dup := "---\nid: plain\nunit_refs: none\nrule_refs: none\n---\n\n# Plain\n\n## frontmatter\n\nFirst.\n\n## frontmatter\n\nSecond.\n"
 	if err := os.WriteFile(path, []byte(dup), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2794,7 +2794,7 @@ func writeRuleAndConsumer(t *testing.T, repoRoot string) string {
 	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	os.MkdirAll(ruleDir, 0755)
 	rulePath := filepath.Join(ruleDir, "g_rule_test.md")
-	ruleContent := "---\nid: g_rule_test\nversion: 0.1.0\nscope: global\n---\n\n# Rule\n\nBody.\n"
+	ruleContent := "---\nid: g_rule_test\nscope: global\n---\n\n# Rule\n\nBody.\n"
 	if err := os.WriteFile(rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -3228,7 +3228,7 @@ func TestRewriteCachesToStablePromotedCachesPassStableChecks(t *testing.T) {
 	os.MkdirAll(filepath.Dir(candSpec), 0755)
 	os.MkdirAll(filepath.Dir(candAppendix), 0755)
 	os.MkdirAll(filepath.Dir(srcPath), 0755)
-	os.WriteFile(candSpec, []byte("---\nid: test\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# Test\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: test.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"), 0644)
+	os.WriteFile(candSpec, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n\n# Test\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: test.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"), 0644)
 	os.WriteFile(candAppendix, []byte("---\nunit: test\n---\n\n# Appendix\n"), 0644)
 	os.WriteFile(srcPath, []byte("package demo\n\nfunc Demo() int { return 1 }\n"), 0644)
 
@@ -3340,7 +3340,7 @@ func writeSpecWithTwoItems(t *testing.T, repoRoot, name string) string {
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: " + name + ".aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: " + name + ".aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

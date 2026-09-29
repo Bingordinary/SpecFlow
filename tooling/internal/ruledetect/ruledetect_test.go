@@ -24,7 +24,7 @@ func writeUnit(t *testing.T, repoRoot, layer, unitName, ruleRefs string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: " + unitName + "\nversion: 0.1.0\nunit_refs: none\nrule_refs: " + ruleRefs + "\n---\n"
+	content := "---\nid: " + unitName + "\nunit_refs: none\nrule_refs: " + ruleRefs + "\n---\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unitName+".md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

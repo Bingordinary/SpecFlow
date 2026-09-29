@@ -74,6 +74,7 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 |-----------|---------|
 | **Rename files** | `mv docs/specs/rules/stable/s_g_rule_foo.md docs/specs/rules/stable/g_rule_foo.md` |
 | **Update frontmatter** | Change a field value, add a missing required field, remove a deprecated field |
+| **Remove unit `version` fields and version pins** | Unit specs no longer declare a `version` field and refs are bare names (`framework/spec_writing_guide.md` §3): delete every `version:` line from `docs/specs/units/**/unit_*.md` and strip any `@x.y.z` suffix from `unit_refs` / `rule_refs` entries |
 | **Update references** | Bulk-replace old ref format in `rule_refs` / `unit_refs` across all spec files |
 | **Restructure directories** | Move files between directories when path rules change |
 | **Sync template bootstrap rule** | When Step 2 detected a shape change in `templates/docs/specs/rules/stable/g_rule_repository_baseline.md`, migrate the change to the project copy at `docs/specs/rules/stable/g_rule_repository_baseline.md`: apply the template's clause renumbering, version semantics, and prohibition changes, while preserving the project's own filled content (the Tech Stack and Reusable Mechanisms sections are project-owned records — do not overwrite them with the template's blank placeholders). If a change requires business judgment (e.g. renumbering a clause that the project copy references in its own filled content), present the affected file to the user and ask for input |
@@ -97,7 +98,7 @@ After migration, run the format compliance check against `framework/spec_writing
 
 | Check | What to verify |
 |-------|---------------|
-| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `version`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
+| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
 | Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present. Compare against `spec_writing_guide.md`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
 | Rule files | For each rule file: `rule_id`, `rule_scope`, `rule_version` present. Path matches convention. |

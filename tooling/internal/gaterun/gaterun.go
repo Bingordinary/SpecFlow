@@ -1455,8 +1455,8 @@ func diffSurfaceEntries(stored, current Surface) []string {
 // Parsing and path helpers
 // ------------------------------------------------------------
 
-// parseRefList reads a frontmatter ref list (unit_refs / rule_refs), strips
-// any @version suffix, drops the given self name, dedupes, and sorts.
+// parseRefList reads a frontmatter ref list (unit_refs / rule_refs), drops
+// the given self name, dedupes, and sorts.
 func parseRefList(content, field, self string) []string {
 	fm := specpaths.ReadFrontmatterStringMap(content)
 	raw := strings.TrimSpace(fm[field])
@@ -1466,7 +1466,6 @@ func parseRefList(content, field, self string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, ref := range specpaths.ParseRefList(raw) {
-		ref = stripVersion(strings.TrimSpace(ref))
 		if ref == "" || ref == self || seen[ref] {
 			continue
 		}
@@ -1475,13 +1474,6 @@ func parseRefList(content, field, self string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func stripVersion(ref string) string {
-	if at := strings.LastIndex(ref, "@"); at > 0 {
-		return ref[:at]
-	}
-	return ref
 }
 
 func readSpecContent(repoRoot, rel string) (string, error) {

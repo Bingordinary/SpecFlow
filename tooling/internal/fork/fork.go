@@ -47,16 +47,6 @@ func Fork(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	data, err := os.ReadFile(stableSpecPath)
-	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Cannot read stable spec: %v", err))
-		r.Passed = false
-		return r
-	}
-
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	stableVersion := fm["version"]
-
 	stableAppendixDir := filepath.Join(repoRoot, specpaths.StableAppendixDir)
 	candidateAppendixDir := filepath.Join(repoRoot, specpaths.CandidateAppendixDir)
 	appendixPattern := fmt.Sprintf("unit_%s_*.md", unitName)
@@ -82,18 +72,12 @@ func Fork(repoRoot, unitName string) *Result {
 		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", rel))
 	}
 
-	candidateVersion := fileops.VersionWithBumpPatch(stableVersion)
-
-	copyErr := copyFileWithVersion(
-		stableSpecPath, candidateSpecPath,
-		"version", candidateVersion,
-	)
-	if copyErr != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy spec: %v", copyErr))
+	if err := fileops.CopyFile(stableSpecPath, candidateSpecPath); err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy spec: %v", err))
 		r.Passed = false
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s (version %s -> %s)", stableSpec, candidateSpec, stableVersion, candidateVersion))
+	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s", stableSpec, candidateSpec))
 
 	for _, f := range filesToCopy {
 		if err := fileops.CopyFile(f.src, f.dst); err != nil {
@@ -106,11 +90,11 @@ func Fork(repoRoot, unitName string) *Result {
 	}
 
 	// Inherit the stable confirmation caches: fork copies the stable content
-	// verbatim (only the version bumps), so pass confirmation conclusions
-	// carry over to the candidate round (rewritten to the candidate layer).
-	// Skipped gates need their full run; inheritance errors are non-fatal —
-	// the fork itself succeeded, and a missing baseline is a safe degradation
-	// (the gate re-runs in full).
+	// verbatim, so pass confirmation conclusions carry over to the candidate
+	// round (rewritten to the candidate layer) and stay valid until the round's
+	// edits stale their evidence. Skipped gates need their full run;
+	// inheritance errors are non-fatal — the fork itself succeeded, and a
+	// missing baseline is a safe degradation (the gate re-runs in full).
 	inheritReport, err := validationcache.InheritStableCaches(repoRoot, unitName)
 	if err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to inherit confirmation caches: %v (gates need their full runs)", err))

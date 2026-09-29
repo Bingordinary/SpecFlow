@@ -44,7 +44,6 @@ Each unit main Spec must include these fields:
 
 ```yaml
 id: {unit}
-version: x.y.z
 unit_refs: none
 rule_refs: none
 ```
@@ -65,7 +64,7 @@ rule_refs:
   - b_rule_example
 ```
 
-Refs are bare unit or rule names; the ref resolves to the current version.
+Refs are bare unit or rule names; the ref resolves to the current content (units) or the current `rule_version` (rules).
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
@@ -409,7 +408,7 @@ Each unit appendix must:
 1. use the current path shape for its layer and unit id
 2. declare `unit: {unit}` in frontmatter
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`) and bumps the main spec version. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`). Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
 - Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
@@ -580,9 +579,9 @@ The unit's own main spec is declared by **section regions** in validation caches
 5. **Naming stability:** headings are part of the region content — renaming a heading changes the region's content identity and stales declarations on it. Rename deliberately (a rename is a semantic signal, not a cosmetic edit).
 6. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
 7. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and protocol appendices are contract files declared whole and need no section structure (see `framework/validation_cache.md` §Structural Region Dependencies).
-8. **Reserved heading name:** `frontmatter` is a reserved spelling — the `--section frontmatter` declaration names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be declared by section regions: the declaration would silently alias the pre-heading region (validate Check 9 fails the reserved name). Choose a different heading text.
+8. **Reserved heading name:** `frontmatter` is a reserved spelling — the `--section frontmatter` declaration names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be declared by section regions: the declaration would silently alias the pre-heading region (validate Check 8 fails the reserved name). Choose a different heading text.
 
-A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, or stray pre-heading content) cannot be declared by section regions — validate Check 1/9 reports it and the fix direction is restructuring the spec per this section, not falling back to whole-file declarations.
+A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, or stray pre-heading content) cannot be declared by section regions — validate Check 1/8 reports it and the fix direction is restructuring the spec per this section, not falling back to whole-file declarations.
 
 ## 14. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
 

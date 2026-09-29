@@ -26,7 +26,7 @@ func newRepo(t *testing.T) string {
 // surfaceSpec builds a candidate spec whose acceptance items carry the given
 // implementation_surface values, in order (item_1, item_2, ...).
 func surfaceSpec(values ...string) string {
-	content := "---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n" +
+	content := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n" +
 		"acceptance_item_set:\n"
 	for i, value := range values {
 		content += fmt.Sprintf(
@@ -213,7 +213,7 @@ func TestCheckAnchors_ItemRelativeIndentSurfaceResolves(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nversion: 0.1.0\nunit_refs: none\nrule_refs: none\n---\n\n"+
+		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n"+
 			"acceptance_item_set:\n"+
 			"    - id: item_1\n"+
 			"      description: test\n"+

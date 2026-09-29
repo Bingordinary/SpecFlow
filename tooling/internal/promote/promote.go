@@ -246,17 +246,15 @@ func Promote(repoRoot, unitName string) *Result {
 		sfm := parseFrontmatter(string(stableData))
 		if raw := sfm["rule_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 			for _, ref := range specpaths.ParseRefList(raw) {
-				name := strings.TrimSpace(strings.Split(ref, "@")[0])
-				if name != "" {
-					droppedRuleRefs[name] = true
+				if ref != "" {
+					droppedRuleRefs[ref] = true
 				}
 			}
 		}
 	}
 	if raw := fm["rule_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 		for _, ref := range specpaths.ParseRefList(raw) {
-			name := strings.TrimSpace(strings.Split(ref, "@")[0])
-			delete(droppedRuleRefs, name)
+			delete(droppedRuleRefs, ref)
 		}
 	}
 
@@ -279,7 +277,6 @@ func Promote(repoRoot, unitName string) *Result {
 		value string
 	}{
 		{"id", fm["id"]},
-		{"version", fm["version"]},
 	}
 
 	for _, c := range checks {
@@ -305,7 +302,6 @@ func Promote(repoRoot, unitName string) *Result {
 	if !retired && fm["unit_refs"] != "" && !strings.EqualFold(fm["unit_refs"], "none") {
 		refs := specpaths.ParseRefList(fm["unit_refs"])
 		for _, ref := range refs {
-			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
 			if ref == "" || ref == unitName {
 				continue
 			}
@@ -331,7 +327,6 @@ func Promote(repoRoot, unitName string) *Result {
 	if !retired && fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
 		refs := specpaths.ParseRefList(fm["rule_refs"])
 		for _, ref := range refs {
-			ref = strings.TrimSpace(strings.Split(ref, "@")[0])
 			if ref == "" {
 				continue
 			}
