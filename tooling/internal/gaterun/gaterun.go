@@ -1029,8 +1029,9 @@ func derive(repoRoot, gate, targetKind, targetName, target string) ([]Ref, []Sur
 
 // deriveUnitValidate resolves a validate unit run's inputs: the unit's own
 // spec files in the target layer, the unit_refs dependency units (current
-// layer) with their protocol appendices, the bound and global rules, and the
-// spec's affects.files entries.
+// layer) with their protocol appendices, the bound and global rules, the
+// spec's affects.files entries, and every peer unit main spec (Check 9's
+// surface-ownership audit reads all of them).
 func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	var unitMain string
 	if target == TargetCandidate {
@@ -1047,11 +1048,19 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	for _, appendix := range unitAppendices(repoRoot, unitName, target) {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
+	depUnits := map[string]bool{}
 	for _, dep := range parseRefList(content, "unit_refs", unitName) {
+		depUnits[dep] = true
 		refs = append(refs, logicalUnitRef(repoRoot, dep, SourceDerived))
 		for _, appendixRef := range logicalUnitAppendixRefs(repoRoot, dep) {
 			refs = append(refs, appendixRef)
 		}
+	}
+	for _, peer := range allUnitNames(repoRoot) {
+		if peer == unitName || depUnits[peer] {
+			continue
+		}
+		refs = append(refs, logicalUnitRef(repoRoot, peer, SourceDerived))
 	}
 	ruleIDs := append(parseRefList(content, "rule_refs", ""), globalRuleIDs(repoRoot)...)
 	for _, ruleID := range dedupeSorted(ruleIDs) {

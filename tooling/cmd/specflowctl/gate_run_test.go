@@ -190,6 +190,7 @@ var grCheckNames = map[string]string{
 	"6": "Affects-source validity",
 	"7": "Cross-unit consistency",
 	"8": "Constraint alignment",
+	"9": "Surface ownership & sharing",
 }
 
 // grValidateReport builds a validate packet report: PASS verdicts for the
@@ -212,6 +213,22 @@ func grValidateReport(checks []string, scopes map[string][]string) string {
 		}
 	}
 	return b.String()
+}
+
+// grDependenciesReport builds a dependency-group validate report. Check 9
+// (surface ownership) joined the group; when the caller provides no scope
+// line for it, check 7's declaration is reused — the packet contract only
+// requires one scope line per executed check, and these tests exercise the
+// gate mechanics.
+func grDependenciesReport(scopes map[string][]string) string {
+	if _, ok := scopes["9"]; !ok {
+		if lines, ok := scopes["7"]; ok {
+			scopes["9"] = lines
+		} else if lines, ok := scopes["8"]; ok {
+			scopes["9"] = lines
+		}
+	}
+	return grValidateReport([]string{"7", "8", "9"}, scopes)
 }
 
 // grCrossReport builds a cross-check packet report.
@@ -371,7 +388,7 @@ func grSubmitValidatePackets(t *testing.T, repoRoot, runID, specPath string, ext
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
 	}))
@@ -743,7 +760,7 @@ func TestGateRunComputesHashAndDeps(t *testing.T) {
 		"4": {main + ": all"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": all"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": all"},
 		"8": {main + ": all"},
 	}))
@@ -794,7 +811,7 @@ func TestGateRunSectionAndRangeDeclarations(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": acceptance_items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -839,7 +856,7 @@ func TestGateRunLogicalReference(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Testability / Acceptance Criteria"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Testability / Acceptance Criteria"},
 		"8": {main + ": Description"},
 	}))
@@ -892,7 +909,7 @@ func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Testability / Acceptance Criteria"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": frontmatter"},
 		"8": {"rule:g_rule_http: all"},
 	}))
@@ -1949,7 +1966,7 @@ func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
 	// and the carried checks share the main spec path.
 	var decls []validationcache.CheckDeclaration
 	decls = append(decls, validationcache.CheckDeclaration{Check: "1", Sections: []string{"Description"}})
-	for _, key := range []string{"2", "3", "4", "5", "6", "7", "8", gaterun.CrossKey} {
+	for _, key := range []string{"2", "3", "4", "5", "6", "7", "8", "9", gaterun.CrossKey} {
 		decls = append(decls, validationcache.CheckDeclaration{Check: key, Sections: []string{"Scope"}})
 	}
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, main, decls)
@@ -1976,7 +1993,7 @@ func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
 	entry.Deps = append(entry.Deps, extraDep)
 
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", gaterun.CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.CrossKey} {
 		statuses[key] = "pass"
 	}
 	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 2, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
@@ -2016,7 +2033,7 @@ func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
 	if got := strings.Join(packetIDsOf(deltaRun), ","); got != "structural,cross" {
 		t.Fatalf("expected the structural group plus cross to re-run, got %s", got)
 	}
-	if got := strings.Join(deltaRun.CarriedKeys, ","); got != "2,4,5,7,8" {
+	if got := strings.Join(deltaRun.CarriedKeys, ","); got != "2,4,5,7,8,9" {
 		t.Fatalf("expected the Scope checks carried over, got %v", deltaRun.CarriedKeys)
 	}
 
@@ -2078,7 +2095,7 @@ func TestGateRunValidateCandidateFailDeletesCache(t *testing.T) {
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n")
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2359,7 +2376,7 @@ func TestGateRunRequiresMainFileCoverage(t *testing.T) {
 		"4": {appendix + ": all"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {appendix + ": all"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {appendix + ": all"},
 		"8": {appendix + ": all"},
 	}))
@@ -2521,7 +2538,7 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Testability / Acceptance Criteria"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2585,7 +2602,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
-	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2614,6 +2631,93 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	// A delta plan with nothing stale is refused.
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
 		t.Fatalf("expected the freshness refusal, got %v", err)
+	}
+}
+
+// TestGateRunSurfaceOwnershipPeerStaleness: check 9 declares every peer
+// unit's frontmatter and acceptance-item regions, so another unit's surface
+// declaration change stales the cache and the delta re-runs check 9 instead
+// of carrying it — even though the peer is not in the target's unit_refs
+// (see framework/validation_cache.md §Logical References).
+func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	specPath := grWriteSpec(t, repoRoot, "auth")
+	peerPath := grWriteSpec(t, repoRoot, "beta")
+	main := specPath
+	desc := main + ": Description"
+	accept := main + ": Testability / Acceptance Criteria"
+	peerDeps := []string{"unit:beta: frontmatter", "unit:beta: acceptance_items"}
+
+	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+		"1": {main + ": frontmatter", desc},
+		"3": {accept},
+		"6": {accept},
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+		"2": {desc},
+		"4": {desc},
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
+		"5": {accept},
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
+		"7": {desc},
+		"8": {desc},
+		"9": peerDeps,
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
+
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected the fresh cache, got: %s", res.Reason)
+	}
+
+	// A peer's acceptance-item edit (the surface-declaration carrier) stales
+	// check 9 even though beta is not in auth's unit_refs.
+	data, err := os.ReadFile(peerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(peerPath, []byte(strings.Replace(string(data), "Behavior.", "Behavior, changed.", 1)), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err = validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Fresh {
+		t.Fatalf("expected the peer edit to stale the cache, got fresh with reason: %s", res.Reason)
+	}
+
+	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, repoRoot, deltaRun)
+	if got := strings.Join(packetIDsOf(run), ","); got != "dependencies,cross" {
+		t.Fatalf("expected the dependencies packet plus cross to re-run, got %s", got)
+	}
+	if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,4,5,6" {
+		t.Fatalf("expected the structural/design/acceptance checks carried over, got %s", got)
+	}
+	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grDependenciesReport(map[string][]string{
+		"7": {desc},
+		"8": {desc},
+		"9": peerDeps,
+	}))
+	grSubmitOK(t, repoRoot, deltaRun, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
+
+	res, err = validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected the delta cache to recover freshness, got: %s", res.Reason)
 	}
 }
 
@@ -3066,13 +3170,13 @@ func TestGateSubmitRejectsPhysicalNameResolvedPaths(t *testing.T) {
 		{
 			name: "cross-unit main spec in unit cache", gate: "validate", kind: "unit", target: "self",
 			packet:  "dependencies",
-			report:  grValidateReport([]string{"7", "8"}, map[string][]string{"7": {"docs/specs/units/candidate/unit_auth.md: Description"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
+			report:  grDependenciesReport(map[string][]string{"7": {"docs/specs/units/candidate/unit_auth.md: Description"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
 			wantErr: "unit:auth",
 		},
 		{
 			name: "rule file in unit cache", gate: "validate", kind: "unit", target: "self",
 			packet:  "dependencies",
-			report:  grValidateReport([]string{"7", "8"}, map[string][]string{"7": {"docs/specs/rules/candidate/g_rule_repo.md: all"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
+			report:  grDependenciesReport(map[string][]string{"7": {"docs/specs/rules/candidate/g_rule_repo.md: all"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
 			wantErr: "rule:g_rule_repo",
 		},
 		{
@@ -3301,7 +3405,7 @@ func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Testability / Acceptance Criteria"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: acceptance_item:auth.core"},
 		"8": {main + ": Description"},
 	}))
@@ -3575,7 +3679,7 @@ func TestGateSubmitNormalizesDeclarationPaths(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grValidateReport([]string{"7", "8"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
 	}))

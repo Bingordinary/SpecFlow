@@ -202,7 +202,7 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 		{"structural", []string{"1", "3", "6"}},
 		{"design", []string{"2", "4"}},
 		{"acceptance", []string{"5"}},
-		{"dependencies", []string{"7", "8"}},
+		{"dependencies", []string{"7", "8", "9"}},
 	} {
 		scopes := make(map[string][]string)
 		for _, check := range packet.checks {
@@ -220,7 +220,7 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 		"Finding affects: " + id + " = 2\n" +
 		"cross: " + main + ": Description\n" +
 		"Severity confirmation: " + id + " = confirmed P1 — evidence: " + main + "; reason: dependent design is affected\n"
-	for _, check := range []string{"1", "2", "3", "4", "5", "6", "7", "8"} {
+	for _, check := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"} {
 		status := "pass"
 		if check == "2" {
 			status = "fail"

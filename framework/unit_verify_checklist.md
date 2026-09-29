@@ -125,7 +125,7 @@ Next step: {concrete next command with reason, or "None"}
   - Review reports present findings whose recorded ownership belongs to another unit in a `Deferred to {unit}:` section after the Findings section, with the same block fields plus an `ownership:` line. They are retained and routed but do not count toward `Key counts`, `Blocking promote`, or the gate result (see `framework/spec_review_checklist.md` §Output Format → Deferred findings).
 - `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the command's check identifier (validate: `check-{n}`; verify: the acceptance item id; review: the packet's file path). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify item judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Every read-only subagent reports this scope for the checks in its packet; the report is submitted verbatim via `gate-submit`, which validates the declarations against that packet's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly Check / Packet scope). Targeted runs may omit it.
 - `Severity check:` — packet-run reports use the exact `Severity confirmation:` line grammar owned by `framework/verification_scope.md` §Gate Work Packets → Packet report contract. Unit cross reports carry one complete sequence for every terminal retained finding after disposition/merge resolution: one `confirmed` record, or an `adjusted` record followed by exactly one final record for the adjusted severity. `confirmed: N | adjusted: N` counts findings by final sequence outcome, not record lines. Rule validate reports carry the confirmation sequences required by their command checklist. `gate-submit` parses and validates these records; `gate-finalize` uses the resulting canonical severities. Targeted reports retain the command checklist's human-readable severity trace but do not create packet state.
-- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run check in the run's own structure (e.g. validate: "check-5 (acceptance coverage & correctness): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-4, 6-8: carried over — their dependency evidence is unchanged") and the cross-check result (unit targets — rules have no cross-check). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or review file has no evidence to carry, so it executes like a stale judgment), and generates the re-run packet set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the plan's packet set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, any explicit `--rerun` overrides, and the cross-check; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full packet set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
+- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run check in the run's own structure (e.g. validate: "check-5 (acceptance coverage & correctness): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-4, 6-9: carried over — their dependency evidence is unchanged") and the cross-check result (unit targets — rules have no cross-check). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or review file has no evidence to carry, so it executes like a stale judgment), and generates the re-run packet set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the plan's packet set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, any explicit `--rerun` overrides, and the cross-check; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full packet set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. A finding's fix lifecycle has three states with fixed wording: `finding_open` → "Resolve the findings, then re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; `fixed_pending_recheck` → "Fixes applied; re-run the target-appropriate re-check command to confirm." — only after the approved fix was actually written; `verified` → "Re-check passed." — only after a re-check confirmed the fix. A gate report is always produced before any fix is applied (nothing is implemented before the user approves the findings), so an actionable finding's report-time `Next step` is always the `finding_open` wording. Other guidance: all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}"; nothing further → `None`.
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no complete cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line. If the result contains P0/P1, run `gate-invalidate` before reporting completion.
@@ -507,16 +507,19 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
 
 ## Step 3 — Scope accuracy
 
-**Purpose:** Cross-reference each acceptance item's `affects` declarations against the actual implementation. This catches undeclared scope and missing declarations.
+**Purpose:** Cross-reference each acceptance item's declared implementation files — `implementation_surface` (a file, or a directory expanded to its repository-content files) and `affects.files` — against the actual implementation. This catches undeclared scope and missing declarations.
 
 **Execution steps:**
 
-1. For each acceptance item with `affects.files`:
+1. For each acceptance item's declared implementation files — its `implementation_surface` value (a file, or a directory expanded to its repository-content files) plus every `affects.files` entry:
 ```
 - Read each declared file
 - Does the file contain implementation relevant to the pass_condition?
 - Is the nature of the change consistent with the behavior described?
   (If item says "add login handler" but the file only has imports → flag)
+- Does the file implement this unit's behavior at all, or is it another unit's implementation
+  carried in this unit's surface (a surface-ownership symptom → flag and defer to Step 7 for
+  the spec_gap direction; see `framework/spec_writing_guide.md` §14.4 Surface Ownership)?
 ```
 
 2. For each acceptance item with `affects.rules`:
@@ -532,21 +535,21 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
 - Is the dependency used? If not → flag
 ```
 
-4. Cross-reference: compare declared `affects.files` against the set of files that contain actual implementation related to this acceptance item:
+4. Cross-reference: compare the declared implementation files (`implementation_surface` expansion plus `affects.files`) against the set of files that contain actual implementation related to this acceptance item:
 ```
-- Files with relevant code but not in affects.files → flag (under-declared scope)
-- Files in affects.files but with no relevant code → flag (over-declared scope)
+- Files with relevant code but not declared → flag (under-declared scope)
+- Declared files with no relevant code → flag (over-declared scope)
 ```
 
 **Scope boundary for non-implementation files:**
-- Test files are not scope violations: `affects.files` declares implementation scope; a relevant test file absent from it is recorded in `Dependency scope`, not reported as under-declared scope.
+- Test files are not scope violations: the declared implementation files (`implementation_surface`/`affects.files`) declare implementation scope; a relevant test file absent from them is recorded in `Dependency scope`, not reported as under-declared scope.
 - Dependency files (read for context but not part of the implementation) are likewise recorded in `Dependency scope`, never as scope findings.
 
-**PASS:** All affects declarations are accurate and complete
+**PASS:** All declared implementation files are accurate and complete
 
 **FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found — defer classification to Step 7
 
-**Check method:** affects.* declarations × actual implementation — triple cross-reference (files, rules, dependencies)
+**Check method:** declared implementation files (`implementation_surface` × `affects.files`) × actual implementation — triple cross-reference (files, rules, dependencies)
 
 ---
 
@@ -792,12 +795,13 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - Do they disagree on the goal itself?
    - Is one side clearly wrong (typo, dead code, outdated reference)?
    - Does one side handle edge cases the other misses?
-   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §14).
+   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §14). Surface ownership check: does the item's declared surface (`implementation_surface`/`affects.files`) contain a file another unit implements? That is a surface-ownership defect (`framework/spec_writing_guide.md` §14.4) — the file belongs to its owner, and this unit references that owner through `unit_refs`/`affects.dependencies` instead of declaring the file.
 
 4. Root cause analysis (choose the best fit):
    - Code is incomplete — spec intent is clear, code hasn't caught up
    - Spec is stale — code has evolved, spec wasn't updated
    - Shadow specification / over-specification — the spec mirrored private, internal, or obsolete implementation details of another unit that have evolved or been removed
+   - Surface ownership defect — the declared surface contains another unit's implementation (`framework/spec_writing_guide.md` §14.4)
    - Design divergence — both sides made different valid trade-offs
    - Accident — bug, typo, copy-paste error
    - External dependency — blocked on something outside this unit
@@ -808,6 +812,7 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - needs_design: neither side is clearly right — the design itself needs rethinking
    - blocked: the mismatch depends on an external input or unresolved decision
    - **Shadow specification anti-regression rule (MANDATORY):** If the root cause is a shadow specification (non-owner unit hardcoding unexported/private parameters of a collaborating unit), the recommended direction MUST be **spec_gap** (update the peripheral spec to restore behavioral abstraction or use public contract anchors). **NEVER recommend code_gap to re-introduce removed parameters or dead code into a collaborating unit solely to satisfy a shadow spec.**
+   - **Surface ownership rule (MANDATORY):** If the root cause is a surface-ownership defect (this unit's declared surface contains another unit's implementation file), the recommended direction MUST be **spec_gap** (drop the declaration, keep the file in its owning unit, and reference that unit through `unit_refs`/`affects.dependencies`). **NEVER recommend code_gap to duplicate or relocate the owner's implementation into this unit.**
 
 6. Confidence:
    - high: clear evidence supports one direction

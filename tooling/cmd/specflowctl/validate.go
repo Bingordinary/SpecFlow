@@ -139,6 +139,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  6. Body layer-path check (candidate-layer spec paths)")
 	fmt.Fprintln(w, "  7. Dependency cycle check (unit_refs graph — a unit on a cycle FAILs)")
 	fmt.Fprintln(w, "  8. Region locatability (section and acceptance item regions resolve unambiguously)")
+	fmt.Fprintln(w, "  9. Surface ownership (a code file belongs to at most one unit's declared surface)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate rule runs mechanical checks on a candidate rule:")
 	fmt.Fprintln(w, "  1. Frontmatter completeness")

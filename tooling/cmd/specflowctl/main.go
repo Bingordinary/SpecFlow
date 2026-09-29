@@ -69,6 +69,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runConsumers(args[1:], stdout, stderr)
 	case "deps":
 		return runDeps(args[1:], stdout, stderr)
+	case "surfaces":
+		return runSurfaces(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
 	case "detect":
@@ -563,6 +565,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
 	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
+	fmt.Fprintln(w, "  surfaces   Audit declared code surfaces for cross-unit ownership overlaps")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  detect     Detect removable bound rules (no consumers, no retention)")
 	fmt.Fprintln(w, "  remove     Delete a rule whose constraint no longer applies (bound rules auto-verified; global rules on explicit instruction)")

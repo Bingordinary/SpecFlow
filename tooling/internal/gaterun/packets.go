@@ -165,7 +165,7 @@ func loadCarriedEvidence(repoRoot string, run *Run, carried []string) ([]Carried
 }
 
 // validateCheckGroups is the fixed packet decomposition of the unit validate
-// checklist: every one of the 8 checks belongs to exactly one group, and the
+// checklist: every one of the 9 checks belongs to exactly one group, and the
 // cross-check is its own packet. The mapping is part of the gate contract
 // (framework/verification_scope.md §Gate Work Packets → Packet generation
 // rules) — the same plan is generated for the same target every time.
@@ -176,7 +176,7 @@ var validateCheckGroups = []struct {
 	{"structural", []string{"1", "3", "6"}},
 	{"design", []string{"2", "4"}},
 	{"acceptance", []string{"5"}},
-	{"dependencies", []string{"7", "8"}},
+	{"dependencies", []string{"7", "8", "9"}},
 }
 
 // ruleValidateChecks is the rule validate packet's check key set (the 8 rule
@@ -1004,10 +1004,11 @@ func validatePacketsFor(repoRoot string, selected map[string]bool, run *Run) []P
 
 // unitValidatePacketReadRefs derives the exact packet-local read surface for
 // one unit validate packet. Check 1 (structural) must resolve unit_refs and
-// rule_refs to verify that they exist, while Checks 7-8 (dependencies) read
-// those same logical objects for cross-unit and constraint judgments. The
-// design and acceptance packets stay limited to the unit's own truth and
-// shared evidence inputs; they do not receive unrelated logical objects.
+// rule_refs to verify that they exist, while Checks 7-9 (dependencies) read
+// those logical objects for cross-unit, constraint, and surface-ownership
+// judgments. The design and acceptance packets stay limited to the unit's
+// own truth and shared evidence inputs; they do not receive unrelated logical
+// objects.
 func unitValidatePacketReadRefs(repoRoot string, run *Run, packetID string) []string {
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(run)...)
