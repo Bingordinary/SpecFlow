@@ -644,8 +644,8 @@ func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	if !strings.Contains(output, "P0") {
 		t.Fatalf("expected P0 finding detail, got:\n%s", output)
 	}
-	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (delta recovery from the failure record)") {
-		t.Fatalf("expected delta-recovery advice for the blocked gate, got:\n%s", output)
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+		t.Fatalf("expected repair-recovery advice for the blocked gate, got:\n%s", output)
 	}
 }
 

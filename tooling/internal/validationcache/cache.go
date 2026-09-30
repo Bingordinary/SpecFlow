@@ -344,7 +344,7 @@ func CheckReviewStable(repoRoot, unitName string) (CheckResult, error) {
 
 // blockingCheck validates the blocking declarations of a fail-capable cache
 // (review, and validate/verify failure records written by delta re-runs or a
-// candidate verify full-run FAIL). It
+// candidate full-run FAIL). It
 // fails closed on a missing `blocking` field or a conflicting result/blocking
 // declaration, and classifies a P0/P1 cache as CategoryBlocked (promote
 // rejected, fresh reports BLOCKED). A nil result means the cache declares a
@@ -1610,7 +1610,7 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 	}
 
 	// Blocking check — fail-capable caches (validate/verify failure records
-	// written by delta re-runs or a candidate verify full-run FAIL, and pass
+	// written by delta re-runs or a candidate full-run FAIL, and pass
 	// caches that declare a blocking field) are validated by the same chain
 	// review uses. A blocking cache
 	// is CategoryBlocked: promote rejects it and fresh reports BLOCKED. The

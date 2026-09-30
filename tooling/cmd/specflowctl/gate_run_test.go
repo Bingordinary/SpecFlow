@@ -2077,12 +2077,12 @@ func TestGateFinalizeRejectsCrossDigestMismatch(t *testing.T) {
 	}
 }
 
-func TestGateRunValidateCandidateFailDeletesCache(t *testing.T) {
+func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
-	// Seed an existing pass cache that the full-run failure must delete.
+	// Seed an existing pass cache that the full-run failure must replace.
 	seedRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitValidatePackets(t, repoRoot, seedRun, main)
 	grFinalizeOK(t, repoRoot, seedRun, "--result", "pass")
@@ -2101,11 +2101,94 @@ func TestGateRunValidateCandidateFailDeletesCache(t *testing.T) {
 	}))
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	out := grFinalizeOK(t, repoRoot, runID, "--result", "fail", "--p0-count", "1")
-	if !strings.Contains(out, "no failure record was written") {
-		t.Fatalf("expected the delete-on-fail disclosure, got:\n%s", out)
+	if !strings.Contains(out, "Self-check: BLOCKED") || !strings.Contains(out, "Cache written:") {
+		t.Fatalf("expected a published failure record, got:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")); !os.IsNotExist(err) {
-		t.Fatal("expected the candidate validate cache to be deleted on a full-run FAIL")
+
+	// The failure record replaces the prior pass cache — same shape as a
+	// verify full-run FAIL: basis: full, complete pass/fail status map,
+	// no carried entries.
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	for _, want := range []string{"result: fail", "blocking: true", "basis: full", `check: "2"`, "status: fail"} {
+		if !strings.Contains(cache, want) {
+			t.Fatalf("expected %q in the failure record, got:\n%s", want, cache)
+		}
+	}
+	if strings.Contains(cache, "status: carried") {
+		t.Fatalf("a full-run record must not carry judgments, got:\n%s", cache)
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Category != validationcache.CategoryBlocked {
+		t.Fatalf("expected BLOCKED, got %q: %s", res.Category, res.Reason)
+	}
+
+	// fresh shows BLOCKED with the repair recovery advice.
+	freshOut, err := freshRun(t, repoRoot, "--unit", "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGateStatus(t, freshOut, "validate", "BLOCKED")
+	if !strings.Contains(freshOut, "revalidate@auth (repair recovery from the failure record)") {
+		t.Fatalf("expected the repair advice, got:\n%s", freshOut)
+	}
+}
+
+// TestGateRunValidateFullFailRepairFlow: a candidate validate full FAIL is the
+// failure-recovery baseline — the delta mode refuses it, the repair plan
+// re-runs the failed packet plus cross and carries the passed checks over, and
+// the repaired cache is promote-consumable with basis: repair.
+func TestGateRunValidateFullFailRepairFlow(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+
+	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+		"1": {main + ": Description"},
+		"3": {main + ": Testability / Acceptance Criteria"},
+		"6": {main + ": Testability / Acceptance Criteria"},
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n")
+	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
+	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
+		"7": {main + ": Description"},
+		"8": {main + ": Description"},
+	}))
+	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, fullRun, "--result", "fail", "--p0-count", "1")
+
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "--mode repair") {
+		t.Fatalf("expected the delta-mode refusal on a failure baseline, got %v", err)
+	}
+	repairRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	run := mustLoadRun(t, repoRoot, repairRun)
+	if got := strings.Join(packetIDsOf(run), ","); got != "design,cross" {
+		t.Fatalf("expected the failed design packet + cross, got %v", got)
+	}
+	if got := strings.Join(run.CarriedKeys, ","); got != "1,3,5,6,7,8,9" {
+		t.Fatalf("expected the passed checks carried over, got %v", got)
+	}
+
+	grSubmitOK(t, repoRoot, repairRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+		"2": {main + ": Description"},
+		"4": {main + ": Description"},
+	}))
+	grSubmitOK(t, repoRoot, repairRun, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, repairRun, "--result", "pass")
+
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	if !strings.Contains(cache, "basis: repair") || !strings.Contains(cache, `check: "2"`) {
+		t.Fatalf("expected a repair cache carrying the passed checks, got:\n%s", cache)
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected the repair cache to be fresh, got: %s", res.Reason)
 	}
 }
 
@@ -4014,6 +4097,47 @@ func TestGateRuleSeverityAdjustmentPersistsCanonicalDetail(t *testing.T) {
 	}
 	if !strings.Contains(cache, "p1_count: 1") || !strings.Contains(cache, "result: fail") {
 		t.Fatalf("expected the adjusted severity to drive the derived result and counts, got:\n%s", cache)
+	}
+}
+
+// TestGateRunRuleValidateCandidateFailWritesFailureRecord: a rule candidate
+// full FAIL writes a failure record with all eight check statuses and the
+// repair plan derives from it (same recovery shape as unit validate).
+func TestGateRunRuleValidateCandidateFailWritesFailureRecord(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
+	var b strings.Builder
+	for c := 1; c <= 8; c++ {
+		if c == 8 {
+			fmt.Fprintf(&b, "8. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["8"])
+			continue
+		}
+		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
+	}
+	for c := 1; c <= 8; c++ {
+		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
+	}
+	fmt.Fprintf(&b, "[P0] %s:5 — rule body contradicts the declared constraint (needs_decision)\n", rulePath)
+	findingID := grRunFindingID(runID, "checks", 1)
+	fmt.Fprintf(&b, "Severity confirmation: %s = adjusted P0 -> P1 — evidence: %s; reason: impact is local to the bound consumers\n", findingID, rulePath)
+	fmt.Fprintf(&b, "Severity confirmation: %s = confirmed P1 — evidence: %s; reason: local impact confirmed\n", findingID, rulePath)
+	grSubmitOK(t, repoRoot, runID, "checks", b.String())
+	out := grFinalizeOK(t, repoRoot, runID, "--result", "fail", "--p0-count", "0", "--p1-count", "1")
+	if !strings.Contains(out, "Self-check: BLOCKED") {
+		t.Fatalf("expected a published failure record, got:\n%s", out)
+	}
+
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/rule/b_rule_http/validate_result.md")
+	for _, want := range []string{"result: fail", "blocking: true", "basis: full", "status: fail"} {
+		if !strings.Contains(cache, want) {
+			t.Fatalf("expected %q in the failure record, got:\n%s", want, cache)
+		}
+	}
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "repair"); err != nil {
+		t.Fatalf("expected the failure record to support repair planning, got %v", err)
 	}
 }
 

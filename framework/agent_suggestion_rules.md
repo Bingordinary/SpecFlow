@@ -28,8 +28,10 @@ Before suggesting any action, communicate the current file state using concrete,
 | No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
 | Validate cache fresh | "Validate has passed all checks, and the read files have not changed" |
 | Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
+| Validate cache with P0/P1 findings | "Validate found {N} P0/P1 finding(s) — validate blocks promote until resolved" |
 | Verify cache fresh | "Verify has passed for all items, and the checked files have not changed" |
 | Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
+| Verify cache with P0/P1 findings | "Verify found {N} P0/P1 finding(s) — verify blocks promote until resolved" |
 | Review cache fresh | "Review has passed — no P0 or P1 findings" |
 | Review cache with P0/P1 findings | "Review found {N} P0/P1 finding(s) — review blocks promote until resolved" |
 | Review cache missing/stale | "Review cache does not exist or is expired" |
@@ -38,7 +40,7 @@ Before suggesting any action, communicate the current file state using concrete,
 
 ## Cache State Meaning
 
-Caches satisfy gates only when a complete-coverage run passed. Targeted runs never publish a complete result cache; a targeted P0/P1 may delete a pass cache or persist `invalidated_checks` on a failure record through `gate-invalidate`. Delta re-runs write caches with `basis: delta`; repair writes `basis: repair`. A delta/repair FAIL writes a **failure record** instead of deleting the cache — `result: fail` + `blocking: true` with a per-check status map, which is the failure-recovery baseline (see `framework/verification_scope.md` §Delta Runs → Failure recovery). Full-run failures delete the cache for validate (candidate targets — the spec is the upstream root) and record a failure record for verify (candidate targets), review, and stable-only targets.
+Caches satisfy gates only when a complete-coverage run passed. Targeted runs never publish a complete result cache; a targeted P0/P1 may delete a pass cache or persist `invalidated_checks` on a failure record through `gate-invalidate`. Delta re-runs write caches with `basis: delta`; repair writes `basis: repair`. A delta/repair FAIL writes a **failure record** instead of deleting the cache — `result: fail` + `blocking: true` with a per-check status map, which is the failure-recovery baseline (see `framework/verification_scope.md` §Delta Runs → Failure recovery). Full-run failures write the same failure record for validate (candidate targets), verify (candidate targets), review, and stable-only targets — no full-run FAIL deletes a cache.
 
 **State transition lookup table for a normal unit (use only after a quality-check or completion signal):**
 

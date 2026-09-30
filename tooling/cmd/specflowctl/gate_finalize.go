@@ -130,26 +130,6 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	result := outcome.Result
 	counts := outcome.Counts
 
-	// Candidate validate full FAIL: trust establishment failed — the spec is
-	// the upstream root, so nothing may be carried over and no failure record
-	// is written (framework/validation_cache.md §Failure handling by gate
-	// role). Any existing cache is deleted; the run closes as consumed with
-	// no cache write.
-	if run.Gate == gaterun.GateValidate && run.Target == gaterun.TargetCandidate && run.Mode == gaterun.ModeFull && result == "fail" {
-		if run.TargetKind == gaterun.TargetKindUnit {
-			if err := validationcache.DeleteCache(absRoot, run.TargetName, run.Gate); err != nil {
-				return err
-			}
-		} else if err := validationcache.DeleteRuleCache(absRoot, run.TargetName, run.Gate); err != nil {
-			return err
-		}
-		if err := gaterun.Consume(absRoot, run); err != nil {
-			return err
-		}
-		fmt.Fprintln(stdout, "Full-run validation failed (candidate): any existing validate cache was deleted and no failure record was written — the spec is the upstream root, so nothing may be carried over. Fix the findings, then plan a new full run.")
-		return nil
-	}
-
 	entries, err := assembleEntries(absRoot, run, reports)
 	if err != nil {
 		return err

@@ -231,11 +231,16 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 	if _, err := grSubmitRaw(t, root, runID, "cross", report); err != nil {
 		t.Fatal(err)
 	}
-	if out := grFinalizeOK(t, root, runID); !strings.Contains(out, "Full-run validation failed") {
+	out := grFinalizeOK(t, root, runID)
+	if !strings.Contains(out, "Self-check: BLOCKED") {
 		t.Fatalf("blocking validate cross finding did not fail the gate: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(root, "docs/specs/meta/validation/unit/auth/validate_result.md")); !os.IsNotExist(err) {
-		t.Fatalf("failed candidate validate unexpectedly published a cache: %v", err)
+	cache, err := os.ReadFile(filepath.Join(root, "docs/specs/meta/validation/unit/auth/validate_result.md"))
+	if err != nil {
+		t.Fatalf("failed candidate validate must write a failure record: %v", err)
+	}
+	if !strings.Contains(string(cache), "result: fail") || !strings.Contains(string(cache), "blocking: true") {
+		t.Fatalf("expected a blocking failure record, got:\n%s", cache)
 	}
 }
 

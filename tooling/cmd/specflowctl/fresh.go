@@ -741,12 +741,12 @@ func gatePassed(status gateStatus) bool {
 }
 
 // gateAdvice renders the recovery suggestion for a non-fresh gate. STALE is
-// recoverable by the delta re-run (re* — the default recovery path); MISSING
-// has no delta baseline and needs the full command; BLOCKED is a failure
-// record (validate/verify/review P0/P1 findings) whose recovery is the delta
-// re-run after the findings are resolved — the failure record is the delta
-// baseline (see framework/verification_scope.md §Delta Runs → Failure
-// recovery).
+// recoverable by the delta re-run (re* — the pass-baseline recovery path);
+// MISSING has no usable baseline and needs the full command; BLOCKED is a
+// failure record (validate/verify/review P0/P1 findings) whose recovery is
+// the repair re-run (`gate-plan --mode repair`) after the findings are
+// resolved — the failure record is the failure-recovery baseline (see
+// framework/verification_scope.md §Delta Runs → Failure recovery).
 func gateAdvice(command string, status gateStatus, targetName string) string {
 	switch status {
 	case gateStale:
@@ -754,7 +754,7 @@ func gateAdvice(command string, status gateStatus, targetName string) string {
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateBlocked:
-		return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (delta recovery from the failure record)", command, targetName)
+		return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
 	default:
 		return ""
 	}
