@@ -46,10 +46,12 @@ func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationca
 	}
 }
 
-// mainCheckDecls declares every validate check on the main spec.
+// mainCheckDecls declares every validate check on the main spec. Check 10
+// (reader contract) declares the narrative section — the fixture spec's
+// human-readable part before the acceptance section.
 func mainCheckDecls() []validationcache.CheckDeclaration {
 	var checks []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		checks = append(checks, validationcache.CheckDeclaration{Check: key, Sections: []string{"Description"}})
 	}
 	return checks
@@ -147,7 +149,7 @@ func TestLoadCarriedResultsAssociatesCrossFindingWithAffectedKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		statuses[key] = "pass"
 	}
 	judgments, err := json.Marshal(JudgmentBaseline{
@@ -252,7 +254,7 @@ func TestDerivedPlanMapsUnclaimedDependencyUnit(t *testing.T) {
 	if got != "dependencies,cross" {
 		t.Fatalf("expected the dependencies packet + cross, got %s", got)
 	}
-	if strings.Join(run.CarriedKeys, ",") != "1,2,3,4,5,6" {
+	if strings.Join(run.CarriedKeys, ",") != "1,10,2,3,4,5,6" {
 		t.Fatalf("expected checks 1-6 carried over, got %v", run.CarriedKeys)
 	}
 	if len(run.Notices) == 0 {
@@ -285,7 +287,7 @@ func TestDerivedPlanRerunForcesGroup(t *testing.T) {
 	if got != "design,cross" {
 		t.Fatalf("expected the design packet + cross, got %s", got)
 	}
-	if strings.Join(run.CarriedKeys, ",") != "1,3,5,6,7,8,9" {
+	if strings.Join(run.CarriedKeys, ",") != "1,10,3,5,6,7,8,9" {
 		t.Fatalf("expected the other checks carried over, got %v", run.CarriedKeys)
 	}
 }
@@ -305,7 +307,7 @@ func TestDerivedPlanDegradesWithoutEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 || len(run.CarriedKeys) != 0 {
+	if len(run.Packets) != 7 || len(run.CarriedKeys) != 0 {
 		t.Fatalf("expected a degraded full plan, got %v / carried %v", packetIDsOf(run), run.CarriedKeys)
 	}
 	if !strings.Contains(strings.Join(run.Notices, " "), "no per-check evidence") {
@@ -327,7 +329,7 @@ func TestDerivedPlanRepairWithoutStatusMapDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
@@ -359,7 +361,7 @@ func TestDerivedPlanDeltaRequiresPassBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 || !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
+	if len(run.Packets) != 7 || !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
 		t.Fatalf("expected the degraded repair plan, got %v / %v", packetIDsOf(run), run.Notices)
 	}
 }
@@ -569,7 +571,7 @@ func TestDerivedPlanDeltaCrossOnlyPlansCrossPacket(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck} {
 		decls = append(decls, validationcache.CheckDeclaration{Check: key, Sections: []string{"Description"}})
 		statuses[key] = "pass"
 	}
@@ -599,7 +601,7 @@ func TestDerivedPlanDeltaCrossOnlyPlansCrossPacket(t *testing.T) {
 	if got := strings.Join(packetIDsOf(run), ","); got != CrossKey {
 		t.Fatalf("expected a cross-only plan, got %s", got)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,4,5,6,7,8,9" {
+	if got := strings.Join(run.CarriedKeys, ","); got != "1,10,2,3,4,5,6,7,8,9" {
 		t.Fatalf("expected every declared check carried over, got %v", run.CarriedKeys)
 	}
 	if !strings.Contains(strings.Join(run.Notices, " "), "re-run checks cross") {
@@ -615,7 +617,7 @@ func TestDerivedPlanRepairPartialStatusMapDegrades(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		decl := validationcache.CheckDeclaration{Check: key, Sections: []string{"Description"}}
 		if key == "1" {
 			decl.Status = "fail"
@@ -633,11 +635,11 @@ func TestDerivedPlanRepairPartialStatusMapDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	notice := strings.Join(run.Notices, " ")
-	if !strings.Contains(notice, "incomplete per-check status map") || !strings.Contains(notice, "missing: 2, 3, 4, 5, 6, 7, 8, 9, cross") {
+	if !strings.Contains(notice, "incomplete per-check status map") || !strings.Contains(notice, "missing: 2, 3, 4, 5, 6, 7, 8, 9, 10, cross") {
 		t.Fatalf("expected the incomplete-status degradation with the missing checks, got %v", run.Notices)
 	}
 }
@@ -651,7 +653,7 @@ func TestDerivedPlanRepairInvalidStatusValueDegrades(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "3" {
 			status = "bogus"
@@ -669,7 +671,7 @@ func TestDerivedPlanRepairInvalidStatusValueDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "invalid per-check status map") || !strings.Contains(notice, "3=bogus") {
@@ -687,7 +689,7 @@ func TestDerivedPlanRepairCarriedInFullRunRecordDegrades(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "3" {
 			status = "carried"
@@ -705,7 +707,7 @@ func TestDerivedPlanRepairCarriedInFullRunRecordDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "invalid per-check status map") || !strings.Contains(notice, "3=carried") {
@@ -722,7 +724,7 @@ func TestDerivedPlanRepairStatusMapJudgmentMismatchDegrades(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		decls = append(decls, validationcache.CheckDeclaration{Check: key, Status: "pass", Sections: []string{"Description"}})
 		statuses[key] = "pass"
 	}
@@ -737,7 +739,7 @@ func TestDerivedPlanRepairStatusMapJudgmentMismatchDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "does not match its judgment baseline") || !strings.Contains(notice, "unmatched: 3") {
@@ -754,7 +756,7 @@ func TestDerivedPlanRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -775,7 +777,7 @@ func TestDerivedPlanRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
 	if got := strings.Join(packetIDsOf(run), ","); got != "structural,cross" {
 		t.Fatalf("expected the failed group plus cross to re-run, got %s", got)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "2,4,5,7,8,9" {
+	if got := strings.Join(run.CarriedKeys, ","); got != "10,2,4,5,7,8,9" {
 		t.Fatalf("expected the passing groups carried over, got %v", run.CarriedKeys)
 	}
 	for _, notice := range run.Notices {
@@ -795,7 +797,7 @@ func TestDerivedPlanRepairUsesPersistedTargetedInvalidation(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -820,7 +822,7 @@ func TestDerivedPlanRepairUsesPersistedTargetedInvalidation(t *testing.T) {
 	if got := strings.Join(packetIDsOf(run), ","); got != "structural,design,cross" {
 		t.Fatalf("persisted check 2 must add its design packet, got %s", got)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "5,7,8,9" {
+	if got := strings.Join(run.CarriedKeys, ","); got != "10,5,7,8,9" {
 		t.Fatalf("invalidated judgment must not be carried, got %v", run.CarriedKeys)
 	}
 	if !strings.Contains(strings.Join(run.Notices, " "), "persisted targeted invalidations: 2") {
@@ -834,7 +836,7 @@ func TestDerivedPlanRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
 
 	var decls []validationcache.CheckDeclaration
 	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -855,7 +857,7 @@ func TestDerivedPlanRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 || len(run.CarriedKeys) != 0 {
+	if len(run.Packets) != 7 || len(run.CarriedKeys) != 0 {
 		t.Fatalf("unknown invalidation must degrade to full scope, got %v / carried %v", packetIDsOf(run), run.CarriedKeys)
 	}
 	if !strings.Contains(strings.Join(run.Notices, " "), `re-run judgment "removed-check" is not in the spec surface`) {
@@ -920,7 +922,7 @@ func TestDerivedPlanDeltaCrossOnlyBaselineReportsFullScope(t *testing.T) {
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("a cross-only baseline carries nothing over, got %v", run.CarriedKeys)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected the full packet set, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "the re-run covers every declared check — the plan covers the full scope") {
@@ -953,7 +955,7 @@ func TestDerivedPlanDeltaDegradesOnUntrackableEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "cannot attribute (no dependency chunks)") || !strings.Contains(notice, "src/extra.go") {
@@ -1001,7 +1003,7 @@ func TestDerivedPlanDeltaDegradesWhenMainFileMissingEvenWithReRuns(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Packets) != 5 {
+	if len(run.Packets) != 7 {
 		t.Fatalf("expected a degraded full plan, got %v", packetIDsOf(run))
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "does not include the main file") || !strings.Contains(notice, "unit_auth.md") {
@@ -1049,7 +1051,7 @@ func TestPreviewDeltaScopeFailureRecordUsesRepair(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		decls = append(decls, validationcache.CheckDeclaration{Check: key, Status: "pass", Sections: []string{"Description"}})
 	}
 	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
@@ -1079,7 +1081,7 @@ func TestPreviewDeltaScopeFailureRecordUsesRepair(t *testing.T) {
 	if got := strings.Join(preview.Carried, ","); got != strings.Join(run.CarriedKeys, ",") {
 		t.Fatalf("preview carried %v, plan carried %v", preview.Carried, run.CarriedKeys)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,4,5,6,7,8,9" {
+	if got := strings.Join(run.CarriedKeys, ","); got != "1,10,2,3,4,5,6,7,8,9" {
 		t.Fatalf("expected the other checks carried over, got %s", got)
 	}
 }
@@ -1118,7 +1120,7 @@ func TestPreviewDeltaScopePassBaselineUsesDelta(t *testing.T) {
 	if !preview.CoversFull {
 		t.Fatalf("expected the stale section to cover every declared check, got rerun %v carried %v", preview.Rerun, preview.Carried)
 	}
-	if got := strings.Join(preview.Rerun, ","); got != "1,2,3,4,5,6,7,8,9,cross" {
+	if got := strings.Join(preview.Rerun, ","); got != "1,10,2,3,4,5,6,7,8,9,cross" {
 		t.Fatalf("expected every check plus cross re-run, got %s", got)
 	}
 	if len(preview.Carried) != 0 {
@@ -1284,7 +1286,7 @@ func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 	}
 	statuses := map[string]string{}
 	judgments := JudgmentBaseline{SchemaVersion: 2, LogicalStatus: statuses, SynthesisDigest: "sha256:test"}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck} {
 		statuses[key] = "pass"
 	}
 	judgmentsData, err := json.Marshal(judgments)
@@ -1350,7 +1352,7 @@ func TestDerivedPlanRepairQuotedStatusStillReruns(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ReaderContractCheck, CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -1392,5 +1394,52 @@ func TestDerivedPlanRepairQuotedStatusStillReruns(t *testing.T) {
 	}
 	if notice := strings.Join(run.Notices, " "); strings.Contains(notice, "degrad") || strings.Contains(notice, "incomplete") {
 		t.Fatalf("a canonical `fail` status must not degrade the plan, got %v", run.Notices)
+	}
+}
+
+// TestNarrativeSectionHeadingsBoundary pins the human-readable boundary rule:
+// the sections before the acceptance-enclosing section, a marker outside every
+// ## section failing closed, and fenced marker examples never shifting the
+// boundary.
+func TestNarrativeSectionHeadingsBoundary(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+		wantOK  bool
+	}{
+		{
+			name:    "marker before the first heading fails closed",
+			content: "---\nid: auth\n---\n\n# auth\n\nacceptance_item_set:\n  - id: auth.core\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n",
+			wantOK:  false,
+		},
+		{
+			name:    "marker inside the first heading section yields an empty narrative",
+			content: "---\nid: auth\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n",
+			wantOK:  true,
+		},
+		{
+			name:    "marker inside a later section yields the preceding headings",
+			content: "---\nid: auth\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n",
+			wantOK:  true,
+			want:    []string{"Description"},
+		},
+		{
+			name:    "fenced marker example does not shift the boundary",
+			content: "---\nid: auth\n---\n\n# auth\n\n## Background\n\n```text\nacceptance_item_set:\n```\n\n## Design narrative\n\nText.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n",
+			wantOK:  true,
+			want:    []string{"Background", "Design narrative"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := NarrativeSectionHeadings(tc.content)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %t, want %t (headings %v)", ok, tc.wantOK, got)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("headings = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

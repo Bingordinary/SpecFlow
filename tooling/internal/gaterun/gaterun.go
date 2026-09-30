@@ -75,11 +75,20 @@ const (
 
 	// Packet kinds: a group of validate checks, one verify detection, one
 	// conditional verify analysis, one reviewed file, or the cross-check.
+	// The validate gate's reader contract check (Check 10) adds two more:
+	// the reader probe packet produces the evidence report, and the
+	// verifier packet judges its sufficiency (both own check key "10").
 	PacketKindChecks   = "checks"
 	PacketKindItem     = "item"
 	PacketKindAnalysis = "analysis"
 	PacketKindFile     = "file"
 	PacketKindCross    = "cross"
+	PacketKindReader   = "reader"
+	PacketKindVerifier = "verifier"
+
+	// ReaderContractCheck is the unit validate check key of the reader
+	// contract probe (Check 10).
+	ReaderContractCheck = "10"
 
 	// CrossKey is the reserved check key of the cross-check.
 	CrossKey = "cross"
@@ -137,6 +146,10 @@ type PacketSpec struct {
 	CheckKeys []string `json:"check_keys"`
 	DependsOn []string `json:"depends_on,omitempty"`
 	ReadRefs  []string `json:"read_refs,omitempty"`
+	// Context carries packet-kind-specific plan-time facts a mission must
+	// state verbatim: the reader-contract packets carry the human-readable
+	// part's section headings computed from the plan-time snapshot.
+	Context []string `json:"context,omitempty"`
 }
 
 // Finding is one mechanically identified finding. Local finding ids are

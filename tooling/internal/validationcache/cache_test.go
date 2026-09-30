@@ -3522,6 +3522,28 @@ func TestBuildEntryMixesWholeSetAndItemDeps(t *testing.T) {
 	}
 }
 
+func TestBuildEntryFromChecksDedupesRepeatedDeclarations(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithSections(t, repoRoot, "self", "Prose.")
+	path := "docs/specs/units/candidate/unit_self.md"
+	text, _ := contenthash.FileText(specPath)
+	descRegion, _ := contenthash.LocateSectionRegion(text, "Description")
+	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
+
+	entry, err := BuildEntryFromChecks(repoRoot, path, []CheckDeclaration{
+		{Check: "10", Sections: []string{"Description", "Description"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Checks) != 1 || len(entry.Checks[0].Deps) != 1 || entry.Checks[0].Deps[0] != descDep {
+		t.Fatalf("repeated declarations must yield one distinct dep per check, got %v", entry.Checks[0].Deps)
+	}
+	if len(entry.Deps) != 1 || entry.Deps[0] != descDep {
+		t.Fatalf("repeated declarations must yield one distinct union dep, got %v", entry.Deps)
+	}
+}
+
 func TestDeriveStaleScopeAcceptanceItemEdit(t *testing.T) {
 	repoRoot := t.TempDir()
 	specPath := writeSpecWithTwoItems(t, repoRoot, "self")

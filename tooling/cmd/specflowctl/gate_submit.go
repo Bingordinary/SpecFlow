@@ -112,7 +112,7 @@ func submitGatePacket(absRoot, runID, packetID, reportPath string, stdout io.Wri
 	if derr := validatePacketDeclarations(absRoot, run, spec, parsed); derr != nil {
 		return reject(derr.Error())
 	}
-	if derr := validatePacketSemantics(absRoot, run, spec, parsed); derr != nil {
+	if derr := validatePacketSemantics(absRoot, run, spec, parsed, report); derr != nil {
 		return reject(derr.Error())
 	}
 
@@ -195,6 +195,9 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 			return fmt.Errorf("check %q declaration %s: %w", kp.key, kp.path, err)
 		}
 		if !run.PacketAllowsDeclaration(absRoot, spec, kp.path) {
+			if spec.Kind == gaterun.PacketKindReader || spec.Kind == gaterun.PacketKindVerifier {
+				return fmt.Errorf("check %q scope line declares %q — the reader and verifier packets cite only the unit main spec", kp.key, kp.path)
+			}
 			return fmt.Errorf("check %q declaration %q is not part of packet %q's read refs — add evidence with --input at gate-plan time or use the packet that owns this input", kp.key, kp.path, spec.PacketID)
 		}
 		decl := validationcache.CheckDeclaration{Check: kp.key}
@@ -211,7 +214,7 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 	return nil
 }
 
-func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport) error {
+func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport, report string) error {
 	if len(parsed.SeverityChecks) > 0 && spec.Kind != gaterun.PacketKindCross && !(spec.Kind == gaterun.PacketKindChecks && run.TargetKind == gaterun.TargetKindRule) {
 		return errors.New("severity confirmations belong to the unit cross packet or the single rule-validate checks packet")
 	}
@@ -219,6 +222,21 @@ func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Pac
 		return errors.New("ownership records belong to the cross packet")
 	}
 	switch spec.Kind {
+	case gaterun.PacketKindReader:
+		// The reader authors evidence, never findings or verdicts: any
+		// authored finding line is rejected, and the mechanical citation
+		// validation composes the findings for no_local_answer questions.
+		if len(extractFindings(report)) > 0 {
+			return errors.New("reader packets report evidence only — finding entries are composed mechanically by gate-submit")
+		}
+		if err := validateReaderEvidence(absRoot, run, spec, report, parsed); err != nil {
+			return err
+		}
+		if verdict, ok := parsed.Verdicts[gaterun.ReaderContractCheck]; ok && verdict == "FAIL" && blockingFindingCount(parsed.Findings) == 0 {
+			return errors.New("a reader FAIL verdict requires at least one no_local_answer question")
+		}
+	case gaterun.PacketKindVerifier:
+		return validateVerifierPacket(absRoot, run, spec, parsed, report)
 	case gaterun.PacketKindItem:
 		if len(parsed.Findings) > 0 {
 			return errors.New("verify detection packets report mismatch type only; severity belongs to the analysis packet")
@@ -542,7 +560,7 @@ func packetResult(spec *gaterun.PacketSpec, parsed *parsedReport, digest string)
 }
 
 func consumedResultDigests(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec) map[string]string {
-	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross {
+	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross && spec.Kind != gaterun.PacketKindVerifier {
 		return nil
 	}
 	out := map[string]string{}

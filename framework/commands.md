@@ -62,7 +62,7 @@ The applicable path depends on the target:
 
 | Step | Unit | Rule | Retiring unit |
 |---|---|---|---|
-| validate | 9-point unit design checklist (`unit_validate_checklist.md`) | 8-point rule checklist (`rule_validate_checklist.md`) | Retirement validation in the unit checklist |
+| validate | 10-point unit design checklist (`unit_validate_checklist.md`) | 8-point rule checklist (`rule_validate_checklist.md`) | Retirement validation in the unit checklist |
 | verify | Required: 7-step spec-vs-code check (`unit_verify_checklist.md`) | Not applicable; rule verify was removed | Not applicable |
 | review | Required: spec-aware code review (`spec_review_checklist.md`) | Not applicable | Not applicable |
 | promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer migration (`rule_promote_workflow.md`) | remove retired unit truth (`unit_promote_workflow.md`) |

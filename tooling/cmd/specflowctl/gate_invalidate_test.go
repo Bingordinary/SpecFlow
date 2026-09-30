@@ -105,7 +105,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 
 	statuses := map[string]string{}
 	var decls []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.ReaderContractCheck, gaterun.CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -162,6 +162,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
+	grSubmitReaderVerifier(t, repoRoot, runID, main)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID)
 

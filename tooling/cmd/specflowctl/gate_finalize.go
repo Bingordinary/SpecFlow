@@ -388,7 +388,7 @@ func retainedFindingDetails(reports []reportRef, retained []gaterun.Finding) ([]
 }
 
 func validateConsumedDigests(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, state *gaterun.PacketState) error {
-	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross {
+	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross && spec.Kind != gaterun.PacketKindVerifier {
 		return nil
 	}
 	expected := consumedResultDigests(absRoot, run, spec)

@@ -51,6 +51,7 @@ type missionPacket struct {
 	ReadRefs         []string                  `json:"read_refs"`
 	ReadInputs       []missionReadInput        `json:"read_inputs"`
 	DependsOn        []string                  `json:"depends_on"`
+	Context          []string                  `json:"context,omitempty"`
 	Dependencies     []missionDependency       `json:"dependency_results"`
 	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
@@ -103,6 +104,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 		ReadRefs:         append([]string{}, spec.ReadRefs...),
 		ReadInputs:       missionInputs(run, spec),
 		DependsOn:        append([]string{}, spec.DependsOn...),
+		Context:          append([]string{}, spec.Context...),
 		Dependencies:     []missionDependency{},
 		CarriedResults:   []missionDependency{},
 		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForPacket(run, spec)...),
@@ -155,10 +157,12 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 			return gateMission{}, fmt.Errorf("dependency %q has no accepted result", dep)
 		}
 		entry := missionJudgmentFor(dep, state.Status, state.Result)
-		if spec.Kind == gaterun.PacketKindAnalysis {
+		if spec.Kind == gaterun.PacketKindAnalysis || spec.Kind == gaterun.PacketKindVerifier {
 			// The analysis step's documented input is the accepted detection
 			// report carrying the detector's evidence lines (see
-			// framework/unit_verify_checklist.md Step 7). Every other
+			// framework/unit_verify_checklist.md Step 7); the verifier's
+			// documented input is the accepted reader evidence report (see
+			// framework/unit_validate_checklist.md Check 10). Every other
 			// dependency carries its compact judgment record only.
 			entry.Report = state.Report
 		}
@@ -170,6 +174,18 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 		}
 	}
 	constraints := []string{"independent read-only reviewer session without the author's context", "packet boundaries are deterministic; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from packet read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
+	if spec.Kind == gaterun.PacketKindReader {
+		constraints = append(constraints,
+			"cite only the human-readable part: the ## sections of the main spec listed in the packet Context, before the section holding acceptance_item_set; content after that section, appendices, and code are not citation sources",
+			"answer with evidence, not judgment: a verbatim quote from exactly one section per question; when the human-readable part carries no answer, declare Status: no_local_answer instead of approximating, paraphrasing, or stitching spans from several sections",
+			"do not write a verdict line or finding entries — the check verdict and findings are computed mechanically from the question blocks")
+	}
+	if spec.Kind == gaterun.PacketKindVerifier {
+		constraints = append(constraints,
+			"judge only the accepted reader evidence report's (question, answer, quote) triples; do not search the spec for answers or substitute a better answer",
+			"a quote that exists but does not answer its question is partial or unsupported; a question the reader declared no_local_answer must be judged unsupported",
+			"do not write finding entries — findings are composed mechanically from the judgment lines")
+	}
 	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.PacketKindItem || spec.Kind == gaterun.PacketKindAnalysis) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
@@ -207,6 +223,12 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 			fmt.Fprintf(w, " -> %s", input.Resolved)
 		}
 		fmt.Fprintln(w)
+	}
+	if len(p.Context) > 0 {
+		fmt.Fprintln(w, "Packet context (plan-time facts; state these verbatim where the report contract requires):")
+		for _, line := range p.Context {
+			fmt.Fprintf(w, "  - %s\n", line)
+		}
 	}
 	if len(p.Dependencies) > 0 {
 		fmt.Fprintln(w, "Dependency results (each accepted packet's verdicts, findings, and analysis):")
@@ -375,6 +397,10 @@ func missionTextFor(kind string) string {
 		return "Detect whether the acceptance item matches the implementation; report its type and evidence without assigning severity."
 	case gaterun.PacketKindAnalysis:
 		return "Analyze the accepted mismatch, determine its root cause, severity, and repair direction."
+	case gaterun.PacketKindReader:
+		return "Answer the fixed 17-question reader bank using only the main spec's human-readable part, citing one verbatim quote and its section per answer; report evidence, not verdicts."
+	case gaterun.PacketKindVerifier:
+		return "Judge the sufficiency of every (question, answer, quote) triple in the accepted reader evidence report, without re-reading the spec for answers."
 	case gaterun.PacketKindFile:
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
 	case gaterun.PacketKindCross:
@@ -389,6 +415,10 @@ func protocolScopeFor(kind string, keys []string) string {
 		return "Steps 1-6 for acceptance item " + strings.Join(keys, ", ")
 	case gaterun.PacketKindAnalysis:
 		return "Step 7 for acceptance item " + strings.Join(keys, ", ")
+	case gaterun.PacketKindReader:
+		return "Check 10 reader probe (question bank and evidence report)"
+	case gaterun.PacketKindVerifier:
+		return "Check 10 verifier scale (sufficiency judgment)"
 	case gaterun.PacketKindFile:
 		return "file review for " + strings.Join(keys, ", ")
 	case gaterun.PacketKindCross:

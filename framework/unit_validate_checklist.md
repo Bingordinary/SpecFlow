@@ -2,7 +2,7 @@
 
 ## Overview
 
-When an agent executes `validate@{unit}`, it uses the 9 checks defined here. The trigger route in `framework/concepts.md` loads this file at validate time, not proactively.
+When an agent executes `validate@{unit}`, it uses the 10 checks defined here. The trigger route in `framework/concepts.md` loads this file at validate time, not proactively.
 
 ## Prerequisite — Read all unit files
 
@@ -19,21 +19,21 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@{unit}` | full | All 9 checks + cross-check. Quality checks are holistic — always runs full. |
+| `validate@{unit}` | full | All 10 checks + cross-check. Quality checks are holistic — always runs full. |
 | `validate@{unit}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
 | `validate@{unit}:{keyword}` | targeted | Match keyword to check name (e.g., "design" → Check 2, "scope" → Check 3). User explicitly chooses focus. Does not write a cache. |
 
-**Keyword domain:** validate keywords resolve to check names — `structure` (Check 1), `design` (Check 2), `scope` (Check 3), `evidence` (Check 4), `acceptance`/`coverage` (Check 5), `affects` (Check 6), `cross-unit` (Check 7), `constraint` (Check 8), `ownership`/`surface` (Check 9). A keyword matching no check name is a no-match — ask the user for clarification.
+**Keyword domain:** validate keywords resolve to check names — `structure` (Check 1), `design` (Check 2), `scope` (Check 3), `evidence` (Check 4), `acceptance`/`coverage` (Check 5), `affects` (Check 6), `cross-unit` (Check 7), `constraint` (Check 8), `ownership`/`surface` (Check 9), `reader`/`readable` (Check 10). A keyword matching no check name is a no-match — ask the user for clarification.
 
 **Output:** Targeted runs report only the executed check(s) and note "This was a targeted check — no complete cache was written. Run `validate@{unit}` for a complete validation." A targeted P0/P1 must first be persisted with `gate-invalidate --check {check key}`.
 
 ### Stable-only mode
 
-When no candidate spec exists (validate against stable), run the same 9 checks + cross-check against the **stable** content:
+When no candidate spec exists (validate against stable), run the same 10 checks + cross-check against the **stable** content:
 
 1. Read the stable main spec: `docs/specs/units/stable/unit_{unit}.md`
 2. Glob all stable appendix files: `docs/specs/units/stable/appendix/unit_{unit}_*.md`, read every non-exempt, non-retired appendix (same skip rules as the candidate path)
-3. Run all 9 checks + cross-check against the stable content — Checks 6/7/8/9 are the live part: referenced files, dependency-unit contracts, rules, and declared surfaces may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does, or another unit now declares a file this surface also declares)
+3. Run all 10 checks + cross-check against the stable content — Checks 6/7/8/9 are the live part: referenced files, dependency-unit contracts, rules, and declared surfaces may have changed since promote, so the stable content may no longer hold (e.g. a new rule now prohibits something the stable design does, or another unit now declares a file this surface also declares)
 4. **PASS** → `gate-finalize` writes the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; `mode: full`, `hash` + `deps` evidence; same packet sequence as Step 9)
 5. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check plus the cross-check; full runs have no `carried` — the confirmation state stays visible as BLOCKED and is the failure-recovery baseline), present the findings (Check 2 Step 1 and 5a/5h FAIL findings re-verified per §Step 9 → Extraction re-verification before presentation), and recommend forking the unit (`specflowctl fork --unit <name>`) to reconcile the stable content with the changed dependency or rule. Do not edit stable directly; normal candidate-to-stable writes use promote (the routed remove/update procedures own their narrow exceptions)
 
@@ -41,7 +41,7 @@ The stable confirmation cache is read-only state: it grants no promote eligibili
 
 ## Execution Rules
 
-- **Subagent permissions:** validate executes one packet per independent read-only sub-agent session — the sub-agent may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents. The main agent sends `specflowctl gate-packet --format prompt` output verbatim; its check keys are the packet scope (see `framework/verification_scope.md` §Sub-agent Prompt Assembly). Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
+- **Subagent permissions:** validate executes one packet per independent read-only sub-agent session — the sub-agent may inspect file content, search text by pattern, and locate files by name pattern. Must NOT modify files, execute commands, or delegate to other agents. The main agent sends `specflowctl gate-packet --format prompt` output verbatim; its check keys are the packet scope (see `framework/verification_scope.md` §Sub-agent Prompt Assembly). Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead — Check 10 is the exception: its targeted run coordinates the reader and verifier sessions per Check 10, still without a packet run or cache write.
 - Each check reports **PASS**, **WARNING**, or **FAIL** with a reason.
 - On FAIL, the agent must identify **which information sources contradict each other** (e.g., "spec body describes auto-retry logic but no acceptance item covers it") in the FAIL reason, and record the fix in the FAIL reason. When the finding is written out, its `evidence:` block quotes the contradicting sources verbatim and its `fix:` (or `decision:`) field states the repair — the entry line's location reference is a pointer, not the evidence.
 - Resolution types:
@@ -113,7 +113,7 @@ Next step: {concrete next command with reason, or "None"}
   - Review reports present findings whose recorded ownership belongs to another unit in a `Deferred to {unit}:` section after the Findings section, with the same block fields plus an `ownership:` line. They are retained and routed but do not count toward `Key counts`, `Blocking promote`, or the gate result (see `framework/spec_review_checklist.md` §Output Format → Deferred findings).
 - `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the command's check identifier (validate: `check-{n}`; verify: the acceptance item id; review: the packet's file path). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify item judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Every read-only subagent reports this scope for the checks in its packet; the report is submitted verbatim via `gate-submit`, which validates the declarations against that packet's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly Check / Packet scope). Targeted runs may omit it.
 - `Severity check:` — packet-run reports use the exact `Severity confirmation:` line grammar owned by `framework/verification_scope.md` §Gate Work Packets → Packet report contract. Unit cross reports carry one complete sequence for every terminal retained finding after disposition/merge resolution: one `confirmed` record, or an `adjusted` record followed by exactly one final record for the adjusted severity. `confirmed: N | adjusted: N` counts findings by final sequence outcome, not record lines. Rule validate reports carry the confirmation sequences required by their command checklist. `gate-submit` parses and validates these records; `gate-finalize` uses the resulting canonical severities. Targeted reports retain the command checklist's human-readable severity trace but do not create packet state.
-- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run check in the run's own structure (e.g. validate: "check-5 (acceptance coverage & correctness): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-4, 6-9: carried over — their dependency evidence is unchanged") and the cross-check result (unit targets — rules have no cross-check). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or review file has no evidence to carry, so it executes like a stale judgment), and generates the re-run packet set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the plan's packet set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, any explicit `--rerun` overrides, and the cross-check; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full packet set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
+- `Incremental scope:` — delta runs only (mode `delta`). One line per re-run check in the run's own structure (e.g. validate: "check-5 (acceptance coverage & correctness): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-4, 6-10: carried over — their dependency evidence is unchanged") and the cross-check result (unit targets — rules have no cross-check). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or review file has no evidence to carry, so it executes like a stale judgment), and generates the re-run packet set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the plan's packet set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, any explicit `--rerun` overrides, and the cross-check; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full packet set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. A finding's fix lifecycle has three states with fixed wording: `finding_open` → "Resolve the findings, then re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}` / `review@{target}:{keyword}`) to confirm"; `fixed_pending_recheck` → "Fixes applied; re-run the target-appropriate re-check command to confirm." — only after the approved fix was actually written; `verified` → "Re-check passed." — only after a re-check confirmed the fix. A gate report is always produced before any fix is applied (nothing is implemented before the user approves the findings), so an actionable finding's report-time `Next step` is always the `finding_open` wording. Other guidance: all gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}"; nothing further → `None`.
 
 **Targeted runs:** end the report with the command's targeted note ("This was a targeted check — no complete cache was written. Run `{command}@{target}` for a complete ...") after the `Next step` line. If the result contains P0/P1, run `gate-invalidate` before reporting completion.
@@ -152,6 +152,7 @@ One line per check, numbered as in this file:
 7. Cross-unit consistency: PASS | WARNING | FAIL — reason
 8. Constraint alignment: PASS | FAIL — reason
 9. Surface ownership & sharing: PASS | FAIL — reason
+10. Reader contract: PASS | FAIL — reason
 ```
 
 After the check lines, report the cross-check line (full runs only) and the counts:
@@ -248,13 +249,13 @@ When findings mix resolution types (within one check or across checks), the repo
 
 **Communication note:** When suggesting Check 1 to a user, describe it as "structural integrity — verifies file structure and reference existence without evaluating design quality."
 
-**Retiring unit:** when the candidate main spec declares `status: retired` (see `framework/spec_writing_guide.md` §8 Unit Retirement), the unit is being removed from stable. The acceptance item set is not required (agent Check 5's acceptance checks are skipped for the retired spec), and retiring appendices are skipped like exempt ones. Check 1 still verifies the required frontmatter fields. The retiring spec's own references (`unit_refs`, `rule_refs`, appendix and evidence references) are exempt from the mechanical checks — they disappear with it. The mechanical `specflowctl validate` checks use their own numbering (Check 1 frontmatter, Check 2 acceptance items, Check 3 anchor integrity, Check 4 reference integrity, Check 5 appendix files, Check 6 layer-path check, Check 7 dependency cycle check, Check 8 region locatability, Check 9 surface ownership); of these, a retiring spec skips Check 2, 3, 4, 6, 7, 8, and 9, while Check 1 still applies and Check 5 keeps its appendix-level exempt/retired skipping. `specflowctl promote` also skips its reference checks for a retiring unit. Reference protection: a unit that is being retired must not be referenced by any other current-layer unit's `unit_refs` — the mechanical `specflowctl validate` Check 4 rejects such a reference; the agent must also report it via agent Check 7 (cross-unit) with `needs_decision` resolution until the referrer drops the reference.
+**Retiring unit:** when the candidate main spec declares `status: retired` (see `framework/spec_writing_guide.md` §8 Unit Retirement), the unit is being removed from stable. The acceptance item set is not required (agent Check 5's acceptance checks are skipped for the retired spec), and retiring appendices are skipped like exempt ones. Check 1 still verifies the required frontmatter fields. Check 10 is skipped entirely — the gate plan generates no reader or verifier packets for a retiring spec, since its human-readable boundary (the acceptance section) is not required to exist. The retiring spec's own references (`unit_refs`, `rule_refs`, appendix and evidence references) are exempt from the mechanical checks — they disappear with it. The mechanical `specflowctl validate` checks use their own numbering (Check 1 frontmatter, Check 2 acceptance items, Check 3 anchor integrity, Check 4 reference integrity, Check 5 appendix files, Check 6 layer-path check, Check 7 dependency cycle check, Check 8 region locatability, Check 9 surface ownership); of these, a retiring spec skips Check 2, 3, 4, 6, 7, 8, and 9, while Check 1 still applies and Check 5 keeps its appendix-level exempt/retired skipping. `specflowctl promote` also skips its reference checks for a retiring unit. Reference protection: a unit that is being retired must not be referenced by any other current-layer unit's `unit_refs` — the mechanical `specflowctl validate` Check 4 rejects such a reference; the agent must also report it via agent Check 7 (cross-unit) with `needs_decision` resolution until the referrer drops the reference.
 
 ---
 
 ## Check 2 — Design soundness
 
-**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the spec satisfies the full `framework/spec_writing_guide.md` §9 Authoring Baseline: the ten expression points are made clear (a reader who never sees the code can restate the design), the design decisions are closed, so the downstream executor is never forced to choose, and any intentionally unmade decision declares its boundary. The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
+**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the spec satisfies the decision-closure half of the `framework/spec_writing_guide.md` §9 Authoring Baseline: every implementation-affecting decision is closed, so the downstream executor is never forced to choose, and any intentionally unmade decision declares its boundary. The ten §9 expression points are tested separately by the reader contract probe (Check 10). The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
 
 **Execution steps:**
 
@@ -303,14 +304,12 @@ Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and
 
 Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5 Execution Rules, rule 2), verify the §9.3 boundary, and record the confirmation in the check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with the evidence file). This trace is human-readable — it is not a packet `Severity confirmation:` record (those exist only for terminal retained findings in the cross packet). Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
 
-**Step 5 — Authoring Baseline verification**
-Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Authoring Baseline in two layers: the ten expression points are made clear (a reader who never sees the code can restate the design), and every implementation-affecting decision is closed. The downstream executor must not be forced to choose.
+**Step 5 — Authoring Baseline verification (decision closure)**
+Verify that the spec closes every implementation-affecting decision in `framework/spec_writing_guide.md` §9: the downstream executor must not be forced to choose. The ten §9 expression points are NOT judged here — they are tested under acquisition conditions by the reader contract probe (Check 10), whose independent reader must find and cite each point's answer in the human-readable part. This step verifies the decision closure the probe does not test.
 
-- **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a point or a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
+- **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
 
-**Layer 1 — Expression points (the "must make clear" list):** For each of the ten baseline points — (1) the intended user, actor, or caller; (2) the unit responsibility and why the unit owns it; (3) the entry point or trigger; (4) the normal path from input to result; (5) the boundaries crossed on that path; (6) the data, state, or durable truth each step reads or writes; (7) the owner of each read/write responsibility; (8) the output artifact or observable result; (9) the way failures or unavailable dependencies are exposed; (10) the verification surface and success condition — can the reader determine the answer from the spec alone? A point that is not made clear is a FAIL (actionable: express it in the spec).
-
-**Layer 2 — Decision closure (the "must close" list):** Verify that the spec closes every implementation-affecting decision: which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility.
+**Decision closure (the "must close" list):** Verify that the spec closes every implementation-affecting decision: which object owns a responsibility, which entry point starts the behavior, where state or durable truth lives, how ordered steps connect, how boundary failures are reported, what the result shape means, how acceptance proves the stated responsibility.
 
 - For each of the seven decisions: can the downstream executor determine the answer from the spec alone, without making a choice?
   - For evidence-driven acceptance items (Step 2 waiver), the closure source is the evidence appendix: verify it records the item's behavior domain as directly readable behavioral truth (per `framework/spec_writing_guide.md` §3 `evidence_appendix_ref`), not only background, motivation, or patch notes.
@@ -318,7 +317,7 @@ Verify that the spec satisfies the full `framework/spec_writing_guide.md` §9 Au
 - If a decision is intentionally not made, the spec must state that boundary and explain why (per `framework/spec_writing_guide.md` §9, the "If a decision is intentionally not made" rule). An open decision without a stated boundary is a FAIL.
 - Granularity: verify closure, not exhaustiveness — the spec must not be inflated into an implementation manual. Coverage obligations are limited to formal behavior domains (see Check 5a Step 2 extraction premise); narrative elaboration in the body does not add coverage obligations.
 
-**FAIL:** a Step 1 goal-means flag (default severity P1; extraction artifact required), a Step 2 rationale gap, a Step 3 critical flaw; or any of the ten expression points is not made clear, or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: express the point, or record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
+**FAIL:** a Step 1 goal-means flag (default severity P1; extraction artifact required), a Step 2 rationale gap, a Step 3 critical flaw; or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
 **Step 6 — Abstraction level & implementation agnosticism (The Truth Ownership Check)**
 Verify that the spec text adheres to `framework/spec_writing_guide.md` §14 (Truth Ownership Framework):
@@ -331,7 +330,7 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 - **FAIL (P1: Over-specification)** (actionable: restate as observable behavioral invariants or causal state transitions)
 
 **Step 7 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all ten §9 expression points made clear, all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §14
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §14
 - FAIL: specific findings reported
 
 **Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification + abstraction boundary check (the subagent makes active engineering judgments)
@@ -878,6 +877,87 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 2. **Plan (mechanism-derived)** — run `specflowctl gate-plan --gate validate (--unit {name} | --rule {id}) --target {candidate|stable} --mode delta` (or `--mode repair` for a failure record). The planner derives the re-run set from the cache's per-check `checks` mapping — affected = {checks whose declared deps went stale} ∪ {current checks the baseline never declared} ∪ {persisted `invalidated_checks`} ∪ {explicit `--rerun` overrides} ∪ {cross-check} — maps unclaimed deps by the fixed associations (a `unit:` entry → Check 7; a `rule:` entry → Check 8), and reports the re-run packets, carried-over checks (`carried_keys`), and any degradation or full-scope coverage statement. After a targeted P0/P1, the coordinator runs `gate-invalidate --check {check key}` immediately; repair reads that state automatically and never carries the contradicted judgment. Legacy caches without per-check evidence and invalidated keys that cannot map to the current surface degrade to the full packet set. The plan is the scope; the executor does not re-derive or extend it.
 3. **Execution** — execute the planned packets (protocol: `framework/verification_scope.md` §Gate Work Packets; packet reports carry the `Dependency scope:` lines per §Output Format), submitting each report with `specflowctl gate-submit --run <run_id> --packet <packet_id> --report PATH`. Any P0/P1 finding during the re-run makes the finalize write a **failure record** (`result: fail`, `blocking: true`, severity counts, findings body, `mode: full`, `basis: delta`, and the per-check `status` map — `fail`/`pass` for the re-run checks, `carried` for the carried-over ones, derived by `gate-finalize` from the accepted packet verdicts). Stop, present findings (same as full FAIL — Check 2 Step 1 and 5a/5h findings re-verified per §Step 9 → Extraction re-verification before presentation).
 4. **On PASS** — `gate-finalize` rewrites `validate_result.md` with `mode: full`, `basis: delta` (or `basis: repair` when recovering from a failure record), `target: candidate` (stable-only target: `target: stable`), a fresh `timestamp`, and a **complete** `files` list: new `hash` + `deps` + per-check `checks` evidence (computed by the tooling from the accepted packet reports) for the re-run checks' files, and the original evidence for the carried-over checks' files, merged by the tooling from the baseline cache (their CIDs are unchanged by construction). Logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:{id}`) are carried over the same way.
+
+---
+
+## Check 10 — Reader contract
+
+**Purpose:** Enforce the Reader Contract (`framework/spec_writing_guide.md` §9) under acquisition conditions: an independent reader who has never seen the code and holds no author context must be able to reconstruct the design from the spec's human-readable part alone. The check replaces the reader-facing promise with reader-independent document properties — each answer must exist locally, carry a verbatim citation, and sit in one contiguous section — so the gate never depends on a reviewer's taste. The ten §9 expression points and the seven must-close decisions are the check's fixed question bank; §9's promise is only as strong as this check's enforcement.
+
+**Human-readable part (citation source):** every `##` section of the unit main spec before the section containing the `acceptance_item_set:` marker. The acceptance-enclosing section itself and everything after it, appendices, and code are not citation sources — a design narrative buried after the acceptance section or inside an appendix does not satisfy the contract. The gate plan computes the section list mechanically (the reader and verifier packet contexts carry it verbatim); a spec without the marker section, or with no narrative section before it, fails closed at plan time.
+
+**Packet structure:** Check 10 owns two packets that always execute together — the `reader` packet (evidence report) and the `verifier` packet (sufficiency judgment, depends on the accepted reader result). The reader authors evidence only; the verifier authors judgments only; gate-submit composes the check verdict and the findings mechanically from both. Neither packet's reviewer writes a verdict line or finding entries.
+
+### Question bank
+
+The bank is fixed: the same seventeen questions for every unit and every round, parameterized by nothing but the unit's own content. Q01–Q10 are the §9 ten expression points; Q11–Q17 are the §9 seven must-close decisions.
+
+| ID | Question |
+|----|----------|
+| Q01 | intended user, actor, or caller |
+| Q02 | unit responsibility and why the unit owns it |
+| Q03 | entry point or trigger |
+| Q04 | normal path from input to result |
+| Q05 | boundaries crossed on the path |
+| Q06 | data, state, or durable truth each step reads or writes |
+| Q07 | owner of each read/write responsibility |
+| Q08 | output artifact or observable result |
+| Q09 | failure and dependency-unavailability exposure |
+| Q10 | verification surface and success condition |
+| Q11 | which object owns a responsibility |
+| Q12 | which entry point starts the behavior |
+| Q13 | where state or durable truth lives |
+| Q14 | how ordered steps connect |
+| Q15 | how boundary failures are reported |
+| Q16 | what the result shape means |
+| Q17 | how acceptance proves the stated responsibility |
+
+### Reader packet — evidence report
+
+The reader is an independent read-only session (packet mission; §Sub-agent Prompt Assembly in `framework/verification_scope.md`). It reads only the human-readable part and answers every bank question in one block, in bank order:
+
+```
+Question: Q01 — intended user, actor, or caller
+Status: answered
+Answer: {one-sentence restatement of the answer}
+Quote: {verbatim quote from the human-readable part}
+Location: {exact heading text of the ## section containing the quote}
+```
+
+- `Status: no_local_answer` is the honest report when the human-readable part carries no answer. Approximating with a near-miss quote, paraphrasing, or stitching spans from several sections is prohibited — the mechanical layer rejects stitching by construction (one quote per question) and the verifier rejects near-misses.
+- The quote must be a single contiguous span of exactly one human-readable section, 4–400 characters. This is the 0-jump default: an answer a reader must assemble from several places is not locally present.
+- The reader must not write a verdict line or finding entries.
+
+gate-submit validates the report mechanically: bank order and coverage (17/17), per-status field rules, and — for every answered question — the quote exists verbatim inside the declared section, the section belongs to the human-readable part, and the quote length holds. Any violation rejects the submission (the executor corrects the report; every attempt is kept). The check verdict is computed, not authored: `PASS` when every question is answered with a valid citation, `FAIL` when any question reports `no_local_answer`. Each `no_local_answer` question composes one mechanical P1 finding (actionable: express the point in the narrative).
+
+### Verifier packet — sufficiency judgment
+
+The verifier is a second independent read-only session. Its only input for judgment is the accepted reader evidence report (embedded in its packet mission); it must not search the spec for answers or substitute a better answer. It reports exactly one Judgment line per bank question, in bank order, plus the check verdict:
+
+```
+10. Reader contract: PASS | FAIL — {reason}
+
+Judgment: Q01 = supported — {basis}
+Judgment: Q02 = supported — {basis}
+...
+```
+
+- `supported` — the quote really answers the question; `partial` — the quote addresses part of it; `unsupported` — the quote does not answer it.
+- A question the reader declared `no_local_answer` must be judged `unsupported`.
+- The verdict must equal the mechanical outcome: `PASS` exactly when every judgment is `supported` and the reader report carries no `no_local_answer`; otherwise `FAIL`.
+- Every deficient question composes exactly one mechanical P1 finding: a `no_local_answer` question through the reader packet (above), an answered question judged `partial` or `unsupported` through this verifier packet (actionable: revise the cited section so it directly answers the question).
+
+### Verdict and severity
+
+Check 10 `FAIL` findings are P1 (contract-decided default) and gate-driving — they block promote like every other validate P0/P1. The fix is always actionable at the document level: express the missing point, or revise the cited section, in the human-readable part.
+
+### Scope and lifecycle
+
+- **Delta/repair:** check 10's dependency evidence is the human-readable section set. A narrative edit re-runs the reader and verifier packets together; acceptance-item edits, rule changes, and dependency changes carry it over. The check never carries partially — both packets re-run or neither does.
+- **Stable-only targets:** the probe runs against the stable main spec like every other check (the boundary resolves from the stable file's own `acceptance_item_set:` marker).
+- **Retiring units:** skipped entirely — no reader or verifier packets are planned (see the retiring-unit note in Check 1).
+- **Targeted runs:** `validate@{unit}:reader` (or `:check-10`) executes the same reader-then-verifier protocol as two independent subagent sessions coordinated by the main agent, without a packet run or cache write; a P0/P1 finding must first be persisted with `gate-invalidate --check 10`.
+- **Boundary-move note:** reordering sections across the acceptance boundary without editing their content does not stale the check's declared evidence (section CIDs are unchanged). Such a reorder is a deliberate structural change (§13 naming stability) and is the author's declared-change responsibility, like retirement itself.
 
 ---
 

@@ -210,6 +210,7 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 		}
 		grSubmitOK(t, root, runID, packet.id, grValidateReport(packet.checks, scopes))
 	}
+	grSubmitReaderVerifier(t, root, runID, main)
 	id := runID + "/cross/F1"
 	report := "Cross item: design_constraints = FAIL — combined design violates a constraint\n" +
 		"Cross item finding: design_constraints = " + id + "\n" +
@@ -220,7 +221,7 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 		"Finding affects: " + id + " = 2\n" +
 		"cross: " + main + ": Description\n" +
 		"Severity confirmation: " + id + " = confirmed P1 — evidence: " + main + "; reason: dependent design is affected\n"
-	for _, check := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+	for _, check := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"} {
 		status := "pass"
 		if check == "2" {
 			status = "fail"

@@ -21,7 +21,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &planned); err != nil {
 		t.Fatal(err)
 	}
-	if planned.SchemaVersion != 1 || planned.NextAction != "execute" || len(planned.ReadyPacketIDs) != 4 || strings.Contains(strings.Join(planned.ReadyPacketIDs, ","), "cross") {
+	if planned.SchemaVersion != 1 || planned.NextAction != "execute" || len(planned.ReadyPacketIDs) != 5 || strings.Contains(strings.Join(planned.ReadyPacketIDs, ","), "cross") {
 		t.Fatalf("wrong planned work: %+v", planned)
 	}
 	if len(planned.DeferredFindings) != 0 || !strings.Contains(out.String(), `"deferred_findings": []`) {
@@ -35,7 +35,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if current.RunID != planned.RunID || len(current.ReadyPacketIDs) != 4 {
+	if current.RunID != planned.RunID || len(current.ReadyPacketIDs) != 5 {
 		t.Fatalf("wrong status: %+v", current)
 	}
 	if len(current.DeferredFindings) != 0 || !strings.Contains(status.String(), `"deferred_findings": []`) {

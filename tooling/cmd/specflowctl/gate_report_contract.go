@@ -67,6 +67,15 @@ func verdictContractFor(kind, key string) reportVerdict {
 		v.Line = "Cross-check"
 		v.Allowed = []string{"PASS", "FAIL"}
 		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
+	case gaterun.PacketKindVerifier:
+		v.Line = gaterun.ReaderContractCheck + ". Reader contract"
+		v.Allowed = []string{"PASS", "FAIL"}
+		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
+	case gaterun.PacketKindReader:
+		// The reader authors evidence only — the verdict is computed by
+		// gate-submit from the question blocks, so the contract declares no
+		// reviewer-authored verdict line.
+		v.Line = "(computed from the question blocks — do not write a verdict line)"
 	case gaterun.PacketKindAnalysis:
 		v.Allowed = []string{"MISMATCH"}
 	}
@@ -96,8 +105,22 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 	for _, key := range packet.CheckKeys {
 		v := verdictContractFor(packet.Kind, key)
 		switch packet.Kind {
-		case gaterun.PacketKindChecks:
-			lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
+		case gaterun.PacketKindChecks, gaterun.PacketKindVerifier:
+			if packet.Kind == gaterun.PacketKindVerifier {
+				lines = append(lines, fmt.Sprintf("%s. Reader contract: <PASS|FAIL> — <reason>", key))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
+			}
+		case gaterun.PacketKindReader:
+			for _, q := range readerContractQuestions {
+				lines = append(lines,
+					"Question: "+q.ID+" — "+q.Title,
+					"Status: <answered|no_local_answer>",
+					"Answer: <one-sentence answer; answered questions only>",
+					"Quote: <verbatim quote, "+fmt.Sprint(readerQuoteMinRunes)+"-"+fmt.Sprint(readerQuoteMaxRunes)+" characters, one contiguous span; answered questions only>",
+					"Location: <exact heading text of the ## section containing the quote; answered questions only>",
+					"")
+			}
 		case gaterun.PacketKindItem:
 			lines = append(lines, fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key))
 		case gaterun.PacketKindFile:
@@ -114,7 +137,7 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 			}
 		case gaterun.PacketKindAnalysis:
 		}
-		if packet.Kind != gaterun.PacketKindAnalysis {
+		if packet.Kind != gaterun.PacketKindAnalysis && packet.Kind != gaterun.PacketKindReader {
 			c.Verdicts = append(c.Verdicts, v)
 		}
 	}
@@ -123,6 +146,19 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 		if example != "" {
 			lines = append(lines, example)
 		}
+	}
+	if packet.Kind == gaterun.PacketKindReader {
+		add("reader-question-blocks", "exactly one block per bank question, in bank order (Q01-Q17); each block carries Status, and answered blocks carry non-empty Answer, Quote, and Location", "Question: Q01 — intended user, actor, or caller\nStatus: <answered|no_local_answer>\nAnswer: <answer>\nQuote: <verbatim quote>\nLocation: <## heading>")
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		add("reader-quote-bounds", "each Quote is a verbatim span of one human-readable section, "+fmt.Sprint(readerQuoteMinRunes)+"-"+fmt.Sprint(readerQuoteMaxRunes)+" characters; a missing answer is reported as Status: no_local_answer, never approximated", "")
+		add("reader-narrative-scopes", "one Dependency scope line per human-readable section of the main spec (the packet Context lists them), declared for check "+gaterun.ReaderContractCheck, "Dependency scope:\n  check-"+gaterun.ReaderContractCheck+": <main spec>: <section heading>")
+	}
+	if packet.Kind == gaterun.PacketKindVerifier {
+		add("verifier-judgments", "exactly one Judgment line per bank question, in bank order (Q01-Q17), each with supported, partial, or unsupported and a non-empty basis", "Judgment: Q01 = <supported|partial|unsupported> — <basis>")
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"supported", "partial", "unsupported"}
+		add("verifier-verdict-closure", "the verdict is PASS exactly when every judgment is supported and the accepted reader report carries no no_local_answer; any other outcome is FAIL", "")
+		add("verifier-narrative-scopes", "one Dependency scope line per human-readable section of the main spec (the packet Context lists them), declared for check "+gaterun.ReaderContractCheck, "Dependency scope:\n  check-"+gaterun.ReaderContractCheck+": <main spec>: <section heading>")
 	}
 	if packet.Kind == gaterun.PacketKindChecks && run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && stringInList(packet.CheckKeys, "5") {
 		for _, sub := range unitAcceptanceSubchecks {
@@ -215,7 +251,7 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	}
-	if packet.Kind != gaterun.PacketKindAnalysis && packet.Kind != gaterun.PacketKindItem {
+	if packet.Kind != gaterun.PacketKindAnalysis && packet.Kind != gaterun.PacketKindItem && packet.Kind != gaterun.PacketKindReader && packet.Kind != gaterun.PacketKindVerifier {
 		finding := "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>"
 		if packet.Kind == gaterun.PacketKindCross {
 			finding = "[P1] <location> — <new cross finding>\nFinding affects: <new_finding_id> = <check_key>"

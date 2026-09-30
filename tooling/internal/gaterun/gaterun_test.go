@@ -339,7 +339,7 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
-		"---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
+		"---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
 
 	for _, gate := range []string{GateVerify, GateReview} {
 		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {

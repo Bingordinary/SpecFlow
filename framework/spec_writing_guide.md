@@ -515,6 +515,8 @@ Acceptance items       → minimal verifiable behavior contracts (see §7)
 
 Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
 
+**Enforcement (validate Check 10).** This contract is enforced at validate time by the reader contract probe: an independent reader session answers a fixed seventeen-question bank — the ten expression points and the seven must-close decisions above — using only the spec's human-readable part, citing for each answer a verbatim quote and its section. The **human-readable part** is every `##` section of the unit main spec before the section containing the `acceptance_item_set:` marker; content after that boundary, appendices, and code are not legal citation sources. An answer that exists only across several sections, only in an appendix, or only in the acceptance items fails the check — the design narrative belongs in the main spec, before the acceptance section, written so each point is locally quotable in one contiguous span. The probe and its independent verifier are defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition (failure means the design cannot be reconstructed from the human-readable part), not an upper bound on readability.
+
 ### Spec-First Planning and Execution Lifecycle
 
 A Spec is not a post-hoc implementation journal; it is the upstream design driver that leads development.

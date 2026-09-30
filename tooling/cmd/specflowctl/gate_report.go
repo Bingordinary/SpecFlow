@@ -141,6 +141,12 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 		if err := parseAnalysisReport(run, spec, report, out); err != nil {
 			return nil, err
 		}
+	} else if spec.Kind == gaterun.PacketKindReader {
+		// The reader authors evidence only: the check verdict is computed
+		// from the parsed question blocks, never written by the reviewer.
+		if err := parseReaderEvidenceReport(spec, report, out); err != nil {
+			return nil, err
+		}
 	} else {
 		for _, key := range spec.CheckKeys {
 			token, line, lineIdx, err := extractVerdict(spec, key, report)
@@ -174,12 +180,14 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 		}
 	}
 	out.Scopes = scopes
-	if spec.Kind != gaterun.PacketKindAnalysis {
+	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindReader && spec.Kind != gaterun.PacketKindVerifier {
 		// Finding ids are run-scoped — {run_id}/{packet_id}/F{n} — so they
 		// are unique by construction across runs: a finding authored by this
 		// report can never collide with a carried finding from an earlier
 		// run (see framework/verification_scope.md §Gate Work Packets →
-		// Packet report contract).
+		// Packet report contract). The reader and verifier packets author
+		// no findings at all — their findings are composed mechanically
+		// from the evidence and judgment lines at submit time.
 		for i, extracted := range extractFindings(report) {
 			// The unified finding format carries a resolution label on the
 			// entry line (framework/_atoms/misc/report_skeleton.md); cross
@@ -226,6 +234,8 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 
 func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, report string, out *parsedReport) error {
 	switch {
+	case spec.Kind == gaterun.PacketKindVerifier && run.Gate == gaterun.GateValidate:
+		return parseVerifierJudgments(report, out)
 	case run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && spec.Kind == gaterun.PacketKindChecks && stringInList(spec.CheckKeys, "5"):
 		return validateUnitAcceptanceBody(report)
 	case run.Gate == gaterun.GateVerify && spec.Kind == gaterun.PacketKindItem:
@@ -736,7 +746,7 @@ func extractVerdict(spec *gaterun.PacketSpec, key, report string) (string, strin
 	var pat string
 	allowed := strings.Join(verdictContractFor(spec.Kind, key).Allowed, "|")
 	switch spec.Kind {
-	case gaterun.PacketKindChecks:
+	case gaterun.PacketKindChecks, gaterun.PacketKindVerifier:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(` + allowed + `)\b`
 	case gaterun.PacketKindItem:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b(?:\s*\(([^)\n]*)\))?`
@@ -834,7 +844,7 @@ func extractScopes(_ *gaterun.Run, spec *gaterun.PacketSpec, report string, verd
 		matched := false
 		for _, key := range spec.CheckKeys {
 			prefixes := []string{key + ":"}
-			if spec.Kind == gaterun.PacketKindChecks {
+			if spec.Kind == gaterun.PacketKindChecks || spec.Kind == gaterun.PacketKindReader || spec.Kind == gaterun.PacketKindVerifier {
 				prefixes = append(prefixes, "check-"+key+":")
 			}
 			for _, p := range prefixes {

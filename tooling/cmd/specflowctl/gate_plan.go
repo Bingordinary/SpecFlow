@@ -156,7 +156,7 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Modes: full (every packet), delta (re-run set derived from a pass baseline's")
 	fmt.Fprintln(w, "stale evidence), repair (re-run set derived from a failure record's status map).")
-	fmt.Fprintln(w, "--rerun explicitly forces a check key (validate: 1-8; verify: item id; review: file path)")
+	fmt.Fprintln(w, "--rerun explicitly forces a check key (validate: 1-10; verify: item id; review: file path)")
 	fmt.Fprintln(w, "into the delta/repair re-run set. Targeted P0/P1 findings are persisted by")
 	fmt.Fprintln(w, "gate-invalidate and included in repair automatically; they do not rely on --rerun.")
 	fmt.Fprintln(w, "")

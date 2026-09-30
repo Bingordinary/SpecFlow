@@ -104,7 +104,7 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 9-point unit or 8-point rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
+2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 10-point unit or 8-point rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
 3. **verify** (normal-unit implementation-alignment gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user. P0/P1 block normal-unit promote. Verify is not a rule or retiring-unit gate.
 
@@ -554,7 +554,7 @@ Local slices review one owner area for internal closure, side effects, contract 
     - verifies that each command package named by the routing table is self-contained for its phase per Section 2.12 (progressive disclosure: entry routing inline, phase procedure in the package)
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
 11. `sub_agent_prompt_assembly`
-    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the packet report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (8-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (Step 7 sub-agent protocol), `operations/issues.md` (Step 3), and their referenced checklists
+    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the packet report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (Step 7 sub-agent protocol), `operations/issues.md` (Step 3), and their referenced checklists
     - verifies per Section 2.17: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate packet kind and an assembled triage prompt, with text-level evidence per checkpoint)
     - verifies the scenario inventory itself is complete via deterministic search; any uncovered sub-agent scenario is a finding
     - verifies mission and assembled-prompt output contracts agree with the unified report skeleton (Section 2.6 drift)

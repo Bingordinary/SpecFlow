@@ -665,37 +665,47 @@ func declarationDeps(text, path string, d declFields) (string, []string, error) 
 		return "", nil, perr
 	}
 
+	var deps []string
+	seen := map[string]bool{}
+	add := func(dep string) {
+		if seen[dep] {
+			return
+		}
+		seen[dep] = true
+		deps = append(deps, dep)
+	}
+
 	nothingDeclared := len(parsed) == 0 && len(d.Sections) == 0 && !d.AcceptanceItems && len(d.AcceptanceItemIDs) == 0
 	if nothingDeclared {
-		var deps []string
 		for _, c := range fc.Chunks {
-			deps = append(deps, c.CID)
+			add(c.CID)
 		}
 		return contenthash.FileHashText(text), deps, nil
 	}
 
-	var deps []string
 	if len(parsed) > 0 {
 		for _, r := range parsed {
 			if r[1] > fc.LineCount() {
 				return "", nil, fmt.Errorf("range %d-%d exceeds the file's line count (%d lines)", r[0], r[1], fc.LineCount())
 			}
 		}
-		deps = append(deps, contenthash.CIDsForRanges(fc, parsed)...)
+		for _, dep := range contenthash.CIDsForRanges(fc, parsed) {
+			add(dep)
+		}
 	}
 	for _, heading := range d.Sections {
 		dep, derr := sectionDep(text, heading)
 		if derr != nil {
 			return "", nil, derr
 		}
-		deps = append(deps, dep)
+		add(dep)
 	}
 	if d.AcceptanceItems {
 		cid, err := contenthash.AcceptanceItemSetCID(text)
 		if err != nil {
 			return "", nil, fmt.Errorf("acceptance_item_set in %s is not a valid semantic set — cannot declare the structural dependency: %w", path, err)
 		}
-		deps = append(deps, "region:acceptance_items:"+cid)
+		add("region:acceptance_items:" + cid)
 	}
 	for _, id := range d.AcceptanceItemIDs {
 		id = strings.TrimSpace(id)
@@ -706,7 +716,7 @@ func declarationDeps(text, path string, d declFields) (string, []string, error) 
 		if !ok {
 			return "", nil, fmt.Errorf("acceptance item %q not found in %s (or declared more than once) — list the items with `specflowctl gate-evidence --items`", id, path)
 		}
-		deps = append(deps, "region:acceptance_item:"+id+":"+contenthash.RegionCID(region.Text))
+		add("region:acceptance_item:" + id + ":" + contenthash.RegionCID(region.Text))
 	}
 	return contenthash.FileHashText(text), deps, nil
 }

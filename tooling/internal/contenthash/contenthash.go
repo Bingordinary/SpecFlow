@@ -275,6 +275,19 @@ func AcceptanceItemsRegion(text string) (region string, ok bool) {
 	return strings.Join(lines[startIdx:endIdx], "\n"), true
 }
 
+// AcceptanceMarkerIndex returns the 0-based line index of the exact
+// acceptance_item_set marker line — the same fence-aware location
+// AcceptanceItemsRegion uses — so callers can map the marker onto the
+// section regions of the same text. ok is false when the marker is absent.
+func AcceptanceMarkerIndex(text string) (int, bool) {
+	lines := strings.Split(text, "\n")
+	startIdx, _, ok := acceptanceItemsRegionBounds(lines)
+	if !ok || startIdx < 0 {
+		return 0, false
+	}
+	return startIdx, true
+}
+
 // acceptanceItemsRegionBounds locates the acceptance_item_set structural
 // region of the split text and returns its line bounds: startIdx is the index
 // of the exact marker line, endIdx the index one past the region's last line
