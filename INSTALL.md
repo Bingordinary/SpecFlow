@@ -47,4 +47,8 @@ In Codex CLI or the desktop app's Local environment, accept the project-hook tru
 
 ## Update
 
-To update an existing installation, run `spec_flow_update` in the current agent session, then start a new session for the updated bootstrap to be injected. No host process restart is required — command packages and the bootstrap are read fresh from disk.
+To update an existing installation, follow `UPDATE.md`:
+
+> Read https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/UPDATE.md and follow its instructions to update specFlow in this project.
+
+`UPDATE.md` runs the update script directly, so it works whether or not the platform adapter currently loads. In a healthy session you can still run the `spec_flow_update` trigger instead.

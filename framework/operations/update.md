@@ -4,6 +4,8 @@ When the user says `spec_flow_update`, follow this procedure. It pulls the lates
 
 Requests that do not explicitly invoke `spec_flow_update` carry no migration write authority — route them through normal editing instead.
 
+> If the platform adapter that injects the bootstrap is not loading — for example after a runtime breaking change — the agent cannot see the `spec_flow_update` trigger. The out-of-band recovery entry is the repository-root `UPDATE.md`: it runs the Step 1 pull directly, then hands back to this procedure from Step 2.
+
 ## Procedure
 
 ### Step 0: Record pre-update state

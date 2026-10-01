@@ -99,4 +99,8 @@ Natural language works too — describe your goal, and the agent reads repo trut
 
 ## Update
 
-Run the trigger `spec_flow_update` in your current agent session. Once the update finishes, **start a new agent session** so the hook platforms (Claude Code, Codex, Antigravity) re-inject the updated bootstrap. The bootstrap is read fresh — no host process restart is required, and OpenCode re-reads it on the next message.
+Copy the following instruction to your agent:
+
+> Read https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/UPDATE.md and follow its instructions to update specFlow in this project.
+
+Use this whenever you update. It also works when a runtime breaking change stops the platform adapter from loading and the agent can no longer see specFlow triggers — the case where an in-session trigger like `spec_flow_update` is unavailable.

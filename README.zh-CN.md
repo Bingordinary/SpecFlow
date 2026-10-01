@@ -99,4 +99,8 @@ Agent 只在你明确发出质量检查或完成信号后提出下一步，而�
 
 ## 更新
 
-在当前 agent 会话中运行 `spec_flow_update` 触发更新。更新完成后，**启动一个新的 agent 会话**——hooks 和规则会在会话启动时重新注入，确保更新内容生效。
+将以下指令复制给你的 agent：
+
+> 读取 https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/UPDATE.md 并按照其中的指引更新当前项目中的 specFlow。
+
+任何时候更新都用这条。当运行时破坏性变更导致平台适配器无法加载、agent 看不到 specFlow 触发词时，它同样可用——那正是 `spec_flow_update` 这类会话内触发词失效的场景。
