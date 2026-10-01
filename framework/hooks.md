@@ -17,7 +17,7 @@ Platform hook config (JSON) or plugin
                     └── outputs JSON → injected into agent session context
 ```
 
-The injected content arrives as platform-specific JSON or a message transform which the agent runtime loads into the session prompt. The agent does not need to read `framework/concepts.md` from disk — its content is already present in the session context. The bootstrap routes each trigger to its command package, and the agent reads the package files from disk only when a trigger fires.
+The injected content arrives as platform-specific JSON or a plugin-injected session prompt block which the agent runtime loads into the session prompt. The agent does not need to read `framework/concepts.md` from disk — its content is already present in the session context. The bootstrap routes each trigger to its command package, and the agent reads the package files from disk only when a trigger fires.
 
 ## Core Files
 
@@ -53,7 +53,7 @@ This contract is runtime-neutral. It defines what any platform adapter must guar
 3. **Directory-keyed and version-keyed caching, if caching exists.** If a platform mechanism makes per-injection reads impossible, a cache key must include at least the project directory and a framework content identity (bootstrap content hash, mtime+size, or the recorded framework fingerprint). A change to any framework content must invalidate the entry, and one process serving multiple project directories must not share cache entries between them.
 4. **Framework identity inputs.** The installed framework repository commit and `tooling/fingerprint.txt` are the recorded version identifiers. Adapters may use them, or the bootstrap file's own content identity, as cache keys.
 5. **Platform parameters.** Adapters use the platform's default injection limits; no adapter may raise or disable a platform hook-output cap to make a larger bootstrap fit. The Bootstrap Contract's payload budget keeps the bootstrap inside the supported platform hook-output caps, and the tooling closure test enforces it.
-6. **Independent implementations.** Each adapter delivers the same bootstrap contract in its own mechanism: Claude Code, Codex, and Antigravity through `hooks/session-start`; OpenCode through its message-transform plugin.
+6. **Independent implementations.** Each adapter delivers the same bootstrap contract in its own mechanism: Claude Code, Codex, and Antigravity through `hooks/session-start`; OpenCode through its session context-hook plugin.
 
 ## Platform Support
 
@@ -63,7 +63,7 @@ The `session-start` script detects the target platform from an explicit argument
 |----------|-----------|---------------|
 | Claude Code | `CLAUDE_PLUGIN_ROOT` set AND `COPILOT_CLI` not set | `{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "..." } }` |
 | Codex | Argument `codex` | `{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "..." } }` |
-| OpenCode | OpenCode plugin (see below) | Message transform via JS plugin |
+| OpenCode | OpenCode plugin (see below) | System-context injection via JS plugin hook |
 | Antigravity | Argument `antigravity` or `ANTIGRAVITY` set | `{ "injectSteps": [ { "ephemeralMessage": "..." } ] }` |
 
 > The `COPILOT_CLI` guard covers Copilot CLI, which also sets `CLAUDE_PLUGIN_ROOT`. When `COPILOT_CLI` is set, the Claude-format JSON output is suppressed so Copilot CLI's own session handling does not receive Claude-specific hook JSON.
@@ -175,6 +175,6 @@ For each supported platform, the corresponding hook JSON file exists at the inst
 
 - Claude Code: `.claude-plugin/plugin.json` is the plugin manifest. Hooks are discovered by convention at `hooks/hooks.json`. `specflowctl` installs both.
 - Codex: `.codex/hooks.json` contains the project-scoped `SessionStart` hook for Codex CLI and the desktop app's Local environment. `specflowctl` preserves unrelated Codex settings and hooks, replaces only the managed SpecFlow entry, and rejects invalid existing JSON instead of overwriting it. The entry handles `startup`, `resume`, `clear`, and `compact`, provides Unix and Windows commands, and uses the default context limit. Worktree and Cloud environments are not supported.
-- OpenCode: `.opencode/plugins/specflow.js` installed by `specflowctl`. OpenCode auto-discovers plugins in `.opencode/plugins/` at startup — no config file registration needed. The plugin reads the bootstrap at message-transform time.
+- OpenCode: `.opencode/plugins/specflow.js` installed by `specflowctl`. OpenCode auto-discovers plugins in `.opencode/plugins/` at startup — no config file registration needed. The plugin reads the bootstrap fresh when each agent-loop model request is assembled and prepends it to the request's system context.
 - Antigravity: `.agents/plugins/specflow/plugin.json` is the plugin manifest and `hooks.json` defines lifecycle hooks. `specflowctl` installs both.
 - **Consumer path validation**: For every platform integration that reads files from disk (`.opencode/plugins/specflow.js`, `.codex/hooks.json`), verify that its paths resolve correctly from the plugin runtime's working directory or repository root, not from the source-repo layout. See `framework/spec_flow_review.md` Section 2.16.
