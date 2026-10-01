@@ -368,28 +368,186 @@ func grCompleteCrossReport(t *testing.T, repoRoot string, run *gaterun.Run, repo
 	return b.String()
 }
 
-// grReaderEvidenceReport builds a Check 10 reader evidence report: all 17
-// questions answered with the given quote and section, and one Dependency
-// scope line for the narrative section.
-func grReaderEvidenceReport(specPath, section, quote string) string {
-	var b strings.Builder
-	for _, q := range readerContractQuestions {
-		fmt.Fprintf(&b, "Question: %s — %s\n", q.ID, q.Title)
-		fmt.Fprintf(&b, "Status: answered\n")
-		fmt.Fprintf(&b, "Answer: the fixture answer for %s\n", q.ID)
-		fmt.Fprintf(&b, "Quote: %s\n", quote)
-		fmt.Fprintf(&b, "Location: %s\n\n", section)
+// grReaderReconstruction builds a valid closed-book reader report citing
+// the given narrative section.
+func grReaderReconstruction(specPath, narrativeSection string, undetermined ...string) string {
+	return grReaderReconCustom(specPath, narrativeSection, "", undetermined...)
+}
+
+// grReaderReconCustom builds a closed-book reader report with a custom
+// restatement (empty restores the fixture restatement).
+func grReaderReconCustom(specPath, narrativeSection, restatement string, undetermined ...string) string {
+	if restatement == "" {
+		restatement = "The unit verifies credentials and returns a session token; state lives in the token store; failures are exposed as errors; the boundary is the token store."
 	}
-	fmt.Fprintf(&b, "Dependency scope:\ncheck-10: %s: %s\n", specPath, section)
+	var b strings.Builder
+	b.WriteString("Reconstruction:\n")
+	b.WriteString(restatement + "\n\n")
+	b.WriteString("Undetermined:\n")
+	if len(undetermined) == 0 {
+		b.WriteString("- none\n\n")
+	} else {
+		for _, u := range undetermined {
+			b.WriteString("- " + u + "\n")
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Dependency scope:\ncheck-10: %s: %s\n", specPath, narrativeSection)
+	return b.String()
+}
+
+// grCarrierItemIDs extracts the acceptance item ids from the run's verifier
+// packet context (the Check 10 carrier backbone).
+func grCarrierItemIDs(t *testing.T, repoRoot, runID string) []string {
+	t.Helper()
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packetContextItems(run.PacketByID("verifier"))
+}
+
+// grVerifierAppendices extracts the protocol appendix paths from the run's
+// verifier packet context (the Check 10 carrier appendices).
+func grVerifierAppendices(t *testing.T, repoRoot, runID string) []string {
+	t.Helper()
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packetContextAppendices(run.PacketByID("verifier"))
+}
+
+func packetContextItems(packet *gaterun.PacketSpec) []string {
+	if packet == nil {
+		return nil
+	}
+	var items []string
+	in := false
+	for _, line := range packet.Context {
+		if strings.HasPrefix(line, "acceptance item set (Check 10 carrier backbone):") {
+			in = true
+			continue
+		}
+		if strings.HasPrefix(line, "protocol appendices (Check 10 carrier):") {
+			break
+		}
+		if in {
+			items = append(items, line)
+		}
+	}
+	return items
+}
+
+func packetContextAppendices(packet *gaterun.PacketSpec) []string {
+	if packet == nil {
+		return nil
+	}
+	var appendices []string
+	in := false
+	for _, line := range packet.Context {
+		if strings.HasPrefix(line, "protocol appendices (Check 10 carrier):") {
+			in = true
+			continue
+		}
+		if in && line != "none" {
+			appendices = append(appendices, line)
+		}
+	}
+	return appendices
+}
+
+// grVerifierScopeLines builds the verifier's default Dependency scope
+// lines: the narrative sections, the acceptance item set, and the
+// appendices.
+func grVerifierScopeLines(specPath, narrativeSection string, appendices []string) []string {
+	lines := []string{"check-10: " + specPath + ": " + narrativeSection, "check-10: " + specPath + ": acceptance_items"}
+	for _, a := range appendices {
+		lines = append(lines, "check-10: "+a+": all")
+	}
+	return lines
+}
+
+// grVerifierReconSpec controls one Check 10 verifier report's deviations
+// from the all-pass reconciliation fixture.
+type grVerifierReconSpec struct {
+	Verdict     string            // default PASS
+	DropClaims  bool              // emit no Claim lines at all
+	Claims      []string          // full Claim lines (default: one supported claim)
+	Carriers    map[string]string // item id -> status (default seen)
+	MustCloses  map[string]string // decision id -> status (default closed)
+	Consistency string            // default coherent
+	Scope       []string          // full Dependency scope lines (default built from Appendices)
+	Appendices  []string          // appendix paths for the default scope lines
+	Drop        string            // "" | "carriers" | "mustcloses" | "consistency"
+	Extra       []string          // raw lines appended before the scope section
+}
+
+// grVerifierReconciliation builds a Check 10 verifier report whose
+// classifications all pass except for the deviations in spec.
+func grVerifierReconciliation(specPath, narrativeSection string, items []string, spec *grVerifierReconSpec) string {
+	if spec == nil {
+		spec = &grVerifierReconSpec{}
+	}
+	verdict := spec.Verdict
+	if verdict == "" {
+		verdict = "PASS"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "10. Reader contract: %s — reconciled\n\n", verdict)
+	if !spec.DropClaims {
+		if len(spec.Claims) > 0 {
+			for _, claim := range spec.Claims {
+				b.WriteString(claim + "\n")
+			}
+		} else {
+			b.WriteString("Claim: C01 = supported — the restatement carries the design\n")
+		}
+	}
+	if spec.Drop != "carriers" {
+		for _, item := range items {
+			status := spec.Carriers[item]
+			if status == "" {
+				status = "seen"
+			}
+			fmt.Fprintf(&b, "Carrier: %s = %s — the restatement presents the item's behavioral subject\n", item, status)
+		}
+	}
+	if spec.Drop != "mustcloses" {
+		for _, d := range mustCloseDecisions {
+			status := spec.MustCloses[d.ID]
+			if status == "" {
+				status = "closed"
+			}
+			fmt.Fprintf(&b, "Must-close: %s = %s — the restatement closes the decision\n", d.ID, status)
+		}
+	}
+	if spec.Drop != "consistency" {
+		consistency := spec.Consistency
+		if consistency == "" {
+			consistency = "coherent"
+		}
+		fmt.Fprintf(&b, "Consistency: %s — the restatement is one design\n", consistency)
+	}
+	for _, line := range spec.Extra {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\nDependency scope:\n")
+	scopes := spec.Scope
+	if scopes == nil {
+		scopes = grVerifierScopeLines(specPath, narrativeSection, spec.Appendices)
+	}
+	for _, line := range scopes {
+		b.WriteString(line + "\n")
+	}
 	return b.String()
 }
 
 // grSubmitReaderVerifier submits Check 10's two packets for the validate
-// run's main spec: a fully answered evidence report citing the Description
-// section and a verifier report judging every triple supported. Runs without
-// reader packets (verify, review) and runs where the packets are already
-// accepted are skipped, so the helper is safe to call before any cross
-// submission.
+// run's main spec: a closed-book reconstruction citing the Description
+// section and an all-pass reconciliation. Runs without reader packets
+// (verify, review) and runs where the packets are already accepted are
+// skipped, so the helper is safe to call before any cross submission.
 func grSubmitReaderVerifier(t *testing.T, repoRoot, runID, specPath string) {
 	t.Helper()
 	run, err := gaterun.Load(repoRoot, runID)
@@ -408,20 +566,10 @@ func grSubmitReaderVerifier(t *testing.T, repoRoot, runID, specPath string) {
 			return
 		}
 	}
-	grSubmitOK(t, repoRoot, runID, "reader", grReaderEvidenceReport(specPath, "Description", "Prose."))
-	grSubmitOK(t, repoRoot, runID, "verifier", grVerifierReport(specPath, "Description", "PASS", "supported"))
-}
-
-// grVerifierReport builds a Check 10 verifier report with the given verdict
-// and per-question judgment value.
-func grVerifierReport(specPath, section, verdict, judgment string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "10. Reader contract: %s — checked\n\n", verdict)
-	for _, q := range readerContractQuestions {
-		fmt.Fprintf(&b, "Judgment: %s = %s — the cited quote answers the question\n", q.ID, judgment)
-	}
-	fmt.Fprintf(&b, "\nDependency scope:\ncheck-10: %s: %s\n", specPath, section)
-	return b.String()
+	grSubmitOK(t, repoRoot, runID, "reader", grReaderReconstruction(specPath, "Description"))
+	items := grCarrierItemIDs(t, repoRoot, runID)
+	appendices := grVerifierAppendices(t, repoRoot, runID)
+	grSubmitOK(t, repoRoot, runID, "verifier", grVerifierReconciliation(specPath, "Description", items, &grVerifierReconSpec{Appendices: appendices}))
 }
 
 // grSubmitValidatePackets submits the full 7-packet validate plan for a
@@ -448,10 +596,49 @@ func grSubmitValidatePackets(t *testing.T, repoRoot, runID, specPath string, ext
 		"7": {desc},
 		"8": {desc},
 	}))
-	grSubmitOK(t, repoRoot, runID, "reader", grReaderEvidenceReport(specPath, "Description", "Prose."))
-	grSubmitOK(t, repoRoot, runID, "verifier", grVerifierReport(specPath, "Description", "PASS", "supported"))
 	grSubmitReaderVerifier(t, repoRoot, runID, specPath)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(specPath, "Description"))
+}
+
+// grSubmitPlannedValidatePackets submits exactly the packets the run's plan
+// carries, in plan order — used for delta/repair runs whose packet set is a
+// subset of the full validate plan.
+func grSubmitPlannedValidatePackets(t *testing.T, repoRoot, runID, specPath string) {
+	t.Helper()
+	run := mustLoadRun(t, repoRoot, runID)
+	desc := specPath + ": Description"
+	accept := specPath + ": Testability / Acceptance Criteria"
+	front := specPath + ": frontmatter"
+	reports := map[string]string{
+		"structural": grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+			"1": {front, desc},
+			"3": {accept},
+			"6": {accept},
+		}),
+		"design": grValidateReport([]string{"2", "4"}, map[string][]string{
+			"2": {desc},
+			"4": {desc},
+		}),
+		"acceptance": grValidateReport([]string{"5"}, map[string][]string{
+			"5": {accept},
+		}),
+		"dependencies": grDependenciesReport(map[string][]string{
+			"7": {desc},
+			"8": {desc},
+		}),
+	}
+	for _, packet := range run.Packets {
+		switch {
+		case packet.PacketID == "reader" || packet.PacketID == "verifier":
+			grSubmitReaderVerifier(t, repoRoot, runID, specPath)
+		case packet.PacketID == "cross":
+			grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(specPath, "Description"))
+		default:
+			if report, ok := reports[packet.PacketID]; ok {
+				grSubmitOK(t, repoRoot, runID, packet.PacketID, report)
+			}
+		}
+	}
 }
 
 // grVerifyItemReport builds a verify item packet report with an ALIGNED
@@ -2463,39 +2650,31 @@ func TestGateRunAppendixCoverage(t *testing.T) {
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
 	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Protocol\n\nPOST /login.\n")
 
+	// The Check 10 verifier declares every protocol appendix as formal
+	// carrier evidence, so the appendix reaches the validated surface
+	// without a structural-packet declaration.
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitValidatePackets(t, repoRoot, runID, main)
-	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil || !strings.Contains(err.Error(), "appendix") {
-		t.Fatalf("expected the appendix gate to reject the write, got %v", err)
-	}
-	if _, serr := os.Stat(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")); !os.IsNotExist(serr) {
-		t.Fatal("expected no cache to survive the appendix rejection")
-	}
-
-	// A new plan whose structural packet declares the appendix passes.
-	runID = grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidatePackets(t, repoRoot, runID, main, appendix+": all")
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 	res, err := validationcache.CheckValidate(repoRoot, "auth")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Fresh {
-		t.Fatalf("expected FRESH after declaring the appendix, got: %s", res.Reason)
+		t.Fatalf("expected FRESH with the carrier appendix, got: %s", res.Reason)
 	}
 
-	// A later rejected finalize must not destroy or rewrite the last valid
-	// canonical cache. Validation happens against the rendered candidate and
-	// publication is the final step.
+	// A rejected finalize must not destroy or rewrite the last valid
+	// canonical cache. Re-validation and publication are ordered: an error
+	// leaves the cache untouched.
 	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
 	before, err := os.ReadFile(cachePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	runID = grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidatePackets(t, repoRoot, runID, main)
-	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil || !strings.Contains(err.Error(), "appendix") {
-		t.Fatalf("expected the later appendix gate to reject the candidate, got %v", err)
+	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil {
+		t.Fatal("expected finalize with pending packets to reject")
 	}
 	after, err := os.ReadFile(cachePath)
 	if err != nil {

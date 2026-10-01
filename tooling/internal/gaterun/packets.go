@@ -168,9 +168,10 @@ func loadCarriedEvidence(repoRoot string, run *Run, carried []string) ([]Carried
 // validateCheckGroups is the fixed packet decomposition of the unit validate
 // checklist: every one of the 10 checks belongs to exactly one group, and the
 // cross-check is its own packet. Check 10 (reader contract) owns two packets
-// that always travel together: the reader probe (evidence report) and the
-// verifier (sufficiency judgment over the accepted reader report). The
-// mapping is part of the gate contract
+// that always travel together: the reader probe (closed-book reconstruction)
+// and the verifier (reconciliation of the accepted reconstruction against the
+// human-readable part and the formal carrier). The mapping is part of the
+// gate contract
 // (framework/verification_scope.md §Gate Work Packets → Packet generation
 // rules) — the same plan is generated for the same target every time.
 var validateCheckGroups = []struct {
@@ -190,7 +191,8 @@ var validateCheckGroups = []struct {
 // unit main spec for the target layer: every ## section region before the
 // section containing the `acceptance_item_set:` marker. It returns the
 // heading texts in document order. The acceptance-enclosing section and
-// everything after it are not citation sources for the reader contract probe
+// everything after it, appendices, and code are outside the Check 10
+// reader's reading scope
 // (framework/unit_validate_checklist.md Check 10). A spec whose marker is
 // missing or sits outside every ## section cannot locate the boundary and
 // fails closed; a retiring spec has no acceptance item set by design, so the
@@ -272,21 +274,56 @@ func validatePacketOwner(check string) (string, bool) {
 }
 
 // isReaderVerifierGroup reports whether the packet id is one of Check 10's
-// two packets, which always re-run together: the verifier consumes the
-// reader's accepted evidence report, so neither can re-run without the other.
+// two packets, which always re-run together: the verifier reconciles the
+// reader's accepted reconstruction, so neither can re-run without the other.
 func isReaderVerifierGroup(packetID string) bool {
 	return packetID == "reader" || packetID == "verifier"
 }
 
 // narrativeSectionContext renders the plan-time human-readable section
-// headings as the reader-contract packets' Context: the citation source the
-// mission states verbatim and the exact set the report's Dependency scope
-// lines must declare.
+// headings as the Check 10 packets' Context: the reading scope the mission
+// states verbatim and the exact set the report's Dependency scope lines
+// must declare.
 func narrativeSectionContext(narrative []string) []string {
 	out := make([]string, 0, len(narrative)+1)
-	out = append(out, "human-readable part (Check 10 citation source):")
+	out = append(out, "human-readable part (Check 10 reading scope):")
 	out = append(out, narrative...)
 	return out
+}
+
+// unitCarrierItemIDs extracts the acceptance item ids of the target's unit
+// main spec — the Check 10 verifier's carrier backbone. An empty result is
+// a legitimate outcome: validate plans an empty item set so Check 2 can
+// report it, and an empty set gives the reconciliation no carrier, so the
+// callers skip Check 10's packets for it (like a retiring spec).
+func unitCarrierItemIDs(repoRoot string, run *Run) ([]string, error) {
+	main := ownSpecPaths(repoRoot, run)[0]
+	content, err := readSpecContent(repoRoot, main)
+	if err != nil {
+		return nil, err
+	}
+	return specvalidation.ExtractAcceptanceItemIDs(content), nil
+}
+
+// verifierCarrierContext assembles the plan-time formal-carrier context of
+// the Check 10 verifier packet: the acceptance item set (the backbone the
+// Carrier lines must map) and the protocol appendix files (whole-file
+// carrier evidence the Dependency scope must declare).
+func verifierCarrierContext(repoRoot string, run *Run) ([]string, error) {
+	items, err := unitCarrierItemIDs(repoRoot, run)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{"acceptance item set (Check 10 carrier backbone):"}
+	out = append(out, items...)
+	appendices := unitAppendices(repoRoot, run.TargetName, run.Target)
+	if len(appendices) == 0 {
+		out = append(out, "protocol appendices (Check 10 carrier): none")
+		return out, nil
+	}
+	out = append(out, "protocol appendices (Check 10 carrier):")
+	out = append(out, appendices...)
+	return out, nil
 }
 
 // buildPacketPlan generates the deterministic packet plan for a run. It
@@ -442,9 +479,16 @@ func fullPacketPlan(repoRoot string, run *Run) ([]PacketSpec, error) {
 		if err != nil {
 			return nil, err
 		}
+		items, err := unitCarrierItemIDs(repoRoot, run)
+		if err != nil {
+			return nil, err
+		}
+		// An empty acceptance set gives the reconciliation no carrier; the
+		// probe is skipped and Check 2 reports the defect instead.
+		skipProbe := retired || len(items) == 0
 		var packets []PacketSpec
 		for _, group := range validateCheckGroups {
-			if retired && isReaderVerifierGroup(group.PacketID) {
+			if skipProbe && isReaderVerifierGroup(group.PacketID) {
 				continue
 			}
 			packet := PacketSpec{
@@ -453,12 +497,16 @@ func fullPacketPlan(repoRoot string, run *Run) ([]PacketSpec, error) {
 				CheckKeys: append([]string(nil), group.Checks...),
 				ReadRefs:  unitValidatePacketReadRefs(repoRoot, run, group.PacketID),
 			}
-			if group.PacketID == "verifier" {
+			switch group.PacketID {
+			case "reader":
+				packet.Context = narrativeSectionContext(narrative)
+			case "verifier":
 				packet.DependsOn = []string{"reader"}
-				packet.Context = narrativeSectionContext(narrative)
-			}
-			if group.PacketID == "reader" {
-				packet.Context = narrativeSectionContext(narrative)
+				carrier, err := verifierCarrierContext(repoRoot, run)
+				if err != nil {
+					return nil, err
+				}
+				packet.Context = append(narrativeSectionContext(narrative), carrier...)
 			}
 			packets = append(packets, packet)
 		}
@@ -1009,7 +1057,7 @@ func rerunPacketPlan(repoRoot string, run *Run, derivation *scopeDerivation) ([]
 			}
 			narrative = headings
 		}
-		return validatePacketsFor(repoRoot, selected, run, narrative), nil
+		return validatePacketsFor(repoRoot, selected, run, narrative)
 	case GateVerify:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
@@ -1070,8 +1118,13 @@ func currentGateKeys(repoRoot string, run *Run) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		items, err := unitCarrierItemIDs(repoRoot, run)
+		if err != nil {
+			return nil, err
+		}
+		skipProbe := retired || len(items) == 0
 		for _, group := range validateCheckGroups {
-			if retired && isReaderVerifierGroup(group.PacketID) {
+			if skipProbe && isReaderVerifierGroup(group.PacketID) {
 				continue
 			}
 			for _, check := range group.Checks {
@@ -1121,7 +1174,7 @@ func sortedKeySet(keys map[string]bool) []string {
 // groups, in the fixed group order, plus the cross packet. Check 10's two
 // packets are coupled: selecting either plans both. The caller passes the
 // plan-time human-readable section headings (nil for a retiring spec).
-func validatePacketsFor(repoRoot string, selected map[string]bool, run *Run, narrative []string) []PacketSpec {
+func validatePacketsFor(repoRoot string, selected map[string]bool, run *Run, narrative []string) ([]PacketSpec, error) {
 	if selected["reader"] || selected["verifier"] {
 		selected["reader"] = true
 		selected["verifier"] = true
@@ -1137,16 +1190,21 @@ func validatePacketsFor(repoRoot string, selected map[string]bool, run *Run, nar
 			CheckKeys: append([]string(nil), group.Checks...),
 			ReadRefs:  unitValidatePacketReadRefs(repoRoot, run, group.PacketID),
 		}
-		if isReaderVerifierGroup(group.PacketID) {
+		switch group.PacketID {
+		case "reader":
 			packet.Context = narrativeSectionContext(narrative)
-			if group.PacketID == "verifier" {
-				packet.DependsOn = []string{"reader"}
+		case "verifier":
+			packet.DependsOn = []string{"reader"}
+			carrier, err := verifierCarrierContext(repoRoot, run)
+			if err != nil {
+				return nil, err
 			}
+			packet.Context = append(narrativeSectionContext(narrative), carrier...)
 		}
 		packets = append(packets, packet)
 	}
 	packets = append(packets, crossPacket(run, packetIDs(packets)))
-	return packets
+	return packets, nil
 }
 
 // unitValidatePacketReadRefs derives the exact packet-local read surface for
@@ -1155,14 +1213,18 @@ func validatePacketsFor(repoRoot string, selected map[string]bool, run *Run, nar
 // those logical objects for cross-unit, constraint, and surface-ownership
 // judgments. The design and acceptance packets stay limited to the unit's
 // own truth and shared evidence inputs; they do not receive unrelated logical
-// objects. Check 10's reader and verifier are confined to the unit main spec:
-// the reader answers from the human-readable part only, and the verifier
-// judges the accepted reader report (framework/unit_validate_checklist.md
-// Check 10) — appendices, extra inputs, and code evidence are not citation
-// sources for either packet.
+// objects. Check 10's reader reads the unit main spec only: it reconstructs
+// from the human-readable part, and appendices and code are out of scope.
+// The verifier additionally reads the unit's protocol appendices: they are
+// the formal carrier it reconciles against, next to the main spec's
+// narrative and acceptance items (framework/unit_validate_checklist.md
+// Check 10). Neither packet reads code evidence or extra inputs.
 func unitValidatePacketReadRefs(repoRoot string, run *Run, packetID string) []string {
-	if isReaderVerifierGroup(packetID) {
+	if packetID == "reader" {
 		return []string{ownSpecPaths(repoRoot, run)[0]}
+	}
+	if packetID == "verifier" {
+		return ownSpecPaths(repoRoot, run)
 	}
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(run)...)

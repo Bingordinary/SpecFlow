@@ -161,7 +161,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 			// The analysis step's documented input is the accepted detection
 			// report carrying the detector's evidence lines (see
 			// framework/unit_verify_checklist.md Step 7); the verifier's
-			// documented input is the accepted reader evidence report (see
+			// documented input is the accepted reader reconstruction (see
 			// framework/unit_validate_checklist.md Check 10). Every other
 			// dependency carries its compact judgment record only.
 			entry.Report = state.Report
@@ -176,15 +176,16 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 	constraints := []string{"independent read-only reviewer session without the author's context", "packet boundaries are deterministic; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from packet read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
 	if spec.Kind == gaterun.PacketKindReader {
 		constraints = append(constraints,
-			"cite only the human-readable part: the ## sections of the main spec listed in the packet Context, before the section holding acceptance_item_set; content after that section, appendices, and code are not citation sources",
-			"answer with evidence, not judgment: a verbatim quote from exactly one section per question; when the human-readable part carries no answer, declare Status: no_local_answer instead of approximating, paraphrasing, or stitching spans from several sections",
-			"do not write a verdict line or finding entries — the check verdict and findings are computed mechanically from the question blocks")
+			"reconstruct from the human-readable part only: the ## sections of the main spec listed in the packet Context, before the section holding acceptance_item_set; content after that section, appendices, and code are out of scope",
+			"you receive no question bank: restate the design as one coherent block so each part connects to the next — a restatement that only answers scattered questions proves nothing about the whole; when something would not connect or had to be guessed, declare it in the Undetermined list instead of filling the gap",
+			"do not write a verdict line or finding entries — the check verdict is the verifier packet's, composed mechanically from its classifications")
 	}
 	if spec.Kind == gaterun.PacketKindVerifier {
 		constraints = append(constraints,
-			"judge only the accepted reader evidence report's (question, answer, quote) triples; do not search the spec for answers or substitute a better answer",
-			"a quote that exists but does not answer its question is partial or unsupported; a question the reader declared no_local_answer must be judged unsupported",
-			"do not write finding entries — findings are composed mechanically from the judgment lines")
+			"reconcile the accepted reconstruction against the human-readable part (support) and the formal carrier — the acceptance item set and the protocol appendices (backbone and contradiction); do not repair the reader's gaps from your own knowledge",
+			"classify, do not author: Claim lines carry supported, reader-error, unsupported-central, unsupported-minor, or contradicted; Carrier lines carry seen or missing for every acceptance item; Must-close lines carry closed, missing, or not-applicable for every §9 decision; Consistency is coherent or incoherent",
+			"central = the unit's declared responsibility + each acceptance item's behavioral subject + every applicable must-close decision; unsupported-minor claims are advisory and reader-error claims are the reader's own invention — neither may be inflated to a blocking class; a declarative unit is reconciled by its declared responsibility and its acceptance items' behavioral subjects, never by a behavior template",
+			"do not write finding entries — findings are composed mechanically from the classification lines")
 	}
 	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.PacketKindItem || spec.Kind == gaterun.PacketKindAnalysis) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
@@ -398,9 +399,9 @@ func missionTextFor(kind string) string {
 	case gaterun.PacketKindAnalysis:
 		return "Analyze the accepted mismatch, determine its root cause, severity, and repair direction."
 	case gaterun.PacketKindReader:
-		return "Answer the fixed 17-question reader bank using only the main spec's human-readable part, citing one verbatim quote and its section per answer; report evidence, not verdicts."
+		return "Read only the main spec's human-readable part and reconstruct the design closed-book: one coherent restatement plus an honest Undetermined list; no question bank, no citations, no verdicts."
 	case gaterun.PacketKindVerifier:
-		return "Judge the sufficiency of every (question, answer, quote) triple in the accepted reader evidence report, without re-reading the spec for answers."
+		return "Reconcile the accepted reconstruction against the human-readable part and the formal carrier (acceptance item set and protocol appendices): classify every claim, map every carrier item and §9 must-close decision, and judge the restatement's internal coherence; the verdict is composed mechanically from the classifications."
 	case gaterun.PacketKindFile:
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
 	case gaterun.PacketKindCross:
@@ -416,9 +417,9 @@ func protocolScopeFor(kind string, keys []string) string {
 	case gaterun.PacketKindAnalysis:
 		return "Step 7 for acceptance item " + strings.Join(keys, ", ")
 	case gaterun.PacketKindReader:
-		return "Check 10 reader probe (question bank and evidence report)"
+		return "Check 10 reader probe (closed-book reconstruction)"
 	case gaterun.PacketKindVerifier:
-		return "Check 10 verifier scale (sufficiency judgment)"
+		return "Check 10 verifier protocol (reconciliation)"
 	case gaterun.PacketKindFile:
 		return "file review for " + strings.Join(keys, ", ")
 	case gaterun.PacketKindCross:

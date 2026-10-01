@@ -142,9 +142,10 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 			return nil, err
 		}
 	} else if spec.Kind == gaterun.PacketKindReader {
-		// The reader authors evidence only: the check verdict is computed
-		// from the parsed question blocks, never written by the reviewer.
-		if err := parseReaderEvidenceReport(spec, report, out); err != nil {
+		// The reader authors evidence only: the closed-book reconstruction
+		// and the Undetermined list. It never writes a verdict — the check
+		// verdict is the verifier packet's, composed mechanically.
+		if err := parseReaderReconstructionReport(spec, report, out); err != nil {
 			return nil, err
 		}
 	} else {
@@ -235,7 +236,7 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, report string, out *parsedReport) error {
 	switch {
 	case spec.Kind == gaterun.PacketKindVerifier && run.Gate == gaterun.GateValidate:
-		return parseVerifierJudgments(report, out)
+		return parseVerifierReconciliation(report)
 	case run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && spec.Kind == gaterun.PacketKindChecks && stringInList(spec.CheckKeys, "5"):
 		return validateUnitAcceptanceBody(report)
 	case run.Gate == gaterun.GateVerify && spec.Kind == gaterun.PacketKindItem:

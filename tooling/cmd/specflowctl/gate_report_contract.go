@@ -107,20 +107,26 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 		switch packet.Kind {
 		case gaterun.PacketKindChecks, gaterun.PacketKindVerifier:
 			if packet.Kind == gaterun.PacketKindVerifier {
-				lines = append(lines, fmt.Sprintf("%s. Reader contract: <PASS|FAIL> — <reason>", key))
+				lines = append(lines, fmt.Sprintf("%s. Reader contract: <PASS|FAIL> — <reason>", key),
+					"Claim: C01 = <supported|reader-error|unsupported-central|unsupported-minor|contradicted> — <basis>",
+					"Carrier: <acceptance item id> = <seen|missing> — <basis>",
+					"Must-close: Q11 = <closed|missing|not-applicable> — <basis>",
+					"Consistency: <coherent|incoherent> — <basis>", "")
 			} else {
 				lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
 			}
 		case gaterun.PacketKindReader:
-			for _, q := range readerContractQuestions {
-				lines = append(lines,
-					"Question: "+q.ID+" — "+q.Title,
-					"Status: <answered|no_local_answer>",
-					"Answer: <one-sentence answer; answered questions only>",
-					"Quote: <verbatim quote, "+fmt.Sprint(readerQuoteMinRunes)+"-"+fmt.Sprint(readerQuoteMaxRunes)+" characters, one contiguous span; answered questions only>",
-					"Location: <exact heading text of the ## section containing the quote; answered questions only>",
-					"")
-			}
+			// The reader authors evidence only — the closed-book
+			// reconstruction and the Undetermined list. No verdict line
+			// exists: the check verdict is the verifier packet's, composed
+			// mechanically from its classifications.
+			lines = append(lines,
+				"Reconstruction:",
+				"<one contiguous block restating the design: what the unit is, the main path, state, failure exposure, boundaries, output>",
+				"",
+				"Undetermined:",
+				"- <undetermined point, one per line; exactly `- none` when nothing is>",
+				"")
 		case gaterun.PacketKindItem:
 			lines = append(lines, fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key))
 		case gaterun.PacketKindFile:
@@ -148,17 +154,24 @@ func reportContractFor(run *gaterun.Run, packet *gaterun.PacketSpec) gateReportC
 		}
 	}
 	if packet.Kind == gaterun.PacketKindReader {
-		add("reader-question-blocks", "exactly one block per bank question, in bank order (Q01-Q17); each block carries Status, and answered blocks carry non-empty Answer, Quote, and Location", "Question: Q01 — intended user, actor, or caller\nStatus: <answered|no_local_answer>\nAnswer: <answer>\nQuote: <verbatim quote>\nLocation: <## heading>")
-		c.Requirements[len(c.Requirements)-1].MaxCount = -1
-		add("reader-quote-bounds", "each Quote is a verbatim span of one human-readable section, "+fmt.Sprint(readerQuoteMinRunes)+"-"+fmt.Sprint(readerQuoteMaxRunes)+" characters; a missing answer is reported as Status: no_local_answer, never approximated", "")
+		add("reader-reconstruction", "exactly one `Reconstruction:` header followed by one non-empty contiguous block (no blank lines inside) restating the design coherently — what the unit is, the main path, state, failure exposure, boundaries, output", "")
+		add("reader-undetermined", "exactly one `Undetermined:` header followed by one or more `- {point}` entries; declare exactly `- none` when nothing is undetermined; never combine `none` with entries", "")
 		add("reader-narrative-scopes", "one Dependency scope line per human-readable section of the main spec (the packet Context lists them), declared for check "+gaterun.ReaderContractCheck, "Dependency scope:\n  check-"+gaterun.ReaderContractCheck+": <main spec>: <section heading>")
 	}
 	if packet.Kind == gaterun.PacketKindVerifier {
-		add("verifier-judgments", "exactly one Judgment line per bank question, in bank order (Q01-Q17), each with supported, partial, or unsupported and a non-empty basis", "Judgment: Q01 = <supported|partial|unsupported> — <basis>")
+		add("verifier-claims", "at least one `Claim: C{nn} = {status} — {basis}` line; claim ids are sequential from C01 and classify the reconstruction's statements", "Claim: C01 = <supported|reader-error|unsupported-central|unsupported-minor|contradicted> — <basis>")
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
-		c.Requirements[len(c.Requirements)-1].Allowed = []string{"supported", "partial", "unsupported"}
-		add("verifier-verdict-closure", "the verdict is PASS exactly when every judgment is supported and the accepted reader report carries no no_local_answer; any other outcome is FAIL", "")
-		add("verifier-narrative-scopes", "one Dependency scope line per human-readable section of the main spec (the packet Context lists them), declared for check "+gaterun.ReaderContractCheck, "Dependency scope:\n  check-"+gaterun.ReaderContractCheck+": <main spec>: <section heading>")
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"supported", "reader-error", "unsupported-central", "unsupported-minor", "contradicted"}
+		add("verifier-carriers", "exactly one `Carrier: {acceptance item id} = {seen|missing} — {basis}` line per acceptance item in the packet Context's carrier backbone, in context order", "")
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"seen", "missing"}
+		add("verifier-must-close", "exactly one `Must-close: {decision id} = {closed|missing|not-applicable} — {basis}` line per §9 must-close decision (Q11-Q17), in id order", "")
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"closed", "missing", "not-applicable"}
+		add("verifier-consistency", "exactly one `Consistency: {coherent|incoherent} — {basis}` line judging the restatement's internal coherence", "")
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"coherent", "incoherent"}
+		add("verifier-verdict-closure", "the verdict is FAIL exactly when at least one claim is contradicted or unsupported-central, at least one Carrier line is missing, at least one Must-close line is missing, or Consistency is incoherent; otherwise PASS", "")
+		add("verifier-scopes", "one Dependency scope line per human-readable section of the main spec plus exactly one `acceptance_items` line on the main spec plus one whole-file line per protocol appendix listed in the packet Context, all declared for check "+gaterun.ReaderContractCheck, "Dependency scope:\n  check-"+gaterun.ReaderContractCheck+": <main spec>: <section heading>\n  check-"+gaterun.ReaderContractCheck+": <main spec>: acceptance_items\n  check-"+gaterun.ReaderContractCheck+": <appendix>: all")
 	}
 	if packet.Kind == gaterun.PacketKindChecks && run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && stringInList(packet.CheckKeys, "5") {
 		for _, sub := range unitAcceptanceSubchecks {

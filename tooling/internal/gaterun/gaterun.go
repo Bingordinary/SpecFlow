@@ -76,8 +76,9 @@ const (
 	// Packet kinds: a group of validate checks, one verify detection, one
 	// conditional verify analysis, one reviewed file, or the cross-check.
 	// The validate gate's reader contract check (Check 10) adds two more:
-	// the reader probe packet produces the evidence report, and the
-	// verifier packet judges its sufficiency (both own check key "10").
+	// the reader packet produces the closed-book reconstruction, and the
+	// verifier packet reconciles it against the human-readable part and the
+	// formal carrier (both own check key "10").
 	PacketKindChecks   = "checks"
 	PacketKindItem     = "item"
 	PacketKindAnalysis = "analysis"
@@ -1253,6 +1254,14 @@ func unitAppendices(repoRoot, unitName, layer string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// UnitAppendices lists the unit's protocol appendix files (repo-relative,
+// sorted) in the given layer. It is the exported form of unitAppendices for
+// submit-time validation in the command package (the Check 10 verifier's
+// formal-carrier appendix set).
+func UnitAppendices(repoRoot, unitName, layer string) []string {
+	return unitAppendices(repoRoot, unitName, layer)
 }
 
 // allUnitNames lists every unit with a main spec in either layer.

@@ -255,7 +255,7 @@ When findings mix resolution types (within one check or across checks), the repo
 
 ## Check 2 — Design soundness
 
-**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the spec satisfies the decision-closure half of the `framework/spec_writing_guide.md` §9 Authoring Baseline: every implementation-affecting decision is closed, so the downstream executor is never forced to choose, and any intentionally unmade decision declares its boundary. The ten §9 expression points are tested separately by the reader contract probe (Check 10). The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
+**Purpose:** Evaluate whether the design itself is correct and reasonable — not just whether it is well-documented — and whether the spec satisfies the decision-closure half of the `framework/spec_writing_guide.md` §9 Authoring Baseline: every implementation-affecting decision is closed, so the downstream executor is never forced to choose, and any intentionally unmade decision declares its boundary. The §9 expression points are tested separately by the reader contract probe (Check 10) through closed-book reconstruction. The subagent must actively reason about the design, not passively verify documentation completeness. Appendix content describing design decisions, API contracts, component trees, or data types is part of the unit's design and must be included in this analysis.
 
 **Execution steps:**
 
@@ -305,7 +305,7 @@ Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and
 Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5 Execution Rules, rule 2), verify the §9.3 boundary, and record the confirmation in the check-line trace (`confirmed` / `adjusted: {Px} → {Py}` with the evidence file). This trace is human-readable — it is not a packet `Severity confirmation:` record (those exist only for terminal retained findings in the cross packet). Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
 
 **Step 5 — Authoring Baseline verification (decision closure)**
-Verify that the spec closes every implementation-affecting decision in `framework/spec_writing_guide.md` §9: the downstream executor must not be forced to choose. The ten §9 expression points are NOT judged here — they are tested under acquisition conditions by the reader contract probe (Check 10), whose independent reader must find and cite each point's answer in the human-readable part. This step verifies the decision closure the probe does not test.
+Verify that the spec closes every implementation-affecting decision in `framework/spec_writing_guide.md` §9: the downstream executor must not be forced to choose. The §9 expression points are NOT judged here — they are tested under reconstruction conditions by the reader contract probe (Check 10), whose independent reader must restate the design from the human-readable part alone. This step verifies the decision closure the probe does not test.
 
 - **Input discipline:** the spec text is the ONLY input (main spec + non-exempt, non-retired appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
 
@@ -882,28 +882,38 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Check 10 — Reader contract
 
-**Purpose:** Enforce the Reader Contract (`framework/spec_writing_guide.md` §9) under acquisition conditions: an independent reader who has never seen the code and holds no author context must be able to reconstruct the design from the spec's human-readable part alone. The check replaces the reader-facing promise with reader-independent document properties — each answer must exist locally, carry a verbatim citation, and sit in one contiguous section — so the gate never depends on a reviewer's taste. The ten §9 expression points and the seven must-close decisions are the check's fixed question bank; §9's promise is only as strong as this check's enforcement.
+**Purpose:** Enforce the Reader Contract (`framework/spec_writing_guide.md` §9) under reconstruction conditions: an independent reader who has never seen the code and holds no author context must be able to reconstruct the design from the spec's human-readable part alone. The check splits the labor explicitly: machine validation keeps locality (the declared reading scope, the report structure, the carrier evidence set), while global coherence — whether the parts compose into one design — is kept by closed-book reconstruction followed by independent reconciliation. There is no fixed question bank on purpose: per-question answerability is a constructive-local property, and locally valid answers do not compose into a design (the collage counterexample — text whose every paragraph is locally sound but which shares no single design — passes any question-answering check by construction).
 
-**Human-readable part (citation source):** every `##` section of the unit main spec before the section containing the `acceptance_item_set:` marker. The acceptance-enclosing section itself and everything after it, appendices, and code are not citation sources — a design narrative buried after the acceptance section or inside an appendix does not satisfy the contract. The gate plan computes the section list mechanically (the reader and verifier packet contexts carry it verbatim); a spec without the marker section, or with no narrative section before it, fails closed at plan time.
+**Human-readable part (reading scope):** every `##` section of the unit main spec before the section containing the `acceptance_item_set:` marker. The acceptance-enclosing section itself and everything after it, appendices, and code are outside the reader's scope — a design narrative buried after the acceptance section or inside an appendix does not satisfy the contract. The gate plan computes the section list mechanically (the reader packet context carries it verbatim); a spec without the marker section, or with no narrative section before it, fails closed at plan time.
 
-**Packet structure:** Check 10 owns two packets that always execute together — the `reader` packet (evidence report) and the `verifier` packet (sufficiency judgment, depends on the accepted reader result). The reader authors evidence only; the verifier authors judgments only; gate-submit composes the check verdict and the findings mechanically from both. Neither packet's reviewer writes a verdict line or finding entries.
+**Packet structure:** Check 10 owns two packets that always execute together — the `reader` packet (closed-book reconstruction) and the `verifier` packet (reconciliation, depends on the accepted reader result). The reader authors evidence only (the reconstruction and the Undetermined list); the verifier authors classifications only (Claim, Carrier, Must-close, Consistency lines); gate-submit composes the check verdict and the findings mechanically from the classifications. Judgment enters the gate only at the classification step — the verdict itself is never authored. Neither packet's reviewer writes finding entries.
 
-### Question bank
+### Reader packet — closed-book reconstruction
 
-The bank is fixed: the same seventeen questions for every unit and every round, parameterized by nothing but the unit's own content. Q01–Q10 are the §9 ten expression points; Q11–Q17 are the §9 seven must-close decisions.
+The reader is an independent read-only session (packet mission; §Sub-agent Prompt Assembly in `framework/verification_scope.md`). It reads only the human-readable part — no acceptance items, no appendices, no code — and receives no question bank. It produces one contiguous design restatement and the honest list of what it could not determine:
 
-| ID | Question |
+```
+Reconstruction:
+{one contiguous prose block: what the unit is, how the main path works,
+ where state lives, how failure is exposed, what the boundaries are,
+ what it produces}
+
+Undetermined:
+- {anything that would not connect or had to be guessed}
+```
+
+- The restatement must be one non-empty contiguous block. No quotes and no citations are required: quoting proves local answerability, and local answerability does not compose into a design — the restatement must carry the connections itself.
+- `Undetermined` is the honesty trace: every place the reader had to guess or could not connect is declared instead of filled. Declare exactly `- none` when nothing is undetermined; `none` never combines with entries.
+- The reader must not write a verdict line or finding entries — the check verdict is the verifier packet's, composed mechanically.
+
+gate-submit validates the report mechanically: the Reconstruction block is present, contiguous, and non-degenerate; the Undetermined list is well-formed; and the declared Dependency scope sections are exactly the human-readable section list. Any violation rejects the submission (the executor corrects the report; every attempt is kept).
+
+### Verifier packet — reconciliation
+
+The verifier is a second independent read-only session. Its inputs: the accepted reconstruction (embedded in its packet mission), the human-readable part (the support source), and the formal carrier — the acceptance item set and the protocol appendices (the verifier's packet context carries the carrier backbone; its read refs cover the main spec and the appendices). It reports the check verdict, one line per classified claim, one Carrier line per acceptance item, one Must-close line per §9 decision, and one Consistency line. The seven §9 must-close decisions keep their fixed ids, identical to the tooling's decision table:
+
+| ID | Decision |
 |----|----------|
-| Q01 | intended user, actor, or caller |
-| Q02 | unit responsibility and why the unit owns it |
-| Q03 | entry point or trigger |
-| Q04 | normal path from input to result |
-| Q05 | boundaries crossed on the path |
-| Q06 | data, state, or durable truth each step reads or writes |
-| Q07 | owner of each read/write responsibility |
-| Q08 | output artifact or observable result |
-| Q09 | failure and dependency-unavailability exposure |
-| Q10 | verification surface and success condition |
 | Q11 | which object owns a responsibility |
 | Q12 | which entry point starts the behavior |
 | Q13 | where state or durable truth lives |
@@ -912,51 +922,44 @@ The bank is fixed: the same seventeen questions for every unit and every round, 
 | Q16 | what the result shape means |
 | Q17 | how acceptance proves the stated responsibility |
 
-### Reader packet — evidence report
-
-The reader is an independent read-only session (packet mission; §Sub-agent Prompt Assembly in `framework/verification_scope.md`). It reads only the human-readable part and answers every bank question in one block, in bank order:
-
-```
-Question: Q01 — intended user, actor, or caller
-Status: answered
-Answer: {one-sentence restatement of the answer}
-Quote: {verbatim quote from the human-readable part}
-Location: {exact heading text of the ## section containing the quote}
-```
-
-- `Status: no_local_answer` is the honest report when the human-readable part carries no answer. Approximating with a near-miss quote, paraphrasing, or stitching spans from several sections is prohibited — the mechanical layer rejects stitching by construction (one quote per question) and the verifier rejects near-misses.
-- The quote must be a single contiguous span of exactly one human-readable section, 4–400 characters. This is the 0-jump default: an answer a reader must assemble from several places is not locally present.
-- The reader must not write a verdict line or finding entries.
-
-gate-submit validates the report mechanically: bank order and coverage (17/17), per-status field rules, and — for every answered question — the quote exists verbatim inside the declared section, the section belongs to the human-readable part, and the quote length holds. Any violation rejects the submission (the executor corrects the report; every attempt is kept). The check verdict is computed, not authored: `PASS` when every question is answered with a valid citation, `FAIL` when any question reports `no_local_answer`. Each `no_local_answer` question composes one mechanical P1 finding (actionable: express the point in the narrative).
-
-### Verifier packet — sufficiency judgment
-
-The verifier is a second independent read-only session. Its only input for judgment is the accepted reader evidence report (embedded in its packet mission); it must not search the spec for answers or substitute a better answer. It reports exactly one Judgment line per bank question, in bank order, plus the check verdict:
-
 ```
 10. Reader contract: PASS | FAIL — {reason}
 
-Judgment: Q01 = supported — {basis}
-Judgment: Q02 = supported — {basis}
-...
+Claim: C01 = supported — {basis}
+Carrier: {acceptance item id} = seen — {basis}
+Must-close: Q11 = closed — {basis}
+Consistency: coherent — {basis}
 ```
 
-- `supported` — the quote really answers the question; `partial` — the quote addresses part of it; `unsupported` — the quote does not answer it.
-- A question the reader declared `no_local_answer` must be judged `unsupported`.
-- The verdict must equal the mechanical outcome: `PASS` exactly when every judgment is `supported` and the reader report carries no `no_local_answer`; otherwise `FAIL`.
-- Every deficient question composes exactly one mechanical P1 finding: a `no_local_answer` question through the reader packet (above), an answered question judged `partial` or `unsupported` through this verifier packet (actionable: revise the cited section so it directly answers the question).
+Claim classification (this is the step where judgment lives, and the only one):
+
+- `supported` — the human-readable part supports the claim.
+- `contradicted` — the formal carrier contradicts the claim; the basis records both sides so the user can adjudicate.
+- `unsupported-central` — the claim's substance exists in the formal carrier but the human-readable part never states it, and the claim touches a central mechanism. This is a document gap.
+- `unsupported-minor` — same, but the claim is a minor detail. Advisory only: presented on the check line, never a machine finding.
+- `reader-error` — neither the human-readable part nor the carrier supports the claim: the reader invented it. It does not affect the verdict — the document is not condemned for the reader's fabrication (re-running the reader is the remedy).
+
+**Central** = the unit's declared responsibility + each acceptance item's behavioral subject + every applicable must-close decision. The carrier mapping works in the opposite direction — from the formal carrier into the reconstruction: `seen` — the item's behavioral subject is reconstructable from the restatement; `missing` — neither the restatement nor the Undetermined list lets the verifier see it, meaning the document did not let the reader see it. A subject the reader could only guess at is not a reconstructed subject: `Undetermined` entries inform the verifier's judgment, but a guessed design is still `missing`. Must-close mapping: `closed` — the reconstruction carries the decision; `missing` — it does not; `not-applicable` — the decision has no subject in this unit, with the basis stating why.
+
+**Declarative units** (type/contract units produced by §14.4's shared-code law) are reconciled by their declared responsibility and their acceptance items' behavioral subjects — the public surface and whom it serves, the form things take crossing the boundary, what is frozen, what breaks when changed — never by a behavior template. A declarative unit does not need a flow to pass; it needs its shape to be reconstructable.
+
+The verdict must equal the mechanical outcome: `FAIL` exactly when at least one claim is `contradicted` or `unsupported-central`, at least one Carrier line is `missing`, at least one Must-close line is `missing`, or `Consistency: incoherent`; otherwise `PASS`. Every blocking classification composes exactly one mechanical P1 finding (actionable, document-level): a `contradicted` claim (reconcile the narrative with the carrier; the user adjudicates from the recorded sides), an `unsupported-central` claim (state the substance in the narrative), a `missing` Carrier line (let the narrative carry the item's behavioral subject), a `missing` Must-close line (close the decision or declare its open boundary per §9), and an incoherent consistency (resolve the self-contradiction). `unsupported-minor` claims enter no finding — validate grades findings P0/P1 only.
 
 ### Verdict and severity
 
-Check 10 `FAIL` findings are P1 (contract-decided default) and gate-driving — they block promote like every other validate P0/P1. The fix is always actionable at the document level: express the missing point, or revise the cited section, in the human-readable part.
+Check 10 `FAIL` findings are P1 (contract-decided default) and gate-driving — they block promote like every other validate P0/P1. The fix is always actionable at the document level: state the missing substance, close or bound the decision, or reconcile the contradiction, in the human-readable part.
+
+### Design boundary and calibration
+
+The split of labor is part of the contract: machine checks keep locality (the human-readable boundary, the declared reading scope, report structure, carrier evidence); global coherence is kept by the independent reconstruction and reconciliation pair. Two structural-fact probes once proposed for this check were rejected and must not be reintroduced as gate criteria: a single-home rule (each fact written in exactly one place) and a linear-path rule (no cross-section jumps) test layout, not semantics — a collage passes both — and the single-home rule conflicts with declarative units, whose narrative must restate shape facts the acceptance items also carry. Calibration is a periodic meta practice, not a gate dependency: sample accepted reconstructions and their classifications by hand to estimate the false-pass rate; a verifier that has never produced a blocking classification over many runs is an anomaly signal worth auditing.
 
 ### Scope and lifecycle
 
-- **Delta/repair:** check 10's dependency evidence is the human-readable section set. A narrative edit re-runs the reader and verifier packets together; acceptance-item edits, rule changes, and dependency changes carry it over. The check never carries partially — both packets re-run or neither does.
+- **Delta/repair:** check 10's dependency evidence is the union of both packets' declared evidence — the human-readable section set (reader and verifier), the acceptance item set, and the protocol appendices (verifier). A narrative edit, an acceptance-item edit, or a carrier-appendix edit re-runs the reader and verifier packets together: the carrier backbone changed, so the reconciliation baseline changed. Rule changes and dependency changes carry it over. The check never carries partially — both packets re-run or neither does.
 - **Stable-only targets:** the probe runs against the stable main spec like every other check (the boundary resolves from the stable file's own `acceptance_item_set:` marker).
 - **Retiring units:** skipped entirely — no reader or verifier packets are planned (see the retiring-unit note in Check 1).
-- **Targeted runs:** `validate@{unit}:reader` (or `:check-10`) executes the same reader-then-verifier protocol as two independent subagent sessions coordinated by the main agent, without a packet run or cache write; a P0/P1 finding must first be persisted with `gate-invalidate --check 10`.
+- **Empty acceptance item set:** the probe is skipped like a retiring unit's — with no carrier there is nothing to reconcile against. Validate still plans the run so Check 2 can report the empty set; the gate fails on that check, so the skip cannot produce a passing record.
+- **Targeted runs:** `validate@{unit}:reader` (or `:check-10`) executes the same reconstruct-then-reconcile protocol as two independent subagent sessions coordinated by the main agent, without a packet run or cache write; a P0/P1 finding must first be persisted with `gate-invalidate --check 10`.
 - **Boundary-move note:** reordering sections across the acceptance boundary without editing their content does not stale the check's declared evidence (section CIDs are unchanged). Such a reorder is a deliberate structural change (§13 naming stability) and is the author's declared-change responsibility, like retirement itself.
 
 ---

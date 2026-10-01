@@ -196,7 +196,7 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 		}
 		if !run.PacketAllowsDeclaration(absRoot, spec, kp.path) {
 			if spec.Kind == gaterun.PacketKindReader || spec.Kind == gaterun.PacketKindVerifier {
-				return fmt.Errorf("check %q scope line declares %q — the reader and verifier packets cite only the unit main spec", kp.key, kp.path)
+				return fmt.Errorf("check %q scope line declares %q — the reader packet reads the unit main spec only, and the verifier packet reads the main spec and its protocol appendices", kp.key, kp.path)
 			}
 			return fmt.Errorf("check %q declaration %q is not part of packet %q's read refs — add evidence with --input at gate-plan time or use the packet that owns this input", kp.key, kp.path, spec.PacketID)
 		}
@@ -224,17 +224,13 @@ func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Pac
 	switch spec.Kind {
 	case gaterun.PacketKindReader:
 		// The reader authors evidence, never findings or verdicts: any
-		// authored finding line is rejected, and the mechanical citation
-		// validation composes the findings for no_local_answer questions.
+		// authored finding line is rejected, and the mechanical validation
+		// enforces the declared reading scope (exactly the human-readable
+		// sections).
 		if len(extractFindings(report)) > 0 {
 			return errors.New("reader packets report evidence only — finding entries are composed mechanically by gate-submit")
 		}
-		if err := validateReaderEvidence(absRoot, run, spec, report, parsed); err != nil {
-			return err
-		}
-		if verdict, ok := parsed.Verdicts[gaterun.ReaderContractCheck]; ok && verdict == "FAIL" && blockingFindingCount(parsed.Findings) == 0 {
-			return errors.New("a reader FAIL verdict requires at least one no_local_answer question")
-		}
+		return validateReaderReconstruction(absRoot, run, spec, parsed)
 	case gaterun.PacketKindVerifier:
 		return validateVerifierPacket(absRoot, run, spec, parsed, report)
 	case gaterun.PacketKindItem:
