@@ -1,19 +1,26 @@
-// Package gaterun fixes the immutable input snapshot and the deterministic
-// packet plan of a quality-gate run. A promote-consumable gate cache is
-// written by the sequence
+// Package gaterun fixes the immutable input snapshot and the coverage set of a
+// quality-gate run. A promote-consumable gate cache is written by the sequence
 //
-//	gate-plan → execute packets → gate-submit (per report) → gate-finalize
+//	gate-plan → decide session batches → gate-submit (per session) → gate-finalize
 //
 // gate-plan resolves the run's input surface — the target's spec files, the
-// dependency spec objects, and (for verify/review) the declared code surface
-// — adds the agent-declared extra inputs, generates the packet set for the
-// run mode, and persists the run under meta/gate_runs/. gate-submit validates
-// and records each packet report mechanically; gate-finalize re-resolves the
-// surface and re-hashes the stored entries, and any divergence (a modified,
-// added, or removed input, or a logical reference whose layer resolution
-// moved) rejects the write, so the cache's evidence can only describe content
-// that was stable for the whole judgment window (see
+// dependency spec objects, and (for verify) the declared code surface
+// — adds the agent-declared extra inputs, computes the coverage set (the
+// judgment keys that must each receive exactly one verdict) for the run mode,
+// and persists the run under meta/gate_runs/ with no sessions. The agent
+// chooses how to batch coverage keys into reviewer sessions; gate-mission
+// materializes a session's read-only mission, gate-submit validates and
+// records each accepted session report mechanically, and gate-finalize
+// re-resolves the surface and re-hashes the stored entries. Any divergence (a
+// modified, added, or removed input, or a logical reference whose layer
+// resolution moved) rejects the write, so the cache's evidence can only
+// describe content that was stable for the whole judgment window (see
 // framework/validation_cache.md §Write Rules → Tooled writes).
+//
+// Coverage closure is mechanical: gate-finalize refuses a run whose coverage
+// set is not covered by exactly one accepted session per key (plus carried
+// baseline judgments for delta/repair). This replaces the anti-skip guarantee
+// the former fixed session plan provided.
 //
 // The run id correlates state only. It is not executor identity and proves
 // nothing about the execution shape.
@@ -31,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
@@ -42,7 +50,6 @@ import (
 const (
 	GateValidate = "validate"
 	GateVerify   = "verify"
-	GateReview   = "review"
 
 	TargetKindUnit = "unit"
 	TargetKindRule = "rule"
@@ -50,14 +57,14 @@ const (
 	TargetCandidate = "candidate"
 	TargetStable    = "stable"
 
-	// Run modes: full generates every packet; delta derives the re-run set
+	// Run modes: full generates every session; delta derives the re-run set
 	// from a pass baseline's stale evidence; repair derives it from a
 	// failure record's status map.
 	ModeFull   = "full"
 	ModeDelta  = "delta"
 	ModeRepair = "repair"
 
-	// StatusOpen marks a run whose packets may still be submitted and
+	// StatusOpen marks a run whose sessions may still be submitted and
 	// finalized; StatusConsumed marks a finalized run kept for audit;
 	// StatusInvalidated marks an open plan contradicted by a later targeted
 	// P0/P1, so it can no longer submit or finalize.
@@ -65,31 +72,35 @@ const (
 	StatusConsumed    = "consumed"
 	StatusInvalidated = "invalidated"
 
-	// Packet statuses. A packet is pending (no submission yet), accepted
+	// Session statuses. A session is pending (no submission yet), accepted
 	// (its report validated and recorded — terminal), or rejected (its last
 	// submission failed validation; it can be re-submitted).
-	PacketPending     = "pending"
-	PacketAccepted    = "accepted"
-	PacketRejected    = "rejected"
-	PacketNotRequired = "not_required"
+	SessionPending     = "pending"
+	SessionAccepted    = "accepted"
+	SessionRejected    = "rejected"
+	SessionNotRequired = "not_required"
 
-	// Packet kinds: a group of validate checks, one verify detection, one
-	// conditional verify analysis, one reviewed file, or the cross-check.
-	// The validate gate's reader contract check (Check 10) adds two more:
-	// the reader packet produces the closed-book reconstruction, and the
-	// verifier packet reconciles it against the human-readable part and the
-	// formal carrier (both own check key "10").
-	PacketKindChecks   = "checks"
-	PacketKindItem     = "item"
-	PacketKindAnalysis = "analysis"
-	PacketKindFile     = "file"
-	PacketKindCross    = "cross"
-	PacketKindReader   = "reader"
-	PacketKindVerifier = "verifier"
+	// Report kinds: a group of validate checks, one or more verify items, a
+	// reviewed file, or the final cross synthesis.
+	SessionKindChecks       = "checks"
+	SessionKindItem         = "item"
+	SessionKindDesign       = "design"
+	SessionKindCode         = "code"
+	SessionKindArchitecture = "architecture"
+	SessionKindPreserve     = "preserve"
+	SessionKindCross        = "cross"
 
-	// ReaderContractCheck is the unit validate check key of the reader
-	// contract probe (Check 10).
-	ReaderContractCheck = "10"
+	// Lens tags distinguish the two judgment stances the merged `verify` gate
+	// carries: `alignment` treats the spec as authority (acceptance items) and
+	// `quality` treats the spec as rationale (declared code files). A reviewer
+	// session never mixes lenses.
+	LensAlignment = "alignment"
+	LensQuality   = "quality"
+
+	// ClarityCheck is the unit validate check key of the clarity check
+	// (Check 10): read the unit spec and report what is unclear,
+	// underspecified, or internally contradictory.
+	ClarityCheck = "10"
 
 	// CrossKey is the reserved check key of the cross-check.
 	CrossKey = "cross"
@@ -101,8 +112,8 @@ const (
 	// SourceDerivedAffects marks a spec-derived evidence file that exists
 	// because the target spec declares it in an acceptance item's
 	// affects.files. Validate's read surface includes these files, so local
-	// validate packets may read and declare them; they never define work
-	// packets.
+	// validate sessions may read and declare them; they never define work
+	// sessions.
 	SourceDerivedAffects = "derived_affects"
 
 	runStateDir     = "meta/gate_runs"
@@ -138,23 +149,43 @@ type Surface struct {
 	Source  string  `json:"source"`
 }
 
-// PacketSpec is one planned work packet: the immutable plan record. The
-// packet's mutable state (status, attempts, accepted report) lives in its own
-// state file under the run directory.
-type PacketSpec struct {
-	PacketID  string   `json:"packet_id"`
-	Kind      string   `json:"kind"`
-	CheckKeys []string `json:"check_keys"`
-	DependsOn []string `json:"depends_on,omitempty"`
-	ReadRefs  []string `json:"read_refs,omitempty"`
-	// Context carries packet-kind-specific plan-time facts a mission must
-	// state verbatim: the reader-contract packets carry the human-readable
-	// part's section headings computed from the plan-time snapshot.
+// CoverageKey is one unit of judgment in a gate run: the key that must receive
+// exactly one verdict, tagged with its lens and the reviewer report kind it
+// maps to. A verify item key maps to the item report kind; a reviewed file key
+// to the file report kind; a validate group key (including clarity) to the
+// checks report kind. The agent decides how to batch coverage keys into
+// reviewer sessions; the planner only fixes the set.
+type CoverageKey struct {
+	Key      string   `json:"key"`
+	Lens     string   `json:"lens,omitempty"`
+	Kind     string   `json:"kind"`
+	File     string   `json:"file,omitempty"`
+	Unit     string   `json:"unit,omitempty"`
+	Item     string   `json:"item,omitempty"`
+	ReadRefs []string `json:"read_refs,omitempty"`
+	Source   string   `json:"source,omitempty"`
+	Task     string   `json:"task,omitempty"`
+}
+
+// SessionSpec is one materialized reviewer session spec: the immutable read
+// surface and report contract for an agent-chosen key batch. It is rebuilt
+// deterministically from the run's coverage set at mission and submit time;
+// the session's mutable state (status, attempts, accepted report) lives in its
+// own state file under the run directory.
+type SessionSpec struct {
+	SessionID     string   `json:"session_id"`
+	Kind          string   `json:"kind"`
+	CheckKeys     []string `json:"check_keys"`
+	DependsOn     []string `json:"depends_on,omitempty"`
+	ReadRefs      []string `json:"read_refs,omitempty"`
+	Relationships []string `json:"relationships,omitempty"`
+	// Context carries report-kind-specific plan-time facts a mission must
+	// state verbatim.
 	Context []string `json:"context,omitempty"`
 }
 
 // Finding is one mechanically identified finding. Local finding ids are
-// assigned at submit time from the immutable packet id and report order.
+// assigned at submit time from the immutable session id and report order.
 type Finding struct {
 	ID           string   `json:"id"`
 	Severity     string   `json:"severity"`
@@ -165,9 +196,30 @@ type Finding struct {
 	// OwnedBy is the unit whose behavior the finding belongs to, set by the
 	// cross synthesis's ownership records. Empty means unassigned: the finding
 	// drives this unit's gate. A finding owned by another unit is deferred —
-	// recorded and routed to the owner's review, not blocking this run (see
-	// framework/verification_scope.md §Gate Work Packets → Deferred findings).
+	// recorded and routed to the owner's verify run, not blocking this run (see
+	// framework/verification_scope.md §Coverage Model → Deferred findings).
 	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+// WithMinimumSeverity raises a validated P0-P3 grade without lowering it.
+// The canonical detail follows the grade; the original reviewer report stays
+// unchanged as evidence of the submitted assessment.
+func (finding Finding) WithMinimumSeverity(minimum string) Finding {
+	if minimum == "" || minimum >= finding.Severity {
+		return finding
+	}
+	previous := finding.Severity
+	finding.Severity = minimum
+	lines := strings.Split(finding.Detail, "\n")
+	lines[0] = strings.Replace(lines[0], "["+previous+"]", "["+minimum+"]", 1)
+	for i, line := range lines {
+		label, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if ok && strings.EqualFold(label, "Severity") && strings.EqualFold(strings.TrimSpace(value), previous) {
+			lines[i] = line[:strings.IndexByte(line, ':')+1] + " " + minimum
+		}
+	}
+	finding.Detail = strings.Join(lines, "\n")
+	return finding
 }
 
 // FindingOwnership is the cross synthesis's evidence-backed ownership record
@@ -180,7 +232,7 @@ type FindingOwnership struct {
 	Reason       string `json:"reason"`
 }
 
-// Scope is one dependency declaration parsed from a packet report.
+// Scope is one dependency declaration parsed from a session report.
 type Scope struct {
 	Key         string `json:"key"`
 	Path        string `json:"path"`
@@ -195,44 +247,35 @@ type FindingDisposition struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-// SeverityConfirmation is the cross or rule-validate executor's evidence-
-// backed step in one finding's severity-confirmation sequence.
-// OriginalSeverity must match the severity produced by the previous step (or
-// the finding before synthesis for the first step). FinalSeverity is equal for
-// confirmed records or one adjacent level away for adjusted records.
-type SeverityConfirmation struct {
-	FindingID        string `json:"finding_id"`
-	Outcome          string `json:"outcome"` // confirmed | adjusted
-	OriginalSeverity string `json:"original_severity"`
-	FinalSeverity    string `json:"final_severity"`
-	EvidencePath     string `json:"evidence_path"`
-	Reason           string `json:"reason"`
-}
-
-// PacketResult is the immutable machine-readable interpretation of an
-// accepted report. Later packets and gate-finalize consume this structure,
-// never a coordinator-supplied restatement of the result.
-type PacketResult struct {
-	PacketID        string                 `json:"packet_id"`
-	Kind            string                 `json:"kind"`
-	Verdicts        map[string]string      `json:"verdicts,omitempty"`
-	Scopes          []Scope                `json:"scopes,omitempty"`
-	Findings        []Finding              `json:"findings,omitempty"`
-	EffectiveStatus map[string]string      `json:"effective_status,omitempty"`
-	Dispositions    []FindingDisposition   `json:"dispositions,omitempty"`
-	SeverityChecks  []SeverityConfirmation `json:"severity_confirmations,omitempty"`
-	Ownerships      []FindingOwnership     `json:"ownerships,omitempty"`
-	Analysis        map[string]string      `json:"analysis,omitempty"`
-	ReportDigest    string                 `json:"report_digest"`
+// SessionResult is the immutable machine-readable interpretation of an
+// accepted session report. Later sessions (the final synthesis) and
+// gate-finalize consume this structure, never a coordinator-supplied
+// restatement of the result.
+type SessionResult struct {
+	SessionID               string               `json:"session_id"`
+	Kind                    string               `json:"kind"`
+	Verdicts                map[string]string    `json:"verdicts,omitempty"`
+	Scopes                  []Scope              `json:"scopes,omitempty"`
+	Findings                []Finding            `json:"findings,omitempty"`
+	EffectiveStatus         map[string]string    `json:"effective_status,omitempty"`
+	QualityConclusions      map[string]string    `json:"quality_conclusions,omitempty"`
+	Dispositions            []FindingDisposition `json:"dispositions,omitempty"`
+	Ownerships              []FindingOwnership   `json:"ownerships,omitempty"`
+	Analysis                map[string]string    `json:"analysis,omitempty"`
+	ReportDigest            string               `json:"report_digest"`
+	Observations            []Finding            `json:"observations,omitempty"`
+	ObservationDispositions []FindingDisposition `json:"observation_dispositions,omitempty"`
 }
 
 // JudgmentBaseline is the cache-embedded semantic state used to materialize
 // carried judgments for a delta/repair run.
 type JudgmentBaseline struct {
-	SchemaVersion   int               `json:"schema_version"`
-	LogicalStatus   map[string]string `json:"logical_status"`
-	Findings        []Finding         `json:"findings"`
-	SynthesisDigest string            `json:"synthesis_digest"`
+	SchemaVersion   int                          `json:"schema_version"`
+	Records         map[string]judgments.Binding `json:"records,omitempty"`
+	LogicalStatus   map[string]string            `json:"logical_status"`
+	Findings        []Finding                    `json:"findings"`
+	SynthesisDigest string                       `json:"synthesis_digest"`
+	Relationships   []string                     `json:"relationships"`
 	// DeferredFindings records the run's findings whose ownership points at
 	// another unit. They are audit state, not carry state: routing lives in the
 	// deferred-findings ledger, and a later run of this unit must not re-dispose
@@ -240,11 +283,11 @@ type JudgmentBaseline struct {
 	DeferredFindings []Finding `json:"deferred_findings,omitempty"`
 }
 
-// DeferredFinding is one pending review finding routed to this run's unit by
-// another unit's review synthesis. The plan loads it from the deferred-
+// DeferredFinding is one pending verify finding routed to this run's unit by
+// another unit's verify synthesis. The plan loads it from the deferred-
 // findings ledger, the cross synthesis must dispose it, and gate-finalize
 // consumes the ledger entry it resolved (see framework/verification_scope.md
-// §Gate Work Packets → Deferred findings).
+// §Coverage Model → Deferred findings).
 type DeferredFinding struct {
 	SourceUnit   string  `json:"source_unit"`
 	SourceRun    string  `json:"source_run"`
@@ -253,8 +296,8 @@ type DeferredFinding struct {
 	Finding      Finding `json:"finding"`
 }
 
-// Attempt is one submission of a packet report. Every submission is recorded —
-// accepted and rejected alike — so retry counts and replacement results are
+// Attempt is one submission of a session report. Every submission is recorded
+// — accepted and rejected alike — so retry counts and replacement results are
 // traceable.
 type Attempt struct {
 	Attempt         int    `json:"attempt"`
@@ -264,14 +307,17 @@ type Attempt struct {
 	ResultDigest    string `json:"result_digest"`
 }
 
-// PacketState is the persisted mutable state of one packet. A missing state
-// file means pending.
-type PacketState struct {
-	PacketID              string            `json:"packet_id"`
+// SessionState is the persisted mutable state of one reviewer session: the
+// agent-assigned coverage keys and, once accepted, the verbatim report and its
+// parsed result. A missing state file means pending.
+type SessionState struct {
+	SessionID             string            `json:"session_id"`
+	Keys                  []string          `json:"keys"`
 	Status                string            `json:"status"` // pending | accepted | rejected | not_required
 	Attempts              []Attempt         `json:"attempts,omitempty"`
-	Report                string            `json:"report,omitempty"` // the accepted report, verbatim
-	Result                *PacketResult     `json:"packet_result,omitempty"`
+	Report                string            `json:"report,omitempty"`
+	SemanticDigest        string            `json:"semantic_digest,omitempty"` // the accepted report, verbatim
+	Result                *SessionResult    `json:"session_result,omitempty"`
 	ConsumedResultDigests map[string]string `json:"consumed_result_digests,omitempty"`
 }
 
@@ -294,31 +340,45 @@ type CarriedEvidenceEntry struct {
 // CarriedCheckEntry is one carried check's dependency evidence.
 type CarriedCheckEntry struct {
 	Check string   `json:"check"`
+	Lens  string   `json:"lens,omitempty"`
 	Deps  []string `json:"deps,omitempty"`
 }
 
 // Run is the persisted plan of one gate run: the immutable input snapshot,
-// the deterministic packet plan, and the run mode.
+// the coverage set that must be judged, and the run mode. It carries no
+// sessions: the agent creates them under their chosen key batches.
 type Run struct {
-	RunID           string                 `json:"run_id"`
-	Gate            string                 `json:"gate"`
-	TargetKind      string                 `json:"target_kind"`
-	TargetName      string                 `json:"target_name"`
-	Target          string                 `json:"target"`
-	CreatedAt       string                 `json:"created_at"`
-	Status          string                 `json:"status"`
-	Mode            string                 `json:"mode"`
-	Refs            []Ref                  `json:"refs"`
-	Surfaces        []Surface              `json:"surfaces"`
-	ExtraInputs     []string               `json:"extra_inputs,omitempty"`
-	RequiredFiles   []string               `json:"required_files,omitempty"`
-	CarriedKeys     []string               `json:"carried_keys,omitempty"`
-	CarriedEvidence []CarriedEvidenceEntry `json:"carried_evidence,omitempty"`
-	RerunKeys       []string               `json:"rerun_keys,omitempty"`
-	Packets         []PacketSpec           `json:"packets"`
-	CarriedResults  []PacketResult         `json:"carried_results,omitempty"`
+	PublicEvidence  map[string][]string          `json:"public_evidence,omitempty"`
+	RunID           string                       `json:"run_id"`
+	SchemaVersion   int                          `json:"schema_version,omitempty"`
+	Protocol        string                       `json:"protocol,omitempty"`
+	Records         map[string]judgments.Binding `json:"records,omitempty"`
+	Gate            string                       `json:"gate"`
+	TargetKind      string                       `json:"target_kind"`
+	TargetName      string                       `json:"target_name"`
+	Target          string                       `json:"target"`
+	CreatedAt       string                       `json:"created_at"`
+	Status          string                       `json:"status"`
+	Mode            string                       `json:"mode"`
+	Refs            []Ref                        `json:"refs"`
+	Surfaces        []Surface                    `json:"surfaces"`
+	ExtraInputs     []string                     `json:"extra_inputs,omitempty"`
+	RequiredFiles   []string                     `json:"required_files,omitempty"`
+	OwnSpecFiles    []string                     `json:"own_spec_files,omitempty"`
+	CarriedKeys     []string                     `json:"carried_keys,omitempty"`
+	CarriedEvidence []CarriedEvidenceEntry       `json:"carried_evidence,omitempty"`
+	RerunKeys       []string                     `json:"rerun_keys,omitempty"`
+	Coverage        []CoverageKey                `json:"coverage"`
+	Relationships   []string                     `json:"relationships"`
+	CarriedResults  []SessionResult              `json:"carried_results,omitempty"`
+
+	// ProtectedEvidence holds the stable spec paths selected for requirement
+	// protection before execution scope is narrowed by delta or repair.
+	ProtectedEvidence []string `json:"protected_evidence,omitempty"`
+
 	// DeferredFindings are the pending deferrals this run's unit must dispose,
-	// loaded from the deferred-findings ledger at plan time (review runs only).
+	// loaded from the deferred-findings ledger at plan time (verify unit runs;
+	// gate-finalize writes the ledger for the same gate/kind).
 	DeferredFindings []DeferredFinding `json:"deferred_findings,omitempty"`
 	// Notices records plan-time disclosures (delta scope derivation, carried
 	// checks, conservative degradations) for gate-status and the plan output.
@@ -344,18 +404,25 @@ func runDirectoryPath(repoRoot, runID string) (string, error) {
 	return localstate.Path(repoRoot, runStateDir, runID)
 }
 
-func packetStatePath(repoRoot, runID, packetID string) (string, error) {
+func sessionStatePath(repoRoot, runID, sessionID string) (string, error) {
 	if err := localstate.ValidateID(runID); err != nil {
 		return "", err
 	}
-	return localstate.Path(repoRoot, runStateDir, runID, "packets", packetFileBase(packetID)+".json")
+	return localstate.Path(repoRoot, runStateDir, runID, "sessions", sessionFileBase(sessionID)+".json")
 }
 
-// packetFileBase maps the logical packet id to a fixed-length filename that is
-// valid on every supported filesystem. The original id remains embedded in the
-// packet state and is validated after loading.
-func packetFileBase(packetID string) string {
-	sum := sha256.Sum256([]byte(packetID))
+func sessionsDirPath(repoRoot, runID string) (string, error) {
+	if err := localstate.ValidateID(runID); err != nil {
+		return "", err
+	}
+	return localstate.Path(repoRoot, runStateDir, runID, "sessions")
+}
+
+// sessionFileBase maps the logical session id to a fixed-length filename that
+// is valid on every supported filesystem. The original id remains embedded in
+// the session state and is validated after loading.
+func sessionFileBase(sessionID string) string {
+	sum := sha256.Sum256([]byte(sessionID))
 	return fmt.Sprintf("%x", sum)
 }
 
@@ -374,11 +441,11 @@ func (r *Run) EntryCount() int {
 	return n
 }
 
-// PacketByID returns the planned packet with the given id, or nil.
-func (r *Run) PacketByID(packetID string) *PacketSpec {
-	for i := range r.Packets {
-		if r.Packets[i].PacketID == packetID {
-			return &r.Packets[i]
+// CoverageByKey returns the coverage key with the given key, or nil.
+func (r *Run) CoverageByKey(key string) *CoverageKey {
+	for i := range r.Coverage {
+		if r.Coverage[i].Key == key {
+			return &r.Coverage[i]
 		}
 	}
 	return nil
@@ -387,15 +454,15 @@ func (r *Run) PacketByID(packetID string) *PacketSpec {
 // validateGateTarget checks the supported gate/kind/target combinations.
 func validateGateTarget(gate, targetKind, target string) error {
 	switch gate {
-	case GateValidate, GateVerify, GateReview:
+	case GateValidate, GateVerify:
 	default:
-		return fmt.Errorf("invalid gate %q: must be validate, verify, or review", gate)
+		return fmt.Errorf("invalid gate %q: must be validate or verify", gate)
 	}
 	switch targetKind {
 	case TargetKindUnit:
 	case TargetKindRule:
 		if gate != GateValidate {
-			return fmt.Errorf("rule targets support the validate gate only (rule verify and review have been removed) — got %q", gate)
+			return fmt.Errorf("rule targets support the validate gate only (rule verify has been removed) — got %q", gate)
 		}
 	default:
 		return fmt.Errorf("invalid target kind %q: must be unit or rule", targetKind)
@@ -412,14 +479,8 @@ func validateGateTarget(gate, targetKind, target string) error {
 // target requires the candidate main file; a stable target is a stable-only
 // target (the stable file exists and no candidate file exists).
 func validateTargetLayer(repoRoot, targetKind, targetName, target string) error {
-	var candidate, stable string
-	if targetKind == TargetKindUnit {
-		candidate = specpaths.CandidateUnitSpecFileRef(targetName)
-		stable = specpaths.StableUnitSpecFileRef(targetName)
-	} else {
-		candidate = specpaths.RuleCandidateFileRef(targetName)
-		stable = specpaths.RuleStableFileRef(targetName)
-	}
+	candidate := targetLayerSpecRef(targetKind, targetName, TargetCandidate)
+	stable := targetLayerSpecRef(targetKind, targetName, TargetStable)
 	hasCandidate := fileExists(filepath.Join(repoRoot, filepath.FromSlash(candidate)))
 	hasStable := fileExists(filepath.Join(repoRoot, filepath.FromSlash(stable)))
 	if target == TargetCandidate {
@@ -438,11 +499,11 @@ func validateTargetLayer(repoRoot, targetKind, targetName, target string) error 
 }
 
 // Plan resolves the run's input surface, applies the agent-declared extra
-// inputs, generates the deterministic packet plan, and persists the run. Any
-// previous run for the same (gate, target kind, target name, layer) is
-// replaced. The packet plan and the input snapshot are fixed here, before any
+// inputs, computes the coverage set, and persists the run with no sessions.
+// Any previous run for the same (gate, target kind, target name, layer) is
+// replaced. The coverage set and the input snapshot are fixed here, before any
 // executor reads input.
-func Plan(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys []string, now time.Time) (*Run, error) {
+func Plan(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys, relationships []string, now time.Time) (*Run, error) {
 	// Validate the target name before the mutation lock touches the working
 	// tree: an invalid name must fail without creating meta/ or a lock file
 	// (tooling/README.md §Target names).
@@ -452,7 +513,7 @@ func Plan(repoRoot, gate, targetKind, targetName, target, mode string, extraInpu
 	var planned *Run
 	err := WithMutation(repoRoot, func() error {
 		var err error
-		planned, err = planUnlocked(repoRoot, gate, targetKind, targetName, target, mode, extraInputs, rerunKeys, now)
+		planned, err = planUnlocked(repoRoot, gate, targetKind, targetName, target, mode, extraInputs, rerunKeys, relationships, now)
 		return err
 	})
 	return planned, err
@@ -466,11 +527,12 @@ func WithMutation(repoRoot string, fn func() error) error {
 }
 
 // TargetedInvalidation is the complete, repository-locked result of recording
-// a targeted P0/P1: the canonical cache transition plus every matching open
-// run that was made unusable so it cannot overwrite the new recovery state.
+// a targeted P0/P1: invalidated immutable evidence, the canonical cache
+// transition, and matching open runs that cannot overwrite recovery state.
 type TargetedInvalidation struct {
-	Cache             *validationcache.TargetedInvalidation
-	InvalidatedRunIDs []string
+	Cache                  *validationcache.TargetedInvalidation
+	InvalidatedRunIDs      []string
+	InvalidatedJudgmentIDs []string
 }
 
 // InvalidateTargeted records targeted P0/P1 recovery state and invalidates
@@ -502,6 +564,29 @@ func InvalidateTargeted(repoRoot, gate, targetKind, targetName, target string, c
 
 	result := &TargetedInvalidation{}
 	err := WithMutation(repoRoot, func() error {
+		if gate == GateVerify {
+			items, err := verifyItems(repoRoot, &Run{TargetKind: targetKind, TargetName: targetName, Target: target})
+			if err != nil {
+				return err
+			}
+			for i, key := range keys {
+				if stringInSlice(items, key) {
+					keys[i] = reviewKey(SessionKindItem, targetName, key)
+				}
+			}
+			keys = dedupeSorted(keys)
+			refs, err := targetedVerifyReferences(repoRoot, targetName, target, keys)
+			if err != nil {
+				return err
+			}
+			reason := fmt.Sprintf("targeted P0/P1: verify@%s (%s), checks: %s", targetName, target, strings.Join(keys, ", "))
+			for _, ref := range refs {
+				if err := judgments.Invalidate(repoRoot, ref.ID, reason); err != nil {
+					return err
+				}
+				result.InvalidatedJudgmentIDs = append(result.InvalidatedJudgmentIDs, ref.ID)
+			}
+		}
 		ids, err := invalidateOpenRunsFor(repoRoot, gate, targetKind, targetName, target, keys)
 		if err != nil {
 			return err
@@ -517,16 +602,23 @@ func InvalidateTargeted(repoRoot, gate, targetKind, targetName, target string, c
 	return result, err
 }
 
-func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys []string, now time.Time) (*Run, error) {
+func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys, relationships []string, now time.Time) (*Run, error) {
 	run, err := resolveRun(repoRoot, gate, targetKind, targetName, target, mode, extraInputs, rerunKeys)
 	if err != nil {
 		return nil, err
 	}
-	plan, carried, required, notices, err := buildPacketPlan(repoRoot, run)
+	run.Relationships = dedupeSorted(relationships)
+	if err := validateRelationships(run); err != nil {
+		return nil, err
+	}
+	coverage, carried, required, notices, err := buildCoveragePlan(repoRoot, run)
 	if err != nil {
 		return nil, err
 	}
-	run.Packets = plan
+	if err := validateRelationships(run); err != nil {
+		return nil, err
+	}
+	run.Coverage = coverage
 	run.CarriedKeys = carried
 	if len(carried) > 0 {
 		carriedResults, cerr := loadCarriedResults(repoRoot, run, carried)
@@ -534,6 +626,25 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 			return nil, cerr
 		}
 		run.CarriedResults = carriedResults
+		if gate == GateVerify {
+			baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, gate)
+			if err != nil {
+				return nil, err
+			}
+			state, err := validatedJudgmentState(baseline)
+			if err != nil {
+				return nil, err
+			}
+			for _, key := range carried {
+				if ref, ok := state.Records[key]; ok {
+					ref.Source = "carried"
+					if !strings.HasPrefix(key, "preserve:") {
+						ref.Layer = target
+					}
+					run.Records[key] = ref
+				}
+			}
+		}
 		carriedEvidence, cerr := loadCarriedEvidence(repoRoot, run, carried)
 		if cerr != nil {
 			return nil, cerr
@@ -543,11 +654,12 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	run.RequiredFiles = required
 	run.Notices = notices
 
-	// A review run consumes the unit's pending deferrals: findings another
-	// unit's review routed here by recorded ownership. Loading them at plan
-	// time makes them part of the run's immutable input — the cross synthesis
-	// must dispose every one of them, exactly like a carried judgment.
-	if gate == GateReview && targetKind == TargetKindUnit {
+	// A verify run consumes the unit's pending deferrals: findings another
+	// unit's quality-lens synthesis routed here by recorded ownership. Loading
+	// them at plan time makes them part of the run's immutable input — the
+	// final synthesis must dispose every one of them, exactly like a carried
+	// judgment.
+	if gate == GateVerify && targetKind == TargetKindUnit {
 		deferred, derr := loadDeferredFindings(repoRoot, targetName)
 		if derr != nil {
 			return nil, derr
@@ -570,12 +682,20 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	if err := writeRun(repoRoot, run); err != nil {
 		return nil, err
 	}
+	if gate == GateVerify {
+		if err := prepareSharedChecks(repoRoot, run); err != nil {
+			return nil, err
+		}
+		if err := writeRun(repoRoot, run); err != nil {
+			return nil, err
+		}
+	}
 	return run, nil
 }
 
 // resolveRun validates the run request and resolves its input surface: the
 // gate's derived refs and surfaces plus the agent-declared extra inputs. It
-// performs no packet planning and writes no state, so Plan and the delta
+// performs no session planning and writes no state, so Plan and the delta
 // scope preview share exactly the same input resolution.
 func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys []string) (*Run, error) {
 	if err := validateGateTarget(gate, targetKind, target); err != nil {
@@ -600,15 +720,26 @@ func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, ext
 		return nil, err
 	}
 	run := &Run{
-		Gate:       gate,
-		TargetKind: targetKind,
-		TargetName: targetName,
-		Target:     target,
-		Status:     StatusOpen,
-		Mode:       mode,
-		RerunKeys:  dedupeSorted(rerunKeys),
-		Refs:       refs,
-		Surfaces:   surfaces,
+		SchemaVersion: 2,
+		Protocol:      judgments.Protocol(repoRoot),
+		Records:       map[string]judgments.Binding{},
+		Gate:          gate,
+		TargetKind:    targetKind,
+		TargetName:    targetName,
+		Target:        target,
+		Status:        StatusOpen,
+		Mode:          mode,
+		RerunKeys:     dedupeSorted(rerunKeys),
+		Refs:          refs,
+		Surfaces:      surfaces,
+	}
+	run.OwnSpecFiles = []string{mainSpecRef(run)}
+	if targetKind == TargetKindUnit {
+		appendices, err := unitAppendices(repoRoot, targetName, target)
+		if err != nil {
+			return nil, err
+		}
+		run.OwnSpecFiles = append(run.OwnSpecFiles, appendices...)
 	}
 	seenRefs := map[string]bool{}
 	for _, ref := range run.Refs {
@@ -664,11 +795,16 @@ func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, ext
 		seenRefs[canonical] = true
 		run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
 	}
+	if gate == GateVerify {
+		if err := addReviewInputs(repoRoot, run); err != nil {
+			return nil, err
+		}
+	}
 	// The derived refs and surfaces are validated inside derive; extra inputs
 	// are appended afterwards, so re-validate the complete set. A logical
 	// reference whose resolution escapes the repository must be rejected here,
 	// before any run state is written (see framework/verification_scope.md
-	// §Gate Work Packets → Input roles).
+	// §Coverage Model → Input roles).
 	if err := validateSnapshotPaths(repoRoot, run.Refs, run.Surfaces); err != nil {
 		return nil, err
 	}
@@ -689,7 +825,7 @@ type DeltaPreview struct {
 	Rerun      []string                    // sorted effective re-run keys
 	Carried    []string                    // sorted carried-over keys
 	CoversFull bool                        // the re-run covers every declared check
-	Degraded   bool                        // no scope could be derived — the plan is the full packet set
+	Degraded   bool                        // no scope could be derived — the plan is the full coverage set
 	Reason     string                      // degradation reason (degraded only)
 	Notices    []string
 	PlanError  string // the derivation refused (fresh cache or an unreadable baseline)
@@ -705,7 +841,7 @@ type DeltaPreview struct {
 // the stale evidence it did read.
 func PreviewDeltaScope(repoRoot, gate, targetKind, targetName, target string) (*DeltaPreview, error) {
 	mode := ModeDelta
-	if baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, gate); err == nil && baseline.Exists && baselineFailureRecord(gate, baseline) {
+	if baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, gate); err == nil && baseline.Exists && baselineFailureRecord(baseline) {
 		mode = ModeRepair
 	}
 	run, err := resolveRun(repoRoot, gate, targetKind, targetName, target, mode, nil, nil)
@@ -770,6 +906,9 @@ func Load(repoRoot, runID string) (*Run, error) {
 	if run.RunID == "" || run.Gate == "" || run.TargetKind == "" || run.TargetName == "" || run.Target == "" || run.Status == "" || run.Mode == "" {
 		return nil, fmt.Errorf("gate run %s is missing required fields", runID)
 	}
+	if run.Records == nil {
+		run.Records = map[string]judgments.Binding{}
+	}
 	switch run.Status {
 	case StatusOpen, StatusConsumed, StatusInvalidated:
 	default:
@@ -778,11 +917,17 @@ func Load(repoRoot, runID string) (*Run, error) {
 	if err := validateGateTarget(run.Gate, run.TargetKind, run.Target); err != nil {
 		return nil, fmt.Errorf("gate run %s: %w", runID, err)
 	}
-	if len(run.Packets) == 0 {
-		return nil, fmt.Errorf("gate run %s has no packet plan", runID)
+	if len(run.Coverage) == 0 && len(run.Relationships) == 0 {
+		return nil, fmt.Errorf("gate run %s has no coverage set", runID)
 	}
-	if err := validatePacketPlan(run, run.Packets); err != nil {
-		return nil, fmt.Errorf("gate run %s has an invalid packet plan: %w", runID, err)
+	if err := validateRelationships(run); err != nil {
+		return nil, err
+	}
+	if err := validateCoverage(run, run.Coverage); err != nil {
+		return nil, fmt.Errorf("gate run %s has an invalid coverage set: %w", runID, err)
+	}
+	if run.Gate == GateVerify && run.SchemaVersion != 2 {
+		return nil, fmt.Errorf("old verify run uses a retired protocol; replan a full verify")
 	}
 	return run, nil
 }
@@ -814,48 +959,92 @@ func ListRuns(repoRoot string) ([]*Run, error) {
 	return runs, nil
 }
 
-// LoadPacketState reads one packet's state. A missing state file means the
-// packet is still pending.
-func LoadPacketState(repoRoot string, run *Run, packetID string) (*PacketState, error) {
-	if run.PacketByID(packetID) == nil {
-		return nil, fmt.Errorf("packet %q is not part of run %s's plan", packetID, run.RunID)
-	}
-	statePath, err := packetStatePath(repoRoot, run.RunID, packetID)
+// LoadSessionState reads one session's state. A missing state file means the
+// session is still pending.
+func LoadSessionState(repoRoot string, run *Run, sessionID string) (*SessionState, error) {
+	statePath, err := sessionStatePath(repoRoot, run.RunID, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(statePath)
 	if os.IsNotExist(err) {
-		return &PacketState{PacketID: packetID, Status: PacketPending}, nil
+		states, err := sharedStates(repoRoot, run, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range states {
+			if s.SessionID == sessionID {
+				return s, nil
+			}
+		}
+		return &SessionState{SessionID: sessionID, Status: SessionPending}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot read packet %q state: %w", packetID, err)
+		return nil, fmt.Errorf("cannot read session %q state: %w", sessionID, err)
 	}
-	state := &PacketState{}
+	state := &SessionState{}
 	if err := json.Unmarshal(data, state); err != nil {
-		return nil, fmt.Errorf("cannot parse packet %q state: %w", packetID, err)
+		return nil, fmt.Errorf("cannot parse session %q state: %w", sessionID, err)
 	}
-	if state.PacketID != packetID || state.Status == "" {
-		return nil, fmt.Errorf("packet %q state is missing required fields", packetID)
+	if state.SessionID != sessionID || state.Status == "" {
+		return nil, fmt.Errorf("session %q state is missing required fields", sessionID)
 	}
 	return state, nil
 }
 
-// SavePacketState persists one packet's state atomically. Packet state files
-// are independent, so concurrent submissions of different packets never
+// LoadSessionStates reads every session state under the run directory. A
+// missing directory means no session has been created. Entries that cannot be
+// loaded are an error — a corrupt session state must not silently drop a
+// judgment.
+func LoadSessionStates(repoRoot string, run *Run) ([]*SessionState, error) {
+	dir, err := sessionsDirPath(repoRoot, run.RunID)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return sharedStates(repoRoot, run, nil)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read sessions directory: %w", err)
+	}
+	var states []*SessionState
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, rerr := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if rerr != nil {
+			return nil, fmt.Errorf("cannot read session state %s: %w", entry.Name(), rerr)
+		}
+		state := &SessionState{}
+		if uerr := json.Unmarshal(data, state); uerr != nil {
+			return nil, fmt.Errorf("cannot parse session state %s: %w", entry.Name(), uerr)
+		}
+		if state.SessionID == "" || state.Status == "" {
+			return nil, fmt.Errorf("session state %s is missing required fields", entry.Name())
+		}
+		states = append(states, state)
+	}
+	sort.Slice(states, func(i, j int) bool { return states[i].SessionID < states[j].SessionID })
+	return sharedStates(repoRoot, run, states)
+}
+
+// SaveSessionState persists one session's state atomically. Session state
+// files are independent, so concurrent submissions of different sessions never
 // contend.
-func SavePacketState(repoRoot string, run *Run, state *PacketState) error {
+func SaveSessionState(repoRoot string, run *Run, state *SessionState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode packet %s state: %w", state.PacketID, err)
+		return fmt.Errorf("encode session %s state: %w", state.SessionID, err)
 	}
 	data = append(data, '\n')
-	statePath, err := packetStatePath(repoRoot, run.RunID, state.PacketID)
+	statePath, err := sessionStatePath(repoRoot, run.RunID, state.SessionID)
 	if err != nil {
 		return err
 	}
 	if err := writeFileAtomic(statePath, data, 0644); err != nil {
-		return fmt.Errorf("write packet %s state: %w", state.PacketID, err)
+		return fmt.Errorf("write session %s state: %w", state.SessionID, err)
 	}
 	return nil
 }
@@ -872,6 +1061,22 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 	refs, surfaces, err := derive(repoRoot, run.Gate, run.TargetKind, run.TargetName, run.Target)
 	if err != nil {
 		return []string{fmt.Sprintf("input surface no longer resolvable: %v", err)}, nil
+	}
+	if run.Gate == GateVerify {
+		current, err := resolveRun(repoRoot, run.Gate, run.TargetKind, run.TargetName, run.Target, ModeFull, run.ExtraInputs, nil)
+		if err != nil {
+			return []string{err.Error()}, nil
+		}
+		if current.Protocol != run.Protocol {
+			return []string{"review protocol changed"}, nil
+		}
+		var derived []Ref
+		for _, ref := range current.Refs {
+			if ref.Source != SourceInput {
+				derived = append(derived, ref)
+			}
+		}
+		refs = derived
 	}
 	// The derived part is re-derived; the agent-declared part (--input) is
 	// re-resolved from the stored entries. The two parts are compared
@@ -990,12 +1195,12 @@ func (r *Run) SnapshotHash(repoRoot, declared string) (string, bool) {
 	return "", false
 }
 
-// PacketAllowsDeclaration reports whether a path belongs to one packet's
+// SessionAllowsDeclaration reports whether a path belongs to one session's
 // declared read surface. Run-wide snapshot membership is insufficient: a
-// packet may not borrow evidence that was assigned only to another packet.
-func (r *Run) PacketAllowsDeclaration(repoRoot string, packet *PacketSpec, declared string) bool {
+// session may not borrow evidence that was assigned only to another session.
+func (r *Run) SessionAllowsDeclaration(repoRoot string, session *SessionSpec, declared string) bool {
 	canonical := canonicalPath(repoRoot, declared)
-	for _, allowed := range packet.ReadRefs {
+	for _, allowed := range session.ReadRefs {
 		if isLogicalRef(allowed) {
 			if isLogicalRef(canonical) && allowed == canonical {
 				return true
@@ -1007,6 +1212,13 @@ func (r *Run) PacketAllowsDeclaration(repoRoot string, packet *PacketSpec, decla
 		}
 	}
 	return false
+}
+
+// IsProtectedStableInput identifies the physical stable spec evidence selected
+// by planning. It remains available when a delta carries the preserve checks.
+func (r *Run) IsProtectedStableInput(repoRoot, declared string) bool {
+	canonical := canonicalPath(repoRoot, declared)
+	return stringInSlice(r.ProtectedEvidence, canonical)
 }
 
 // ------------------------------------------------------------
@@ -1023,7 +1235,7 @@ func derive(repoRoot, gate, targetKind, targetName, target string) ([]Ref, []Sur
 		switch gate {
 		case GateValidate:
 			refs, err = deriveUnitValidate(repoRoot, targetName, target)
-		case GateVerify, GateReview:
+		case GateVerify:
 			refs, surfaces, err = deriveUnitCodeGate(repoRoot, targetName, target)
 		}
 	case TargetKindRule:
@@ -1047,26 +1259,29 @@ func derive(repoRoot, gate, targetKind, targetName, target string) ([]Ref, []Sur
 // spec's affects.files entries, and every peer unit main spec (Check 9's
 // surface-ownership audit reads all of them).
 func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
-	var unitMain string
-	if target == TargetCandidate {
-		unitMain = specpaths.CandidateUnitSpecFileRef(unitName)
-	} else {
-		unitMain = specpaths.StableUnitSpecFileRef(unitName)
-	}
+	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
 	if err != nil {
 		return nil, err
 	}
 	var refs []Ref
 	refs = append(refs, physicalRef(repoRoot, unitMain, SourceDerived))
-	for _, appendix := range unitAppendices(repoRoot, unitName, target) {
+	appendices, err := unitAppendices(repoRoot, unitName, target)
+	if err != nil {
+		return nil, err
+	}
+	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
 	depUnits := map[string]bool{}
 	for _, dep := range parseRefList(content, "unit_refs", unitName) {
 		depUnits[dep] = true
 		refs = append(refs, logicalUnitRef(repoRoot, dep, SourceDerived))
-		for _, appendixRef := range logicalUnitAppendixRefs(repoRoot, dep) {
+		appendixRefs, err := logicalUnitAppendixRefs(repoRoot, dep)
+		if err != nil {
+			return nil, err
+		}
+		for _, appendixRef := range appendixRefs {
 			refs = append(refs, appendixRef)
 		}
 	}
@@ -1097,33 +1312,32 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	return refs, nil
 }
 
-// deriveUnitCodeGate resolves a verify/review unit run's inputs: the unit's
+// deriveUnitCodeGate resolves a verify unit run's inputs: the unit's
 // own spec files in the target layer plus the declared code surface
 // (implementation_surface directories expanded to their repository-content
 // files + affects.files). It fails closed before any run state is written on
 // a spec with no acceptance items or an unresolvable declared surface.
 func deriveUnitCodeGate(repoRoot, unitName, target string) ([]Ref, []Surface, error) {
-	var unitMain string
-	if target == TargetCandidate {
-		unitMain = specpaths.CandidateUnitSpecFileRef(unitName)
-	} else {
-		unitMain = specpaths.StableUnitSpecFileRef(unitName)
-	}
+	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
 	if err != nil {
 		return nil, nil, err
 	}
-	// Fail closed before any run state is written: a verify/review run's work
+	// Fail closed before any run state is written: a verify run's work
 	// set is the acceptance items, so an empty item set has no verifiable
-	// object — the packet plan would carry only the cross packet and could
+	// object — the session plan would carry only the cross session and could
 	// finalize a pass cache with no code evidence at all. The same
 	// precondition is enforced by mechanical validate Check 2.
 	if len(specvalidation.ExtractAcceptanceItemIDs(content)) == 0 {
-		return nil, nil, fmt.Errorf("declared acceptance item set is empty — add at least one acceptance item before planning a verify/review run")
+		return nil, nil, fmt.Errorf("declared acceptance item set is empty — add at least one acceptance item before planning a verify run")
 	}
 	var refs []Ref
 	refs = append(refs, physicalRef(repoRoot, unitMain, SourceDerived))
-	for _, appendix := range unitAppendices(repoRoot, unitName, target) {
+	appendices, err := unitAppendices(repoRoot, unitName, target)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
 	surfaces, err := codeSurfaces(repoRoot, content)
@@ -1169,7 +1383,7 @@ func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
 	// entries, producing a plan (and later a pass cache) with no code evidence
 	// at all. The same check runs in mechanical validate Check 3.
 	if problems := specvalidation.CheckImplementationSurfaces(repoRoot, specContent); len(problems) > 0 {
-		return nil, fmt.Errorf("declared implementation_surface cannot resolve to a code file — fix the acceptance items before planning a verify/review run: %s", specvalidation.FormatSurfaceProblems(problems))
+		return nil, fmt.Errorf("declared implementation_surface cannot resolve to a code file — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
 	}
 	var paths []string
 	paths = append(paths, specvalidation.ExtractImplementationSurfaces(specContent)...)
@@ -1238,30 +1452,18 @@ func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
 }
 
 // unitAppendices lists a unit's appendix files in one layer.
-func unitAppendices(repoRoot, unitName, layer string) []string {
-	pattern := fmt.Sprintf("docs/specs/units/%s/appendix/unit_%s_*.md", layer, unitName)
-	matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(pattern)))
+func unitAppendices(repoRoot, unitName, layer string) ([]string, error) {
+	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, layer)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
-	for _, m := range matches {
-		rel, relErr := filepath.Rel(repoRoot, m)
-		if relErr != nil {
-			continue
+	for _, appendix := range appendices {
+		if appendix.Status != "exempt" {
+			out = append(out, appendix.Path)
 		}
-		out = append(out, filepath.ToSlash(rel))
 	}
-	sort.Strings(out)
-	return out
-}
-
-// UnitAppendices lists the unit's protocol appendix files (repo-relative,
-// sorted) in the given layer. It is the exported form of unitAppendices for
-// submit-time validation in the command package (the Check 10 verifier's
-// formal-carrier appendix set).
-func UnitAppendices(repoRoot, unitName, layer string) []string {
-	return unitAppendices(repoRoot, unitName, layer)
+	return out, nil
 }
 
 // allUnitNames lists every unit with a main spec in either layer.
@@ -1333,10 +1535,14 @@ func logicalUnitRef(repoRoot, unitName, source string) Ref {
 // logicalUnitAppendixRefs builds the logical refs of a unit's protocol
 // appendices: every appendix base name present in either layer, resolved
 // current-layer.
-func logicalUnitAppendixRefs(repoRoot, unitName string) []Ref {
+func logicalUnitAppendixRefs(repoRoot, unitName string) ([]Ref, error) {
 	var bases []string
 	for _, layer := range []string{TargetCandidate, TargetStable} {
-		for _, file := range unitAppendices(repoRoot, unitName, layer) {
+		appendices, err := unitAppendices(repoRoot, unitName, layer)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range appendices {
 			base := strings.TrimSuffix(filepath.Base(file), ".md")
 			bases = append(bases, base)
 		}
@@ -1345,7 +1551,7 @@ func logicalUnitAppendixRefs(repoRoot, unitName string) []Ref {
 	for _, base := range dedupeSorted(bases) {
 		refs = append(refs, refreshRef(repoRoot, Ref{Ref: "unit:" + unitName + ":appendix:" + base, Source: SourceDerived}))
 	}
-	return refs
+	return refs, nil
 }
 
 // logicalRuleRef builds a rule logical ref (`rule:{id}`).
@@ -1556,7 +1762,7 @@ func validateSnapshotPaths(repoRoot string, refs []Ref, surfaces []Surface) erro
 // `./` prefixes, absolute paths, and platform separators are equivalent when
 // a report declaration is recorded (see framework/validation_cache.md §Format
 // and §Dependency Declaration). Membership is still enforced separately
-// against the packet's read refs.
+// against the session's read refs.
 func CanonicalDeclPath(repoRoot, p string) string {
 	return canonicalPath(repoRoot, p)
 }

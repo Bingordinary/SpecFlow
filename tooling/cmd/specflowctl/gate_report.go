@@ -10,21 +10,22 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
 
-// parsedReport is the mechanically extracted content of one packet report:
-// verdicts, dependency declarations, findings, synthesis records, and
-// evidence-backed severity confirmations.
+// parsedReport is the mechanically extracted content of one session report:
+// verdicts, dependency declarations, findings, and synthesis records.
 type parsedReport struct {
-	Verdicts          map[string]string // check key -> verdict token
-	CrossItems        map[string]string // fixed cross item -> PASS | FAIL
-	CrossItemFindings map[string]string // failed cross item -> new cross finding id
-	Scopes            []parsedScope
-	Findings          []gaterun.Finding
-	EffectiveStatus   map[string]string
-	Dispositions      []gaterun.FindingDisposition
-	SeverityChecks    []gaterun.SeverityConfirmation
-	Ownerships        []gaterun.FindingOwnership
-	Analysis          map[string]string
-	GateFindings      string // review file packets: the gate_findings line content (`none` or [P0|P1] entries)
+	Observations            []gaterun.Finding
+	ObservationDispositions []gaterun.FindingDisposition
+	Verdicts                map[string]string // check key -> verdict token
+	CrossItems              map[string]string // fixed cross item -> PASS | FAIL
+	CrossItemFindings       map[string]string // failed cross item -> new cross finding id
+	Scopes                  []parsedScope
+	Findings                []gaterun.Finding
+	EffectiveStatus         map[string]string
+	QualityConclusions      map[string]string
+	Dispositions            []gaterun.FindingDisposition
+	Ownerships              []gaterun.FindingOwnership
+	Analysis                map[string]string
+	FileGateFindings        map[string]string // file key -> gate_findings content
 }
 
 // parsedScope is one `{check key}: {file}: {declaration}` line.
@@ -56,8 +57,6 @@ var (
 	effectiveStatusRe   = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Effective status:\s*(.+?)\s*=\s*(` + strings.Join(crossStatuses, "|") + `)\s*$`)
 	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(` + strings.Join(crossDispositions, "|") + `)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
-	severityCheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:\s*(\S+)\s*=\s*(` + strings.Join(severityOutcomes, "|") + `)\s+(` + strings.Join(severityLevels, "|") + `)(?:\s*->\s*(` + strings.Join(severityLevels, "|") + `))?\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
-	severityCheckLineRe = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Severity confirmation:`)
 	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
 	ownershipLineRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:`)
 	crossItemLineRe     = regexp.MustCompile(`^Cross item:\s*([a-z][a-z0-9_]*)\s*=\s*(PASS|FAIL)\s+[—-]\s+(\S.*)$`)
@@ -82,7 +81,7 @@ type declParts struct {
 }
 
 // parseDecl classifies one dependency-scope declaration string. The grammar
-// is shared by the packet-report validation (gate-submit) and the cache
+// is shared by the session-report validation (gate-submit) and the cache
 // assembly (gate-finalize) so the two can never drift.
 func parseDecl(decl string) (declParts, error) {
 	decl = strings.TrimSpace(decl)
@@ -125,29 +124,31 @@ func mergeDecl(m *declParts, d declParts) {
 	m.Items = append(m.Items, d.Items...)
 }
 
-// parsePacketReport validates one packet report against its planned packet:
+// parseSessionReport validates one session report against its planned session:
 // every check key has exactly one verdict line with an allowed token, blocking
 // verdicts carry a reason, and every check key declares at least one
 // dependency-scope line whose file belongs to the run snapshot. See
-// framework/verification_scope.md §Gate Work Packets → Packet report contract.
-func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string) (*parsedReport, error) {
+// framework/verification_scope.md §Coverage Model → Session report contract.
+func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
 	if strings.TrimSpace(report) == "" {
 		return nil, fmt.Errorf("empty report")
 	}
 	report = strings.ReplaceAll(report, "\r\n", "\n")
+	if gaterun.IsQualityKind(spec.Kind) {
+		return parseQualitySessionReport(run, spec, report)
+	}
 	out := &parsedReport{Verdicts: map[string]string{}, EffectiveStatus: map[string]string{}, Analysis: map[string]string{}}
 	verdictLines := map[int]bool{}
-	if spec.Kind == gaterun.PacketKindAnalysis {
-		if err := parseAnalysisReport(run, spec, report, out); err != nil {
+	if gaterun.IsItemKind(spec.Kind) {
+		// A verify session judges its acceptance items directly: each item
+		// carries an alignment verdict and, for a mismatch, the finding with
+		// its root cause, severity, and repair direction (there is no separate
+		// analysis session in the coverage model).
+		lines, err := parseVerifyItemReport(run, spec, report, out)
+		if err != nil {
 			return nil, err
 		}
-	} else if spec.Kind == gaterun.PacketKindReader {
-		// The reader authors evidence only: the closed-book reconstruction
-		// and the Undetermined list. It never writes a verdict — the check
-		// verdict is the verifier packet's, composed mechanically.
-		if err := parseReaderReconstructionReport(spec, report, out); err != nil {
-			return nil, err
-		}
+		verdictLines = lines
 	} else {
 		for _, key := range spec.CheckKeys {
 			token, line, lineIdx, err := extractVerdict(spec, key, report)
@@ -160,7 +161,7 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 			out.Verdicts[key] = token
 			verdictLines[lineIdx] = true
 		}
-		if err := validatePacketBodyStructure(run, spec, report, out); err != nil {
+		if err := validateSessionBodyStructure(run, spec, report, out); err != nil {
 			return nil, err
 		}
 	}
@@ -168,7 +169,7 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range spec.CheckKeys {
+	for _, key := range spec.RequiredScopeKeys() {
 		found := false
 		for _, s := range scopes {
 			if s.Key == key {
@@ -181,33 +182,29 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 		}
 	}
 	out.Scopes = scopes
-	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindReader && spec.Kind != gaterun.PacketKindVerifier {
-		// Finding ids are run-scoped — {run_id}/{packet_id}/F{n} — so they
+	if !gaterun.IsItemKind(spec.Kind) {
+		// Finding ids are run-scoped — {run_id}/{session_id}/F{n} — so they
 		// are unique by construction across runs: a finding authored by this
 		// report can never collide with a carried finding from an earlier
-		// run (see framework/verification_scope.md §Gate Work Packets →
-		// Packet report contract). The reader and verifier packets author
-		// no findings at all — their findings are composed mechanically
-		// from the evidence and judgment lines at submit time.
+		// run (see framework/verification_scope.md §Coverage Model →
+		// Session report contract).
 		for i, extracted := range extractFindings(report) {
 			// The unified finding format carries a resolution label on the
 			// entry line (framework/_atoms/misc/report_skeleton.md); cross
 			// reports author new findings in the cross synthesis format,
 			// which has no label.
-			if spec.Kind != gaterun.PacketKindCross && !resolutionLabelRe.MatchString(extracted.text) {
+			if spec.Kind != gaterun.SessionKindCross && !resolutionLabelRe.MatchString(extracted.text) {
 				return nil, fmt.Errorf("finding [%s] %s carries no resolution label (`(actionable)` or `(needs_decision)`)", extracted.severity, extracted.text)
 			}
-			// Every review P3 finding must carry the fact anchor required by
-			// the review checklist's P3 reportability gate.
-			if spec.Kind == gaterun.PacketKindFile && extracted.severity == "P3" && !factAnchorRe.MatchString(extracted.detail) {
-				return nil, fmt.Errorf("review P3 finding [%s] %s carries no non-empty fact_anchor detail line", extracted.severity, extracted.text)
+			sourceKey := ""
+			if spec.Kind == gaterun.SessionKindCross {
+				sourceKey = gaterun.CrossKey
 			}
-			sourceKey := spec.PacketID
 			if len(spec.CheckKeys) == 1 {
 				sourceKey = spec.CheckKeys[0]
 			}
 			out.Findings = append(out.Findings, gaterun.Finding{
-				ID:        fmt.Sprintf("%s/%s/F%d", run.RunID, spec.PacketID, i+1),
+				ID:        fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, i+1),
 				Severity:  extracted.severity,
 				Text:      extracted.text,
 				Detail:    extracted.detail,
@@ -215,46 +212,55 @@ func parsePacketReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string
 			})
 		}
 	}
-	if spec.Kind == gaterun.PacketKindFile {
-		gateFindings, err := extractGateFindings(report)
-		if err != nil {
+	if spec.Kind == gaterun.SessionKindChecks {
+		if err := parseFindingAffects(report, out); err != nil {
 			return nil, err
 		}
-		out.GateFindings = gateFindings
+		for i := range out.Findings {
+			finding := &out.Findings[i]
+			keys := findingKeySet(*finding)
+			if len(keys) == 0 {
+				return nil, fmt.Errorf("finding %q must declare Finding affects with its check keys", finding.ID)
+			}
+			for key := range keys {
+				if !stringInList(spec.CheckKeys, key) {
+					return nil, fmt.Errorf("finding %q affects unassigned check %q", finding.ID, key)
+				}
+			}
+			if finding.SourceKey == "" {
+				finding.SourceKey = sortedFindingKeys(keys, "")[0]
+			}
+			finding.AffectedKeys = sortedFindingKeys(keys, finding.SourceKey)
+		}
 	}
-	if spec.Kind == gaterun.PacketKindCross {
+	if spec.Kind == gaterun.SessionKindCross {
 		if err := parseCrossSynthesis(report, out); err != nil {
 			return nil, err
 		}
 	}
-	if err := parseSeverityConfirmations(report, out); err != nil {
-		return nil, err
-	}
 	return out, nil
 }
 
-func validatePacketBodyStructure(run *gaterun.Run, spec *gaterun.PacketSpec, report string, out *parsedReport) error {
+func validateSessionBodyStructure(run *gaterun.Run, spec *gaterun.SessionSpec, report string, out *parsedReport) error {
 	switch {
-	case spec.Kind == gaterun.PacketKindVerifier && run.Gate == gaterun.GateValidate:
-		return parseVerifierReconciliation(report)
-	case run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit && spec.Kind == gaterun.PacketKindChecks && stringInList(spec.CheckKeys, "5"):
+	case isUnitValidateCheck5(run, spec):
 		return validateUnitAcceptanceBody(report)
-	case run.Gate == gaterun.GateVerify && spec.Kind == gaterun.PacketKindItem:
-		return validateVerifyItemBody(report)
-	case run.Gate == gaterun.GateReview && spec.Kind == gaterun.PacketKindFile:
-		return validateReviewFileBody(report)
-	case spec.Kind == gaterun.PacketKindCross && len(crossItemsFor(run.Gate)) > 0:
-		return validateCrossItemBody(run.Gate, report, out)
+	case spec.Kind == gaterun.SessionKindCross:
+		return validateCrossItemBody(run, report, out)
 	default:
 		return nil
 	}
 }
 
-func validateCrossItemBody(gate, report string, out *parsedReport) error {
-	items := crossItemsFor(gate)
+func validateCrossItemBody(run *gaterun.Run, report string, out *parsedReport) error {
+	gate := run.Gate
+	items := crossItemsFor(run)
 	seen := make(map[string]bool, len(items))
 	links := make(map[string]string, len(items))
 	out.CrossItems = make(map[string]string, len(items))
+	if out.Analysis == nil {
+		out.Analysis = map[string]string{}
+	}
 	passed := 0
 	summaryLines := 0
 	for _, line := range strings.Split(report, "\n") {
@@ -292,6 +298,7 @@ func validateCrossItemBody(gate, report string, out *parsedReport) error {
 		}
 		seen[key] = true
 		out.CrossItems[key] = match[2]
+		out.Analysis[gaterun.RelationshipKey(key)] = match[2]
 		if match[2] == "PASS" {
 			passed++
 		}
@@ -306,6 +313,12 @@ func validateCrossItemBody(gate, report string, out *parsedReport) error {
 		if out.CrossItems[item] == "PASS" && links[item] != "" {
 			return fmt.Errorf("passing Cross item %q must not declare a Cross item finding", item)
 		}
+	}
+	if len(items) == 0 {
+		if summaryLines != 1 || crossSummaryRe.MatchString(report) {
+			return fmt.Errorf("finding-only synthesis requires exactly one `Cross-check: PASS|FAIL — reason` summary without relationship counts")
+		}
+		return nil
 	}
 	summaries := crossSummaryRe.FindAllStringSubmatch(report, -1)
 	if summaryLines != 1 || len(summaries) != 1 {
@@ -341,39 +354,61 @@ func validateUnitAcceptanceBody(report string) error {
 	return nil
 }
 
-func validateVerifyItemBody(report string) error {
+// itemContinuationBlock returns the verdict line at idx plus its contiguous
+// indented continuation lines — the per-item block a verify session report
+// must carry. The block ends at the first non-empty, unindented line (the next
+// item's verdict or the Dependency scope section).
+func itemContinuationBlock(lines []string, idx int) []string {
+	block := []string{lines[idx]}
+	for i := idx + 1; i < len(lines); i++ {
+		line := lines[i]
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if line[0] != ' ' && line[0] != '\t' {
+			break
+		}
+		block = append(block, line)
+	}
+	return block
+}
+
+// validateVerifyItemBlock validates one acceptance item's field block: one
+// non-empty evidence, deterministic, Part A, and Part B line.
+func validateVerifyItemBlock(block []string) error {
+	text := strings.Join(block, "\n")
 	for _, field := range verifyItemFields {
-		pat := `(?mi)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*)$`
+		pat := `(?mi)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(field) + `:[ \t]*(\S[^\n]*)$`
 		if field == "deterministic" {
-			pat = `(?mi)^[ \t]*-?[ \t]*deterministic:\s*(true|false)\s*$`
+			pat = `(?mi)^[ \t]*-?[ \t]*deterministic:[ \t]*(true|false)[ \t]*$`
 		}
 		if field == "Part A" || field == "Part B" {
-			pat = `(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*)$`
+			pat = `(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:[ \t]*(\S[^\n]*)$`
 		}
-		if count := len(regexp.MustCompile(pat).FindAllStringSubmatch(report, -1)); count != 1 {
-			return fmt.Errorf("verify item report must declare exactly one non-empty %s field", field)
+		if count := len(regexp.MustCompile(pat).FindAllStringSubmatch(text, -1)); count != 1 {
+			return fmt.Errorf("verify item block must declare exactly one non-empty %s field", field)
 		}
 	}
 	// When Part B does not apply, the report must use the explicit
 	// `skipped — {reason}` form; a bare `skipped` carries no reason.
-	if partB := regexp.MustCompile(`(?mi)^[ \t]*Part B:\s*(\S[^\n]*)$`).FindStringSubmatch(report); partB != nil {
+	if partB := regexp.MustCompile(`(?mi)^[ \t]*Part B:[ \t]*(\S[^\n]*)$`).FindStringSubmatch(text); partB != nil {
 		content := strings.TrimSpace(partB[1])
 		if strings.HasPrefix(strings.ToLower(content), "skipped") {
 			reason := strings.TrimSpace(content[len("skipped"):])
 			reason = strings.Trim(reason, " \t—–-:;,.")
 			if reason == "" {
-				return fmt.Errorf("verify item report Part B `skipped` must carry a reason (`skipped — {reason}`)")
+				return fmt.Errorf("verify item Part B `skipped` must carry a reason (`skipped — {reason}`)")
 			}
 		}
 	}
 	return nil
 }
 
-func validateReviewFileBody(report string) error {
-	for _, field := range reviewDimensions {
+func validateQualityFileBody(report string) error {
+	for _, field := range qualityDimensions {
 		re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*(\S[^\n]*?)\s+[—-]\s+(\S[^\n]*)$`)
 		if count := len(re.FindAllStringSubmatch(report, -1)); count != 1 {
-			return fmt.Errorf("review file report must declare exactly one %s assessment with a non-empty basis", field)
+			return fmt.Errorf("quality file report must declare exactly one %s assessment with a non-empty basis", field)
 		}
 	}
 	required := []struct {
@@ -385,7 +420,7 @@ func validateReviewFileBody(report string) error {
 	}
 	for _, field := range required {
 		if count := len(regexp.MustCompile(field.pat).FindAllStringSubmatch(report, -1)); count != 1 {
-			return fmt.Errorf("review file report must declare exactly one %s field", field.name)
+			return fmt.Errorf("quality file report must declare exactly one %s field", field.name)
 		}
 	}
 	return nil
@@ -398,36 +433,6 @@ func stringInList(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func parseSeverityConfirmations(report string, out *parsedReport) error {
-	matches := severityCheckRe.FindAllStringSubmatch(report, -1)
-	if len(matches) != len(severityCheckLineRe.FindAllString(report, -1)) {
-		return fmt.Errorf("malformed Severity confirmation line; use `{finding_id} = confirmed {Px} — evidence: {path}; reason: {text}` or `{finding_id} = adjusted {Px} -> {Py} — evidence: {path}; reason: {text}`")
-	}
-	for _, m := range matches {
-		id := strings.TrimSpace(m[1])
-		outcome := m[2]
-		original := m[3]
-		final := m[4]
-		if outcome == "confirmed" {
-			if final != "" {
-				return fmt.Errorf("confirmed severity for finding %q must not declare an adjusted level", id)
-			}
-			final = original
-		} else if final == "" {
-			return fmt.Errorf("adjusted severity for finding %q must declare the final level", id)
-		}
-		out.SeverityChecks = append(out.SeverityChecks, gaterun.SeverityConfirmation{
-			FindingID:        id,
-			Outcome:          outcome,
-			OriginalSeverity: original,
-			FinalSeverity:    final,
-			EvidencePath:     strings.TrimSpace(m[5]),
-			Reason:           strings.TrimSpace(m[6]),
-		})
-	}
-	return nil
 }
 
 type extractedFinding struct {
@@ -481,64 +486,94 @@ func indentWidth(line string) int {
 	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
-func parseAnalysisReport(run *gaterun.Run, spec *gaterun.PacketSpec, report string, out *parsedReport) error {
-	if len(spec.CheckKeys) != 1 {
-		return fmt.Errorf("analysis packet %q must own exactly one item", spec.PacketID)
+// parseVerifyItemReport parses a verify session report: one alignment verdict
+// per assigned acceptance item, each with its evidence block, and — when the
+// verdict is MISMATCH — the inline finding fields (problem, evidence, impact,
+// root cause, suggested direction, severity, confidence). It returns the
+// verdict line indexes so the generic scope parser skips them.
+func parseVerifyItemReport(run *gaterun.Run, spec *gaterun.SessionSpec, report string, out *parsedReport) (map[int]bool, error) {
+	verdictLines := map[int]bool{}
+	lines := strings.Split(report, "\n")
+	for _, item := range spec.CheckKeys {
+		token, line, lineIdx, err := extractVerdict(spec, item, report)
+		if err != nil {
+			return nil, err
+		}
+		if needsReason(spec, token) && !hasReason(line, token) {
+			return nil, fmt.Errorf("check %q verdict %s carries no reason", item, token)
+		}
+		out.Verdicts[item] = token
+		verdictLines[lineIdx] = true
+		block := itemContinuationBlock(lines, lineIdx)
+		if err := validateVerifyItemBlock(block); err != nil {
+			return nil, fmt.Errorf("check %q: %w", item, err)
+		}
+		if token == "CANNOT_DETERMINE" && spec.Kind == gaterun.SessionKindPreserve {
+			out.Findings = append(out.Findings, gaterun.Finding{ID: fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, len(out.Findings)+1), Severity: "P1", Text: item + " cannot establish preservation", Detail: "Problem: " + line + "\nSuggested direction: blocked", SourceKey: item})
+		}
+		if token == "MISMATCH" {
+			finding, err := parseItemMismatch(run, spec, item, block, len(out.Findings)+1)
+			if err != nil {
+				return nil, err
+			}
+			out.Findings = append(out.Findings, *finding)
+		}
 	}
-	item := spec.CheckKeys[0]
+	return verdictLines, nil
+}
+
+// parseItemMismatch parses and validates the inline finding fields of one
+// MISMATCH item block and composes the finding.
+func parseItemMismatch(run *gaterun.Run, spec *gaterun.SessionSpec, item string, block []string, index int) (*gaterun.Finding, error) {
+	text := strings.Join(block, "\n")
+	analysis := map[string]string{}
 	for _, field := range analysisFields {
 		re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:\s*([^\n]+)$`)
-		matches := re.FindAllStringSubmatch(report, -1)
+		matches := re.FindAllStringSubmatch(text, -1)
 		if len(matches) != 1 || strings.TrimSpace(matches[0][1]) == "" {
-			return fmt.Errorf("analysis %q must declare exactly one non-empty %s field", item, field)
+			return nil, fmt.Errorf("check %q MISMATCH must declare exactly one non-empty %s field", item, field)
 		}
-		out.Analysis[field] = strings.TrimSpace(matches[0][1])
+		analysis[field] = strings.TrimSpace(matches[0][1])
 	}
-	itemRe := regexp.MustCompile(`(?mi)^[ \t]*Item:\s*` + regexp.QuoteMeta(item) + `\s*$`)
-	if len(itemRe.FindAllString(report, -1)) != 1 {
-		return fmt.Errorf("analysis report must declare exactly one `Item: %s` line", item)
-	}
-	evidence, err := analysisEvidenceBlock(report)
+	evidence, err := analysisEvidenceBlock(text)
 	if err != nil {
-		return fmt.Errorf("analysis %q: %w", item, err)
+		return nil, fmt.Errorf("check %q: %w", item, err)
 	}
-	severity := strings.ToUpper(out.Analysis["Severity"])
+	severity := strings.ToUpper(analysis["Severity"])
 	if !oneOf(severity, analysisAllowed("Severity")...) {
-		return fmt.Errorf("analysis %q has invalid Severity %q", item, out.Analysis["Severity"])
+		return nil, fmt.Errorf("check %q has invalid Severity %q", item, analysis["Severity"])
 	}
-	if !oneOf(out.Analysis["Root cause"], analysisAllowed("Root cause")...) {
-		return fmt.Errorf("analysis %q has invalid Root cause %q", item, out.Analysis["Root cause"])
+	if !oneOf(analysis["Root cause"], analysisAllowed("Root cause")...) {
+		return nil, fmt.Errorf("check %q has invalid Root cause %q", item, analysis["Root cause"])
 	}
-	direction := out.Analysis["Suggested direction"]
+	direction := analysis["Suggested direction"]
 	if !oneOf(direction, analysisAllowed("Suggested direction")...) {
-		return fmt.Errorf("analysis %q has invalid Suggested direction %q", item, direction)
+		return nil, fmt.Errorf("check %q has invalid Suggested direction %q", item, direction)
 	}
-	if !oneOf(strings.ToLower(out.Analysis["Confidence"]), analysisAllowed("Confidence")...) {
-		return fmt.Errorf("analysis %q has invalid Confidence %q", item, out.Analysis["Confidence"])
+	if !oneOf(strings.ToLower(analysis["Confidence"]), analysisAllowed("Confidence")...) {
+		return nil, fmt.Errorf("check %q has invalid Confidence %q", item, analysis["Confidence"])
 	}
-	out.Verdicts[item] = "MISMATCH"
 	resolution := "actionable"
 	if direction == "needs_design" || direction == "blocked" {
 		resolution = "needs_decision"
 	}
-	fixBlock, err := analysisFixBlock(report, resolution)
+	fixBlock, err := analysisFixBlock(text, resolution)
 	if err != nil {
-		return fmt.Errorf("analysis %q: %w", item, err)
+		return nil, fmt.Errorf("check %q: %w", item, err)
 	}
 	var evidenceRendered strings.Builder
 	for _, line := range evidence {
 		evidenceRendered.WriteString("\n    " + line)
 	}
 	detail := fmt.Sprintf("[%s] %s — verify mismatch analysis (%s)\n  problem: %s\n  evidence:%s\n  impact: %s\n%s\n  root_cause: %s\n  direction: %s (confidence: %s)",
-		severity, item, resolution, out.Analysis["Problem"], evidenceRendered.String(), out.Analysis["Impact"], fixBlock, out.Analysis["Root cause"], direction, strings.ToLower(out.Analysis["Confidence"]))
-	out.Findings = []gaterun.Finding{{
-		ID:        fmt.Sprintf("%s/%s/F1", run.RunID, spec.PacketID),
+		severity, item, resolution, analysis["Problem"], evidenceRendered.String(), analysis["Impact"], fixBlock, analysis["Root cause"], direction, strings.ToLower(analysis["Confidence"]))
+	return &gaterun.Finding{
+		ID:        fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, index),
 		Severity:  severity,
 		Text:      "verify mismatch analysis for " + item,
 		Detail:    detail,
 		SourceKey: item,
-	}}
-	return nil
+	}, nil
 }
 
 // analysisBlockLines returns the contiguous indented sub-lines that follow the
@@ -563,7 +598,7 @@ func analysisBlockLines(report, name string) []string {
 
 // analysisEvidenceBlock requires the finding block's Evidence section: at least
 // one spec-side and one code-side sub-line (see
-// framework/verification_scope.md §Gate Work Packets → Packet report contract).
+// framework/verification_scope.md §Coverage Model → Session report contract).
 func analysisEvidenceBlock(report string) ([]string, error) {
 	lines := analysisBlockLines(report, "Evidence")
 	hasSpec, hasCode := false, false
@@ -626,6 +661,24 @@ func oneOf(value string, allowed ...string) bool {
 }
 
 func parseCrossSynthesis(report string, out *parsedReport) error {
+	out.QualityConclusions = map[string]string{}
+	for _, line := range strings.Split(report, "\n") {
+		rest, declared := strings.CutPrefix(strings.TrimSpace(line), "Quality conclusion:")
+		if !declared {
+			continue
+		}
+		key, value, ok := strings.Cut(rest, "=")
+		key = strings.TrimSpace(key)
+		verdict, reason, hasReason := strings.Cut(value, "—")
+		verdict = strings.TrimSpace(verdict)
+		if !ok || key == "" || !oneOf(verdict, "acceptable", "needs_attention", "unacceptable") || !hasReason || strings.TrimSpace(reason) == "" {
+			return fmt.Errorf("invalid Quality conclusion: expected <key> = <acceptable|needs_attention|unacceptable> — <reason>")
+		}
+		if _, exists := out.QualityConclusions[key]; exists {
+			return fmt.Errorf("cross report declares Quality conclusion for %q more than once", key)
+		}
+		out.QualityConclusions[key] = verdict
+	}
 	for _, m := range effectiveStatusRe.FindAllStringSubmatch(report, -1) {
 		key := strings.TrimSpace(m[1])
 		if key == "" {
@@ -652,32 +705,8 @@ func parseCrossSynthesis(report string, out *parsedReport) error {
 		}
 		out.Dispositions = append(out.Dispositions, d)
 	}
-	findingByID := map[string]*gaterun.Finding{}
-	for i := range out.Findings {
-		findingByID[out.Findings[i].ID] = &out.Findings[i]
-	}
-	affectedSeen := map[string]bool{}
-	for _, m := range findingAffectsRe.FindAllStringSubmatch(report, -1) {
-		id := strings.TrimSpace(m[1])
-		finding := findingByID[id]
-		if finding == nil {
-			return fmt.Errorf("cross report declares affected keys for unknown new finding %q", id)
-		}
-		if affectedSeen[id] {
-			return fmt.Errorf("cross report declares affected keys for finding %q more than once", id)
-		}
-		affectedSeen[id] = true
-		seenKeys := map[string]bool{}
-		for _, raw := range strings.Split(m[2], ",") {
-			key := strings.TrimSpace(raw)
-			if key == "" {
-				return fmt.Errorf("cross finding %q carries an empty affected key", id)
-			}
-			if !seenKeys[key] {
-				seenKeys[key] = true
-				finding.AffectedKeys = append(finding.AffectedKeys, key)
-			}
-		}
+	if err := parseFindingAffects(report, out); err != nil {
+		return err
 	}
 	ownershipMatches := ownershipRe.FindAllStringSubmatch(report, -1)
 	if len(ownershipMatches) != len(ownershipLineRe.FindAllString(report, -1)) {
@@ -700,14 +729,45 @@ func parseCrossSynthesis(report string, out *parsedReport) error {
 	return nil
 }
 
-// extractGateFindings parses the review packet's `gate_findings:` line. The
-// documented forms are `none` or one or more `[P0|P1] {finding}` entries; any
-// other content is rejected so the conclusion mapping can be checked
-// mechanically (see framework/spec_review_checklist.md §Output Format).
+func parseFindingAffects(report string, out *parsedReport) error {
+	findingByID := map[string]*gaterun.Finding{}
+	for i := range out.Findings {
+		findingByID[out.Findings[i].ID] = &out.Findings[i]
+	}
+	affectedSeen := map[string]bool{}
+	for _, m := range findingAffectsRe.FindAllStringSubmatch(report, -1) {
+		id := strings.TrimSpace(m[1])
+		finding := findingByID[id]
+		if finding == nil {
+			return fmt.Errorf("report declares affected keys for unknown new finding %q", id)
+		}
+		if affectedSeen[id] {
+			return fmt.Errorf("report declares affected keys for finding %q more than once", id)
+		}
+		affectedSeen[id] = true
+		seenKeys := map[string]bool{}
+		for _, raw := range strings.Split(m[2], ",") {
+			key := strings.TrimSpace(raw)
+			if key == "" {
+				return fmt.Errorf("finding %q carries an empty affected key", id)
+			}
+			if !seenKeys[key] {
+				seenKeys[key] = true
+				finding.AffectedKeys = append(finding.AffectedKeys, key)
+			}
+		}
+	}
+	return nil
+}
+
+// extractGateFindings parses the quality file session's `gate_findings:` line.
+// The documented forms are `none` or one or more `[P0|P1] {finding}` entries;
+// any other content is rejected so the conclusion mapping can be checked
+// mechanically (see framework/unit_verify_checklist.md §Output Format).
 func extractGateFindings(report string) (string, error) {
 	matches := gateFindingsRe.FindAllStringSubmatch(report, -1)
 	if len(matches) != 1 {
-		return "", fmt.Errorf("review file report must declare exactly one gate_findings field")
+		return "", fmt.Errorf("quality file report must declare exactly one gate_findings field")
 	}
 	content, _, err := parseGateFindings(matches[0][1])
 	return content, err
@@ -743,20 +803,20 @@ func gateFindingsDeclareBlocking(content string) bool {
 
 // extractVerdict finds the single verdict line of one check key and returns
 // the token, the line text, and its index.
-func extractVerdict(spec *gaterun.PacketSpec, key, report string) (string, string, int, error) {
+func extractVerdict(spec *gaterun.SessionSpec, key, report string) (string, string, int, error) {
 	var pat string
 	allowed := strings.Join(verdictContractFor(spec.Kind, key).Allowed, "|")
 	switch spec.Kind {
-	case gaterun.PacketKindChecks, gaterun.PacketKindVerifier:
+	case gaterun.SessionKindChecks:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(` + allowed + `)\b`
-	case gaterun.PacketKindItem:
+	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b(?:\s*\(([^)\n]*)\))?`
-	case gaterun.PacketKindFile:
+	case gaterun.SessionKindDesign, gaterun.SessionKindCode, gaterun.SessionKindArchitecture:
 		pat = `(?m)^[ \t]*-?[ \t]*conclusion:\s*((?i:` + allowed + `))\b`
-	case gaterun.PacketKindCross:
+	case gaterun.SessionKindCross:
 		pat = `(?m)^[ \t]*-?[ \t]*Cross-check:\s*(?:\d+\s*/\s*\d+\s+)?(` + allowed + `)\b`
 	default:
-		return "", "", 0, fmt.Errorf("unknown packet kind %q", spec.Kind)
+		return "", "", 0, fmt.Errorf("unknown session kind %q", spec.Kind)
 	}
 	re, err := regexp.Compile(pat)
 	if err != nil {
@@ -771,10 +831,10 @@ func extractVerdict(spec *gaterun.PacketSpec, key, report string) (string, strin
 	}
 	match := re.FindStringSubmatch(report[locs[0][0]:locs[0][1]])
 	token := match[1]
-	if spec.Kind == gaterun.PacketKindItem && token == "MISMATCH" {
+	if gaterun.IsItemKind(spec.Kind) && token == "MISMATCH" {
 		// The detection verdict is `MISMATCH (type)` with a fixed type
 		// vocabulary; a missing or unknown type is rejected so the analysis
-		// packet always receives a classified mismatch.
+		// session always receives a classified mismatch.
 		verdictType := ""
 		if len(match) > 2 {
 			verdictType = strings.TrimSpace(match[2])
@@ -783,7 +843,7 @@ func extractVerdict(spec *gaterun.PacketSpec, key, report string) (string, strin
 			return "", "", 0, fmt.Errorf("check %q MISMATCH verdict requires a type suffix from `structural | acceptance | scope | stub | surplus`, got %q", key, verdictType)
 		}
 	}
-	if spec.Kind == gaterun.PacketKindFile {
+	if gaterun.IsQualityKind(spec.Kind) {
 		token = strings.ToLower(token)
 	}
 	lineIdx := strings.Count(report[:locs[0][0]], "\n")
@@ -806,7 +866,7 @@ func lineEnd(s string, pos int) int {
 }
 
 // needsReason reports whether a verdict token requires a non-empty reason.
-func needsReason(spec *gaterun.PacketSpec, token string) bool {
+func needsReason(spec *gaterun.SessionSpec, token string) bool {
 	return stringInList(verdictContractFor(spec.Kind, "").ReasonRequiredFor, token)
 }
 
@@ -828,8 +888,8 @@ func hasReason(line, token string) bool {
 }
 
 // extractScopes parses every `{check key}: {file}: {declaration}` line for
-// the packet's check keys, skipping lines already consumed as verdicts.
-func extractScopes(_ *gaterun.Run, spec *gaterun.PacketSpec, report string, verdictLines map[int]bool) ([]parsedScope, error) {
+// the session's check keys, skipping lines already consumed as verdicts.
+func extractScopes(_ *gaterun.Run, spec *gaterun.SessionSpec, report string, verdictLines map[int]bool) ([]parsedScope, error) {
 	paths := declarationPaths(spec)
 	lines := strings.Split(report, "\n")
 	var out []parsedScope
@@ -843,9 +903,9 @@ func extractScopes(_ *gaterun.Run, spec *gaterun.PacketSpec, report string, verd
 			continue
 		}
 		matched := false
-		for _, key := range spec.CheckKeys {
+		for _, key := range spec.ScopeKeys() {
 			prefixes := []string{key + ":"}
-			if spec.Kind == gaterun.PacketKindChecks || spec.Kind == gaterun.PacketKindReader || spec.Kind == gaterun.PacketKindVerifier {
+			if spec.Kind == gaterun.SessionKindChecks {
 				prefixes = append(prefixes, "check-"+key+":")
 			}
 			for _, p := range prefixes {
@@ -855,7 +915,7 @@ func extractScopes(_ *gaterun.Run, spec *gaterun.PacketSpec, report string, verd
 				rest := strings.TrimSpace(t[len(p):])
 				file, decl, ok := splitPathDecl(rest, paths)
 				if !ok {
-					return nil, fmt.Errorf("check %q dependency scope line %q: its file is not part of this packet's read refs", key, strings.TrimSpace(raw))
+					return nil, fmt.Errorf("check %q dependency scope line %q: its file is not part of this session's read refs", key, strings.TrimSpace(raw))
 				}
 				out = append(out, parsedScope{Key: key, Path: file, Declaration: decl})
 				matched = true
@@ -872,7 +932,7 @@ func extractScopes(_ *gaterun.Run, spec *gaterun.PacketSpec, report string, verd
 // declarationPaths lists every path spelling a report may name: physical
 // snapshot refs, resolved logical refs, and surface entry files. Sorted by
 // length descending so the longest path wins a prefix match.
-func declarationPaths(spec *gaterun.PacketSpec) []string {
+func declarationPaths(spec *gaterun.SessionSpec) []string {
 	seen := map[string]bool{}
 	var paths []string
 	add := func(p string) {

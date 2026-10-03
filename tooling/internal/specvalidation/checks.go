@@ -34,6 +34,9 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 	}
 
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
+	if status := fm["status"]; status != "" && status != "active" {
+		return CheckResult{Name: "Frontmatter completeness", Status: Fail, Details: "unit status must be active or absent; deletion uses specflowctl remove"}
+	}
 
 	required := []struct {
 		field string
@@ -86,15 +89,6 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 	}
 
 	content := string(data)
-
-	fm := specpaths.ReadFrontmatterStringMap(content)
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Pass,
-			Details: "spec is marked retired — acceptance item set not required",
-		}
-	}
 
 	if !strings.Contains(content, "acceptance_item_set:") {
 		return CheckResult{
@@ -199,16 +193,7 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 
 	content := string(data)
 
-	// A retiring spec is removed from stable — its affects.files anchors
 	// describe implementation that is going away and are not required.
-	fm := specpaths.ReadFrontmatterStringMap(content)
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Anchor integrity",
-			Status:  Pass,
-			Details: "spec is marked retired — affects.files paths not required",
-		}
-	}
 
 	var problems []string
 
@@ -217,7 +202,7 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	// file, or a directory's repository-content files (the files Git tracks
 	// plus untracked files that are not ignored). A non-pending value that
 	// yields none would silently derive an empty code surface, so it fails
-	// here (same check gate-plan applies before planning a verify/review run).
+	// here (same check gate-plan applies before planning a verify run).
 	for _, surfaceProblem := range CheckImplementationSurfaces(repoRoot, content) {
 		problems = append(problems, surfaceProblem.String())
 	}
@@ -276,18 +261,6 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
 
-	// A retiring spec's own references (unit_refs, rule_refs, appendix and
-	// evidence references) disappear with it — reference checks apply only to
-	// content that survives promote. Protection of OTHER units' references to
-	// a retiring target lives in those units' own reference checks.
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Reference integrity",
-			Status:  Pass,
-			Details: "spec is marked retired — own references not checked",
-		}
-	}
-
 	unitRefs := fm["unit_refs"]
 	var missingRefs []string
 
@@ -296,14 +269,7 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 		for _, ref := range refs {
 			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", ref))
 			if _, err := os.Stat(candidatePath); err == nil {
-				// A referenced unit that is being retired loses its stable copy
-				// on promote — the reference cannot survive the retirement.
-				if cdata, rerr := os.ReadFile(candidatePath); rerr == nil {
-					cfm := specpaths.ReadFrontmatterStringMap(string(cdata))
-					if strings.TrimSpace(cfm["status"]) == "retired" {
-						missingRefs = append(missingRefs, fmt.Sprintf("%s (being retired)", ref))
-					}
-				}
+
 				continue
 			}
 
@@ -334,23 +300,6 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	// Appendix references: a candidate appendix marked retired is removed on
-	// promote, so neither affects.appendices entries nor evidence_appendix_ref
-	// may reference it. Only refs that resolve to an existing candidate
-	// appendix are judged mechanically; unresolvable refs are left to the
-	// agent-side Check 6.
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	for _, ref := range ExtractAffectsAppendices(string(data)) {
-		if AppendixMarkedRetired(appendixDir, ref) {
-			missingRefs = append(missingRefs, fmt.Sprintf("%s (appendix being retired)", ref))
-		}
-	}
-	if v := fm["evidence_appendix_ref"]; v != "" && !strings.EqualFold(v, "none") {
-		if AppendixMarkedRetired(appendixDir, v) {
-			missingRefs = append(missingRefs, fmt.Sprintf("%s (evidence appendix being retired)", v))
-		}
-	}
-
 	if len(missingRefs) > 0 {
 		return CheckResult{
 			Name:    "Reference integrity",
@@ -368,41 +317,8 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 // indented `- name` lines) and the inline flow form (`appendices: [a.md]`).
 func ExtractAffectsAppendices(content string) []string {
 	var refs []string
-	lines := strings.Split(content, "\n")
-	inAcceptance := false
-	inAppendices := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "acceptance_item_set:") {
-			inAcceptance = true
-			continue
-		}
-		if !inAcceptance {
-			continue
-		}
-		// The acceptance block ends at a top-level line (no indent) that is
-		// not an item continuation.
-		if trimmed != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "#") {
-			break
-		}
-		if trimmed == "appendices:" || strings.HasPrefix(trimmed, "appendices: ") {
-			value := strings.TrimSpace(trimmed[len("appendices:"):])
-			if value == "" {
-				inAppendices = true
-				continue
-			}
-			refs = append(refs, parseInlineRefList(value)...)
-			continue
-		}
-		if inAppendices {
-			if strings.HasPrefix(trimmed, "- ") {
-				refs = append(refs, strings.TrimSpace(trimmed[2:]))
-				continue
-			}
-			if trimmed != "" {
-				inAppendices = false
-			}
-		}
+	for _, item := range parseAcceptanceItems(content) {
+		refs = append(refs, item.affectsAppendices...)
 	}
 	return refs
 }
@@ -429,37 +345,20 @@ func parseInlineRefList(value string) []string {
 	return []string{value}
 }
 
-// AppendixMarkedRetired reports whether the named appendix file exists in dir
-// and is marked for retirement. A file that cannot be read is not judged.
-func AppendixMarkedRetired(dir, name string) bool {
-	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, "/\\") {
-		return false
-	}
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return false
-	}
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	return strings.TrimSpace(fm["status"]) == "retired"
-}
-
 // ------------------------------------------------------------
 // Check 5: Appendix files exist
 // ------------------------------------------------------------
 func checkAppendices(repoRoot, unitName string) CheckResult {
-	appendixGlob := specpaths.CandidateAppendixGlob(unitName)
-	fullGlob := filepath.Join(repoRoot, filepath.FromSlash(appendixGlob))
-	matches, err := filepath.Glob(fullGlob)
+	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
 	if err != nil {
 		return CheckResult{
 			Name:    "Appendix files",
-			Status:  Pass,
-			Details: fmt.Sprintf("error globbing appendices: %v", err),
+			Status:  Fail,
+			Details: err.Error(),
 		}
 	}
 
-	if len(matches) == 0 {
+	if len(appendices) == 0 {
 		return CheckResult{
 			Name:    "Appendix files",
 			Status:  Pass,
@@ -468,38 +367,14 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 	}
 
 	var relPaths []string
-	var errs []string
-	for _, m := range matches {
-		rel, _ := filepath.Rel(repoRoot, m)
-		relPaths = append(relPaths, rel)
-
-		data, readErr := os.ReadFile(m)
-		if readErr != nil {
-			errs = append(errs, fmt.Sprintf("%s: cannot read (%v)", rel, readErr))
-			continue
-		}
-		fm := specpaths.ReadFrontmatterStringMap(string(data))
-		status := strings.TrimSpace(fm["status"])
-		if status == "exempt" || status == "retired" {
-			continue
-		}
-		if strings.TrimSpace(fm["unit"]) != unitName {
-			errs = append(errs, fmt.Sprintf("%s: frontmatter unit=%q, expected %q", rel, fm["unit"], unitName))
-		}
-	}
-
-	if len(errs) > 0 {
-		return CheckResult{
-			Name:    "Appendix files",
-			Status:  Fail,
-			Details: fmt.Sprintf("%d appendix file(s) found with errors: %s", len(matches), strings.Join(errs, "; ")),
-		}
+	for _, appendix := range appendices {
+		relPaths = append(relPaths, appendix.Path)
 	}
 
 	return CheckResult{
 		Name:    "Appendix files",
 		Status:  Pass,
-		Details: fmt.Sprintf("%d appendix file(s): %s", len(matches), strings.Join(relPaths, ", ")),
+		Details: fmt.Sprintf("%d appendix file(s): %s", len(appendices), strings.Join(relPaths, ", ")),
 	}
 }
 
@@ -566,36 +441,24 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
 		}
 	}
-	// A retiring spec is removed from stable — layer-prefix references in its
 	// body and in its appendices have no post-promote target and are not
-	// checked (matching unit_validate_checklist.md: a retiring spec skips
 	// Check 6 entirely, including its appendices).
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Body layer-path check",
-			Status:  Pass,
-			Details: "spec is marked retired — layer-path check skipped",
-		}
-	}
+
 	scanContent(fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName), string(data))
 
-	appendixGlob := specpaths.CandidateAppendixGlob(unitName)
-	fullGlob := filepath.Join(repoRoot, filepath.FromSlash(appendixGlob))
-	if matches, err := filepath.Glob(fullGlob); err == nil {
-		for _, m := range matches {
-			appendixData, readErr := os.ReadFile(m)
-			if readErr != nil {
-				continue
-			}
-			fm := specpaths.ReadFrontmatterStringMap(string(appendixData))
-			status := strings.TrimSpace(fm["status"])
-			if status == "exempt" || status == "retired" {
-				continue
-			}
-			rel, _ := filepath.Rel(repoRoot, m)
-			scanContent(rel, string(appendixData))
+	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+	if err != nil {
+		return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}
+	}
+	for _, appendix := range appendices {
+		if appendix.Status == "exempt" {
+			continue
 		}
+		appendixData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
+		if err != nil {
+			return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}
+		}
+		scanContent(appendix.Path, string(appendixData))
 	}
 
 	if len(hits) > 0 {
@@ -630,23 +493,14 @@ const cycleBuildGuidance = "Check 7 reads every current-layer unit spec to build
 // blocked on its own dependency's unstable acceptance items), so every
 // in-cycle unit FAILs — blocking promote. Units outside the cycle are not
 // affected by it. Only explicit unit_refs edges count; prose is never
-// inferred. A retiring spec is skipped — its references disappear with it.
 func checkDependencyCycles(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)
-	data, err := os.ReadFile(path)
+	_, err := os.ReadFile(path)
 	if err != nil {
 		return CheckResult{
 			Name:    "Dependency cycles",
 			Status:  Fail,
 			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
-		}
-	}
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Dependency cycles",
-			Status:  Pass,
-			Details: "spec is marked retired — cycle check skipped",
 		}
 	}
 
@@ -694,15 +548,6 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		}
 	}
 	content := string(data)
-
-	fm := specpaths.ReadFrontmatterStringMap(content)
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return CheckResult{
-			Name:    "Region locatability",
-			Status:  Pass,
-			Details: "spec is marked retired — region locatability not required",
-		}
-	}
 
 	// 1. When the content mentions acceptance_item_set at all, the marker
 	// must be locatable — the structural region locator

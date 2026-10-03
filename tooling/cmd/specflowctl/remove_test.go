@@ -67,7 +67,7 @@ func TestRemoveRuleSuccess(t *testing.T) {
 			t.Fatalf("%s must not exist after remove", p)
 		}
 	}
-	if !strings.Contains(output, "Rule b_rule_x removed") {
+	if !strings.Contains(output, "Removal complete") {
 		t.Fatalf("expected success line, got:\n%s", output)
 	}
 }
@@ -97,25 +97,9 @@ func TestRemoveRuleWithConsumersRejected(t *testing.T) {
 	}
 }
 
-func TestRemoveRuleRetainedRejected(t *testing.T) {
+func TestRemoveRuleMetadataOnlyCleanup(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeBoundRule(t, repoRoot, "stable", "b_rule_x", "unbound_retention: intentional\nunbound_retention_reason: future reuse\nunbound_retention_owner: demo_flow\n")
-
-	_, err := removeRun(t, repoRoot, "--rule", "b_rule_x")
-	if err == nil {
-		t.Fatal("expected rejection of retained rule")
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/rules/stable/b_rule_x.md")); err != nil {
-		t.Fatalf("retained rule must survive: %v", err)
-	}
-}
-
-func TestRemoveRuleMissingFilesDegradesToMetadataCleanup(t *testing.T) {
-	repoRoot := t.TempDir()
-	// A partial deletion (or a typo'd id) leaves the rule files gone while
-	// baseline/cache residuals remain. With no rule file there is nothing to
-	// protect — remove must degrade to metadata cleanup instead of failing,
-	// keeping the documented recovery path (`remove` re-run) effective.
+	// A known target can consist only of explicitly owned current records.
 	writeRuleMetadata(t, repoRoot, "b_rule_x")
 
 	output, err := removeRun(t, repoRoot, "--rule", "b_rule_x")
@@ -127,22 +111,11 @@ func TestRemoveRuleMissingFilesDegradesToMetadataCleanup(t *testing.T) {
 		"docs/specs/meta/validation/rule/b_rule_x/validate_result.md",
 	} {
 		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
-			t.Fatalf("%s must not exist after degraded cleanup", p)
+			t.Fatalf("%s must not exist after cleanup", p)
 		}
 	}
-	if !strings.Contains(output, "nothing to protect") {
-		t.Fatalf("expected degraded-cleanup explanation, got:\n%s", output)
-	}
-}
-
-func TestRemoveRuleMissingFilesNoResidualsIdempotent(t *testing.T) {
-	repoRoot := t.TempDir()
-	output, err := removeRun(t, repoRoot, "--rule", "b_rule_ghost")
-	if err != nil {
-		t.Fatalf("remove failed: %v\n%s", err, output)
-	}
-	if !strings.Contains(output, "Rule b_rule_ghost removed") {
-		t.Fatalf("expected success line, got:\n%s", output)
+	if !strings.Contains(output, "Removal complete") {
+		t.Fatalf("expected completion report, got:\n%s", output)
 	}
 }
 

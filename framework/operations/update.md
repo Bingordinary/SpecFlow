@@ -76,11 +76,8 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 |-----------|---------|
 | **Rename files** | `mv docs/specs/rules/stable/s_g_rule_foo.md docs/specs/rules/stable/g_rule_foo.md` |
 | **Update frontmatter** | Change a field value, add a missing required field, remove a deprecated field |
-| **Remove unit `version` fields and version pins** | Unit specs no longer declare a `version` field and refs are bare names (`framework/spec_writing_guide.md` §3): delete every `version:` line from `docs/specs/units/**/unit_*.md` and strip any `@x.y.z` suffix from `unit_refs` / `rule_refs` entries |
 | **Update references** | Bulk-replace old ref format in `rule_refs` / `unit_refs` across all spec files |
 | **Restructure directories** | Move files between directories when path rules change |
-| **Sync template bootstrap rule** | When Step 2 detected a shape change in `templates/docs/specs/rules/stable/g_rule_repository_baseline.md`, migrate the change to the project copy at `docs/specs/rules/stable/g_rule_repository_baseline.md`: apply the template's clause renumbering, version semantics, and prohibition changes, while preserving the project's own filled content (the Tech Stack and Reusable Mechanisms sections are project-owned records — do not overwrite them with the template's blank placeholders). If a change requires business judgment (e.g. renumbering a clause that the project copy references in its own filled content), present the affected file to the user and ask for input |
-| **Migrate retired rule candidates** | When a rule candidate still carries `status: retired`, the retired-status ceremony no longer exists (`framework/spec_writing_guide.md` §6.5) — the declaration no longer drives any removal behavior. Run `specflowctl detect --rule <id>` to confirm no current-layer consumers, then `specflowctl remove --rule <id>` with user confirmation instead of promoting the candidate; remove the `status` field first if the rule is actually being kept |
 
 For each operation:
 
@@ -93,6 +90,12 @@ If multiple operations are needed, order them so later operations don't break ea
 If a change requires business judgment (e.g. "what value should this new frontmatter field have?"), present the affected files to the user and ask for input. Do not invent business truth.
 
 If no structural changes were detected in Step 2, report that no migration is needed and skip to Step 4.
+
+### Removal-model migration
+
+- Move useful `unbound_retention_reason` and owner rationale into rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`. Rules without consumers may remain valid.
+- Inspect legacy `status: retired` unit and appendix files. Under `framework/removal_workflow.md`, the agent decides whether the responsibility ended and identifies exact deletion targets. Delete only within clear existing authorization; discuss unresolved intent. Do not recreate the old promote-based exit logic. Surviving files use normal active/exempt status rules.
+- Rule validate now has seven agent checks: metadata 1–6 and body quality 7. Existing caches using the former check set require normal revalidation against the current contract, not translation of the old retention judgment.
 
 ### Step 4: Verify and report
 

@@ -346,30 +346,6 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 	}
 }
 
-func TestCheckAnchors_RetiredSpecExempt(t *testing.T) {
-	repoRoot := newRepo(t)
-	// A retiring spec is removed from stable — its affects.files anchors are
-	// not required, even when the referenced implementation is gone.
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
-			"acceptance_item_set:\n"+
-			"  - id: item_1\n"+
-			"    description: test\n"+
-			"    verification_type: auto\n"+
-			"    verification_surface: src/\n"+
-			"    implementation_surface: src/\n"+
-			"    verification_method: check\n"+
-			"    pass_condition: ok\n"+
-			"    runnable: yes\n"+
-			"    affects:\n"+
-			"      files:\n"+
-			"        - src/nonexistent.go\n")
-	result := checkAnchors(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retired spec with missing anchors, got %s: %s", result.Status, result.Details)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Check 4: Reference integrity
 // ---------------------------------------------------------------------------
@@ -446,101 +422,6 @@ func TestCheckReferences_RefNotFoundFail(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_RetiredTargetFail(t *testing.T) {
-	repoRoot := newRepo(t)
-	// The referenced unit exists in the candidate layer but is being retired
-	// — its stable copy will be deleted on promote, so the reference cannot
-	// survive.
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	if err := os.MkdirAll(candidateDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(candidateDir, "unit_auth.md"),
-		[]byte("---\nid: auth\nstatus: retired\n---\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs:\n  - auth\nrule_refs: none\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for ref to retiring unit, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "being retired") {
-		t.Fatalf("expected 'being retired' in details, got: %s", result.Details)
-	}
-}
-
-func TestCheckReferences_RetiredStatusIgnoredForRules(t *testing.T) {
-	repoRoot := newRepo(t)
-	ruleDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
-	if err := os.MkdirAll(ruleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	// A leftover `status: retired` declaration no longer marks a rule for
-	// removal — the rule file exists, so the reference is valid. Rule removal
-	// is `specflowctl remove --rule`, after which the file disappears and the
-	// reference becomes a missing-target violation.
-	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_auth.md"),
-		[]byte("---\nrule_id: b_rule_auth\nrule_scope: bound\nrule_version: 0.1.0\nstatus: retired\n---\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs: none\nrule_refs:\n  - b_rule_auth\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for ref to existing rule, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckReferences_RetiredAppendixInAffectsFail(t *testing.T) {
-	repoRoot := newRepo(t)
-	// An acceptance item references a candidate appendix that is being
-	// retired — the reference breaks on promote and must be rejected.
-	writeAppendix(t, repoRoot, "test_unit", "legacy",
-		"unit: test_unit\nstatus: retired\n")
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
-			"acceptance_item_set:\n"+
-			"  - id: item_1\n"+
-			"    description: test\n"+
-			"    verification_type: auto\n"+
-			"    verification_surface: src/\n"+
-			"    implementation_surface: src/\n"+
-			"    verification_method: check\n"+
-			"    pass_condition: ok\n"+
-			"    runnable: yes\n"+
-			"    affects:\n"+
-			"      appendices:\n"+
-			"        - unit_test_unit_legacy.md\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for affects.appendices ref to retiring appendix, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "appendix being retired") {
-		t.Fatalf("expected 'appendix being retired' in details, got: %s", result.Details)
-	}
-}
-
-func TestCheckReferences_RetiredEvidenceRefFail(t *testing.T) {
-	repoRoot := newRepo(t)
-	// evidence_appendix_ref points at a candidate appendix that is being
-	// retired — the field must be dropped before the appendix retires.
-	writeAppendix(t, repoRoot, "test_unit", "evidence",
-		"unit: test_unit\nstatus: retired\n")
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n"+
-			"evidence_appendix_ref: unit_test_unit_evidence.md\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for evidence_appendix_ref to retiring appendix, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "evidence appendix being retired") {
-		t.Fatalf("expected 'evidence appendix being retired' in details, got: %s", result.Details)
-	}
-}
-
 func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
 	repoRoot := newRepo(t)
 	// An affects.appendices entry pointing at an active appendix is legal.
@@ -552,34 +433,6 @@ func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for ref to active appendix, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckReferences_RetiredAppendixInAffectsInlineFlowFail(t *testing.T) {
-	repoRoot := newRepo(t)
-	// The inline YAML flow form of affects.appendices must be rejected like
-	// the block form when it references a retiring appendix.
-	writeAppendix(t, repoRoot, "test_unit", "legacy",
-		"unit: test_unit\nstatus: retired\n")
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
-			"acceptance_item_set:\n"+
-			"  - id: item_1\n"+
-			"    description: test\n"+
-			"    verification_type: auto\n"+
-			"    verification_surface: src/\n"+
-			"    implementation_surface: src/\n"+
-			"    verification_method: check\n"+
-			"    pass_condition: ok\n"+
-			"    runnable: yes\n"+
-			"    affects:\n"+
-			"      appendices: [unit_test_unit_legacy.md, unit_test_unit_api.md]\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for inline-flow affects.appendices ref to retiring appendix, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "appendix being retired") {
-		t.Fatalf("expected 'appendix being retired' in details, got: %s", result.Details)
 	}
 }
 
@@ -674,21 +527,6 @@ func TestExtractAffectsAppendices(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_RetiredSpecOwnRefsExempt(t *testing.T) {
-	repoRoot := newRepo(t)
-	// A retiring spec's own references disappear with it — referencing a
-	// retiring appendix from a retiring spec is not checked.
-	writeAppendix(t, repoRoot, "test_unit", "evidence",
-		"unit: test_unit\nstatus: retired\n")
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n"+
-			"status: retired\nevidence_appendix_ref: unit_test_unit_evidence.md\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retired spec with own refs, got %s: %s", result.Status, result.Details)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Check 5: Appendix files
 // ---------------------------------------------------------------------------
@@ -759,28 +597,6 @@ func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for exempt appendix even with bad frontmatter (skip), got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckAppendices_RetiredAppendixSkip(t *testing.T) {
-	repoRoot := newRepo(t)
-	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: wrong_unit\nstatus: retired\n")
-	result := checkAppendices(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retired appendix (skipped), got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckAcceptanceItems_RetiredSpecExempt(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
-	result := checkAcceptanceItems(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retired spec without acceptance items, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -901,40 +717,6 @@ func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for exempt appendix, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckLayerPaths_RetiredSpecExempt(t *testing.T) {
-	repoRoot := newRepo(t)
-	// A retiring spec is removed from stable — layer-prefix references in its
-	// body have no post-promote target and are not checked.
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n"+
-			"\nReferences candidate/unit_auth.md in the body.\n")
-	result := checkLayerPaths(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retired spec body, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckLayerPaths_RetiredSpecAppendixSkipped(t *testing.T) {
-	repoRoot := newRepo(t)
-	// A retiring unit takes every appendix with it: the appendix layer-path
-	// scan has no post-promote target and must be skipped together with the
-	// main spec (unit_validate_checklist.md: a retiring spec skips Check 6).
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n")
-	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
-	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
-		t.Fatal(err)
-	}
-	result := checkLayerPaths(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retiring unit appendix, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -1120,42 +902,6 @@ func TestCheckDependencyCycles_TransitiveCycle(t *testing.T) {
 	}
 	if !strings.Contains(result.Details, "a -> b -> c") {
 		t.Fatalf("expected normalized cycle listing, got: %s", result.Details)
-	}
-}
-
-func TestCheckDependencyCycles_RetiringSpecSkipped(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "auth", "---\nid: auth\nstatus: retired\nunit_refs: [payment]\nrule_refs: none\n---\n")
-	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
-
-	result := checkDependencyCycles(repoRoot, "auth")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for retiring spec, got %s: %s", result.Status, result.Details)
-	}
-}
-
-// A retiring unit's references disappear with it, so its edges must not be
-// part of the dependency graph: an unrelated unit (here "b", which never
-// references the retiring "a") must not be failed on a cycle that only
-// exists because of the retiring unit's to-be-deleted edge a -> b.
-// The unit that does reference the retiring unit ("c") is still rejected —
-// but by the reference-integrity check (Check 4), not by the cycle check.
-func TestCheckDependencyCycles_RetiringUnitEdgesDoNotAffectOthers(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "a", "---\nid: a\nstatus: retired\nunit_refs: [b]\nrule_refs: none\n---\n")
-	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
-	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
-
-	result := checkDependencyCycles(repoRoot, "b")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for b (outside the retiring unit's edge), got %s: %s", result.Status, result.Details)
-	}
-
-	full := ValidateCandidate(repoRoot, "c")
-	for _, check := range full.Checks {
-		if check.Name == "Reference integrity" && check.Status != Fail {
-			t.Fatalf("expected c to fail reference integrity for referencing the retiring unit, got: %s", check.Details)
-		}
 	}
 }
 
@@ -1345,30 +1091,5 @@ func TestCheckRegionLocatability_FencedHeadingDoesNotFail(t *testing.T) {
 	result := checkRegionLocatability(repoRoot, "fenced")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for fenced heading-like lines, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckRegionLocatability_RetiredSpecPasses(t *testing.T) {
-	// A retiring spec is exempt from section structure — its content is
-	// being removed, so region locatability must not be required (same
-	// exemption as the other mechanical checks).
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "retiring",
-		"---\nid: retiring\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
-	result := checkRegionLocatability(repoRoot, "retiring")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for a retiring spec, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestValidateCandidate_RetiredSpecPassesAllChecks(t *testing.T) {
-	// End-to-end: a retiring spec (no ## headings, no acceptance items)
-	// must pass every mechanical check — Check 8 is skipped like the rest.
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "retiring",
-		"---\nid: retiring\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\nRetiring prose without section structure.\n")
-	result := ValidateCandidate(repoRoot, "retiring")
-	if !result.Passed {
-		t.Fatalf("expected PASS for a retiring spec, got checks: %v", result.Checks)
 	}
 }

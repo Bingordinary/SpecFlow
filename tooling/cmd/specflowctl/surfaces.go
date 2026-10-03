@@ -22,11 +22,19 @@ func runSurfaces(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	views, err := surfaceJudgments(mustAbs(*repoRoot), report)
+	if err != nil {
+		return err
+	}
 	if *asJSON {
 		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
-		return encoder.Encode(report)
+		return encoder.Encode(struct {
+			*specvalidation.SurfaceAuditReport
+			Judgments []surfaceJudgment `json:"judgments"`
+		}{report, views})
 	}
 	fmt.Fprint(stdout, specvalidation.FormatSurfaceAudit(report))
+	printSurfaceJudgments(stdout, views)
 	return nil
 }

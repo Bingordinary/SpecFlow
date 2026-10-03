@@ -30,19 +30,16 @@ var bootstrapGoldenTriggers = []string{
 	"verify@{unit}",
 	"verify@{unit}:{keyword}",
 	"verify@{rule}",
-	"review@{unit}",
-	"review@{unit}:{keyword}",
 	"revalidate@{target}",
 	"reverify@{unit}",
-	"rereview@{unit}",
 	"promote@{target}",
 	"fresh@{target}",
 	"fresh@candidate",
 	"fresh@stable",
 	"fresh@all",
-	"detect@{rule}",
-	"detect@all",
+	"remove@{unit}",
 	"remove@{rule}",
+	"remove@{unit}:appendix:{filename.md}",
 	"deps@all",
 	"deps@{unit}",
 	"deps@{rule}",
@@ -210,11 +207,11 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 	text := string(content)
 	section := bootstrapRoutingSection(t, text)
 
-	requireText(t, text, "- unit: **fork/create → edit → validate → verify → review → promote**")
+	requireText(t, text, "- unit: **fork/create → edit → validate → verify → promote**")
 	requireText(t, text, "- rule: **fork/create → edit → validate → promote**")
-	requireText(t, text, "- retiring unit: **edit retirement → validate → promote**")
+	requireText(t, text, "- removal: **agent decision → structured-reference check → transactional deletion**")
 	requireText(t, text, "Read-only requests remain read-only")
-	requireText(t, text, "`remove@{rule}` deletion and exact `spec_flow_update` migration")
+	requireText(t, text, "authorized spec removal (`framework/removal_workflow.md`) and exact `spec_flow_update` migration")
 
 	assertRoute := func(trigger string, required, forbidden []string) {
 		t.Helper()
@@ -229,7 +226,7 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 		}
 	}
 
-	for _, step := range []string{"gate-plan --format json", "gate-status --format json", "gate-packet --format prompt", "gate-submit", "gate-finalize"} {
+	for _, step := range []string{"gate-plan --format json", "gate-mission --keys", "gate-submit", "gate-mission --final", "gate-finalize"} {
 		requireText(t, section, step)
 	}
 	requireText(t, section, "independent reviewer")
@@ -241,11 +238,8 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 	assertRoute("verify@{unit}", []string{"discover paths", "full run", "--input", "framework/unit_verify_checklist.md"}, nil)
 	assertRoute("verify@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/unit_verify_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("verify@{rule}", []string{"rule verify was removed", "validate@{rule}", "framework/verification_scope.md"}, nil)
-	assertRoute("review@{unit}", []string{"framework/spec_review_checklist.md", "full run"}, nil)
-	assertRoute("review@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/spec_review_checklist.md", "targeted file review directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("revalidate@{target}", []string{"framework/commands.md", "delta/repair", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
 	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta/repair", "--input", "framework/unit_verify_checklist.md"}, nil)
-	assertRoute("rereview@{unit}", []string{"Delta/repair", "framework/spec_review_checklist.md"}, nil)
 	assertRoute("promote@{target}", []string{"framework/commands.md", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
 	assertRoute("fresh@{target}", []string{"For `{target}`, resolve via `framework/commands.md`", "`specflowctl fresh`", "framework/validation_cache.md"}, nil)
 

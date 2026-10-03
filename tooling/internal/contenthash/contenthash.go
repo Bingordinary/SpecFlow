@@ -9,7 +9,7 @@
 // chunk boundaries near the edit; content far from the edit keeps its CID.
 //
 // The agent declares which line ranges it actually depended on during a
-// validate/verify/review run; CIDsForRanges maps those ranges onto the
+// validate/verify run; CIDsForRanges maps those ranges onto the
 // chunks they overlap. Only the resulting CIDs are recorded in the cache —
 // line numbers and positions are never persisted.
 package contenthash
@@ -440,7 +440,7 @@ func LocateAcceptanceItemRegion(text, id string) (AcceptanceItemRegion, bool) {
 // AcceptanceItemIDs returns the id values of all acceptance items in document
 // order, scanning only the acceptance_item_set structural region (the exact
 // marker line; fenced code blocks are content). Empty ids are skipped. This
-// is the single id-space scan shared by extraction (packet generation) and
+// is the single id-space scan shared by extraction (session generation) and
 // item-region location (cache declarations) — the two must never disagree.
 func AcceptanceItemIDs(text string) []string {
 	regions := AcceptanceItemRegions(text)

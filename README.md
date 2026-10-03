@@ -19,7 +19,7 @@
 
 ## What Problem It Solves
 
-specFlow turns AI-assisted development from chat-driven improvisation into engineered delivery. A normal unit follows **validate → verify → review → promote**; rules and retiring units use **validate → promote**. Each path keeps design, implementation, and verification aligned without inventing irrelevant gates.
+specFlow turns AI-assisted development from chat-driven improvisation into engineered delivery. A normal unit follows **validate → verify → promote**; rules use **validate → promote**. Each path keeps design, implementation, and verification aligned without inventing irrelevant gates.
 
 - **AI sessions have no memory** → spec files are persistent truth across sessions
 - **Design has no quality gate** → validate catches incomplete design before it lands
@@ -76,8 +76,7 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 | Trigger | What the agent does |
 |---------|---------------------|
 | `validate@{target}` | Checks unit or rule design quality; gate output changes cache state, not spec truth |
-| `verify@{unit}` | Checks unit implementation against spec truth |
-| `review@{unit}` | Runs spec-aware code review; P0/P1 findings block promotion |
+| `verify@{unit}` | Checks unit implementation against spec truth (alignment lens) and code quality (quality lens); P0/P1 findings block promotion |
 | `promote@{target}` | Confirms intent, checks the target's existing applicable gate results, then transitions candidate truth to stable |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
 | `spec_flow_version` | Checks the installed specFlow version against the remote latest and reports whether the project is up to date |
@@ -89,10 +88,9 @@ The agent responds to explicit quality or completion signals, but never starts o
 ```
 1. Agent creates/edits candidate spec + code (no gate)
 2. You: `validate@unit` → agent checks spec quality
-3. You: `verify@unit` → agent checks implementation against spec
-4. You: `review@unit` → agent checks code quality with spec awareness
-5. You: `promote@unit` → agent checks those gate results, then promotes
-6. Next iteration...
+3. You: `verify@unit` → agent checks implementation against spec and code quality
+4. You: `promote@unit` → agent checks those gate results, then promotes
+5. Next iteration...
 ```
 
 Natural language works too — describe your goal, and the agent reads repo truth and proposes the next action.
@@ -104,3 +102,8 @@ Copy the following instruction to your agent:
 > Read https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/UPDATE.md and follow its instructions to update specFlow in this project.
 
 Use this whenever you update. It also works when a runtime breaking change stops the platform adapter from loading and the agent can no longer see specFlow triggers — the case where an in-session trigger like `spec_flow_update` is unavailable.
+
+
+Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.
+
+Spec deletion uses [the removal workflow](framework/removal_workflow.md): agents decide whether a responsibility ended; `specflowctl remove` checks references and completes explicit cleanup. Optional preview: `remove --dry-run`.

@@ -12,7 +12,7 @@ import (
 )
 
 // runGateEvidence computes the dependency evidence for one file read during a
-// validate/verify/review run. The agent declares the line ranges it actually
+// validate/verify run. The agent declares the line ranges it actually
 // depended on (1-based, inclusive, comma-separated), and the CLI maps them
 // onto the content-defined chunks they overlap. The output — the whole-file
 // hash and the dependency chunk CIDs — is what gets recorded in the cache.
@@ -73,7 +73,7 @@ func runGateEvidence(args []string, stdout, stderr io.Writer) error {
 	if strings.TrimSpace(*filePtr) == "" {
 		fmt.Fprintln(stderr, "Usage: specflowctl gate-evidence --file <path> [--ranges START-END,START-END] [--acceptance-items] [--acceptance-item ID]... [--section HEADING]... [--sections] [--items] [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "Computes dependency evidence for a file read during validate/verify/review.")
+		fmt.Fprintln(stderr, "Computes dependency evidence for a file read during validate/verify.")
 		fmt.Fprintln(stderr, "The agent declares the line ranges it actually depended on; the CLI maps")
 		fmt.Fprintln(stderr, "them onto content-defined chunks and outputs the chunk CIDs to record")
 		fmt.Fprintln(stderr, "in the cache file. An empty --ranges declares a whole-file dependency.")

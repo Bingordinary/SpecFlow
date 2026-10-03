@@ -17,7 +17,7 @@ When an agent executes `promote@{unit}`, it follows the 3 steps defined here. Th
 
 ```
 Promote result: PASS | FAIL
-1. Agent pre-check (optional): PASS | FAIL — reason
+1. Rule publication and agent pre-check: PASS | FAIL — reason
 2. Body path check: PASS | FAIL — reason
 3. specflowctl promote: PASS | FAIL — reason
 Summary: ...
@@ -25,21 +25,25 @@ Summary: ...
 
 ---
 
-## Step 1 — Agent pre-check (optional)
+## Step 1 — Rule publication and agent pre-check
 
-**Purpose:** Optionally check cache freshness and review non-runnable items before promote. Cache check is redundant with the CLI's own enforcement but provides transparency. The non-runnable review catches items that may have become runnable since the last verify cycle.
+**Purpose:** Check direct rule publication and report the applicable gate state before invoking promote.
+
+==ATOM_BEGIN:unit_rule_publication==
+### Rule Publication Prerequisites
+
+1. On a unit completion signal or `promote@{unit}`, run read-only `specflowctl fresh --unit <name>` before suggesting promote or supplementary gates. Ordinary discussion and editing do not trigger publication reminders.
+2. For a normal candidate unit, publication blockers come from its own candidate `rule_refs`: an explicit rule with no stable file blocks; a missing rule blocks; a bound rule whose candidate differs from stable blocks until that rule is promoted. Compare normalized complete file content, including version and wording changes. Identical candidate/stable content passes. Unrelated bound rules and bindings dropped by this candidate do not block.
+3. Changed or newly created candidate global rules are unpublished drafts. List them as advisories and recommend publishing them first only if this unit's current round is intended to adopt them. Their existence does not block work under the active stable global rules; identical global candidate/stable content needs no advisory.
+4. Report every blocking rule ID and reason before recommending downstream checks. A read error stops with the failing path. The rule publication result is separate from validate/verify cache state: `READY` requires both the publication check and all applicable gates. Publication prerequisites apply to every unit; stable confirmation reports gain no promote condition.
+5. Never automatically promote a rule or start a gate. After rule publication, read `fresh --unit <name>` and recommend only the applicable missing, stale, or blocking gates. Evidence captured against the same bound candidate content may remain fresh after its publication; do not require an unconditional re-run.
+==ATOM_END:unit_rule_publication==
 
 **Execution steps:**
 
-1. Read `docs/specs/meta/validation/unit/{name}/validate_result.md` if it exists
-2. Read `docs/specs/meta/validation/unit/{name}/verify_result.md` if it exists
-3. Report freshness status to the user if reporting would be useful
-4. **Reference target check:**
-   - Read the candidate spec's `unit_refs` and `rule_refs` frontmatter fields
-   - For each referenced unit/rule, check whether a stable-layer file exists (`docs/specs/units/stable/unit_{ref}.md` / `docs/specs/rules/stable/{ref}.md`)
-   - A ref whose target exists only in the candidate layer (`docs/specs/units/candidate/` / `docs/specs/rules/candidate/`) will be rejected by `specflowctl promote` — the referenced unit/rule must be promoted first
-   - Report any such ref to the user before running promote
-5. **Non-runnable review:**
+1. Run `specflowctl fresh --unit <name>` and apply the publication prerequisites above. Stop on publication blockers or read errors; report applicable gate gaps without starting gates automatically.
+2. **Optional unit-reference check:** read the candidate spec's `unit_refs`. A referenced unit that exists only in candidate will be rejected by the CLI and must be promoted first. Report such refs before running promote.
+3. **Optional non-runnable review:**
    - Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`
    - Scan acceptance items for `runnable: no`
    - For each item found, assess:
@@ -48,8 +52,8 @@ Summary: ...
      - If the same item was already non-runnable in the stable predecessor (check git history for the previous stable spec), flag it as a concern — it has persisted across promote cycles
    - Report findings to the user
 
-**PASS:** Freshness information reported; no unresolved non-runnable concerns (or step skipped)
-**FAIL:** Not applicable — this step is optional and cannot fail
+**PASS:** Rule publication prerequisites pass; applicable gate state and any global draft advisories are reported. The optional reviews may be skipped.
+**FAIL:** Rule publication is blocked or a prerequisite input cannot be read. Report the rule IDs/reasons or failing path and stop before Step 3. No Spec or cache repair occurs in this workflow.
 
 **Quality concern:** One or more non-runnable items persist from the previous stable spec; user attention recommended before promote
 
@@ -57,7 +61,7 @@ Summary: ...
 
 ## Step 2 — Body path pre-check
 
-**Purpose:** Scan the candidate spec body for candidate-layer path references that will break after promote (candidate files are deleted). Per `framework/spec_writing_guide.md` §12, body text should reference specs by concept name rather than layer-prefixed file paths. `validate` Check 1 step 10 already rejects layer-prefixed paths at validate time — this step is the last-resort gate for content that predates or bypassed that check.
+**Purpose:** Find candidate-layer paths that would become invalid or point to the wrong design after publication.
 
 **Execution steps:**
 
@@ -84,31 +88,27 @@ Summary: ...
 
 ## Step 3 — Run specflowctl promote
 
-**Purpose:** The CLI performs the mechanical candidate-to-stable transition. In normal unit development, only promote writes stable; for retired content it removes stable files. Routed rule removal and framework-update migration own their separate narrow exceptions.
-
-**Retirement:** when the candidate main spec or a candidate appendix carries `status: retired` in its frontmatter (see `framework/spec_writing_guide.md` §8), promote removes the corresponding stable copy instead of copying. A retiring unit (retired main spec) removes the stable main spec and every stable appendix of the unit; a retired appendix removes only its own stable copy. The CLI rejects a retire promote while any current-layer unit still references the retiring unit — "current-layer" (effective) semantics: each unit resolves to its candidate file when one exists, falling back to the stable file (the same resolution `deps` uses), so a stale stable file whose candidate has already dropped the reference does not block the retirement; a retiring referrer is not counted (its references disappear with it). A retiring unit runs only the validate cache gate (steps 2a): the content-alignment gates (verify, review) and the appendix coverage check have no object for content that is being removed. (Rules are not retired through promote — see `framework/spec_writing_guide.md` §6.5; a retiring unit's promote does run the §6.5 dropped-rule cleanup, so every bound rule the candidate no longer lists that is left with no current-layer consumers and no `unbound_retention` declaration is removed with it and listed explicitly in the report.) A retired appendix inside an otherwise normal promote (the unit continues) runs all four gates unchanged.
+**Purpose:** The CLI performs normal candidate-to-stable publication. Explicit deletion is owned by `framework/removal_workflow.md`.
 
 **Execution steps:**
 
 1. Run `specflowctl promote --unit <name>` from the repository root
 2. The CLI independently checks:
-   a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to re-run `validate`. The validate cache must have `result: pass` — a failure record (`result: fail` + `blocking: true`, written by a candidate full-run FAIL or by a delta/repair re-run's FAIL) is rejected as BLOCKED with guidance to resolve the findings. This is the only cache gate for a retiring unit (see the Retirement note above).
-   b. Verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to re-run `verify`. The verify cache must have `result: pass` — a failure record (`result: fail` + `blocking: true`, written by a delta/repair re-run's FAIL or a candidate full-run FAIL) is rejected as BLOCKED with guidance to resolve the findings; a full cache with `result: pass` and P2/P3 severity counts (non-blocking pending items) passes. Skipped for a retiring unit.
-   c. Review cache — reads `docs/specs/meta/validation/unit/{name}/review_result.md`. Must exist, mode must be `full`, must not be `blocking: true`, and the declared dependency chunks must be unchanged. If missing: "Review not completed. Run `review@{unit}` first." If mode is not `full`: "review cache mode is %q, expected 'full' — run `review@{unit}` before promoting." If stale: "Review cache is stale. Run `review@{unit}` again." If blocking: "Review found P0/P1 finding(s). Resolve before promoting." The `blocking` field is required and must be consistent with `result` (`result: pass` → `blocking: false`, `result: fail` → `blocking: true`); a cache missing `blocking`, with an invalid `result` value, or with conflicting declarations fails closed and rejects promote. Skipped for a retiring unit.
-   d. Appendix cache — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. Retired candidate appendices are exempt from this check (promote removes their stable copies instead of copying them). If any appendix is missing, rejects promote with guidance to re-run `validate@{unit}`. Skipped for a retiring unit.
-   e. All required cache checks pass → format validation (frontmatter, required fields, and ref target check — `unit_refs`/`rule_refs` pointing only to candidate-layer files are rejected with "promote it first" guidance; `unit_refs` at a retiring unit are rejected with "remove the references before retiring" guidance; `rule_refs` at a nonexistent rule (removed) are rejected with "does not exist in stable or candidate" guidance) + copy candidate files to stable + remove candidate files.
+   0. Rule publication — before any cache check, inspect the candidate unit's direct rule refs and pending global drafts using the same read-only check as `fresh`. Reject missing/unpublished explicit rule refs and bound candidate/stable content differences; global drafts are advisory. The internal promote operation repeats this check before any write, so direct callers cannot bypass it.
+   a. Validate cache — reads `docs/specs/meta/validation/unit/{name}/validate_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to re-run `validate`. The validate cache must have `result: pass` — a failure record (`result: fail` + `blocking: true`, written by a candidate full-run FAIL or by a delta/repair re-run's FAIL) is rejected as BLOCKED with guidance to resolve the findings.
+   b. Merged verify cache — reads `docs/specs/meta/validation/unit/{name}/verify_result.md`. Must exist, mode must be `full`, must record a check for every expected key of both lenses (`alignment` and `quality`), must not be `blocking: true`, and the declared dependency chunks must be unchanged. If missing: "Verify not completed. Run `verify@{unit}` first." If mode is not `full`: "verify cache mode is %q, expected 'full' — run `verify@{unit}` before promoting." If the cache does not cover both lenses: "verify cache does not cover both lenses — missing key(s): ... Run `verify@{unit}` again." If stale: "Verify cache is stale. Run `verify@{unit}` again." If blocking: "Verify found P0/P1 finding(s). Resolve before promoting." The `blocking` field is required and must be consistent with `result` (`result: pass` → `blocking: false`, `result: fail` → `blocking: true`); a cache missing `blocking`, with an invalid `result` value, or with conflicting declarations fails closed and rejects promote. A pass cache with P2/P3 severity counts (non-blocking pending items) passes.
+   c. Appendix cache — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any appendix is missing, rejects promote with guidance to re-run `validate@{unit}`.
+   d. All required cache checks pass → format validation (frontmatter, required fields, and ref target check — `unit_refs`/`rule_refs` pointing only to candidate-layer files are rejected with "promote it first" guidance; `rule_refs` at a nonexistent rule (removed) are rejected with "does not exist in stable or candidate" guidance) + copy candidate files to stable + remove candidate files.
 
-**Check scope:** steps a–e are artifact-level checks (cache presence, freshness, format, coverage). The CLI does not verify who executed the validate, verify, or review runs — execution shape (session independence, read-only capability) is a runtime property declared by the workflow, not observable from the cache (see `framework/verification_scope.md` §Guarantee Boundary).
+**Check scope:** publication plus steps a–d are artifact-level checks (published rule content, cache presence, freshness, format, coverage). The CLI does not verify who executed the validate or verify runs — execution shape (session independence, read-only capability) is a runtime property declared by the workflow, not observable from the cache (see `framework/verification_scope.md` §Guarantee Boundary).
 
 3. The CLI automatically:
    - Copies candidate content to stable verbatim (the layer is encoded by the file path — no frontmatter field is transformed, so promoted content is byte-identical and content-addressed caches of dependent units stay fresh)
    - Appendix filenames are preserved since they no longer encode layer
-   - Removes the stable copies of retired content (in the same transaction as the copies)
-   - Rewrites the candidate-layer gate caches into stable confirmation caches (`target: candidate` → `target: stable`, physical paths rewritten from `docs/specs/units/candidate/` to `docs/specs/units/stable/`); for a retired unit the caches are deleted instead (the stable content is gone). The rewritten caches become the delta-recovery baseline: `fresh@stable` reports them, `re*` restores a stale one, and `fork` inherits them into the next round. See `framework/validation_cache.md` §Cache lifecycle.
-   - Removes rules the candidate dropped from `rule_refs`: every bound rule left with no current-layer consumers and no `unbound_retention` declaration is deleted with it (stable and candidate copies, baseline, validate cache), and the removed rules are listed explicitly in the promote report (see `framework/spec_writing_guide.md` §6.5)
+   - Rewrites the candidate-layer gate caches into stable confirmation caches (`target: candidate` → `target: stable`, physical paths rewritten from `docs/specs/units/candidate/` to `docs/specs/units/stable/`). The rewritten caches become the delta-recovery baseline: `fresh@stable` reports them, `re*` restores a stale one, and `fork` inherits them into the next round. See `framework/validation_cache.md` §Cache lifecycle.
 
 **PASS:** `specflowctl promote --unit <name>` exits with code 0, all files copied and candidate cleaned up
-**FAIL:** CLI returns non-zero exit or reports cache stale — report the CLI output and recommend re-running the appropriate validation step
+**FAIL:** CLI returns non-zero exit — report the concrete prerequisite, gate, or format failure. For an unpublished rule, report which rule must be promoted first; for a cache gap, recommend only the applicable check. Do not prescribe a gate re-run for a rule publication blocker alone.
 
 ---
 
@@ -118,3 +118,6 @@ Summary: ...
 ## Truth Semantics
 
 Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable content. Removing candidate files keeps file existence unambiguous. A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.
+
+
+Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.

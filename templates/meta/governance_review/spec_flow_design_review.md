@@ -34,8 +34,8 @@
 |---|---|---|---|
 | q1 | completed | 4 | Mechanism solves real spec-implementation alignment problem in LLM-assisted development. Problem is explicit, not self-created. | framework/concepts.md, framework/spec_writing_guide.md |
 | q2 | completed | 4 | Unit/rule boundaries follow real work shape. Ownership is derived from unit/rule frontmatter and filesystem paths. | framework/spec_writing_guide.md, framework/core/object_model.md |
-| q3 | completed | 4 | Target-specific paths (normal unit validate→verify→review→promote; rule/retiring unit validate→promote) correspond to real information changes; order reduces uncertainty. | framework/concepts.md |
-| q4 | completed | 3 | Applicable gates plus user-confirmed promote create real downstream gain without inventing gates for rules or retiring units. | framework/concepts.md |
+| q3 | completed | 4 | Target-specific paths (normal unit validate→verify→promote; rule validate→promote) correspond to real information changes; order reduces uncertainty. | framework/concepts.md |
+| q4 | completed | 3 | Applicable gates plus user-confirmed promote create real downstream gain without inventing gates for rules or deletion. | framework/concepts.md |
 | q5 | completed | 3 | Design rewards real clarification and surfaces uncertainty. | framework/concepts.md, framework/spec_writing_guide.md |
 | q6 | completed | 3 | Hook-injected bootstrap routes every trigger to a command package; packages are self-contained per phase. | framework/concepts.md, framework/commands.md |
 | q7 | completed | 3 | Minimum file surface per phase is focused. Tool-enforced rules in specflowctl reduce agent burden. | framework/tooling_execution_policy.md |
@@ -59,7 +59,7 @@
 |---|---|---|---|
 | 1 | 4 | Mechanism solves real spec-implementation alignment. | framework/concepts.md |
 | 2 | 4 | Unit/rule boundaries follow real work. | framework/spec_writing_guide.md, framework/core/object_model.md |
-| 3 | 4 | Target-specific paths are explicit: normal unit validate→verify→review→promote; rule/retiring unit validate→promote. | framework/concepts.md |
+| 3 | 4 | Target-specific paths are explicit: normal unit validate→verify→promote; rule validate→promote. | framework/concepts.md |
 | 4 | 3 | Applicable gates plus user-confirmed promote create real downstream gain. | framework/concepts.md |
 | 5 | 3 | Design rewards real clarification. | framework/concepts.md |
 | 6 | 3 | Self-contained routing in the hook-injected bootstrap; phase procedures load on demand. | framework/concepts.md, framework/commands.md |

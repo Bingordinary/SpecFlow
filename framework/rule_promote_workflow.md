@@ -19,18 +19,9 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 | **PATCH** (0.0.x) | Wording clarification | Assess consumer impact per rule content. Typically none. |
 | None | Brand new rule (no previous stable) | No consumers exist yet. Rule promoted to stable. |
 
-## Rule Removal
+## Spec Removal
 
-A rule whose constraint no longer applies is removed with `specflowctl remove --rule <id>` — the `status: retired` declaration flow no longer exists (see `framework/spec_writing_guide.md` §6.5). Removal is the end of the rule: the rule files are deleted and git history is the only record.
-
-### Pre-check for removal
-
-1. Find the rule's current-layer (effective) consumers: `specflowctl detect --rule <id>` reports them, or `specflowctl detect --all` lists every removal candidate (bound rules with no consumers and no `unbound_retention` declaration). Global rules (`g_rule_*`) are never listed — they apply to every unit by default.
-2. Each consumer must drop the rule from its `rule_refs` (and the body explanation if present) and pass its own validate before the rule is removed. `remove` rejects the deletion while any current-layer reference remains, listing the referrers.
-3. `unbound_retention` exempts a rule from removal: a rule declaring intentional retention is rejected by `remove` — remove the retention fields first, or keep the rule.
-4. After removal, `specflowctl consumers --rule <id>` reports the rule as not found because the rule file no longer exists — no command confirmation is needed.
-
-Removal is also triggered automatically: a unit promote removes every bound rule its candidate dropped from `rule_refs` that is left with no consumers and no retention declaration (reported explicitly in the promote actions). `fresh` reports embed the removal-candidate list read-only.
+Explicit rule removal follows `framework/removal_workflow.md`. Read the constraint and relevant code before deciding. Publish surviving referrers that drop the rule first, then remove the specified rule. Promote never deletes unbound rules.
 
 ## Workflow
 
@@ -58,7 +49,7 @@ The CLI tool performs:
 8. **Delete candidate** — removes the candidate rule file
 9. **Rewrite the validate cache** into a stable confirmation cache (`target: candidate` → `target: stable`, physical path from `docs/specs/rules/candidate/` to `docs/specs/rules/stable/`) — consumed by `fresh@stable` as the rule's consumer/consistency confirmation state
 
-Rule removal is a separate command: `specflowctl remove --rule <id>` (see `framework/spec_writing_guide.md` §6.5). A unit promote additionally removes every bound rule its candidate dropped from `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration; the removed rules are listed explicitly in the promote report.
+Rule removal uses `framework/removal_workflow.md`; rule and unit promote only publish their specified objects.
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
 **FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `validate@{rule}` before retrying. Do not attempt manual promotion.
@@ -72,13 +63,15 @@ After the CLI succeeds, the agent must act based on the change type:
 2. For each affected unit that needs a content update:
    - If the unit has no candidate file, fork it first per HARD RULE 5 in `framework/concepts.md` (`specflowctl fork --unit <name>` — stable is never edited directly)
    - Update the candidate content per the rule's new constraint
-   - Suggest running `validate`, `verify`, and `review` on each affected unit (user-triggered per HARD RULE 2 in `framework/concepts.md`)
-3. Note that the rule promote already made each affected unit's validate cache stale (the cache declares `rule:{id}` as a logical reference), so the unit's promote is mechanically rejected until it is re-validated — no extra action is needed beyond the gates above
+   - Run read-only `specflowctl fresh --unit <name>` and suggest only the applicable missing, stale, or blocking gates (user-triggered per HARD RULE 2 in `framework/concepts.md`)
+3. Confirm gate state with `fresh` instead of assuming publication made every consumer stale. A bound-rule dependency already checked against the identical candidate content stays fresh when that content is promoted; global dependencies use stable content, so a changed published global dependency may stale the evidence. Unit content or implementation updates may independently require re-checks. Publication itself never requires an unconditional gate re-run.
 4. Report the tool output and the affected-unit plan to the user
 
 **If MINOR/PATCH:**
 1. Assess consumer impact per rule content. Typically no impact — confirm and proceed.
 2. The tool output already includes the "Assess consumer impact per rule content" guidance. Report the tool output to the user.
+
+For any consumer being prepared for promotion, read `specflowctl fresh --unit <name>` after rule publication. Resolve its remaining rule publication blockers first and recommend only its actual applicable gate gaps. MINOR/PATCH version labels do not waive the unit's complete-content publication check.
 
 ## State After Promote
 

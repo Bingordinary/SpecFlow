@@ -12,9 +12,9 @@ import (
 )
 
 // DeferredLedgerRelPath is the repository-relative path of the deferred-
-// findings ledger: the durable handoff of review findings whose recorded
+// findings ledger: the durable handoff of findings whose recorded
 // ownership points at another unit (see framework/verification_scope.md
-// §Gate Work Packets → Deferred findings and framework/validation_cache.md
+// §Coverage Model → Deferred findings and framework/validation_cache.md
 // §Format → Deferred-findings ledger). It lives beside the validation caches
 // and shares their lifecycle (durable project state, version controlled).
 const DeferredLedgerRelPath = "docs/specs/meta/validation/deferred_findings.json"
@@ -23,11 +23,11 @@ const DeferredLedgerRelPath = "docs/specs/meta/validation/deferred_findings.json
 // other version fails closed — the tooling never guesses a state layout.
 const deferredLedgerSchema = 1
 
-// DeferredEntry is one pending review finding routed to another unit. The
-// finding content is stored in full so the owner unit's review can dispose it
-// without reading the source run's local state, which is replaced by later
-// plans. OwnerUnit is the unit whose review must dispose the entry; SourceUnit
-// and SourceRun record where the deferral came from.
+// DeferredEntry is one pending finding routed to another unit. The
+// finding content is stored in full so the owner unit's verify run can dispose
+// it without reading the source run's local state, which is replaced by later
+// plans. OwnerUnit is the unit whose verify run must dispose the entry;
+// SourceUnit and SourceRun record where the deferral came from.
 type DeferredEntry struct {
 	FindingID    string   `json:"finding_id"`
 	OwnerUnit    string   `json:"owner_unit"`

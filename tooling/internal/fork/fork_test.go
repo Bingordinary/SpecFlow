@@ -31,6 +31,7 @@ unit: test_unit
 Appendix content.
 `
 	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_helper.md"), []byte(appendixContent), 0644)
+	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_extra_protocol.md"), []byte("---\nunit: test_unit_extra\n---\nPeer content.\n"), 0644)
 
 	result := Fork(repoRoot, "test_unit")
 	if !result.Passed {
@@ -53,6 +54,9 @@ Appendix content.
 	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
 	if _, err := os.Stat(candidateAppendix); os.IsNotExist(err) {
 		t.Fatal("candidate appendix was not created")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(candidateAppendix), "unit_test_unit_extra_protocol.md")); !os.IsNotExist(err) {
+		t.Fatal("fork copied another unit's prefix-sharing appendix")
 	}
 
 	stableSpec := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
@@ -248,7 +252,7 @@ func writeStableUnitForFork(t *testing.T, repoRoot string) {
 
 // TestForkUnitInheritsConfirmationCaches verifies that pass stable
 // confirmation caches are rewritten to the candidate layer during fork: the
-// files' physical paths move from stable/ to candidate/, and review's target
+// files' physical paths move from stable/ to candidate/, and the target
 // declaration becomes candidate.
 func TestForkUnitInheritsConfirmationCaches(t *testing.T) {
 	repoRoot := t.TempDir()
@@ -263,10 +267,8 @@ func TestForkUnitInheritsConfirmationCaches(t *testing.T) {
 
 	writeUnitConfirmationCache(t, repoRoot, "test_unit", "validate", "target: stable\n",
 		[]string{"docs/specs/units/stable/unit_test_unit.md"})
-	writeUnitConfirmationCache(t, repoRoot, "test_unit", "verify", "target: stable\n",
+	writeUnitConfirmationCache(t, repoRoot, "test_unit", "verify", "target: stable\nblocking: false\n",
 		[]string{"docs/specs/units/stable/unit_test_unit.md", "src/a.go"})
-	writeUnitConfirmationCache(t, repoRoot, "test_unit", "review", "target: stable\nblocking: false\n",
-		[]string{"src/a.go"})
 
 	result := Fork(repoRoot, "test_unit")
 	if !result.Passed {
@@ -276,7 +278,6 @@ func TestForkUnitInheritsConfirmationCaches(t *testing.T) {
 	for _, want := range []string{
 		"Inherited validate confirmation cache (rewritten to candidate layer)",
 		"Inherited verify confirmation cache (rewritten to candidate layer)",
-		"Inherited review confirmation cache (rewritten to candidate layer)",
 	} {
 		found := false
 		for _, a := range result.Actions {
@@ -311,34 +312,27 @@ func TestForkUnitInheritsConfirmationCaches(t *testing.T) {
 		t.Fatal(err)
 	}
 	verifyContent := string(verifyCache)
+	if !strings.Contains(verifyContent, "target: candidate") {
+		t.Fatalf("expected target: candidate in inherited verify cache, got:\n%s", verifyContent)
+	}
 	if !strings.Contains(verifyContent, "- path: docs/specs/units/candidate/unit_test_unit.md") {
 		t.Fatalf("expected candidate main spec path in inherited verify cache, got:\n%s", verifyContent)
 	}
 	if !strings.Contains(verifyContent, "- path: src/a.go") {
 		t.Fatalf("expected code file path preserved in inherited verify cache, got:\n%s", verifyContent)
 	}
-
-	reviewCache, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit/review_result.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	reviewContent := string(reviewCache)
-	if !strings.Contains(reviewContent, "target: candidate") {
-		t.Fatalf("expected target: candidate in inherited review cache, got:\n%s", reviewContent)
-	}
 }
 
 // TestForkUnitSkipsUnusableCaches verifies the fork skips confirmation caches
-// without a usable baseline: a blocking review cache (P0/P1) and a missing
-// cache are reported as skipped, and only the usable validate cache is
-// inherited.
+// without a usable baseline: a failure-record verify cache and a missing cache
+// are reported as skipped, and only the usable validate cache is inherited.
 func TestForkUnitSkipsUnusableCaches(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeStableUnitForFork(t, repoRoot)
 
 	writeUnitConfirmationCache(t, repoRoot, "test_unit", "validate", "target: stable\n",
 		[]string{"docs/specs/units/stable/unit_test_unit.md"})
-	writeUnitConfirmationCache(t, repoRoot, "test_unit", "review", "target: stable\nblocking: true\n",
+	writeUnitConfirmationCache(t, repoRoot, "test_unit", "verify", "target: stable\nresult: fail\nblocking: true\n",
 		[]string{"src/a.go"})
 
 	result := Fork(repoRoot, "test_unit")
@@ -350,18 +344,15 @@ func TestForkUnitSkipsUnusableCaches(t *testing.T) {
 	if !strings.Contains(joined, "Inherited validate confirmation cache") {
 		t.Fatalf("expected validate inheritance, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "review: confirmation cache is blocking (P0/P1 findings)") {
-		t.Fatalf("expected review skip reason, got:\n%s", joined)
-	}
-	if !strings.Contains(joined, "verify: no confirmation cache to inherit") {
+	if !strings.Contains(joined, "verify: confirmation cache result is \"fail\", expected 'pass'") {
 		t.Fatalf("expected verify skip reason, got:\n%s", joined)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit/review_result.md"))
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit/verify_result.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "target: candidate") {
-		t.Fatalf("blocking review cache must not be inherited (kept as stable confirmation), got:\n%s", string(data))
+		t.Fatalf("failure-record verify cache must not be inherited (kept as stable confirmation), got:\n%s", string(data))
 	}
 }

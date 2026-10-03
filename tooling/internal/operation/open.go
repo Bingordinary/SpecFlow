@@ -218,13 +218,21 @@ func unitSpecEntries(repoRoot, unit string) ([]AllowedPath, error) {
 	specPath := candidate
 	if candidateExists {
 		entries = append(entries, AllowedPath{Path: candidate, Source: SourceSpecFile})
-		for _, appendix := range appendixFiles(repoRoot, unit, "candidate") {
+		appendices, err := appendixFiles(repoRoot, unit, "candidate")
+		if err != nil {
+			return nil, err
+		}
+		for _, appendix := range appendices {
 			entries = append(entries, AllowedPath{Path: appendix, Source: SourceSpecFile})
 		}
 	} else {
 		specPath = stable
 		entries = append(entries, AllowedPath{Path: candidate, Source: SourceSpecFile})
-		for _, appendix := range appendixFiles(repoRoot, unit, "stable") {
+		appendices, err := appendixFiles(repoRoot, unit, "stable")
+		if err != nil {
+			return nil, err
+		}
+		for _, appendix := range appendices {
 			entries = append(entries, AllowedPath{Path: candidateAppendixPath(appendix), Source: SourceSpecFile})
 		}
 	}
@@ -285,26 +293,19 @@ func candidateAppendixPath(stableAppendix string) string {
 }
 
 // appendixFiles lists a unit's appendix files in one layer.
-func appendixFiles(repoRoot, unit, layer string) []string {
-	dir := specpaths.CandidateAppendixDir
-	if layer == "stable" {
-		dir = specpaths.StableAppendixDir
-	}
-	pattern := filepath.Join(repoRoot, filepath.FromSlash(dir), fmt.Sprintf("unit_%s_*.md", unit))
-	matches, err := filepath.Glob(pattern)
+func appendixFiles(repoRoot, unit, layer string) ([]string, error) {
+	appendices, err := specpaths.UnitAppendices(repoRoot, unit, layer)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
-	for _, match := range matches {
-		rel, relErr := filepath.Rel(repoRoot, match)
-		if relErr != nil {
-			continue
+	for _, appendix := range appendices {
+		if appendix.Status != "exempt" {
+			out = append(out, appendix.Path)
 		}
-		out = append(out, filepath.ToSlash(rel))
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // canonicalSpecPath normalizes a spec-declared path. Empty values and the

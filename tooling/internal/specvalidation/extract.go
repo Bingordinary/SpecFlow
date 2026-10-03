@@ -10,6 +10,9 @@ type acceptanceItemFields struct {
 	id                    string
 	implementationSurface string
 	affectsFiles          []string
+	affectsAppendices     []string
+	affectsDependencies   []string
+	affectsRules          []string
 }
 
 // parseAcceptanceItems is the single semantic parser for acceptance-item
@@ -30,7 +33,7 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 		item := acceptanceItemFields{id: region.ID}
 		fieldIndent := leadingSpaces(region.Text) + 2
 		inAffects := false
-		inFiles := false
+		listField := ""
 		fence := acceptanceFence{}
 		for _, line := range strings.Split(region.Text, "\n") {
 			if fence.active {
@@ -50,24 +53,62 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 					item.implementationSurface = value
 				}
 				inAffects = false
-				inFiles = false
+				listField = ""
 			case indent == fieldIndent && trimmed == "affects:":
 				inAffects = true
-				inFiles = false
-			case indent == fieldIndent && strings.HasSuffix(trimmed, ":"):
+				listField = ""
+			case indent == fieldIndent && trimmed != "":
 				inAffects = false
-				inFiles = false
-			case inAffects && indent == fieldIndent+2 && strings.HasSuffix(trimmed, ":"):
-				inFiles = trimmed == "files:"
-			case inFiles && indent == fieldIndent+4 && strings.HasPrefix(trimmed, "- "):
+				listField = ""
+			case inAffects && indent == fieldIndent+2 && strings.Contains(trimmed, ":"):
+				key, value, _ := strings.Cut(trimmed, ":")
+				listField = key
+				for _, entry := range parseInlineRefList(strings.TrimSpace(value)) {
+					appendAffects(&item, key, entry)
+				}
+			case inAffects && listField != "" && indent == fieldIndent+4 && strings.HasPrefix(trimmed, "- "):
 				if value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")); value != "" {
-					item.affectsFiles = append(item.affectsFiles, value)
+					appendAffects(&item, listField, strings.Trim(value, `"'`))
 				}
 			}
 		}
 		items = append(items, item)
 	}
 	return items
+}
+
+func appendAffects(item *acceptanceItemFields, key, value string) {
+	if value == "" || value == "none" {
+		return
+	}
+	switch key {
+	case "files":
+		item.affectsFiles = append(item.affectsFiles, value)
+	case "appendices":
+		item.affectsAppendices = append(item.affectsAppendices, value)
+	case "dependencies":
+		item.affectsDependencies = append(item.affectsDependencies, value)
+	case "rules":
+		item.affectsRules = append(item.affectsRules, value)
+	}
+}
+
+// ExtractAffectsDependencies returns the formally declared unit dependencies.
+func ExtractAffectsDependencies(content string) []string {
+	var refs []string
+	for _, item := range parseAcceptanceItems(content) {
+		refs = append(refs, item.affectsDependencies...)
+	}
+	return refs
+}
+
+// ExtractAffectsRules returns acceptance-item rule references.
+func ExtractAffectsRules(content string) []string {
+	var refs []string
+	for _, item := range parseAcceptanceItems(content) {
+		refs = append(refs, item.affectsRules...)
+	}
+	return refs
 }
 
 func leadingSpaces(line string) int {
@@ -145,7 +186,7 @@ func ExtractAffectsFiles(content string) []string {
 // structural one item-region location uses (contenthash.AcceptanceItemIDs):
 // only the exact acceptance_item_set marker line outside a code fence starts
 // the set, the set ends at the next top-level heading outside a fence, and a
-// fenced `- id:` example is content, not an item — packet generation and
+// fenced `- id:` example is content, not an item — session generation and
 // cache-declaration location must share one id space.
 func ExtractAcceptanceItemIDs(content string) []string {
 	items := parseAcceptanceItems(content)
@@ -168,4 +209,17 @@ func ExtractImplementationSurfaces(content string) []string {
 		}
 	}
 	return surfaces
+}
+
+// AcceptanceSurfaces preserves the item-to-file relationship for protection planning.
+func AcceptanceSurfaces(content string) map[string][]string {
+	out := map[string][]string{}
+	for _, item := range parseAcceptanceItems(content) {
+		files := append([]string(nil), item.affectsFiles...)
+		if item.implementationSurface != "" && item.implementationSurface != SurfacePending {
+			files = append(files, item.implementationSurface)
+		}
+		out[item.id] = files
+	}
+	return out
 }

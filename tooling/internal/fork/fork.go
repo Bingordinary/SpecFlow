@@ -47,11 +47,12 @@ func Fork(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	stableAppendixDir := filepath.Join(repoRoot, specpaths.StableAppendixDir)
 	candidateAppendixDir := filepath.Join(repoRoot, specpaths.CandidateAppendixDir)
-	appendixPattern := fmt.Sprintf("unit_%s_*.md", unitName)
-
-	appendixMatches, _ := filepath.Glob(filepath.Join(stableAppendixDir, appendixPattern))
+	appendixMatches, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
+	if err != nil {
+		r.Issues = append(r.Issues, err.Error())
+		return r
+	}
 
 	var filesToCopy []struct {
 		src string
@@ -59,17 +60,14 @@ func Fork(repoRoot, unitName string) *Result {
 	}
 
 	for _, m := range appendixMatches {
-		rel, _ := filepath.Rel(repoRoot, m)
-
-		appendixFM := specpaths.ReadFrontmatterStringMap(readFileString(m))
-		if appendixFM["status"] == "exempt" {
-			r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", rel))
+		if m.Status == "exempt" {
+			r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", m.Path))
 			continue
 		}
 
-		dst := filepath.Join(candidateAppendixDir, filepath.Base(m))
-		filesToCopy = append(filesToCopy, struct{ src, dst string }{m, dst})
-		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", rel))
+		dst := filepath.Join(candidateAppendixDir, filepath.Base(m.Path))
+		filesToCopy = append(filesToCopy, struct{ src, dst string }{filepath.Join(repoRoot, filepath.FromSlash(m.Path)), dst})
+		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", m.Path))
 	}
 
 	if err := fileops.CopyFile(stableSpecPath, candidateSpecPath); err != nil {

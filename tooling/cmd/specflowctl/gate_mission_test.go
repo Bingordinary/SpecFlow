@@ -14,15 +14,18 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	grEnableMissionLayout(t, root)
 	grWriteSpec(t, root, "auth")
 	var out, errOut bytes.Buffer
-	if err := runGatePlan([]string{"--repo-root", root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--format", "json"}, &out, &errOut); err != nil {
+	if err := runGatePlan([]string{"--repo-root", root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "none", "--format", "json"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	var planned gateRunView
 	if err := json.Unmarshal(out.Bytes(), &planned); err != nil {
 		t.Fatal(err)
 	}
-	if planned.SchemaVersion != 1 || planned.NextAction != "execute" || len(planned.ReadyPacketIDs) != 5 || strings.Contains(strings.Join(planned.ReadyPacketIDs, ","), "cross") {
-		t.Fatalf("wrong planned work: %+v", planned)
+	if planned.SchemaVersion != 2 || planned.NextAction != "execute" || len(planned.UncoveredKeys) != 5 || strings.Contains(strings.Join(planned.UncoveredKeys, ","), "cross") {
+		t.Fatalf("wrong planned coverage: %+v", planned)
+	}
+	if len(planned.Coverage) != 5 || planned.Coverage[0].CoveredBy != "" {
+		t.Fatalf("wrong planned coverage detail: %+v", planned.Coverage)
 	}
 	if len(planned.DeferredFindings) != 0 || !strings.Contains(out.String(), `"deferred_findings": []`) {
 		t.Fatalf("plan must show an empty deferred findings array: %s", out.String())
@@ -35,37 +38,37 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if current.RunID != planned.RunID || len(current.ReadyPacketIDs) != 5 {
+	if current.RunID != planned.RunID || len(current.UncoveredKeys) != 5 {
 		t.Fatalf("wrong status: %+v", current)
 	}
 	if len(current.DeferredFindings) != 0 || !strings.Contains(status.String(), `"deferred_findings": []`) {
 		t.Fatalf("status must show an empty deferred findings array: %s", status.String())
 	}
 	var jsonOut, prompt bytes.Buffer
-	args := []string{"--repo-root", root, "--run", planned.RunID, "--packet", "structural"}
-	if err := runGatePacket(append(append([]string{}, args...), "--format", "json"), &jsonOut, &errOut); err != nil {
+	args := []string{"--repo-root", root, "--run", planned.RunID, "--keys", "structural"}
+	if err := runGateMission(append(append([]string{}, args...), "--format", "json"), &jsonOut, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := runGatePacket(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
+	if err := runGateMission(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	var mission gateMission
 	if err := json.Unmarshal(jsonOut.Bytes(), &mission); err != nil {
 		t.Fatal(err)
 	}
-	if len(mission.Packets) != 1 || mission.Packets[0].ProtocolRef != "framework/unit_validate_checklist.md" || mission.Packets[0].PacketID != "structural" {
+	if len(mission.Sessions) != 1 || mission.Sessions[0].ProtocolRef != "framework/unit_validate_checklist.md" || mission.Sessions[0].SessionID != "structural" {
 		t.Fatalf("wrong mission: %+v", mission)
 	}
-	if mission.Packets[0].LastRejection != "" || strings.Contains(jsonOut.String(), "last_rejection") || strings.Contains(prompt.String(), "Previous submission was rejected:") {
+	if mission.Sessions[0].LastRejection != "" || strings.Contains(jsonOut.String(), "last_rejection") || strings.Contains(prompt.String(), "Previous submission was rejected:") {
 		t.Fatalf("first-attempt mission carries retry feedback: %s", prompt.String())
 	}
-	for _, want := range []string{mission.RunID, mission.Packets[0].ProtocolRef, "Checks: 1, 3, 6", "Dependency scope:", "gate-submit"} {
+	for _, want := range []string{mission.RunID, mission.Sessions[0].ProtocolRef, "Checks: 1, 3, 6", "Dependency scope:", "gate-submit"} {
 		if !strings.Contains(prompt.String(), want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, prompt.String())
 		}
 	}
 	main := "docs/specs/units/candidate/unit_auth.md"
-	report := mission.Packets[0].ReportContract.Template
+	report := mission.Sessions[0].ReportContract.Template
 	for _, pair := range [][2]string{
 		{"1. <check name>: <PASS|WARNING|FAIL> — <reason>", "1. Structural integrity: PASS — checked"},
 		{"3. <check name>: <PASS|WARNING|FAIL> — <reason>", "3. Scope integrity: PASS — checked"},
@@ -74,6 +77,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		report = strings.Replace(report, pair[0], pair[1], 1)
 	}
 	report = strings.Replace(report, "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>\n", "", 1)
+	report = strings.Replace(report, "Finding affects: <finding_id> = <check_key>[,<check_key>...]\n", "", 1)
 	report = strings.Replace(report, "  <check_key>: <read_ref>: <section|range|acceptance_item:id|acceptance_items|all>", "  check-1: "+main+": frontmatter\n  check-3: "+main+": Description\n  check-6: "+main+": Description", 1)
 	if strings.Contains(report, "<") {
 		t.Fatalf("unfilled report template:\n%s", report)
@@ -83,14 +87,14 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		t.Fatalf("missing template field was not rejected: %v", err)
 	}
 	retry := missionJSON(t, root, planned.RunID, "structural")
-	if !strings.Contains(retry.Packets[0].LastRejection, `check "3" has no verdict`) {
-		t.Fatalf("retry mission lost rejection reason: %+v", retry.Packets[0])
+	if !strings.Contains(retry.Sessions[0].LastRejection, `check "3" has no verdict`) {
+		t.Fatalf("retry mission lost rejection reason: %+v", retry.Sessions[0])
 	}
 	prompt.Reset()
-	if err := runGatePacket(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
+	if err := runGateMission(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt.String(), "Previous submission was rejected: "+retry.Packets[0].LastRejection) {
+	if !strings.Contains(prompt.String(), "Previous submission was rejected: "+retry.Sessions[0].LastRejection) {
 		t.Fatalf("retry prompt lost rejection reason: %s", prompt.String())
 	}
 	invalidAgain := strings.Replace(report, "1. Structural integrity: PASS — checked\n", "", 1)
@@ -98,14 +102,14 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		t.Fatalf("second invalid report was not rejected: %v", err)
 	}
 	retry = missionJSON(t, root, planned.RunID, "structural")
-	if !strings.Contains(retry.Packets[0].LastRejection, `check "1" has no verdict`) || strings.Contains(retry.Packets[0].LastRejection, `check "3" has no verdict`) {
-		t.Fatalf("retry mission did not use latest rejection: %+v", retry.Packets[0])
+	if !strings.Contains(retry.Sessions[0].LastRejection, `check "1" has no verdict`) || strings.Contains(retry.Sessions[0].LastRejection, `check "3" has no verdict`) {
+		t.Fatalf("retry mission did not use latest rejection: %+v", retry.Sessions[0])
 	}
 	prompt.Reset()
-	if err := runGatePacket(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
+	if err := runGateMission(append(append([]string{}, args...), "--format", "prompt"), &prompt, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt.String(), "Previous submission was rejected: "+retry.Packets[0].LastRejection) || strings.Contains(prompt.String(), `check "3" has no verdict`) {
+	if !strings.Contains(prompt.String(), "Previous submission was rejected: "+retry.Sessions[0].LastRejection) || strings.Contains(prompt.String(), `check "3" has no verdict`) {
 		t.Fatalf("retry prompt did not use latest rejection: %s", prompt.String())
 	}
 	status.Reset()
@@ -115,8 +119,8 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(current.ReadyPacketIDs, ","), "structural") {
-		t.Fatalf("rejected packet is not ready to retry: %+v", current)
+	if !strings.Contains(strings.Join(current.UncoveredKeys, ","), "structural") {
+		t.Fatalf("rejected session's key is not uncovered: %+v", current)
 	}
 	grSubmitOK(t, root, planned.RunID, "structural", report)
 	status.Reset()
@@ -126,40 +130,51 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.Join(current.ReadyPacketIDs, ","), "structural") {
-		t.Fatalf("accepted packet still ready: %+v", current)
+	if strings.Contains(strings.Join(current.UncoveredKeys, ","), "structural") {
+		t.Fatalf("accepted session's key still uncovered: %+v", current)
 	}
-	if err := runGatePacket(args, &prompt, &errOut); err == nil || !strings.Contains(err.Error(), "only pending or rejected") {
-		t.Fatalf("accepted packet received another mission: %v", err)
+	if err := runGateMission(args, &prompt, &errOut); err == nil || !strings.Contains(err.Error(), "already covered") {
+		t.Fatalf("accepted session received another mission: %v", err)
 	}
 }
 
-func TestGateMissionUsesInstalledFrameworkPathAndRejectsBlockedPacket(t *testing.T) {
+func TestGateMissionUsesInstalledFrameworkPath(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteFile(t, root, "specflow/tooling/manifest.tsv", "fixture\n")
 	grWriteSpec(t, root, "auth")
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	var out, errOut bytes.Buffer
-	if err := runGatePacket([]string{"--repo-root", root, "--run", runID, "--packet", "cross", "--format", "json"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "not ready") {
-		t.Fatalf("blocked cross mission: %v", err)
-	}
-	if err := runGatePacket([]string{"--repo-root", root, "--run", runID, "--packet", "structural", "--format", "json"}, &out, &errOut); err != nil {
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "json"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	var mission gateMission
 	if err := json.Unmarshal(out.Bytes(), &mission); err != nil {
 		t.Fatal(err)
 	}
-	if mission.Packets[0].ProtocolRef != "specflow/framework/unit_validate_checklist.md" {
-		t.Fatalf("wrong deployed path: %s", mission.Packets[0].ProtocolRef)
+	if mission.Sessions[0].ProtocolRef != "specflow/framework/unit_validate_checklist.md" {
+		t.Fatalf("wrong deployed path: %s", mission.Sessions[0].ProtocolRef)
+	}
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "not-a-key", "--format", "json"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "not part of run") {
+		t.Fatalf("unknown key must be rejected: %v", err)
 	}
 }
 
-func missionJSON(t *testing.T, root, runID, packetID string) gateMission {
+func missionJSON(t *testing.T, root, runID, sessionID string) gateMission {
 	t.Helper()
+	run, err := gaterun.Load(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := grSessionKeys(run, sessionID)
 	var out, errOut bytes.Buffer
-	if err := runGatePacket([]string{"--repo-root", root, "--run", runID, "--packet", packetID, "--format", "json"}, &out, &errOut); err != nil {
-		t.Fatalf("mission %s: %v (%s)", packetID, err, errOut.String())
+	args := []string{"--repo-root", root, "--run", runID, "--format", "json"}
+	if sessionID == "cross" {
+		args = append(args, "--final")
+	} else {
+		args = append(args, "--keys", strings.Join(keys, ","))
+	}
+	if err := runGateMission(args, &out, &errOut); err != nil {
+		t.Fatalf("mission %s: %v (%s)", sessionID, err, errOut.String())
 	}
 	var mission gateMission
 	if err := json.Unmarshal(out.Bytes(), &mission); err != nil {
@@ -168,47 +183,43 @@ func missionJSON(t *testing.T, root, runID, packetID string) gateMission {
 	return mission
 }
 
-func TestGateMissionsCoverRuleVerifyAnalysisReviewAndCross(t *testing.T) {
+func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
 	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	ruleRun := grPlan(t, root, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	rule := missionJSON(t, root, ruleRun, "checks")
-	if rule.Packets[0].ProtocolRef != "framework/rule_validate_checklist.md" || len(rule.Packets[0].ReportContract.Verdicts) != 8 {
-		t.Fatalf("wrong rule mission: %+v", rule.Packets[0])
+	if rule.Sessions[0].ProtocolRef != "framework/rule_validate_checklist.md" || len(rule.Sessions[0].ReportContract.Verdicts) != 7 {
+		t.Fatalf("wrong rule mission: %+v", rule.Sessions[0])
 	}
 
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteSpec(t, root, "auth")
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	verifyRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	detect := missionJSON(t, root, verifyRun, "detect:auth.core")
-	if detect.Packets[0].ProtocolScope != "Steps 1-6 for acceptance item auth.core" || !strings.Contains(detect.Packets[0].ReportContract.Template, "Part B:") {
-		t.Fatalf("wrong detection mission: %+v", detect.Packets[0])
+	item := missionJSON(t, root, verifyRun, "auth.core")
+	if item.Sessions[0].ProtocolScope != "Steps 1-7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
+		t.Fatalf("wrong verify item mission: %+v", item.Sessions[0])
 	}
-	grSubmitOK(t, root, verifyRun, "detect:auth.core", grVerifyItemBody("auth.core", "MISMATCH (acceptance)", "broken at src/auth.go:1")+"auth.core: "+main+": acceptance_item:auth.core\nauth.core: src/auth.go: all\n")
-	analysis := missionJSON(t, root, verifyRun, "analysis:auth.core")
-	if analysis.Packets[0].ProtocolScope != "Step 7 for acceptance item auth.core" || len(analysis.Packets[0].Dependencies) != 1 || !strings.Contains(analysis.Packets[0].Dependencies[0].Report, "MISMATCH (acceptance)") {
-		t.Fatalf("wrong analysis mission: %+v", analysis.Packets[0])
-	}
+	grSubmitOK(t, root, verifyRun, "auth.core", grVerifyItemBody("auth.core", "MISMATCH (acceptance)", "broken at src/auth.go:1")+grVerifyAnalysisFields("auth.core")+"auth.core: "+main+": acceptance_item:auth.core\nauth.core: src/auth.go: all\n")
 
-	reviewRun := grPlan(t, root, "--gate", "review", "--unit", "auth", "--target", "candidate")
-	file := missionJSON(t, root, reviewRun, "src/auth.go")
-	if file.Packets[0].ProtocolRef != "framework/spec_review_checklist.md" || !strings.Contains(file.Packets[0].ReportContract.Template, "module_boundaries:") {
-		t.Fatalf("wrong review mission: %+v", file.Packets[0])
+	grPreparePublic(t, root, mustLoadRun(t, root, verifyRun), []string{"design:auth:src/auth.go"})
+	file := missionJSON(t, root, verifyRun, "src/auth.go")
+	if file.Sessions[0].ProtocolRef != "framework/unit_verify_checklist.md" || !strings.Contains(file.Sessions[0].ReportContract.Template, "spec_requirements:") {
+		t.Fatalf("wrong quality file mission: %+v", file.Sessions[0])
 	}
-	grSubmitOK(t, root, reviewRun, "src/auth.go", grReviewReport("src/auth.go", main))
-	cross := missionJSON(t, root, reviewRun, "cross")
-	if len(cross.Packets[0].Dependencies) != 1 || cross.Packets[0].Dependencies[0].Digest == "" || len(cross.Packets[0].Dependencies[0].Verdicts) == 0 ||
-		cross.Packets[0].Dependencies[0].Report != "" || len(cross.Packets[0].AdditionalRefs) != 2 || !strings.Contains(cross.Packets[0].ReportContract.Template, "Effective status:") {
-		t.Fatalf("wrong cross mission: %+v", cross.Packets[0])
+	grSubmitOK(t, root, verifyRun, "src/auth.go", grQualityReport("src/auth.go", main))
+	cross := missionJSON(t, root, verifyRun, "cross")
+	if len(cross.Sessions[0].Dependencies) != 3 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
+		len(cross.Sessions[0].AdditionalRefs) != 2 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
+		t.Fatalf("wrong cross mission: %+v", cross.Sessions[0])
 	}
 }
 
 // TestGateMissionReportLineFormsMatchValidator pins the prompt's "Required
 // report lines and values" section to the line prefixes the validator parses:
 // the logical check key is not itself a report line for checks, file, and
-// cross packets.
+// cross sessions.
 func TestGateMissionReportLineFormsMatchValidator(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -219,27 +230,27 @@ func TestGateMissionReportLineFormsMatchValidator(t *testing.T) {
 		sample string
 		token  string
 	}{
-		{"checks", gaterun.GateValidate, gaterun.PacketKindChecks, "1", "1. <check name>", "1. Structural integrity: PASS — checked", "PASS"},
-		{"item", gaterun.GateVerify, gaterun.PacketKindItem, "auth.core", "auth.core", "auth.core: MISMATCH (acceptance) — src/auth.go:1", "MISMATCH"},
-		{"file", gaterun.GateReview, gaterun.PacketKindFile, "src/auth.go", "conclusion", "conclusion: acceptable — ok", "acceptable"},
-		{"cross", gaterun.GateVerify, gaterun.PacketKindCross, "cross", "Cross-check", "Cross-check: 5/5 PASS — ok", "PASS"},
+		{"checks", gaterun.GateValidate, gaterun.SessionKindChecks, "1", "1. <check name>", "1. Structural integrity: PASS — checked", "PASS"},
+		{"item", gaterun.GateVerify, gaterun.SessionKindItem, "auth.core", "auth.core", "auth.core: MISMATCH (acceptance) — src/auth.go:1", "MISMATCH"},
+		{"file", gaterun.GateVerify, gaterun.SessionKindDesign, "src/auth.go", "conclusion", "conclusion: acceptable — ok", "acceptable"},
+		{"cross", gaterun.GateVerify, gaterun.SessionKindCross, "cross", "Cross-check", "Cross-check: 5/5 PASS — ok", "PASS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			run := &gaterun.Run{Gate: tc.gate, TargetKind: gaterun.TargetKindUnit, TargetName: "auth", Target: "candidate", Mode: "full"}
-			packet := &gaterun.PacketSpec{Kind: tc.kind, PacketID: "p", CheckKeys: []string{tc.key}}
-			contract := reportContractFor(run, packet)
+			session := &gaterun.SessionSpec{Kind: tc.kind, SessionID: "p", CheckKeys: []string{tc.key}}
+			contract := reportContractFor(run, session)
 			if contract.Verdicts[0].Line != tc.line {
 				t.Fatalf("verdict line = %q, want %q", contract.Verdicts[0].Line, tc.line)
 			}
-			prompt := renderMissionPrompt(t, run, packet)
+			prompt := renderMissionPrompt(t, run, session)
 			if !strings.Contains(prompt, "- "+tc.line+": ") {
 				t.Fatalf("prompt does not render the report line %q:\n%s", tc.line, prompt)
 			}
 			if tc.line != tc.key && strings.Contains(prompt, "- "+tc.key+": ") {
 				t.Fatalf("prompt still renders the logical key %q as a report line:\n%s", tc.key, prompt)
 			}
-			token, _, _, err := extractVerdict(packet, tc.key, tc.sample)
+			token, _, _, err := extractVerdict(session, tc.key, tc.sample)
 			if err != nil || token != tc.token {
 				t.Fatalf("sample line %q does not parse as %s: token=%q err=%v", tc.sample, tc.token, token, err)
 			}
@@ -247,19 +258,19 @@ func TestGateMissionReportLineFormsMatchValidator(t *testing.T) {
 	}
 }
 
-func renderMissionPrompt(t *testing.T, run *gaterun.Run, packet *gaterun.PacketSpec) string {
+func renderMissionPrompt(t *testing.T, run *gaterun.Run, session *gaterun.SessionSpec) string {
 	t.Helper()
 	mission := gateMission{
-		SchemaVersion: 2, RunID: "20260101-000000-abc123", Gate: run.Gate,
+		SchemaVersion: 3, RunID: "20260101-000000-abc123", Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target, Mode: run.Mode,
 		SpecSource: "docs/specs/units/candidate/unit_auth.md",
-		Packets: []missionPacket{{
-			PacketID:       packet.PacketID,
-			Kind:           packet.Kind,
-			Mission:        missionTextFor(packet.Kind),
-			CheckKeys:      append([]string{}, packet.CheckKeys...),
+		Sessions: []missionSession{{
+			SessionID:      session.SessionID,
+			Kind:           session.Kind,
+			Mission:        missionTextFor(session.Kind),
+			CheckKeys:      append([]string{}, session.CheckKeys...),
 			ProtocolRef:    "framework/unit_verify_checklist.md",
-			ReportContract: reportContractFor(run, packet),
+			ReportContract: reportContractFor(run, session),
 		}},
 		FailurePath: failureLineFor(run.Gate),
 	}

@@ -14,34 +14,36 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-// reportRef is one accepted packet report plus its parsed content.
+// reportRef is one accepted session report plus its parsed content.
 type reportRef struct {
-	spec   *gaterun.PacketSpec
-	result *gaterun.PacketResult
+	spec   *gaterun.SessionSpec
+	result *gaterun.SessionResult
 	text   string
 }
 
 type gateOutcome struct {
-	Result           string
-	Counts           [4]int
-	Findings         []gaterun.Finding
-	DeferredFindings []gaterun.Finding
-	Ownerships       []gaterun.FindingOwnership
-	EffectiveStatus  map[string]string
-	SynthesisDigest  string
+	Result             string
+	Counts             [4]int
+	Findings           []gaterun.Finding
+	DeferredFindings   []gaterun.Finding
+	Ownerships         []gaterun.FindingOwnership
+	EffectiveStatus    map[string]string
+	QualityConclusions map[string]string
+	SynthesisDigest    string
 }
 
-// runGateFinalize writes the gate cache from the run's accepted packet
-// reports, after completeness and snapshot checks. Every required packet
-// must be resolved; the plan's check keys and the target's required files are
-// covered by the accepted reports (plus carried-over baseline evidence for
-// delta/repair); the input snapshot must be unchanged since gate-plan. Cache
+// runGateFinalize writes the gate cache from the run's accepted session
+// reports, after coverage closure and snapshot checks. Every coverage key must
+// be covered by exactly one accepted session (plus carried-over baseline
+// evidence for delta/repair); a run with findings must carry an accepted final
+// synthesis. The input snapshot must be unchanged since gate-plan. Cache
 // evidence is assembled from the accepted declarations, while result,
 // blocking, severity counts, and statuses are derived from the accepted
-// synthesis artifact. See framework/verification_scope.md §Gate Work Packets and
+// synthesis artifact. See framework/verification_scope.md §Coverage model and
 // framework/validation_cache.md §Write Rules → Tooled writes.
 func runGateFinalize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-finalize", flag.ContinueOnError)
@@ -78,34 +80,64 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
 	}
 
-	// Completeness: every plan packet must be resolved before the cache can be
-	// assembled (accepted, or not_required for conditional analysis only).
+	states, err := gaterun.LoadSessionStates(absRoot, run)
+	if err != nil {
+		return err
+	}
+
+	// Coverage closure: every coverage key must be covered by exactly one
+	// accepted session. A duplicate is a mechanical error (submit prevents
+	// it, but a hand-edited state must fail closed).
+	_, uncovered, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		return fmt.Errorf("gate-finalize rejected: %w", err)
+	}
+	if len(uncovered) > 0 {
+		var rejected []string
+		for _, state := range states {
+			if state.Status != gaterun.SessionAccepted {
+				rejected = append(rejected, fmt.Sprintf("%s (%s, keys: %s)", state.SessionID, state.Status, strings.Join(state.Keys, ", ")))
+			}
+		}
+		detail := ""
+		if len(rejected) > 0 {
+			detail = "\nNon-accepted sessions: " + strings.Join(rejected, "; ")
+		}
+		return fmt.Errorf("gate-finalize rejected: coverage incomplete — uncovered key(s): %s%s\nSubmit them first: `specflowctl gate-mission --run %s --keys <keys> --format prompt`, then `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`",
+			strings.Join(uncovered, ", "), detail, run.RunID, run.RunID)
+	}
+
 	var reports []reportRef
-	var missing []string
-	for i := range run.Packets {
-		spec := &run.Packets[i]
-		state, lerr := gaterun.LoadPacketState(absRoot, run, spec.PacketID)
-		if lerr != nil {
-			return lerr
-		}
-		if state.Status == gaterun.PacketNotRequired && spec.Kind == gaterun.PacketKindAnalysis {
+	for _, state := range states {
+		if state.Status != gaterun.SessionAccepted {
 			continue
 		}
-		if state.Status != gaterun.PacketAccepted {
-			missing = append(missing, fmt.Sprintf("%s (%s)", spec.PacketID, state.Status))
-			continue
+		spec, serr := gaterun.BuildSessionSpec(absRoot, run, state.Keys)
+		if serr != nil {
+			return fmt.Errorf("accepted session %s has an invalid key set: %w", state.SessionID, serr)
+		}
+		if spec.SessionID != state.SessionID {
+			return fmt.Errorf("accepted session %s does not match the id derived from its keys %s", state.SessionID, strings.Join(state.Keys, ", "))
+		}
+		semanticData, _ := json.Marshal(state.Result)
+		if run.Gate == gaterun.GateVerify && state.SemanticDigest != judgments.Digest(semanticData) {
+			return fmt.Errorf("session %s structured result digest mismatch", state.SessionID)
 		}
 		if state.Result == nil || state.Result.ReportDigest != reportDigest(state.Report) {
-			return fmt.Errorf("packet %q is accepted but its structured result is missing or does not match the stored report — plan a new run", spec.PacketID)
+			return fmt.Errorf("session %q is accepted but its structured result is missing or does not match the stored report — plan a new run", state.SessionID)
 		}
-		if err := validateConsumedDigests(absRoot, run, spec, state); err != nil {
+		if err := validateConsumedDigests(absRoot, run, spec, state, states); err != nil {
 			return err
 		}
 		reports = append(reports, reportRef{spec: spec, result: state.Result, text: state.Report})
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("gate-finalize rejected: %d packet(s) are not accepted: %s\nSubmit them first: `specflowctl gate-submit --run %s --packet <id> --report PATH`",
-			len(missing), strings.Join(missing, ", "), run.RunID)
+
+	// A run with findings must carry an accepted final synthesis; a clean run
+	// finalizes directly. The final synthesis is the optional `cross` session.
+	cross := crossReport(reports)
+	hasFindings := runHasInputFindings(run, reports)
+	if (hasFindings || len(run.Relationships) > 0) && cross == nil && run.TargetKind != gaterun.TargetKindRule {
+		return fmt.Errorf("gate-finalize rejected: the run has relationships to check or findings but no accepted final synthesis — generate it with `specflowctl gate-mission --run %s --final --format prompt`, then submit it with `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
 	}
 
 	// Snapshot check — the closure of the time-of-check/time-of-use gap. Any
@@ -118,7 +150,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return rejectSnapshotDivergence(absRoot, run, divergences)
 	}
 
-	outcome, err := deriveGateOutcome(absRoot, run, reports)
+	outcome, err := deriveGateOutcome(run, reports)
 	if err != nil {
 		return err
 	}
@@ -130,7 +162,8 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	result := outcome.Result
 	counts := outcome.Counts
 
-	entries, err := assembleEntries(absRoot, run, reports)
+	synthesisKeys := synthesisEvidenceKeys(run, reports, outcome)
+	entries, err := assembleEntries(absRoot, run, reports, synthesisKeys)
 	if err != nil {
 		return err
 	}
@@ -161,8 +194,17 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		body.WriteString("\n\nAdditional retained findings:\n")
 		body.WriteString(strings.Join(retainedDetails, "\n\n"))
 	}
+	schema := 3
+	if run.Gate == gaterun.GateVerify {
+		schema = 4
+		if err := publishUnitJudgments(absRoot, run, reports, outcome, synthesisKeys); err != nil {
+			return err
+		}
+	}
 	judgmentData, err := json.Marshal(gaterun.JudgmentBaseline{
-		SchemaVersion:    2,
+		SchemaVersion:    schema,
+		Records:          run.Records,
+		Relationships:    run.AllRelationships(),
 		LogicalStatus:    outcome.EffectiveStatus,
 		Findings:         outcome.Findings,
 		SynthesisDigest:  outcome.SynthesisDigest,
@@ -252,15 +294,45 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	return nil
 }
 
+// crossReport returns the accepted final-synthesis report, or nil.
+func crossReport(reports []reportRef) *reportRef {
+	for i := range reports {
+		if reports[i].spec.Kind == gaterun.SessionKindCross {
+			return &reports[i]
+		}
+	}
+	return nil
+}
+
+// runHasInputFindings reports whether the run's accepted non-final reports,
+// carried results, or pending deferrals carry any finding — the trigger for
+// the optional final synthesis.
+func runHasInputFindings(run *gaterun.Run, reports []reportRef) bool {
+	for _, rep := range reports {
+		if rep.spec.Kind == gaterun.SessionKindCross {
+			continue
+		}
+		if len(resultFindings(rep.result)) > 0 {
+			return true
+		}
+	}
+	for i := range run.CarriedResults {
+		if len(resultFindings(&run.CarriedResults[i])) > 0 {
+			return true
+		}
+	}
+	return len(run.DeferredFindings) > 0
+}
+
 // updateDeferredLedger synchronizes the repository's deferred-findings ledger
-// with one finalized review run. It (1) consumes the owner-side entries the run
+// with one finalized verify run. It (1) consumes the owner-side entries the run
 // disposed — every pending deferral loaded at plan time is an input finding the
-// cross synthesis must dispose — and (2) supersedes this unit's own older
+// final synthesis must dispose — and (2) supersedes this unit's own older
 // deferrals for files the run re-reviewed, then (3) records this run's new
 // deferrals. The write is idempotent: a retried finalize re-applies the same
 // removals and upserts the same entries by finding id.
 func updateDeferredLedger(absRoot string, run *gaterun.Run, outcome *gateOutcome) error {
-	if run.Gate != gaterun.GateReview || run.TargetKind != gaterun.TargetKindUnit {
+	if run.Gate != gaterun.GateVerify || run.TargetKind != gaterun.TargetKindUnit {
 		return nil
 	}
 	ledger, err := validationcache.ReadDeferredLedger(absRoot)
@@ -268,11 +340,8 @@ func updateDeferredLedger(absRoot string, run *gaterun.Run, outcome *gateOutcome
 		return err
 	}
 	current := map[string]bool{}
-	for _, spec := range run.Packets {
-		if spec.Kind == gaterun.PacketKindCross {
-			continue
-		}
-		for _, key := range spec.CheckKeys {
+	for _, ck := range run.Coverage {
+		for _, key := range run.ReportKeys(ck) {
 			current[key] = true
 		}
 	}
@@ -345,7 +414,7 @@ func sameDeferredEntries(a, b []validationcache.DeferredEntry) bool {
 }
 
 // entryCoversCurrent reports whether any of the entry's affected keys was
-// re-reviewed by the run (its current file packets).
+// re-reviewed by the run (its current coverage report keys).
 func entryCoversCurrent(entry validationcache.DeferredEntry, current map[string]bool) bool {
 	if current[entry.SourceKey] {
 		return true
@@ -360,10 +429,10 @@ func entryCoversCurrent(entry validationcache.DeferredEntry, current map[string]
 
 // retainedFindingDetails returns the renderable block of every terminal
 // retained finding whose canonical detail is not already present in a current
-// packet report — a finding carried over from the baseline, deferred by this
-// run's cross synthesis, or routed in from another unit's review. Every
+// session report — a finding carried over from the baseline, deferred by this
+// run's final synthesis, or routed in from another unit's verify run. Every
 // terminal retained finding keeps its complete block in the human-readable
-// body exactly once; a finding already rendered by a packet report is skipped.
+// body exactly once; a finding already rendered by a session report is skipped.
 func retainedFindingDetails(reports []reportRef, retained []gaterun.Finding) ([]string, error) {
 	current := map[string]bool{}
 	for _, report := range reports {
@@ -387,153 +456,59 @@ func retainedFindingDetails(reports []reportRef, retained []gaterun.Finding) ([]
 	return details, nil
 }
 
-func validateConsumedDigests(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, state *gaterun.PacketState) error {
-	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross && spec.Kind != gaterun.PacketKindVerifier {
+func validateConsumedDigests(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, state *gaterun.SessionState, states []*gaterun.SessionState) error {
+	if spec.Kind != gaterun.SessionKindCross && spec.Kind != gaterun.SessionKindDesign {
 		return nil
 	}
-	expected := consumedResultDigests(absRoot, run, spec)
+	expected := consumedResultDigests(absRoot, run, spec, states)
 	if len(expected) != len(state.ConsumedResultDigests) {
-		return fmt.Errorf("packet %q consumed-result set no longer matches its dependencies — plan a new run", spec.PacketID)
+		return fmt.Errorf("session %q consumed-result set no longer matches its dependencies — plan a new run", spec.SessionID)
 	}
 	for id, digest := range expected {
 		if state.ConsumedResultDigests[id] != digest {
-			return fmt.Errorf("packet %q consumed digest for %q does not match the accepted result — plan a new run", spec.PacketID, id)
+			return fmt.Errorf("session %q consumed digest for %q does not match the accepted result — plan a new run", spec.SessionID, id)
 		}
 	}
 	return nil
 }
 
-func deriveGateOutcome(_ string, run *gaterun.Run, reports []reportRef) (*gateOutcome, error) {
+func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, error) {
 	out := &gateOutcome{Result: "pass", EffectiveStatus: map[string]string{}}
-	var cross *reportRef
-	for i := range reports {
-		if reports[i].spec.Kind == gaterun.PacketKindCross {
-			cross = &reports[i]
-			break
-		}
-	}
 	if run.TargetKind == gaterun.TargetKindRule {
-		if len(reports) != 1 {
-			return nil, fmt.Errorf("rule validate requires exactly one accepted checks packet, got %d", len(reports))
+		if err := deriveRuleOutcome(run, reports, out); err != nil {
+			return nil, err
 		}
-		carriedKeys := map[string]bool{}
-		for _, key := range run.CarriedKeys {
-			if carriedKeys[key] {
-				return nil, fmt.Errorf("rule run carries check %q more than once", key)
-			}
-			carriedKeys[key] = true
+	} else if cross := crossReport(reports); cross != nil {
+		if err := deriveCrossOutcome(run, reports, cross, out); err != nil {
+			return nil, err
 		}
-		findingIndex := map[string]int{}
-		addCarriedFinding := func(finding gaterun.Finding) {
-			if index, ok := findingIndex[finding.ID]; ok {
-				keys := findingKeySet(out.Findings[index])
-				for key := range findingKeySet(finding) {
-					keys[key] = true
-				}
-				out.Findings[index].AffectedKeys = sortedFindingKeys(keys, out.Findings[index].SourceKey)
-				return
-			}
-			findingIndex[finding.ID] = len(out.Findings)
-			out.Findings = append(out.Findings, finding)
-		}
+	} else {
+		// A clean run: coverage is closed by alignment/quality sessions and no
+		// final synthesis is required. No finding exists, so every status is
+		// derived from the sessions' verdicts plus the carried baseline
+		// statuses, and the mechanical synthesis digest covers the derived
+		// status map.
 		for i := range run.CarriedResults {
-			result := &run.CarriedResults[i]
-			for key, status := range result.EffectiveStatus {
-				if !carriedKeys[key] {
-					return nil, fmt.Errorf("carried rule result declares non-carried check %q", key)
-				}
-				if status != "pass" && status != "fail" {
-					return nil, fmt.Errorf("carried rule check %q has invalid status %q", key, status)
-				}
-				if prior, exists := out.EffectiveStatus[key]; exists && prior != status {
-					return nil, fmt.Errorf("carried rule check %q has conflicting statuses %q and %q", key, prior, status)
-				}
+			for key, status := range run.CarriedResults[i].EffectiveStatus {
 				out.EffectiveStatus[key] = status
 			}
-			for _, finding := range resultFindings(result) {
-				addCarriedFinding(finding)
+		}
+		for _, rep := range reports {
+			for key, verdict := range rep.result.Verdicts {
+				out.EffectiveStatus[key] = statusForVerdict(verdict)
 			}
 		}
-		for key := range carriedKeys {
-			if _, ok := out.EffectiveStatus[key]; !ok {
-				return nil, fmt.Errorf("carried rule check %q has no baseline status", key)
-			}
-		}
-		for _, report := range reports {
-			for key, verdict := range report.result.Verdicts {
-				if carriedKeys[key] {
-					return nil, fmt.Errorf("rule run check %q is both carried and re-run", key)
-				}
-				if verdict == "FAIL" {
-					out.EffectiveStatus[key] = "fail"
-				} else {
-					out.EffectiveStatus[key] = "pass"
-				}
-			}
-			for _, finding := range resultFindings(report.result) {
-				if index, ok := findingIndex[finding.ID]; ok {
-					out.Findings[index] = finding
-				} else {
-					findingIndex[finding.ID] = len(out.Findings)
-					out.Findings = append(out.Findings, finding)
-				}
-			}
-		}
-		for i := 1; i <= 8; i++ {
-			key := strconv.Itoa(i)
-			if _, ok := out.EffectiveStatus[key]; !ok {
-				return nil, fmt.Errorf("rule validate outcome has no logical status for check %q", key)
-			}
-		}
-		if len(out.EffectiveStatus) != 8 {
-			return nil, fmt.Errorf("rule validate outcome carries unexpected logical statuses: %v", out.EffectiveStatus)
+		if runHasInputFindings(run, reports) || len(run.Relationships) > 0 {
+			return nil, errors.New("gate-finalize rejected: the run has findings but no accepted final synthesis")
 		}
 		digestState, err := json.Marshal(struct {
 			LogicalStatus map[string]string `json:"logical_status"`
 			Findings      []gaterun.Finding `json:"findings"`
-		}{LogicalStatus: out.EffectiveStatus, Findings: out.Findings})
+		}{LogicalStatus: out.EffectiveStatus, Findings: []gaterun.Finding{}})
 		if err != nil {
-			return nil, fmt.Errorf("encode rule synthesis state: %w", err)
+			return nil, fmt.Errorf("encode clean synthesis state: %w", err)
 		}
 		out.SynthesisDigest = reportDigest(string(digestState))
-	} else {
-		if cross == nil {
-			return nil, errors.New("gate-finalize rejected: unit run has no accepted cross synthesis result")
-		}
-		var inputFindings []gaterun.Finding
-		for _, report := range reports {
-			if report.spec.Kind == gaterun.PacketKindCross {
-				continue
-			}
-			inputFindings = append(inputFindings, resultFindings(report.result)...)
-		}
-		for i := range run.CarriedResults {
-			inputFindings = append(inputFindings, resultFindings(&run.CarriedResults[i])...)
-		}
-		for _, deferred := range run.DeferredFindings {
-			inputFindings = append(inputFindings, deferred.Finding)
-		}
-		retained, err := resolveCrossFindings(inputFindings, cross.result.Findings, cross.result.Dispositions)
-		if err != nil {
-			return nil, fmt.Errorf("gate-finalize rejected invalid cross synthesis: %w", err)
-		}
-		retained, err = applySeverityConfirmations(retained, cross.result.SeverityChecks)
-		if err != nil {
-			return nil, fmt.Errorf("gate-finalize rejected invalid severity synthesis: %w", err)
-		}
-		if len(cross.result.Ownerships) > 0 && run.Gate != gaterun.GateReview {
-			return nil, fmt.Errorf("gate-finalize rejected invalid ownership synthesis: ownership records are review-only — the %s gate has no ownership dimension", run.Gate)
-		}
-		retained, err = applyOwnerships(retained, cross.result.Ownerships)
-		if err != nil {
-			return nil, fmt.Errorf("gate-finalize rejected invalid ownership synthesis: %w", err)
-		}
-		out.Findings, out.DeferredFindings = splitDeferred(retained, run.TargetName)
-		out.Ownerships = cross.result.Ownerships
-		for key, status := range cross.result.EffectiveStatus {
-			out.EffectiveStatus[key] = status
-		}
-		out.SynthesisDigest = cross.result.ReportDigest
 	}
 	// A zero-finding run must emit the documented array shape in the
 	// GATE_JUDGMENTS block, not JSON null: the block is the machine-readable
@@ -563,6 +538,122 @@ func deriveGateOutcome(_ string, run *gaterun.Run, reports []reportRef) (*gateOu
 		return nil, errors.New("validate synthesis contains P2/P3 findings; validate grades P0/P1 only")
 	}
 	return out, nil
+}
+
+// statusForVerdict maps a session verdict token to the logical fail/pass
+// status the cache records.
+func statusForVerdict(verdict string) string {
+	switch verdict {
+	case "FAIL", "MISMATCH", "unacceptable":
+		return "fail"
+	default:
+		return "pass"
+	}
+}
+
+func deriveRuleOutcome(run *gaterun.Run, reports []reportRef, out *gateOutcome) error {
+	carriedKeys := map[string]bool{}
+	for _, key := range run.CarriedKeys {
+		if carriedKeys[key] {
+			return fmt.Errorf("rule run carries check %q more than once", key)
+		}
+		carriedKeys[key] = true
+	}
+	findingIndex := map[string]int{}
+	addCarriedFinding := func(finding gaterun.Finding) {
+		if index, ok := findingIndex[finding.ID]; ok {
+			keys := findingKeySet(out.Findings[index])
+			for key := range findingKeySet(finding) {
+				keys[key] = true
+			}
+			out.Findings[index].AffectedKeys = sortedFindingKeys(keys, out.Findings[index].SourceKey)
+			return
+		}
+		findingIndex[finding.ID] = len(out.Findings)
+		out.Findings = append(out.Findings, finding)
+	}
+	for i := range run.CarriedResults {
+		result := &run.CarriedResults[i]
+		for key, status := range result.EffectiveStatus {
+			if !carriedKeys[key] {
+				return fmt.Errorf("carried rule result declares non-carried check %q", key)
+			}
+			if status != "pass" && status != "fail" {
+				return fmt.Errorf("carried rule check %q has invalid status %q", key, status)
+			}
+			if prior, exists := out.EffectiveStatus[key]; exists && prior != status {
+				return fmt.Errorf("carried rule check %q has conflicting statuses %q and %q", key, prior, status)
+			}
+			out.EffectiveStatus[key] = status
+		}
+		for _, finding := range resultFindings(result) {
+			addCarriedFinding(finding)
+		}
+	}
+	for key := range carriedKeys {
+		if _, ok := out.EffectiveStatus[key]; !ok {
+			return fmt.Errorf("carried rule check %q has no baseline status", key)
+		}
+	}
+	for _, report := range reports {
+		if report.spec.Kind == gaterun.SessionKindCross {
+			return errors.New("rule validate has no final synthesis session")
+		}
+		for key, verdict := range report.result.Verdicts {
+			if carriedKeys[key] {
+				return fmt.Errorf("rule run check %q is both carried and re-run", key)
+			}
+			out.EffectiveStatus[key] = statusForVerdict(verdict)
+		}
+		for _, finding := range resultFindings(report.result) {
+			if index, ok := findingIndex[finding.ID]; ok {
+				out.Findings[index] = finding
+			} else {
+				findingIndex[finding.ID] = len(out.Findings)
+				out.Findings = append(out.Findings, finding)
+			}
+		}
+	}
+	for i := 1; i <= 7; i++ {
+		key := strconv.Itoa(i)
+		if _, ok := out.EffectiveStatus[key]; !ok {
+			return fmt.Errorf("rule validate outcome has no logical status for check %q", key)
+		}
+	}
+	if len(out.EffectiveStatus) != 7 {
+		return fmt.Errorf("rule validate outcome carries unexpected logical statuses: %v", out.EffectiveStatus)
+	}
+	digestState, err := json.Marshal(struct {
+		LogicalStatus map[string]string `json:"logical_status"`
+		Findings      []gaterun.Finding `json:"findings"`
+	}{LogicalStatus: out.EffectiveStatus, Findings: out.Findings})
+	if err != nil {
+		return fmt.Errorf("encode rule synthesis state: %w", err)
+	}
+	out.SynthesisDigest = reportDigest(string(digestState))
+	return nil
+}
+
+func deriveCrossOutcome(run *gaterun.Run, reports []reportRef, cross *reportRef, out *gateOutcome) error {
+	retained, err := resolveCrossFindings(synthesisInputFindings(run, reports), cross.result.Findings, cross.result.Dispositions)
+	if err != nil {
+		return fmt.Errorf("gate-finalize rejected invalid cross synthesis: %w", err)
+	}
+	if len(cross.result.Ownerships) > 0 && run.Gate != gaterun.GateVerify {
+		return fmt.Errorf("gate-finalize rejected invalid ownership synthesis: ownership records are quality-lens-only — the %s gate has no ownership dimension", run.Gate)
+	}
+	retained, err = applyOwnerships(retained, cross.result.Ownerships)
+	if err != nil {
+		return fmt.Errorf("gate-finalize rejected invalid ownership synthesis: %w", err)
+	}
+	out.Findings, out.DeferredFindings = splitDeferred(retained, run.TargetName)
+	out.Ownerships = cross.result.Ownerships
+	for key, status := range cross.result.EffectiveStatus {
+		out.EffectiveStatus[key] = status
+	}
+	out.QualityConclusions = cross.result.QualityConclusions
+	out.SynthesisDigest = cross.result.ReportDigest
+	return nil
 }
 
 // freshEvidencePaths lists the paths this run's accepted reports declared —
@@ -619,9 +710,9 @@ func rejectSnapshotDivergence(absRoot string, run *gaterun.Run, divergences []st
 
 // assembleEntries builds the cache files list from the accepted reports'
 // dependency-scope declarations plus the carried-over baseline evidence
-// (delta/repair). It also enforces coverage: the plan's check keys and the
-// target's required files must all appear.
-func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]validationcache.FileEntry, error) {
+// (delta/repair). It also enforces coverage: the coverage set's report keys and
+// the target's required files must all appear.
+func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef, synthesisKeys map[string]map[string]bool) ([]validationcache.FileEntry, error) {
 	type pathAgg struct {
 		path  string
 		keys  []string
@@ -629,24 +720,43 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 	}
 	agg := map[string]*pathAgg{}
 	var pathOrder []string
+	var scopes []gaterun.Scope
+	reportedKeys := map[string]bool{}
 	for _, rep := range reports {
 		for _, s := range rep.result.Scopes {
-			p := agg[s.Path]
-			if p == nil {
-				p = &pathAgg{path: s.Path, decls: map[string]*declParts{}}
-				agg[s.Path] = p
-				pathOrder = append(pathOrder, s.Path)
+			if s.Key != gaterun.CrossKey {
+				scopes = append(scopes, s)
+				reportedKeys[s.Key] = true
 			}
-			if _, ok := p.decls[s.Key]; !ok {
-				p.decls[s.Key] = &declParts{}
-				p.keys = append(p.keys, s.Key)
-			}
-			d, derr := parseDecl(s.Declaration)
-			if derr != nil {
-				return nil, fmt.Errorf("check %q declaration for %s: %w", s.Key, s.Path, derr)
-			}
-			mergeDecl(p.decls[s.Key], d)
 		}
+	}
+	// `cross` has no independent check entry. Its disposition/ownership
+	// evidence and each finding group's source evidence belong to the logical
+	// judgments that consumed them, including suppressed and carried findings.
+	var affectedKeys []string
+	for key := range synthesisKeys {
+		affectedKeys = append(affectedKeys, key)
+	}
+	sortCheckKeys(affectedKeys)
+	for _, key := range affectedKeys {
+		scopes = append(scopes, synthesisScopesForKey(key, reports, synthesisKeys[key])...)
+	}
+	for _, s := range scopes {
+		p := agg[s.Path]
+		if p == nil {
+			p = &pathAgg{path: s.Path, decls: map[string]*declParts{}}
+			agg[s.Path] = p
+			pathOrder = append(pathOrder, s.Path)
+		}
+		if _, ok := p.decls[s.Key]; !ok {
+			p.decls[s.Key] = &declParts{}
+			p.keys = append(p.keys, s.Key)
+		}
+		d, derr := parseDecl(s.Declaration)
+		if derr != nil {
+			return nil, fmt.Errorf("check %q declaration for %s: %w", s.Key, s.Path, derr)
+		}
+		mergeDecl(p.decls[s.Key], d)
 	}
 
 	// Carried-over evidence comes from the run's plan-time snapshot — the
@@ -661,6 +771,10 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 		checks []validationcache.CheckEntry
 	}
 	carried := map[string]*carriedEntry{}
+	carriedKeys := map[string]bool{}
+	for _, key := range run.CarriedKeys {
+		carriedKeys[key] = true
+	}
 	if len(run.CarriedKeys) > 0 {
 		if len(run.CarriedEvidence) == 0 {
 			return nil, fmt.Errorf("carried-over checks %s have no evidence snapshot in the run state — plan a new run", strings.Join(run.CarriedKeys, ", "))
@@ -668,7 +782,12 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 		for _, entry := range run.CarriedEvidence {
 			ce := &carriedEntry{hash: entry.Hash, deps: append([]string(nil), entry.Deps...)}
 			for _, c := range entry.Checks {
-				ce.checks = append(ce.checks, validationcache.CheckEntry{Check: c.Check, Deps: append([]string(nil), c.Deps...)})
+				ce.checks = append(ce.checks, validationcache.CheckEntry{Check: c.Check, Lens: c.Lens, Deps: append([]string(nil), c.Deps...)})
+				for _, key := range affectedKeys {
+					if key != c.Check && synthesisKeys[key][c.Check] {
+						ce.checks = append(ce.checks, validationcache.CheckEntry{Check: key, Lens: run.LensForReportKey(key), Deps: append([]string(nil), c.Deps...)})
+					}
+				}
 			}
 			carried[entry.Path] = ce
 			pathOrder = append(pathOrder, entry.Path)
@@ -708,7 +827,7 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 			var checks []validationcache.CheckDeclaration
 			for _, k := range keys {
 				m := p.decls[k]
-				cd := validationcache.CheckDeclaration{Check: k}
+				cd := validationcache.CheckDeclaration{Check: k, Lens: run.LensForReportKey(k)}
 				if !m.WholeFile {
 					cd.Sections = m.Sections
 					cd.Ranges = strings.Join(m.Ranges, ",")
@@ -729,21 +848,31 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 			if entry.Hash == "" {
 				entry.Hash = ce.hash
 			}
-			// The carried entry's file-level deps are preserved even when the
-			// path also carries re-run declarations: the union includes the
-			// declare-heavy remainder no check owns, which the promote gate
-			// judges freshness on (see framework/validation_cache.md §Format
-			// → Per-check evidence).
 			for _, dep := range ce.deps {
 				if !containsString(entry.Deps, dep) {
 					entry.Deps = append(entry.Deps, dep)
 				}
 			}
 			for _, c := range ce.checks {
-				if hasCheckKey(entry.Checks, c.Check) {
+				if carriedKeys[c.Check] && reportedKeys[c.Check] {
 					return nil, fmt.Errorf("check %q is both re-run and carried over — plan a new run", c.Check)
 				}
-				entry.Checks = append(entry.Checks, c)
+				index := -1
+				for i := range entry.Checks {
+					if entry.Checks[i].Check == c.Check {
+						index = i
+						break
+					}
+				}
+				if index < 0 {
+					entry.Checks = append(entry.Checks, c)
+				} else {
+					for _, dep := range c.Deps {
+						if !containsString(entry.Checks[index].Deps, dep) {
+							entry.Checks[index].Deps = append(entry.Checks[index].Deps, dep)
+						}
+					}
+				}
 				for _, dep := range c.Deps {
 					if !containsString(entry.Deps, dep) {
 						entry.Deps = append(entry.Deps, dep)
@@ -758,8 +887,8 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef) ([]v
 		entries = append(entries, entry)
 	}
 
-	for _, spec := range run.Packets {
-		for _, key := range spec.CheckKeys {
+	for _, ck := range run.Coverage {
+		for _, key := range run.ReportKeys(ck) {
 			if !seenKey[key] {
 				return nil, fmt.Errorf("coverage incomplete: check %q has no evidence in the assembled cache — plan a new run", key)
 			}
@@ -807,8 +936,8 @@ func applyFailureStatuses(run *gaterun.Run, status map[string]string, entries []
 	return nil
 }
 
-// sortCheckKeys orders check keys numerically first (validate "1"-"8"), then
-// lexically (verify item ids, review file paths, "cross").
+// sortCheckKeys orders check keys numerically first (validate "1"-"10"), then
+// lexically (verify item ids, quality file paths, "cross").
 func sortCheckKeys(keys []string) {
 	sort.Slice(keys, func(i, j int) bool {
 		ni, ei := strconv.Atoi(keys[i])
@@ -884,12 +1013,12 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl gate-finalize --run RUN_ID [--timestamp T] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Writes the gate cache from the run's accepted packet reports, after completeness")
-	fmt.Fprintln(w, "and snapshot checks: every plan packet must be resolved (accepted, or conditional")
-	fmt.Fprintln(w, "analysis marked not_required), the plan's check keys")
-	fmt.Fprintln(w, "and the target's required files must be covered by the accepted reports (plus")
-	fmt.Fprintln(w, "carried-over baseline evidence for delta/repair), and no input may have changed")
-	fmt.Fprintln(w, "since gate-plan (a divergence discards the run). The tooling assembles each")
+	fmt.Fprintln(w, "Writes the gate cache from the run's accepted session reports, after coverage")
+	fmt.Fprintln(w, "closure and snapshot checks: every coverage key must be covered by exactly one")
+	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for delta/repair), and no")
+	fmt.Fprintln(w, "input may have changed since gate-plan (a divergence discards the run). A run")
+	fmt.Fprintln(w, "that produced findings must carry an accepted final synthesis (the optional")
+	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles each")
 	fmt.Fprintln(w, "files entry and the per-check checks mapping from the reports' Dependency scope")
 	fmt.Fprintln(w, "declarations, computes hash + deps, enforces union discipline and path-form")
 	fmt.Fprintln(w, "rules, derives the failure-record status map mechanically, then re-reads and")
@@ -901,4 +1030,165 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --run RUN_ID     gate run id printed by gate-plan (required)")
 	fmt.Fprintln(w, "  --timestamp T    run timestamp RFC3339 (default: now UTC)")
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")
+}
+
+func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, outcome *gateOutcome, synthesisKeys map[string]map[string]bool) error {
+	coverage, err := gaterun.RequiredCoverage(root, run)
+	if err != nil {
+		return err
+	}
+	byKey := map[string]reportRef{}
+	for _, rep := range reports {
+		if rep.spec.Kind == gaterun.SessionKindCross {
+			continue
+		}
+		for _, key := range rep.spec.CheckKeys {
+			byKey[key] = rep
+		}
+	}
+	for _, ck := range coverage {
+		// Public observations are independent facts, published at acceptance.
+		// Unit-specific synthesis must not rewrite them.
+		if ck.Kind == gaterun.SessionKindCode {
+			continue
+		}
+		binding, bound := run.Records[ck.Key]
+		rep, reported := byKey[ck.Key]
+		if !reported {
+			if !bound {
+				return fmt.Errorf("no accepted judgment for %s", ck.Key)
+			}
+			record, err := judgments.Load(root, binding.Reference)
+			if err != nil {
+				return err
+			}
+			result, err := gaterun.BoundJudgmentResult(record, ck, binding.Layer)
+			if err != nil {
+				return err
+			}
+			rep = reportRef{result: &result, text: record.Report}
+		}
+		original := keyJudgmentResult(ck, rep.result)
+		canonical := finalizedKeyResult(ck, &original, outcome)
+		changed := !judgmentDecisionEqual(&original, &canonical)
+		if bound && !changed {
+			if !gaterun.IsItemKind(ck.Kind) {
+				continue
+			}
+			context, err := judgments.SpecContext(root, ck.Unit, binding.Layer)
+			if err != nil {
+				return err
+			}
+			record, err := judgments.Load(root, binding.Reference)
+			if err != nil {
+				return err
+			}
+			if record.SpecContext == context {
+				continue
+			}
+			// Carry the unchanged judgment into this spec context without
+			// executing it again or changing another context's current decision.
+		}
+		report := rep.text
+		if cross := crossReport(reports); cross != nil && changed {
+			// The decision includes the final review's evidence, even when the
+			// original item was ALIGNED or was carried without re-execution.
+			canonical.Scopes = append(canonical.Scopes, synthesisScopesForKey(ck.Key, reports, synthesisKeys[ck.Key])...)
+			report += "\n\nFinal synthesis:\n" + cross.text
+		}
+		var refs []judgments.Binding
+		if ck.Kind == gaterun.SessionKindDesign {
+			public, ok := run.Records["code:"+ck.File]
+			if !ok {
+				return fmt.Errorf("no public record for %s", ck.File)
+			}
+			refs = append(refs, public)
+		}
+		ref, err := gaterun.SaveJudgment(root, run, ck, &canonical, report, refs)
+		if err != nil {
+			return err
+		}
+		layer, source := run.Target, "executed"
+		if ck.Kind == gaterun.SessionKindPreserve {
+			layer = gaterun.TargetStable
+		}
+		if bound {
+			source = binding.Source
+		}
+		run.Records[ck.Key] = judgments.Binding{Reference: ref, Layer: layer, Source: source}
+	}
+	return gaterun.Persist(root, run)
+}
+
+func keyJudgmentResult(ck gaterun.CoverageKey, original *gaterun.SessionResult) gaterun.SessionResult {
+	result := *original
+	verdict := original.Verdicts[ck.Key]
+	status, ok := original.EffectiveStatus[ck.Key]
+	if !ok {
+		status = statusForVerdict(verdict)
+	}
+	result.Verdicts = map[string]string{ck.Key: verdict}
+	result.EffectiveStatus = map[string]string{ck.Key: status}
+	result.Scopes = nil
+	for _, scope := range original.Scopes {
+		if scope.Key == ck.Key {
+			result.Scopes = append(result.Scopes, scope)
+		}
+	}
+	result.Findings = nil
+	for _, finding := range original.Findings {
+		if findingKeySet(finding)[ck.Key] {
+			finding.SourceKey = ck.Key
+			finding.AffectedKeys = nil
+			result.Findings = append(result.Findings, finding)
+		}
+	}
+	return result
+}
+
+func synthesisScopesForKey(key string, reports []reportRef, sources map[string]bool) []gaterun.Scope {
+	var scopes []gaterun.Scope
+	for _, rep := range reports {
+		for _, scope := range rep.result.Scopes {
+			if sources[scope.Key] {
+				scope.Key = key
+				scopes = append(scopes, scope)
+			}
+		}
+	}
+	return scopes
+}
+
+func finalizedKeyResult(ck gaterun.CoverageKey, original *gaterun.SessionResult, outcome *gateOutcome) gaterun.SessionResult {
+	result := *original
+	status := outcome.EffectiveStatus[ck.Key]
+	verdict := original.Verdicts[ck.Key]
+	if gaterun.IsItemKind(ck.Kind) {
+		// Passing an advisory gate does not prove an indeterminate requirement.
+		// Preserve consumers still need the original alignment verdict.
+		if status == "pass" && verdict != "CANNOT_DETERMINE" {
+			verdict = "ALIGNED"
+		} else if verdict != "CANNOT_DETERMINE" {
+			verdict = "MISMATCH"
+		}
+	} else if conclusion, finalized := outcome.QualityConclusions[ck.Key]; finalized {
+		verdict = conclusion
+	}
+	result.Verdicts = map[string]string{ck.Key: verdict}
+	result.EffectiveStatus = map[string]string{ck.Key: status}
+	result.Findings = nil
+	for _, finding := range outcome.Findings {
+		if findingKeySet(finding)[ck.Key] {
+			finding.SourceKey = ck.Key
+			finding.AffectedKeys = nil
+			result.Findings = append(result.Findings, finding)
+		}
+	}
+	return result
+}
+
+func judgmentDecisionEqual(original, canonical *gaterun.SessionResult) bool {
+	return reflect.DeepEqual(original.Verdicts, canonical.Verdicts) &&
+		reflect.DeepEqual(original.EffectiveStatus, canonical.EffectiveStatus) &&
+		reflect.DeepEqual(original.Findings, canonical.Findings)
 }

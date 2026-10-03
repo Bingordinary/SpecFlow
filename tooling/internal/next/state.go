@@ -13,17 +13,17 @@ import (
 
 // UnitInfo describes a unit's file state.
 type UnitInfo struct {
-	Name                  string
-	HasCandidate          bool
-	CandidateSpec         string
-	HasStable             bool
-	StableSpec            string
-	Appendices            []string
-	RuleRefs              []string
-	RelatedUnits          []string
+	Name                   string
+	HasCandidate           bool
+	CandidateSpec          string
+	HasStable              bool
+	StableSpec             string
+	Appendices             []string
+	RuleRefs               []string
+	RelatedUnits           []string
 	ImplementationSurfaces []string
-	AffectsFiles          []string
-	AcceptanceItems       []string
+	AffectsFiles           []string
+	AcceptanceItems        []string
 }
 
 // DiscoverUnit reads the file system to discover a unit's file state.
@@ -43,19 +43,16 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 		info.StableSpec = fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
 	}
 
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	pattern := fmt.Sprintf("unit_%s_*.md", unitName)
-	matches, _ := filepath.Glob(filepath.Join(appendixDir, pattern))
-	for _, m := range matches {
-		rel, _ := filepath.Rel(repoRoot, m)
-		info.Appendices = append(info.Appendices, rel)
-	}
-
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	stableMatches, _ := filepath.Glob(filepath.Join(stableAppendixDir, pattern))
-	for _, m := range stableMatches {
-		rel, _ := filepath.Rel(repoRoot, m)
-		info.Appendices = append(info.Appendices, rel)
+	for _, layer := range []string{"candidate", "stable"} {
+		appendices, err := specpaths.UnitAppendices(repoRoot, unitName, layer)
+		if err != nil {
+			return nil, err
+		}
+		for _, appendix := range appendices {
+			if appendix.Status != "exempt" {
+				info.Appendices = append(info.Appendices, appendix.Path)
+			}
+		}
 	}
 
 	specPath := specpaths.CandidateUnitSpecFileRef(unitName)

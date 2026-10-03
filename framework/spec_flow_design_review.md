@@ -288,7 +288,7 @@ If any in-scope file cannot be assigned to a review block, do not issue `pass`.
 13. separate blocking findings from non-blocking optimizations
    - every real finding must use the fixed finding contract from Section 8.1
    - every non-blocking optimization must use the optimization contract from Section 8.2
-   - before the final conclusion, confirm every finding's severity per `framework/severity_policy.md` §9: read at least one impact-surface file beyond the slice that found it (the governance file governing the affected mechanism, or the consumer of the affected rule), verify the §9.3 boundary, and record `confirmed` or `adjusted: {Px} → {Py}` with the evidence file and reason per §9.4-9.6
+   - before the final conclusion, validate every finding's severity per `framework/severity_policy.md` §9: read at least one impact-surface file beyond the slice that found it (the governance file governing the affected mechanism, or the consumer of the affected rule) and verify the §9.3 boundary holds. A grade found too low is raised; no confirmation record is written
 14. issue the final result only after baseline slices, dynamic risk slices, entry control chain check, hard-blocker review, routine-work path check when triggered, question scoring, group checks, weighted-score calculation, findings review, optimization review, and cross-block convergence are all complete
 
 ## 7. Scoring Model
@@ -299,7 +299,7 @@ Every `spec_flow_design_review` must answer and score exactly these eight questi
 
 1. whether the mechanism solves a real problem
 2. whether object boundaries follow real work shape
-3. whether each target's path is necessary and correctly ordered (normal unit validate→verify→review→promote; rule/retiring unit validate→promote)
+3. whether each target's path is necessary and correctly ordered (normal unit validate→verify→promote; rule validate→promote)
 4. whether applicable gates plus the user-confirmed promote transition create real downstream gain
 5. whether the mechanism rewards correct behavior instead of surface compliance
 6. whether the mechanism's instruction design supports reliable executor orientation and following
@@ -384,7 +384,7 @@ The `entry_robustness_probe` must use abstract prompt families that test the hoo
 6. `missing_hooks_prompt` — tests behavior when hooks injection files are absent
 7. `stale_concepts_prompt` — tests behavior when `concepts.md` content is outdated
 8. `targeted_gate_prompt` — verifies direct main-session execution without `gate-plan` or complete-cache publication
-9. `rule_promote_prompt` — verifies that rule promotion requires validate only and does not invent verify/review
+9. `rule_promote_prompt` — verifies that rule promotion requires validate only and does not invent extra gates
 10. `read_only_design_prompt` — verifies that discussing design does not grant write authority
 11. `stable_exception_prompt` — verifies normal design uses promote while routed remove/update retain their narrow stable exceptions
 
@@ -693,7 +693,7 @@ The minimum required fields are:
 1. `title`
 2. `severity`
    - required for every real finding and must be one of `P0`, `P1`, `P2`, or `P3`
-   - must be confirmed per `framework/severity_policy.md` §9 before the final conclusion (Section 6 step 13); the confirmation record (`confirmed` or `adjusted`) is part of the finding's evidence
+   - must be validated per `framework/severity_policy.md` §9 before the final conclusion (Section 6 step 13); the resulting severity is the finding's canonical severity and no confirmation record is written
 3. `affected_questions`
    - the exact question numbers from Section 7.1 that this finding harms
 4. `score_impact`

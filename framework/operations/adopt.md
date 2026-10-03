@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs, appendices, and acceptance items — and follows the normal unit path: validate → verify → review → promote. The only difference is the starting point: code, not design.
+Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs, appendices, and acceptance items — and follows the normal unit path: validate → verify → promote. The only difference is the starting point: code, not design.
 
 ## Trigger
 
@@ -51,7 +51,7 @@ For each unit in the confirmed batch, the agent:
 
 ### Step 6 — Guided per-batch promotion
 
-The agent guides the user through the normal pipeline for each batch, at the user's pace: `validate@{unit}` → `verify@{unit}` → `review@{unit}` → `promote@{unit}`. Evidence-driven items skip the design-rationale review (see `framework/unit_validate_checklist.md` Check 2 Step 2); all other quality gates apply unchanged. After a batch is promoted, the next batch may start.
+The agent guides the user through the normal pipeline for each batch, at the user's pace: `validate@{unit}` → `verify@{unit}` → `promote@{unit}`. Evidence-driven items skip the design-rationale review (see `framework/unit_validate_checklist.md` Check 2 Step 2); all other quality gates apply unchanged. After a batch is promoted, the next batch may start.
 
 ## Evidence Lifecycle
 
@@ -70,15 +70,9 @@ When a behavior domain is redesigned in a later iteration:
 
 Other behavior domains keep their evidence references and continue to waive rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected.
 
-### Retirement (final round)
+### Removal (final round)
 
-When no acceptance item references the evidence appendix:
-
-1. Retire the last evidence section if one remains.
-2. Add `status: retired` to the candidate evidence appendix frontmatter and set `evidence_appendix_ref` to `none` in the spec frontmatter.
-3. Promote normally: the retiring appendix is not copied; the stable copy is removed together with the candidate copy (see `framework/spec_writing_guide.md` §8 Appendix Retirement).
-
-Do not delete the candidate appendix file before promote — deleting the candidate copy leaves the stable sections in place and the orphan finding re-appears in every later round. After the final promote the appendix exists in no layer: no file means no zombie, orphan, or residual finding, and no inert content is forked in later rounds.
+When the agent confirms the final evidence appendix no longer supports any behavior, remove the last obsolete sections and its references, set `evidence_appendix_ref` to `none`, then follow the candidate-then-stable appendix sequence in `framework/removal_workflow.md`. This explicit removal prevents obsolete evidence from returning in later forks.
 
 ### Enforcement
 
@@ -94,5 +88,8 @@ See `framework/unit_validate_checklist.md` Check 4.
 
 1. Evidence appendix content must record directly readable observed behavior — not only background, motivation, or patch notes (`framework/unit_validate_checklist.md` Check 6).
 2. One evidence appendix per unit; the appendix is organized by behavior domain, one section per acceptance item.
-3. Adoption does not create a new spec lifecycle — adopted units follow validate → verify → review → promote.
+3. Adoption does not create a new spec lifecycle — adopted units follow validate → verify → promote.
 4. The agent tracks adoption progress in-session; no adoption state directory is created.
+
+
+Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.

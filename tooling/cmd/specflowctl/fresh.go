@@ -13,8 +13,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/ruledetect"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -26,7 +25,7 @@ import (
 //	        coverage incomplete, mode/result invalid) — re-running fixes it
 //	MISSING cache file does not exist (never run, or run failed and cache deleted)
 //	BLOCKED cache exists but declares blocking findings (a failure record —
-//	        validate/verify/review P0/P1)
+//	        validate/verify P0/P1)
 //	OK      appendix gate: every appendix is covered by the validate cache
 type gateStatus string
 
@@ -96,7 +95,7 @@ func writeAllFresh(stdout io.Writer, absRoot, scope string) error {
 			return err
 		}
 	}
-	return writeUnboundRulesSection(stdout, absRoot)
+	return nil
 }
 
 // writeCandidateFreshSection reports the cache freshness of every active
@@ -121,16 +120,25 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 
 	readyCount := 0
 	total := 0
+	globalAdvisories := map[string]promote.RulePrerequisite{}
 
 	if len(unitNames) > 0 {
 		fmt.Fprintf(stdout, "UNITS (%d):\n", len(unitNames))
 		for _, name := range unitNames {
+			rulePrerequisites, err := promote.CheckUnitRulePrerequisites(absRoot, name)
+			if err != nil {
+				return err
+			}
 			total++
-			line, ready := unitSummaryLine(absRoot, name)
+			line, ready := unitSummaryLine(absRoot, name, rulePrerequisites)
 			if ready {
 				readyCount++
 			}
 			fmt.Fprintf(stdout, "  %s\n", line)
+			writeRulePrerequisiteItems(stdout, rulePrerequisites.Blockers)
+			for _, advisory := range rulePrerequisites.Advisories {
+				globalAdvisories[advisory.RuleID] = advisory
+			}
 		}
 		fmt.Fprintln(stdout)
 	}
@@ -148,14 +156,24 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 		fmt.Fprintln(stdout)
 	}
 
+	advisoryIDs := make([]string, 0, len(globalAdvisories))
+	for id := range globalAdvisories {
+		advisoryIDs = append(advisoryIDs, id)
+	}
+	sort.Strings(advisoryIDs)
+	var advisories []promote.RulePrerequisite
+	for _, id := range advisoryIDs {
+		advisories = append(advisories, globalAdvisories[id])
+	}
+	writeGlobalRuleAdvisories(stdout, advisories)
 	fmt.Fprintf(stdout, "READY FOR PROMOTE: %d of %d\n", readyCount, total)
 	return nil
 }
 
 // writeStableFreshSection reports the confirmation and drift state of every
 // stable target. Stable targets have no promote gate — the report shows the
-// three confirmation states (validate: dependencies/rules, verify: code
-// alignment, review: code quality) plus the baseline drift comparison
+// two confirmation states (validate: dependencies/rules, verify: code
+// alignment and quality) plus the baseline drift comparison
 // (OK / CHANGED / MISSING).
 func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 	unitNames, err := stableUnitNames(absRoot)
@@ -191,39 +209,8 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 	return nil
 }
 
-// writeUnboundRulesSection embeds the removal-candidate list — bound rules
-// (b_rule_*) with no current-layer (effective) consumers and no
-// unbound_retention declaration — at the end of every fresh summary report
-// (candidate, stable, and all scopes). The list is layer-independent:
-// removability is decided by consumers and the retention declaration alone,
-// not by which layer holds the rule file, so every summary shows the same
-// complete list exactly once. Read-only: removal always happens through
-// `specflowctl remove --rule`, never here.
-func writeUnboundRulesSection(stdout io.Writer, absRoot string) error {
-	results, err := ruledetect.DetectAll(absRoot)
-	if err != nil {
-		return err
-	}
-	var removable []ruledetect.DetectResult
-	for _, r := range results {
-		if r.Removable {
-			removable = append(removable, r)
-		}
-	}
-	if len(removable) == 0 {
-		return nil
-	}
-	fmt.Fprintf(stdout, "RULES WITHOUT CONSUMERS (removable candidates, %d):\n", len(removable))
-	for _, r := range removable {
-		fmt.Fprintf(stdout, "  %s\n", r.RuleID)
-	}
-	fmt.Fprintln(stdout, "  Removal is never automatic — run `specflowctl remove --rule <id>` to delete.")
-	fmt.Fprintln(stdout)
-	return nil
-}
-
 // stableUnitSummaryLine reports one stable unit's confirmation and drift
-// state. The three confirmation columns (validate/verify/review) come from
+// state. The two confirmation columns (validate/verify) come from
 // the stable-layer caches written by the corresponding @stable runs; the
 // drift column is the mechanical baseline comparison. A fresh verify cache
 // means the code was recently confirmed to still conform even when the
@@ -231,9 +218,8 @@ func writeUnboundRulesSection(stdout io.Writer, absRoot string) error {
 func stableUnitSummaryLine(repoRoot, unitName string) string {
 	vaStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "validate")
 	vfStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "verify")
-	rStatus, _, _ := checkStableUnitGate(repoRoot, unitName, "review")
-	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  review: %-8s  drift: %-8s",
-		unitName, vaStatus, vfStatus, rStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)))
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  drift: %-8s",
+		unitName, vaStatus, vfStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)))
 }
 
 func stableRuleSummaryLine(repoRoot, ruleID string) string {
@@ -254,22 +240,19 @@ func stableDriftLabel(repoRoot, name string, result baseline.CheckResult) string
 	}
 }
 
-func unitSummaryLine(repoRoot, unitName string) (string, bool) {
-	if isRetiringUnit(repoRoot, unitName) {
-		vStatus, _, _ := checkUnitGate(repoRoot, unitName, "validate")
-		ready := gatePassed(vStatus)
-		return fmt.Sprintf("%-13s (retiring)  validate: %-8s  READY: %t",
-			unitName, vStatus, ready), ready
-	}
+func unitSummaryLine(repoRoot, unitName string, rules promote.RulePrerequisites) (string, bool) {
 
 	vStatus, _, _ := checkUnitGate(repoRoot, unitName, "validate")
 	vfStatus, _, _ := checkUnitGate(repoRoot, unitName, "verify")
-	rStatus, _, _ := checkUnitGate(repoRoot, unitName, "review")
 	aStatus, _ := checkAppendixGate(repoRoot, unitName)
 
-	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(rStatus) && gatePassed(aStatus)
-	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  review: %-8s  appendix: %-4s  READY: %t",
-		unitName, vStatus, vfStatus, rStatus, aStatus, ready), ready
+	ruleStatus := "OK"
+	if len(rules.Blockers) > 0 {
+		ruleStatus = "BLOCKED"
+	}
+	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(aStatus) && len(rules.Blockers) == 0
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  appendix: %-4s  rules: %-7s  READY: %t",
+		unitName, vStatus, vfStatus, aStatus, ruleStatus, ready), ready
 }
 
 func ruleSummaryLine(repoRoot, ruleID string) (string, bool) {
@@ -292,7 +275,13 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		}
 	}
 
+	rulePrerequisites, err := promote.CheckUnitRulePrerequisites(absRoot, unitName)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (unit)\n\n", unitName)
+	writeRulePrerequisites(stdout, rulePrerequisites)
+	fmt.Fprintln(stdout)
 
 	nonFresh := 0
 
@@ -310,20 +299,6 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
-	if isRetiringUnit(absRoot, unitName) {
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Unit is retiring — verify, review, and appendix gates are skipped (matching promote).")
-		if vStatus == gateStale {
-			writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "candidate", map[string]gateStatus{"validate": vStatus})
-		}
-		if gatePassed(vStatus) {
-			fmt.Fprintln(stdout, "READY FOR PROMOTE: yes")
-		} else {
-			fmt.Fprintln(stdout, "READY FOR PROMOTE: no — validate needs attention")
-		}
-		return nil
-	}
-
 	vfStatus, vfDetail, vfNote := checkUnitGate(absRoot, unitName, "verify")
 	if vfStatus == gateFresh {
 		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
@@ -335,20 +310,6 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
 	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
-		fmt.Fprintf(stdout, "  %s\n", advice)
-	}
-
-	rStatus, rDetail, rNote := checkUnitGate(absRoot, unitName, "review")
-	if rStatus == gateFresh {
-		rDetail = freshDetail(readSummary(absRoot, "unit", unitName, "review_result.md"))
-		if rNote != "" {
-			rDetail += " | " + rNote
-		}
-	} else {
-		nonFresh++
-	}
-	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "review", rStatus, rDetail)
-	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
@@ -365,14 +326,13 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "candidate", map[string]gateStatus{
 		"validate": vStatus,
 		"verify":   vfStatus,
-		"review":   rStatus,
 	})
 
 	fmt.Fprintln(stdout)
-	if nonFresh == 0 {
+	if nonFresh == 0 && len(rulePrerequisites.Blockers) == 0 {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: yes\n")
 	} else {
-		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — %d gate(s) need attention\n", nonFresh)
+		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — %d gate(s) need attention; %d rule prerequisite(s) blocked\n", nonFresh, len(rulePrerequisites.Blockers))
 	}
 	return nil
 }
@@ -386,7 +346,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 // that are not STALE print nothing — the fresh report's own gate status
 // already covers them.
 func writeDeltaScopeSections(stdout io.Writer, absRoot, targetKind, targetName, target string, statuses map[string]gateStatus) {
-	commands := []string{"validate", "verify", "review"}
+	commands := []string{"validate", "verify"}
 	for _, cmd := range commands {
 		if statuses[cmd] != gateStale {
 			continue
@@ -405,11 +365,14 @@ func writeDeltaScopeSections(stdout io.Writer, absRoot, targetKind, targetName, 
 func writeDeltaScopeDetail(stdout io.Writer, preview *gaterun.DeltaPreview) {
 	scope := preview.Scope
 	if scope == nil {
-		fmt.Fprintln(stdout, "  stale evidence unavailable — the delta plan degrades to the full packet set")
+		fmt.Fprintln(stdout, "  stale evidence unavailable — the delta plan degrades to the full coverage set")
 		writeDeltaPlanLines(stdout, preview)
 		return
 	}
-	if len(scope.StaleDeps) == 0 {
+	for _, failure := range scope.RecordFailures {
+		fmt.Fprintln(stdout, "  stale judgment: "+failure)
+	}
+	if len(scope.StaleDeps) == 0 && len(scope.RecordFailures) == 0 {
 		if len(scope.Unreadable) > 0 {
 			fmt.Fprintln(stdout, "  no stale dependency CIDs — staleness comes from missing/unreadable files or cache metadata")
 		} else {
@@ -431,7 +394,7 @@ func writeDeltaScopeDetail(stdout io.Writer, preview *gaterun.DeltaPreview) {
 			fmt.Fprintln(stdout, "  affected checks: none — the stale deps are all unclaimed")
 		}
 	} else {
-		fmt.Fprintln(stdout, "  no per-check evidence — the delta plan degrades to the full packet set")
+		fmt.Fprintln(stdout, "  no per-check evidence — the delta plan degrades to the full coverage set")
 	}
 	if len(scope.Unclaimed) > 0 {
 		fmt.Fprintf(stdout, "  unclaimed entries: %s\n", strings.Join(scope.Unclaimed, ", "))
@@ -464,7 +427,7 @@ func writeDeltaPlanLines(stdout io.Writer, preview *gaterun.DeltaPreview) {
 		}
 		fmt.Fprintf(stdout, "  plan: unavailable — %s\n", planErr)
 	case preview.Degraded:
-		fmt.Fprintf(stdout, "  plan: full packet set — %s\n", preview.Reason)
+		fmt.Fprintf(stdout, "  plan: full coverage set — %s\n", preview.Reason)
 	case preview.CoversFull:
 		fmt.Fprintf(stdout, "  plan: re-run %s; the re-run covers every declared check — no judgment is carried over\n", strings.Join(preview.Rerun, ", "))
 	case len(preview.Carried) > 0:
@@ -500,18 +463,6 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
-
-	rStatus, rDetail, rNote := checkStableUnitGate(absRoot, unitName, "review")
-	if rStatus == gateFresh {
-		rDetail = freshDetail(readSummary(absRoot, "unit", unitName, "review_result.md"))
-		if rNote != "" {
-			rDetail += " | " + rNote
-		}
-	}
-	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "review", rStatus, rDetail)
-	if advice := gateAdvice("review", rStatus, unitName); advice != "" {
-		fmt.Fprintf(stdout, "  %s\n", advice)
-	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
 
 	result := baseline.CheckUnitBaseline(absRoot, unitName)
@@ -532,7 +483,6 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	writeDeltaScopeSections(stdout, absRoot, "unit", unitName, "stable", map[string]gateStatus{
 		"validate": vaStatus,
 		"verify":   vfStatus,
-		"review":   rStatus,
 	})
 	return nil
 }
@@ -558,7 +508,7 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 	if advice := gateAdvice("validate", vStatus, ruleID); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
-	fmt.Fprintln(stdout, "verify and review do not apply to rules.")
+	fmt.Fprintln(stdout, "verify does not apply to rules.")
 
 	writeDeltaScopeSections(stdout, absRoot, "rule", ruleID, "candidate", map[string]gateStatus{"validate": vStatus})
 
@@ -609,14 +559,12 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 // ------------------------------------------------------------
 
 // checkStableUnitGate classifies one of the stable-layer confirmation states
-// (validate/verify/review) using the same check chain promote relies on. The
+// (validate/verify) using the same check chain promote relies on. The
 // stable variants separate the layers the way each gate's evidence allows:
 // validate/verify point the main-file check at the stable spec path (their
-// caches must list the stable main spec), and review requires the cache to be
-// recorded with `target: stable` (the review gate has no main-file
-// requirement). A candidate-run cache fails the matching stable variant, so
-// the stable report never mislabels a candidate cache as a stable
-// confirmation.
+// caches must list the stable main spec). A candidate-run cache fails the
+// matching stable variant, so the stable report never mislabels a candidate
+// cache as a stable confirmation.
 func checkStableUnitGate(repoRoot, unitName, command string) (gateStatus, string, string) {
 	var (
 		result validationcache.CheckResult
@@ -626,9 +574,10 @@ func checkStableUnitGate(repoRoot, unitName, command string) (gateStatus, string
 	case "validate":
 		result, err = validationcache.CheckValidateStable(repoRoot, unitName)
 	case "verify":
-		result, err = validationcache.CheckVerifyStable(repoRoot, unitName)
-	case "review":
-		result, err = validationcache.CheckReviewStable(repoRoot, unitName)
+		// No compatibility: a stable confirmation cache must carry per-check
+		// evidence; an old cache without `checks` is invalid. When the stable
+		// spec's coverage can be derived, its expected keys must be present.
+		result, err = checkStableUnitVerifyMerged(repoRoot, unitName)
 	default:
 		return gateStale, fmt.Sprintf("unknown gate %q", command), ""
 	}
@@ -649,9 +598,9 @@ func checkStableRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
 }
 
 // writeDeferredFindingsNote reports the unit's pending deferred findings —
-// review findings another unit's synthesis routed here by recorded ownership.
-// The next review of this unit (either layer) disposes them; a malformed
-// ledger is reported instead of silently ignored.
+// verify findings another unit's final synthesis routed here by recorded
+// ownership. The next verify of this unit (either layer) disposes them; a
+// malformed ledger is reported instead of silently ignored.
 func writeDeferredFindingsNote(stdout io.Writer, repoRoot, unitName string) {
 	ledger, err := validationcache.ReadDeferredLedger(repoRoot)
 	if err != nil {
@@ -662,13 +611,13 @@ func writeDeferredFindingsNote(stdout io.Writer, repoRoot, unitName string) {
 	if len(pending) == 0 {
 		return
 	}
-	fmt.Fprintf(stdout, "  Note: %d deferred finding(s) pending from other units — the next review@%s disposes them:\n", len(pending), unitName)
+	fmt.Fprintf(stdout, "  Note: %d deferred finding(s) pending from other units — the next verify@%s disposes them:\n", len(pending), unitName)
 	for _, entry := range pending {
 		fmt.Fprintf(stdout, "    [%s] %s — from %s run %s: %s\n", entry.Severity, entry.FindingID, entry.SourceUnit, entry.SourceRun, entry.Text)
 	}
 }
 
-// checkUnitGate classifies one of the unit gates (validate/verify/review)
+// checkUnitGate classifies one of the unit gates (validate/verify)
 // and returns the promote-identical reason text plus the informational note
 // (e.g. content changed outside the declared dependency chunks).
 func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string, string) {
@@ -680,9 +629,10 @@ func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string, stri
 	case "validate":
 		result, err = validationcache.CheckValidate(repoRoot, unitName)
 	case "verify":
-		result, err = validationcache.CheckVerify(repoRoot, unitName)
-	case "review":
-		result, err = validationcache.CheckReview(repoRoot, unitName)
+		// Use the same merged verify check promote runs, so a fresh report and
+		// a promote run never disagree: the verify cache must cover both the
+		// alignment and quality lenses.
+		result, err = checkUnitVerifyMerged(repoRoot, unitName, "candidate")
 	default:
 		return gateStale, fmt.Sprintf("unknown gate %q", command), ""
 	}
@@ -690,6 +640,46 @@ func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string, stri
 		return gateStale, fmt.Sprintf("gate check error: %v", err), ""
 	}
 	return classifyGate(result), result.Reason, result.Note
+}
+
+// checkUnitVerifyMerged applies the merged-cache promote requirement: the
+// verify cache must exist, be full mode, not block, be dependency-fresh, and
+// cover every alignment key and every quality key of the current target. The
+// expected keys are re-derived from the spec and declared surface the same way
+// gate-plan derives them, so promote and the planner never disagree.
+func checkUnitVerifyMerged(repoRoot, unitName, target string) (validationcache.CheckResult, error) {
+	expected, err := gaterun.ExpectedChecks(repoRoot, unitName, target)
+	if err != nil {
+		// Coverage cannot be derived (e.g. the spec is missing). An existing
+		// cache must still prove both lenses ran, so require the lens sections
+		// without enumerating keys; when no cache exists the base check has
+		// already reported MISSING. promote and fresh share this function, so
+		// they still agree.
+		base, baseErr := validationcache.CheckVerifyMerged(repoRoot, unitName, target, nil, false)
+		if baseErr != nil || base.Category == validationcache.CategoryMissing {
+			return base, baseErr
+		}
+		return validationcache.CheckResult{Fresh: false, Category: validationcache.CategoryStale, Reason: "cannot derive required verify checks: " + err.Error()}, nil
+	}
+	return validationcache.CheckVerifyMerged(repoRoot, unitName, target, expected, false)
+}
+
+// checkStableUnitVerifyMerged applies the no-compatibility requirement to a
+// stable-layer confirmation cache: the cache must carry per-check evidence
+// (an old cache without `checks` is invalid), and when the stable spec's
+// coverage can be derived its expected keys must be present. The both-lens
+// requirement is the promote requirement and does not apply to a stable
+// confirmation.
+func checkStableUnitVerifyMerged(repoRoot, unitName string) (validationcache.CheckResult, error) {
+	expected, err := gaterun.ExpectedChecks(repoRoot, unitName, "stable")
+	if err != nil {
+		base, baseErr := validationcache.CheckVerifyMerged(repoRoot, unitName, "stable", nil, false)
+		if baseErr != nil || base.Category == validationcache.CategoryMissing {
+			return base, baseErr
+		}
+		return validationcache.CheckResult{Fresh: false, Category: validationcache.CategoryStale, Reason: "cannot derive stable verify checks: " + err.Error()}, nil
+	}
+	return validationcache.CheckVerifyMerged(repoRoot, unitName, "stable", expected, false)
 }
 
 func checkRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
@@ -743,7 +733,7 @@ func gatePassed(status gateStatus) bool {
 // gateAdvice renders the recovery suggestion for a non-fresh gate. STALE is
 // recoverable by the delta re-run (re* — the pass-baseline recovery path);
 // MISSING has no usable baseline and needs the full command; BLOCKED is a
-// failure record (validate/verify/review P0/P1 findings) whose recovery is
+// failure record (validate/verify P0/P1 findings) whose recovery is
 // the repair re-run (`gate-plan --mode repair`) after the findings are
 // resolved — the failure record is the failure-recovery baseline (see
 // framework/verification_scope.md §Delta Runs → Failure recovery).
@@ -843,15 +833,6 @@ func ruleIDsInLayer(repoRoot, layer string) ([]string, error) {
 	return ids, nil
 }
 
-func isRetiringUnit(repoRoot, unitName string) bool {
-	data, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", unitName)))
-	if err != nil {
-		return false
-	}
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	return strings.TrimSpace(fm["status"]) == "retired"
-}
-
 func writeFreshUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl fresh [--scope candidate|stable|all] [--repo-root PATH]")
@@ -861,7 +842,7 @@ func writeFreshUsage(w io.Writer) {
 	fmt.Fprintln(w, "Reports cache freshness for all active candidates (default --scope")
 	fmt.Fprintln(w, "candidate), drift state for all stable targets (--scope stable), or")
 	fmt.Fprintln(w, "both (--scope all), or for a single unit/rule target. Read-only:")
-	fmt.Fprintln(w, "never writes or deletes caches, never runs validate/verify/review.")
+	fmt.Fprintln(w, "never writes or deletes caches, never runs validate/verify.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --scope SCOPE    candidate | stable | all (default: candidate)")

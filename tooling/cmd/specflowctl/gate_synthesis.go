@@ -8,91 +8,76 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
 
-func applySeverityConfirmations(findings []gaterun.Finding, confirmations []gaterun.SeverityConfirmation) ([]gaterun.Finding, error) {
-	out := append([]gaterun.Finding(nil), findings...)
-	index := make(map[string]int, len(out))
-	for i, finding := range out {
-		if _, exists := index[finding.ID]; exists {
-			return nil, fmt.Errorf("retained finding %q appears more than once", finding.ID)
-		}
-		index[finding.ID] = i
-	}
-	sequences := make(map[string][]gaterun.SeverityConfirmation, len(out))
-	for _, confirmation := range confirmations {
-		_, ok := index[confirmation.FindingID]
-		if !ok {
-			return nil, fmt.Errorf("severity confirmation names non-terminal finding %q", confirmation.FindingID)
-		}
-		sequences[confirmation.FindingID] = append(sequences[confirmation.FindingID], confirmation)
-		if len(sequences[confirmation.FindingID]) > 2 {
-			return nil, fmt.Errorf("finding %q has more than two severity confirmation records", confirmation.FindingID)
+func synthesisInputFindings(run *gaterun.Run, reports []reportRef) []gaterun.Finding {
+	var findings []gaterun.Finding
+	for _, report := range reports {
+		if report.spec.Kind != gaterun.SessionKindCross {
+			findings = append(findings, resultFindings(report.result)...)
 		}
 	}
-	for id, i := range index {
-		sequence := sequences[id]
-		if len(sequence) == 0 {
-			return nil, fmt.Errorf("terminal retained finding %q has no severity confirmation", id)
-		}
-		if len(sequence) == 2 && sequence[0].Outcome != "adjusted" {
-			return nil, fmt.Errorf("finding %q has a second severity confirmation after a final confirmed result", id)
-		}
-		initial := out[i].Severity
-		current := initial
-		for step, confirmation := range sequence {
-			if confirmation.OriginalSeverity != current {
-				return nil, fmt.Errorf("severity confirmation for finding %q starts at %s, want %s", id, confirmation.OriginalSeverity, current)
-			}
-			switch confirmation.Outcome {
-			case "confirmed":
-				if confirmation.FinalSeverity != current {
-					return nil, fmt.Errorf("confirmed severity for finding %q changes %s to %s", id, current, confirmation.FinalSeverity)
-				}
-				if step != len(sequence)-1 {
-					return nil, fmt.Errorf("confirmed severity for finding %q is final and cannot be followed by another record", id)
-				}
-			case "adjusted":
-				from, fromOK := severityRank(current)
-				to, toOK := severityRank(confirmation.FinalSeverity)
-				if !fromOK || !toOK || from-to > 1 || to-from > 1 || from == to {
-					return nil, fmt.Errorf("adjusted severity for finding %q must move exactly one level (got %s -> %s)", id, current, confirmation.FinalSeverity)
-				}
-				current = confirmation.FinalSeverity
-				if step == 0 && len(sequence) != 2 {
-					return nil, fmt.Errorf("adjusted severity for finding %q requires exactly one final second confirmation", id)
-				}
-			case "":
-				return nil, fmt.Errorf("severity confirmation for finding %q has no outcome", id)
-			default:
-				return nil, fmt.Errorf("severity confirmation for finding %q has invalid outcome %q", id, confirmation.Outcome)
-			}
-		}
-		out[i].Detail = rewriteFindingDetailSeverity(out[i].Detail, initial, current)
-		out[i].Severity = current
+	for i := range run.CarriedResults {
+		findings = append(findings, resultFindings(&run.CarriedResults[i])...)
 	}
-	return out, nil
+	for _, deferred := range run.DeferredFindings {
+		findings = append(findings, deferred.Finding)
+	}
+	return findings
 }
 
-func rewriteFindingDetailSeverity(detail, from, to string) string {
-	if from == to || detail == "" {
-		return detail
+// synthesisEvidenceKeys maps each affected judgment to the source judgments
+// and final-synthesis evidence its decision consumes. Input findings are kept
+// here even when suppression removes them from the canonical outcome. Final
+// groups also include new findings, merge sources, and deferred ownership.
+func synthesisEvidenceKeys(run *gaterun.Run, reports []reportRef, outcome *gateOutcome) map[string]map[string]bool {
+	dependencies := map[string]map[string]bool{}
+	if crossReport(reports) == nil {
+		return dependencies
 	}
-	lineEnd := strings.IndexByte(detail, '\n')
-	if lineEnd < 0 {
-		lineEnd = len(detail)
+	originalConclusions := map[string]string{}
+	for _, report := range reports {
+		if report.spec.Kind != gaterun.SessionKindCross {
+			for key, verdict := range report.result.Verdicts {
+				originalConclusions[key] = verdict
+			}
+		}
 	}
-	needle := "[" + from + "]"
-	idx := strings.Index(detail[:lineEnd], needle)
-	if idx < 0 {
-		return detail
+	for _, result := range run.CarriedResults {
+		for key, verdict := range result.Verdicts {
+			originalConclusions[key] = verdict
+		}
 	}
-	return detail[:idx] + "[" + to + "]" + detail[idx+len(needle):]
+	for key, conclusion := range outcome.QualityConclusions {
+		if originalConclusions[key] != conclusion {
+			dependencies[key] = map[string]bool{gaterun.CrossKey: true, key: true}
+		}
+	}
+	findings := synthesisInputFindings(run, reports)
+	findings = append(findings, outcome.Findings...)
+	findings = append(findings, outcome.DeferredFindings...)
+	for _, finding := range findings {
+		keys := findingKeySet(finding)
+		for key := range keys {
+			// Pending findings routed from another unit may retain that run's
+			// keys. Only the consuming run's judgments can own cache evidence.
+			if _, current := outcome.EffectiveStatus[key]; !current {
+				continue
+			}
+			if dependencies[key] == nil {
+				dependencies[key] = map[string]bool{gaterun.CrossKey: true}
+			}
+			for source := range keys {
+				dependencies[key][source] = true
+			}
+		}
+	}
+	return dependencies
 }
 
 // applyOwnerships validates the cross report's ownership records against the
 // terminal retained findings and stamps each finding's OwnedBy. A finding
 // without a record stays unassigned (empty) and drives this unit's gate; a
 // record naming another unit defers the finding (see
-// framework/verification_scope.md §Gate Work Packets → Deferred findings).
+// framework/verification_scope.md §Coverage Model → Deferred findings).
 func applyOwnerships(findings []gaterun.Finding, ownerships []gaterun.FindingOwnership) ([]gaterun.Finding, error) {
 	out := append([]gaterun.Finding(nil), findings...)
 	index := make(map[string]int, len(out))
@@ -123,7 +108,7 @@ func applyOwnerships(findings []gaterun.Finding, ownerships []gaterun.FindingOwn
 // gateDriving reports whether a terminal retained finding drives the run's
 // gate: unassigned findings and findings owned by the run's own unit do;
 // findings owned by another unit are deferred — recorded, routed to the
-// owner's review, and not blocking here.
+// owner's verify run, and not blocking here.
 func gateDriving(finding gaterun.Finding, unit string) bool {
 	return finding.OwnedBy == "" || finding.OwnedBy == unit
 }
@@ -156,37 +141,12 @@ func severityRank(severity string) (int, bool) {
 	}
 }
 
-// resultFindings returns a result's findings with every mechanically known
-// logical source attached. Single-key packets already carry that key as the
-// finding source; multi-key packets additionally contribute each blocking
-// verdict key so merge synthesis cannot lose the judgment that raised a
-// blocking finding.
-func resultFindings(result *gaterun.PacketResult) []gaterun.Finding {
+// resultFindings preserves the logical keys bound to each finding at submit
+// time. Sharing a reviewer session does not make two judgments related.
+func resultFindings(result *gaterun.SessionResult) []gaterun.Finding {
 	out := make([]gaterun.Finding, 0, len(result.Findings))
 	for _, finding := range result.Findings {
-		keys := map[string]bool{}
-		for _, key := range finding.AffectedKeys {
-			if key != "" && key != gaterun.CrossKey {
-				keys[key] = true
-			}
-		}
-		if finding.SourceKey != result.PacketID || len(result.Verdicts) <= 1 {
-			if finding.SourceKey != "" && finding.SourceKey != gaterun.CrossKey {
-				keys[finding.SourceKey] = true
-			}
-		}
-		for key, verdict := range result.Verdicts {
-			if verdict == "FAIL" || verdict == "MISMATCH" || verdict == "unacceptable" {
-				keys[key] = true
-			}
-		}
-		if finding.SourceKey == result.PacketID && len(result.Verdicts) > 1 {
-			logicalKeys := sortedFindingKeys(keys, "")
-			if len(logicalKeys) > 0 {
-				finding.SourceKey = logicalKeys[0]
-			}
-		}
-		finding.AffectedKeys = sortedFindingKeys(keys, finding.SourceKey)
+		finding.AffectedKeys = sortedFindingKeys(findingKeySet(finding), finding.SourceKey)
 		out = append(out, finding)
 	}
 	return out
@@ -295,6 +255,22 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 	}
 
 	groupKeys := map[string]map[string]bool{}
+	// groupSeverity records the canonical severity of each terminal retained
+	// group: the most severe grade among the findings retained or merged into
+	// it (conservative — disagreement raises, never lowers).
+	groupSeverity := map[string]string{}
+	raiseSeverity := func(id, severity string) {
+		current, ok := groupSeverity[id]
+		if !ok {
+			groupSeverity[id] = severity
+			return
+		}
+		currentRank, currentOK := severityRank(current)
+		newRank, newOK := severityRank(severity)
+		if !currentOK || (newOK && newRank < currentRank) {
+			groupSeverity[id] = severity
+		}
+	}
 	for _, id := range inputOrder {
 		terminal, err := resolve(id)
 		if err != nil {
@@ -309,6 +285,7 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		for key := range findingKeySet(inputByID[id]) {
 			groupKeys[terminal][key] = true
 		}
+		raiseSeverity(terminal, inputByID[id].Severity)
 	}
 	for _, id := range crossOrder {
 		if groupKeys[id] == nil {
@@ -317,6 +294,7 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		for key := range findingKeySet(crossByID[id]) {
 			groupKeys[id][key] = true
 		}
+		raiseSeverity(id, crossByID[id].Severity)
 	}
 
 	var out []gaterun.Finding
@@ -324,16 +302,24 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		if dispositionByID[id].Action != "retained" {
 			continue
 		}
-		finding := inputByID[id]
+		finding := withRaisedSeverity(inputByID[id], groupSeverity[id])
 		finding.AffectedKeys = sortedFindingKeys(groupKeys[id], finding.SourceKey)
 		out = append(out, finding)
 	}
 	for _, id := range crossOrder {
-		finding := crossByID[id]
+		finding := withRaisedSeverity(crossByID[id], groupSeverity[id])
 		finding.AffectedKeys = sortedFindingKeys(groupKeys[id], finding.SourceKey)
 		out = append(out, finding)
 	}
 	return out, nil
+}
+
+// withRaisedSeverity applies the canonical (conservatively raised) severity of
+// a finding's terminal retain/merge group. When it raises the grade it rewrites
+// the stored detail's leading [Px] prefix so the human-readable block and the
+// machine severity agree.
+func withRaisedSeverity(finding gaterun.Finding, severity string) gaterun.Finding {
+	return finding.WithMinimumSeverity(severity)
 }
 
 func findingKeySet(finding gaterun.Finding) map[string]bool {

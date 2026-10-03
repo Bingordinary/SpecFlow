@@ -49,7 +49,7 @@ func TestSurfacesCommandReportsOverlap(t *testing.T) {
 		t.Fatalf("runSurfaces: %v\n%s", err, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "Overlaps:") || !strings.Contains(out, "pkg/a.go") {
+	if !strings.Contains(out, "File judgments:") || !strings.Contains(out, "pkg/a.go") {
 		t.Fatalf("expected overlap in report:\n%s", out)
 	}
 
@@ -61,12 +61,12 @@ func TestSurfacesCommandReportsOverlap(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("json: %v\n%s", err, stdout.String())
 	}
-	if len(report.Overlaps) != 1 || report.Overlaps[0].Path != "pkg/a.go" {
+	if len(report.SharedFiles) != 1 || report.SharedFiles[0].Path != "pkg/a.go" {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
 
-func TestValidateCandidateFailsOnSurfaceOverlap(t *testing.T) {
+func TestValidateCandidateFailsOnSharedSurfaceFile(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	pkgDir := filepath.Join(repoRoot, "pkg")
 	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
@@ -83,7 +83,7 @@ func TestValidateCandidateFailsOnSurfaceOverlap(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected validate to fail on a surface overlap:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Surface ownership: FAIL") {
+	if !strings.Contains(stdout.String(), "Surface associations: PASS") {
 		t.Fatalf("expected the surface ownership check to fail:\n%s", stdout.String())
 	}
 }

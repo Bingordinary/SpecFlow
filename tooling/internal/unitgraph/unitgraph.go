@@ -44,13 +44,6 @@ type Graph struct {
 // Edges always resolve to the current-layer file (candidate first, stable
 // fallback). An edge whose target has no file in scope is still recorded with
 // the target name; cycle detection and ordering only consider in-scope nodes.
-//
-// A retiring unit (status: retired in its current-layer frontmatter) is not
-// part of the dependency graph: its references disappear with it (see
-// framework/unit_validate_checklist.md, retiring-unit note), so neither its
-// node nor its edges participate in cycle detection, ordering, or consumer
-// reports. Referrers of the retiring unit are still rejected by the
-// reference-integrity check (validate Check 4), not by this graph.
 func Build(repoRoot, scope string) (*Graph, error) {
 	scope = strings.TrimSpace(strings.ToLower(scope))
 	if scope == "" {
@@ -119,9 +112,6 @@ func Build(repoRoot, scope string) (*Graph, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", file.path, err)
 		}
-		if node == nil {
-			continue // retiring unit — not part of the dependency graph
-		}
 		g.nodes[name] = node
 	}
 
@@ -139,18 +129,14 @@ func Build(repoRoot, scope string) (*Graph, error) {
 	return g, nil
 }
 
-// readNode reads one unit spec into a graph node. It returns (nil, nil) when
-// the unit is retiring (status: retired) — a retiring unit is not part of the
-// dependency graph because its references disappear with it.
+// readNode reads one unit spec into a graph node.
 func readNode(path, name, layer string) (*Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	if strings.TrimSpace(fm["status"]) == "retired" {
-		return nil, nil
-	}
+
 	node := &Node{Name: name, Layer: layer}
 	if raw := fm["unit_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 		for _, ref := range specpaths.ParseRefList(raw) {

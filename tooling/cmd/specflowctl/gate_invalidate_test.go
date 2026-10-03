@@ -31,7 +31,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 		Blocking:  true,
 		P1Count:   1,
 		Timestamp: "2026-09-19T00:00:00Z",
-		Judgments: `{"schema_version":2,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
+		Judgments: `{"schema_version":3,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
 		Entries:   []validationcache.FileEntry{entry},
 	}); err != nil {
 		t.Fatal(err)
@@ -48,14 +48,14 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gate-invalidate failed: %v (stderr=%s)", err, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Persisted check(s): auth.core") {
+	if !strings.Contains(stdout.String(), "Persisted check(s): item:auth:auth.core") {
 		t.Fatalf("unexpected output: %s", stdout.String())
 	}
 	baseline, err := validationcache.ReadGateBaseline(repoRoot, "unit", "auth", "verify")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(baseline.InvalidatedChecks, ",") != "auth.core" {
+	if strings.Join(baseline.InvalidatedChecks, ",") != "item:auth:auth.core" {
 		t.Fatalf("persisted invalidations = %v", baseline.InvalidatedChecks)
 	}
 }
@@ -105,7 +105,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 
 	statuses := map[string]string{}
 	var decls []validationcache.CheckDeclaration
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.ReaderContractCheck, gaterun.CrossKey} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.ClarityCheck, gaterun.CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
@@ -117,7 +117,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 2, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
+	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,8 +150,8 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair")
 	run := mustLoadRun(t, repoRoot, runID)
-	if got := strings.Join(packetIDsOf(run), ","); got != "structural,design,cross" {
-		t.Fatalf("repair did not include persisted check 2: %s", got)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "structural,design" {
+		t.Fatalf("repair did not include persisted check 2's group: %s", got)
 	}
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
@@ -162,7 +162,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
-	grSubmitReaderVerifier(t, repoRoot, runID, main)
+	grSubmitClarity(t, repoRoot, runID, main)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID)
 

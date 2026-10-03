@@ -10,7 +10,7 @@ The only full-scope mechanism review entry is exact `spec_flow_review:full`.
 It answers five questions:
 
 1. whether the framework documents are self-consistent and complete
-2. whether the five commands (next, validate, verify, review, promote) cover the governance needs without gaps or overlap
+2. whether the four commands (next, validate, verify, promote) cover the governance needs without gaps or overlap
 3. whether the tooling boundary is correct — specflowctl does deterministic work, LLM does semantic judgment
 4. whether an executor can operate the framework without prior specFlow knowledge
 5. whether all framework files, templates, and governance files agree with each other
@@ -24,13 +24,9 @@ That judgment belongs to `spec_flow_design_review`.
 
 ### Terminology Note
 
-"Review" in this file has two distinct meanings:
+"Review" in this file means the meta-governance command `spec_flow_review`, which reviews the framework mechanism itself (Sections 1, 2, 6-9, and the file as a whole). This is a developer command, not part of the user workflow. See `framework/governance/review.md` for routing.
 
-1. **`spec_flow_review`** — the meta-governance command that reviews the framework mechanism itself (Sections 1, 2, 6-9, and the file as a whole). This is a developer command, not part of the user workflow. See `framework/governance/review.md` for routing.
-
-2. **`review`** — the spec-aware code-quality gate, one of the five user workflow commands (next, validate, verify, review, promote) defined in Sections 2.3-2.4. It has no relation to `spec_flow_review`.
-
-When reading Sections 2.3-2.4, "review" refers to the user workflow command. Everywhere else, "review" or `spec_flow_review` refers to the meta-governance command.
+It is distinct from spec-aware code-quality review, which is the `quality` lens of the `verify` command. The user workflow commands are next, validate, verify, and promote.
 
 ## 2. Review Standard
 
@@ -84,17 +80,16 @@ If one of those items is intentionally owned elsewhere, the file must link or na
 
 ### 2.3 Process Closure
 
-The commands (next, validate, verify, review, promote) form a coherent process. The review must verify:
+The commands (next, validate, verify, promote) form a coherent process. The review must verify:
 
 1. each command has a defined purpose and does not overlap with the others
 2. `next` outputs enough information for the agent to start work
 3. `validate` produces a structured output (per-checklist PASS/FAIL) that the agent can act on
-4. `verify` (normal-unit implementation-alignment gate) produces structured per-acceptance-item alignment results and divergence analysis that leaves reconciliation direction to the user
-5. `review` (normal-unit code-quality gate) produces P0-P3 graded findings; cache must exist, be full mode, and non-blocking to satisfy a normal-unit promote
-6. `promote` applies the target's path: a normal unit runs validate, verify, and review before the archive step; a rule runs validate before version promotion and consumer migration; a retiring unit runs validate before retirement removal
-7. promote's archive step deterministically copies candidate files to stable directories
-8. the applicable gate runs (a normal unit's validate, verify, and review; a rule's or retiring unit's validate) are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
-9. if promote fails (an applicable gate finds issues, or a required cache is missing, stale, or blocking), the outcome is clearly communicated and stable truth is unchanged
+4. `verify` (normal-unit implementation-alignment and code-quality gate) produces structured per-acceptance-item alignment results with divergence analysis that leaves reconciliation direction to the user, plus P0-P3 graded code-quality findings; its merged cache must cover both lenses, be full mode, and be non-blocking to satisfy a normal-unit promote
+5. `promote` applies the target's path: a normal unit runs validate and verify before the archive step; a rule runs validate before version promotion and consumer migration
+6. promote's archive step deterministically copies candidate files to stable directories
+7. the applicable gate runs (a normal unit's validate and verify; a rule's validate) are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
+8. if promote fails (an applicable gate finds issues, or a required cache is missing, stale, or blocking), the outcome is clearly communicated and stable truth is unchanged
 
 If a command is missing a required output, has undefined behavior for failure cases, or requires the executor to infer its purpose, the related slice must not be marked `passed`.
 
@@ -104,16 +99,14 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 10-point unit or 8-point rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
+2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 10-point unit or 7-point rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
-3. **verify** (normal-unit implementation-alignment gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user. P0/P1 block normal-unit promote. Verify is not a rule or retiring-unit gate.
+3. **verify** (normal-unit implementation-alignment and code-quality gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Runs one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality). Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user, plus P0-P3 code-quality findings with code references. P0/P1 from either lens block normal-unit promote; P2/P3 are advisory. Rules use validate; deletion uses `framework/removal_workflow.md`.
 
-4. **review** (normal-unit code-quality gate): given a unit name, runs a spec-aware code review. Outputs P0-P3 findings with code references. P0/P1 block normal-unit promote; P2/P3 are advisory. Review is not a rule or retiring-unit gate.
-
-5. **promote**: given a unit name or rule id, resolves target type, requires user confirmation, and applies only that target's path:
-   a. Normal unit: validate, verify, and review are independent prerequisites, not phases inside promote. The agent performs the unit body-path pre-check, then the CLI independently checks all three caches before candidate→stable archive.
-   b. Rule: validate is the sole prerequisite. Rule verify/review must not be requested. The rule workflow owns version promotion, consumer migration, and body-reference cleanup.
-   c. Retiring unit: retirement validate is the sole prerequisite. Verify/review must not be requested; successful promote removes retired unit truth as defined by the unit workflow.
+4. **promote**: given a unit name or rule id, resolves target type, requires user confirmation, and applies only that target's path:
+   a. Normal unit: validate and verify are independent prerequisites, not phases inside promote. The agent performs the unit body-path pre-check, then the CLI independently checks all applicable caches before candidate→stable archive.
+   b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns version promotion, consumer migration, and body-reference cleanup.
+   c. Removal: the agent chooses explicit objects; `framework/removal_workflow.md` owns two-layer integrity checks and transactional cleanup without gates.
    d. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
    The unit body-path pre-check scans candidate prose for candidate-layer paths that would break after archive. Structured field paths (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `actionable`; narrative references require user judgment and remain `needs_decision` until resolved.
@@ -388,11 +381,11 @@ Consumer-aware path validation under this section applies only when the deployab
 
 ### 2.17 Sub-Agent Prompt Assembly Validity
 
-A sub-agent is a zero-context, one-shot worker: it has no conversation history and no framework knowledge beyond its mission and the files it is told to read. Every gate mission generated by `specflowctl gate-packet --format prompt` must answer five questions without inference: who am I, what am I doing, why now, what counts as done, and who consumes my output. Other sub-agent scenarios retain their own prompt rules. In the checkpoints below, *mission* means the prompt text delivered to the sub-agent — generated for gate packets, assembled per the scenario's own rule otherwise.
+A sub-agent is a zero-context, one-shot worker: it has no conversation history and no framework knowledge beyond its mission and the files it is told to read. Every gate mission generated by `specflowctl gate-mission --format prompt` must answer five questions without inference: who am I, what am I doing, why now, what counts as done, and who consumes my output. Other sub-agent scenarios retain their own prompt rules. In the checkpoints below, *mission* means the prompt text delivered to the sub-agent — generated for gate sessions, assembled per the scenario's own rule otherwise.
 
 **Scope (scenario inventory):** the current framework's sub-agent scenarios are —
 
-1. validate, verify detection/analysis, review, and cross packets — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
+1. validate, verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
 2. verify Step 7 mismatch-analysis semantics — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
 3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
 
@@ -401,9 +394,9 @@ The reviewer must verify the scenario inventory is complete with a deterministic
 **Checkpoints (executed per scenario):**
 
 1. **Role and mission** — the mission directly answers "who am I, what am I doing"; the task boundary requires no inference.
-2. **Context and motivation** — the mission answers "why now, where am I in the flow" (owning command, execution shape, output consumer). Packet missions must declare that packet boundaries are deterministic and the result is independent of execution order (sequential or parallel); validate packet missions additionally declare the required execution shape — the sub-agent does not hold the writing context and the main agent does not re-litigate its verdicts. The declaration is an instruction to the executor, not a claim that independence was verified (see `framework/verification_scope.md` §Guarantee Boundary).
+2. **Context and motivation** — the mission answers "why now, where am I in the flow" (owning command, execution shape, output consumer). Session missions must declare that the assigned key batch is deterministic and the result is independent of execution order (sequential or parallel); validate session missions additionally declare the required execution shape — the sub-agent does not hold the writing context and the main agent does not re-litigate its verdicts. The declaration is an instruction to the executor, not a claim that independence was verified (see `framework/verification_scope.md` §Guarantee Boundary).
 3. **Terminology entry** — every framework term that appears in the mission has a definition or a source reference in the mission (fine-grained: one-line definition plus source). An undefined term is a finding.
-4. **Protocol location** — the generated mission points to the gate checklist and, for cross, the cross-check and severity policy; it does not replace semantic rules with a summary.
+4. **Protocol location** — the generated mission points to the gate checklist and, for the final synthesis, the fixed synthesis items and severity policy; it does not replace semantic rules with a summary.
 5. **Permission boundary** — the mission states the read-only permission and the prohibitions (no file modification, no state-changing commands, no further sub-agent launch).
 6. **Output contract** — the mission states its output format and failure path, and the stated output format agrees with the unified report skeleton (drift against `report_skeleton` is handled under Section 2.6).
 7. **Zero-guessing** — the mission text contains no point whose correct execution requires executor inference. Any "the executor must guess" point is a finding.
@@ -411,12 +404,12 @@ The reviewer must verify the scenario inventory is complete with a deterministic
 **Review method:**
 
 1. **Static rule check** — read the mission generator, report contract, and non-gate prompt rules; verify that the seven checkpoints are enforced without a gap for the main agent to improvise.
-2. **Complete mission exercise (mandatory, at least one per scenario)** — generate a real mission for each gate packet kind and assemble non-gate prompts under their own rules. Check every checkpoint against the produced text with text-level evidence:
-   - Exercise A: a verify detection mission from `gate-packet --format prompt`
-   - Exercise B: a review file mission from the same command
-   - Exercise C: a required verify analysis mission with an accepted mismatch result
+2. **Complete mission exercise (mandatory, at least one per scenario)** — generate a real mission for each gate session kind and assemble non-gate prompts under their own rules. Check every checkpoint against the produced text with text-level evidence:
+   - Exercise A: a verify alignment mission from `gate-mission --keys ... --format prompt`
+   - Exercise B: a verify quality mission from the same command
+   - Exercise C: a verify alignment MISMATCH mission (the item's divergence analysis)
    - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
-   - Exercise E: a validate packet mission (unit or rule target) and a cross mission after accepted dependencies
+   - Exercise E: a validate session mission (unit or rule target) and a final-synthesis mission after accepted dependencies
    - Each exercise uses a distinct fixture so a static example cannot confirm itself.
 3. **Escalation (optional)** — when a checkpoint is in doubt on a produced mission or prompt, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
 
@@ -519,7 +512,7 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies review entry meaning, output contracts, finding contracts, and stop behavior
 3. `concept_and_command_policy`
    - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `operations/update.md`, and `guidance/*/SKILL.md`
-   - verifies the five commands (next, validate, verify, review, promote) have defined input, output, and failure behavior per Section 2.4
+   - verifies the four commands (next, validate, verify, promote) have defined input, output, and failure behavior per Section 2.4
    - verifies project-instance migration routing and guidance entry behavior
 4. `truth_and_implementation_gates`
    - reviews `spec_writing_guide.md` and `concepts.md`
@@ -554,8 +547,8 @@ Local slices review one owner area for internal closure, side effects, contract 
     - verifies that each command package named by the routing table is self-contained for its phase per Section 2.12 (progressive disclosure: entry routing inline, phase procedure in the package)
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
 11. `sub_agent_prompt_assembly`
-    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the packet report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (Step 7 sub-agent protocol), `operations/issues.md` (Step 3), and their referenced checklists
-    - verifies per Section 2.17: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate packet kind and an assembled triage prompt, with text-level evidence per checkpoint)
+    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the session report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (alignment + quality lens protocol), `operations/issues.md` (Step 3), and their referenced checklists
+    - verifies per Section 2.17: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate session kind and an assembled triage prompt, with text-level evidence per checkpoint)
     - verifies the scenario inventory itself is complete via deterministic search; any uncovered sub-agent scenario is a finding
     - verifies mission and assembled-prompt output contracts agree with the unified report skeleton (Section 2.6 drift)
 
@@ -564,7 +557,7 @@ Local slices review one owner area for internal closure, side effects, contract 
 Cross-convergence slices review whether locally correct rules still compose into one coherent governance baseline.
 
 1. `command_to_process_convergence`
-   - verifies the five commands (next, validate, verify, review, promote) converge with process closure rules from Section 2.3
+   - verifies the four commands (next, validate, verify, promote) converge with process closure rules from Section 2.3
 2. `truth_to_implementation_convergence`
    - verifies truth writeback, implementation gates, and candidate entry rules converge
 3. `shared_to_impact_convergence`
@@ -854,18 +847,17 @@ For full-scope review:
       context but dissolves under broader cross-file verification must be
       demoted to a note
     - severity P3 findings and notes are exempt from this
-      validation step and from the severity confirmation below
-      (they are reported as graded; a P3 finding that claims a
-      blocking status must first be re-graded through the
-      confirmation path)
-    - for every retained finding (P0-P2), confirm the severity per
+      validation step (they are reported as graded; a P3 finding that
+      claims a blocking status must first be re-graded under
+      `framework/severity_policy.md` §9)
+    - for every retained finding (P0-P2), validate the severity per
       `framework/severity_policy.md` §9 before final conclusion:
       the reviewer must read at least one impact-surface file beyond the
       finding's source slice that the severity claim depends on (the
       governance file governing the affected mechanism, or the consumer
-      of the affected rule), verify the §9.3 boundary holds, and record
-      `confirmed` or `adjusted: {Px} → {Py}` with the evidence file and
-      reason per §9.4-9.6
+      of the affected rule) and verify the §9.3 boundary holds. A grade
+      found too low is raised; the resulting severity is the finding's
+      canonical severity and no confirmation record is written
     - if a validated finding is demoted and was the sole basis
       for a slice's `blocked` status, that slice must be re-reviewed and
       updated to `passed` or remain `blocked` with an updated blocked_reason
@@ -903,7 +895,8 @@ The output must report at least:
 16. the cross-convergence results
 17. the command completeness result:
    - next command input, output, and failure behavior verified
-   - review command input, output, and failure behavior verified
+   - validate command input, output, and failure behavior verified
+   - verify command input, output, and failure behavior verified
    - promote command input, output, and failure behavior verified
    - undefined behavior or missing definitions found, or explicit `none`
 18. the findings result:
@@ -985,8 +978,8 @@ Every real finding must still contain these information items:
    - one short problem label
 2. severity
    - required for every real finding and must be one of `P0`, `P1`, `P2`, or `P3`
-   - must be confirmed per `framework/severity_policy.md` §9 before the final conclusion (Section 7 step 10); the confirmation record (`confirmed` or `adjusted`) is part of the finding's evidence
-   - P3 findings and notes exempted per Section 7 step 10 are reported as graded with no confirmation record (severity_policy.md §9.6)
+   - must be validated per `framework/severity_policy.md` §9 before the final conclusion (Section 7 step 10)
+   - P3 findings and notes exempted per Section 7 step 10 are reported as graded
 3. background
    - the minimum repository or rule context needed to understand why this finding matters
 4. what happened
@@ -1005,7 +998,7 @@ Every real finding must still contain these information items:
 Recommended user-facing shape: one self-contained narrative paragraph (4-6 sentences, answering the six questions above in plain language) followed by the information items below as labeled fields.
 
 ```text
-## F-XXX (P?, confirmed/adjusted, blocking: yes|no) — {one short problem label}
+## F-XXX (P?, blocking: yes|no) — {one short problem label}
 {narrative paragraph: who executes, what they try to complete, what the rule should make
 clear, where the path loses direction, how the executor goes wrong, smallest repair point}
 - background: {minimum repository or rule context}

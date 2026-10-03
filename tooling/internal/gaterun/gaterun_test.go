@@ -180,8 +180,8 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 	if _, ok := surfaceByPath(run, "src"); !ok {
 		t.Fatalf("real implementation surface is missing: %+v", run.Surfaces)
 	}
-	if run.PacketByID("detect:fake.item") != nil || run.PacketByID("detect:auth.core") == nil {
-		t.Fatalf("packet ids did not use the real acceptance set: %+v", run.Packets)
+	if run.CoverageByKey("item:auth:fake.item") != nil || run.CoverageByKey("item:auth:auth.core") == nil {
+		t.Fatalf("coverage keys did not use the real acceptance set: %+v", run.Coverage)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
 
-	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "path does not exist") {
 		t.Fatalf("expected the item-granular surface rejection, got %v", err)
 	}
@@ -212,21 +212,8 @@ func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	}
 }
 
-// TestPlanReviewRejectsUnresolvableImplementationSurface verifies the review
-// gate applies the same precondition as verify.
-func TestPlanReviewRejectsUnresolvableImplementationSurface(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/tool/**", "")
-	writeFile(t, repoRoot, "internal/tool/main.go", "package tool\n")
-
-	_, err := Plan(repoRoot, GateReview, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "path does not exist") {
-		t.Fatalf("expected the unresolvable-pattern rejection, got %v", err)
-	}
-}
-
 // TestPlanVerifyReadsItemRelativeIndentSurface verifies a consistently nested
-// item block contributes its declared surface to the plan: the reader follows
+// item block contributes its declared surface to the plan: the parser follows
 // the item's own indent instead of assuming the canonical column.
 func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 	repoRoot := newRepo(t)
@@ -234,7 +221,7 @@ func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 
-	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +240,7 @@ func TestPlanVerifyRejectsEmptyDirectorySurface(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "directory contains no files") {
 		t.Fatalf("expected the empty-directory rejection, got %v", err)
 	}
@@ -261,7 +248,7 @@ func TestPlanVerifyRejectsEmptyDirectorySurface(t *testing.T) {
 
 // TestPlanVerifyExcludesIgnoredFilesFromSurface verifies a declared directory
 // expands over Git repository content: ignored dependencies and build output
-// stay out of the snapshot, its read refs, and the packet plan, while
+// stay out of the snapshot, its read refs, and the session plan, while
 // untracked non-ignored files remain part of the surface.
 func TestPlanVerifyExcludesIgnoredFilesFromSurface(t *testing.T) {
 	repoRoot := newRepo(t)
@@ -272,7 +259,7 @@ func TestPlanVerifyExcludesIgnoredFilesFromSurface(t *testing.T) {
 	writeFile(t, repoRoot, "web/node_modules/dep/index.js", "module.exports = {};\n")
 	writeFile(t, repoRoot, "web/dist/bundle.js", "bundle\n")
 
-	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,13 +274,17 @@ func TestPlanVerifyExcludesIgnoredFilesFromSurface(t *testing.T) {
 	if strings.Join(got, ",") != "web/app.js,web/lib/util.js" {
 		t.Fatalf("ignored dependencies and build output must not enter the surface, got %v", got)
 	}
-	if len(run.Packets) == 0 {
-		t.Fatal("expected the verify packet plan")
+	if len(run.Coverage) == 0 {
+		t.Fatal("expected the verify coverage set")
 	}
-	for _, packet := range run.Packets {
-		for _, ref := range packet.ReadRefs {
+	for _, ck := range run.Coverage {
+		spec, serr := BuildSessionSpec(repoRoot, run, []string{ck.Key})
+		if serr != nil {
+			t.Fatal(serr)
+		}
+		for _, ref := range spec.ReadRefs {
 			if strings.Contains(ref, "node_modules") || strings.Contains(ref, "dist/") {
-				t.Fatalf("packet %s must not list ignored files in its read refs: %s", packet.PacketID, ref)
+				t.Fatalf("session %s must not list ignored files in its read refs: %s", ck.Key, ref)
 			}
 		}
 	}
@@ -308,20 +299,20 @@ func TestPlanVerifyRejectsDirectoryWithOnlyIgnoredFiles(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "dist", "")
 	writeFile(t, repoRoot, "dist/bundle.js", "bundle\n")
 
-	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "directory contains no files") {
 		t.Fatalf("expected the only-ignored-files directory rejection, got %v", err)
 	}
 }
 
 // TestPlanValidateIgnoresCodeSurfaceResolution verifies the precondition is
-// verify/review-only: the validate gate derives no code surface and plans
+// verify-only: the validate gate derives no code surface and plans
 // normally for a spec whose surface is still the <pending> placeholder.
 func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "<pending>", "")
 
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now())
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatalf("validate planning must not require a resolvable code surface, got %v", err)
 	}
@@ -331,9 +322,9 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 }
 
 // TestPlanCodeGatesRejectEmptyAcceptanceItemSet verifies the work-set
-// precondition: a verify/review plan for a spec with an empty
+// precondition: a verify plan for a spec with an empty
 // acceptance_item_set is rejected before any run state is written — an empty
-// item set has no verifiable object and would plan only the cross packet.
+// item set has no verifiable object and would plan only the cross session.
 // The validate gate still plans it, because reporting the empty set as a
 // check failure is the validate gate's job.
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
@@ -341,8 +332,8 @@ func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
 		"---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
 
-	for _, gate := range []string{GateVerify, GateReview} {
-		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
+	for _, gate := range []string{GateVerify} {
+		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
 			t.Fatalf("expected the empty-item-set rejection for %s, got %v", gate, err)
 		}
 	}
@@ -353,7 +344,7 @@ func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	if len(runs) != 0 {
 		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
 	}
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now()); err != nil {
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err != nil {
 		t.Fatalf("validate planning must still plan an empty item set so Check 2 can report it, got %v", err)
 	}
 }
@@ -456,53 +447,53 @@ func TestLoadRejectsInvalidAndMismatchedRunIDs(t *testing.T) {
 	}
 }
 
-func TestPacketStateFilenameIsFixedLengthAndFilesystemSafe(t *testing.T) {
+func TestSessionStateFilenameIsFixedLengthAndFilesystemSafe(t *testing.T) {
 	ids := []string{
-		"detect:auth.core",
-		"analysis:auth.core",
+		"auth.core",
+		"batch-0123456789ab",
 		`src\\windows:name/handler.go`,
 		"src/用户/处理器.go",
 		strings.Repeat("very/long/review/path/", 40) + "service.go",
 	}
 	seen := map[string]string{}
 	for _, id := range ids {
-		base := packetFileBase(id)
+		base := sessionFileBase(id)
 		if len(base) != 64 {
-			t.Fatalf("packetFileBase(%q) length = %d, want 64", id, len(base))
+			t.Fatalf("sessionFileBase(%q) length = %d, want 64", id, len(base))
 		}
 		if strings.Trim(base, "0123456789abcdef") != "" {
-			t.Fatalf("packetFileBase(%q) = %q, want lowercase hexadecimal", id, base)
+			t.Fatalf("sessionFileBase(%q) = %q, want lowercase hexadecimal", id, base)
 		}
 		if prior, ok := seen[base]; ok {
-			t.Fatalf("packet ids %q and %q mapped to the same filename %q", prior, id, base)
+			t.Fatalf("session ids %q and %q mapped to the same filename %q", prior, id, base)
 		}
 		seen[base] = id
-		if again := packetFileBase(id); again != base {
-			t.Fatalf("packetFileBase(%q) is not stable: %q then %q", id, base, again)
+		if again := sessionFileBase(id); again != base {
+			t.Fatalf("sessionFileBase(%q) is not stable: %q then %q", id, base, again)
 		}
 	}
 }
 
-func TestPacketStateRoundTripsReservedAndLongIDs(t *testing.T) {
+func TestSessionStateRoundTripsReservedAndLongIDs(t *testing.T) {
 	repoRoot := newRepo(t)
 	run := &Run{RunID: "20260917-123456-a0b1c2"}
 	ids := []string{
-		"detect:auth.core",
-		"analysis:auth.core",
+		"auth.core",
+		"cross",
 		`src\\windows:name/handler.go`,
 		strings.Repeat("very/long/review/path/", 40) + "service.go",
 	}
 	for _, id := range ids {
-		run.Packets = append(run.Packets, PacketSpec{PacketID: id})
-		want := &PacketState{PacketID: id, Status: PacketAccepted}
-		if err := SavePacketState(repoRoot, run, want); err != nil {
-			t.Fatalf("SavePacketState(%q): %v", id, err)
+		keys := []string{id}
+		want := &SessionState{SessionID: id, Keys: keys, Status: SessionAccepted}
+		if err := SaveSessionState(repoRoot, run, want); err != nil {
+			t.Fatalf("SaveSessionState(%q): %v", id, err)
 		}
-		got, err := LoadPacketState(repoRoot, run, id)
+		got, err := LoadSessionState(repoRoot, run, id)
 		if err != nil {
-			t.Fatalf("LoadPacketState(%q): %v", id, err)
+			t.Fatalf("LoadSessionState(%q): %v", id, err)
 		}
-		if got.PacketID != id || got.Status != PacketAccepted {
+		if got.SessionID != id || got.Status != SessionAccepted || strings.Join(got.Keys, ",") != id {
 			t.Fatalf("round trip for %q = %+v", id, got)
 		}
 	}
@@ -795,7 +786,7 @@ func TestOpenLogicalInputRef(t *testing.T) {
 // open is the test helper for a full-mode plan.
 func open(t *testing.T, repoRoot, gate, targetKind, targetName, target string, extraInputs []string, now time.Time) (*Run, error) {
 	t.Helper()
-	return Plan(repoRoot, gate, targetKind, targetName, target, ModeFull, extraInputs, nil, now)
+	return Plan(repoRoot, gate, targetKind, targetName, target, ModeFull, extraInputs, nil, nil, now)
 }
 
 func TestPlanRejectsInvalidTargetName(t *testing.T) {
@@ -807,11 +798,11 @@ func TestPlanRejectsInvalidTargetName(t *testing.T) {
 
 	ruleNames := []string{"../../../../tmp/evil", "a/b", "..", "with space", "trailing "}
 	for _, name := range ruleNames {
-		if _, err := Plan(repoRoot, GateValidate, TargetKindRule, name, TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil {
+		if _, err := Plan(repoRoot, GateValidate, TargetKindRule, name, TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil {
 			t.Fatalf("expected rule id %q to be rejected", name)
 		}
 	}
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth/x", TargetCandidate, ModeFull, nil, nil, time.Now()); err == nil {
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth/x", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil {
 		t.Fatal("expected a unit name with a separator to be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "meta")); !os.IsNotExist(err) {
@@ -832,7 +823,7 @@ func TestConcurrentPlansLeaveOneOpenRun(t *testing.T) {
 		go func(offset time.Duration) {
 			defer wg.Done()
 			<-start
-			run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, time.Now().Add(offset))
+			run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now().Add(offset))
 			runs <- run
 			errs <- err
 		}(time.Duration(i) * time.Second)

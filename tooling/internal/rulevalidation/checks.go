@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulerefs"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -257,66 +256,4 @@ func checkProhibitedFields(repoRoot, ruleID string) CheckResult {
 	}
 
 	return CheckResult{Name: "Prohibited fields", Status: Pass}
-}
-
-func checkUnboundRetention(repoRoot, ruleID string) CheckResult {
-	fm := frontmatterKeys(repoRoot, ruleID)
-	if fm == nil {
-		return CheckResult{
-			Name:    "unbound_retention correctness",
-			Status:  Fail,
-			Details: "cannot read frontmatter",
-		}
-	}
-
-	if !strings.HasPrefix(ruleID, "b_rule_") {
-		return CheckResult{
-			Name:    "unbound_retention correctness",
-			Status:  Pass,
-			Details: "not a bound rule (b_rule_) — skipped",
-		}
-	}
-
-	consumers, err := rulerefs.FindRuleConsumers(repoRoot, ruleID)
-	if err != nil {
-		return CheckResult{
-			Name:    "unbound_retention correctness",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot search for consumers: %v", err),
-		}
-	}
-
-	hasUnbound := strings.TrimSpace(fm["unbound_retention"]) != ""
-	hasUnboundReason := strings.TrimSpace(fm["unbound_retention_reason"]) != ""
-	hasUnboundOwner := strings.TrimSpace(fm["unbound_retention_owner"]) != ""
-
-	if len(consumers) == 0 {
-		missing := make([]string, 0, 3)
-		if !hasUnbound {
-			missing = append(missing, "unbound_retention")
-		}
-		if !hasUnboundReason {
-			missing = append(missing, "unbound_retention_reason")
-		}
-		if !hasUnboundOwner {
-			missing = append(missing, "unbound_retention_owner")
-		}
-		if len(missing) > 0 {
-			return CheckResult{
-				Name:    "unbound_retention correctness",
-				Status:  Fail,
-				Details: fmt.Sprintf("b_rule_ with no consumers requires fields: %s", strings.Join(missing, ", ")),
-			}
-		}
-	} else {
-		if hasUnbound || hasUnboundReason || hasUnboundOwner {
-			return CheckResult{
-				Name:    "unbound_retention correctness",
-				Status:  Fail,
-				Details: "b_rule_ with consumers must not have unbound_retention fields",
-			}
-		}
-	}
-
-	return CheckResult{Name: "unbound_retention correctness", Status: Pass}
 }

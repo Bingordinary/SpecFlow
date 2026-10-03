@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,40 +13,47 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-// runGateSubmit records one packet report and its parsed result after
-// mechanical validation. Declarations are checked against packet-local read
-// refs; analysis/cross bind the exact dependency-result digests they consume;
-// verify detection resolves the conditional analysis packet.
+// runGateSubmit records one reviewer session's report for an agent-assigned
+// coverage key batch. Declarations are checked against the session's read
+// refs; the final cross synthesis binds the accepted dependency result digests
+// it consumes.
 func runGateSubmit(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-submit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	runIDPtr := fs.String("run", "", "gate run id printed by gate-plan")
-	packetIDPtr := fs.String("packet", "", "packet id from the run's plan")
-	reportPtr := fs.String("report", "", "path to the packet report file")
+	sessionIDPtr := fs.String("session", "", "session id (single key, or the derived batch id from gate-mission)")
+	keysPtr := fs.String("keys", "", "comma-separated coverage keys assigned to this session")
+	reportPtr := fs.String("report", "", "path to the session report file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	runID := strings.TrimSpace(*runIDPtr)
-	packetID := strings.TrimSpace(*packetIDPtr)
+	sessionID := strings.TrimSpace(*sessionIDPtr)
+	keys := splitKeys(*keysPtr)
 	reportPath := strings.TrimSpace(*reportPtr)
-	if runID == "" || packetID == "" || reportPath == "" {
+	if runID == "" || sessionID == "" || reportPath == "" {
 		writeGateSubmitUsage(stderr)
-		return errors.New("--run, --packet, and --report are required")
+		return errors.New("--run, --session, and --report are required")
+	}
+	if len(keys) == 0 {
+		writeGateSubmitUsage(stderr)
+		return errors.New("--keys is required (a single coverage key, or `cross` for the final synthesis)")
 	}
 
 	absRoot := mustAbs(*repoRootPtr)
 	return gaterun.WithMutation(absRoot, func() error {
-		return submitGatePacket(absRoot, runID, packetID, reportPath, stdout)
+		return submitGateSession(absRoot, runID, sessionID, keys, reportPath, stdout)
 	})
 }
 
-func submitGatePacket(absRoot, runID, packetID, reportPath string, stdout io.Writer) error {
+func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPath string, stdout io.Writer) error {
 	run, err := gaterun.Load(absRoot, runID)
 	if err != nil {
 		return err
@@ -53,27 +61,50 @@ func submitGatePacket(absRoot, runID, packetID, reportPath string, stdout io.Wri
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run accepts submissions; plan a new run", run.RunID, run.Status)
 	}
-	spec := run.PacketByID(packetID)
-	if spec == nil {
-		return fmt.Errorf("packet %q is not part of run %s's plan (packet ids: %s)", packetID, run.RunID, strings.Join(packetPlanIDs(run), ", "))
-	}
-	state, err := gaterun.LoadPacketState(absRoot, run, packetID)
+	spec, err := gaterun.BuildSessionSpec(absRoot, run, keys)
 	if err != nil {
 		return err
 	}
-	if state.Status == gaterun.PacketAccepted {
-		return fmt.Errorf("packet %q is already accepted (terminal) — an accepted packet cannot be replaced; plan a new run if the result must change", packetID)
+	if err := gaterun.ClaimShared(absRoot, run, keys); err != nil {
+		return err
 	}
-	if state.Status == gaterun.PacketNotRequired {
-		return fmt.Errorf("packet %q is not_required (terminal) — a not-required packet accepts no submissions; plan a new run if the result must change", packetID)
+	if spec.SessionID != sessionID {
+		return fmt.Errorf("--session %q does not match the id derived from --keys %s (%q) — use the session id printed by gate-mission", sessionID, strings.Join(keys, ","), spec.SessionID)
+	}
+
+	states, err := gaterun.LoadSessionStates(absRoot, run)
+	if err != nil {
+		return err
+	}
+	if spec.Kind != gaterun.SessionKindCross {
+		covered, _, cerr := gaterun.CoverageProgress(run, states)
+		if cerr != nil {
+			return cerr
+		}
+		for _, key := range keys {
+			if owner, ok := covered[key]; ok {
+				return fmt.Errorf("coverage key %q is already covered by accepted session %q — an accepted judgment cannot be replaced; plan a new run if it must change", key, owner)
+			}
+		}
+	}
+
+	state, err := gaterun.LoadSessionState(absRoot, run, sessionID)
+	if err != nil {
+		return err
+	}
+	if state.Status == gaterun.SessionAccepted {
+		return fmt.Errorf("session %q is already accepted (terminal) — it cannot be replaced; plan a new run if the result must change", sessionID)
+	}
+	if state.Status == gaterun.SessionNotRequired {
+		return fmt.Errorf("session %q is not_required (terminal) — it accepts no submissions; plan a new run if the result must change", sessionID)
 	}
 	for _, dep := range spec.DependsOn {
-		depState, derr := gaterun.LoadPacketState(absRoot, run, dep)
+		depState, derr := gaterun.LoadSessionState(absRoot, run, dep)
 		if derr != nil {
 			return derr
 		}
-		if depState.Status != gaterun.PacketAccepted && depState.Status != gaterun.PacketNotRequired {
-			return fmt.Errorf("gate-submit rejected: dependency packet %q is %s — submit it first: `specflowctl gate-submit --run %s --packet %s --report PATH`", dep, depState.Status, run.RunID, dep)
+		if depState.Status != gaterun.SessionAccepted && depState.Status != gaterun.SessionNotRequired {
+			return fmt.Errorf("gate-submit rejected: dependency session %q is %s — submit it first: `specflowctl gate-submit --run %s --session %s --keys <keys> --report PATH`", dep, depState.Status, run.RunID, dep)
 		}
 	}
 
@@ -87,15 +118,17 @@ func submitGatePacket(absRoot, runID, packetID, reportPath string, stdout io.Wri
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
 	reject := func(reason string) error {
-		state.Status = gaterun.PacketRejected
+		state.SessionID = sessionID
+		state.Keys = append([]string(nil), keys...)
+		state.Status = gaterun.SessionRejected
 		state.Attempts = append(state.Attempts, gaterun.Attempt{
 			Attempt:         attempt,
 			SubmittedAt:     now,
-			Status:          gaterun.PacketRejected,
+			Status:          gaterun.SessionRejected,
 			RejectionReason: reason,
 			ResultDigest:    digest,
 		})
-		if saveErr := gaterun.SavePacketState(absRoot, run, state); saveErr != nil {
+		if saveErr := gaterun.SaveSessionState(absRoot, run, state); saveErr != nil {
 			return saveErr
 		}
 		return fmt.Errorf("gate-submit rejected: %s (attempt %d recorded — fix the report and re-submit)", reason, attempt)
@@ -104,68 +137,72 @@ func submitGatePacket(absRoot, runID, packetID, reportPath string, stdout io.Wri
 	if strings.TrimSpace(report) == "" {
 		return reject("empty report")
 	}
-	parsed, perr := parsePacketReport(run, spec, report)
+	parsed, perr := parseSessionReport(run, spec, report)
 	if perr != nil {
 		return reject(perr.Error())
 	}
 	normalizeDeclaredPaths(absRoot, parsed)
-	if derr := validatePacketDeclarations(absRoot, run, spec, parsed); derr != nil {
+	if derr := validateSessionDeclarations(absRoot, run, spec, parsed); derr != nil {
 		return reject(derr.Error())
 	}
-	if derr := validatePacketSemantics(absRoot, run, spec, parsed, report); derr != nil {
+	if derr := validateReviewDependencies(absRoot, run, spec, parsed); derr != nil {
+		return reject(derr.Error())
+	}
+	if derr := validateSessionSemantics(absRoot, run, spec, parsed, report); derr != nil {
 		return reject(derr.Error())
 	}
 
-	state.Status = gaterun.PacketAccepted
+	state.SessionID = sessionID
+	state.Keys = append([]string{}, keys...)
+	state.Status = gaterun.SessionAccepted
 	state.Report = report
-	state.Result = packetResult(spec, parsed, digest)
-	state.ConsumedResultDigests = consumedResultDigests(absRoot, run, spec)
+	state.Result = sessionResult(spec, parsed, digest)
+	semanticData, _ := json.Marshal(state.Result)
+	state.SemanticDigest = judgments.Digest(semanticData)
+	state.ConsumedResultDigests = consumedResultDigests(absRoot, run, spec, states)
 	state.Attempts = append(state.Attempts, gaterun.Attempt{
 		Attempt:      attempt,
 		SubmittedAt:  now,
-		Status:       gaterun.PacketAccepted,
+		Status:       gaterun.SessionAccepted,
 		ResultDigest: digest,
 	})
-	if err := gaterun.SavePacketState(absRoot, run, state); err != nil {
-		return err
+	if err := gaterun.PublishPublic(absRoot, run, spec, state); err != nil {
+		return reject(err.Error())
 	}
-	if spec.Kind == gaterun.PacketKindItem {
-		if err := resolveVerifyAnalysis(absRoot, run, spec, parsed); err != nil {
-			return err
-		}
+	if err := gaterun.SaveSessionState(absRoot, run, state); err != nil {
+		return err
 	}
 
-	accepted, pending, rejected, err := packetCounts(absRoot, run)
-	if err != nil {
-		return err
+	states = append(states, state)
+	_, uncovered, cerr := gaterun.CoverageProgress(run, states)
+	if cerr != nil {
+		return cerr
 	}
-	fmt.Fprintf(stdout, "Packet accepted: %s (attempt %d, digest %s)\n", packetID, attempt, digest)
-	fmt.Fprintf(stdout, "Progress: %d accepted, %d pending, %d rejected of %d packet(s)\n", accepted, pending, rejected, len(run.Packets))
-	fmt.Fprintf(stdout, "Next: %s\n", gateNextStep(absRoot, run))
+	accepted, pending, rejected := sessionCounts(states)
+	fmt.Fprintf(stdout, "Session accepted: %s (keys %s, attempt %d, digest %s)\n", sessionID, strings.Join(keys, ", "), attempt, digest)
+	fmt.Fprintf(stdout, "Coverage: %d/%d covered · sessions: %d accepted, %d pending, %d rejected\n", len(run.Coverage)-len(uncovered), len(run.Coverage), accepted, pending, rejected)
+	fmt.Fprintf(stdout, "Next: %s\n", gateNextStep(run, states, uncovered))
 	return nil
 }
 
 // normalizeDeclaredPaths rewrites every parsed declaration path — dependency
-// scopes and severity-confirmation evidence — to its canonical repo-relative
-// spelling before validation and persistence, so the run snapshot, the stored
-// packet result, and the finalize-time cache assembly all speak one path form
+// scopes and ownership evidence — to its canonical repo-relative spelling
+// before validation and persistence, so the run snapshot, the stored session
+// result, and the finalize-time cache assembly all speak one path form
 // (see framework/validation_cache.md §Format: `./` prefixes, absolute paths,
 // and platform separators in a recorded path are equivalent).
 func normalizeDeclaredPaths(absRoot string, parsed *parsedReport) {
 	for i := range parsed.Scopes {
 		parsed.Scopes[i].Path = gaterun.CanonicalDeclPath(absRoot, parsed.Scopes[i].Path)
 	}
-	for i := range parsed.SeverityChecks {
-		parsed.SeverityChecks[i].EvidencePath = gaterun.CanonicalDeclPath(absRoot, parsed.SeverityChecks[i].EvidencePath)
-	}
 	for i := range parsed.Ownerships {
 		parsed.Ownerships[i].EvidencePath = gaterun.CanonicalDeclPath(absRoot, parsed.Ownerships[i].EvidencePath)
 	}
 }
 
-// validatePacketDeclarations validates every dependency-scope line's path
+// validateSessionDeclarations validates every dependency-scope line's path
 // form, snapshot membership, and declaration parseability.
-func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport) error {
+func validateSessionDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
 	// Merge the declarations of one check key onto one path: multiple scope
 	// lines for the same (key, path) declare the union of their scopes; a
 	// single "all" line makes the declaration whole-file.
@@ -191,14 +228,12 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 	}
 	for _, kp := range order {
 		m := merged[kp]
-		if err := validationcache.ValidateEntryPathForm(run.TargetKind, run.TargetName, kp.path); err != nil {
+		protected := (spec.Kind == gaterun.SessionKindPreserve || spec.Kind == gaterun.SessionKindCross) && run.IsProtectedStableInput(absRoot, kp.path)
+		if err := validationcache.ValidateEntryPathForm(absRoot, run.TargetKind, run.TargetName, kp.path); err != nil && !protected {
 			return fmt.Errorf("check %q declaration %s: %w", kp.key, kp.path, err)
 		}
-		if !run.PacketAllowsDeclaration(absRoot, spec, kp.path) {
-			if spec.Kind == gaterun.PacketKindReader || spec.Kind == gaterun.PacketKindVerifier {
-				return fmt.Errorf("check %q scope line declares %q — the reader packet reads the unit main spec only, and the verifier packet reads the main spec and its protocol appendices", kp.key, kp.path)
-			}
-			return fmt.Errorf("check %q declaration %q is not part of packet %q's read refs — add evidence with --input at gate-plan time or use the packet that owns this input", kp.key, kp.path, spec.PacketID)
+		if !run.SessionAllowsDeclaration(absRoot, spec, kp.path) {
+			return fmt.Errorf("check %q declaration %q is not part of session %q's read refs — add evidence with --input at gate-plan time or use the session that owns this input", kp.key, kp.path, spec.SessionID)
 		}
 		decl := validationcache.CheckDeclaration{Check: kp.key}
 		if !m.WholeFile {
@@ -214,135 +249,112 @@ func validatePacketDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.
 	return nil
 }
 
-func validatePacketSemantics(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport, report string) error {
-	if len(parsed.SeverityChecks) > 0 && spec.Kind != gaterun.PacketKindCross && !(spec.Kind == gaterun.PacketKindChecks && run.TargetKind == gaterun.TargetKindRule) {
-		return errors.New("severity confirmations belong to the unit cross packet or the single rule-validate checks packet")
-	}
-	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.PacketKindCross {
-		return errors.New("ownership records belong to the cross packet")
+func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, report string) error {
+	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.SessionKindCross {
+		return errors.New("ownership records belong to the final synthesis")
 	}
 	switch spec.Kind {
-	case gaterun.PacketKindReader:
-		// The reader authors evidence, never findings or verdicts: any
-		// authored finding line is rejected, and the mechanical validation
-		// enforces the declared reading scope (exactly the human-readable
-		// sections).
-		if len(extractFindings(report)) > 0 {
-			return errors.New("reader packets report evidence only — finding entries are composed mechanically by gate-submit")
-		}
-		return validateReaderReconstruction(absRoot, run, spec, parsed)
-	case gaterun.PacketKindVerifier:
-		return validateVerifierPacket(absRoot, run, spec, parsed, report)
-	case gaterun.PacketKindItem:
-		if len(parsed.Findings) > 0 {
-			return errors.New("verify detection packets report mismatch type only; severity belongs to the analysis packet")
-		}
-	case gaterun.PacketKindAnalysis:
-		if len(spec.DependsOn) != 1 {
-			return errors.New("analysis packet must depend on exactly one detection packet")
-		}
-		detection, err := gaterun.LoadPacketState(absRoot, run, spec.DependsOn[0])
-		if err != nil {
-			return err
-		}
-		if detection.Result == nil || detection.Result.Verdicts[spec.CheckKeys[0]] != "MISMATCH" {
-			return fmt.Errorf("analysis packet %q is not required because its detection result is not MISMATCH", spec.PacketID)
-		}
-	case gaterun.PacketKindChecks:
-		if run.TargetKind == gaterun.TargetKindRule {
-			var required []gaterun.Finding
-			for _, finding := range parsed.Findings {
-				if finding.Severity == "P0" {
-					required = append(required, finding)
-				}
-			}
-			canonical, err := validateSeverityConfirmations(absRoot, run, spec, parsed, required)
-			if err != nil {
-				return err
-			}
-			// The canonical finding carries both the adjusted severity and the
-			// detail prefix rewritten to the final level (see
-			// applySeverityConfirmations); persist the whole value so the
-			// judgment baseline and any carried rendering stay consistent.
-			canonicalByID := map[string]gaterun.Finding{}
-			for _, finding := range canonical {
-				canonicalByID[finding.ID] = finding
-			}
-			for i := range parsed.Findings {
-				if canonicalFinding, ok := canonicalByID[parsed.Findings[i].ID]; ok {
-					parsed.Findings[i] = canonicalFinding
-				}
-			}
-		}
+	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+		// A verify session authors its own alignment verdicts and, for each
+		// mismatch, the finding (with severity and evidence). The parser
+		// composes those findings mechanically; nothing extra is required
+		// here.
+	case gaterun.SessionKindChecks:
 		fails := verdictCount(parsed.Verdicts, "FAIL")
 		blocking := blockingFindingCount(parsed.Findings)
 		if fails > 0 && blocking == 0 {
-			return errors.New("a validate FAIL verdict requires at least one P0/P1 finding in the same packet")
+			return errors.New("a validate FAIL verdict requires at least one P0/P1 finding in the same session")
 		}
 		if fails == 0 && blocking > 0 {
-			return errors.New("a validate packet with P0/P1 findings must report at least one FAIL verdict")
+			return errors.New("a validate session with P0/P1 findings must report at least one FAIL verdict")
 		}
-	case gaterun.PacketKindFile:
+		for key, verdict := range parsed.Verdicts {
+			covered := false
+			for _, finding := range parsed.Findings {
+				if (finding.Severity == "P0" || finding.Severity == "P1") && findingKeySet(finding)[key] {
+					covered = true
+				}
+			}
+			if (verdict == "FAIL") != covered {
+				return fmt.Errorf("validate check %q verdict must match its own P0/P1 findings", key)
+			}
+		}
+	case gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
 		// The conclusion mapping is mechanical for its P0/P1 half: the
 		// conclusion, the gate_findings entries, and the report's P0/P1
-		// findings must agree (see framework/spec_review_checklist.md
+		// findings must agree (see framework/unit_verify_checklist.md
 		// §Output Format). The P2/P3/none distinction stays
 		// author-declared — it has no machine carrier.
-		unacceptable := verdictCount(parsed.Verdicts, "unacceptable") > 0
-		gateFindingsBlocking := gateFindingsDeclareBlocking(parsed.GateFindings)
-		if unacceptable && blockingFindingCount(parsed.Findings) == 0 {
-			return errors.New("an unacceptable review conclusion requires at least one P0/P1 finding")
+		for key, verdict := range parsed.Verdicts {
+			var findings []gaterun.Finding
+			for _, finding := range parsed.Findings {
+				if finding.SourceKey == key {
+					findings = append(findings, finding)
+				}
+			}
+			unacceptable := verdict == "unacceptable"
+			blocking := blockingFindingCount(findings) > 0
+			gateBlocking := gateFindingsDeclareBlocking(parsed.FileGateFindings[key])
+			if unacceptable != blocking || unacceptable != gateBlocking {
+				return fmt.Errorf("quality file %q conclusion, gate_findings, and its own P0/P1 findings must agree", key)
+			}
 		}
-		if unacceptable && !gateFindingsBlocking {
-			return errors.New("an unacceptable review conclusion requires a P0/P1 gate_findings entry")
-		}
-		if gateFindingsBlocking && !unacceptable {
-			return errors.New("a P0/P1 gate_findings entry requires the unacceptable conclusion")
-		}
-	case gaterun.PacketKindCross:
-		return validateCrossSynthesis(absRoot, run, parsed)
+	case gaterun.SessionKindCross:
+		return validateCrossSynthesis(absRoot, run, spec, parsed)
 	}
 	return nil
 }
 
-func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedReport) error {
+func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
 	expectedStatus := map[string]bool{gaterun.CrossKey: true}
-	var inputFindings []gaterun.Finding
-	for _, packet := range run.Packets {
-		if packet.Kind == gaterun.PacketKindCross || packet.Kind == gaterun.PacketKindAnalysis {
-			continue
-		}
-		for _, key := range packet.CheckKeys {
+	for _, name := range run.Relationships {
+		expectedStatus[gaterun.RelationshipKey(name)] = true
+	}
+	for _, ck := range run.Coverage {
+		for _, key := range run.ReportKeys(ck) {
 			expectedStatus[key] = true
 		}
 	}
 	for _, key := range run.CarriedKeys {
 		expectedStatus[key] = true
 	}
-	for _, packet := range run.Packets {
-		if packet.Kind == gaterun.PacketKindCross {
+	states, err := gaterun.LoadSessionStates(absRoot, run)
+	if err != nil {
+		return err
+	}
+	var inputFindings []gaterun.Finding
+	for _, state := range states {
+		if state.Result == nil {
 			continue
 		}
-		state, err := gaterun.LoadPacketState(absRoot, run, packet.PacketID)
-		if err != nil {
-			return err
-		}
-		if state.Status != gaterun.PacketAccepted || state.Result == nil {
-			continue
-		}
-		for _, finding := range resultFindings(state.Result) {
-			inputFindings = append(inputFindings, finding)
+		for key, verdict := range state.Result.Verdicts {
+			if strings.HasPrefix(key, "preserve:") && verdict != "ALIGNED" && parsed.EffectiveStatus[key] != "fail" {
+				return fmt.Errorf("protected requirement %s cannot be cleared by synthesis", key)
+			}
 		}
 	}
-	for _, result := range run.CarriedResults {
-		for _, finding := range resultFindings(&result) {
-			inputFindings = append(inputFindings, finding)
+	for _, state := range states {
+		if state.SessionID == gaterun.CrossKey || state.Status != gaterun.SessionAccepted || state.Result == nil {
+			continue
 		}
+		inputFindings = append(inputFindings, resultFindings(state.Result)...)
+	}
+	for _, result := range run.CarriedResults {
+		inputFindings = append(inputFindings, resultFindings(&result)...)
 	}
 	for _, deferred := range run.DeferredFindings {
 		inputFindings = append(inputFindings, deferred.Finding)
 	}
 
+	for _, disposition := range parsed.Dispositions {
+		if disposition.Action != "retained" {
+			for _, f := range inputFindings {
+				if f.ID == disposition.FindingID && strings.HasPrefix(f.SourceKey, "preserve:") {
+					return fmt.Errorf("protected requirement finding %s cannot be suppressed or deferred", f.ID)
+				}
+			}
+		}
+	}
 	for key := range expectedStatus {
 		if _, ok := parsed.EffectiveStatus[key]; !ok {
 			return fmt.Errorf("cross report is missing Effective status for %q", key)
@@ -363,16 +375,36 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 			return fmt.Errorf("new cross finding %q must name at least one affected non-cross logical key", finding.ID)
 		}
 	}
-	retained, err = validateSeverityConfirmations(absRoot, run, run.PacketByID(gaterun.CrossKey), parsed, retained)
-	if err != nil {
-		return err
-	}
-	retained, err = validateOwnerships(absRoot, run, run.PacketByID(gaterun.CrossKey), parsed, retained)
+	retained, err = validateOwnerships(absRoot, run, spec, parsed, retained)
 	if err != nil {
 		return err
 	}
 	if err := validateCrossItemFindingLinks(run.Gate, parsed, retained); err != nil {
 		return err
+	}
+	qualityKeys := map[string]bool{}
+	for key := range expectedStatus {
+		if run.Gate == gaterun.GateVerify && (strings.HasPrefix(key, "design:") || strings.HasPrefix(key, "architecture:")) {
+			qualityKeys[key] = true
+			conclusion, ok := parsed.QualityConclusions[key]
+			if !ok {
+				return fmt.Errorf("cross report is missing Quality conclusion for %q", key)
+			}
+			var findings []gaterun.Finding
+			for _, finding := range retained {
+				if findingKeySet(finding)[key] && gateDriving(finding, run.TargetName) {
+					findings = append(findings, finding)
+				}
+			}
+			if (conclusion == "unacceptable") != (blockingFindingCount(findings) > 0) {
+				return fmt.Errorf("Quality conclusion for %q must agree with its finalized P0/P1 findings", key)
+			}
+		}
+	}
+	for key := range parsed.QualityConclusions {
+		if !qualityKeys[key] {
+			return fmt.Errorf("cross report declares unexpected Quality conclusion for %q", key)
+		}
 	}
 	wantStatus := make(map[string]string, len(expectedStatus))
 	for key := range expectedStatus {
@@ -395,12 +427,18 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 			return fmt.Errorf("retained findings require `Effective status: %s = %s` (got %s)", key, want, got)
 		}
 	}
+	for name, verdict := range parsed.CrossItems {
+		key := gaterun.RelationshipKey(name)
+		if (verdict == "FAIL") != (wantStatus[key] == "fail") {
+			return fmt.Errorf("relationship %q verdict must match its retained findings", name)
+		}
+	}
 
 	crossVerdict := parsed.Verdicts[gaterun.CrossKey]
 	wantCrossStatus := "pass"
 	newIDs := map[string]bool{}
-	for _, finding := range parsed.Findings {
-		newIDs[finding.ID] = true
+	for _, id := range parsed.CrossItemFindings {
+		newIDs[id] = true
 	}
 	var canonicalCrossFindings []gaterun.Finding
 	for _, finding := range retained {
@@ -415,7 +453,7 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, parsed *parsedRepo
 			return errors.New("Cross-check FAIL requires at least one new P0/P1 cross finding owned by this unit or unassigned")
 		}
 	}
-	if run.Gate != gaterun.GateReview && crossVerdict == "PASS" && blockingCross {
+	if crossVerdict == "PASS" && blockingCross {
 		return errors.New("Cross-check PASS contradicts a retained gate-driving P0/P1 cross finding")
 	}
 	if parsed.EffectiveStatus[gaterun.CrossKey] != wantCrossStatus {
@@ -431,6 +469,12 @@ func validateCrossItemFindingLinks(gate string, parsed *parsedReport, retained [
 		newIDs[finding.ID] = true
 	}
 	retainedNew := make(map[string]gaterun.Finding)
+	linked := map[string]bool{}
+	for _, disposition := range parsed.Dispositions {
+		if disposition.Action == "merged" {
+			linked[disposition.TargetID] = true
+		}
+	}
 	for _, finding := range retained {
 		if newIDs[finding.ID] {
 			retainedNew[finding.ID] = finding
@@ -444,65 +488,69 @@ func validateCrossItemFindingLinks(gate string, parsed *parsedReport, retained [
 		if !ok {
 			return fmt.Errorf("Cross item %q refers to cross finding %q, which is not retained", item, id)
 		}
+		if !findingKeySet(finding)[gaterun.RelationshipKey(item)] {
+			return fmt.Errorf("Cross item %q finding must affect %s", item, gaterun.RelationshipKey(item))
+		}
+		linked[id] = true
 		if gate == gaterun.GateValidate && finding.Severity != "P0" && finding.Severity != "P1" {
 			return fmt.Errorf("validate Cross item %q refers to %s finding %q; validate findings must be P0 or P1", item, finding.Severity, id)
+		}
+	}
+	for id := range newIDs {
+		if !linked[id] {
+			return fmt.Errorf("new synthesis finding %q must explain a failed assigned relationship; local checks must not be repeated", id)
 		}
 	}
 	return nil
 }
 
-func validateSeverityConfirmations(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport, findings []gaterun.Finding) ([]gaterun.Finding, error) {
-	canonical, err := applySeverityConfirmations(findings, parsed.SeverityChecks)
-	if err != nil {
-		return nil, err
-	}
-	for _, confirmation := range parsed.SeverityChecks {
-		if strings.TrimSpace(confirmation.EvidencePath) == "" || strings.TrimSpace(confirmation.Reason) == "" {
-			return nil, fmt.Errorf("severity confirmation for finding %q requires evidence and reason", confirmation.FindingID)
-		}
-		if !run.PacketAllowsDeclaration(absRoot, spec, confirmation.EvidencePath) {
-			return nil, fmt.Errorf("severity confirmation for finding %q cites %q outside packet %q's read refs", confirmation.FindingID, confirmation.EvidencePath, spec.PacketID)
-		}
-		if !packetDeclaresPath(spec, parsed, confirmation.EvidencePath) {
-			return nil, fmt.Errorf("severity confirmation for finding %q cites %q without a matching Dependency scope declaration", confirmation.FindingID, confirmation.EvidencePath)
-		}
-	}
-	return canonical, nil
-}
-
-// packetDeclaresPath reports whether the report carries a Dependency scope
-// declaration for path. A cross packet's evidence must be covered by a `cross`
-// scope line; other packet kinds match any of their own declarations.
-func packetDeclaresPath(spec *gaterun.PacketSpec, parsed *parsedReport, path string) bool {
+// sessionDeclaresPath reports whether the report carries a Dependency scope
+// declaration for path. A cross session's evidence must be covered by a `cross`
+// scope line; other kinds match any of their own declarations.
+func sessionDeclaresPath(spec *gaterun.SessionSpec, parsed *parsedReport, path string) bool {
 	for _, scope := range parsed.Scopes {
 		if scope.Path != path {
 			continue
 		}
-		if spec.Kind != gaterun.PacketKindCross || scope.Key == gaterun.CrossKey {
+		if spec.Kind != gaterun.SessionKindCross || scope.Key == gaterun.CrossKey {
 			return true
 		}
 	}
 	return false
 }
 
-// validateOwnerships applies the cross report's ownership records to the
+// validateOwnerships applies the final synthesis's ownership records to the
 // terminal retained findings. Each record must cite evidence inside the cross
-// packet's read refs, covered by a `cross` dependency-scope declaration, and
+// session's read refs, covered by a `cross` dependency-scope declaration, and
 // name a unit that exists in the repository — a deferral to a nonexistent
 // unit would route the finding nowhere, so it fails closed here.
-func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport, findings []gaterun.Finding) ([]gaterun.Finding, error) {
-	if len(parsed.Ownerships) > 0 && run.Gate != gaterun.GateReview {
-		return nil, fmt.Errorf("ownership records are review-only — the %s gate has no ownership dimension", run.Gate)
+func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, findings []gaterun.Finding) ([]gaterun.Finding, error) {
+	if len(parsed.Ownerships) > 0 && run.Gate != gaterun.GateVerify {
+		return nil, fmt.Errorf("ownership records are quality-lens-only — the %s gate has no ownership dimension", run.Gate)
 	}
 	canonical, err := applyOwnerships(findings, parsed.Ownerships)
 	if err != nil {
 		return nil, err
 	}
+	findingByID := make(map[string]gaterun.Finding, len(canonical))
+	for _, finding := range canonical {
+		findingByID[finding.ID] = finding
+	}
 	for _, ownership := range parsed.Ownerships {
-		if !run.PacketAllowsDeclaration(absRoot, spec, ownership.EvidencePath) {
-			return nil, fmt.Errorf("ownership record for finding %q cites %q outside packet %q's read refs", ownership.FindingID, ownership.EvidencePath, spec.PacketID)
+		finding := findingByID[ownership.FindingID]
+		keys := findingKeySet(finding)
+		if len(keys) == 0 {
+			return nil, fmt.Errorf("ownership record for finding %q has no quality coverage key", finding.ID)
 		}
-		if !packetDeclaresPath(spec, parsed, ownership.EvidencePath) {
+		for key := range keys {
+			if run.LensForReportKey(key) != gaterun.LensQuality {
+				return nil, fmt.Errorf("ownership records are quality-lens-only — finding %q affects non-quality key %q", finding.ID, key)
+			}
+		}
+		if !run.SessionAllowsDeclaration(absRoot, spec, ownership.EvidencePath) {
+			return nil, fmt.Errorf("ownership record for finding %q cites %q outside session %q's read refs", ownership.FindingID, ownership.EvidencePath, spec.SessionID)
+		}
+		if !sessionDeclaresPath(spec, parsed, ownership.EvidencePath) {
 			return nil, fmt.Errorf("ownership record for finding %q cites %q without a matching Dependency scope declaration", ownership.FindingID, ownership.EvidencePath)
 		}
 		if err := specpaths.ValidateTargetName("unit", ownership.OwnerUnit); err != nil {
@@ -535,42 +583,58 @@ func blockingFindingCount(findings []gaterun.Finding) int {
 	return count
 }
 
-func packetResult(spec *gaterun.PacketSpec, parsed *parsedReport, digest string) *gaterun.PacketResult {
+func sessionResult(spec *gaterun.SessionSpec, parsed *parsedReport, digest string) *gaterun.SessionResult {
 	scopes := make([]gaterun.Scope, 0, len(parsed.Scopes))
 	for _, scope := range parsed.Scopes {
 		scopes = append(scopes, gaterun.Scope{Key: scope.Key, Path: scope.Path, Declaration: scope.Declaration})
 	}
-	return &gaterun.PacketResult{
-		PacketID:        spec.PacketID,
-		Kind:            spec.Kind,
-		Verdicts:        parsed.Verdicts,
-		Scopes:          scopes,
-		Findings:        parsed.Findings,
-		EffectiveStatus: parsed.EffectiveStatus,
-		Dispositions:    parsed.Dispositions,
-		SeverityChecks:  parsed.SeverityChecks,
-		Ownerships:      parsed.Ownerships,
-		Analysis:        parsed.Analysis,
-		ReportDigest:    digest,
+	return &gaterun.SessionResult{
+		SessionID:               spec.SessionID,
+		Kind:                    spec.Kind,
+		Verdicts:                parsed.Verdicts,
+		Scopes:                  scopes,
+		Findings:                parsed.Findings,
+		Observations:            parsed.Observations,
+		ObservationDispositions: parsed.ObservationDispositions,
+		EffectiveStatus:         parsed.EffectiveStatus,
+		QualityConclusions:      parsed.QualityConclusions,
+		Dispositions:            parsed.Dispositions,
+		Ownerships:              parsed.Ownerships,
+		Analysis:                parsed.Analysis,
+		ReportDigest:            digest,
 	}
 }
 
-func consumedResultDigests(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec) map[string]string {
-	if spec.Kind != gaterun.PacketKindAnalysis && spec.Kind != gaterun.PacketKindCross && spec.Kind != gaterun.PacketKindVerifier {
-		return nil
+// consumedResultDigests records the accepted dependency result digests a
+// session consumes: the final synthesis binds every accepted non-final
+// session's digest plus the carried results.
+func consumedResultDigests(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, states []*gaterun.SessionState) map[string]string {
+	if spec.Kind != gaterun.SessionKindCross {
+		out := map[string]string{}
+		for _, dep := range spec.DependsOn {
+			state, err := gaterun.LoadSessionState(absRoot, run, dep)
+			if err == nil && state.Result != nil {
+				out[dep] = state.Result.ReportDigest
+			}
+		}
+		return out
 	}
 	out := map[string]string{}
 	for _, dep := range spec.DependsOn {
-		state, err := gaterun.LoadPacketState(absRoot, run, dep)
-		if err != nil || state.Status == gaterun.PacketNotRequired || state.Result == nil {
+		depState, err := gaterun.LoadSessionState(absRoot, run, dep)
+		if err != nil || depState.Status == gaterun.SessionNotRequired || depState.Result == nil {
 			continue
 		}
-		out[dep] = state.Result.ReportDigest
+		out[dep] = depState.Result.ReportDigest
 	}
-	if spec.Kind == gaterun.PacketKindCross {
-		for _, result := range run.CarriedResults {
-			out[result.PacketID] = result.ReportDigest
+	for _, state := range states {
+		if state.SessionID == gaterun.CrossKey || state.Status != gaterun.SessionAccepted || state.Result == nil {
+			continue
 		}
+		out[state.SessionID] = state.Result.ReportDigest
+	}
+	for i := range run.CarriedResults {
+		out[run.CarriedResults[i].SessionID] = run.CarriedResults[i].ReportDigest
 	}
 	if len(out) == 0 {
 		return nil
@@ -578,65 +642,110 @@ func consumedResultDigests(absRoot string, run *gaterun.Run, spec *gaterun.Packe
 	return out
 }
 
-func resolveVerifyAnalysis(absRoot string, run *gaterun.Run, spec *gaterun.PacketSpec, parsed *parsedReport) error {
-	if len(spec.CheckKeys) != 1 {
-		return nil
-	}
-	analysisID := "analysis:" + spec.CheckKeys[0]
-	analysis := run.PacketByID(analysisID)
-	if analysis == nil {
-		return nil
-	}
-	if parsed.Verdicts[spec.CheckKeys[0]] == "MISMATCH" {
-		return nil
-	}
-	state, err := gaterun.LoadPacketState(absRoot, run, analysisID)
-	if err != nil {
-		return err
-	}
-	if state.Status == gaterun.PacketPending {
-		state.Status = gaterun.PacketNotRequired
-		return gaterun.SavePacketState(absRoot, run, state)
-	}
-	return nil
-}
-
-// reportDigest is the normalized-text sha256 of a packet report.
+// reportDigest is the normalized-text sha256 of a session report.
 func reportDigest(report string) string {
 	sum := sha256.Sum256([]byte(specpaths.NormalizeText(report)))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func packetPlanIDs(run *gaterun.Run) []string {
-	var ids []string
-	for _, p := range run.Packets {
-		ids = append(ids, p.PacketID)
-	}
-	return ids
-}
-
 func writeGateSubmitUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-submit --run RUN_ID --packet PACKET_ID --report PATH [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-submit --run RUN_ID --session SESSION_ID --keys K1,K2 --report PATH [--repo-root PATH]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Records one packet report after mechanical validation: the run is open, the")
-	fmt.Fprintln(w, "packet exists and is not already accepted, its dependencies are resolved,")
-	fmt.Fprintln(w, "and the report is structurally complete — every check key has exactly one")
-	fmt.Fprintln(w, "verdict line with an allowed token and evidence basis, gate-specific required")
-	fmt.Fprintln(w, "fields are present, and every check key declares at least one Dependency scope")
-	fmt.Fprintln(w, "line inside packet read refs.")
-	fmt.Fprintln(w, "Analysis and cross packets bind accepted dependency result digests; cross also")
-	fmt.Fprintln(w, "must dispose every input finding, publish every effective logical status, and")
-	fmt.Fprintln(w, "map each new cross finding to the logical keys it makes fail. Every terminal")
-	fmt.Fprintln(w, "retained finding needs a complete evidence-backed severity-confirmation sequence;")
-	fmt.Fprintln(w, "rule validate carries the required sequence for each P0 in its checks packet.")
-	fmt.Fprintln(w, "A valid report is recorded as accepted (terminal); an invalid one as rejected")
-	fmt.Fprintln(w, "with the reason — it can be re-submitted, and every attempt is kept.")
-	fmt.Fprintln(w, "See framework/verification_scope.md §Gate Work Packets.")
+	fmt.Fprintln(w, "Records one reviewer session's report after mechanical validation: the run is")
+	fmt.Fprintln(w, "open, the assigned keys belong to the run's coverage set and are not already")
+	fmt.Fprintln(w, "covered by an accepted session, the session id matches the keys, its")
+	fmt.Fprintln(w, "dependencies are resolved, and the report is structurally complete — every")
+	fmt.Fprintln(w, "assigned check key has exactly one verdict line with an allowed token and")
+	fmt.Fprintln(w, "evidence basis, gate-specific required fields are present, and every check key")
+	fmt.Fprintln(w, "declares at least one Dependency scope line inside the session read refs.")
+	fmt.Fprintln(w, "The optional final synthesis is submitted with --session cross --keys cross; it")
+	fmt.Fprintln(w, "must dispose every input finding, publish every effective logical status, and map")
+	fmt.Fprintln(w, "each new cross finding to the logical keys it makes fail. A valid report is")
+	fmt.Fprintln(w, "recorded as accepted (terminal); an invalid one as rejected with the reason — it")
+	fmt.Fprintln(w, "can be re-submitted, and every attempt is kept.")
+	fmt.Fprintln(w, "See framework/verification_scope.md §Coverage model.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --run RUN_ID     gate run id printed by gate-plan (required)")
-	fmt.Fprintln(w, "  --packet ID      packet id from the run's plan (required)")
-	fmt.Fprintln(w, "  --report PATH    file holding the packet report (required)")
+	fmt.Fprintln(w, "  --session ID     session id printed by gate-mission (required)")
+	fmt.Fprintln(w, "  --keys K1,K2     the coverage keys assigned to this session (required)")
+	fmt.Fprintln(w, "  --report PATH    file holding the session report (required)")
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")
+}
+
+func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
+	if run.Gate != gaterun.GateVerify {
+		return nil
+	}
+	if spec.Kind != gaterun.SessionKindCode && spec.Kind != gaterun.SessionKindCross {
+		for _, key := range spec.CheckKeys {
+			ck := run.CoverageByKey(key)
+			layer := run.Target
+			if ck.Kind == gaterun.SessionKindPreserve {
+				layer = gaterun.TargetStable
+			}
+			main := "docs/specs/units/" + layer + "/unit_" + ck.Unit + ".md"
+			found := false
+			for _, scope := range parsed.Scopes {
+				if scope.Key == key && scope.Path == main {
+					found = true
+				}
+			}
+			if !found {
+				return fmt.Errorf("check %s must declare its unit spec evidence from %s", key, main)
+			}
+		}
+	}
+	if spec.Kind == gaterun.SessionKindCode {
+		for _, key := range spec.CheckKeys {
+			ck := run.CoverageByKey(key)
+			for _, p := range ck.ReadRefs {
+				found := false
+				for _, scope := range parsed.Scopes {
+					if scope.Key == key && scope.Path == p && scope.Declaration == "all" {
+						found = true
+					}
+				}
+				if !found {
+					return fmt.Errorf("public check %s must declare whole-file evidence for %s", key, p)
+				}
+			}
+		}
+	}
+	if spec.Kind == gaterun.SessionKindPreserve {
+		for i := range parsed.Findings {
+			parsed.Findings[i] = parsed.Findings[i].WithMinimumSeverity("P1")
+		}
+	}
+	if spec.Kind == gaterun.SessionKindDesign {
+		observations := map[string]gaterun.Finding{}
+		results, err := gaterun.PublicResultsForDesign(root, run, spec)
+		if err != nil {
+			return err
+		}
+		for key, result := range results {
+			for _, f := range result.Observations {
+				f.SourceKey = key
+				observations[f.ID] = f
+			}
+		}
+		seen := map[string]bool{}
+		for _, d := range parsed.ObservationDispositions {
+			f, ok := observations[d.FindingID]
+			if !ok || seen[d.FindingID] || strings.TrimSpace(d.Reason) == "" {
+				return fmt.Errorf("invalid or duplicate public observation disposition %s", d.FindingID)
+			}
+			seen[d.FindingID] = true
+			if d.Action == "retained" {
+				f.ID = fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, len(parsed.Findings)+1)
+				f.Detail += "\nPublic observation: " + d.FindingID + "\nUnit design reason: " + d.Reason
+				parsed.Findings = append(parsed.Findings, f)
+			}
+		}
+		if len(seen) != len(observations) {
+			return fmt.Errorf("design report must dispose every public observation with unit-specific evidence")
+		}
+	}
+	return nil
 }

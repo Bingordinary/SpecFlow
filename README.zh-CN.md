@@ -19,7 +19,7 @@
 
 ## 解决的问题
 
-specFlow 把 AI 辅助开发从聊天驱动的即兴编程变成有门控的工程交付。普通 unit 使用 **validate → verify → review → promote**；rule 和退役 unit 使用 **validate → promote**，不会强行套用无关门控。
+specFlow 把 AI 辅助开发从聊天驱动的即兴编程变成有门控的工程交付。普通 unit 使用 **validate → verify → promote**；rule 使用 **validate → promote**，不会强行套用无关门控。
 
 - **AI 会话没有记忆** → spec 文件是跨会话的持久真相
 - **设计缺乏质量门控** → validate 在落地前卡住不完整的设计
@@ -76,8 +76,7 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | 触发词 | agent 做什么 |
 |--------|-------------|
 | `validate@{target}` | 检查 unit 或 rule 的设计质量；只改变门控缓存，不改 spec 真相 |
-| `verify@{unit}` | 检查 unit 的实现是否符合 spec |
-| `review@{unit}` | 结合 spec 做代码质量审查；P0/P1 会阻止 promote |
+| `verify@{unit}` | 检查 unit 的实现是否符合 spec（alignment 视角），并做代码质量审查（quality 视角）；P0/P1 会阻止 promote |
 | `promote@{target}` | 确认用户意图并检查已有的适用门控结果，然后把 candidate 变成 stable |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
 | `spec_flow_version` | 检查本地 specFlow 版本并对比远程最新版本，报告项目是否最新 |
@@ -89,10 +88,9 @@ Agent 只在你明确发出质量检查或完成信号后提出下一步，而�
 ```
 1. Agent 创建/编辑 candidate spec + 代码（没有门控）
 2. 你说 `validate@unit` → agent 检查 spec 质量
-3. 你说 `verify@unit` → agent 检查实现与 spec 是否一致
-4. 你说 `review@unit` → agent 结合 spec 检查代码质量
-5. 你说 `promote@unit` → agent 检查上述门控结果后 promote
-6. 进入下一轮迭代...
+3. 你说 `verify@unit` → agent 检查实现与 spec 是否一致，并检查代码质量
+4. 你说 `promote@unit` → agent 检查上述门控结果后 promote
+5. 进入下一轮迭代...
 ```
 
 自然语言也可以——描述你的目标，agent 会读取仓库真相并建议下一步操作。
@@ -104,3 +102,5 @@ Agent 只在你明确发出质量检查或完成信号后提出下一步，而�
 > 读取 https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/UPDATE.md 并按照其中的指引更新当前项目中的 specFlow。
 
 任何时候更新都用这条。当运行时破坏性变更导致平台适配器无法加载、agent 看不到 specFlow 触发词时，它同样可用——那正是 `spec_flow_update` 这类会话内触发词失效的场景。
+
+删除 unit、rule 和附录使用[统一删除流程](framework/removal_workflow.md)：agent 判断删除依据，`specflowctl remove` 检查引用并完成明确范围内的清理。可选预览使用 `remove --dry-run`。

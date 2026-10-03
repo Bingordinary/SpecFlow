@@ -82,7 +82,11 @@ func ExpandDir(repoRoot, dir string) ([]File, error) {
 	if err := RequireWorkTreeTop(repoRoot); err != nil {
 		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
 	}
-	canonical, err := repopath.Canonical(repoRoot, dir)
+	canonical := "."
+	var err error
+	if dir != "." {
+		canonical, err = repopath.Canonical(repoRoot, dir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
 	}

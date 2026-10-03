@@ -1,0 +1,65 @@
+# Shared Verify Judgments
+
+This protocol runs in an installed consumer project. Framework development in the source repository does not require consumer unit declarations.
+
+## File associations
+
+`implementation_surface` and `affects.files` name files participating in a unit's implementation. A file, including a file expanded from a directory, may be associated with several units. File sharing alone creates neither a `unit_refs` dependency nor a new unit. Units describe independent responsibilities; behavior, data meaning, and shared agreements still have one authoritative source. Shared constraints are published in rules rather than restated in several specs.
+
+`specflowctl surfaces` derives current and stable associations from spec declarations and displays public code judgments and each unit's design judgments. An unfinished candidate does not replace that unit's stable requirements. The association view is not manually maintained review state.
+
+Reverse surplus checks read complete associated files, then compare only structures and designs belonging to the judgment's unit responsibility. Independent behavior outside that responsibility is not surplus merely because it is absent from this unit's spec. Attribute the boundary using implementation, callers and data flow; file association alone proves neither ownership nor exclusion. Helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. Missing attribution evidence requires replanning with the needed input. Preserve applies this boundary to its assigned stable requirement, without requiring unrelated behavior in a shared file to be restated in the protected spec.
+
+## Required tasks
+
+| Key | Lens | Responsibility |
+| --- | --- | --- |
+| `code:<file>` | quality | Collect code facts and potential problems independently of unit-private design |
+| `design:<unit>:<file>` | quality | Actively check that unit's design requirements and decide each public observation |
+| `architecture:<unit>` | quality | Assess all six Dimension 8 fields once for the entire unit |
+| `item:<unit>:<item>` | alignment | Verify the current unit's acceptance requirement |
+| `preserve:<unit>:<item>` | alignment | Confirm a related stable requirement of another unit remains ALIGNED |
+
+Batches must have the same kind and lens. Public checks precede design judgments. Public evidence includes repository callers, callees, dependencies and tests without narrowing by the triggering unit. Tool discovery conservatively follows file references; the coordinator must supplement it with related evidence found by repository search through `--input`. If a reviewer finds a missing evidence path, do not submit an incomplete verdict: replan with that path. Newly required evidence invalidates reuse even if existing content dependencies remain unchanged.
+
+A public report contains `File: <key>`, `conclusion: FACTS`, `facts: <assessment>`, potential finding blocks, and whole-file Dependency scope declarations for every public read ref. It must not suppress observations using private spec rationale.
+
+Design missions consume only the immutable `code:<file>` records for their assigned files, whether those records were executed, reused or carried. A public execution batch does not determine the design batch's inputs; observations and judgments for unassigned files are excluded. Execution dependencies still determine readiness. Mission generation and submission validation use the same per-file public records.
+
+A design report contains `File: <key>`, its quality conclusion, `spec_requirements: <active assessment>`, `gate_findings`, dependency scopes, and exactly one `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>` for every public observation in the assigned files' records. Retention creates a finding for this unit; suppression changes only this design judgment. Reviewers must also find spec violations absent from the public observations. Every design, architecture, item and preserve judgment declares its own unit main spec evidence; applicable rules remain dependencies even when the report has no separate rule scope line.
+
+An architecture report uses `Unit: architecture:<unit>` and the existing six Dimension 8 assessments, quality conclusion, findings and dependency scopes. It covers the entire unit rather than repeating architecture once per file.
+
+## Stable requirement protection
+
+Planning discovers other stable units' acceptance items connected to the current implementation through declarations, current callers and dependencies, or accepted evidence. Missing or damaged referenced records never remove that evidence association; the affected requirement must be rechecked. Reuse a valid item judgment when its coverage, inputs, dependencies and protocol satisfy the protection task; otherwise execute only that item. Read the protected unit's stable spec and applicable stable constraints. A candidate-only peer contributes no protected requirement; an unfinished candidate never replaces an existing stable requirement.
+
+The plan records the physical stable spec, appendix and rule paths selected for protection. Preserve and final synthesis may declare these paths within their assigned read refs, including when preserve judgments are carried in a delta or repair run. These declarations remain bound to stable through cache writing, freshness checks, fork and promote. Unrelated spec dependencies resolved by name retain the logical-reference contract.
+
+Every preserve task must be ALIGNED. MISMATCH and CANNOT_DETERMINE block the current unit and cannot be suppressed, deferred or cleared by synthesis. Follow the existing difference-analysis process without automatically choosing a code or spec change. Protection does not complete the other unit's entire verify.
+
+## Immutable storage and task allocation
+
+Accepted records live in `docs/specs/meta/validation/judgments/<id>.json`. The tool derives their ids and digests from canonical record content. Records contain their kind and subject, coverage and read inputs, content dependencies, consumed record references, protocol fingerprint, verdict, findings or observations, dispositions, report and report digest, and source run. Accepted records cannot be replaced; rechecking creates a new record. Acceptance records also carry `spec_context`, a fingerprint of the normalized main spec and all active, non-exempt appendices, using layer-independent own-spec names. Appendix ownership requires both the filename form and its frontmatter `unit`; an appendix of a distinct unit sharing the filename prefix is excluded. The same ownership inventory governs planning, context fingerprints, dependency normalization, fork and promote. Protected peer evidence keeps its physical layer binding; peer references resolved by name remain logical. Each unit, acceptance item and spec-context combination has an atomic current-record reference under `judgments/accepted/`, advanced under the repository mutation lock. Protection selects the current decision for the stable spec context and reuses it only when its evidence is valid; missing, damaged, invalidated or stale current decisions require rechecking rather than selecting an older ALIGNED record. Cached records must satisfy both their original context's current decision and the currently bound stable context's decision, so publishing a new stable context cannot leave a conflicting historical pass valid. A different candidate spec context cannot overwrite or hide the stable context's current decision.
+
+All required code inputs and published-rule inputs use exact whole-file content fingerprints in every judgment, including inputs without a separate report scope declaration. A report can select spec chapters and acceptance-item regions but cannot omit required code dependencies. Consumed records form a checked reference chain: missing, damaged, invalidated, stale or changed-protocol records invalidate their consumers. Unit-private reasons never modify public observations.
+
+`gate-plan` fixes necessary keys and input snapshots, recording executed, carried or reused sources. Shared public tasks under `meta/gate_runs/shared/` have one owner for the same file, evidence and protocol. A concurrent run consumes the accepted record or waits for the assigned run. An interrupted owner continues its task; when its run is replaced, a new run can claim that same pending task. The repository mutation lock serializes assignment, acceptance and publication.
+
+Public judgments publish after independent report acceptance and their own snapshot checks. Unit judgments publish after accepted synthesis and complete snapshot checks. Their verdicts, logical statuses and findings are the finalized per-key decisions, including suppression, merging and failures introduced by synthesis. A nonblocking CANNOT_DETERMINE remains CANNOT_DETERMINE: a gate pass is not proof of alignment. Design and architecture preserve their accepted three-state quality conclusions when no synthesis runs. When synthesis runs, it authors one final `Quality conclusion` per design and architecture key, including carried keys, with a reason. `unacceptable` requires a gate-driving canonical P0/P1 finding; `acceptable` versus `needs_attention` remains the reviewer's assessment. Logical pass/fail is stored separately and never converted into a quality conclusion. Changed carried or reused decisions also receive new records. Final-review evidence used for a changed decision joins its dependency closure. A protection consumer projects a source item decision onto its own preserve key, without importing source-run relationship keys; non-ALIGNED protection still blocks. Protected findings have a minimum severity of P1 while retaining P0, and their canonical detail follows that severity without changing the source record. Input changes reject publication; old runs cannot replace a newer unit cache.
+
+## Cache, delta and release
+
+A unit's `verify_result.md` remains the complete gate entry, with schema 4 structured judgments, necessary check keys, immutable record ids/digests and source labels, plus the full human-readable report. Validate and rule caches retain their existing responsibilities and schema.
+
+Full verify repeats this unit's item, design and architecture judgments and may reuse public and protection records. Delta re-executes changed dependencies and newly required coverage; repair additionally re-executes failures and explicit invalidations. Region dependencies still determine execution scope: an unchanged carried acceptance decision is published into the current spec context without repeating its review. Its previous context's current decision remains intact. Changing private design leaves valid public records reusable. Changing shared implementation invalidates every dependent record; the current run completes its required checks rather than verifying every other unit.
+
+`gate-invalidate --judgment <id> --reason <evidence>` invalidates that immutable judgment and its consumers without deleting history. If newly reviewed evidence contradicts an accepted public fact, the coordinator must invalidate the contradicted record by id and cite that evidence before completing the run; its consumers cannot continue using the old result. `gate-invalidate --gate verify --unit <unit> --target <layer> --check <key>` also invalidates the contradicted immutable evidence before transitioning the unit cache and matching open runs, under the same repository lock. Acceptance-item ids are normalized to `item:<unit>:<item>` and select the current decision for the requested spec context even when the unit cache is absent. A different candidate context cannot invalidate the stable context merely because a forked cache still references its historical record. Public and unit-private quality keys select the records bound by the cache or matching open runs. All consumers reject invalidated evidence through the checked reference chain; history remains intact.
+
+Fresh and promote derive required keys again from current declarations and stable associations, then check coverage, evidence, record digests, dependency closure, protocol and blocking findings. Missing or indeterminate state blocks release with the specific gap. Promote never starts reviews. Validate, rule publication and appendix requirements remain in force.
+
+Fork and promote change only this unit's cache layer bindings and verify unchanged content. Protected peers stay bound to stable. Removing a unit clears its current caches while preserving records used by other units. There is no automatic history cleanup.
+
+## Previous protocol
+
+Older verify caches remain historical evidence and are STALE under this protocol. Run full verify before using the gate again. Old in-progress verify runs must be replanned. Do not convert a previous unit-specific file verdict into a public judgment. Existing abstraction units are not automatically deleted or merged; restructuring them remains a project design decision.

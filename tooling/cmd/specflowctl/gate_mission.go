@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"sort"
@@ -11,24 +13,174 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specflowlayout"
 )
 
-// missionDependency is one compact judgment record in a packet mission: the
-// synthesis-relevant projection of an accepted packet result (dependency
+// runGateMission materializes the read-only reviewer mission for an
+// agent-chosen coverage key batch. Public missions claim their fixed batch under the repository lock;
+// mission generation never persists an accepted session. With --final it builds the optional final cross synthesis instead.
+func runGateMission(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("gate-mission", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRootPtr := fs.String("repo-root", ".", "repository root")
+	runIDPtr := fs.String("run", "", "gate run id printed by gate-plan")
+	keysPtr := fs.String("keys", "", "comma-separated coverage keys assigned to this session")
+	finalPtr := fs.Bool("final", false, "build the final cross synthesis mission instead of a coverage batch")
+	formatPtr := fs.String("format", "prompt", "output format: prompt | json")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	runID := strings.TrimSpace(*runIDPtr)
+	if runID == "" {
+		return errors.New("--run is required")
+	}
+	if *formatPtr != "prompt" && *formatPtr != "json" {
+		return fmt.Errorf("invalid --format %q: must be prompt or json", *formatPtr)
+	}
+	if *finalPtr && strings.TrimSpace(*keysPtr) != "" {
+		return errors.New("--final and --keys are mutually exclusive")
+	}
+	absRoot := mustAbs(*repoRootPtr)
+	run, err := gaterun.Load(absRoot, runID)
+	if err != nil {
+		return err
+	}
+	if run.Status != gaterun.StatusOpen {
+		return fmt.Errorf("gate run %s is %s — only an open run can materialize a mission; plan a new run", run.RunID, run.Status)
+	}
+	keys := []string{gaterun.CrossKey}
+	if !*finalPtr {
+		keys = splitKeys(*keysPtr)
+		if len(keys) == 0 {
+			return errors.New("--keys is required (or use --final)")
+		}
+	}
+	if err := gaterun.WithMutation(absRoot, func() error {
+		current, err := gaterun.Load(absRoot, runID)
+		if err != nil {
+			return err
+		}
+		if current.Status != gaterun.StatusOpen {
+			return fmt.Errorf("gate run %s is %s", runID, current.Status)
+		}
+		if _, err := gaterun.BuildSessionSpec(absRoot, current, keys); err != nil {
+			return err
+		}
+		run = current
+		return gaterun.ClaimShared(absRoot, run, keys)
+	}); err != nil {
+		return err
+	}
+	spec, err := gaterun.BuildSessionSpec(absRoot, run, keys)
+	if err != nil {
+		return err
+	}
+	if spec.Kind != gaterun.SessionKindCross {
+		states, cerr := gaterun.LoadSessionStates(absRoot, run)
+		if cerr != nil {
+			return cerr
+		}
+		covered, _, cerr := gaterun.CoverageProgress(run, states)
+		if cerr != nil {
+			return cerr
+		}
+		for _, key := range keys {
+			if owner, ok := covered[key]; ok {
+				return fmt.Errorf("coverage key %q is already covered by accepted session %q — its judgment is terminal", key, owner)
+			}
+		}
+	}
+	state, err := gaterun.LoadSessionState(absRoot, run, spec.SessionID)
+	if err != nil {
+		return err
+	}
+	if state.Status != gaterun.SessionPending && state.Status != gaterun.SessionRejected {
+		return fmt.Errorf("session %q is %s — only a pending or rejected session can receive a mission", spec.SessionID, state.Status)
+	}
+	mission, err := buildGateMission(absRoot, run, spec, state)
+	if err != nil {
+		return err
+	}
+	if *formatPtr == "json" {
+		return writeGateJSON(stdout, mission)
+	}
+	writeGatePrompt(stdout, mission)
+	return nil
+}
+
+// splitKeys parses a comma-separated key list, trimming blanks.
+func splitKeys(raw string) []string {
+	var keys []string
+	for _, tok := range strings.Split(raw, ",") {
+		if key := strings.TrimSpace(tok); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// deferredFindingsForSession selects the pending deferrals a session executor
+// must see: the final cross session receives every pending deferral (its
+// synthesis disposes them all); a file session receives the deferrals whose
+// affected keys name the file it reviews.
+func deferredFindingsForSession(run *gaterun.Run, spec *gaterun.SessionSpec) []gaterun.DeferredFinding {
+	if len(run.DeferredFindings) == 0 {
+		return nil
+	}
+	switch spec.Kind {
+	case gaterun.SessionKindCross:
+		return run.DeferredFindings
+	case gaterun.SessionKindDesign:
+		var out []gaterun.DeferredFinding
+		for _, deferred := range run.DeferredFindings {
+			if deferredCoversKeys(deferred, spec.CheckKeys) {
+				out = append(out, deferred)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// deferredCoversKeys reports whether a deferred finding affects one of the
+// session's keys.
+func deferredCoversKeys(deferred gaterun.DeferredFinding, keys []string) bool {
+	for _, key := range keys {
+		if key == deferred.Finding.SourceKey {
+			return true
+		}
+		for _, affected := range deferred.Finding.AffectedKeys {
+			if affected == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func indentSessionContext(value, prefix string) string {
+	value = strings.TrimRight(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	if value == "" {
+		return prefix
+	}
+	return prefix + strings.ReplaceAll(value, "\n", "\n"+prefix)
+}
+
+// missionDependency is one compact judgment record in a session mission: the
+// synthesis-relevant projection of an accepted session result (dependency
 // results) or of a carried baseline judgment (carried results). It carries the
 // verdicts, findings with their stored details, and analysis fields a
-// result-consuming packet synthesizes over — never the verbatim accepted
+// result-consuming session synthesizes over — never the verbatim accepted
 // report, which stays in run state and is assembled into the published cache
-// body. The one exception is a verify analysis packet's single detection
-// dependency, whose report is the documented input of the analysis step.
+// body.
 type missionDependency struct {
-	PacketID        string            `json:"packet_id"`
+	SessionID       string            `json:"session_id"`
 	Kind            string            `json:"kind,omitempty"`
 	Status          string            `json:"status"`
 	Digest          string            `json:"digest,omitempty"`
 	Verdicts        map[string]string `json:"verdicts,omitempty"`
 	Findings        []gaterun.Finding `json:"findings,omitempty"`
+	Observations    []gaterun.Finding `json:"observations,omitempty"`
 	Analysis        map[string]string `json:"analysis,omitempty"`
 	EffectiveStatus map[string]string `json:"effective_status,omitempty"`
-	Report          string            `json:"accepted_report,omitempty"`
 }
 
 type missionTerm struct {
@@ -42,12 +194,13 @@ type missionReadInput struct {
 	Resolved string `json:"resolved,omitempty"`
 }
 
-type missionPacket struct {
-	PacketID         string                    `json:"packet_id"`
+type missionSession struct {
+	SessionID        string                    `json:"session_id"`
 	Kind             string                    `json:"kind"`
 	Mission          string                    `json:"mission"`
 	LastRejection    string                    `json:"last_rejection,omitempty"`
 	CheckKeys        []string                  `json:"check_keys"`
+	Relationships    []string                  `json:"relationships"`
 	ReadRefs         []string                  `json:"read_refs"`
 	ReadInputs       []missionReadInput        `json:"read_inputs"`
 	DependsOn        []string                  `json:"depends_on"`
@@ -62,22 +215,22 @@ type missionPacket struct {
 }
 
 type gateMission struct {
-	SchemaVersion int             `json:"schema_version"`
-	RunID         string          `json:"run_id"`
-	Gate          string          `json:"gate"`
-	TargetKind    string          `json:"target_kind"`
-	TargetName    string          `json:"target_name"`
-	Target        string          `json:"target"`
-	Mode          string          `json:"mode"`
-	SpecSource    string          `json:"spec_source"`
-	Packets       []missionPacket `json:"packets"`
-	Constraints   []string        `json:"constraints"`
-	Glossary      []missionTerm   `json:"glossary"`
-	FailurePath   string          `json:"failure_path"`
-	Submission    string          `json:"submission_command"`
+	SchemaVersion int              `json:"schema_version"`
+	RunID         string           `json:"run_id"`
+	Gate          string           `json:"gate"`
+	TargetKind    string           `json:"target_kind"`
+	TargetName    string           `json:"target_name"`
+	Target        string           `json:"target"`
+	Mode          string           `json:"mode"`
+	SpecSource    string           `json:"spec_source"`
+	Sessions      []missionSession `json:"sessions"`
+	Constraints   []string         `json:"constraints"`
+	Glossary      []missionTerm    `json:"glossary"`
+	FailurePath   string           `json:"failure_path"`
+	Submission    string           `json:"submission_command"`
 }
 
-func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, state *gaterun.PacketState) (gateMission, error) {
+func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, state *gaterun.SessionState) (gateMission, error) {
 	if len(run.RequiredFiles) == 0 {
 		return gateMission{}, fmt.Errorf("gate run %s has no spec source", run.RunID)
 	}
@@ -93,126 +246,139 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.PacketSpec, s
 		protocol = "unit_validate_checklist.md"
 	case run.Gate == gaterun.GateVerify:
 		protocol = "unit_verify_checklist.md"
-	case run.Gate == gaterun.GateReview:
-		protocol = "spec_review_checklist.md"
 	default:
 		return gateMission{}, fmt.Errorf("unsupported gate %q", run.Gate)
 	}
-	packet := missionPacket{
-		PacketID: spec.PacketID, Kind: spec.Kind, Mission: missionTextFor(spec.Kind),
+	session := missionSession{
+		SessionID: spec.SessionID, Kind: spec.Kind, Mission: missionTextFor(spec.Kind),
 		CheckKeys:        append([]string{}, spec.CheckKeys...),
+		Relationships:    append([]string{}, spec.Relationships...),
 		ReadRefs:         append([]string{}, spec.ReadRefs...),
 		ReadInputs:       missionInputs(run, spec),
 		DependsOn:        append([]string{}, spec.DependsOn...),
 		Context:          append([]string{}, spec.Context...),
 		Dependencies:     []missionDependency{},
 		CarriedResults:   []missionDependency{},
-		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForPacket(run, spec)...),
+		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForSession(run, spec)...),
 		ProtocolRef:      specflowlayout.Relative(layout.FrameworkRoot, protocol),
 		ProtocolScope:    protocolScopeFor(spec.Kind, spec.CheckKeys),
 		AdditionalRefs:   []string{},
 		ReportContract:   reportContractFor(run, spec),
 	}
-	if state.Status == gaterun.PacketRejected {
+	if state.Status == gaterun.SessionRejected {
 		if len(state.Attempts) == 0 || strings.TrimSpace(state.Attempts[len(state.Attempts)-1].RejectionReason) == "" {
-			return gateMission{}, fmt.Errorf("rejected packet %q has no rejection reason", spec.PacketID)
+			return gateMission{}, fmt.Errorf("rejected session %q has no rejection reason", spec.SessionID)
 		}
-		packet.LastRejection = state.Attempts[len(state.Attempts)-1].RejectionReason
+		session.LastRejection = state.Attempts[len(state.Attempts)-1].RejectionReason
 	}
-	if spec.Kind == gaterun.PacketKindCross {
-		packet.AdditionalRefs = append(packet.AdditionalRefs,
+	if spec.Kind == gaterun.SessionKindCross {
+		session.AdditionalRefs = append(session.AdditionalRefs,
 			specflowlayout.Relative(layout.FrameworkRoot, "verification_scope.md")+" §Cross-check",
-			specflowlayout.Relative(layout.FrameworkRoot, "severity_policy.md")+" §9")
+			specflowlayout.Relative(layout.FrameworkRoot, "severity_policy.md"))
 	}
 	framework := layout.FrameworkRoot
 	glossary := []missionTerm{
-		{"packet", "one planned and independently reviewed part of a gate run", framework + "/verification_scope.md §Gate Work Packets"},
-		{"check_keys", "the checks this packet must report, excluding carried checks", framework + "/verification_scope.md §Packet record"},
-		{"read_refs", "the exact evidence entries this packet may declare", framework + "/verification_scope.md §Packet record"},
+		{"session", "one independently reviewed batch of coverage keys in a gate run", framework + "/verification_scope.md §Coverage model"},
+		{"check_keys", "the checks this session must report, excluding carried checks", framework + "/verification_scope.md §Session record"},
+		{"read_refs", "the exact evidence entries this session may declare", framework + "/verification_scope.md §Session record"},
 		{"Dependency scope", "one line per executed check naming the file and region used for its judgment", framework + "/validation_cache.md §Dependency Declaration"},
 	}
-	if spec.Kind == gaterun.PacketKindCross {
+	if spec.Kind == gaterun.SessionKindCross {
 		glossary = append(glossary,
 			missionTerm{"carried judgments", "baseline judgments preserved without re-execution in a delta or repair run", framework + "/verification_scope.md §Delta Runs"},
-			missionTerm{"finding disposition", "cross decision to retain, suppress, or merge each input finding", framework + "/verification_scope.md §Packet report contract"},
-			missionTerm{"effective status", "cross result for every logical check and cross itself", framework + "/verification_scope.md §Packet report contract"},
-			missionTerm{"severity confirmation", "cross evidence-backed confirmation or adjustment of a retained finding's grade", framework + "/severity_policy.md §9"},
+			missionTerm{"finding disposition", "cross decision to retain, suppress, or merge each input finding", framework + "/verification_scope.md §Session report contract"},
+			missionTerm{"effective status", "cross result for every logical check and cross itself", framework + "/verification_scope.md §Session report contract"},
 		)
-		if len(crossItemsFor(run.Gate)) > 0 {
-			glossary = append(glossary, missionTerm{"Cross item finding", "the new retained cross finding that explains one failed fixed cross item", framework + "/verification_scope.md §Packet report contract"})
+		if len(crossItemsFor(run)) > 0 {
+			glossary = append(glossary, missionTerm{"Cross item finding", "the new retained cross finding that explains one failed fixed cross item", framework + "/verification_scope.md §Session report contract"})
 		}
 	}
-	if len(packet.DeferredFindings) > 0 {
-		glossary = append(glossary, missionTerm{"deferred finding", "a finding routed from another unit for this review to dispose", framework + "/verification_scope.md §Deferred findings"})
+	if len(session.DeferredFindings) > 0 {
+		glossary = append(glossary, missionTerm{"deferred finding", "a finding routed from another unit for this verify run to dispose", framework + "/verification_scope.md §Deferred findings"})
+	}
+	if spec.Kind == gaterun.SessionKindCross {
+		// The optional final synthesis consumes every accepted session's
+		// compact judgment record, plus the carried baseline judgments below.
+		states, serr := gaterun.LoadSessionStates(root, run)
+		if serr != nil {
+			return gateMission{}, serr
+		}
+		for _, dep := range states {
+			if dep.Status != gaterun.SessionAccepted || dep.SessionID == gaterun.CrossKey || dep.Result == nil {
+				continue
+			}
+			session.Dependencies = append(session.Dependencies, missionJudgmentFor(dep.SessionID, dep.Status, dep.Result))
+		}
 	}
 	for _, dep := range spec.DependsOn {
-		state, err := gaterun.LoadPacketState(root, run, dep)
+		state, err := gaterun.LoadSessionState(root, run, dep)
 		if err != nil {
 			return gateMission{}, err
 		}
-		if state.Status != gaterun.PacketAccepted && state.Status != gaterun.PacketNotRequired {
-			return gateMission{}, fmt.Errorf("packet %q is not ready: dependency %q is %s", spec.PacketID, dep, state.Status)
+		if state.Status != gaterun.SessionAccepted && state.Status != gaterun.SessionNotRequired {
+			return gateMission{}, fmt.Errorf("session %q is not ready: dependency %q is %s", spec.SessionID, dep, state.Status)
 		}
-		if state.Status == gaterun.PacketAccepted && state.Result == nil {
+		if state.Status == gaterun.SessionAccepted && state.Result == nil {
 			return gateMission{}, fmt.Errorf("dependency %q has no accepted result", dep)
 		}
-		entry := missionJudgmentFor(dep, state.Status, state.Result)
-		if spec.Kind == gaterun.PacketKindAnalysis || spec.Kind == gaterun.PacketKindVerifier {
-			// The analysis step's documented input is the accepted detection
-			// report carrying the detector's evidence lines (see
-			// framework/unit_verify_checklist.md Step 7); the verifier's
-			// documented input is the accepted reader reconstruction (see
-			// framework/unit_validate_checklist.md Check 10). Every other
-			// dependency carries its compact judgment record only.
-			entry.Report = state.Report
+		if spec.Kind != gaterun.SessionKindDesign {
+			entry := missionJudgmentFor(dep, state.Status, state.Result)
+			session.Dependencies = append(session.Dependencies, entry)
 		}
-		packet.Dependencies = append(packet.Dependencies, entry)
 	}
-	if spec.Kind == gaterun.PacketKindCross {
+	if spec.Kind == gaterun.SessionKindDesign {
+		results, err := gaterun.PublicResultsForDesign(root, run, spec)
+		if err != nil {
+			return gateMission{}, err
+		}
+		for _, key := range spec.CheckKeys {
+			result := results[key]
+			if stringInList(run.CarriedKeys, result.SessionID) {
+				session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(result.SessionID, "", &result))
+			} else {
+				session.Dependencies = append(session.Dependencies, missionJudgmentFor(result.SessionID, gaterun.SessionAccepted, &result))
+			}
+		}
+	}
+	if spec.Kind == gaterun.SessionKindCross {
 		for i := range run.CarriedResults {
-			packet.CarriedResults = append(packet.CarriedResults, missionJudgmentFor(run.CarriedResults[i].PacketID, "", &run.CarriedResults[i]))
+			session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(run.CarriedResults[i].SessionID, "", &run.CarriedResults[i]))
 		}
 	}
-	constraints := []string{"independent read-only reviewer session without the author's context", "packet boundaries are deterministic; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from packet read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
-	if spec.Kind == gaterun.PacketKindReader {
-		constraints = append(constraints,
-			"reconstruct from the human-readable part only: the ## sections of the main spec listed in the packet Context, before the section holding acceptance_item_set; content after that section, appendices, and code are out of scope",
-			"you receive no question bank: restate the design as one coherent block so each part connects to the next — a restatement that only answers scattered questions proves nothing about the whole; when something would not connect or had to be guessed, declare it in the Undetermined list instead of filling the gap",
-			"do not write a verdict line or finding entries — the check verdict is the verifier packet's, composed mechanically from its classifications")
-	}
-	if spec.Kind == gaterun.PacketKindVerifier {
-		constraints = append(constraints,
-			"reconcile the accepted reconstruction against the human-readable part (support) and the formal carrier — the acceptance item set and the protocol appendices (backbone and contradiction); do not repair the reader's gaps from your own knowledge",
-			"classify, do not author: Claim lines carry supported, reader-error, unsupported-central, unsupported-minor, or contradicted; Carrier lines carry seen or missing for every acceptance item; Must-close lines carry closed, missing, or not-applicable for every §9 decision; Consistency is coherent or incoherent",
-			"central = the unit's declared responsibility + each acceptance item's behavioral subject + every applicable must-close decision; unsupported-minor claims are advisory and reader-error claims are the reader's own invention — neither may be inflated to a blocking class; a declarative unit is reconciled by its declared responsibility and its acceptance items' behavioral subjects, never by a behavior template",
-			"do not write finding entries — findings are composed mechanically from the classification lines")
-	}
-	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.PacketKindItem || spec.Kind == gaterun.PacketKindAnalysis) {
+	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
+	if run.Gate == gaterun.GateVerify && spec.Kind == gaterun.SessionKindItem {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
+	schema := 3
+	if run.Gate == gaterun.GateVerify {
+		schema = 4
+	}
 	return gateMission{
-		SchemaVersion: 2, RunID: run.RunID, Gate: run.Gate,
+		SchemaVersion: schema, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target, Mode: run.Mode,
 		SpecSource:  run.RequiredFiles[0],
-		Packets:     []missionPacket{packet},
+		Sessions:    []missionSession{session},
 		Constraints: constraints,
 		Glossary:    glossary,
 		FailurePath: failureLineFor(run.Gate),
-		Submission:  fmt.Sprintf("specflowctl gate-submit --run %s --packet %s --report REPORT_PATH", run.RunID, spec.PacketID),
+		Submission:  fmt.Sprintf("specflowctl gate-submit --run %s --session %s --keys %s --report REPORT_PATH", run.RunID, spec.SessionID, strings.Join(gaterun.CoverageKeysForSpec(run, spec), ",")),
 	}, nil
 }
 
 func writeGatePrompt(w io.Writer, mission gateMission) {
-	p := mission.Packets[0]
-	fmt.Fprintf(w, "You are the independent read-only reviewer for %s@%s (%s), packet %s of run %s.\n", mission.Gate, mission.TargetName, mission.Target, p.PacketID, mission.RunID)
+	p := mission.Sessions[0]
+	fmt.Fprintf(w, "You are the independent read-only reviewer for %s@%s (%s), session %s of run %s.\n", mission.Gate, mission.TargetName, mission.Target, p.SessionID, mission.RunID)
 	fmt.Fprintf(w, "Mission: %s The main agent will submit your report verbatim; follow the report contract below.\n", p.Mission)
-	fmt.Fprintf(w, "Why now: this packet is ready in the %s run; every dependency is accepted or not required.\n", mission.Mode)
+	fmt.Fprintf(w, "Why now: this session is ready in the %s run; every dependency is accepted or not required.\n", mission.Mode)
 	if p.LastRejection != "" {
-		fmt.Fprintf(w, "Previous submission was rejected: %s. Re-evaluate the packet and return a complete corrected report.\n", p.LastRejection)
+		fmt.Fprintf(w, "Previous submission was rejected: %s. Re-evaluate the session and return a complete corrected report.\n", p.LastRejection)
 	}
 
-	fmt.Fprintf(w, "Run: %s\nGate: %s\nTarget kind: %s\nTarget name: %s\nTarget layer: %s\nPacket: %s\nKind: %s\nChecks: %s\nMode: %s\n", mission.RunID, mission.Gate, mission.TargetKind, mission.TargetName, mission.Target, p.PacketID, p.Kind, strings.Join(p.CheckKeys, ", "), mission.Mode)
+	fmt.Fprintf(w, "Run: %s\nGate: %s\nTarget kind: %s\nTarget name: %s\nTarget layer: %s\nSession: %s\nKind: %s\nChecks: %s\nMode: %s\n", mission.RunID, mission.Gate, mission.TargetKind, mission.TargetName, mission.Target, p.SessionID, p.Kind, strings.Join(p.CheckKeys, ", "), mission.Mode)
 	fmt.Fprintf(w, "Spec source: %s\n", mission.SpecSource)
+	if p.Kind == gaterun.SessionKindCross {
+		fmt.Fprintf(w, "Assigned relationships: %s\n", strings.Join(p.Relationships, ", "))
+	}
 	fmt.Fprintf(w, "Protocol: %s (%s). Read this scope for semantic judgment; the task and report format are fixed here.\n", p.ProtocolRef, p.ProtocolScope)
 	for _, ref := range p.AdditionalRefs {
 		fmt.Fprintf(w, "Additional semantic reference: %s\n", ref)
@@ -226,18 +392,15 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		fmt.Fprintln(w)
 	}
 	if len(p.Context) > 0 {
-		fmt.Fprintln(w, "Packet context (plan-time facts; state these verbatim where the report contract requires):")
+		fmt.Fprintln(w, "Session context (plan-time facts; state these verbatim where the report contract requires):")
 		for _, line := range p.Context {
 			fmt.Fprintf(w, "  - %s\n", line)
 		}
 	}
 	if len(p.Dependencies) > 0 {
-		fmt.Fprintln(w, "Dependency results (each accepted packet's verdicts, findings, and analysis):")
+		fmt.Fprintln(w, "Dependency judgments (accepted verdicts, findings, observations, and analysis):")
 		for _, dep := range p.Dependencies {
 			writeMissionJudgment(w, dep)
-			if dep.Report != "" {
-				fmt.Fprintf(w, "    Accepted report:\n%s\n", indentPacketContext(dep.Report, "      "))
-			}
 		}
 	}
 	if len(p.CarriedResults) > 0 {
@@ -282,13 +445,13 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 	fmt.Fprintln(w, mission.Submission)
 }
 
-// missionJudgmentFor projects an accepted packet result into the compact
+// missionJudgmentFor projects an accepted session result into the compact
 // judgment record a mission carries. A nil result (a not-required conditional
 // dependency) yields the identity fields only. The verbatim accepted report is
 // never part of the projection — a mission carries judgments, not the
-// reviewers' narratives; evidence is read from the packet's read refs.
-func missionJudgmentFor(packetID, status string, result *gaterun.PacketResult) missionDependency {
-	entry := missionDependency{PacketID: packetID, Status: status}
+// reviewers' narratives; evidence is read from the session's read refs.
+func missionJudgmentFor(sessionID, status string, result *gaterun.SessionResult) missionDependency {
+	entry := missionDependency{SessionID: sessionID, Status: status}
 	if result == nil {
 		return entry
 	}
@@ -296,17 +459,18 @@ func missionJudgmentFor(packetID, status string, result *gaterun.PacketResult) m
 	entry.Digest = result.ReportDigest
 	entry.Verdicts = result.Verdicts
 	entry.Findings = result.Findings
+	entry.Observations = result.Observations
 	entry.Analysis = result.Analysis
 	entry.EffectiveStatus = result.EffectiveStatus
 	return entry
 }
 
-// writeMissionJudgment renders one compact judgment record: the packet header
+// writeMissionJudgment renders one compact judgment record: the session header
 // line, its verdicts or effective statuses, analysis fields, and every finding
 // with its stored detail block. Map keys are sorted so the mission text is
 // deterministic for a given run state.
 func writeMissionJudgment(w io.Writer, dep missionDependency) {
-	header := dep.PacketID
+	header := dep.SessionID
 	if dep.Status != "" {
 		header += ": " + dep.Status
 	}
@@ -321,6 +485,9 @@ func writeMissionJudgment(w io.Writer, dep missionDependency) {
 		header += " (" + strings.Join(meta, ", ") + ")"
 	}
 	fmt.Fprintf(w, "  - %s\n", header)
+	for _, f := range dep.Observations {
+		fmt.Fprintf(w, "  Observation %s [%s]: %s\n%s\n", f.ID, f.Severity, f.Text, f.Detail)
+	}
 	if len(dep.Verdicts) > 0 {
 		fmt.Fprintf(w, "    verdicts: %s\n", joinSortedPairs(dep.Verdicts))
 	}
@@ -337,7 +504,7 @@ func writeMissionJudgment(w io.Writer, dep missionDependency) {
 		fmt.Fprintln(w, "    findings:")
 		for _, finding := range dep.Findings {
 			fmt.Fprintf(w, "      - %s [%s]:\n", finding.ID, finding.Severity)
-			fmt.Fprintf(w, "%s\n", indentPacketContext(finding.Detail, "        "))
+			fmt.Fprintf(w, "%s\n", indentSessionContext(finding.Detail, "        "))
 		}
 	}
 }
@@ -360,7 +527,7 @@ func joinSortedPairs(values map[string]string) string {
 	return strings.Join(pairs, ", ")
 }
 
-func missionInputs(run *gaterun.Run, spec *gaterun.PacketSpec) []missionReadInput {
+func missionInputs(run *gaterun.Run, spec *gaterun.SessionSpec) []missionReadInput {
 	refs := make(map[string]missionReadInput)
 	for _, ref := range run.Refs {
 		refs[ref.Ref] = missionReadInput{Ref: ref.Ref, Resolved: ref.Resolved}
@@ -385,44 +552,34 @@ func failureLineFor(gate string) string {
 	switch gate {
 	case gaterun.GateValidate:
 		return "Validation could not complete — <reason>"
-	case gaterun.GateVerify:
-		return "Verification could not complete — <reason>"
 	default:
-		return "Review could not complete — <reason>"
+		return "Verification could not complete — <reason>"
 	}
 }
 
 func missionTextFor(kind string) string {
 	switch kind {
-	case gaterun.PacketKindItem:
-		return "Detect whether the acceptance item matches the implementation; report its type and evidence without assigning severity."
-	case gaterun.PacketKindAnalysis:
-		return "Analyze the accepted mismatch, determine its root cause, severity, and repair direction."
-	case gaterun.PacketKindReader:
-		return "Read only the main spec's human-readable part and reconstruct the design closed-book: one coherent restatement plus an honest Undetermined list; no question bank, no citations, no verdicts."
-	case gaterun.PacketKindVerifier:
-		return "Reconcile the accepted reconstruction against the human-readable part and the formal carrier (acceptance item set and protocol appendices): classify every claim, map every carrier item and §9 must-close decision, and judge the restatement's internal coherence; the verdict is composed mechanically from the classifications."
-	case gaterun.PacketKindFile:
+	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+		return "Judge each acceptance item against the implementation: report its alignment verdict and evidence, and for a mismatch author the finding with its root cause, severity, and repair direction."
+	case gaterun.SessionKindCode:
+		return "Inspect whole-file public code facts without unit-private rationale."
+	case gaterun.SessionKindArchitecture:
+		return "Assess the whole unit architecture once (Dimension 8)."
+	case gaterun.SessionKindDesign:
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
-	case gaterun.PacketKindCross:
-		return "Synthesize all accepted and carried judgments, dispose every input finding, confirm retained severities, and report effective statuses."
+	case gaterun.SessionKindCross:
+		return "Check only the assigned relationships using current source and accepted/carried judgments. Do not repeat local checks. Dispose existing findings, raise severity conservatively on retain or merge, and report effective statuses. An empty relationship scope means finding disposition only."
 	}
-	return "Judge only the packet's check keys and report evidence for each judgment."
+	return "Judge only the session's check keys and report evidence for each judgment."
 }
 
 func protocolScopeFor(kind string, keys []string) string {
 	switch kind {
-	case gaterun.PacketKindItem:
-		return "Steps 1-6 for acceptance item " + strings.Join(keys, ", ")
-	case gaterun.PacketKindAnalysis:
-		return "Step 7 for acceptance item " + strings.Join(keys, ", ")
-	case gaterun.PacketKindReader:
-		return "Check 10 reader probe (closed-book reconstruction)"
-	case gaterun.PacketKindVerifier:
-		return "Check 10 verifier protocol (reconciliation)"
-	case gaterun.PacketKindFile:
-		return "file review for " + strings.Join(keys, ", ")
-	case gaterun.PacketKindCross:
+	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+		return "Steps 1-7 for acceptance item(s) " + strings.Join(keys, ", ")
+	case gaterun.SessionKindDesign:
+		return "quality assessment of " + strings.Join(keys, ", ")
+	case gaterun.SessionKindCross:
 		return "cross synthesis"
 	default:
 		return "checks " + strings.Join(keys, ", ")

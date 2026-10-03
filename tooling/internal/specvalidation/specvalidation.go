@@ -9,7 +9,7 @@
 //  6. Body layer-path check (candidate-layer spec paths)
 //  7. Dependency cycle check (unit_refs graph has no cycles through the unit)
 //  8. Region locatability (section and acceptance item regions are splittable and locatable)
-//  9. Surface ownership (a code file belongs to at most one unit's declared surface)
+//  9. Surface associations (declarations resolve; file sharing is allowed)
 package specvalidation
 
 import (
@@ -62,7 +62,7 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkDependencyCycles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkRegionLocatability(repoRoot, unitName))
-	r.Checks = append(r.Checks, checkSurfaceOwnership(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkSurfaceAssociations(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {

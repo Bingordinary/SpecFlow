@@ -174,7 +174,8 @@ func contains(list []string, value string) bool {
 func TestOpenDerivesUnitScope(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "demo", "internal/demo", []string{"docs/design.md"})
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "---\nstatus: active\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "---\nunit: demo\nstatus: active\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md", "---\nunit: demo_extra\n---\n# Peer flows\n")
 	commitAll(t, repoRoot, "fixture")
 
 	result := mustOpen(t, repoRoot, OpenOptions{
@@ -201,6 +202,11 @@ func TestOpenDerivesUnitScope(t *testing.T) {
 	}
 	if entry := allowedEntry(t, op, "docs/specs/units/candidate/appendix/unit_demo_flows.md"); entry.Source != SourceSpecFile {
 		t.Fatalf("appendix source = %q, want %q", entry.Source, SourceSpecFile)
+	}
+	for _, entry := range op.AllowedPaths {
+		if entry.Path == "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md" {
+			t.Fatal("operation granted write scope to a prefix-sharing peer appendix")
+		}
 	}
 	if entry := allowedEntry(t, op, "internal/demo"); entry.Source != SourceImplSurface {
 		t.Fatalf("surface source = %q, want %q", entry.Source, SourceImplSurface)
@@ -233,7 +239,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingScope(t *testing.T) {
 func TestOpenStableOnlyTargetScopesCandidateForkPaths(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/stable/unit_demo.md", unitSpecContent("demo", "internal/demo", nil))
-	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nstatus: active\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nunit: demo\nstatus: active\n---\n# Flows\n")
 	commitAll(t, repoRoot, "fixture")
 
 	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation

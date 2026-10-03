@@ -22,8 +22,25 @@ func assertGateStatus(t *testing.T, output, gate, status string) {
 }
 
 type cacheFileSpec struct {
-	path string
-	hash string
+	path   string
+	hash   string
+	checks []cacheCheckSpec
+}
+
+// cacheCheckSpec is one per-check evidence entry of a hand-written test cache:
+// the check key and its lens tag (empty for validate caches).
+type cacheCheckSpec struct {
+	key  string
+	lens string
+}
+
+// indentBlock indents every non-empty line of a rendered cache block by the
+// given prefix (used to nest a whole-file deps block under a checks entry).
+func indentBlock(block, prefix string) string {
+	if block == "" {
+		return ""
+	}
+	return prefix + strings.ReplaceAll(strings.TrimRight(block, "\n"), "\n", "\n"+prefix) + "\n"
 }
 
 func writeUnitSpec(t *testing.T, repoRoot, name string) string {
@@ -40,22 +57,20 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 	return path
 }
 
-func writeRetiringUnitSpec(t *testing.T, repoRoot, name string) string {
-	t.Helper()
-	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nstatus: retired\nunit_refs: none\nrule_refs: none\n---\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter string, files []cacheFileSpec) {
 	t.Helper()
+	if command == "verify" {
+		target := "candidate"
+		if strings.Contains(extraFrontmatter, "target: stable") {
+			target = "stable"
+		}
+		spec := "docs/specs/units/" + target + "/unit_" + name + ".md"
+		data, _ := os.ReadFile(filepath.Join(repoRoot, spec))
+		if strings.Contains(string(data), "acceptance_item_set:") {
+			currentVerifyFixture(t, repoRoot, name, target, extraFrontmatter)
+			return
+		}
+	}
 	dir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", name)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
@@ -73,7 +88,18 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	sb.WriteString("files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:%s\n", f.path, f.hash)
-		sb.WriteString(cacheDepsAt(t, repoRoot, f.path))
+		deps := cacheDepsAt(t, repoRoot, f.path)
+		if len(f.checks) > 0 {
+			sb.WriteString("    checks:\n")
+			for _, c := range f.checks {
+				fmt.Fprintf(&sb, "      - check: %q\n", c.key)
+				if c.lens != "" {
+					fmt.Fprintf(&sb, "        lens: %s\n", c.lens)
+				}
+				sb.WriteString(indentBlock(deps, "    "))
+			}
+		}
+		sb.WriteString(deps)
 	}
 	sb.WriteString("---\nok\n")
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {
@@ -159,19 +185,44 @@ func appendToFile(t *testing.T, path, content string) {
 	}
 }
 
+// writeMergedVerifyFixture writes a unit spec with one acceptance item and a
+// code file, and returns the merged verify cache entries the gate requires:
+// the alignment check on the spec and the quality check on the code file, each
+// declaring the whole file. The spec's declared implementation_surface (src)
+// expands to the code file, so the derived expected coverage is exactly these
+// two keys.
+func writeMergedVerifyFixture(t *testing.T, repoRoot, name string) (specPath, codePath string, files []cacheFileSpec) {
+	t.Helper()
+	specPath = grWriteSpecItems(t, repoRoot, name, "none", "none", []string{name + ".core"})
+	codePath = grWriteFile(t, repoRoot, "src/"+name+".go", "package "+name+"\n")
+	files = []cacheFileSpec{
+		{
+			path:   "docs/specs/units/candidate/unit_" + name + ".md",
+			hash:   computeHash(specPath),
+			checks: []cacheCheckSpec{{key: name + ".core", lens: "alignment"}},
+		},
+		{
+			path:   "src/" + name + ".go",
+			hash:   computeHash(codePath),
+			checks: []cacheCheckSpec{{key: "src/" + name + ".go", lens: "quality"}},
+		},
+	}
+	return specPath, codePath, files
+}
+
 // TestFreshAllMixed verifies the summary mode reports every candidate with
 // its per-gate status, excludes stable-only units, and counts readiness.
 func TestFreshAllMixed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
-	// user_auth: all gates fresh
-	specA := writeUnitSpec(t, repoRoot, "user_auth")
+	// user_auth: all gates fresh. The verify cache carries the per-check
+	// evidence the merged gate requires (alignment + quality keys).
+	specA, _, verifyFilesA := writeMergedVerifyFixture(t, repoRoot, "user_auth")
 	filesA := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specA)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", filesA)
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", filesA)
-	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: false\np0_count: 0\np1_count: 0\n", filesA)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", verifyFilesA)
 
-	// payment: validate only (verify/review missing)
+	// payment: validate only (verify missing)
 	specB := writeUnitSpec(t, repoRoot, "payment")
 	filesB := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_payment.md", hash: computeHash(specB)}}
 	writeUnitCache(t, repoRoot, "payment", "validate", "", filesB)
@@ -205,8 +256,8 @@ func TestFreshAllMixed(t *testing.T) {
 	if !strings.Contains(output, "user_auth") || !strings.Contains(output, "validate: FRESH") {
 		t.Fatalf("expected FRESH validate for user_auth:\n%s", output)
 	}
-	if !strings.Contains(output, "review: MISSING") {
-		t.Fatalf("expected MISSING review for payment:\n%s", output)
+	if !strings.Contains(output, "verify: MISSING") {
+		t.Fatalf("expected MISSING verify for payment:\n%s", output)
 	}
 	if !strings.Contains(output, "RULES (1):") || !strings.Contains(output, "b_rule_auth") {
 		t.Fatalf("expected rules section:\n%s", output)
@@ -229,11 +280,10 @@ func TestFreshAllNoCandidates(t *testing.T) {
 
 func TestFreshUnitDetailAllFresh(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", files)
-	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: false\np0_count: 0\np1_count: 0\n", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", verifyFiles)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -242,7 +292,7 @@ func TestFreshUnitDetailAllFresh(t *testing.T) {
 	if !strings.Contains(output, "FRESHNESS REPORT — user_auth (unit)") {
 		t.Fatalf("expected report header, got:\n%s", output)
 	}
-	for _, gate := range []string{"validate", "verify", "review"} {
+	for _, gate := range []string{"validate", "verify"} {
 		assertGateStatus(t, output, gate, "FRESH")
 	}
 	if !strings.Contains(output, "appendix  OK") {
@@ -258,13 +308,23 @@ func TestFreshUnitDetailAllFresh(t *testing.T) {
 
 func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", verifyFiles)
 	// Deliberately stale verify cache: the spec changes after the cache is written,
 	// so the declared dependency chunk is gone.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "Prose.", "Prose, edited.", 1)
+	if edited == string(data) {
+		t.Fatal("fixture assumption broken: Description edit did not apply")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -276,6 +336,112 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	}
 	if !strings.Contains(output, "READY FOR PROMOTE: no") {
 		t.Fatalf("expected ready no, got:\n%s", output)
+	}
+}
+
+// TestFreshUnitVerifySurfacesStaleLens pins D10: the fresh report names which
+// lens of the merged verify cache is stale. A spec-only change stales the
+// alignment lens while quality stays fresh; a code-only change stales both.
+func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
+	setup := func(t *testing.T) (repoRoot, specPath, codePath string) {
+		t.Helper()
+		repoRoot = createCLITestRepo(t)
+		grEnableMissionLayout(t, repoRoot)
+		specPath = grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
+		codePath = grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Core() {}\n")
+		runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+		// Omitting the code scope cannot omit its required alignment evidence.
+		alignmentReport := grVerifyItemBody("auth.core", "ALIGNED", "src/auth.go:1") +
+			fmt.Sprintf("auth.core: %s: acceptance_item:auth.core\n", specPath)
+		grSubmitOK(t, repoRoot, runID, "auth.core", alignmentReport)
+		grAutoSubmitQuality(t, repoRoot, runID)
+		grFinalizeOK(t, repoRoot, runID)
+		return repoRoot, specPath, codePath
+	}
+
+	t.Run("spec-only change stales alignment", func(t *testing.T) {
+		repoRoot, specPath, _ := setup(t)
+		out, err := freshRun(t, repoRoot, "--unit", "auth")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertGateStatus(t, out, "verify", "FRESH")
+
+		data, err := os.ReadFile(specPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		edited := strings.Replace(string(data), "description: Behavior.", "description: Behavior, edited.", 1)
+		if edited == string(data) {
+			t.Fatal("fixture assumption broken: item description not found")
+		}
+		if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		out, err = freshRun(t, repoRoot, "--unit", "auth")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertGateStatus(t, out, "verify", "STALE")
+		if !strings.Contains(out, "alignment stale") || !strings.Contains(out, "quality fresh") {
+			t.Fatalf("expected alignment stale / quality fresh, got:\n%s", out)
+		}
+	})
+
+	t.Run("code-only change stales both lenses", func(t *testing.T) {
+		repoRoot, _, codePath := setup(t)
+		appendToFile(t, codePath, "\n// changed\n")
+
+		out, err := freshRun(t, repoRoot, "--unit", "auth")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertGateStatus(t, out, "verify", "STALE")
+		if !strings.Contains(out, "quality stale") || !strings.Contains(out, "alignment stale") {
+			t.Fatalf("expected quality stale / alignment stale, got:\n%s", out)
+		}
+	})
+}
+
+// TestFreshUnitVerifyFallbackRequiresBothLenses pins the guard hole: when the
+// verify coverage cannot be derived but a per-check cache exists, fresh must
+// still require both lens sections instead of silently accepting the cache.
+func TestFreshUnitVerifyFallbackRequiresBothLenses(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	// No acceptance items: verify coverage derivation fails, so fresh takes
+	// the fallback path.
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_noitems.md")
+	if err := os.MkdirAll(filepath.Dir(specPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(specPath, []byte("---\nid: noitems\nunit_refs: none\nrule_refs: none\n---\n\n# noitems\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	codePath := grWriteFile(t, repoRoot, "src/code.go", "package code\n")
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/noitems")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cache := "---\ncommand: verify\nunit: noitems\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_noitems.md\n    hash: sha256:" + computeHash(specPath) + "\n" +
+		cacheDepsAt(t, repoRoot, "docs/specs/units/candidate/unit_noitems.md") +
+		"  - path: src/code.go\n    hash: sha256:" + computeHash(codePath) + "\n" +
+		"    checks:\n      - check: \"src/code.go\"\n        lens: quality\n" +
+		cacheDepsAt(t, repoRoot, "src/code.go") +
+		"---\nok\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := freshRun(t, repoRoot, "--unit", "noitems")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGateStatus(t, out, "verify", "STALE")
+	if !strings.Contains(out, "cannot derive required verify checks") {
+		t.Fatalf("expected the missing alignment lens named, got:\n%s", out)
 	}
 }
 
@@ -309,7 +475,7 @@ func TestFreshUnitDetailDeltaScope(t *testing.T) {
 		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
 		"---\nok\n" +
 		`<!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":2,"logical_status":{"1":"pass","5":"pass"},"findings":[],"synthesis_digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}
+{"schema_version":3,"logical_status":{"1":"pass","5":"pass"},"findings":[],"synthesis_digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}
 GATE_JUDGMENTS_END -->
 `
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
@@ -557,7 +723,7 @@ func TestFreshUnitDetailDeltaScopeUnionViolation(t *testing.T) {
 	}
 }
 
-func TestFreshUnitDetailMissingReview(t *testing.T) {
+func TestFreshUnitDetailMissingVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
@@ -567,74 +733,22 @@ func TestFreshUnitDetailMissingReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh failed: %v", err)
 	}
-	assertGateStatus(t, output, "review", "MISSING")
-	if !strings.Contains(output, "Review not completed") {
-		t.Fatalf("expected review guidance, got:\n%s", output)
-	}
-}
-
-func TestFreshUnitDetailBlockedReview(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
-	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
-	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "review", "BLOCKED")
-	if !strings.Contains(output, "P0") {
-		t.Fatalf("expected P0 finding detail, got:\n%s", output)
-	}
-}
-
-// TestFreshUnitDetailStaleBlockedReview verifies that a review cache which
-// declares blocking findings but is stale (files changed since the run) is
-// reported STALE, not BLOCKED: the gate needs a re-run, matching promote's
-// own stale reason for the same cache.
-func TestFreshUnitDetailStaleBlockedReview(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
-	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
-	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "review", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
-	// The spec changes after the review cache is written: stale, not BLOCKED.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "review", "STALE")
-	if !strings.Contains(output, "stale") {
-		t.Fatalf("expected stale reason, got:\n%s", output)
-	}
-	if strings.Contains(output, "BLOCKED") {
-		t.Fatalf("stale+blocking review cache must not be BLOCKED:\n%s", output)
-	}
-	// The stale failure record is previewed through the repair derivation
-	// (the baseline carries no per-check status map here): the plan degrades
-	// to the full packet set instead of refusing with "run the full command".
-	if strings.Contains(output, "plan: unavailable") {
-		t.Fatalf("stale review failure record must preview the repair plan:\n%s", output)
-	}
-	if !strings.Contains(output, "plan: full packet set") {
-		t.Fatalf("expected the repair degradation in the delta scope section:\n%s", output)
+	assertGateStatus(t, output, "verify", "MISSING")
+	if !strings.Contains(output, "verify cache not found") {
+		t.Fatalf("expected verify guidance, got:\n%s", output)
 	}
 }
 
 // TestFreshUnitDetailBlockedVerify verifies that a verify failure record (a
 // delta re-run's fail cache, result: fail + blocking: true) is reported
-// BLOCKED — the failure-recovery design gives validate/verify caches the same
-// blocking vocabulary review has.
+// BLOCKED — validate and verify caches share the failure-recovery blocking
+// vocabulary.
 func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", verifyFiles)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -650,7 +764,7 @@ func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 }
 
 // TestFreshUnitDetailBlockedValidate verifies that a validate failure record
-// is reported BLOCKED like the verify and review records.
+// is reported BLOCKED like the verify records.
 func TestFreshUnitDetailBlockedValidate(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
@@ -666,16 +780,26 @@ func TestFreshUnitDetailBlockedValidate(t *testing.T) {
 
 // TestFreshUnitDetailStaleBlockedVerify verifies that a verify failure record
 // whose files changed since the run is reported STALE, not BLOCKED — the
-// gate needs a re-run, matching promote's own stale reason and the review
-// gate's stale-over-blocking precedence.
+// gate needs a re-run, matching promote's own stale reason and the
+// stale-over-blocking precedence.
 func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", verifyFiles)
 	// The spec changes after the fail record is written: stale, not BLOCKED.
-	os.WriteFile(specPath, []byte("---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644)
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "Prose.", "Prose, edited.", 1)
+	if edited == string(data) {
+		t.Fatal("fixture assumption broken: Description edit did not apply")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
 	if err != nil {
@@ -691,7 +815,7 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	if strings.Contains(output, "plan: unavailable") {
 		t.Fatalf("stale verify failure record must preview the repair plan:\n%s", output)
 	}
-	if !strings.Contains(output, "plan: full packet set") {
+	if !strings.Contains(output, "plan: full coverage set") {
 		t.Fatalf("expected the repair degradation in the delta scope section:\n%s", output)
 	}
 }
@@ -712,7 +836,7 @@ func TestFreshRuleDetail(t *testing.T) {
 		t.Fatalf("expected rule report header, got:\n%s", output)
 	}
 	assertGateStatus(t, output, "validate", "FRESH")
-	if !strings.Contains(output, "verify and review do not apply to rules") {
+	if !strings.Contains(output, "verify does not apply to rules") {
 		t.Fatalf("expected rule gate note, got:\n%s", output)
 	}
 	if !strings.Contains(output, "READY FOR PROMOTE: yes") {
@@ -720,55 +844,10 @@ func TestFreshRuleDetail(t *testing.T) {
 	}
 }
 
-func TestFreshRetiringUnit(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := writeRetiringUnitSpec(t, repoRoot, "user_auth")
-	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
-	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	if !strings.Contains(output, "retiring") {
-		t.Fatalf("expected retiring note, got:\n%s", output)
-	}
-	if !strings.Contains(output, "READY FOR PROMOTE: yes") {
-		t.Fatalf("expected ready yes, got:\n%s", output)
-	}
-	if strings.Contains(output, "\nverify") {
-		t.Fatalf("retiring unit must not report verify gate:\n%s", output)
-	}
-}
-
-// TestFreshRetiringUnitStaleValidateShowsDeltaScope verifies the retirement
-// path keeps the documented DELTA SCOPE promise for its STALE validate gate:
-// verify/review are skipped for a retiring unit, but the validate gate that is
-// still shown must carry its mechanism-derived recovery scope.
-func TestFreshRetiringUnitStaleValidateShowsDeltaScope(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := writeRetiringUnitSpec(t, repoRoot, "user_auth")
-	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
-	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
-	appendToFile(t, specPath, "\n<!-- changed -->\n")
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "DELTA SCOPE (validate):") {
-		t.Fatalf("expected the delta scope section for the stale validate gate, got:\n%s", output)
-	}
-	if strings.Contains(output, "DELTA SCOPE (verify)") || strings.Contains(output, "DELTA SCOPE (review)") {
-		t.Fatalf("retiring units skip verify/review, got:\n%s", output)
-	}
-}
-
 // TestFreshUnitDetailDeltaScopeDegradesForMetadataStale verifies that a STALE
 // gate whose staleness the declared per-check evidence cannot attribute (here:
 // the cache declares every check but no dependency chunks) is reported as the
-// conservative full-packet degradation instead of the "cache is fresh"
+// conservative full-session degradation instead of the "cache is fresh"
 // refusal — the report uses the gate's own freshness classification.
 func TestFreshUnitDetailDeltaScopeDegradesForMetadataStale(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
@@ -797,7 +876,7 @@ func TestFreshUnitDetailDeltaScopeDegradesForMetadataStale(t *testing.T) {
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "plan: full packet set — the baseline cache is stale for a cause") {
+	if !strings.Contains(output, "plan: full coverage set — the baseline cache is stale for a cause") {
 		t.Fatalf("expected the conservative degradation, got:\n%s", output)
 	}
 	if strings.Contains(output, "cache is fresh") {
@@ -825,7 +904,8 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n## Description\nStable fixture.\n\n## Testability / Acceptance Criteria\nacceptance_item_set:\n  - id: " + name + ".core\n    implementation_surface: src/" + name + ".go\n"
+	grWriteFile(t, repoRoot, "src/"+name+".go", "package fixture\n")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1013,7 +1093,18 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	// column while the drift column stays CHANGED.
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
 	writeUnitCache(t, repoRoot, "settled", "verify", "target: stable\n",
-		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+		[]cacheFileSpec{
+			{
+				path:   "docs/specs/units/stable/unit_settled.md",
+				hash:   specHash,
+				checks: []cacheCheckSpec{{key: "settled.core", lens: "alignment"}},
+			},
+			{
+				path:   "src/a.go",
+				hash:   computeHash(filepath.Join(srcDir, "a.go")),
+				checks: []cacheCheckSpec{{key: "src/a.go", lens: "quality"}},
+			},
+		})
 
 	out, err := freshRun(t, repoRoot, "--scope", "stable")
 	if err != nil {
@@ -1066,70 +1157,33 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	}
 }
 
-// TestFreshStableScope_Confirmations verifies the stable summary shows all
-// three confirmation states (validate/verify/review) plus the drift column
+// TestFreshStableScope_Confirmations verifies the stable summary shows both
+// confirmation states (validate/verify) plus the drift column
 // when the stable-layer caches exist.
 func TestFreshStableScope_Confirmations(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
 	specHash := computeHash(specPath)
 
-	// Three stable-layer confirmation caches (validate/verify/review) written
-	// by the corresponding @stable runs. review caches require the blocking
-	// field.
+	// Two stable-layer confirmation caches (validate/verify) written by the
+	// corresponding @stable runs.
 	writeUnitCache(t, repoRoot, "settled", "validate", "target: stable\n",
 		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
 	writeUnitCache(t, repoRoot, "settled", "verify", "target: stable\n",
-		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
-	writeUnitCache(t, repoRoot, "settled", "review", "target: stable\nblocking: false\n",
-		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+		[]cacheFileSpec{{
+			path:   "docs/specs/units/stable/unit_settled.md",
+			hash:   specHash,
+			checks: []cacheCheckSpec{{key: "settled.core", lens: "alignment"}},
+		}})
 
 	out, err := freshRun(t, repoRoot, "--scope", "stable")
 	if err != nil {
 		t.Fatalf("fresh --scope stable: %v", err)
 	}
-	for _, want := range []string{"validate: FRESH", "verify: FRESH", "review: FRESH", "drift: MISSING"} {
+	for _, want := range []string{"validate: FRESH", "verify: FRESH", "drift: MISSING"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in stable summary, got:\n%s", want, out)
 		}
-	}
-}
-
-// TestFreshStableScope_ReviewSeparatesLayers verifies the stable summary's
-// review column cannot be satisfied by a candidate review cache. During an
-// active candidate round the shared review cache path holds the candidate
-// cache (target: candidate); only a cache recorded with `target: stable` by an
-// @stable review run proves the stable quality confirmation.
-func TestFreshStableScope_ReviewSeparatesLayers(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := writeStableUnitSpec(t, repoRoot, "settled")
-	specHash := computeHash(specPath)
-
-	// An active candidate round exists (both files present) and the last
-	// review run was a candidate review — its cache carries target: candidate.
-	writeUnitSpec(t, repoRoot, "settled")
-	writeUnitCache(t, repoRoot, "settled", "review", "target: candidate\nblocking: false\n",
-		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
-
-	out, err := freshRun(t, repoRoot, "--scope", "stable")
-	if err != nil {
-		t.Fatalf("fresh --scope stable: %v", err)
-	}
-	if strings.Contains(out, "review: FRESH") {
-		t.Fatalf("candidate review cache must not satisfy the stable review confirmation, got:\n%s", out)
-	}
-
-	// A stable review run overwrites the cache with target: stable -> the
-	// stable confirmation state shows FRESH.
-	writeUnitCache(t, repoRoot, "settled", "review", "target: stable\nblocking: false\n",
-		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
-
-	out, err = freshRun(t, repoRoot, "--scope", "stable")
-	if err != nil {
-		t.Fatalf("fresh --scope stable: %v", err)
-	}
-	if !strings.Contains(out, "review: FRESH") {
-		t.Fatalf("expected review FRESH after stable review run, got:\n%s", out)
 	}
 }
 
@@ -1186,7 +1240,6 @@ func TestFreshStableDetailAdvice(t *testing.T) {
 	for _, want := range []string{
 		"-> required: validate@settled (full run - no delta baseline)",
 		"-> required: verify@settled (full run - no delta baseline)",
-		"-> required: review@settled (full run - no delta baseline)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected advice %q, got:\n%s", want, out)
@@ -1233,7 +1286,7 @@ func TestFreshCandidateDetailAdvice(t *testing.T) {
 	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
 		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
 
-	// Fresh validate, but verify/review never ran -> MISSING advice.
+	// Fresh validate, but verify never ran -> MISSING advice.
 	out, err := freshRun(t, repoRoot, "--unit", "iter")
 	if err != nil {
 		t.Fatalf("fresh --unit iter: %v", err)
@@ -1425,58 +1478,6 @@ func depsBlock(deps []string) string {
 	return b.String()
 }
 
-func TestFreshEmbedsUnboundRulesStableScope(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// An unbound rule with no retention declaration must appear in the
-	// stable view's removal-candidate list.
-	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
-	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
-		t.Fatal(err)
-	}
-	// A retained rule must not appear.
-	retained := "---\nrule_id: b_rule_kept\nrule_scope: bound\nrule_version: 0.1.0\nunbound_retention: intentional\n---\n\n# Kept\n"
-	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_kept.md"), []byte(retained), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := freshRun(t, repoRoot, "--scope", "stable")
-	if err != nil {
-		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
-	}
-	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
-		t.Fatalf("expected removal-candidate list, got:\n%s", output)
-	}
-	if !strings.Contains(output, "b_rule_orphan") {
-		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
-	}
-	listIdx := strings.Index(output, "RULES WITHOUT CONSUMERS")
-	if strings.Contains(output[listIdx:], "b_rule_kept") {
-		t.Fatalf("retained rule must not be listed, got:\n%s", output)
-	}
-}
-
-func TestFreshEmbedsUnboundRulesCandidateScope(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	writeRuleSpec(t, repoRoot, "b_rule_orphan")
-
-	output, err := freshRun(t, repoRoot)
-	if err != nil {
-		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
-	}
-	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
-		t.Fatalf("expected removal-candidate list in the candidate view, got:\n%s", output)
-	}
-	if !strings.Contains(output, "b_rule_orphan") {
-		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
-	}
-}
-
 func TestFreshOmitsConsumedRule(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
@@ -1496,85 +1497,5 @@ func TestFreshOmitsConsumedRule(t *testing.T) {
 	}
 	if strings.Contains(output, "RULES WITHOUT CONSUMERS") {
 		t.Fatalf("consumed rule must not be listed, got:\n%s", output)
-	}
-}
-
-func TestFreshEmbedsUnboundRulesLayerIndependent(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// A stable-only removable rule must appear in the default (candidate)
-	// scope too — the removal-candidate list is layer-independent.
-	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
-	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := freshRun(t, repoRoot)
-	if err != nil {
-		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
-	}
-	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
-		t.Fatalf("expected removal-candidate list in the default candidate view, got:\n%s", output)
-	}
-	if !strings.Contains(output, "b_rule_orphan") {
-		t.Fatalf("expected b_rule_orphan in the list, got:\n%s", output)
-	}
-}
-
-func TestFreshAllScopeListsOnce(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// A rule with files in both layers is a single removal candidate — the
-	// all-scope report must list it exactly once, not once per layer.
-	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	rule := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
-	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(rule), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeRuleSpec(t, repoRoot, "b_rule_orphan")
-
-	output, err := freshRun(t, repoRoot, "--scope", "all")
-	if err != nil {
-		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
-	}
-	if count := strings.Count(output, "RULES WITHOUT CONSUMERS"); count != 1 {
-		t.Fatalf("expected the list exactly once in the all-scope report, got %d:\n%s", count, output)
-	}
-	listIdx := strings.Index(output, "RULES WITHOUT CONSUMERS")
-	if count := strings.Count(output[listIdx:], "b_rule_orphan"); count != 1 {
-		t.Fatalf("expected b_rule_orphan exactly once in the list, got %d:\n%s", count, output)
-	}
-}
-
-func TestFreshEmptyCandidateStillListsRules(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// No candidate files at all — the default report still ends with the
-	// removal-candidate list instead of hiding it behind the empty layer.
-	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
-	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	orphan := "---\nrule_id: b_rule_orphan\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Orphan\n"
-	if err := os.WriteFile(filepath.Join(stableRuleDir, "b_rule_orphan.md"), []byte(orphan), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := freshRun(t, repoRoot)
-	if err != nil {
-		t.Fatalf("fresh failed: %v\noutput=%s", err, output)
-	}
-	if !strings.Contains(output, "No active candidates found.") {
-		t.Fatalf("expected the empty-candidate notice, got:\n%s", output)
-	}
-	if !strings.Contains(output, "RULES WITHOUT CONSUMERS") {
-		t.Fatalf("expected the removal-candidate list despite the empty candidate layer, got:\n%s", output)
 	}
 }

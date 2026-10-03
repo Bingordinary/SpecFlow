@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -19,7 +20,9 @@ func runGateInvalidate(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-invalidate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
-	gatePtr := fs.String("gate", "", "gate name: validate | verify | review")
+	judgmentPtr := fs.String("judgment", "", "immutable judgment id to invalidate")
+	reasonPtr := fs.String("reason", "", "evidence-backed invalidation reason")
+	gatePtr := fs.String("gate", "", "gate name: validate | verify")
 	unitPtr := fs.String("unit", "", "unit name")
 	ruleIDPtr := fs.String("rule", "", "rule id")
 	targetPtr := fs.String("target", "", "layer checked: candidate | stable")
@@ -29,6 +32,18 @@ func runGateInvalidate(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
+	if id := strings.TrimSpace(*judgmentPtr); id != "" {
+		if *gatePtr != "" || *unitPtr != "" || *ruleIDPtr != "" || len(checks) > 0 {
+			return errors.New("--judgment cannot be combined with unit/check invalidation")
+		}
+		return gaterun.WithMutation(mustAbs(*repoRootPtr), func() error {
+			if err := judgments.Invalidate(mustAbs(*repoRootPtr), id, *reasonPtr); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "Judgment invalidated: %s; all consumers must recheck affected judgments.\n", id)
+			return nil
+		})
+	}
 	gate := strings.TrimSpace(*gatePtr)
 	unitName := strings.TrimSpace(*unitPtr)
 	ruleID := strings.TrimSpace(*ruleIDPtr)
@@ -71,21 +86,24 @@ func runGateInvalidate(args []string, stdout, stderr io.Writer) error {
 	if len(result.InvalidatedRunIDs) > 0 {
 		fmt.Fprintf(stdout, "Invalidated open gate run(s): %s\n", strings.Join(result.InvalidatedRunIDs, ", "))
 	}
+	if len(result.InvalidatedJudgmentIDs) > 0 {
+		fmt.Fprintf(stdout, "Invalidated judgment(s): %s; consumers must recheck affected judgments.\n", strings.Join(result.InvalidatedJudgmentIDs, ", "))
+	}
 	fmt.Fprintln(stdout, "Next: resolve the findings, then plan a new full or repair run; repair reads persisted invalidations automatically.")
 	return nil
 }
 
 func validateGateInvalidateTarget(gate, unitName, ruleID, target string) error {
 	switch gate {
-	case gaterun.GateValidate, gaterun.GateVerify, gaterun.GateReview:
+	case gaterun.GateValidate, gaterun.GateVerify:
 	default:
-		return fmt.Errorf("invalid --gate %q: must be validate, verify, or review", gate)
+		return fmt.Errorf("invalid --gate %q: must be validate or verify", gate)
 	}
 	if (unitName == "") == (ruleID == "") {
 		return errors.New("exactly one of --unit or --rule is required")
 	}
 	if ruleID != "" && gate != gaterun.GateValidate {
-		return fmt.Errorf("rule targets support the validate gate only (rule verify and review have been removed) — got %q", gate)
+		return fmt.Errorf("rule targets support the validate gate only (rule verify has been removed) — got %q", gate)
 	}
 	if target != gaterun.TargetCandidate && target != gaterun.TargetStable {
 		return fmt.Errorf("invalid --target %q: must be candidate or stable", target)
@@ -95,9 +113,10 @@ func validateGateInvalidateTarget(gate, unitName, ruleID, target string) error {
 
 func writeGateInvalidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-invalidate --gate validate|verify|review (--unit NAME | --rule ID) --target candidate|stable --check CHECK_KEY [--check CHECK_KEY]... [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-invalidate --gate validate|verify (--unit NAME | --rule ID) --target candidate|stable --check CHECK_KEY [--check CHECK_KEY]... [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Records a targeted P0/P1 without publishing a targeted result cache.")
 	fmt.Fprintln(w, "Deletes a pass cache, or persists the contradicted key(s) on a failure")
-	fmt.Fprintln(w, "record, and invalidates any matching open gate run.")
+	fmt.Fprintln(w, "record, invalidates contradicted verify judgments and their consumers,")
+	fmt.Fprintln(w, "and invalidates any matching open gate run.")
 }

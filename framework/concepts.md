@@ -4,15 +4,15 @@ SpecFlow records accepted design, behavior, boundaries, and shared rules. Specs 
 
 Normal user-triggered paths:
 
-- unit: **fork/create → edit → validate → verify → review → promote**
+- unit: **fork/create → edit → validate → verify → promote**
 - rule: **fork/create → edit → validate → promote**
-- retiring unit: **edit retirement → validate → promote**
+- removal: **agent decision → structured-reference check → transactional deletion**
 
 ## State Model
 
 **File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms.
 
-Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote except confirmed `remove@{rule}` deletion and exact `spec_flow_update` migration. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
+Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote except authorized spec removal (`framework/removal_workflow.md`) and exact `spec_flow_update` migration. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
 
 Code is observed behavior, candidate is proposed intent, stable is prior agreement. None wins automatically. During `verify`, present divergence and let the user decide.
 
@@ -36,24 +36,20 @@ Do not gate before editing. Read, then write. For "only change X" / "do not touc
 
 ## Trigger Routing
 
-Resolve mode first. Full/delta/repair: `gate-plan --format json` → `gate-status --format json` → send ready `gate-packet --format prompt` verbatim to an independent reviewer → `gate-submit` → `gate-finalize` only on status `finalize`. Before verify/reverify, use `specflowctl next --unit <name>`; find every item's related test, caller, callee, and dependency paths only and pass each as `--input` (declared files included). Missing verify read ref: do not submit a partial report; add the path, re-plan with all inputs, and re-execute. Do not assemble this sequence from gate/cache docs. Targeted: main session, no plan/cache. Read the target row.
+Resolve mode first. Full/delta/repair: `gate-plan --format json` → batch uncovered keys by kind and lens → `gate-mission --keys ... --format prompt` for an independent reviewer per batch → `gate-submit` → `gate-mission --final` when findings or relationships exist → `gate-finalize` only on status `finalize`. Reuse accepted public tasks; wait for assigned ones. Before verify/reverify, use `specflowctl next --unit <name>`; discover each item's test, caller, callee and dependency paths and pass them as `--input` (declared files included). Missing read ref: do not submit; add the path, re-plan with all inputs, and re-execute. Targeted: main session, no plan/cache. Read the target row. Unit verify follows `framework/shared_judgments.md` for public facts, unit design, architecture, acceptance and stable protection.
 
 | Trigger | First action and required packages |
 |---|---|
 | `validate@{target}` | Resolve `framework/commands.md`; full run. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | Resolve with `framework/commands.md`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `verify@{unit}` | Resolve candidate/stable; discover paths, then full run with `--input`. Protocol: `framework/unit_verify_checklist.md`. |
+| `verify@{unit}` | Resolve candidate/stable; discover paths, then full run with `--input`. Protocol: `framework/unit_verify_checklist.md` (alignment + quality lenses). |
 | `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md` and `framework/unit_verify_checklist.md`. |
 | `verify@{rule}` | Stop: rule verify was removed; report `validate@{rule}`. Read `framework/verification_scope.md`. |
-| `review@{unit}` | Resolve candidate/stable; full run. Protocol: `framework/spec_review_checklist.md`. |
-| `review@{unit}:{keyword}` | Run targeted file review directly; read `framework/verification_scope.md` and `framework/spec_review_checklist.md`. |
 | `revalidate@{target}` | Resolve `framework/commands.md`; delta/repair. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `reverify@{unit}` | Discover paths for all items, including carried; delta/repair with `--input`. Protocol: `framework/unit_verify_checklist.md`. |
-| `rereview@{unit}` | Delta/repair. Protocol: `framework/spec_review_checklist.md`. |
 | `promote@{target}` | Resolve with `framework/commands.md`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
-| `detect@{rule}` / `detect@all` | Run read-only `specflowctl detect`; use `framework/spec_writing_guide.md` §6.5. |
-| `remove@{rule}` | Confirm intent; require no consumers/retention; use `framework/spec_writing_guide.md` §6.5. |
+| `remove@{unit}` / `remove@{rule}` / `remove@{unit}:appendix:{filename.md}` | Read `framework/removal_workflow.md`; decide the basis within authorized scope, resolve exact targets, then run `specflowctl remove`. |
 | `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |
 | `spec_flow_update` | Follow `framework/operations/update.md`; only its migration step may edit stable structure. |
 | `spec_flow_version` | Follow `framework/operations/version.md`. |
@@ -68,9 +64,9 @@ Project entry instructions, not this router, own meta-governance commands.
 
 **1. Read specs before discussing/changing a unit or rule.** Read its stable and candidate files and name the quoted layer. If neither exists for a read-only request, say so and use code. If the spec does not cover the topic, say so before new work. Create or update the candidate spec only for requested design changes. Plans declare candidate first or state why spec impact is absent.
 
-**2. Gates are user-triggered; promote checks applicable gates.** Never promote without confirmation. Unit: validate+verify+review. Rule: validate. Retiring unit: validate. Never start/repeat any gate without its trigger. P0/P1 blocks promote (`framework/agent_suggestion_rules.md`, `framework/validation_cache.md`).
+**2. Gates are user-triggered; promote checks applicable gates.** Never promote without confirmation. Unit: validate+verify (the verify gate carries the alignment and quality lenses). Rule: validate. Never start/repeat any gate without its trigger. P0/P1 blocks promote (`framework/agent_suggestion_rules.md`, `framework/validation_cache.md`).
 
-**3. Gates do not edit truth.** `validate`/`verify`/`review` write cache only. Normal stable changes use promote. Routed `remove@{rule}` and `spec_flow_update` own their documented exceptions. `next`, `deps`, `doctor`, and `init` are not gates.
+**3. Gates do not edit truth.** `validate`/`verify` write cache only. Normal stable changes use promote. Authorized spec removal (`framework/removal_workflow.md`) and `spec_flow_update` own their documented exceptions. `next`, `deps`, `doctor`, and `init` are not gates.
 
 **3a. Never resolve divergence yourself.** Follow `framework/unit_verify_checklist.md` Step 7, present the analysis, and wait for the user's decision. Do not silently choose code or spec.
 

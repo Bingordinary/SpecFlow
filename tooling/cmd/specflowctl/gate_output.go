@@ -2,17 +2,25 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
 
-type gatePacketView struct {
-	PacketID      string   `json:"packet_id"`
-	Kind          string   `json:"kind"`
-	CheckKeys     []string `json:"check_keys"`
-	DependsOn     []string `json:"depends_on"`
+type gateCoverageView struct {
+	Key        string   `json:"key"`
+	Lens       string   `json:"lens,omitempty"`
+	Kind       string   `json:"kind"`
+	ReportKeys []string `json:"report_keys"`
+	Source     string   `json:"source,omitempty"`
+	Task       string   `json:"shared_task,omitempty"`
+	CoveredBy  string   `json:"covered_by,omitempty"`
+}
+
+type gateSessionView struct {
+	SessionID     string   `json:"session_id"`
+	Keys          []string `json:"keys"`
 	Status        string   `json:"status"`
 	Attempts      int      `json:"attempts"`
 	LastRejection string   `json:"last_rejection,omitempty"`
@@ -27,10 +35,12 @@ type gateRunView struct {
 	Target           string                    `json:"target"`
 	Mode             string                    `json:"mode"`
 	Status           string                    `json:"status"`
-	Packets          []gatePacketView          `json:"packets"`
-	ReadyPacketIDs   []string                  `json:"ready_packet_ids"`
+	Coverage         []gateCoverageView        `json:"coverage"`
+	Sessions         []gateSessionView         `json:"sessions"`
+	UncoveredKeys    []string                  `json:"uncovered_keys"`
 	NextAction       string                    `json:"next_action"`
 	CarriedKeys      []string                  `json:"carried_keys"`
+	Relationships    []string                  `json:"relationships"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
 	Notices          []string                  `json:"notices"`
 }
@@ -42,61 +52,80 @@ func writeGateJSON(w io.Writer, value any) error {
 }
 
 func gateRunSnapshot(root string, run *gaterun.Run) (gateRunView, error) {
+	states, err := gaterun.LoadSessionStates(root, run)
+	if err != nil {
+		return gateRunView{}, err
+	}
+	covered, uncovered, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		return gateRunView{}, err
+	}
 	view := gateRunView{
-		SchemaVersion: 1, RunID: run.RunID, Gate: run.Gate,
+		SchemaVersion: 2, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target,
 		Mode: run.Mode, Status: run.Status,
-		Packets: []gatePacketView{}, ReadyPacketIDs: []string{},
+		Coverage: []gateCoverageView{}, Sessions: []gateSessionView{}, UncoveredKeys: []string{},
 		CarriedKeys:      append([]string{}, run.CarriedKeys...),
+		Relationships:    append([]string{}, run.Relationships...),
 		DeferredFindings: append([]gaterun.DeferredFinding{}, run.DeferredFindings...),
 		Notices:          append([]string{}, run.Notices...),
 	}
-	states := make(map[string]*gaterun.PacketState, len(run.Packets))
-	for _, packet := range run.Packets {
-		state, err := gaterun.LoadPacketState(root, run, packet.PacketID)
-		if err != nil {
-			return gateRunView{}, err
-		}
-		states[packet.PacketID] = state
-		entry := gatePacketView{
-			PacketID: packet.PacketID, Kind: packet.Kind,
-			CheckKeys: append([]string{}, packet.CheckKeys...),
-			DependsOn: append([]string{}, packet.DependsOn...),
-			Status:    state.Status, Attempts: len(state.Attempts),
+	for _, ck := range run.Coverage {
+		view.Coverage = append(view.Coverage, gateCoverageView{
+			Key: ck.Key, Lens: ck.Lens, Kind: ck.Kind, Source: ck.Source, Task: ck.Task,
+			ReportKeys: run.ReportKeys(ck),
+			CoveredBy:  covered[ck.Key],
+		})
+	}
+	for _, state := range states {
+		entry := gateSessionView{
+			SessionID: state.SessionID, Keys: append([]string{}, state.Keys...),
+			Status: state.Status, Attempts: len(state.Attempts),
 		}
 		if len(state.Attempts) > 0 {
 			entry.LastRejection = state.Attempts[len(state.Attempts)-1].RejectionReason
 		}
-		view.Packets = append(view.Packets, entry)
+		view.Sessions = append(view.Sessions, entry)
 	}
-	if run.Status != gaterun.StatusOpen {
-		view.NextAction = "none"
-		return view, nil
-	}
-	for _, packet := range run.Packets {
-		state := states[packet.PacketID]
-		if state.Status != gaterun.PacketPending && state.Status != gaterun.PacketRejected {
-			continue
-		}
-		ready := true
-		for _, dep := range packet.DependsOn {
-			depState := states[dep]
-			if depState == nil {
-				return gateRunView{}, fmt.Errorf("packet %q has missing dependency %q", packet.PacketID, dep)
-			}
-			if depState.Status != gaterun.PacketAccepted && depState.Status != gaterun.PacketNotRequired {
-				ready = false
-				break
-			}
-		}
-		if ready {
-			view.ReadyPacketIDs = append(view.ReadyPacketIDs, packet.PacketID)
-		}
-	}
-	if len(view.ReadyPacketIDs) > 0 {
-		view.NextAction = "execute"
-	} else {
-		view.NextAction = "finalize"
-	}
+	view.UncoveredKeys = uncovered
+	view.NextAction = gateNextAction(run, states, uncovered)
 	return view, nil
+}
+
+// sessionCounts tallies one run's session states.
+func sessionCounts(states []*gaterun.SessionState) (accepted, pending, rejected int) {
+	for _, state := range states {
+		switch state.Status {
+		case gaterun.SessionAccepted, gaterun.SessionNotRequired:
+			accepted++
+		case gaterun.SessionRejected:
+			rejected++
+		default:
+			pending++
+		}
+	}
+	return accepted, pending, rejected
+}
+
+// fmtCoverageRow renders one coverage key's progress line.
+func fmtCoverageRow(run *gaterun.Run, ck gaterun.CoverageKey, coveredBy string) string {
+	line := "  " + ck.Key
+	if ck.Source != "" {
+		line += " (" + ck.Source + ")"
+	}
+	if ck.Lens != "" {
+		line += " [" + ck.Lens + "]"
+	} else {
+		line += " [" + ck.Kind + "]"
+	}
+	reports := run.ReportKeys(ck)
+	if len(reports) > 1 || (len(reports) == 1 && reports[0] != ck.Key) {
+		line += " — reports: " + strings.Join(reports, ", ")
+	}
+	if coveredBy != "" {
+		line += " — covered by " + coveredBy
+	} else {
+		line += " — UNCOVERED"
+	}
+	return line
 }

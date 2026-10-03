@@ -34,9 +34,9 @@ Unit cuts should map explicitly onto the project's structure instead of existing
 
 1. **Prefer explicit mapping.** When dividing work into units, list the project's directory/package structure first and map each responsibility to the directories that carry it. Prefer a one-to-one correspondence between unit and directory; at minimum, record the mapping explicitly at cut time — the adoption flow's cut list carries a directory-mapping column (see `framework/operations/adopt.md` Step 3).
 2. **Do not force responsibility cuts onto technical layering.** When the project structure is organized by technical layer (e.g. controller/service), either refactor the structure first or accept cross-directory units. Forcing responsibility-based cuts onto a non-responsibility structure produces mappings that are unreadable to humans and expensive to repair later.
-3. **Extract cross-cutting constraints as rules.** Constraint-type content (protocols, component contracts) that spans responsibilities should be extracted as shared rules (see §Rule Extraction) instead of being repeated in every unit document. The adoption flow's structure-review step surfaces this option at cut time (see `framework/operations/adopt.md` Step 2). How shared surfaces are carried — constraints into rules, code into a single owner — is defined by §14.4 Surface Ownership.
+3. **Extract cross-cutting constraints as rules.** Constraint-type content (protocols, component contracts) that spans responsibilities should be extracted as shared rules (see §Rule Extraction) instead of being repeated in every unit document. The adoption flow's structure-review step surfaces this option at cut time (see `framework/operations/adopt.md` Step 2). Shared constraints and file associations are defined by §14.4 File Associations and Shared Agreements.
 4. The framework does not force any specific organization: unit cuts are a decision made together with the user, recorded explicitly, and revisited when the structure changes.
-5. **Keep a unit to one responsibility; split when it stops being one.** Behavior that shares no design center with the unit — no shared state, no contract the unit and the behavior jointly define, no shared actor journey — is a separate responsibility: create a new unit for it instead of extending the current one. A unit that bundles independent responsibilities gates, evolves, and promotes them together with no shared reason, and inflates every gate run over it. Splitting the unit is the only remedy that reduces what a gate run and a promote decision carry — non-exempt appendices stay inside the same unit's validation union, so moving content into them changes layering and dependency granularity, not governance weight. Constraints shared between the split parts — protocols and component contracts included — are extracted as rules (item 3), not left as hidden coupling inside one unit. Shared code follows the same principle: a code file belongs to at most one unit, and code that genuinely serves several units belongs to a unit of its own — see §14.4 Surface Ownership. `validate` Check 3 reports a bundled unit as a split candidate (WARNING; see `framework/unit_validate_checklist.md` Check 3 step 6).
+5. **Keep a unit to one responsibility; split when it stops being one.** Behavior that shares no design center with the unit — no shared state, no contract the unit and the behavior jointly define, no shared actor journey — is a separate responsibility: create a new unit for it instead of extending the current one. A unit that bundles independent responsibilities gates, evolves, and promotes them together with no shared reason, and inflates every gate run over it. Splitting the unit is the only remedy that reduces what a gate run and a promote decision carry — non-exempt appendices stay inside the same unit's validation union, so moving content into them changes layering and dependency granularity, not governance weight. Constraints shared between the split parts — protocols and component contracts included — are extracted as rules (item 3), not left as hidden coupling inside one unit. Shared implementation may be associated with several units; reuse public code judgments and keep spec-related judgments separate — see §14.4 File Associations and Shared Agreements. `validate` Check 3 reports a bundled unit as a split candidate (WARNING; see `framework/unit_validate_checklist.md` Check 3 step 6).
 
 ## 3. Unit Frontmatter
 
@@ -70,7 +70,7 @@ Refs are bare unit or rule names; the ref resolves to the current content (units
 
 The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
 
-Evidence has a defined lifecycle (see §8): it is created by the adoption flow (`framework/operations/adopt.md`), retired section by section as behavior domains are redesigned, and removed entirely when no acceptance item references the evidence appendix — at that point this field is set to `none` and the appendix is retired via `status: retired` (see §8). Zombie, orphan, and residual evidence states are detected by `validate` Check 4 at default severity P1.
+Evidence has a defined lifecycle (see §8): adoption records observed behavior, redesigned domains remove their obsolete evidence sections, and the agent decides whether the final appendix should be deleted through `framework/removal_workflow.md`. Set `evidence_appendix_ref` to `none` when it no longer supports this unit. Zombie, orphan, and residual evidence are detected by validate Check 4 at default severity P1.
 
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
@@ -138,7 +138,7 @@ rule_version: x.y.z
 
 `promotion_owner_unit` is an optional documentation field. It may be present to indicate which unit owns the promotion decision, but it has no effect on tooling behavior.
 
-`unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner` may be present when a bound shared rule has no formal current consumers. These fields are used during rule creation and must be removed when formal consumers exist. They also double as the removal exemption: a rule declaring `unbound_retention` is never a removal candidate and `specflowctl remove --rule` rejects it (see §6.5).
+A rule may exist without formal consumers. Record useful retention rationale in its body; absence of consumers does not determine deletion. See `framework/removal_workflow.md`.
 
 ### 6.1 Rule Creation
 
@@ -150,12 +150,8 @@ When creating a new rule:
 4. A brand-new candidate rule starts at `rule_version: 0.1.0`.
 5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs`.
 6. Create the candidate rule file at `docs/specs/rules/candidate/{rule_id}.md`.
-7. If the bound shared rule has no formal current consumers after this write, keep it only when the file explicitly records:
-   - `unbound_retention: intentional`
-   - `unbound_retention_reason: <why this rule is intentionally independent now>`
-   - `unbound_retention_owner: <flow name>`
-8. If the bound shared rule has formal current consumers, remove any `unbound_retention` fields.
-9. Do not write consumer lists or `bound_objects` into the rule file.
+7. A rule may remain without consumers. Explain its independent or future value in body prose when useful.
+8. Do not write consumer lists or `bound_objects` into the rule file.
 
 ### 6.2 Rule Extraction (Unit → Rule)
 
@@ -176,7 +172,7 @@ When extracting existing unit-local formal truth into a rule:
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
 Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
 
-**Current-layer semantics:** consumer discovery resolves each unit to its candidate file when one exists, falling back to the stable file (the same resolution `specflowctl deps` uses). All bound-rule consumer checks — `specflowctl consumers`, `specflowctl detect`, `specflowctl remove --rule`, and the mechanical validate `unbound_retention` check — follow this semantics. (`specflowctl consumers` for a global rule is the exception: it lists every unit with a file in either layer, retiring candidates included — the default applicability has no per-unit reference to resolve; see `framework/verification_scope.md` §Dependency Analysis.) The divergence scenario is a candidate that removed the rule from `rule_refs` while its stable predecessor still lists it: conceptually the unit is no longer a consumer, and mechanically the reference no longer blocks removal — the stale stable file's reference dangles until the unit promotes, and is exposed by the stable confirmation check (`fresh@stable` validate), never silently (see §6.5).
+**Current-layer semantics:** consumer discovery resolves candidate first, stable fallback. This is impact analysis, not deletion approval. Removal checks both physical layers after the planned deletion; publish surviving objects that drop references before final removal. See `framework/removal_workflow.md`.
 
 ### 6.4 Rule Version Semantics
 
@@ -200,26 +196,9 @@ When editing an existing rule candidate, bump the version deterministically:
 - If only wording is clarified without meaning change → bump PATCH
 - If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
 
-### 6.5 Rule Removal
+### 6.5 Spec Removal
 
-A rule can be removed when its constraint no longer applies to any current-layer unit. Removal is the end of the rule: the rule files are deleted by `specflowctl remove --rule <id>` and cannot be forked back.
-
-Two primitives replace the retired-status ceremony (`status: retired` in rule files is no longer a removal mechanism):
-
-- `specflowctl detect` — read-only scan of removal candidates. `detect --rule <id>` reports one rule's current-layer (effective) consumers and its retention declaration; `detect --all` lists every bound rule (`b_rule_*`) with no consumers and no `unbound_retention` declaration. Global rules (`g_rule_*`) are never listed: they apply to every unit by default, so "no consumers" is not a meaningful state for them.
-- `specflowctl remove --rule <id>` — deletion command. Its final verification reuses the detection primitive: the rule is rejected while any current-layer unit still references it in `rule_refs` (the referrers are listed), and while it declares `unbound_retention` (intentional retention). For a global rule, only explicit references block the removal — the default applicability to every unit lifts automatically when the rule file disappears. On success the stable copy (and the candidate copy if present) is deleted, followed by the rule's baseline and validate cache.
-
-Removal is triggered in three ways:
-
-1. **`promote --unit`** — for every bound rule (`b_rule_*`) the unit's candidate dropped from `rule_refs`, promote runs `detect --rule`; a removable rule is deleted with it, and the promote report explicitly lists the removed rules and the verification basis (no current-layer consumers, no `unbound_retention`). Global rules (`g_rule_*`) are never auto-removed — their default applicability lifts only with an explicit user-invoked `remove --rule`.
-2. **`fresh@candidate` / `fresh@stable` / `fresh@all`** — the report embeds the removal-candidate list (read-only; deletion always happens through `remove` after user confirmation).
-3. **User-named** — the agent runs `remove --rule <id>` directly (optionally previewing with `detect --all`).
-
-**`unbound_retention` exemption:** a rule declaring intentional retention is never a removal candidate and `remove` rejects it — rules with no consumers but future value are kept.
-
-**Dangling stale files:** a removed rule's old stable files that still reference it dangle briefly; the stable confirmation check (`fresh@stable` validate) exposes them, and they disappear naturally when the units promote — a promote treats a dropped rule whose file no longer exists as already removed and cleans up residual baseline/cache metadata instead of failing. Removal is never silently unexposed.
-
-Removal is a terminal state — git history is the only record of the removed rule.
+Units, bound and global rules, and appendices use `framework/removal_workflow.md`. The agent decides whether their responsibility or constraint ended, then specifies exact targets to `specflowctl remove`. No consumers is not a deletion reason. Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
 
 ## 7. Acceptance Criteria
 
@@ -257,14 +236,14 @@ acceptance_item_set:
 | `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
-| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify/review planning reject a value that does not. Only files this unit implements may be declared (see §14.4 Surface Ownership) |
+| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
 | `verification_method` | yes | How to verify (e.g. "Go test for demo behavior") |
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |
 | `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
 | `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name) |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
-| `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Only this unit's own files may be declared; cross-unit reliance is expressed through `unit_refs` and `affects.dependencies` (see §14.4 Surface Ownership) |
+| `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Files may be shared; behavior dependencies are expressed through `unit_refs` and `affects.dependencies` (see §14.4 File Associations and Shared Agreements) |
 | `affects.appendices` | recommended | Appendix names that must be checked |
 | `affects.rules` | recommended | Rule names that must be respected |
 | `affects.dependencies` | recommended | Stable unit dependency names that must be maintained |
@@ -274,7 +253,7 @@ When `verification_type` is `reviewable`, human review is the primary verificati
 
 When `verification_type` is `testable`, the acceptance item's `description` and `pass_condition` should be designed so they can be decomposed into a set of unit test scenarios. See `framework/test_decomposition_standard.md` for the decomposition methodology.
 
-The acceptance item ids are used by process evidence. Changing ids invalidates existing process files. Item ids must not use the reserved check key `cross` (the cross-check's key in the gate run model): a verify plan validates check-key uniqueness when it is generated, and an item named `cross` collides with the reserved key, so `gate-plan` rejects the plan before any run state is written (see `framework/verification_scope.md` §Gate Work Packets → Packet generation rules).
+The acceptance item ids are used by process evidence. Changing ids invalidates existing process files. Item ids must not use the reserved final-synthesis key `cross`: a verify plan validates coverage-key uniqueness when it is generated, and an item named `cross` collides with the reserved key, so `gate-plan` rejects the plan before any run state is written (see `framework/verification_scope.md` §Coverage Model → Coverage keys).
 
 Each item's block is also a **structural region** for validation-cache dependency declarations: the region runs from the item's `- id:` line to the line before the next item's `- id:` line (trailing blank lines excluded; see `framework/validation_cache.md` §Structural Region Dependencies). Keep every item block a set-level list entry that starts with its own `- id:` line — an unfenced nested line whose trimmed form starts with `- id:` inside another item's field (e.g. a literal example in `description`) would be read as a new item boundary and split that item's region. Fenced code blocks are content and never start an item region. The item set ends at the next `##` heading — the enclosing section's end; `###` and deeper headings never terminate it, so an item separated from the previous one by a `###` subheading remains part of the set (an item placed after the next `##` heading sits outside it and cannot be validated as an item). The whole-set dependency is computed from the set preamble and the item regions sorted by id, so moving otherwise unchanged item blocks does not stale it. Set-level content that follows the last item but remains inside the item set (before the next `##` heading) is attributed to the last item's region — keep such content outside the set so item regions stay reorder-stable. Item ids must be non-empty and unique (the `id` requirement above): an empty or duplicated id makes the semantic set unlocatable, so whole-set and item-region declarations fail closed and mechanical validation rejects the spec.
 
@@ -408,7 +387,7 @@ Each unit appendix must:
 1. use the current path shape for its layer and unit id
 2. declare `unit: {unit}` in frontmatter
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`). Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`). Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk. After editing, explicitly delete an obsolete draft appendix using the candidate-only removal sequence in `framework/removal_workflow.md`.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
 - Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
@@ -420,42 +399,23 @@ The candidate may have additional candidate appendices.
 An appendix file may carry an optional `status` field in its frontmatter:
 
 - `status: active` (default) — the appendix participates normally in governance validation and coverage checks.
-- `status: exempt` — the appendix is exempt from candidate coverage requirements. A stable appendix with `status: exempt` does **not** require a corresponding candidate appendix, even when the unit has an active candidate round. The tooling skips exempt (and retired) appendices: the promote appendix-coverage gate requires the validate cache to list every non-exempt candidate appendix, and the mechanical validate checks skip exempt/retired appendices when scanning coverage.
-- `status: retired` — the appendix is being retired. The candidate appendix with this status is not copied on promote; instead the stable copy is deleted (see [Appendix Retirement](#appendix-retirement)). Retired appendices are skipped by coverage and content checks, like exempt ones.
+- `status: exempt` — the appendix is exempt from candidate coverage requirements. A stable exempt appendix does not require a corresponding candidate appendix. The tooling skips exempt content when checking coverage, but explicit whole-unit deletion includes it.
 
-The `status` field is validated only when present. Absence is treated as `active`. This field is intended for stable-layer appendices that are valid governance artifacts but not relevant to the current candidate round, and for candidate-layer appendices that declare the removal of a stable appendix.
+The `status` field is validated only when present. Absence is treated as `active`. This field is intended for stable-layer appendices that are valid governance artifacts but not relevant to the current candidate round. Explicit deletion uses `framework/removal_workflow.md`, without a status declaration.
 
-### Appendix Retirement
+### Spec Removal
 
-When an appendix (evidence or ordinary design appendix) is no longer needed, retire it explicitly — do not delete the candidate file and rely on promote to leave the stable copy behind. Deleting the candidate copy only removes the candidate file: the stable copy stays, is copied back by the next fork, and its content keeps producing orphan findings (or contradictions with the main spec). The stable copy can only be removed through an explicit retirement:
-
-1. In the candidate appendix frontmatter, add `status: retired`. Content may remain — the whole file is removed, and git history preserves the record.
-2. Remove any references to the appendix from the main spec (`affects.appendices` entries and `evidence_appendix_ref`). `validate` Check 6 rejects references to a retiring appendix, and the mechanical `specflowctl validate` Check 4 and `specflowctl promote` both reject them as well (a retiring spec's own references are exempt — they disappear with it).
-3. Run the normal gates (`validate@{unit}`, `verify@{unit}`, `review@{unit}`) and `promote@{unit}` with user confirmation.
-4. On promote, the stable copy of the retired appendix is deleted together with the candidate copy. After promote the appendix exists in no layer.
-
-The same mechanism retires an appendix while the rest of the unit continues to be edited: only the appendices marked `retired` are removed, all other files promote normally.
-
-### Unit Retirement
-
-A whole unit (main spec and all its appendices) is retired by marking the candidate main spec with `status: retired`:
-
-1. Remove all references to the unit from other units' `unit_refs` (a retiring unit is rejected by promote while any current-layer unit still references it — `specflowctl validate` Check 4 and `specflowctl promote` both enforce this). "Current-layer" resolves each unit to its candidate file when one exists, falling back to the stable file — the same resolution `specflowctl deps` uses: a stale stable file whose candidate has already dropped the reference does not block the retirement, and the dangling reference is exposed by the stable confirmation check (`fresh@stable` validate) until the unit promotes, never silently. A retiring unit's own references disappear with it and are not counted.
-2. In the candidate main spec frontmatter, add `status: retired`. The acceptance item set is not required on a retiring spec.
-3. Run `validate@{unit}`, then `promote@{unit}` with user confirmation. The verify and review gates are skipped for a retiring unit — its content is being removed, not archived, so implementation alignment and code review have no object.
-4. On promote, the stable main spec and every stable appendix of the unit (including `status: exempt` ones) are deleted, and all candidate files are removed. A retiring unit's promote also runs the §6.5 dropped-rule cleanup: every bound rule the candidate no longer lists in `rule_refs` that is left with no current-layer consumers and no `unbound_retention` declaration is removed with it (stable and candidate copies, baseline, validate cache), and the removed rules are listed explicitly in the promote report. After promote the unit exists in no layer; `specflowctl next` reports the empty state, and a new round can only start by designing the unit from scratch.
-
-Unit retirement is a terminal state — git history is the only record of the retired unit.
+Follow `framework/removal_workflow.md` for unit, rule, and appendix deletion. Appendix replacement removes references in candidate, deletes the old candidate appendix with `--layer candidate`, normally checks and publishes the surviving unit, then explicitly deletes the old stable appendix. Whole-unit removal includes owned appendices, including exempt ones, and does not require a publication cycle.
 
 ### Evidence Appendix Lifecycle
 
 Evidence appendices are transitional artifacts created by the adoption flow for existing-code onboarding (`framework/operations/adopt.md`). They record observed implementation behavior per behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
 
-The retirement path is incremental, matching how real projects replace old behavior:
+The replacement path is incremental, matching how real projects replace old behavior:
 
 1. **Adoption round:** the appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
 2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (remove the evidence appendix from its `affects.appendices`, provide design rationale) and the corresponding appendix section is retired (deleted). Other domains keep their evidence references.
-3. **Final round:** when no acceptance item references the evidence appendix, retire the last section if one remains, then retire the appendix itself: add `status: retired` to the candidate appendix frontmatter and set `evidence_appendix_ref` to `none`. Do not delete the appendix file before promote — deleting only the candidate copy leaves the stable sections in place, re-triggering the orphan finding in every later round. On the final promote the retired appendix is removed from stable along with the candidate copy (see [Appendix Retirement](#appendix-retirement)); the appendix ends with no file at all, with no governance effect.
+3. **Final round:** after the agent confirms the evidence appendix is obsolete, remove its final references and use the candidate-then-stable appendix removal sequence in `framework/removal_workflow.md`.
 
 Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
 
@@ -515,7 +475,7 @@ Acceptance items       → minimal verifiable behavior contracts (see §7)
 
 Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
 
-**Enforcement (validate Check 10).** This contract is enforced at validate time by the reader contract probe: an independent reader session reads only the spec's human-readable part — every `##` section of the unit main spec before the section containing the `acceptance_item_set:` marker (content after that boundary, appendices, and code are out of scope) — and reconstructs the design closed-book: one coherent restatement plus an honest list of what it could not determine. There is no question bank to satisfy: a restatement that only answers scattered questions proves nothing about the whole, so the reader must carry the connections itself. A second independent session then reconciles the reconstruction against the human-readable part and the formal carrier (the acceptance item set and the protocol appendices): claims unsupported by the narrative are document gaps, carrier subjects the reader could not see are gaps, unclosed decisions are gaps, and contradictions are adjudicated by the user. The division of labor is deliberate: machine checks keep locality (the reading boundary, the report structure, the carrier evidence set), while global coherence is kept by the reconstruction-and-reconciliation pair — local answerability cannot prove it. A declarative unit (§14.4's type/contract units) satisfies the probe by making its shape reconstructable — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The probe and its independent verifier are defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition (failure means the design cannot be reconstructed from the human-readable part), not an upper bound on readability.
+**Enforcement (validate Check 10).** This contract is enforced at validate time by the clarity check: one independent session reads the unit's complete spec — the main spec and every non-exempt appendix — and reports what is unclear, underspecified, or internally contradictory. It judges directly whether the human-readable part states the design clearly enough for its readers to understand it without guessing, and whether any statement conflicts with another; there is no reconstruction step and no second session. An internal contradiction, an unclosed implementation-affecting decision, or a passage a reader cannot understand is a P0/P1 finding. A declarative unit (§14.4's type/contract units) satisfies the check by stating its shape clearly — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The check is defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition, not an upper bound on readability.
 
 ### Spec-First Planning and Execution Lifecycle
 
@@ -524,7 +484,7 @@ A Spec is not a post-hoc implementation journal; it is the upstream design drive
 1. **Planning Phase (Proposed Changes Mandate):** When an agent or engineer plans a feature, refactoring, or bug fix, any affected unit's candidate spec must be explicitly declared as a first-class change item before code files. If no candidate spec exists yet, running `specflowctl fork --unit <name>` (or creating the candidate spec) is a declared prerequisite. If the modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria, an explicit one-sentence Spec Impact Assessment must state that fact. Silence on spec impact is prohibited.
 2. **Execution Phase (Spec-First Order):** When implementing the approved plan, the candidate spec must be updated first (establishing new constraints, updated state flow, and acceptance criteria), and only then may implementation code and tests be written or modified to satisfy the spec.
 3. **Verification Phase:** The candidate spec's acceptance items form the verification baseline against which the implementation is verified (`verify@{unit}`).
-4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its appendix sections (per §8 Appendix Retirement; contract content left without a covering item is failed by `validate` Check 5a's appendix coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
+4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its appendix sections (per `framework/removal_workflow.md`; contract content left without a covering item is failed by `validate` Check 5a's appendix coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
 
 An undeclared removal is not a candidate change: the round's declared scope owns it. The checks close the one-sided failure modes — an item removed while its design remains is failed by coverage extraction, a design removed while its item remains is failed by orphan detection — but a behavior both sides still carry is indistinguishable from an intended behavior, so retirement is a declared-change responsibility, not a document-diff check.
 
@@ -630,18 +590,12 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 | **Acceptance Scenarios** | "Given an authenticated admin user" | "Given `mockRunner` configured with `test_tool_v1`" |
 | **Domain Limits** | `maxRetryAttempts = 3`, `tokenExpiry = 3600s` | Hardcoding developer local machine config file path `/Users/alice/.config` |
 
-### 14.4 Surface Ownership
+### 14.4 File Associations and Shared Agreements
 
-A unit's declared code surface — the `implementation_surface` and `affects.files` values of its acceptance items — is the implementation the unit owns. Five laws keep the surface honest and prevent the same file from being reviewed and verified by several units:
+`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create `unit_refs` dependencies or require an abstraction unit.
 
-1. **Own-files law.** Both fields carry only files where this unit implements the behaviors it owns. A file implementing another unit's behavior is a dependency: reference that unit through frontmatter `unit_refs` (and per-item `affects.dependencies`), and read its formal behavior carriers. Never declare another unit's file as this unit's implementation.
+Units describe independent responsibilities. Behavior, data meaning and shared agreements still have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`, rather than being restated in unit specs. Genuine behavior dependencies continue to use `unit_refs` and per-item `affects.dependencies`.
 
-2. **Single-owner law.** Across the current layer, a code file may appear in at most one unit's declared surface — the union of both fields with directories expanded. An overlap is a boundary defect, not a documentation variant: it makes several units review and verify the same code. `specflowctl validate` Check 9 fails an overlap; a file that genuinely carries several units' behaviors is a signal to reassign the behaviors to one owner or to extract the shared code into a unit of its own.
+Declare paths relevant to the acceptance item. Check 9 validates declarations and shared-agreement consistency; unit responsibility boundaries remain the responsibility of the design and scope checks. File overlap alone is not a finding.
 
-3. **Directory law.** A directory value in `implementation_surface` is a single anchor for the unit's own implementation package. A directory whose expansion reaches another unit's declared files — a repository-wide tree such as `internal/`, or a shared boundary tree such as `contracts/` or `runtime/` — is not a valid unit surface; narrow it to the files the unit actually implements.
-
-4. **Shared-constraint law.** Constraint-type content shared across units (protocols, component contracts, boundary semantics) is extracted into a rule — a new rule, or a merge into an existing one — and consumed through `rule_refs`; restating it in each unit's document is prohibited (§2 item 3).
-
-5. **Shared-code law.** Implementation shared across units is carried by a unit: an existing owner, or a new unit created for the shared responsibility. A rule carries constraints only — it has no verify or review phase, so code placed in a rule would be neither verified nor reviewed.
-
-`specflowctl surfaces` reports the mechanical picture — cross-unit overlaps, directory declarations, and `affects.files` entries pointing at another unit's implementation file; `validate` Check 9 judges the resolutions and records them.
+`specflowctl surfaces` derives current and stable file associations and displays each associated unit's separate design result alongside reusable public code judgments. See `framework/shared_judgments.md` for verification, stable requirement protection and immutable record storage.

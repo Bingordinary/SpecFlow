@@ -12,7 +12,26 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
+
+// writeMergedVerifyCache writes a merged verify cache for the promote
+// fixtures: an alignment check on the main spec file and a quality check on
+// the declared code file. Both lens sections must be present for promote.
+func writeMergedVerifyCache(t *testing.T, repoRoot, unit, specRel, codeRel, result string, blocking bool, counts [4]int) {
+	t.Helper()
+	codePath := filepath.Join(repoRoot, filepath.FromSlash(codeRel))
+	if err := os.MkdirAll(filepath.Dir(codePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(codePath); os.IsNotExist(err) {
+		if werr := os.WriteFile(codePath, []byte("package demo\n\nfunc Demo() int { return 1 }\n"), 0644); werr != nil {
+			t.Fatal(werr)
+		}
+	}
+	currentVerifyFixture(t, repoRoot, unit, "candidate", fmt.Sprintf("result: %s\nblocking: %t\np0_count: %d\np1_count: %d\np2_count: %d\np3_count: %d\n", result, blocking, counts[0], counts[1], counts[2], counts[3]))
+
+}
 
 // cacheDeps renders a deps block for a cache file entry covering the whole
 // file (whole-file dependency — the conservative declaration).
@@ -112,10 +131,11 @@ func TestPromoteFailsOnMissingUnit(t *testing.T) {
 
 func TestPromoteFailsOnMissingCache(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	writeUnitSpec(t, repoRoot, "test_unit")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	err := runPromote([]string{"--unit", "nonexistent", "--repo-root", repoRoot}, &stdout, &stderr)
+	err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected error for missing cache")
 	}
@@ -150,7 +170,7 @@ acceptance_item_set:
     description: Test check passes.
     verification_type: testable
     verification_surface: internal
-    implementation_surface: internal
+    implementation_surface: internal/demo.go
     verification_method: test
     pass_condition: passes
     runnable: yes
@@ -199,50 +219,8 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache
-	verifyCache := fmt.Sprintf(`---
-command: verify
-unit: test_unit
-mode: full
-result: pass
-target: candidate
-timestamp: "2026-06-30T11:00:00Z"
-files:
-  - path: docs/specs/units/candidate/unit_test_unit.md
-    hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
-    hash: sha256:%s
-%s---
-Verify passed.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create review cache (required gate: full mode, non-blocking, fresh)
-	reviewCache := fmt.Sprintf(`---
-command: review
-unit: test_unit
-mode: full
-result: pass
-p0_count: 0
-p1_count: 0
-p2_count: 0
-p3_count: 0
-blocking: false
-target: candidate
-timestamp: "2026-06-30T12:00:00Z"
-files:
-  - path: docs/specs/units/candidate/unit_test_unit.md
-    hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
-    hash: sha256:%s
-%s---
-No P0/P1 findings.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create the merged verify cache (alignment + quality).
+	writeMergedVerifyCache(t, repoRoot, "test_unit", "docs/specs/units/candidate/unit_test_unit.md", "internal/demo.go", "pass", false, [4]int{})
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -277,10 +255,10 @@ No P0/P1 findings.
 		}
 		// Physical paths must reference stable layer after rewrite (no "candidate"
 		// in any path entry)
-		if strings.Contains(string(data), "candidate/") {
+		if strings.Contains(strings.SplitN(string(data), "\n---\n", 2)[0], "candidate/") {
 			t.Fatalf("cache %s still contains candidate-layer path after promote:\n%s", cf, string(data))
 		}
-		// Verify/review caches (which had target: candidate) must get target: stable.
+		// Verify caches (which had target: candidate) must get target: stable.
 		// Validate cache (no target field in the test fixture) is accepted without it —
 		// CheckValidateStable does not require the target field.
 		if filepath.Base(cf) != "validate_result.md" {
@@ -479,7 +457,7 @@ acceptance_item_set:
     description: Test check passes.
     verification_type: testable
     verification_surface: internal
-    implementation_surface: internal
+    implementation_surface: internal/demo.go
     verification_method: test
     pass_condition: passes
     runnable: yes
@@ -528,53 +506,9 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache with only P2/P3 findings: non-blocking, promote allowed
-	verifyCache := fmt.Sprintf(`---
-command: verify
-unit: test_unit
-mode: full
-result: pass
-target: candidate
-blocking: false
-p2_count: 1
-p3_count: 2
-timestamp: "2026-06-30T11:00:00Z"
-files:
-  - path: docs/specs/units/candidate/unit_test_unit.md
-    hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
-    hash: sha256:%s
-%s---
-Non-blocking findings found.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create review cache (required gate: full mode, non-blocking, fresh)
-	reviewCache := fmt.Sprintf(`---
-command: review
-unit: test_unit
-mode: full
-result: pass
-p0_count: 0
-p1_count: 0
-p2_count: 0
-p3_count: 0
-blocking: false
-target: candidate
-timestamp: "2026-06-30T12:00:00Z"
-files:
-  - path: docs/specs/units/candidate/unit_test_unit.md
-    hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
-    hash: sha256:%s
-%s---
-No P0/P1 findings.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create the merged verify cache with only P2/P3 findings: non-blocking,
+	// promote allowed (both lenses present).
+	writeMergedVerifyCache(t, repoRoot, "test_unit", "docs/specs/units/candidate/unit_test_unit.md", "internal/demo.go", "pass", false, [4]int{0, 0, 1, 2})
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -616,7 +550,7 @@ acceptance_item_set:
     description: Test check passes.
     verification_type: testable
     verification_surface: internal
-    implementation_surface: internal
+    implementation_surface: internal/demo.go
     verification_method: test
     pass_condition: passes
     runnable: yes
@@ -665,29 +599,9 @@ Validate passed.
 		t.Fatal(err)
 	}
 
-	// Create verify cache with result: fail (a delta re-run's or a candidate
-	// full-run FAIL's failure record — promote must reject it as blocking)
-	verifyCache := fmt.Sprintf(`---
-command: verify
-unit: test_unit
-mode: full
-result: fail
-target: candidate
-blocking: true
-p0_count: 1
-p1_count: 0
-timestamp: "2026-06-30T11:00:00Z"
-files:
-  - path: docs/specs/units/candidate/unit_test_unit.md
-    hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
-    hash: sha256:%s
-%s---
-Blocking findings found.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create the merged verify cache with result: fail (a failure record —
+	// promote must reject it as blocking).
+	writeMergedVerifyCache(t, repoRoot, "test_unit", "docs/specs/units/candidate/unit_test_unit.md", "internal/demo.go", "fail", true, [4]int{1, 0, 0, 0})
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -763,148 +677,6 @@ acceptance_item_set:
 	stdoutOutput := stdout.String()
 	if !strings.Contains(stdoutOutput, "PASS") {
 		t.Fatalf("expected PASS result, got %s", stdoutOutput)
-	}
-}
-
-func TestPromoteRetiredUnitEndToEnd(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// Stable layer holds the unit from a previous round.
-	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
-	stableAppendixDir := filepath.Join(stableDir, "appendix")
-	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	stableSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
-	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stableAppendixDir, "unit_test_unit_helper.md"),
-		[]byte("---\nunit: test_unit\n---\nOld content\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Candidate declares the unit retired (no acceptance item set).
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	if err := os.MkdirAll(candidateDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	retiredSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
-	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
-	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write the three required caches (main spec only — no active appendix).
-	specHash := computeHash(specPath)
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
-	os.MkdirAll(cacheDir, 0755)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
-	verifyCache := fmt.Sprintf("---\ncommand: verify\nunit: test_unit\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
-	reviewCache := fmt.Sprintf("---\ncommand: review\nunit: test_unit\nmode: full\nresult: pass\np0_count: 0\np1_count: 0\np2_count: 0\np3_count: 0\nblocking: false\ntarget: candidate\ntimestamp: \"2026-06-30T12:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(verifyCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cacheDir, "review_result.md"), []byte(reviewCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
-		t.Fatalf("retire promote failed: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
-	}
-
-	// The whole unit is gone from stable and candidate; caches cleared.
-	for _, p := range []string{
-		"docs/specs/units/stable/unit_test_unit.md",
-		"docs/specs/units/stable/appendix/unit_test_unit_helper.md",
-		"docs/specs/units/candidate/unit_test_unit.md",
-	} {
-		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
-			t.Fatalf("%s must not exist after retire", p)
-		}
-	}
-	for _, c := range []string{"validate_result.md", "verify_result.md", "review_result.md"} {
-		if _, err := os.Stat(filepath.Join(cacheDir, c)); !os.IsNotExist(err) {
-			t.Fatalf("cache %s must be cleared after retire", c)
-		}
-	}
-}
-
-func TestPromoteRetiredUnitValidateCacheOnly(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	// Stable layer holds the unit from a previous round, including an
-	// appendix that must disappear with the unit.
-	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
-	stableAppendixDir := filepath.Join(stableDir, "appendix")
-	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	stableSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n# test_unit\n"
-	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableSpec), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stableAppendixDir, "unit_test_unit_helper.md"),
-		[]byte("---\nunit: test_unit\n---\nOld content\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Candidate declares the unit retired; the candidate appendix is NOT
-	// marked retired (the documented procedure only requires the main spec).
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	candidateAppendixDir := filepath.Join(candidateDir, "appendix")
-	if err := os.MkdirAll(candidateAppendixDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	retiredSpec := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\nstatus: retired\n---\n\n# test_unit\n\nThe unit is retired.\n"
-	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
-	if err := os.WriteFile(specPath, []byte(retiredSpec), 0644); err != nil {
-		t.Fatal(err)
-	}
-	appendixPath := filepath.Join(candidateAppendixDir, "unit_test_unit_helper.md")
-	if err := os.WriteFile(appendixPath, []byte("---\nunit: test_unit\n---\nNew content\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Only the validate cache exists — and it lists the main spec only, not
-	// the active candidate appendix. A retiring unit must pass with just this
-	// gate (verify, review, and appendix coverage are skipped).
-	specHash := computeHash(specPath)
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
-	os.MkdirAll(cacheDir, 0755)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
-		t.Fatalf("retire promote failed: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "gates skipped") {
-		t.Fatalf("expected gate-skip notice, stdout:\n%s", stdout.String())
-	}
-
-	// The whole unit is gone from every layer — no stable appendix may
-	// survive a retiring unit, and no candidate appendix may be promoted.
-	for _, p := range []string{
-		"docs/specs/units/stable/unit_test_unit.md",
-		"docs/specs/units/stable/appendix/unit_test_unit_helper.md",
-		"docs/specs/units/candidate/unit_test_unit.md",
-		"docs/specs/units/candidate/appendix/unit_test_unit_helper.md",
-	} {
-		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
-			t.Fatalf("%s must not exist after retire", p)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(cacheDir, "validate_result.md")); !os.IsNotExist(err) {
-		t.Fatal("validate cache must be cleared after retire")
 	}
 }
 
@@ -1006,4 +778,79 @@ func computeHash(path string) string {
 	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
+}
+
+// TestPromoteRejectsSingleLensVerifyCache verifies the merged-cache promote
+// requirement: a verify cache that covers only the alignment lens (no quality
+// section) cannot promote.
+func TestPromoteRejectsSingleLensVerifyCache(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+	specContent := `---
+id: test_unit
+unit_refs: none
+rule_refs: none
+---
+
+## Description
+
+Test unit for promote testing.
+
+## Testability / Acceptance Criteria
+
+acceptance_item_set:
+  - id: test.check
+    description: Test check passes.
+    verification_type: testable
+    verification_surface: internal
+    implementation_surface: internal/demo.go
+    verification_method: test
+    pass_condition: passes
+    runnable: yes
+`
+	specPath := filepath.Join(candidateDir, "unit_test_unit.md")
+	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(repoRoot, "internal"), 0755)
+	if err := os.WriteFile(filepath.Join(repoRoot, "internal", "demo.go"), []byte("package demo\n\nfunc Demo() int { return 1 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
+	os.MkdirAll(cacheDir, 0755)
+	specHash := computeHash(specPath)
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify cache with only the alignment check — no quality section.
+	specEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_test_unit.md", []validationcache.CheckDeclaration{
+		{Check: "test.check", Lens: "alignment", AcceptanceItemIDs: []string{"test.check"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validationcache.WriteCache(repoRoot, "unit", "test_unit", validationcache.CacheWrite{
+		Command:   "verify",
+		Unit:      "test_unit",
+		Mode:      "full",
+		Result:    "pass",
+		Target:    "candidate",
+		Timestamp: "2026-06-30T11:00:00Z",
+		Entries:   []validationcache.FileEntry{specEntry},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err == nil {
+		t.Fatalf("expected promote to reject a single-lens verify cache, stdout:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "old or damaged review protocol") {
+		t.Fatalf("expected the lens-coverage rejection, got:\n%s", stdout.String())
+	}
 }

@@ -10,10 +10,10 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
 
-// runGateStatus reports packet-run progress. Without --run it lists every
-// open run; with --run it reports one run's packet states, attempts, latest
-// rejection reasons, and the next action. It reads run state only and is the
-// recovery point after an interrupted run.
+// runGateStatus reports coverage-run progress. Without --run it lists every
+// open run; with --run it reports one run's coverage progress, session states,
+// attempts, latest rejection reasons, and the next action. It reads run state
+// only and is the recovery point after an interrupted run.
 func runGateStatus(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-status", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -91,67 +91,56 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 		if ruleID != "" && !(run.TargetKind == gaterun.TargetKindRule && run.TargetName == ruleID) {
 			continue
 		}
-		accepted, pending, rejected, err := packetCounts(absRoot, run)
+		states, err := gaterun.LoadSessionStates(absRoot, run)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "%s · %s@%s · %s · mode %s · %d packet(s) (%d accepted, %d pending, %d rejected) · created %s\n",
-			run.RunID, run.Gate, run.TargetName, run.Target, run.Mode, len(run.Packets), accepted, pending, rejected, run.CreatedAt)
+		accepted, pending, rejected := sessionCounts(states)
+		_, uncovered, err := gaterun.CoverageProgress(run, states)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "%s · %s@%s · %s · mode %s · coverage %d/%d covered · %d session(s) (%d accepted, %d pending, %d rejected) · created %s\n",
+			run.RunID, run.Gate, run.TargetName, run.Target, run.Mode, len(run.Coverage)-len(uncovered), len(run.Coverage), len(states), accepted, pending, rejected, run.CreatedAt)
 		listed++
 	}
 	if listed == 0 {
 		fmt.Fprintln(stdout, "No open gate runs.")
 	} else {
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Run `specflowctl gate-status --run <run_id>` for packet detail and the next action.")
+		fmt.Fprintln(stdout, "Run `specflowctl gate-status --run <run_id>` for coverage detail and the next action.")
 	}
 	return nil
 }
 
-// packetCounts tallies one run's packet states.
-func packetCounts(absRoot string, run *gaterun.Run) (accepted, pending, rejected int, err error) {
-	for _, spec := range run.Packets {
-		state, lerr := gaterun.LoadPacketState(absRoot, run, spec.PacketID)
-		if lerr != nil {
-			return 0, 0, 0, lerr
-		}
-		switch state.Status {
-		case gaterun.PacketAccepted, gaterun.PacketNotRequired:
-			accepted++
-		case gaterun.PacketRejected:
-			rejected++
-		default:
-			pending++
-		}
-	}
-	return accepted, pending, rejected, nil
-}
-
-// writeRunStatus prints one run's packet detail and the next action.
+// writeRunStatus prints one run's coverage detail and the next action.
 func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
-	accepted, pending, rejected, err := packetCounts(absRoot, run)
+	states, err := gaterun.LoadSessionStates(absRoot, run)
 	if err != nil {
 		return err
 	}
+	covered, uncovered, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		return err
+	}
+	accepted, pending, rejected := sessionCounts(states)
 	fmt.Fprintf(stdout, "Run: %s · %s@%s · %s\n", run.RunID, run.Gate, run.TargetName, run.Target)
 	fmt.Fprintf(stdout, "Mode: %s · status: %s · created: %s\n", run.Mode, run.Status, run.CreatedAt)
 	fmt.Fprintf(stdout, "Input snapshot: %d ref(s), %d surface path(s), %d file(s)\n", len(run.Refs), len(run.Surfaces), run.EntryCount())
 	if len(run.CarriedKeys) > 0 {
 		fmt.Fprintf(stdout, "Carried over: %s\n", strings.Join(run.CarriedKeys, ", "))
 	}
+	fmt.Fprintf(stdout, "Relationships to check: %s\n", strings.Join(run.Relationships, ", "))
 	for _, notice := range run.Notices {
 		fmt.Fprintf(stdout, "Notice: %s\n", notice)
 	}
-	fmt.Fprintf(stdout, "Packets (%d accepted, %d pending, %d rejected):\n", accepted, pending, rejected)
-	for _, spec := range run.Packets {
-		state, lerr := gaterun.LoadPacketState(absRoot, run, spec.PacketID)
-		if lerr != nil {
-			return lerr
-		}
-		line := fmt.Sprintf("  %s | %s [%s] — checks: %s", state.Status, spec.PacketID, spec.Kind, strings.Join(spec.CheckKeys, ", "))
-		if len(spec.DependsOn) > 0 {
-			line += " — depends on: " + strings.Join(spec.DependsOn, ", ")
-		}
+	fmt.Fprintf(stdout, "Coverage: %d/%d covered\n", len(run.Coverage)-len(uncovered), len(run.Coverage))
+	for _, ck := range run.Coverage {
+		fmt.Fprintln(stdout, fmtCoverageRow(run, ck, covered[ck.Key]))
+	}
+	fmt.Fprintf(stdout, "Sessions (%d accepted, %d pending, %d rejected):\n", accepted, pending, rejected)
+	for _, state := range states {
+		line := fmt.Sprintf("  %s | %s — keys: %s", state.Status, state.SessionID, strings.Join(state.Keys, ", "))
 		if n := len(state.Attempts); n > 0 {
 			last := state.Attempts[n-1]
 			line += fmt.Sprintf(" — attempt %d %s", last.Attempt, last.Status)
@@ -172,35 +161,65 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 		}
 		return nil
 	}
-	fmt.Fprintf(stdout, "Next: %s\n", gateNextStep(absRoot, run))
+	fmt.Fprintf(stdout, "Next: %s\n", gateNextStep(run, states, uncovered))
 	return nil
 }
 
 // gateNextStep renders the next concrete action for an open run.
-func gateNextStep(absRoot string, run *gaterun.Run) string {
-	for _, spec := range run.Packets {
-		state, err := gaterun.LoadPacketState(absRoot, run, spec.PacketID)
-		if err != nil {
-			return "inspect the run state (a packet state file is unreadable)"
-		}
-		if state.Status == gaterun.PacketAccepted || state.Status == gaterun.PacketNotRequired {
-			continue
-		}
-		ready := true
-		for _, dep := range spec.DependsOn {
-			depState, derr := gaterun.LoadPacketState(absRoot, run, dep)
-			if derr != nil || (depState.Status != gaterun.PacketAccepted && depState.Status != gaterun.PacketNotRequired) {
-				ready = false
-				break
+func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
+	switch gateNextAction(run, states, uncovered) {
+	case "execute":
+		keys := strings.Join(uncovered, ",")
+		return fmt.Sprintf("batch these uncovered keys into sessions: `specflowctl gate-mission --run %s --keys %s --format prompt`, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", run.RunID, keys, run.RunID)
+	case "synthesize":
+		return fmt.Sprintf("relationships to check or findings to dispose — generate the final synthesis: `specflowctl gate-mission --run %s --final --format prompt`, then submit it: `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
+	case "none":
+		return "none — this run is audit-only"
+	}
+	return fmt.Sprintf("all coverage keys are covered — `specflowctl gate-finalize --run %s`", run.RunID)
+}
+
+// gateNextAction is shared by JSON status and every text next-step hint.
+func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
+	if run.Status != gaterun.StatusOpen {
+		return "none"
+	}
+	if len(uncovered) > 0 {
+		return "execute"
+	}
+	if run.TargetKind != gaterun.TargetKindRule && (len(run.Relationships) > 0 || runHasFindings(run, states)) {
+		for _, state := range states {
+			if state.SessionID == gaterun.CrossKey && state.Status == gaterun.SessionAccepted {
+				return "finalize"
 			}
 		}
-		if ready {
-			verb := "send the generated mission to an independent reviewer, then submit its report:"
-			if state.Status == gaterun.PacketRejected {
-				verb = "generate the mission again, fix the rejection reason, then re-submit:"
-			}
-			return fmt.Sprintf("%s `specflowctl gate-packet --run %s --packet %s --format prompt`; `specflowctl gate-submit --run %s --packet %s --report PATH`", verb, run.RunID, spec.PacketID, run.RunID, spec.PacketID)
+		return "synthesize"
+	}
+	return "finalize"
+}
+
+// runHasFindings reports whether any accepted non-final session produced a
+// finding, the run carries a baseline finding in its carried results, or the
+// run has pending deferrals.
+func runHasFindings(run *gaterun.Run, states []*gaterun.SessionState) bool {
+	for i := range run.CarriedResults {
+		if len(resultFindings(&run.CarriedResults[i])) > 0 {
+			return true
 		}
 	}
-	return fmt.Sprintf("all required packets are resolved — `specflowctl gate-finalize --run %s`", run.RunID)
+	if len(run.DeferredFindings) > 0 {
+		return true
+	}
+	for _, state := range states {
+		if state.Status != gaterun.SessionAccepted || state.Result == nil {
+			continue
+		}
+		if state.SessionID == gaterun.CrossKey {
+			continue
+		}
+		if len(state.Result.Findings) > 0 {
+			return true
+		}
+	}
+	return false
 }

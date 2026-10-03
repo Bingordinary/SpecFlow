@@ -170,10 +170,6 @@ func TestRefreshSourceRunStateUsesRecordedLayout(t *testing.T) {
 	}
 }
 
-
-
-
-
 func TestInitIncludesSupportingLayerConvergenceSlice(t *testing.T) {
 	_, file, _ := createInitializedRun(t)
 	state := mustParse(t, file)
@@ -784,10 +780,6 @@ func TestRefreshPropagatesStaleToCrossConvergenceSlice(t *testing.T) {
 	}
 }
 
-
-
-
-
 func TestRefreshMarksTruthGateStaleWhenImplementationGateChanges(t *testing.T) {
 	repoRoot, file, now := createInitializedRun(t)
 	state := mustParse(t, file)
@@ -1110,8 +1102,6 @@ func TestValidateRejectsRunStateMissingSupportingLayerSlice(t *testing.T) {
 	}
 }
 
-
-
 func createInitializedRun(t *testing.T) (string, string, time.Time) {
 	t.Helper()
 	repoRoot := createReviewRunRepo(t)
@@ -1139,7 +1129,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"verification_scope.md",
 		"unit_validate_checklist.md",
 		"unit_verify_checklist.md",
-		"spec_review_checklist.md",
 		"operations/issues.md",
 	}
 	for _, name := range frameworkFiles {
@@ -1168,7 +1157,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/_atoms/misc/report_skeleton.md",
 		"templates/meta/governance_review/README.md",
 		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
-			"templates/docs/specs/units/candidate/unit_demo.md",
+		"templates/docs/specs/units/candidate/unit_demo.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",
 		"templates/CLAUDE.md",
@@ -1197,10 +1186,6 @@ func createReviewRunRepo(t *testing.T) string {
 	}
 	return repoRoot
 }
-
-
-
-
 
 func currentReviewToolingScriptFiles() []string {
 	return []string{

@@ -837,7 +837,6 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 					scope.FrameworkPath("rule_validate_checklist.md"),
 					scope.FrameworkPath("unit_verify_checklist.md"),
 					scope.FrameworkPath("operations/issues.md"),
-					scope.FrameworkPath("spec_review_checklist.md"),
 					scope.FrameworkPath("_atoms/misc/report_skeleton.md"),
 					scope.ToolingPath("cmd/specflowctl/gate_mission.go"),
 					scope.ToolingPath("cmd/specflowctl/gate_report_contract.go"),

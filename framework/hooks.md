@@ -38,7 +38,7 @@ The injected bootstrap (`framework/concepts.md`) must contain the content catego
 5. **Trigger routing table** — one row per trigger or behaviorally identical trigger family, with exact syntax, first action, and full command-package paths. Routing row + listed packages (+ `gate-plan` output for full/delta/repair gates) must carry every instruction the step needs.
 6. **Infrastructure** — `specflowctl` location, framework path convention, and framework identity (installed repository commit and `tooling/fingerprint.txt`).
 
-The bootstrap must not contain phase execution procedures: checklists, packet sequences, delta/failure-recovery semantics, full command references, disclosure lookup tables, or operation-scope rule bodies. Those are owned by the command package files the routing table names.
+The bootstrap must not contain phase execution procedures: checklists, coverage sequences, delta/failure-recovery semantics, full command references, disclosure lookup tables, or operation-scope rule bodies. Those are owned by the command package files the routing table names.
 
 **Size budget.** The injected payload (preamble + `framework/concepts.md`) must stay within 9,000 characters. The budget is a 10% margin under the two platform hook-output caps that bind injection: Claude Code caps hook `additionalContext` at 10,000 characters (no setting raises it; oversized output is replaced by a preview and a file path), and Codex spills `additionalContext` above 2,500 tokens by default (`ceil(bytes/4)` ≈ 10,000 bytes). The tooling closure test computes the payload and asserts both bounds; no adapter may raise or disable a platform cap to carry a larger bootstrap.
 
@@ -159,7 +159,7 @@ For each supported platform, the corresponding hook JSON file exists at the inst
 - `framework/concepts.md` contains the six Bootstrap Contract content categories (identity, state model, default editing mode, HARD RULES, trigger routing table, infrastructure)
 - every trigger in the routing table names at least one command package file, and every named package file exists and is non-empty
 - the routing table covers the supported trigger set (the deterministic closure test in the tooling asserts the golden trigger set)
-- the bootstrap contains no phase execution procedures (checklist bodies, packet sequences, delta/failure-recovery semantics, full command reference, disclosure lookup tables, operation-scope rule bodies) — those live in the command package files
+- the bootstrap contains no phase execution procedures (checklist bodies, coverage sequences, delta/failure-recovery semantics, full command reference, disclosure lookup tables, operation-scope rule bodies) — those live in the command package files
 - the trigger-to-package mapping agrees with `framework/commands.md` and the phase documents (no contract drift per `framework/spec_flow_review.md` Section 2.6)
 - the bootstrap stays within the Bootstrap Contract size budget — the tooling closure test computes the injected payload (preamble + `framework/concepts.md`) and asserts the character budget and the Codex `ceil(bytes/4) ≤ 2,500` bound
 - when a change reduces the bootstrap, every removed block is present in, or was relocated in the same change to, a command package named by the routing table (content conservation — no silent semantic loss)

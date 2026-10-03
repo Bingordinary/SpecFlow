@@ -73,7 +73,7 @@ func TestExtractFindingsDeeperQuotedFindingStaysDetail(t *testing.T) {
 // escaped: an id containing a regex metacharacter must not fail compilation
 // or alias another id's line.
 func TestExtractVerdictItemIDMetacharacters(t *testing.T) {
-	spec := &gaterun.PacketSpec{Kind: gaterun.PacketKindItem, CheckKeys: []string{"auth.co(re"}}
+	spec := &gaterun.SessionSpec{Kind: gaterun.SessionKindItem, CheckKeys: []string{"auth.co(re"}}
 	token, _, _, err := extractVerdict(spec, "auth.co(re", "- auth.co(re: ALIGNED — src/auth.go:1\n")
 	if err != nil {
 		t.Fatalf("an item id with a regex metacharacter must not break verdict parsing: %v", err)

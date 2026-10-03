@@ -46,7 +46,6 @@ func ValidateRule(repoRoot, ruleID string) *RuleResult {
 	r.Checks = append(r.Checks, checkVersionSemantics(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkPromotionOwner(repoRoot, ruleID))
 	r.Checks = append(r.Checks, checkProhibitedFields(repoRoot, ruleID))
-	r.Checks = append(r.Checks, checkUnboundRetention(repoRoot, ruleID))
 
 	r.Passed = true
 	for _, c := range r.Checks {
@@ -81,7 +80,7 @@ func FormatResult(r *RuleResult) string {
 	if !r.Passed {
 		buf.WriteString("\nFix the issues above and re-run validate.\n")
 	} else {
-		buf.WriteString("\nGo-level checks passed. Agent should complete Check 8 (Rule Body Quality) before writing cache.\n")
+		buf.WriteString("\nGo-level checks passed. Agent should complete Check 7 (Rule Body Quality) before writing cache.\n")
 	}
 	return buf.String()
 }

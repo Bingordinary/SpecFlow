@@ -15,7 +15,6 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -73,16 +72,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runSurfaces(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
-	case "detect":
-		return runDetect(args[1:], stdout, stderr)
 	case "remove":
 		return runRemove(args[1:], stdout, stderr)
 	case "gate-evidence":
 		return runGateEvidence(args[1:], stdout, stderr)
 	case "gate-plan":
 		return runGatePlan(args[1:], stdout, stderr)
-	case "gate-packet":
-		return runGatePacket(args[1:], stdout, stderr)
+	case "gate-mission":
+		return runGateMission(args[1:], stdout, stderr)
 	case "gate-status":
 		return runGateStatus(args[1:], stdout, stderr)
 	case "gate-submit":
@@ -144,7 +141,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "Usage: specflowctl promote (--unit <name> | --rule <id>) [--repo-root PATH]")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Validates the candidate spec/rule and archives it to stable.")
-		fmt.Fprintln(stderr, "Agent should run review+verify before calling this.")
+		fmt.Fprintln(stderr, "Agent should run validate and verify before calling this.")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Flags:")
 		fmt.Fprintln(stderr, "  --unit NAME      Unit name to promote")
@@ -167,13 +164,15 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Unit promote path
-	// Detect retirement: a retiring unit is removed from stable, so the
-	// content-alignment gates (verify, review) and appendix coverage have no
-	// object — only the validate cache gate remains, matching rule retirement.
-	retiring := false
-	if data, err := os.ReadFile(filepath.Join(absRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", unitName))); err == nil {
-		fm := specpaths.ReadFrontmatterStringMap(string(data))
-		retiring = strings.TrimSpace(fm["status"]) == "retired"
+	rulePrerequisites, err := promote.CheckUnitRulePrerequisites(absRoot, unitName)
+	if err != nil {
+		fmt.Fprintf(stdout, "Rule prerequisite check: FAIL — %v\n", err)
+		return fmt.Errorf("rule prerequisite check: %w", err)
+	}
+	writeRulePrerequisites(stdout, rulePrerequisites)
+	fmt.Fprintln(stdout)
+	if len(rulePrerequisites.Blockers) > 0 {
+		return errors.New("rule publication prerequisites not satisfied")
 	}
 
 	// Check validate cache freshness
@@ -193,58 +192,38 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintln(stdout, "")
 
-	if retiring {
-		fmt.Fprintln(stdout, "Retiring unit — verify, review, and appendix coverage gates skipped.")
-		fmt.Fprintln(stdout, "")
-	} else {
-		// Check verify cache freshness
-		verifyResult, err := validationcache.CheckVerify(absRoot, unitName)
-		if err != nil {
-			return fmt.Errorf("verify cache error: %w", err)
-		}
-		if !verifyResult.Fresh {
-			fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
-			fmt.Fprintln(stdout, "")
-			fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(verifyResult.Category, "verify", unitName))
-			return errors.New("verify cache check failed")
-		}
-		fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
-		if verifyResult.Note != "" {
-			fmt.Fprintf(stdout, "Note: %s\n", verifyResult.Note)
-		}
-		fmt.Fprintln(stdout, "")
-
-		// Check review cache (required gate — must exist, be full mode, fresh, and non-blocking)
-		reviewResult, err := validationcache.CheckReview(absRoot, unitName)
-		if err != nil {
-			return fmt.Errorf("review cache error: %w", err)
-		}
-		if !reviewResult.Fresh {
-			fmt.Fprintf(stdout, "Review cache check: FAIL — %s\n", reviewResult.Reason)
-			fmt.Fprintln(stdout, "")
-			fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(reviewResult.Category, "review", unitName))
-			return errors.New("review cache check failed")
-		}
-		fmt.Fprintf(stdout, "Review cache: %s\n", reviewResult.Reason)
-		if reviewResult.Note != "" {
-			fmt.Fprintf(stdout, "Note: %s\n", reviewResult.Note)
-		}
-		fmt.Fprintln(stdout, "")
-
-		// Check appendix files are included in validate cache
-		appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
-		if err != nil {
-			return fmt.Errorf("appendix cache check error: %w", err)
-		}
-		if !appendixResult.Fresh {
-			fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
-			fmt.Fprintln(stdout, "")
-			fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
-			return errors.New("appendix validation check failed")
-		}
-		fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
-		fmt.Fprintln(stdout, "")
+	// Merged verify cache: one cache covering both lenses. It must exist,
+	// be full mode, not block, be dependency-fresh, and cover every
+	// alignment key and every quality key of the current target.
+	verifyResult, err := checkUnitVerifyMerged(absRoot, unitName, "candidate")
+	if err != nil {
+		return fmt.Errorf("verify cache error: %w", err)
 	}
+	if !verifyResult.Fresh {
+		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(verifyResult.Category, "verify", unitName))
+		return errors.New("verify cache check failed")
+	}
+	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
+	if verifyResult.Note != "" {
+		fmt.Fprintf(stdout, "Note: %s\n", verifyResult.Note)
+	}
+	fmt.Fprintln(stdout, "")
+
+	// Check appendix files are included in validate cache
+	appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
+	if err != nil {
+		return fmt.Errorf("appendix cache check error: %w", err)
+	}
+	if !appendixResult.Fresh {
+		fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
+		fmt.Fprintln(stdout, "")
+		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
+		return errors.New("appendix validation check failed")
+	}
+	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
+	fmt.Fprintln(stdout, "")
 
 	result := promote.Promote(absRoot, unitName)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))
@@ -565,16 +544,15 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
 	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
-	fmt.Fprintln(w, "  surfaces   Audit declared code surfaces for cross-unit ownership overlaps")
+	fmt.Fprintln(w, "  surfaces   Display code-surface associations, shared files, and per-unit judgments")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
-	fmt.Fprintln(w, "  detect     Detect removable bound rules (no consumers, no retention)")
-	fmt.Fprintln(w, "  remove     Delete a rule whose constraint no longer applies (bound rules auto-verified; global rules on explicit instruction)")
+	fmt.Fprintln(w, "  remove     Remove explicitly selected units, rules, and appendices after structured-reference checks")
 	fmt.Fprintln(w, "  gate-evidence Inspect dependency CIDs (chunk ranges, section/item regions, or the whole acceptance item set) for a file read during a gate run")
-	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and packet plan; --format json exposes ready work")
-	fmt.Fprintln(w, "  gate-packet Generate a ready packet's reviewer mission (--format prompt|json)")
-	fmt.Fprintln(w, "  gate-status Report packet-run progress and ready work (--format text|json)")
-	fmt.Fprintln(w, "  gate-submit Record one packet report after mechanical validation (accepted or rejected)")
-	fmt.Fprintln(w, "  gate-finalize Write the gate cache from the accepted packet reports, then self-check it")
+	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
+	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for an agent-chosen key batch (--keys K1,K2 or --final)")
+	fmt.Fprintln(w, "  gate-status Report coverage progress and uncovered keys (--format text|json)")
+	fmt.Fprintln(w, "  gate-submit Record one session report after mechanical validation (accepted or rejected)")
+	fmt.Fprintln(w, "  gate-finalize Write the gate cache from the accepted session reports, then self-check it")
 	fmt.Fprintln(w, "  gate-invalidate Persist a targeted P0/P1 and invalidate any matching open gate run")
 	fmt.Fprintln(w, "  operation  Declare and verify a bounded change scope (open/check/close/update/status)")
 	fmt.Fprintln(w, "  validate   Validate candidate spec/rule structure or file write permissions")

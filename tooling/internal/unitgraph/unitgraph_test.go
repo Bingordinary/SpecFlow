@@ -183,44 +183,6 @@ func TestBuildInvalidScope(t *testing.T) {
 	}
 }
 
-func writeRetiringUnit(t *testing.T, repoRoot, layer, name, unitRefs string) {
-	t.Helper()
-	content := "---\nid: " + name + "\nstatus: retired\nunit_refs: " + unitRefs + "\nrule_refs: none\n---\n\n# " + name + "\n"
-	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "unit_"+name+".md"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestBuildSkipsRetiringUnits(t *testing.T) {
-	repo := t.TempDir()
-	// alpha is retiring: its references disappear with it, so neither its
-	// node nor its edges participate in the graph.
-	writeRetiringUnit(t, repo, "candidate", "alpha", "[beta]")
-	writeUnit(t, repo, "candidate", "beta", "[gamma]", "none")
-	writeUnit(t, repo, "candidate", "gamma", "[alpha]", "none")
-
-	g, err := Build(repo, "all")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := names(g.Nodes()); !reflect.DeepEqual(got, []string{"beta", "gamma"}) {
-		t.Fatalf("nodes = %v, want [beta gamma] (retiring alpha excluded)", got)
-	}
-	if g.Node("alpha") != nil {
-		t.Fatal("retiring unit must not be a node")
-	}
-	if cycles := g.Cycles(); len(cycles) != 0 {
-		t.Fatalf("cycles = %v, want none (alpha's edge would otherwise form beta -> gamma -> alpha)", cycles)
-	}
-	if g.OnCycle("beta") || g.OnCycle("gamma") {
-		t.Fatal("no active unit should be on a cycle")
-	}
-}
-
 func TestUnitConsumers(t *testing.T) {
 	repo := t.TempDir()
 	writeUnit(t, repo, "candidate", "alpha", "[beta]", "none")
