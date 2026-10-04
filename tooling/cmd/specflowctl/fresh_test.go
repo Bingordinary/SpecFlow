@@ -404,10 +404,13 @@ func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
 	})
 }
 
-// TestFreshUnitVerifyFallbackRequiresBothLenses pins the guard hole: when the
-// verify coverage cannot be derived but a per-check cache exists, fresh must
-// still require both lens sections instead of silently accepting the cache.
-func TestFreshUnitVerifyFallbackRequiresBothLenses(t *testing.T) {
+// TestFreshUnitVerifyUndeducibleCoverageFailsClosed pins the guard: when the
+// verify coverage cannot be derived, fresh must fail the cache closed as
+// STALE instead of silently accepting it. The reported reason is the base
+// cache's own classification (here: a cache that cannot prove the merged
+// review protocol ran), which the lazy-derivation order surfaces without
+// paying for evidence discovery.
+func TestFreshUnitVerifyUndeducibleCoverageFailsClosed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	// No acceptance items: verify coverage derivation fails, so fresh takes
 	// the fallback path.
@@ -440,8 +443,8 @@ func TestFreshUnitVerifyFallbackRequiresBothLenses(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGateStatus(t, out, "verify", "STALE")
-	if !strings.Contains(out, "cannot derive required verify checks") {
-		t.Fatalf("expected the missing alignment lens named, got:\n%s", out)
+	if !strings.Contains(out, "old or damaged review protocol") {
+		t.Fatalf("expected the base cache's own fail-closed reason, got:\n%s", out)
 	}
 }
 

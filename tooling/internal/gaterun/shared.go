@@ -116,21 +116,39 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 	return out, nil
 }
 
-// Public evidence is discovered from repository code, independently of the
-// requesting unit. Both directions of references and transitive dependencies
-// participate, including tests. Extra inputs are part of the fixed scope.
-func codeEvidence(root, file string, extra []string) ([]string, error) {
+// codeEvidenceExts is the extension filter for public evidence discovery:
+// only these source files participate, plus each run's quality files.
+const codeEvidenceExts = "|.go|.js|.jsx|.ts|.tsx|.py|.rs|.java|.c|.cc|.cpp|.h|.cs|.rb|.php|.swift|.kt|.sh|.ps1|.json|"
+
+// evidenceCorpus is the run-wide repository source snapshot behind public
+// evidence: one directory expansion and one read per file, shared by every
+// quality file's derivation instead of repeating both per file.
+type evidenceCorpus struct {
+	texts map[string]string // NUL-filtered contents by slash path
+	exts  map[string]string // lowercased extension by slash path
+	rules []string          // active global rule ids
+}
+
+// loadEvidenceCorpus expands the repository once and reads every candidate
+// source file once. targets (the run's quality files) join the corpus
+// regardless of extension, mirroring the per-file inclusion rule. Governance
+// trees never participate.
+func loadEvidenceCorpus(root string, targets []string) (*evidenceCorpus, error) {
 	files, err := repofiles.ExpandDir(root, ".")
 	if err != nil {
 		return nil, err
 	}
-	texts := map[string]string{}
+	isTarget := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		isTarget[t] = true
+	}
+	c := &evidenceCorpus{texts: map[string]string{}, exts: map[string]string{}}
 	for _, f := range files {
 		if strings.HasPrefix(f.Path, "docs/specs/") || strings.HasPrefix(f.Path, "specflow/") || strings.HasPrefix(f.Path, "meta/") {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(f.Path))
-		if f.Path != file && !strings.Contains("|.go|.js|.jsx|.ts|.tsx|.py|.rs|.java|.c|.cc|.cpp|.h|.cs|.rb|.php|.swift|.kt|.sh|.ps1|.json|", "|"+ext+"|") {
+		if !isTarget[f.Path] && !strings.Contains(codeEvidenceExts, "|"+ext+"|") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f.Path)))
@@ -140,15 +158,30 @@ func codeEvidence(root, file string, extra []string) ([]string, error) {
 		if strings.IndexByte(string(data), 0) >= 0 {
 			continue
 		}
-		texts[f.Path] = string(data)
+		c.texts[f.Path] = string(data)
+		c.exts[f.Path] = ext
 	}
+	rules, err := globalRuleIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	c.rules = rules
+	return c, nil
+}
+
+// evidence derives file's public evidence set from the shared snapshot. The
+// traversal sees exactly what a standalone derivation saw: the
+// extension-filtered corpus plus file itself. Both directions of references
+// and transitive dependencies participate, including tests. Extra inputs are
+// part of the fixed scope.
+func (c *evidenceCorpus) evidence(file string, extra []string) []string {
 	seen := map[string]bool{file: true}
 	queue := []string{file}
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		for p, text := range texts {
-			if seen[p] {
+		for p, text := range c.texts {
+			if seen[p] || p != file && !strings.Contains(codeEvidenceExts, "|"+c.exts[p]+"|") {
 				continue
 			}
 			base := filepath.Base(current)
@@ -157,18 +190,14 @@ func codeEvidence(root, file string, extra []string) ([]string, error) {
 			otherStem := strings.TrimSuffix(other, filepath.Ext(other))
 			// File references (with or without an extension) cover imports and
 			// test fixtures. Conservatively include matches; never narrow by unit.
-			linked := strings.Contains(text, base) || len(stem) > 2 && strings.Contains(text, stem) || strings.Contains(texts[current], other) || len(otherStem) > 2 && strings.Contains(texts[current], otherStem)
+			linked := strings.Contains(text, base) || len(stem) > 2 && strings.Contains(text, stem) || strings.Contains(c.texts[current], other) || len(otherStem) > 2 && strings.Contains(c.texts[current], otherStem)
 			if linked {
 				seen[p] = true
 				queue = append(queue, p)
 			}
 		}
 	}
-	globalIDs, err := globalRuleIDs(root)
-	if err != nil {
-		return nil, err
-	}
-	for _, id := range globalIDs {
+	for _, id := range c.rules {
 		seen["rule:"+id] = true
 	}
 	for _, p := range extra {
@@ -181,7 +210,7 @@ func codeEvidence(root, file string, extra []string) ([]string, error) {
 		out = append(out, p)
 	}
 	sort.Strings(out)
-	return out, nil
+	return out
 }
 
 func protectedCoverage(root string, run *Run) ([]CoverageKey, error) {
@@ -348,11 +377,16 @@ func addReviewInputs(root string, run *Run) error {
 	for _, id := range parseRefList(content, "rule_refs", "") {
 		addSnapshotRef(root, run, "rule:"+id)
 	}
-	for _, file := range qualityFiles(run) {
-		inputs, err := codeEvidence(root, file, extraInputPaths(run))
-		if err != nil {
-			return err
-		}
+	// One corpus snapshot serves every quality file: the repository is
+	// expanded and its source corpus read once per run, not once per file.
+	files := qualityFiles(run)
+	corpus, err := loadEvidenceCorpus(root, files)
+	if err != nil {
+		return err
+	}
+	extra := extraInputPaths(run)
+	for _, file := range files {
+		inputs := corpus.evidence(file, extra)
 		run.PublicEvidence[file] = inputs
 		for _, p := range inputs {
 			addSnapshotRef(root, run, p)

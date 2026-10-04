@@ -2,6 +2,7 @@ package validationcache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"os"
@@ -903,14 +904,20 @@ func writeMergedVerifyCache(t *testing.T, repoRoot string) {
 	}
 }
 
+// fixedChecks adapts a static expected set to CheckVerifyMerged's lazy
+// derivation provider.
+func fixedChecks(checks []ExpectedCheck) func() ([]ExpectedCheck, error) {
+	return func() ([]ExpectedCheck, error) { return checks, nil }
+}
+
 func TestCheckVerifyMergedPass(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeMergedVerifyCache(t, repoRoot)
 
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
 		{Key: "test.core", Lens: "alignment"},
 		{Key: "src/handler.go", Lens: "quality"},
-	}, false)
+	}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -924,10 +931,10 @@ func TestCheckVerifyMergedMissingLens(t *testing.T) {
 	writeMergedVerifyCache(t, repoRoot)
 
 	// The expected set names an alignment key the cache never recorded.
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
 		{Key: "test.other", Lens: "alignment"},
 		{Key: "src/handler.go", Lens: "quality"},
-	}, false)
+	}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -943,11 +950,11 @@ func TestCheckVerifyMergedMissingQualityLens(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeMergedVerifyCache(t, repoRoot)
 
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
 		{Key: "test.core", Lens: "alignment"},
 		{Key: "src/handler.go", Lens: "quality"},
 		{Key: "src/other.go", Lens: "quality"},
-	}, false)
+	}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -968,10 +975,10 @@ func TestCheckVerifyMergedStaleQualityKey(t *testing.T) {
 	if err := writeCacheFixtureFile(t, srcPath, []byte("package main\nfunc main() { println(1) }\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
 		{Key: "test.core", Lens: "alignment"},
 		{Key: "src/handler.go", Lens: "quality"},
-	}, false)
+	}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -994,10 +1001,10 @@ func TestCheckVerifyMergedStaleAlignmentKey(t *testing.T) {
 	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
 		{Key: "test.core", Lens: "alignment"},
 		{Key: "src/handler.go", Lens: "quality"},
-	}, false)
+	}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1077,7 +1084,7 @@ func TestCheckVerifyMergedNoPerCheckEvidenceFailsClosed(t *testing.T) {
 	}
 
 	// promote shape: expected keys enumerated.
-	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", []ExpectedCheck{{Key: "test.core", Lens: "alignment"}}, false)
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{{Key: "test.core", Lens: "alignment"}}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1115,6 +1122,135 @@ func TestCheckVerifyMergedNoPerCheckEvidenceFailsClosed(t *testing.T) {
 	}
 	if result.Fresh || result.Category != CategoryStale {
 		t.Fatalf("expected a no-checks failure record to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+	}
+}
+
+// TestCheckVerifyMergedMissingCacheSkipsDerivation pins the lazy-derivation
+// contract: a missing cache is classified MISSING without deriving the
+// expected coverage, so a read-only freshness report pays no evidence
+// discovery for the normal iteration state.
+func TestCheckVerifyMergedMissingCacheSkipsDerivation(t *testing.T) {
+	repoRoot := t.TempDir()
+	derived := false
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", func() ([]ExpectedCheck, error) {
+		derived = true
+		return nil, errors.New("derivation must not run")
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Category != CategoryMissing {
+		t.Fatalf("expected MISSING, got %s (%s)", result.Category, result.Reason)
+	}
+	if derived {
+		t.Fatal("expected derivation to be skipped for a missing cache")
+	}
+}
+
+// TestCheckVerifyMergedStaleBaseSkipsDerivation pins that a stale base cache
+// is reported with its own reason and without attempting the coverage
+// derivation: staleness stays attributable when derivation would fail anyway.
+func TestCheckVerifyMergedStaleBaseSkipsDerivation(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeMergedVerifyCache(t, repoRoot)
+
+	// Change the code file: the base cache goes stale.
+	srcPath := filepath.Join(repoRoot, "src", "handler.go")
+	if err := writeCacheFixtureFile(t, srcPath, []byte("package main\nfunc main() { println(1) }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	derived := false
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", func() ([]ExpectedCheck, error) {
+		derived = true
+		return nil, errors.New("derivation must not run")
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh || result.Category != CategoryStale {
+		t.Fatalf("expected a stale base cache to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+	}
+	if !strings.Contains(result.Reason, "quality stale") {
+		t.Fatalf("expected the base cache's own stale reason, got: %s", result.Reason)
+	}
+	if derived {
+		t.Fatal("expected derivation to be skipped for a stale base cache")
+	}
+}
+
+// TestCheckVerifyMergedLegacyCacheSkipsDerivation pins that the no-compat
+// legacy-cache rejection happens before the coverage derivation: an old cache
+// is STALE without paying for evidence discovery.
+func TestCheckVerifyMergedLegacyCacheSkipsDerivation(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	os.MkdirAll(candidateDir, 0755)
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pre-refactor cache: a valid main-file entry with file-level deps but
+	// no per-check `checks` breakdown.
+	entry, err := BuildEntry(repoRoot, EntryDeclaration{Path: "docs/specs/units/candidate/unit_test.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeCacheFixture(t, repoRoot, "unit", "test", CacheWrite{
+		Command:   "verify",
+		Unit:      "test",
+		Mode:      "full",
+		Result:    "pass",
+		Target:    "candidate",
+		Timestamp: "2026-06-30T11:00:00Z",
+		Entries:   []FileEntry{entry},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	derived := false
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", func() ([]ExpectedCheck, error) {
+		derived = true
+		return nil, errors.New("derivation must not run")
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh || result.Category != CategoryStale {
+		t.Fatalf("expected a legacy cache to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+	}
+	if !strings.Contains(result.Reason, "no per-check evidence") {
+		t.Fatalf("expected the no-compat reason, got: %s", result.Reason)
+	}
+	if derived {
+		t.Fatal("expected derivation to be skipped for a legacy cache")
+	}
+}
+
+// TestCheckVerifyMergedDerivationRunsOnlyForReusableCache pins that the
+// derivation runs exactly once for a base-fresh cache with per-check evidence,
+// and that a derivation failure fails closed as STALE with the provider's
+// error as the reason.
+func TestCheckVerifyMergedDerivationRunsOnlyForReusableCache(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeMergedVerifyCache(t, repoRoot)
+
+	calls := 0
+	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", func() ([]ExpectedCheck, error) {
+		calls++
+		return nil, errors.New("cannot derive required verify checks: boom")
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh || result.Category != CategoryStale {
+		t.Fatalf("expected a failed derivation to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+	}
+	if !strings.Contains(result.Reason, "cannot derive required verify checks") || !strings.Contains(result.Reason, "boom") {
+		t.Fatalf("expected the provider's derivation failure as the reason, got: %s", result.Reason)
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly one derivation for a reusable cache, got %d", calls)
 	}
 }
 

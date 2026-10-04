@@ -333,7 +333,13 @@ type ExpectedCheck struct {
 // for old caches. requireBothLenses additionally requires at least one check
 // of each lens section even when expected names no key (the coverage
 // derivation failed): an existing cache must still prove both lenses ran.
-func CheckVerifyMerged(repoRoot, unitName, target string, expected []ExpectedCheck, requireBothLenses bool) (CheckResult, error) {
+//
+// The expected set is derived lazily through expected, and only after the
+// cache is classified: a missing, legacy, or stale base cache returns before
+// derivation, so a read-only freshness report pays no evidence-discovery work
+// for those outcomes. A nil provider skips key checks entirely. A derivation
+// failure fails closed as STALE with the provider's error as the reason.
+func CheckVerifyMerged(repoRoot, unitName, target string, expected func() ([]ExpectedCheck, error), requireBothLenses bool) (CheckResult, error) {
 	var (
 		base CheckResult
 		err  error
@@ -383,8 +389,19 @@ func CheckVerifyMerged(repoRoot, unitName, target string, expected []ExpectedChe
 		}
 		return base, nil
 	}
+	var wants []ExpectedCheck
+	if expected != nil {
+		derived, err := expected()
+		if err != nil {
+			// The cache is otherwise reusable, so a failed derivation is the
+			// cache's problem to report: fail closed as STALE with the
+			// provider's error as the reason.
+			return CheckResult{Fresh: false, Category: CategoryStale, Reason: err.Error()}, nil
+		}
+		wants = derived
+	}
 	needAlignment, needQuality := false, false
-	for _, want := range expected {
+	for _, want := range wants {
 		switch want.Lens {
 		case "alignment":
 			needAlignment = true
@@ -399,7 +416,7 @@ func CheckVerifyMerged(repoRoot, unitName, target string, expected []ExpectedChe
 		needQuality = true
 	}
 	var missingKeys, missingLenses []string
-	for _, want := range expected {
+	for _, want := range wants {
 		if err := checkExpectedRecord(repoRoot, cache, want); err != nil {
 			return CheckResult{Fresh: false, Category: CategoryStale, Reason: err.Error()}, nil
 		}

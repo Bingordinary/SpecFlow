@@ -645,23 +645,21 @@ func checkUnitGate(repoRoot, unitName, command string) (gateStatus, string, stri
 // checkUnitVerifyMerged applies the merged-cache promote requirement: the
 // verify cache must exist, be full mode, not block, be dependency-fresh, and
 // cover every alignment key and every quality key of the current target. The
-// expected keys are re-derived from the spec and declared surface the same way
-// gate-plan derives them, so promote and the planner never disagree.
+// expected keys are derived lazily — a missing or stale cache is classified
+// without deriving them — and the derivation re-uses gate-plan's resolution
+// (ExpectedChecks), so promote, fresh and the planner never disagree.
 func checkUnitVerifyMerged(repoRoot, unitName, target string) (validationcache.CheckResult, error) {
-	expected, err := gaterun.ExpectedChecks(repoRoot, unitName, target)
-	if err != nil {
-		// Coverage cannot be derived (e.g. the spec is missing). An existing
-		// cache must still prove both lenses ran, so require the lens sections
-		// without enumerating keys; when no cache exists the base check has
-		// already reported MISSING. promote and fresh share this function, so
-		// they still agree.
-		base, baseErr := validationcache.CheckVerifyMerged(repoRoot, unitName, target, nil, false)
-		if baseErr != nil || base.Category == validationcache.CategoryMissing {
-			return base, baseErr
+	return validationcache.CheckVerifyMerged(repoRoot, unitName, target, func() ([]validationcache.ExpectedCheck, error) {
+		expected, err := gaterun.ExpectedChecks(repoRoot, unitName, target)
+		if err != nil {
+			// Coverage cannot be derived (e.g. the spec is missing). The
+			// merged check fails the cache closed with this reason; when no
+			// cache exists the base check has already reported MISSING.
+			// promote and fresh share this function, so they still agree.
+			return nil, fmt.Errorf("cannot derive required verify checks: %w", err)
 		}
-		return validationcache.CheckResult{Fresh: false, Category: validationcache.CategoryStale, Reason: "cannot derive required verify checks: " + err.Error()}, nil
-	}
-	return validationcache.CheckVerifyMerged(repoRoot, unitName, target, expected, false)
+		return expected, nil
+	}, false)
 }
 
 // checkStableUnitVerifyMerged applies the no-compatibility requirement to a
@@ -671,15 +669,13 @@ func checkUnitVerifyMerged(repoRoot, unitName, target string) (validationcache.C
 // requirement is the promote requirement and does not apply to a stable
 // confirmation.
 func checkStableUnitVerifyMerged(repoRoot, unitName string) (validationcache.CheckResult, error) {
-	expected, err := gaterun.ExpectedChecks(repoRoot, unitName, "stable")
-	if err != nil {
-		base, baseErr := validationcache.CheckVerifyMerged(repoRoot, unitName, "stable", nil, false)
-		if baseErr != nil || base.Category == validationcache.CategoryMissing {
-			return base, baseErr
+	return validationcache.CheckVerifyMerged(repoRoot, unitName, "stable", func() ([]validationcache.ExpectedCheck, error) {
+		expected, err := gaterun.ExpectedChecks(repoRoot, unitName, "stable")
+		if err != nil {
+			return nil, fmt.Errorf("cannot derive stable verify checks: %w", err)
 		}
-		return validationcache.CheckResult{Fresh: false, Category: validationcache.CategoryStale, Reason: "cannot derive stable verify checks: " + err.Error()}, nil
-	}
-	return validationcache.CheckVerifyMerged(repoRoot, unitName, "stable", expected, false)
+		return expected, nil
+	}, false)
 }
 
 func checkRuleGate(repoRoot, ruleID string) (gateStatus, string, string) {
