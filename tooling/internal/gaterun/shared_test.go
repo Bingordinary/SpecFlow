@@ -97,7 +97,11 @@ func TestEvidenceCorpusMatchesPerFileDerivation(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/rules/stable/g_rule_tls.md", "---\nid: g_rule_tls\n---\n")
 
 	files := []string{"src/alpha.go", "src/beta.go", "notes/schema.txt", "docs/specs/gone.md"}
-	corpus, err := loadEvidenceCorpus(repoRoot, files)
+	derivation, err := NewDerivation(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := derivation.loadEvidenceCorpus(files)
 	if err != nil {
 		t.Fatal(err)
 	}

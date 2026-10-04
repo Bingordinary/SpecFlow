@@ -266,17 +266,24 @@ func classifyRun(run *Run) runClass {
 	return classUnsupported
 }
 
+// RequiredCoverage is the complete coverage set of a run, derived through a
+// fresh derivation. Callers that already hold a derivation should call
+// Derivation.computeCoverage so the expansions and audit are shared.
+func RequiredCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return d.computeCoverage(run)
+}
+
 // computeCoverage is the complete coverage set for a full run: the judgment
 // keys that must each receive exactly one verdict. validate (unit) covers the
 // validate check groups; validate (rule) covers the rule check keys; verify
 // covers the merged union of the acceptance item ids under the alignment lens
 // and the declared code files under the quality lens.
 // RequiredCoverage includes both executed and carried checks of this run.
-func RequiredCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
-	return computeCoverage(repoRoot, run)
-}
-
-func computeCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
+func (d *Derivation) computeCoverage(run *Run) ([]CoverageKey, error) {
 	switch classifyRun(run) {
 	case classRuleValidate:
 		var coverage []CoverageKey
@@ -291,7 +298,7 @@ func computeCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
 		}
 		return coverage, nil
 	case classUnitVerify:
-		return verifyCoverage(repoRoot, run)
+		return d.verifyCoverage(run)
 	}
 	return nil, fmt.Errorf("unsupported gate %q for %s target", run.Gate, run.TargetKind)
 }
@@ -299,8 +306,8 @@ func computeCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
 // verifyCoverage derives the merged verify gate's coverage keys: the
 // acceptance item ids under the alignment lens, then the declared code files
 // under the quality lens.
-func verifyCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
-	items, err := verifyItems(repoRoot, run)
+func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
+	items, err := verifyItems(d.root, run)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +320,7 @@ func verifyCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindCode, "", file), Kind: SessionKindCode, Lens: LensQuality, File: file, ReadRefs: reads}, CoverageKey{Key: reviewKey(SessionKindDesign, run.TargetName, file), Kind: SessionKindDesign, Lens: LensQuality, File: file, Unit: run.TargetName})
 	}
 	coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindArchitecture, run.TargetName, ""), Kind: SessionKindArchitecture, Lens: LensQuality, Unit: run.TargetName})
-	protected, err := protectedCoverage(repoRoot, run)
+	protected, err := d.protectedCoverage(run)
 	if err != nil {
 		return nil, err
 	}
@@ -365,11 +372,15 @@ func (r *Run) LensForReportKey(key string) string {
 // the current target without persisting a run. promote uses it to require the
 // published verify cache to cover both lenses.
 func ExpectedVerifyCoverage(repoRoot, unitName, target string) ([]CoverageKey, error) {
-	run, err := resolveRun(repoRoot, GateVerify, TargetKindUnit, unitName, target, ModeFull, nil, nil)
+	d, err := NewDerivation(repoRoot)
 	if err != nil {
 		return nil, err
 	}
-	return computeCoverage(repoRoot, run)
+	run, err := d.resolveRun(GateVerify, TargetKindUnit, unitName, target, ModeFull, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return d.computeCoverage(run)
 }
 
 // CoverageKeysForSpec maps a materialized session spec back to the coverage
@@ -405,14 +416,14 @@ func CoverageKeysForSpec(run *Run, spec *SessionSpec) []string {
 // buildCoveragePlan computes the coverage set for the run mode, the carried
 // check keys (delta/repair only), the target's required files, and plan
 // notices (scope derivation and conservative degradations).
-func buildCoveragePlan(repoRoot string, run *Run) ([]CoverageKey, []string, []string, []string, error) {
+func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []string, []string, error) {
 	required := requiredFiles(run)
-	full, err := computeCoverage(repoRoot, run)
+	full, err := d.computeCoverage(run)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	if run.Mode == ModeFull {
-		carried, err := fullRelationshipScope(repoRoot, run)
+		carried, err := fullRelationshipScope(d.root, run)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -421,13 +432,13 @@ func buildCoveragePlan(repoRoot string, run *Run) ([]CoverageKey, []string, []st
 		}
 		return full, carried, required, nil, nil
 	}
-	derivation, err := deriveDeltaRerun(repoRoot, run)
+	derivation, err := d.deriveDeltaRerun(run)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	if derivation.degraded {
 		// A full rerun must not forget relationships checked by its baseline.
-		if baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate); err == nil {
+		if baseline, err := validationcache.ReadGateBaseline(d.root, run.TargetKind, run.TargetName, run.Gate); err == nil {
 			for _, entry := range baseline.Entries {
 				for _, check := range entry.Checks {
 					if IsRelationshipKey(check.Check) {
@@ -763,7 +774,8 @@ func noUsableBaselineError(run *Run) error {
 // expressed over the coverage set (rerunCoverage). Where the derivation cannot
 // trust its association it degrades conservatively to the full coverage set
 // and reports the degradation.
-func deriveDeltaRerun(repoRoot string, run *Run) (*scopeDerivation, error) {
+func (d *Derivation) deriveDeltaRerun(run *Run) (*scopeDerivation, error) {
+	repoRoot := d.root
 	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {
 		return nil, err
@@ -961,7 +973,7 @@ func deriveDeltaRerun(repoRoot string, run *Run) (*scopeDerivation, error) {
 		if err != nil {
 			return nil, err
 		}
-		current, err := computeCoverage(repoRoot, run)
+		current, err := d.computeCoverage(run)
 		if err != nil {
 			return nil, err
 		}
@@ -1035,7 +1047,7 @@ func deriveDeltaRerun(repoRoot string, run *Run) (*scopeDerivation, error) {
 		}
 	}
 
-	current, err := currentGateKeys(repoRoot, run)
+	current, err := d.currentGateKeys(run)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,7 +1222,7 @@ func coverageKeysForRerun(run *Run, effective map[string]bool) []string {
 // currentGateKeys lists the current non-cross judgment keys for the run's
 // gate and target: the fixed check numbers (validate and rule targets),
 // acceptance item ids, or quality code files (verify).
-func currentGateKeys(repoRoot string, run *Run) ([]string, error) {
+func (d *Derivation) currentGateKeys(run *Run) ([]string, error) {
 	switch classifyRun(run) {
 	case classRuleValidate:
 		return append([]string(nil), ruleValidateChecks...), nil
@@ -1228,7 +1240,7 @@ func currentGateKeys(repoRoot string, run *Run) ([]string, error) {
 		}
 		return keys, nil
 	case classUnitVerify:
-		coverage, err := verifyCoverage(repoRoot, run)
+		coverage, err := d.verifyCoverage(run)
 		if err != nil {
 			return nil, err
 		}

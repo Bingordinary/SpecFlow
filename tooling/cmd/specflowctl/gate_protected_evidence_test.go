@@ -68,7 +68,7 @@ func TestGateSynthesisKeepsProtectedStableEvidence(t *testing.T) {
 				t.Fatalf("protected synthesis evidence missing from cache: %s", path)
 			}
 		}
-		if check, err := checkUnitVerifyMerged(root, "auth", layer); err != nil || !check.Fresh {
+		if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", layer); err != nil || !check.Fresh {
 			t.Fatalf("protected synthesis is not fresh at %s: %+v %v", layer, check, err)
 		}
 	}
@@ -118,7 +118,7 @@ func TestGateSynthesisKeepsProtectedStableEvidence(t *testing.T) {
 	grWriteFile(t, root, candidateRule, "---\nid: b_rule_transport\nscope: unit\n---\n\n## Constraint\n\nAnother candidate rule draft.\n")
 	assertPinnedEvidence("candidate")
 	grWriteFile(t, root, appendix, "---\nunit: order\nstatus: active\n---\n\n# Stable contract\n\nThe response now requires a different token.\n")
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || check.Fresh || check.Category != validationcache.CategoryStale {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh || check.Category != validationcache.CategoryStale {
 		t.Fatalf("changed stable evidence did not stale synthesis: %+v %v", check, err)
 	}
 }

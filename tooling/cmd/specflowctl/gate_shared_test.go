@@ -88,7 +88,7 @@ func TestSharedPublicReviewReuseAndIndependentDesign(t *testing.T) {
 	if a.Records["design:auth:contracts.js"].ID == o.Records["design:order:contracts.js"].ID {
 		t.Fatal("private judgments overwritten")
 	}
-	result, err := checkUnitVerifyMerged(root, "order", "candidate")
+	result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || !result.Fresh {
 		t.Fatalf("fresh: %+v %v", result, err)
 	}
@@ -161,11 +161,11 @@ func TestSharedInvalidationAndWholeFileIdentity(t *testing.T) {
 	if err := runGateInvalidate([]string{"--repo-root", root, "--judgment", public.ID, "--reason", "new evidence contradicts a public fact"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	result, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || result.Fresh {
 		t.Fatal("invalidated reference allowed")
 	}
-	if peer, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || peer.Fresh {
+	if peer, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || peer.Fresh {
 		t.Fatalf("peer continued to use invalidated public PASS: %+v %v", peer, err)
 	}
 	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
@@ -190,7 +190,7 @@ func TestSharedInvalidationAndWholeFileIdentity(t *testing.T) {
 	}
 	full := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	sharedFinish(t, root, full)
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("recheck after record damage: %+v %v", check, err)
 	}
 }
@@ -237,7 +237,7 @@ func TestSharedProtectsStableDespiteUnfinishedCandidate(t *testing.T) {
 	}
 	grSubmitOK(t, root, order, "cross", grCrossReport(run.RequiredFiles[0], "Description"))
 	grFinalizeOK(t, root, order)
-	if result, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || result.Fresh || result.Category != validationcache.CategoryBlocked {
+	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || result.Fresh || result.Category != validationcache.CategoryBlocked {
 		t.Fatalf("broken stable behavior released: %+v %v", result, err)
 	}
 	sharedValidateFixture(t, root, "order")
@@ -301,7 +301,7 @@ func TestSharedProtectionRequiredByFreshAndPromote(t *testing.T) {
 	}
 	stable := strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: ./contracts.js", 1)
 	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", stable)
-	if result, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || result.Fresh || !strings.Contains(result.Reason, "preserve:auth:auth.core") {
+	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || result.Fresh || !strings.Contains(result.Reason, "preserve:auth:auth.core") {
 		t.Fatalf("verify without stable protection remained fresh: %+v %v", result, err)
 	}
 	sharedValidateFixture(t, root, "order")
@@ -314,7 +314,7 @@ func TestSharedProtectionRequiredByFreshAndPromote(t *testing.T) {
 		t.Fatal("replan omitted stable protection")
 	}
 	sharedFinish(t, root, id)
-	if result, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !result.Fresh {
+	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !result.Fresh {
 		t.Fatalf("complete protection did not become fresh: %+v %v", result, err)
 	}
 	out.Reset()
@@ -495,7 +495,7 @@ func TestSharedNewCallerRequiresFreshCoverageAndPrivateDelta(t *testing.T) {
 		t.Fatal("private spec discarded public record")
 	}
 	grWriteFile(t, root, "order.js", "import {response} from './contracts.js';\nresponse();\n")
-	fresh, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	fresh, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || fresh.Fresh {
 		t.Fatal("new caller escaped scope validation")
 	}
@@ -530,13 +530,13 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
 		t.Fatalf("promote: %v %s", err, out.String())
 	}
-	if check, err := checkUnitVerifyMerged(root, "auth", "stable"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "stable"); err != nil || !check.Fresh {
 		t.Fatalf("stable: %+v %v", check, err)
 	}
 	if result := fork.Fork(root, "auth"); !result.Passed {
 		t.Fatal(result.Issues)
 	}
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("fork: %+v %v", check, err)
 	}
 	after := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
@@ -568,7 +568,7 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 		t.Fatal("removed unit remains protected")
 	}
 	sharedFinish(t, root, next)
-	if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("after remove: %+v %v", check, err)
 	}
 }
@@ -699,7 +699,7 @@ func TestSharedProtectionUsesPublishedRuleAndRetainsReusedFailure(t *testing.T) 
 	if result := fork.Fork(root, "order"); !result.Passed {
 		t.Fatal(result.Issues)
 	}
-	if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("protected rule binding changed during fork: %+v %v", check, err)
 	}
 
@@ -729,7 +729,7 @@ func TestSharedProtectionUsesPublishedRuleAndRetainsReusedFailure(t *testing.T) 
 	grSubmitOK(t, newRoot, order, "order.core", grVerifyItemReport("order.core", orderRun.RequiredFiles[0], "contracts.js"))
 	grSubmitOK(t, newRoot, order, "cross", grCrossReport(orderRun.RequiredFiles[0], "Description"))
 	grFinalizeOK(t, newRoot, order)
-	if check, err := checkUnitVerifyMerged(newRoot, "order", "candidate"); err != nil || check.Category != validationcache.CategoryBlocked {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, newRoot), newRoot, "order", "candidate"); err != nil || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("advisory peer mismatch released changes: %+v %v", check, err)
 	}
 	record, err := judgments.Load(newRoot, original.Records["item:auth:auth.core"].Reference)
@@ -856,7 +856,7 @@ func TestSharedRequiresPrivateSpecEvidenceAndTracksPublishedRules(t *testing.T) 
 		t.Fatal(err)
 	}
 	file.Close()
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh {
 		t.Fatalf("extended shared constraint kept old PASS: %+v %v", check, err)
 	}
 }
@@ -879,7 +879,7 @@ func TestTargetedInvalidationReachesProtectedConsumers(t *testing.T) {
 			synthesisPromote(t, root, "auth")
 			order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 			sharedFinish(t, root, order)
-			before, err := checkUnitVerifyMerged(root, "order", "candidate")
+			before, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 			if err != nil || !before.Fresh {
 				t.Fatalf("fixture not fresh: %+v %v", before, err)
 			}
@@ -924,7 +924,7 @@ func TestTargetedInvalidationReachesProtectedConsumers(t *testing.T) {
 					t.Fatalf("failure record lost canonical invalidation: %+v %v", failure, err)
 				}
 			}
-			after, err := checkUnitVerifyMerged(root, "order", "candidate")
+			after, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 			if err != nil || after.Fresh || !strings.Contains(after.Reason, "invalidated") {
 				t.Fatalf("consumer freshness: %+v %v", after, err)
 			}
@@ -942,7 +942,7 @@ func TestTargetedInvalidationReachesProtectedConsumers(t *testing.T) {
 				t.Fatalf("invalidated item was reused: %+v", ck)
 			}
 			sharedFinish(t, root, retry)
-			if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+			if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 				t.Fatalf("rechecked consumer not fresh: %+v %v", check, err)
 			}
 		})
@@ -977,7 +977,7 @@ func TestTargetedInvalidationReachesPublicEvidenceFromOpenRun(t *testing.T) {
 		t.Fatalf("contradicted public evidence was reused: %+v", ck)
 	}
 	sharedFinish(t, root, retry)
-	if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("public recheck did not restore freshness: %+v %v", check, err)
 	}
 }
@@ -1008,7 +1008,7 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	if err := judgments.Check(root, stable, "stable", judgments.Protocol(root)); err != nil {
 		t.Fatalf("different stable context was invalidated: %v", err)
 	}
-	if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("stable consumer affected by different candidate context: %+v %v", check, err)
 	}
 }

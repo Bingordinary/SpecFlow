@@ -78,21 +78,86 @@ func RequireWorkTreeTop(repoRoot string) error {
 // absent from the working tree — are not repository-content files and are
 // skipped; a directory holding only ignored files therefore expands to zero
 // files.
+//
+// ExpandDir is the one-shot form of Expander.Expand: it resolves the worktree
+// and expands dir through a fresh expander. Consumers that expand more than
+// one directory per invocation should hold one Expander instead, so repeated
+// declarations of the same directory expand once.
 func ExpandDir(repoRoot, dir string) ([]File, error) {
-	if err := RequireWorkTreeTop(repoRoot); err != nil {
+	e, err := NewExpander(repoRoot)
+	if err != nil {
 		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
 	}
+	return e.Expand(dir)
+}
+
+// Expander is one invocation's view of the repository's directory content.
+// While a read-only invocation runs, repository content is fixed, so a
+// directory's expansion is a pure function of the repository and the
+// directory's canonical path: the expander resolves the git worktree once
+// and expands each distinct directory once, no matter how many declarations
+// name it.
+type Expander struct {
+	repoRoot   string
+	cache      map[string]expansion
+	expansions int
+}
+
+type expansion struct {
+	files []File
+	err   error
+}
+
+// NewExpander verifies that repoRoot is the git worktree top level once for
+// the whole invocation. A root that is not the worktree top fails here
+// instead of once per expansion.
+func NewExpander(repoRoot string) (*Expander, error) {
+	if err := RequireWorkTreeTop(repoRoot); err != nil {
+		return nil, err
+	}
+	return &Expander{repoRoot: repoRoot, cache: map[string]expansion{}}, nil
+}
+
+// Expansions reports how many distinct directories were expanded through git,
+// so the O(distinct directories) guarantee is assertable in tests.
+func (e *Expander) Expansions() int {
+	return e.expansions
+}
+
+// Expand lists every repository-content file under dir with the ExpandDir
+// contract. The memo is keyed by the canonical path, so different spellings
+// of one directory expand once. The returned slice is shared across the
+// invocation's callers and must not be modified.
+func (e *Expander) Expand(dir string) ([]File, error) {
 	canonical := "."
 	var err error
 	if dir != "." {
-		canonical, err = repopath.Canonical(repoRoot, dir)
+		canonical, err = repopath.Canonical(e.repoRoot, dir)
+		if err != nil {
+			return nil, fmt.Errorf("expand directory %q: %w", dir, err)
+		}
 	}
+	if previous, ok := e.cache[canonical]; ok {
+		if previous.err != nil {
+			return nil, fmt.Errorf("expand directory %q: %w", dir, previous.err)
+		}
+		return previous.files, nil
+	}
+	e.expansions++
+	files, err := expandDir(e.repoRoot, canonical)
+	e.cache[canonical] = expansion{files: files, err: err}
 	if err != nil {
 		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
 	}
+	return files, nil
+}
+
+// expandDir runs the git expansion for an already-canonical directory: every
+// repository-content file under it, hashed and sorted by path.
+func expandDir(repoRoot, canonical string) ([]File, error) {
 	out, err := runGit(repoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", canonical)
 	if err != nil {
-		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
+		return nil, err
 	}
 	var files []File
 	for _, p := range strings.Split(out, "\x00") {
@@ -101,7 +166,7 @@ func ExpandDir(repoRoot, dir string) ([]File, error) {
 		}
 		rel, err := repopath.Canonical(repoRoot, p)
 		if err != nil {
-			return nil, fmt.Errorf("expand directory %q: %w", dir, err)
+			return nil, err
 		}
 		abs := filepath.Join(repoRoot, filepath.FromSlash(rel))
 		info, err := os.Stat(abs)
@@ -109,14 +174,14 @@ func ExpandDir(repoRoot, dir string) ([]File, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("expand directory %q: %w", dir, err)
+			return nil, err
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
 		hash, err := specpaths.FileHash(abs)
 		if err != nil {
-			return nil, fmt.Errorf("expand directory %q: %w", dir, err)
+			return nil, err
 		}
 		files = append(files, File{Path: rel, Hash: hash})
 	}

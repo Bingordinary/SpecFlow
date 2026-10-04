@@ -34,7 +34,7 @@ func synthesisItemRecord(t *testing.T, root, unit string) *judgments.Record {
 
 func synthesisAssertBlocked(t *testing.T, root, unit string) {
 	t.Helper()
-	check, err := checkUnitVerifyMerged(root, unit, "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, unit, "candidate")
 	if err != nil || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("unconfirmed protected requirement did not block %s: %+v %v", unit, check, err)
 	}
@@ -126,11 +126,11 @@ func TestItemRequiredCodeEvidenceCannotBeOmittedFromDependencies(t *testing.T) {
 			synthesisPromote(t, root, "auth")
 			order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 			sharedFinish(t, root, order)
-			if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || !check.Fresh {
+			if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 				t.Fatalf("unchanged evidence was not reusable: %+v %v", check, err)
 			}
 			grWriteFile(t, root, changed, "export function response(token) { return {}; }\n")
-			if check, err := checkUnitVerifyMerged(root, "order", "candidate"); err != nil || check.Fresh {
+			if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || check.Fresh {
 				t.Fatalf("changed protected evidence left peer fresh: %+v %v", check, err)
 			}
 			sharedValidateFixture(t, root, "order")
@@ -250,7 +250,7 @@ func TestFinalizedSuppressionIsReusableByProtectedPeer(t *testing.T) {
 	synthesisPromote(t, root, "auth")
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	sharedFinish(t, root, order)
-	check, err := checkUnitVerifyMerged(root, "order", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("suppressed false positive blocked protected peer: %+v %v", check, err)
 	}
@@ -313,7 +313,7 @@ func TestFinalizedFailureSupersedesEarlierAlignedProtection(t *testing.T) {
 			grSubmitOK(t, root, order, "order.core", grVerifyItemReport("order.core", run.RequiredFiles[0], "contracts.js"))
 			grSubmitOK(t, root, order, "cross", grCrossReport(run.RequiredFiles[0], "Description"))
 			grFinalizeOK(t, root, order)
-			check, err := checkUnitVerifyMerged(root, "order", "candidate")
+			check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 			if err != nil || check.Category != validationcache.CategoryBlocked {
 				t.Fatalf("confirmed stable failure did not block peer: %+v %v", check, err)
 			}
@@ -357,7 +357,7 @@ func TestCandidateDecisionDoesNotReplaceDifferentStableRequirement(t *testing.T)
 	grSubmitOK(t, root, id, "auth.core", grVerifyMismatchReport("auth.core", candidate, "contracts.js", "P1"))
 	grSubmitOK(t, root, id, "cross", grCrossReport(candidate, "Description"))
 	grFinalizeOK(t, root, id)
-	check, err := checkUnitVerifyMerged(root, "order", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("different candidate requirement changed accepted stable truth: %+v %v", check, err)
 	}
@@ -378,7 +378,7 @@ func TestCandidateDecisionCannotResurrectSupersededStableProtection(t *testing.T
 	grSubmitOK(t, root, failure, "cross", grCrossReport(stable, "Description"))
 	grFinalizeOK(t, root, failure)
 	failed := grReadJudgmentBaseline(t, root, "unit", "auth", "verify").Records["item:auth:auth.core"]
-	before, err := checkUnitVerifyMerged(root, "order", "candidate")
+	before, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || before.Fresh {
 		t.Fatalf("stable failure must invalidate earlier protection: %+v %v", before, err)
 	}
@@ -390,7 +390,7 @@ func TestCandidateDecisionCannotResurrectSupersededStableProtection(t *testing.T
 	grWriteFile(t, root, candidate, strings.Replace(string(data), "pass_condition:", "pass_condition: different candidate requirement —", 1))
 	draft := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	sharedFinish(t, root, draft)
-	after, err := checkUnitVerifyMerged(root, "order", "candidate")
+	after, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || after.Fresh {
 		t.Fatalf("different candidate resurrected superseded stable protection: %+v %v", after, err)
 	}
@@ -426,12 +426,12 @@ func TestPublishedStableContextInvalidatesHistoricalProtection(t *testing.T) {
 	report := strings.Replace(grVerifyItemReport("auth.core", candidate, "contracts.js"), "ALIGNED", "CANNOT_DETERMINE", 1)
 	grSubmitOK(t, root, draft, "auth.core", report)
 	sharedFinish(t, root, draft)
-	before, err := checkUnitVerifyMerged(root, "order", "candidate")
+	before, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || !before.Fresh {
 		t.Fatalf("unpublished candidate affected stable protection: %+v %v", before, err)
 	}
 	synthesisPromote(t, root, "auth")
-	after, err := checkUnitVerifyMerged(root, "order", "candidate")
+	after, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
 	if err != nil || after.Fresh {
 		t.Fatalf("published indeterminate decision left historical protection valid: %+v %v", after, err)
 	}

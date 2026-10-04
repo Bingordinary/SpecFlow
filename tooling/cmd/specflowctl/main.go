@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/buildrelease"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/install"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
@@ -195,7 +196,11 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	// Merged verify cache: one cache covering both lenses. It must exist,
 	// be full mode, not block, be dependency-fresh, and cover every
 	// alignment key and every quality key of the current target.
-	verifyResult, err := checkUnitVerifyMerged(absRoot, unitName, "candidate")
+	derivation, err := gaterun.NewDerivation(absRoot)
+	if err != nil {
+		return fmt.Errorf("verify cache error: %w", err)
+	}
+	verifyResult, err := checkUnitVerifyMerged(derivation, absRoot, unitName, "candidate")
 	if err != nil {
 		return fmt.Errorf("verify cache error: %w", err)
 	}

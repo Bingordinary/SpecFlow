@@ -138,7 +138,7 @@ func TestAppendixDestinationOwnershipAllowsNormalLifecycle(t *testing.T) {
 func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
 	root, _, _ := sharedFixture(t)
 	removalPublishUnit(t, root, "auth")
-	before, err := checkStableUnitVerifyMerged(root, "auth")
+	before, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
 	if err != nil || !before.Fresh {
 		t.Fatalf("initial auth cache: %+v %v", before, err)
 	}
@@ -148,7 +148,7 @@ func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_auth_extra_protocol.md", "---\nunit: auth_extra\nstatus: active\n---\n\n# Independent design\nNo auth dependency.\n")
-	after, err := checkStableUnitVerifyMerged(root, "auth")
+	after, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
 	if err != nil || !after.Fresh {
 		t.Fatalf("unrelated unit appendix made auth stale: %+v %v", after, err)
 	}
@@ -212,7 +212,7 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 	}
 	assertFresh := func(layer string) {
 		t.Helper()
-		if check, err := checkUnitVerifyMerged(root, "auth", layer); err != nil || !check.Fresh {
+		if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", layer); err != nil || !check.Fresh {
 			t.Fatalf("exact appendix bindings lost freshness in %s: %+v %v", layer, check, err)
 		}
 	}
@@ -231,7 +231,7 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 	}
 	assertFresh("candidate")
 	grWriteFile(t, root, own, "---\nunit: auth\n---\n## Notes\nChanged auth explanation.\n")
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh {
 		t.Fatalf("changed own appendix failed to invalidate the judgment: %+v %v", check, err)
 	}
 }

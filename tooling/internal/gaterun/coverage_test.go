@@ -1523,12 +1523,16 @@ func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationc
 			extra = append(extra, entry.Path)
 		}
 	}
-	run, err := resolveRun(root, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, extra, nil)
+	derivation, err := NewDerivation(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := derivation.resolveRun(GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, extra, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	run.RunID = "20260101-000000-abcdef"
-	coverage, err := computeCoverage(root, run)
+	coverage, err := derivation.computeCoverage(run)
 	if err != nil {
 		t.Fatal(err)
 	}

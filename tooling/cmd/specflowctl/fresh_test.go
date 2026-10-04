@@ -11,7 +11,20 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
+
+// freshDerivation builds a derivation for single-target gate checks in tests.
+// A summary loop shares one derivation across units; a test that checks one
+// unit's gate state needs no sharing, only the construction.
+func freshDerivation(t *testing.T, repoRoot string) *gaterun.Derivation {
+	t.Helper()
+	d, err := gaterun.NewDerivation(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
 
 func assertGateStatus(t *testing.T, output, gate, status string) {
 	t.Helper()

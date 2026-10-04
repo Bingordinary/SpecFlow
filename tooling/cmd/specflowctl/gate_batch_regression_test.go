@@ -35,7 +35,7 @@ func TestGateAlignmentFindingCannotBeDeferred(t *testing.T) {
 	if !strings.Contains(cache, "result: fail") || !strings.Contains(cache, "p1_count: 1") {
 		t.Fatalf("retained alignment mismatch must block, got:\n%s", cache)
 	}
-	check, err := checkUnitVerifyMerged(root, "tool", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "tool", "candidate")
 	if err != nil || check.Fresh || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("fresh/promote must reject the alignment failure: %+v err=%v", check, err)
 	}
@@ -82,7 +82,7 @@ func TestGateQualityBatchKeepsPerFileResults(t *testing.T) {
 	if baseline.LogicalStatus[keys[0]] != "fail" || baseline.LogicalStatus[keys[1]] != "pass" {
 		t.Fatalf("published wrong file statuses: %v", baseline.LogicalStatus)
 	}
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || check.Fresh || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("fresh/promote must reject the failed file: %+v err=%v", check, err)
 	}
@@ -92,7 +92,7 @@ func TestGateQualityBatchKeepsPerFileResults(t *testing.T) {
 	}
 	grSubmitOK(t, root, repair, a, grQualityReport(a, main))
 	grFinalizeOK(t, root, repair)
-	check, err = checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err = checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("fresh/promote must accept the repaired merged verify cache: %+v err=%v", check, err)
 	}
@@ -125,7 +125,7 @@ func TestGateAlignmentBatchSuppressionKeepsOtherItemPassing(t *testing.T) {
 	}
 	grSubmitOK(t, root, repair, "auth.a", grVerifyItemReport("auth.a", main, "src/auth.go"))
 	grFinalizeOK(t, root, repair)
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("repair must keep the suppressed item passing: %+v err=%v", check, err)
 	}

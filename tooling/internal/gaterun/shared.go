@@ -10,7 +10,6 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
@@ -133,8 +132,8 @@ type evidenceCorpus struct {
 // source file once. targets (the run's quality files) join the corpus
 // regardless of extension, mirroring the per-file inclusion rule. Governance
 // trees never participate.
-func loadEvidenceCorpus(root string, targets []string) (*evidenceCorpus, error) {
-	files, err := repofiles.ExpandDir(root, ".")
+func (d *Derivation) loadEvidenceCorpus(targets []string) (*evidenceCorpus, error) {
+	files, err := d.expander.Expand(".")
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +150,7 @@ func loadEvidenceCorpus(root string, targets []string) (*evidenceCorpus, error) 
 		if !isTarget[f.Path] && !strings.Contains(codeEvidenceExts, "|"+ext+"|") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f.Path)))
+		data, err := os.ReadFile(filepath.Join(d.root, filepath.FromSlash(f.Path)))
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +160,7 @@ func loadEvidenceCorpus(root string, targets []string) (*evidenceCorpus, error) 
 		c.texts[f.Path] = string(data)
 		c.exts[f.Path] = ext
 	}
-	rules, err := globalRuleIDs(root)
+	rules, err := globalRuleIDs(d.root)
 	if err != nil {
 		return nil, err
 	}
@@ -213,11 +212,12 @@ func (c *evidenceCorpus) evidence(file string, extra []string) []string {
 	return out
 }
 
-func protectedCoverage(root string, run *Run) ([]CoverageKey, error) {
-	audit, err := specvalidation.SurfaceAudit(root)
+func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
+	audit, err := d.surfaceAudit()
 	if err != nil {
 		return nil, err
 	}
+	root := d.root
 	own := map[string]bool{}
 	for _, f := range qualityFiles(run) {
 		own[f] = true
@@ -367,7 +367,8 @@ func protectedCoverage(root string, run *Run) ([]CoverageKey, error) {
 	return out, nil
 }
 
-func addReviewInputs(root string, run *Run) error {
+func (d *Derivation) addReviewInputs(run *Run) error {
+	root := d.root
 	run.PublicEvidence = map[string][]string{}
 	run.ProtectedEvidence = nil
 	content, err := readSpecContent(root, mainSpecRef(run))
@@ -380,7 +381,7 @@ func addReviewInputs(root string, run *Run) error {
 	// One corpus snapshot serves every quality file: the repository is
 	// expanded and its source corpus read once per run, not once per file.
 	files := qualityFiles(run)
-	corpus, err := loadEvidenceCorpus(root, files)
+	corpus, err := d.loadEvidenceCorpus(files)
 	if err != nil {
 		return err
 	}
@@ -392,7 +393,7 @@ func addReviewInputs(root string, run *Run) error {
 			addSnapshotRef(root, run, p)
 		}
 	}
-	protected, err := protectedCoverage(root, run)
+	protected, err := d.protectedCoverage(run)
 	if err != nil {
 		return err
 	}
@@ -989,18 +990,34 @@ func ExpectedCheckFor(root string, run *Run, ck CoverageKey) validationcache.Exp
 	}
 	return validationcache.ExpectedCheck{Key: ck.Key, Lens: ck.Lens, Kind: kind, Unit: ck.Unit, Layer: layer, Subject: subject, Inputs: coverageReadRefs(root, run, ck)}
 }
+
+// ExpectedChecks derives one unit's expected verify checks through a fresh
+// derivation. Callers that derive several units in one invocation should
+// hold one Derivation and call Derivation.ExpectedChecks instead, so the
+// repo-wide audit and the directory expansions are shared.
 func ExpectedChecks(root, unit, target string) ([]validationcache.ExpectedCheck, error) {
-	run, err := resolveRun(root, GateVerify, TargetKindUnit, unit, target, ModeFull, nil, nil)
+	d, err := NewDerivation(root)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := computeCoverage(root, run)
+	return d.ExpectedChecks(unit, target)
+}
+
+// ExpectedChecks derives one unit's expected verify checks through this
+// derivation: the shared expansions and the once-computed surface audit
+// back the run resolution and the coverage computation.
+func (d *Derivation) ExpectedChecks(unit, target string) ([]validationcache.ExpectedCheck, error) {
+	run, err := d.resolveRun(GateVerify, TargetKindUnit, unit, target, ModeFull, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := d.computeCoverage(run)
 	if err != nil {
 		return nil, err
 	}
 	var out []validationcache.ExpectedCheck
 	for _, ck := range keys {
-		out = append(out, ExpectedCheckFor(root, run, ck))
+		out = append(out, ExpectedCheckFor(d.root, run, ck))
 	}
 	return out, nil
 }

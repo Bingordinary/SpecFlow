@@ -1,9 +1,56 @@
 package specvalidation
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 )
+
+// writeOwnershipStable writes the stable-layer spec for unitName with impl as
+// implementation_surface, mirroring writeOwnershipSpec's candidate shape.
+func writeOwnershipStable(t *testing.T, repoRoot, unitName, impl string) {
+	t.Helper()
+	dir := filepath.Join(repoRoot, "docs/specs/units/stable")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nid: " + unitName + "\nunit_refs: none\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: item_1\n    description: test\n    verification_type: testable\n    verification_surface: src/\n    implementation_surface: " + impl + "\n    verification_method: check\n    pass_condition: ok\n    runnable: yes\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_"+unitName+".md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSurfaceAuditWith_SharesExpansions pins the invocation-sharing contract:
+// several units (and both layers) declaring the same directory expand it once
+// through the shared expander, not once per declaration.
+func TestSurfaceAuditWith_SharesExpansions(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
+	writeSurfaceFile(t, repoRoot, "other/b.go", "package other")
+
+	writeOwnershipSpec(t, repoRoot, "alpha", nil, "pkg", nil)
+	writeOwnershipSpec(t, repoRoot, "beta", nil, "pkg", []string{"other/"})
+	// The same unit's stable layer declares the same directory again.
+	writeOwnershipStable(t, repoRoot, "alpha", "pkg")
+
+	expander, err := repofiles.NewExpander(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := SurfaceAuditWith(expander, repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Directories) != 4 {
+		t.Fatalf("expected four directory declarations, got %+v", report.Directories)
+	}
+	if got := expander.Expansions(); got != 2 {
+		t.Fatalf("declarations over D=2 distinct directories must expand D times, got %d", got)
+	}
+}
 
 // writeOwnershipSpec writes a candidate spec whose single acceptance item
 // declares impl as implementation_surface and affectsFiles as affects.files.

@@ -47,7 +47,7 @@ func TestQualityConclusionSurvivesPublicationAndDelta(t *testing.T) {
 					if record.Verdict != "needs_attention" {
 						t.Fatalf("accepted needs_attention became %s", record.Verdict)
 					}
-					if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || !check.Fresh {
+					if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || !check.Fresh {
 						t.Fatalf("nonblocking quality assessment lost gate freshness: %+v %v", check, err)
 					}
 				}
@@ -90,7 +90,7 @@ func TestFinalQualityConclusionUsesDispositionAndOwnEvidence(t *testing.T) {
 			}
 			if disposition == "suppressed" {
 				grWriteFile(t, root, proof, "Changed responsibility evidence.\n")
-				if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || check.Fresh {
+				if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh {
 					t.Fatalf("changed synthesis evidence left quality fresh: %+v %v", check, err)
 				}
 			}
@@ -133,7 +133,7 @@ func TestFinalAttentionWithoutFindingKeepsSynthesisEvidence(t *testing.T) {
 		t.Fatalf("final attention assessment became %s", record.Verdict)
 	}
 	grWriteFile(t, root, proof, "Responsibility names are resolved.\n")
-	if check, err := checkUnitVerifyMerged(root, "auth", "candidate"); err != nil || check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh {
 		t.Fatalf("changed final-assessment evidence left quality fresh: %+v %v", check, err)
 	}
 }

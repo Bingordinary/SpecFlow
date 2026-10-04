@@ -209,7 +209,7 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err == nil {
 		t.Fatal("changed synthesis evidence left the immutable item judgment fresh")
 	}
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || check.Fresh {
 		t.Fatalf("changed synthesis evidence left verify fresh: %+v %v", check, err)
 	}

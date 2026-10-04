@@ -40,7 +40,6 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
@@ -603,7 +602,13 @@ func InvalidateTargeted(repoRoot, gate, targetKind, targetName, target string, c
 }
 
 func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys, relationships []string, now time.Time) (*Run, error) {
-	run, err := resolveRun(repoRoot, gate, targetKind, targetName, target, mode, extraInputs, rerunKeys)
+	// The plan's reads all precede its writes, so one derivation resolves the
+	// run and builds the coverage plan with shared expansions and audit.
+	derivation, err := NewDerivation(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	run, err := derivation.resolveRun(gate, targetKind, targetName, target, mode, extraInputs, rerunKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +616,7 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	if err := validateRelationships(run); err != nil {
 		return nil, err
 	}
-	coverage, carried, required, notices, err := buildCoveragePlan(repoRoot, run)
+	coverage, carried, required, notices, err := derivation.buildCoveragePlan(run)
 	if err != nil {
 		return nil, err
 	}
@@ -697,7 +702,8 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 // gate's derived refs and surfaces plus the agent-declared extra inputs. It
 // performs no session planning and writes no state, so Plan and the delta
 // scope preview share exactly the same input resolution.
-func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys []string) (*Run, error) {
+func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys []string) (*Run, error) {
+	repoRoot := d.root
 	if err := validateGateTarget(gate, targetKind, target); err != nil {
 		return nil, err
 	}
@@ -715,7 +721,7 @@ func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, ext
 	if mode == ModeFull && len(rerunKeys) > 0 {
 		return nil, fmt.Errorf("--rerun applies to --mode delta or --mode repair only (a full run already covers every check)")
 	}
-	refs, surfaces, err := derive(repoRoot, gate, targetKind, targetName, target)
+	refs, surfaces, err := d.derive(gate, targetKind, targetName, target)
 	if err != nil {
 		return nil, err
 	}
@@ -782,7 +788,7 @@ func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, ext
 				continue
 			}
 			seenSurfaces[canonical] = true
-			surface, err := resolveSurface(repoRoot, Surface{Path: canonical, Source: SourceInput})
+			surface, err := d.resolveSurface(Surface{Path: canonical, Source: SourceInput})
 			if err != nil {
 				return nil, fmt.Errorf("--input %q: %w", input, err)
 			}
@@ -796,7 +802,7 @@ func resolveRun(repoRoot, gate, targetKind, targetName, target, mode string, ext
 		run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
 	}
 	if gate == GateVerify {
-		if err := addReviewInputs(repoRoot, run); err != nil {
+		if err := d.addReviewInputs(run); err != nil {
 			return nil, err
 		}
 	}
@@ -840,15 +846,25 @@ type DeltaPreview struct {
 // DeltaPreview.PlanError instead of an error so the caller can still present
 // the stale evidence it did read.
 func PreviewDeltaScope(repoRoot, gate, targetKind, targetName, target string) (*DeltaPreview, error) {
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return d.PreviewDeltaScope(gate, targetKind, targetName, target)
+}
+
+// PreviewDeltaScope is the derivation-backed form of PreviewDeltaScope.
+func (d *Derivation) PreviewDeltaScope(gate, targetKind, targetName, target string) (*DeltaPreview, error) {
+	repoRoot := d.root
 	mode := ModeDelta
 	if baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, gate); err == nil && baseline.Exists && baselineFailureRecord(baseline) {
 		mode = ModeRepair
 	}
-	run, err := resolveRun(repoRoot, gate, targetKind, targetName, target, mode, nil, nil)
+	run, err := d.resolveRun(gate, targetKind, targetName, target, mode, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	derivation, err := deriveDeltaRerun(repoRoot, run)
+	derivation, err := d.deriveDeltaRerun(run)
 	if err != nil {
 		// The derivation refused (a fresh cache or an unreadable baseline).
 		// The stale evidence is still useful to present, so re-read it for
@@ -1058,12 +1074,16 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 	if run.Status != StatusOpen {
 		return nil, fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
 	}
-	refs, surfaces, err := derive(repoRoot, run.Gate, run.TargetKind, run.TargetName, run.Target)
+	derivation, err := NewDerivation(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	refs, surfaces, err := derivation.derive(run.Gate, run.TargetKind, run.TargetName, run.Target)
 	if err != nil {
 		return []string{fmt.Sprintf("input surface no longer resolvable: %v", err)}, nil
 	}
 	if run.Gate == GateVerify {
-		current, err := resolveRun(repoRoot, run.Gate, run.TargetKind, run.TargetName, run.Target, ModeFull, run.ExtraInputs, nil)
+		current, err := derivation.resolveRun(run.Gate, run.TargetKind, run.TargetName, run.Target, ModeFull, run.ExtraInputs, nil)
 		if err != nil {
 			return []string{err.Error()}, nil
 		}
@@ -1099,7 +1119,7 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 	for _, surface := range run.Surfaces {
 		if surface.Source == SourceInput {
 			inputStoredSurfaces = append(inputStoredSurfaces, surface)
-			current, err := resolveSurface(repoRoot, surface)
+			current, err := derivation.resolveSurface(surface)
 			if err != nil {
 				return nil, fmt.Errorf("input surface %q is no longer project-contained: %w", surface.Path, err)
 			}
@@ -1226,7 +1246,8 @@ func (r *Run) IsProtectedStableInput(repoRoot, declared string) bool {
 // ------------------------------------------------------------
 
 // derive resolves the gate's protocol input surface for one target.
-func derive(repoRoot, gate, targetKind, targetName, target string) ([]Ref, []Surface, error) {
+func (d *Derivation) derive(gate, targetKind, targetName, target string) ([]Ref, []Surface, error) {
+	repoRoot := d.root
 	var refs []Ref
 	var surfaces []Surface
 	var err error
@@ -1236,7 +1257,7 @@ func derive(repoRoot, gate, targetKind, targetName, target string) ([]Ref, []Sur
 		case GateValidate:
 			refs, err = deriveUnitValidate(repoRoot, targetName, target)
 		case GateVerify:
-			refs, surfaces, err = deriveUnitCodeGate(repoRoot, targetName, target)
+			refs, surfaces, err = d.deriveUnitCodeGate(targetName, target)
 		}
 	case TargetKindRule:
 		refs, err = deriveRuleValidate(repoRoot, targetName, target)
@@ -1325,7 +1346,8 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 // (implementation_surface directories expanded to their repository-content
 // files + affects.files). It fails closed before any run state is written on
 // a spec with no acceptance items or an unresolvable declared surface.
-func deriveUnitCodeGate(repoRoot, unitName, target string) ([]Ref, []Surface, error) {
+func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surface, error) {
+	repoRoot := d.root
 	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
 	if err != nil {
@@ -1348,7 +1370,7 @@ func deriveUnitCodeGate(repoRoot, unitName, target string) ([]Ref, []Surface, er
 	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
-	surfaces, err := codeSurfaces(repoRoot, content)
+	surfaces, err := d.codeSurfaces(content)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1388,7 +1410,8 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 // later appearance is a divergence. A declared implementation_surface gets no
 // such tolerance: the fail-closed check below rejects an unresolvable value,
 // so the no-entries divergence semantics apply to affects.files only.
-func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
+func (d *Derivation) codeSurfaces(specContent string) ([]Surface, error) {
+	repoRoot := d.root
 	// Fail closed before expanding anything: a non-<pending>
 	// implementation_surface that yields no file — an unresolvable path, or a
 	// directory with no repository-content files — would expand to zero
@@ -1416,7 +1439,7 @@ func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
 			continue
 		}
 		seen[p] = true
-		surface, err := resolveSurface(repoRoot, Surface{Path: p, Source: SourceDerived})
+		surface, err := d.resolveSurface(Surface{Path: p, Source: SourceDerived})
 		if err != nil {
 			return nil, err
 		}
@@ -1431,7 +1454,8 @@ func codeSurfaces(repoRoot, specContent string) ([]Surface, error) {
 // entries. A path that exists but cannot be expanded is an error — no entry
 // can be recorded for it, so the caller must not proceed with a partial
 // surface.
-func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
+func (d *Derivation) resolveSurface(surface Surface) (Surface, error) {
+	repoRoot := d.root
 	canonical, err := repopath.Canonical(repoRoot, surface.Path)
 	if err != nil {
 		return Surface{}, err
@@ -1444,7 +1468,7 @@ func resolveSurface(repoRoot string, surface Surface) (Surface, error) {
 		return surface, nil
 	}
 	if info.IsDir() {
-		files, err := repofiles.ExpandDir(repoRoot, surface.Path)
+		files, err := d.expander.Expand(surface.Path)
 		if err != nil {
 			return Surface{}, fmt.Errorf("declared code surface %q: %w", surface.Path, err)
 		}

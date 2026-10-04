@@ -71,7 +71,7 @@ func TestGateRelationshipRunsWithoutLocalFindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	grFinalizeOK(t, root, runID)
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("relationship failure must block fresh/promote: %+v %v", check, err)
 	}
@@ -242,7 +242,7 @@ func TestGateVerifyRelationshipOnlyRepairPreservesBothLenses(t *testing.T) {
 		t.Fatal(err)
 	}
 	grFinalizeOK(t, root, repairID)
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("relationship-only verify repair lost complete alignment/quality coverage: %+v %v", check, err)
 	}
@@ -275,7 +275,7 @@ func TestGateFullFailureWithCarriedRelationshipKeepsRepairSmall(t *testing.T) {
 	}
 	grSubmitOK(t, root, repair, code, grQualityReport(code, main))
 	grFinalizeOK(t, root, repair)
-	check, err := checkUnitVerifyMerged(root, "auth", "candidate")
+	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("local-only repair lost the carried relationship or lens evidence: %+v %v", check, err)
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -199,5 +200,61 @@ func TestExpandDir_NonRepositoryFailsClosed(t *testing.T) {
 
 	if _, err := ExpandDir(dir, "web"); err == nil || !strings.Contains(err.Error(), "resolve git worktree") {
 		t.Fatalf("a non-repository root must fail closed, got %v", err)
+	}
+}
+
+func TestExpander_MatchesExpandDir(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, ".gitignore", "web/node_modules/\n")
+	writeFile(t, repoRoot, "web/app.js", "export {};\n")
+	writeFile(t, repoRoot, "web/node_modules/dep.js", "module.exports = {};\n")
+
+	e, err := NewExpander(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := e.Expand("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneShot, err := ExpandDir(repoRoot, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(shared, oneShot) {
+		t.Fatalf("Expander.Expand must match ExpandDir: got %v, want %v", shared, oneShot)
+	}
+}
+
+// TestExpander_ExpandsDistinctDirectoriesOnce pins the operation-count
+// contract: K declarations over D distinct directories expand D times, not
+// K times, and different spellings of one directory share the expansion.
+func TestExpander_ExpandsDistinctDirectoriesOnce(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "web/app.js", "export {};\n")
+	writeFile(t, repoRoot, "src/lib/util.js", "export {};\n")
+
+	e, err := NewExpander(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		for _, dir := range []string{"web", "src/lib", "./web", "."} {
+			if _, err := e.Expand(dir); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := e.Expansions(); got != 3 {
+		t.Fatalf("K declarations over D=3 distinct directories must expand D times, got %d", got)
+	}
+}
+
+func TestExpander_FailsClosedOnNonWorkTreeRoot(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "sub/app.js", "export {};\n")
+
+	if _, err := NewExpander(filepath.Join(repoRoot, "sub")); err == nil || !strings.Contains(err.Error(), "not the git worktree top level") {
+		t.Fatalf("a non-top repository root must fail at construction, got %v", err)
 	}
 }

@@ -63,6 +63,18 @@ type SurfaceAuditReport struct {
 // Sharing a file creates no behavioral dependency. Invalid declarations remain
 // the responsibility of the anchor checks.
 func SurfaceAudit(repoRoot string) (*SurfaceAuditReport, error) {
+	expander, err := repofiles.NewExpander(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return SurfaceAuditWith(expander, repoRoot)
+}
+
+// SurfaceAuditWith derives the same report as SurfaceAudit and expands
+// directory declarations through the caller's expander, so one invocation
+// expands a directory once even when several units — or both layers of the
+// repository — declare it.
+func SurfaceAuditWith(expander *repofiles.Expander, repoRoot string) (*SurfaceAuditReport, error) {
 	graph, err := unitgraph.Build(repoRoot, "all")
 	if err != nil {
 		return nil, fmt.Errorf("build unit graph: %w", err)
@@ -105,7 +117,7 @@ func SurfaceAudit(repoRoot string) (*SurfaceAuditReport, error) {
 		}
 		content := string(data)
 
-		collector := newSurfaceCollector(node.Name)
+		collector := newSurfaceCollector(node.Name, expander)
 		for _, value := range ExtractImplementationSurfaces(content) {
 			collector.addDeclaration(repoRoot, SurfaceFieldImplementation, value)
 		}
@@ -156,13 +168,14 @@ func SurfaceAudit(repoRoot string) (*SurfaceAuditReport, error) {
 // Prefer implementation_surface when both declaration fields name a file.
 type surfaceCollector struct {
 	unit        string
+	expander    *repofiles.Expander
 	refs        map[string]SurfaceRef
 	order       []string
 	directories []SurfaceDirectory
 }
 
-func newSurfaceCollector(unit string) *surfaceCollector {
-	return &surfaceCollector{unit: unit, refs: map[string]SurfaceRef{}}
+func newSurfaceCollector(unit string, expander *repofiles.Expander) *surfaceCollector {
+	return &surfaceCollector{unit: unit, expander: expander, refs: map[string]SurfaceRef{}}
 }
 
 // addDeclaration resolves one declared value. Unresolvable or spec-document
@@ -186,7 +199,7 @@ func (c *surfaceCollector) addDeclaration(repoRoot, field, value string) {
 		c.add(canonical, field, "")
 		return
 	}
-	files, err := repofiles.ExpandDir(repoRoot, canonical)
+	files, err := c.expander.Expand(canonical)
 	if err != nil {
 		return
 	}

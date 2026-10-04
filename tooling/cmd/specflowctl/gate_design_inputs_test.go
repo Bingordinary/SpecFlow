@@ -80,7 +80,7 @@ func finishDesignInputRun(t *testing.T, root, id, main, code string) {
 		}
 	}
 	grFinalizeOK(t, root, id)
-	if check, err := checkUnitVerifyMerged(root, run.TargetName, "candidate"); err != nil || !check.Fresh {
+	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, run.TargetName, "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("completed design run is not fresh: %+v %v", check, err)
 	}
 }
