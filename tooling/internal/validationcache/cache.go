@@ -102,7 +102,7 @@ type cacheFileEntry struct {
 }
 
 // checkEntry is one check's dependency declaration inside a files entry:
-// the check key (validate: "1"-"10" for units and "1"-"7" for rules;
+// the check key (validate: the current unit or rule checklist's check number;
 // verify: the acceptance item id under the alignment lens or the code file
 // path under the quality lens) and the CIDs the check's judgment actually
 // depended on. The file-level Deps list of the same entry is the union of all

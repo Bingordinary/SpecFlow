@@ -36,17 +36,17 @@ Do not gate before editing. Read, then write. For "only change X" / "do not touc
 
 ## Trigger Routing
 
-Resolve mode first. Full/delta/repair: `gate-plan --format json` → batch uncovered keys by kind and lens → `gate-mission --keys ... --format prompt` for an independent reviewer per batch → `gate-submit` → `gate-mission --final` when findings or relationships exist → `gate-finalize` only on status `finalize`. Reuse accepted public tasks; wait for assigned ones. Before verify/reverify, use `specflowctl next --unit <name>`; discover each item's test, caller, callee and dependency paths and pass them as `--input` (declared files included). Missing read ref: do not submit; add the path, re-plan with all inputs, and re-execute. Targeted: main session, no plan/cache. Read the target row. Unit verify follows `framework/shared_judgments.md` for public facts, unit design, architecture, acceptance and stable protection.
+Resolve mode, then read the target row and its required packages.
 
 | Trigger | First action and required packages |
 |---|---|
-| `validate@{target}` | Resolve `framework/commands.md`; full run. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `validate@{target}` | Resolve `framework/commands.md`; full run. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | Resolve with `framework/commands.md`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `verify@{unit}` | Resolve candidate/stable; discover paths, then full run with `--input`. Protocol: `framework/unit_verify_checklist.md` (alignment + quality lenses). |
-| `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md` and `framework/unit_verify_checklist.md`. |
+| `verify@{unit}` | Resolve candidate/stable; discover paths, then full run with `--input`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
+| `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `verify@{rule}` | Stop: rule verify was removed; report `validate@{rule}`. Read `framework/verification_scope.md`. |
-| `revalidate@{target}` | Resolve `framework/commands.md`; delta/repair. Protocol: `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `reverify@{unit}` | Discover paths for all items, including carried; delta/repair with `--input`. Protocol: `framework/unit_verify_checklist.md`. |
+| `revalidate@{target}` | Resolve `framework/commands.md`; delta/repair. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `reverify@{unit}` | Discover paths for all items, including carried; delta/repair with `--input`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `promote@{target}` | Resolve with `framework/commands.md`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
 | `remove@{unit}` / `remove@{rule}` / `remove@{unit}:appendix:{filename.md}` | Read `framework/removal_workflow.md`; decide the basis within authorized scope, resolve exact targets, then run `specflowctl remove`. |
@@ -70,7 +70,7 @@ Project entry instructions, not this router, own meta-governance commands.
 
 **3a. Never resolve divergence yourself.** Follow `framework/unit_verify_checklist.md` Step 7, present the analysis, and wait for the user's decision. Do not silently choose code or spec.
 
-**4. Stop when unclear.** Ask when target, mode, package, permission, or next step is unclear. Use the routed workflow; never invent a substitute audit or reconciliation flow.
+**4. Stop and reassess.** Ask when target, mode, package, permission, or next step is unclear. If execution reveals possible impact on recorded behavior, ownership, rules, acceptance, or implementation permission, pause affected implementation mutations; read-only diagnosis may continue. Read affected units/rules and reassess the request, authorization, and original no-impact basis. Shared files alone do not establish impact; reading or creating a candidate does not expand authorization. Resume through the existing route only when the recorded basis and authorization are clear; ask for missing decisions and apply Rule 3a to divergence. Never invent a substitute audit or reconciliation flow.
 
 **5. Fork only through specflowctl.** Use `specflowctl fork --unit <name>` / `--rule <id>`; never manual `cp`.
 

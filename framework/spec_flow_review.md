@@ -99,7 +99,7 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
 
-2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the 10-point unit or 7-point rule checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
+2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
 3. **verify** (normal-unit implementation-alignment and code-quality gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Runs one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality). Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user, plus P0-P3 code-quality findings with code references. P0/P1 from either lens block normal-unit promote; P2/P3 are advisory. Rules use validate; deletion uses `framework/removal_workflow.md`.
 

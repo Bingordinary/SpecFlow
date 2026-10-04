@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1263,6 +1264,34 @@ func TestDeltaPlanWithoutJudgmentsWhenNothingIsCarried(t *testing.T) {
 	}
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("expected nothing carried over, got %v", run.CarriedKeys)
+	}
+}
+
+// The semantic checklist owns rule checks; its headings and the generated
+// coverage must agree without another independently maintained count.
+func TestRuleChecklistMatchesPlannedCoverage(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "..", "framework", "rule_validate_checklist.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checklistKeys []string
+	for _, match := range regexp.MustCompile(`(?m)^### Check ([0-9]+) — `).FindAllStringSubmatch(string(content), -1) {
+		checklistKeys = append(checklistKeys, match[1])
+	}
+	if len(checklistKeys) == 0 {
+		t.Fatal("rule checklist has no semantic check headings")
+	}
+	repoRoot := newRepo(t)
+	writeRule(t, repoRoot, "candidate", "b_rule_http")
+	run, err := Plan(repoRoot, GateValidate, TargetKindRule, "b_rule_http", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(coverageKeysOf(run), ","), strings.Join(checklistKeys, ","); got != want {
+		t.Fatalf("planned rule coverage %s differs from semantic checklist %s", got, want)
+	}
+	if got, want := strings.Join(RuleValidateChecks(), ","), strings.Join(checklistKeys, ","); got != want {
+		t.Fatalf("finalization check set %s differs from semantic checklist %s", got, want)
 	}
 }
 

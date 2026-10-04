@@ -226,26 +226,96 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 		}
 	}
 
-	for _, step := range []string{"gate-plan --format json", "gate-mission --keys", "gate-submit", "gate-mission --final", "gate-finalize"} {
-		requireText(t, section, step)
-	}
-	requireText(t, section, "independent reviewer")
-	requireText(t, section, "specflowctl next --unit <name>")
-	requireText(t, section, "re-plan with all inputs")
-
-	assertRoute("validate@{target}", []string{"framework/commands.md", "full run", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
+	assertRoute("validate@{target}", []string{"framework/commands.md", "full run", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
 	assertRoute("validate@{target}:check-{n}", []string{"framework/commands.md", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
-	assertRoute("verify@{unit}", []string{"discover paths", "full run", "--input", "framework/unit_verify_checklist.md"}, nil)
-	assertRoute("verify@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/unit_verify_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
+	assertRoute("verify@{unit}", []string{"discover paths", "full run", "--input", "framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md"}, nil)
+	assertRoute("verify@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("verify@{rule}", []string{"rule verify was removed", "validate@{rule}", "framework/verification_scope.md"}, nil)
-	assertRoute("revalidate@{target}", []string{"framework/commands.md", "delta/repair", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
-	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta/repair", "--input", "framework/unit_verify_checklist.md"}, nil)
+	assertRoute("revalidate@{target}", []string{"framework/commands.md", "delta/repair", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
+	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta/repair", "--input", "framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md"}, nil)
 	assertRoute("promote@{target}", []string{"framework/commands.md", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
 	assertRoute("fresh@{target}", []string{"For `{target}`, resolve via `framework/commands.md`", "`specflowctl fresh`", "framework/validation_cache.md"}, nil)
 
 	for _, metaTrigger := range []string{"`spec_flow_review`", "`spec_flow_review:full`", "`spec_flow_design_review`"} {
 		if strings.Contains(section, metaTrigger) {
 			t.Fatalf("meta-governance trigger %s belongs to project entry instructions, not bootstrap routing", metaTrigger)
+		}
+	}
+}
+
+// Phase procedures stay in the packages named by the bootstrap. Removing them
+// from startup must not remove the execution controls themselves.
+func TestBootstrapGateProceduresRemainInRoutedPackages(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..")
+	readPackage := func(name string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(repoRoot, "framework", name))
+		if err != nil {
+			t.Fatalf("read framework/%s: %v", name, err)
+		}
+		return string(content)
+	}
+	bootstrap := readPackage("concepts.md")
+	for _, command := range []string{"gate-plan", "gate-mission", "gate-submit", "gate-finalize"} {
+		if strings.Contains(bootstrap, command) {
+			t.Fatalf("phase execution command %s belongs in the routed packages, not the bootstrap", command)
+		}
+	}
+	for _, checklist := range []string{"unit_validate_checklist.md", "rule_validate_checklist.md", "unit_verify_checklist.md"} {
+		t.Run(checklist, func(t *testing.T) {
+			content := readPackage(checklist)
+			for _, required := range []string{
+				"specflowctl gate-plan --gate",
+				"same kind and lens",
+				"reusing accepted public tasks and waiting for assigned tasks",
+				"gate-mission --run <run_id> --keys",
+				"one independent reviewer",
+				"gate-submit --run <run_id>",
+				"gate-mission --run <run_id> --final",
+				"gate-finalize --run <run_id>",
+			} {
+				requireText(t, content, required)
+			}
+		})
+	}
+	scope := readPackage("verification_scope.md")
+	for _, required := range []string{
+		"specflowctl next --unit <name>",
+		"including items that a delta/repair run might carry",
+		"including files already in the declared code surface",
+		"The coordinator does not submit that text as a session report",
+		"re-runs `gate-plan` with the union of previously discovered and new paths",
+		"executes the replacement run's coverage set again",
+		"only when `gate-status` reports next action `finalize`",
+		"`finalize` when ready to publish",
+		"targeted runs execute directly in the main agent session",
+	} {
+		requireText(t, scope, required)
+	}
+	shared := readPackage("shared_judgments.md")
+	for _, required := range []string{"public", "design", "architecture", "preserve", "waits for the assigned run"} {
+		requireText(t, shared, required)
+	}
+}
+
+func TestBootstrapImpactDiscoveryBoundary(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..")
+	for _, name := range []string{"concepts.md", "recovery_patterns.md"} {
+		content, err := os.ReadFile(filepath.Join(repoRoot, "framework", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.ToLower(string(content))
+		for _, required := range []string{
+			"pause affected implementation mutations",
+			"read-only diagnosis may continue",
+			"affected units/rules",
+			"no-impact basis",
+			"shared files alone do not establish impact",
+			"reading or creating a candidate does not expand authorization",
+			"recorded basis and authorization are clear",
+		} {
+			requireText(t, text, required)
 		}
 	}
 }

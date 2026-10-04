@@ -4,7 +4,9 @@ Common situations where a normal unit's validate → verify → promote path div
 
 ## 1. Code changed without updating candidate
 
-This is the normal iteration pattern. Do not interrupt. When the user signals they are ready to check (quality check signal → run `verify`), verify will detect the divergence and enter divergence resolution.
+Continue without a spec edit only when the implementation change remains authorized and preserves the recorded behavior, ownership, rules, and acceptance conditions. This includes internal changes and repairs that restore the authorized recorded behavior. Do not start a gate automatically; when the user triggers `verify`, follow its divergence-resolution procedure for any mismatch it finds.
+
+If execution reveals possible impact on those conditions or implementation permission, pause affected implementation mutations. Read-only diagnosis may continue: read the affected units/rules and reassess the original request, authorization, and no-impact basis. Shared files alone do not establish impact, and reading or creating a candidate does not expand authorization. Resume through the existing route only when the recorded basis and authorization are clear; ask for missing decisions and apply `framework/concepts.md` HARD RULE 3a to divergence. A later verify does not replace this pre-mutation reassessment.
 
 ## 2. Candidate changed without implementing
 

@@ -62,7 +62,7 @@ The applicable path depends on the target:
 
 | Step | Unit | Rule |
 |---|---|---|
-| validate | 10-point unit design checklist (`unit_validate_checklist.md`) | 7-point rule checklist (`rule_validate_checklist.md`) |
+| validate | 10-point unit design checklist (`unit_validate_checklist.md`) | Rule metadata and body-quality checklist (`rule_validate_checklist.md`) |
 | verify | Required: 7-step spec-vs-code check (`unit_verify_checklist.md`), run as one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality) | Not applicable; rule verify was removed |
 | promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer migration (`rule_promote_workflow.md`) |
 
