@@ -47,27 +47,17 @@ func Fork(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	candidateAppendixDir := filepath.Join(repoRoot, specpaths.CandidateAppendixDir)
-	appendixMatches, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
+	appendixCopies, skipped, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "stable")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r
 	}
 
-	var filesToCopy []struct {
-		src string
-		dst string
+	for _, path := range skipped {
+		r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", path))
 	}
-
-	for _, m := range appendixMatches {
-		if m.Status == "exempt" {
-			r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", m.Path))
-			continue
-		}
-
-		dst := filepath.Join(candidateAppendixDir, filepath.Base(m.Path))
-		filesToCopy = append(filesToCopy, struct{ src, dst string }{filepath.Join(repoRoot, filepath.FromSlash(m.Path)), dst})
-		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", m.Path))
+	for _, appendix := range appendixCopies {
+		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", appendix.Source))
 	}
 
 	if err := fileops.CopyFile(stableSpecPath, candidateSpecPath); err != nil {
@@ -77,14 +67,15 @@ func Fork(repoRoot, unitName string) *Result {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s", stableSpec, candidateSpec))
 
-	for _, f := range filesToCopy {
-		if err := fileops.CopyFile(f.src, f.dst); err != nil {
+	for _, appendix := range appendixCopies {
+		src := filepath.Join(repoRoot, filepath.FromSlash(appendix.Source))
+		dst := filepath.Join(repoRoot, filepath.FromSlash(appendix.Destination))
+		if err := fileops.CopyFile(src, dst); err != nil {
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
 			r.Passed = false
 			return r
 		}
-		rel, _ := filepath.Rel(repoRoot, f.dst)
-		r.Actions = append(r.Actions, fmt.Sprintf("Forked appendix: %s", rel))
+		r.Actions = append(r.Actions, fmt.Sprintf("Forked appendix: %s", appendix.Destination))
 	}
 
 	// Inherit the stable confirmation caches: fork copies the stable content

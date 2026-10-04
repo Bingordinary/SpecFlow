@@ -184,6 +184,7 @@ func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 	}
 	repoRoot := t.TempDir()
 	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
 
 	// Pre-create the directory tree, then make the stable dir read-only so
 	// the main-spec staging fails after the appendix was already staged.
@@ -506,54 +507,291 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 }
 
 func TestCommitStagedRollsBack(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing []bool
+	}{
+		{"single-existing-rule", []bool{true}},
+		{"single-new-rule", []bool{false}},
+		{"existing-unit-files", []bool{true, true, true}},
+		{"new-unit-files", []bool{false, false, false}},
+		{"mixed-unit-files", []bool{true, false, true}},
+		{"mixed-new-first", []bool{false, true, false}},
+	}
+	for _, tc := range cases {
+		for failAt := -1; failAt < len(tc.existing); failAt++ {
+			t.Run(fmt.Sprintf("%s/fail-at-%d", tc.name, failAt), func(t *testing.T) {
+				dir := t.TempDir()
+				var staged []stagedCopy
+				originalModes := make([]os.FileMode, len(tc.existing))
+				for i, existing := range tc.existing {
+					src := filepath.Join(dir, fmt.Sprintf("candidate-%d.md", i))
+					dst := filepath.Join(dir, fmt.Sprintf("stable-%d.md", i))
+					if err := os.WriteFile(src, []byte(fmt.Sprintf("new-%d", i)), 0644); err != nil {
+						t.Fatal(err)
+					}
+					if existing {
+						if err := os.WriteFile(dst, []byte(fmt.Sprintf("old-%d", i)), 0600); err != nil {
+							t.Fatal(err)
+						}
+						info, err := os.Stat(dst)
+						if err != nil {
+							t.Fatal(err)
+						}
+						originalModes[i] = info.Mode().Perm()
+					}
+					tmp, err := stageCopy(src, dst)
+					if err != nil {
+						t.Fatal(err)
+					}
+					staged = append(staged, stagedCopy{tmp: tmp, dst: dst})
+				}
+
+				commitFailure := errors.New("injected commit failure")
+				calls := 0
+				err := commitStagedWith(staged, func(tmp, dst string) error {
+					i := calls
+					calls++
+					if i == failAt {
+						return commitFailure
+					}
+					return os.Rename(tmp, dst)
+				})
+				if failAt >= 0 && !errors.Is(err, commitFailure) {
+					t.Fatalf("expected commit failure, got %v", err)
+				}
+				if failAt < 0 && err != nil {
+					t.Fatalf("successful archive failed: %v", err)
+				}
+				for i, s := range staged {
+					if failAt >= 0 && !tc.existing[i] {
+						if _, err := os.Lstat(s.dst); !os.IsNotExist(err) {
+							t.Errorf("new destination remains after rollback: %s (%v)", s.dst, err)
+						}
+					} else {
+						want := fmt.Sprintf("old-%d", i)
+						if failAt < 0 {
+							want = fmt.Sprintf("new-%d", i)
+						}
+						got, err := os.ReadFile(s.dst)
+						if err != nil || string(got) != want {
+							t.Errorf("destination %d: got %q, error %v; want %q", i, got, err, want)
+						}
+						if failAt >= 0 {
+							info, err := os.Stat(s.dst)
+							if err != nil || info.Mode().Perm() != originalModes[i] {
+								t.Errorf("original destination permissions not restored: %s (%v)", s.dst, err)
+							}
+						}
+					}
+					candidate, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("candidate-%d.md", i)))
+					if err != nil || string(candidate) != fmt.Sprintf("new-%d", i) {
+						t.Errorf("candidate source changed: %d (%v)", i, err)
+					}
+				}
+				for _, pattern := range []string{".sf-tmp-*", ".sf-backup-*"} {
+					leftover, err := filepath.Glob(filepath.Join(dir, pattern))
+					if err != nil || len(leftover) > 0 {
+						t.Errorf("archive temp files remain: %v (%v)", leftover, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestCommitStagedReportsRollbackErrorsAndPreservesBackups(t *testing.T) {
 	dir := t.TempDir()
-
-	dst1 := filepath.Join(dir, "a.md")
-	if err := os.WriteFile(dst1, []byte("old-a"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	dst2 := filepath.Join(dir, "b.md")
-
-	tmp1 := filepath.Join(dir, "t1.md")
-	if err := os.WriteFile(tmp1, []byte("new-a"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	tmp2 := filepath.Join(dir, "t2.md")
-	if err := os.WriteFile(tmp2, []byte("new-b"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	staged := []stagedCopy{{tmp: tmp1, dst: dst1}, {tmp: tmp2, dst: dst2}}
-	commit := func(tmp, dst string) error {
-		if dst == dst2 {
-			return errors.New("injected commit failure")
+	var staged []stagedCopy
+	for i := 0; i < 3; i++ {
+		dst := filepath.Join(dir, fmt.Sprintf("stable-%d.md", i))
+		tmp := filepath.Join(dir, fmt.Sprintf("stage-%d.md", i))
+		if err := os.WriteFile(dst, []byte(fmt.Sprintf("old-%d", i)), 0644); err != nil {
+			t.Fatal(err)
 		}
-		return os.Rename(tmp, dst)
+		if err := os.WriteFile(tmp, []byte(fmt.Sprintf("new-%d", i)), 0644); err != nil {
+			t.Fatal(err)
+		}
+		staged = append(staged, stagedCopy{tmp: tmp, dst: dst})
 	}
+	commitFailure := errors.New("injected commit failure")
+	archiveErr := commitStagedWith(staged, func(tmp, dst string) error {
+		// Non-empty directories prevent restoration at two paths; the other
+		// original must still be restored, and both failures must be reported.
+		for _, i := range []int{0, 2} {
+			if err := os.Mkdir(staged[i].dst, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(staged[i].dst, "obstruction"), []byte("blocked"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return commitFailure
+	})
+	if !errors.Is(archiveErr, commitFailure) {
+		t.Fatalf("original commit error was lost: %v", archiveErr)
+	}
+	for _, i := range []int{0, 2} {
+		if !strings.Contains(archiveErr.Error(), "restore "+staged[i].dst) {
+			t.Errorf("restoration error for destination %d not reported: %v", i, archiveErr)
+		}
+	}
+	got, readErr := os.ReadFile(staged[1].dst)
+	if readErr != nil || string(got) != "old-1" {
+		t.Errorf("unblocked original was not restored: %q (%v)", got, readErr)
+	}
+	backups, globErr := filepath.Glob(filepath.Join(dir, ".sf-backup-*"))
+	if globErr != nil || len(backups) != 2 {
+		t.Fatalf("expected two preserved backups, got %v (%v)", backups, globErr)
+	}
+	remaining := map[string]bool{"old-0": false, "old-2": false}
+	for _, backup := range backups {
+		data, err := os.ReadFile(backup)
+		if err != nil {
+			t.Fatal(err)
+		}
+		remaining[string(data)] = true
+		if !strings.Contains(archiveErr.Error(), backup) {
+			t.Errorf("preserved backup path missing from restoration error: %s", backup)
+		}
+	}
+	for content, present := range remaining {
+		if !present {
+			t.Errorf("original content %q is not preserved", content)
+		}
+	}
+	for _, s := range staged {
+		if _, err := os.Stat(s.tmp); !os.IsNotExist(err) {
+			t.Errorf("staged copy remains: %s (%v)", s.tmp, err)
+		}
+	}
+}
 
-	err := commitStagedWith(staged, commit)
+func TestCommitStagedBackupFailureRestoresPreparedDestinations(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "stable.md")
+	blocker := filepath.Join(dir, "not-a-directory")
+	for path, content := range map[string]string{dst: "old", blocker: "blocker"} {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var staged []stagedCopy
+	for i, target := range []string{dst, filepath.Join(blocker, "stable.md")} {
+		tmp := filepath.Join(dir, fmt.Sprintf("stage-%d.md", i))
+		if err := os.WriteFile(tmp, []byte("new"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		staged = append(staged, stagedCopy{tmp: tmp, dst: target})
+	}
+	err := commitStagedWith(staged, func(tmp, dst string) error {
+		t.Fatal("commit must not start when destination inspection or backup fails")
+		return nil
+	})
 	if err == nil {
-		t.Fatal("expected commit failure to be returned")
+		t.Fatal("expected destination preparation failure")
 	}
-
-	content, err := os.ReadFile(dst1)
-	if err != nil {
-		t.Fatalf("dst1 must be restored after rollback: %v", err)
-	}
-	if string(content) != "old-a" {
-		t.Fatalf("dst1 not rolled back: got %q, want %q", content, "old-a")
-	}
-	if _, err := os.Stat(dst2); !os.IsNotExist(err) {
-		t.Fatal("dst2 must not exist after rollback (no original file)")
-	}
-	for _, p := range []string{tmp1, tmp2} {
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Fatalf("staged temp file left behind after rollback: %s", p)
+	for path, want := range map[string]string{dst: "old", blocker: "blocker"} {
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != want {
+			t.Errorf("original %s changed: %q (%v)", path, got, err)
 		}
 	}
-	leftover, _ := filepath.Glob(filepath.Join(dir, ".sf-backup-*"))
-	if len(leftover) > 0 {
-		t.Fatalf("backup files left behind after rollback: %v", leftover)
+	for _, s := range staged {
+		if _, err := os.Stat(s.tmp); !os.IsNotExist(err) {
+			t.Errorf("staged copy remains after backup failure: %s (%v)", s.tmp, err)
+		}
+	}
+	leftover, err := filepath.Glob(filepath.Join(dir, ".sf-backup-*"))
+	if err != nil || len(leftover) != 0 {
+		t.Errorf("backup files remain after successful restoration: %v (%v)", leftover, err)
+	}
+}
+
+func TestCommitStagedPreservesEarlierRecoveryBackup(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "stable.md")
+	previousBackup := filepath.Join(dir, ".sf-backup-stable.md")
+	tmp := filepath.Join(dir, "stage.md")
+	for path, content := range map[string]string{dst: "old", previousBackup: "earlier original", tmp: "new"} {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := commitStagedWith([]stagedCopy{{tmp: tmp, dst: dst}}, os.Rename); err != nil {
+		t.Fatalf("archive failed: %v", err)
+	}
+	got, err := os.ReadFile(previousBackup)
+	if err != nil || string(got) != "earlier original" {
+		t.Fatalf("backup from an earlier restoration failure was overwritten: %q (%v)", got, err)
+	}
+}
+
+func TestCommitStagedRestoresCandidateRemovals(t *testing.T) {
+	for failAt := -1; failAt < 2; failAt++ {
+		t.Run(fmt.Sprintf("fail-at-%d", failAt), func(t *testing.T) {
+			dir := t.TempDir()
+			var staged []stagedCopy
+			var candidates []string
+			for i := 0; i < 2; i++ {
+				src := filepath.Join(dir, fmt.Sprintf("candidate-%d.md", i))
+				dst := filepath.Join(dir, fmt.Sprintf("published-%d.md", i))
+				if err := os.WriteFile(src, []byte(fmt.Sprintf("new-%d", i)), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(dst, []byte(fmt.Sprintf("old-%d", i)), 0644); err != nil {
+					t.Fatal(err)
+				}
+				tmp, err := stageCopy(src, dst)
+				if err != nil {
+					t.Fatal(err)
+				}
+				staged = append(staged, stagedCopy{tmp: tmp, dst: dst})
+				candidates = append(candidates, src)
+			}
+			failure := errors.New("controlled publication failure")
+			calls := 0
+			err := commitStagedWith(staged, func(tmp, dst string) error {
+				for _, candidate := range candidates {
+					if _, err := os.Stat(candidate); !os.IsNotExist(err) {
+						t.Errorf("candidate removal was not prepared: %v", err)
+					}
+				}
+				i := calls
+				calls++
+				if i == failAt {
+					return failure
+				}
+				return os.Rename(tmp, dst)
+			}, candidates...)
+			if failAt >= 0 && !errors.Is(err, failure) {
+				t.Fatalf("expected failure: %v", err)
+			}
+			if failAt < 0 && err != nil {
+				t.Fatal(err)
+			}
+			for i, s := range staged {
+				want := fmt.Sprintf("new-%d", i)
+				if failAt >= 0 {
+					want = fmt.Sprintf("old-%d", i)
+				}
+				got, err := os.ReadFile(s.dst)
+				if err != nil || string(got) != want {
+					t.Errorf("incorrect published state: %q (%v)", got, err)
+				}
+				got, err = os.ReadFile(candidates[i])
+				if failAt >= 0 && (err != nil || string(got) != fmt.Sprintf("new-%d", i)) {
+					t.Errorf("candidate not restored: %q (%v)", got, err)
+				}
+				if failAt < 0 && !os.IsNotExist(err) {
+					t.Errorf("candidate remains: %v", err)
+				}
+			}
+			leftovers, err := filepath.Glob(filepath.Join(dir, ".sf-*"))
+			if err != nil || len(leftovers) != 0 {
+				t.Fatalf("transaction debris: %v (%v)", leftovers, err)
+			}
+		})
 	}
 }
 
@@ -575,14 +813,16 @@ func TestPromoteUnitCandidateRemovalFailure(t *testing.T) {
 	if result.Passed {
 		t.Fatal("expected promote to fail when candidate cleanup fails")
 	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "failed to remove candidate appendix") {
+	if !strings.Contains(strings.Join(result.Issues, " "), "Failed to commit promote") {
 		t.Fatalf("expected candidate cleanup issue, got: %v", result.Issues)
 	}
 
-	// The stable layer is fully archived and the candidate spec is still in
-	// place, so a re-run completes the promote.
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/stable/unit_demo.md")); err != nil {
-		t.Fatalf("stable spec missing after cleanup failure: %v", err)
+	// No accepted truth or baseline is published on cleanup failure.
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/stable/unit_demo.md")); !os.IsNotExist(err) {
+		t.Fatalf("stable spec must stay absent after cleanup failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("baseline must stay absent after cleanup failure: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")); err != nil {
 		t.Fatal("candidate spec must survive a cleanup failure so promote is re-runnable")
@@ -622,21 +862,24 @@ func TestPromoteRuleCandidateRemovalFailure(t *testing.T) {
 	if result.Passed {
 		t.Fatal("expected rule promote to fail when candidate cleanup fails")
 	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "failed to remove candidate rule") {
+	if !strings.Contains(strings.Join(result.Issues, " "), "Failed to commit rule") {
 		t.Fatalf("expected candidate rule cleanup issue, got: %v", result.Issues)
 	}
 
-	// The stable rule is fully archived and the failure message names the
-	// recovery path (the rule version gate makes an automatic re-run
-	// impossible once the stable version equals the candidate version).
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/rules/stable/b_rule_test.md")); err != nil {
-		t.Fatalf("stable rule missing after cleanup failure: %v", err)
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/rules/stable/b_rule_test.md")); !os.IsNotExist(err) {
+		t.Fatalf("stable rule must stay absent after cleanup failure: %v", err)
 	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "delete docs/specs/rules/candidate/b_rule_test.md manually") {
-		t.Fatalf("expected manual cleanup guidance, got: %v", result.Issues)
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_test.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("baseline must stay absent after cleanup failure: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(ruleDir, "b_rule_test.md")); err != nil {
 		t.Fatal("candidate rule must survive a cleanup failure")
+	}
+	if err := os.Chmod(ruleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if retry := PromoteRule(repoRoot, "b_rule_test"); !retry.Passed {
+		t.Fatalf("normal rule retry must pass: %v", retry.Issues)
 	}
 }
 
@@ -694,7 +937,7 @@ func TestPromoteUnit_NoVerifyCacheFails(t *testing.T) {
 	if result.Passed {
 		t.Fatal("expected promote to fail without verify dependency evidence")
 	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "failed to read verify dependency evidence") {
+	if !strings.Contains(strings.Join(result.Issues, " "), "verify dependency evidence") {
 		t.Fatalf("expected verify dependency issue, got: %v", result.Issues)
 	}
 }

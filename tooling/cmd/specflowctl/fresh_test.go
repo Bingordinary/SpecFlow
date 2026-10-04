@@ -942,7 +942,7 @@ func TestFreshStableScope(t *testing.T) {
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
-		"    verification_type: auto\n" +
+		"    verification_type: testable\n" +
 		"    verification_surface: src/\n" +
 		"    implementation_surface: src/\n" +
 		"    verification_method: check\n" +
@@ -1020,7 +1020,7 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
-		"    verification_type: auto\n" +
+		"    verification_type: testable\n" +
 		"    verification_surface: src/\n" +
 		"    implementation_surface: src/\n" +
 		"    verification_method: check\n" +
@@ -1072,7 +1072,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
-		"    verification_type: auto\n" +
+		"    verification_type: testable\n" +
 		"    verification_surface: src/\n" +
 		"    implementation_surface: src/\n" +
 		"    verification_method: check\n" +
@@ -1128,7 +1128,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
-		"    verification_type: auto\n" +
+		"    verification_type: testable\n" +
 		"    verification_surface: src/\n" +
 		"    implementation_surface: src/\n" +
 		"    verification_method: check\n" +

@@ -61,11 +61,21 @@ func baselinePath(repoRoot, kind, name string) string {
 // returned by ReadVerifyDeps): files with declared dependencies are judged on
 // chunk existence, files without them on the whole-file hash.
 func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) error {
+	path, data, err := PrepareUnitBaseline(repoRoot, unitName, specContent, verifyDeps)
+	if err != nil {
+		return err
+	}
+	return writePrepared(path, data)
+}
+
+// PrepareUnitBaseline computes the publication record without writing it.
+// Promote stages these bytes in the same transaction as accepted truth.
+func PrepareUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) (string, []byte, error) {
 	surfaces, err := collectSurfaces(repoRoot,
 		specvalidation.ExtractImplementationSurfaces(specContent),
 		specvalidation.ExtractAffectsFiles(specContent))
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	for i := range surfaces {
 		for j := range surfaces[i].Entries {
@@ -74,7 +84,7 @@ func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[st
 			}
 		}
 	}
-	return writeBaseline(repoRoot, "unit", unitName, surfaces)
+	return baselinePath(repoRoot, "unit", unitName), renderBaseline("unit", unitName, surfaces), nil
 }
 
 // WriteRuleBaseline records the stable rule file itself as the rule's
@@ -82,12 +92,22 @@ func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[st
 // from the archived stable file, so it must be called after the rule commit.
 func WriteRuleBaseline(repoRoot, ruleID string) error {
 	stableRule := filepath.Join(repoRoot, "docs/specs/rules/stable", ruleID+".md")
-	hash, err := specpaths.FileHash(stableRule)
+	path, data, err := PrepareRuleBaseline(repoRoot, ruleID, stableRule)
 	if err != nil {
 		return err
 	}
+	return writePrepared(path, data)
+}
+
+// PrepareRuleBaseline hashes the artifact that will be published, while its
+// recorded path is always the final stable path. No stable write is required.
+func PrepareRuleBaseline(repoRoot, ruleID, artifactPath string) (string, []byte, error) {
+	hash, err := specpaths.FileHash(artifactPath)
+	if err != nil {
+		return "", nil, err
+	}
 	s := surface{Path: "docs/specs/rules/stable/" + ruleID + ".md", Entries: []entry{{Path: "docs/specs/rules/stable/" + ruleID + ".md", Hash: hash}}}
-	return writeBaseline(repoRoot, "rule", ruleID, []surface{s})
+	return baselinePath(repoRoot, "rule", ruleID), renderBaseline("rule", ruleID, []surface{s}), nil
 }
 
 // RemoveBaseline deletes the baseline of a target (used when the target is
@@ -170,7 +190,7 @@ func collectSurfaces(repoRoot string, surfacePaths, filePaths []string) ([]surfa
 // Serialization (YAML subset, dependency-free)
 // ------------------------------------------------------------
 
-func writeBaseline(repoRoot, kind, name string, surfaces []surface) error {
+func renderBaseline(kind, name string, surfaces []surface) []byte {
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "kind: %s\n", kind)
 	fmt.Fprintf(&buf, "name: %s\n", name)
@@ -193,11 +213,14 @@ func writeBaseline(repoRoot, kind, name string, surfaces []surface) error {
 			}
 		}
 	}
-	path := baselinePath(repoRoot, kind, name)
+	return []byte(buf.String())
+}
+
+func writePrepared(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(buf.String()), 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
 type parsedBaseline struct {

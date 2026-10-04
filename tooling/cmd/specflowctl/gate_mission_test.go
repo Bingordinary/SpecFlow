@@ -7,7 +7,49 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulevalidation"
 )
+
+func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
+	cases := []struct {
+		name, target, candidateVersion, stableVersion string
+		candidatePass                                 bool
+	}{
+		{"stable confirmation", "stable", "", "1.2.0", false},
+		{"candidate increase", "candidate", "1.3.0", "1.2.0", true},
+		{"candidate equal", "candidate", "1.2.0", "1.2.0", false},
+		{"candidate lower", "candidate", "1.1.0", "1.2.0", false},
+		{"new candidate", "candidate", "0.1.0", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := createCLITestRepo(t)
+			grEnableMissionLayout(t, root)
+			const id = "b_rule_consistency"
+			for layer, version := range map[string]string{"candidate": tc.candidateVersion, "stable": tc.stableVersion} {
+				if version != "" {
+					grWriteFile(t, root, "docs/specs/rules/"+layer+"/"+id+".md", "---\nrule_id: "+id+"\nrule_scope: bound\nrule_version: "+version+"\n---\n\n# Constraint\n\nValidate input before processing.\n")
+				}
+			}
+			runID := grPlan(t, root, "--gate", "validate", "--rule", id, "--target", tc.target)
+			var out, errOut bytes.Buffer
+			if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "3,4", "--format", "prompt"}, &out, &errOut); err != nil {
+				t.Fatalf("mission: %v (%s)", err, errOut.String())
+			}
+			for _, want := range []string{"Target layer: " + tc.target, "Spec source: docs/specs/rules/" + tc.target + "/" + id + ".md", "Target-layer applicability", "checks 3, 4"} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("mission omits %q:\n%s", want, out.String())
+				}
+			}
+			if tc.target == "candidate" {
+				result := rulevalidation.ValidateRule(root, id)
+				if result.Passed != tc.candidatePass {
+					t.Fatalf("candidate version gate changed: %+v", result)
+				}
+			}
+		})
+	}
+}
 
 func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	root := createCLITestRepo(t)

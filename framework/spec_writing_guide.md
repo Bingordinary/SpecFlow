@@ -180,15 +180,15 @@ Agent sets the rule version when editing the rule file. The version must change 
 
 Change type determination — compare the candidate version against the current stable version. The first differing segment (MAJOR → MINOR → PATCH) determines the type:
 
-| Type | Condition | Example | Cascade? |
-|------|-----------|---------|----------|
-| **MAJOR** | Core constraint changes. What was previously allowed is now forbidden, or vice versa. Boundaries tighten or loosen. | `"Must use PostgreSQL"` → `"Must NOT use PostgreSQL"` | Yes |
-| **MINOR** | Compatible extension. New exceptions, new options, new clarifications added without changing existing constraint semantics. | `"Must use PostgreSQL"` → `"Must use PostgreSQL, except test environments may use SQLite"` | No |
-| **PATCH** | Wording clarification only. Typo fix, sentence rephrase, or any change that does not alter the rule's formal meaning. | `"Must use PostgresSQL"` → `"Must use PostgreSQL"` (spelling fix) | No |
+| Type | Condition | Example |
+|------|-----------|---------|
+| **MAJOR** | Core constraint changes. What was previously allowed is now forbidden, or vice versa. Boundaries tighten or loosen. | `"Must use PostgreSQL"` → `"Must NOT use PostgreSQL"` |
+| **MINOR** | Compatible extension. New exceptions, new options, new clarifications added without changing existing constraint semantics. | `"Must use PostgreSQL"` → `"Must use PostgreSQL, except test environments may use SQLite"` |
+| **PATCH** | Wording clarification only. Typo fix, sentence rephrase, or any change that does not alter the rule's formal meaning. | `"Must use PostgresSQL"` → `"Must use PostgreSQL"` (spelling fix) |
 
-A brand-new rule starts at `0.1.0`. When a rule has no stable version yet (first promotion), no cascade occurs regardless of version.
+A brand-new rule starts at `0.1.0`. A first publication has no previous stable version, but the published rule still applies to existing units — a global rule by default, a bound rule through existing `rule_refs` — so consumer discovery and impact assessment still run.
 
-**Cascade meaning:** the "Cascade?" column indicates whether a rule promotion requires downstream consumer handling. There is no automatic cascade — tooling never modifies consumer units. For a MAJOR change, the agent identifies affected consumer units and handles their constraint compliance per `framework/rule_promote_workflow.md` §Post-promote Consumer Impact; for MINOR/PATCH changes, consumer impact is assessed per rule content and is typically none. The affected units' caches go stale mechanically (their validate cache declares `rule:{id}` as a logical reference), so their promote is rejected until they are re-validated.
+**Consumer impact:** every publication, including the first, requires consumer discovery and content-impact assessment per `framework/rule_promote_workflow.md` §Post-promote Consumer Impact. The change type classifies the publication; it does not decide whether this handling runs. There is no automatic cascade — tooling never modifies consumer units. A consumer's validate cache declares `rule:{id}` as a logical reference, so when the content it checked against is no longer the published content, its cache goes stale mechanically and its promote is rejected until it is re-validated; a dependency checked against the identical candidate content stays fresh after promotion.
 
 When editing an existing rule candidate, bump the version deterministically:
 - If any existing constraint changes meaning → bump MAJOR
@@ -386,6 +386,8 @@ Each unit appendix must:
 
 1. use the current path shape for its layer and unit id
 2. declare `unit: {unit}` in frontmatter
+
+Before a unit fork or promote writes any file, the tooling resolves the complete appendix copy set and checks every existing destination's path and frontmatter ownership. The destination must belong to the same unit. A different owner, unreadable file, or missing/inconsistent ownership rejects the operation with the destination path before changing main specs, appendices, candidates, caches or baselines. An exempt destination still requires this ownership check; exemption does not authorize another unit to replace it.
 
 When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all active appendix files (skipping `status: exempt`). Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk. After editing, explicitly delete an obsolete draft appendix using the candidate-only removal sequence in `framework/removal_workflow.md`.
 

@@ -265,6 +265,9 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		AdditionalRefs:   []string{},
 		ReportContract:   reportContractFor(run, spec),
 	}
+	if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule {
+		session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
+	}
 	if state.Status == gaterun.SessionRejected {
 		if len(state.Attempts) == 0 || strings.TrimSpace(state.Attempts[len(state.Attempts)-1].RejectionReason) == "" {
 			return gateMission{}, fmt.Errorf("rejected session %q has no rejection reason", spec.SessionID)

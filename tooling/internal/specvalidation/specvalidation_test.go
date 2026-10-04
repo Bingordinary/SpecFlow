@@ -90,6 +90,37 @@ func TestCheckFrontmatter_MissingField(t *testing.T) {
 	}
 }
 
+func TestCheckUnitFrontmatterRequiredShape(t *testing.T) {
+	complete := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n"
+	for _, tc := range []struct {
+		name, content, diagnostic string
+	}{
+		{"none", complete, ""},
+		{"active", strings.Replace(complete, "id: demo", "id: demo\nstatus: active", 1), ""},
+		{"inline refs", "---\nid: demo\nunit_refs: [peer]\nrule_refs: [b_rule_peer]\n---\n", ""},
+		{"block refs", "---\nid: demo\nunit_refs:\n  - peer\nrule_refs:\n  - b_rule_peer\n---\n", ""},
+		{"quoted and CRLF", "---\r\nid: \"demo\"\r\nunit_refs: 'none'\r\nrule_refs: none\r\n---\r\n", ""},
+		{"missing id", strings.Replace(complete, "id: demo\n", "", 1), "id"},
+		{"empty id", strings.Replace(complete, "id: demo", "id: \"\"", 1), "id"},
+		{"missing unit refs", strings.Replace(complete, "unit_refs: none\n", "", 1), "unit_refs"},
+		{"empty unit refs", strings.Replace(complete, "unit_refs: none", "unit_refs:", 1), "unit_refs"},
+		{"missing rule refs", strings.Replace(complete, "rule_refs: none\n", "", 1), "rule_refs"},
+		{"empty rule refs", strings.Replace(complete, "rule_refs: none", "rule_refs: \"\"", 1), "rule_refs"},
+		{"wrong id", strings.Replace(complete, "id: demo", "id: another", 1), "does not match"},
+		{"invalid status", strings.Replace(complete, "id: demo", "id: demo\nstatus: exempt", 1), "status"},
+		{"unclosed header", strings.TrimSuffix(complete, "---\n"), "required fields"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newRepo(t)
+			writeCandidate(t, root, "demo", tc.content)
+			result := checkFrontmatter(root, "demo")
+			if (result.Status == Pass) != (tc.diagnostic == "") || !strings.Contains(result.Details, tc.diagnostic) {
+				t.Fatalf("unexpected frontmatter result: %+v", result)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Check 2: Acceptance items
 // ---------------------------------------------------------------------------
@@ -101,7 +132,7 @@ func TestCheckAcceptanceItems_Pass(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: first acceptance item\n"+
-			"    verification_type: manual\n"+
+			"    verification_type: inspectable\n"+
 			"    verification_surface: docs/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: visual inspection\n"+
@@ -156,7 +187,7 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -168,23 +199,23 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 	}
 }
 
-func TestCheckAcceptanceItems_EmptyImplementationSurfacePass(t *testing.T) {
+func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface:\n"+
 			"    verification_method: check\n"+
 			"    pass_condition: ok\n"+
 			"    runnable: yes\n")
-	// The empty value is a path-resolution defect: Check 3 reports it.
+	// Required values must be non-empty; Check 3 additionally resolves paths.
 	result := checkAcceptanceItems(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for Check 2 (empty surface is Check 3's concern), got %s: %s", result.Status, result.Details)
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for an empty required surface, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -197,7 +228,7 @@ func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T)
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: <pending>\n"+
 			"    verification_method: check\n"+
@@ -237,7 +268,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -259,7 +290,7 @@ func TestCheckAnchors_MissingFileFail(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -290,7 +321,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -301,7 +332,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 			"        - src/handler.go\n"+
 			"  - id: item_2\n"+
 			"    description: test\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -329,7 +360,7 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
-			"    verification_type: auto\n"+
+			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: check\n"+
@@ -742,7 +773,7 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: integration test item\n"+
-			"    verification_type: manual\n"+
+			"    verification_type: inspectable\n"+
 			"    verification_surface: docs/\n"+
 			"    implementation_surface: src/\n"+
 			"    verification_method: review\n"+

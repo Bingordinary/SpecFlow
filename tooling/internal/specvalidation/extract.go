@@ -8,6 +8,8 @@ import (
 
 type acceptanceItemFields struct {
 	id                    string
+	fields                map[string]string
+	duplicateFields       []string
 	implementationSurface string
 	affectsFiles          []string
 	affectsAppendices     []string
@@ -30,10 +32,11 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 	regions := contenthash.AcceptanceItemRegions(content)
 	items := make([]acceptanceItemFields, 0, len(regions))
 	for _, region := range regions {
-		item := acceptanceItemFields{id: region.ID}
+		item := acceptanceItemFields{id: region.ID, fields: map[string]string{"id": region.ID}}
 		fieldIndent := leadingSpaces(region.Text) + 2
 		inAffects := false
 		listField := ""
+		blockField := ""
 		fence := acceptanceFence{}
 		for _, line := range strings.Split(region.Text, "\n") {
 			if fence.active {
@@ -46,20 +49,39 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 
 			trimmed := strings.TrimSpace(line)
 			indent := leadingSpaces(line)
-			switch {
-			case indent == fieldIndent && strings.HasPrefix(trimmed, "implementation_surface:"):
-				value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "implementation_surface:")), `"'`)
-				if value != "" {
-					item.implementationSurface = value
+			if blockField != "" {
+				if indent > fieldIndent {
+					if trimmed != "" {
+						item.fields[blockField] += trimmed + "\n"
+					}
+					continue
 				}
-				inAffects = false
-				listField = ""
-			case indent == fieldIndent && trimmed == "affects:":
-				inAffects = true
-				listField = ""
+				if trimmed == "" {
+					continue
+				}
+				blockField = ""
+			}
+			switch {
 			case indent == fieldIndent && trimmed != "":
 				inAffects = false
 				listField = ""
+				key, raw, ok := strings.Cut(trimmed, ":")
+				if !ok || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				key = strings.TrimSpace(key)
+				if _, exists := item.fields[key]; exists {
+					item.duplicateFields = append(item.duplicateFields, key)
+				}
+				value := acceptanceScalar(raw)
+				item.fields[key] = value
+				if raw = strings.TrimSpace(raw); strings.HasPrefix(raw, "|") || strings.HasPrefix(raw, ">") {
+					if isAcceptanceBlockScalar(value) {
+						blockField = key
+						item.fields[key] = ""
+					}
+				}
+				inAffects = key == "affects" && value == ""
 			case inAffects && indent == fieldIndent+2 && strings.Contains(trimmed, ":"):
 				key, value, _ := strings.Cut(trimmed, ":")
 				listField = key
@@ -72,9 +94,55 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 				}
 			}
 		}
+		item.implementationSurface = strings.TrimSpace(item.fields["implementation_surface"])
 		items = append(items, item)
 	}
 	return items
+}
+
+// acceptanceScalar reads the scalar notation used by acceptance fields,
+// preserving quoted '#' characters while excluding an unquoted inline comment.
+func acceptanceScalar(raw string) string {
+	value := strings.TrimSpace(raw)
+	var quote byte
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if quote != 0 {
+			if quote == '"' && ch == '\\' {
+				i++
+			} else if ch == quote {
+				if quote == '\'' && i+1 < len(value) && value[i+1] == '\'' {
+					i++
+				} else {
+					quote = 0
+				}
+			}
+		} else if i == 0 && (ch == '\'' || ch == '"') {
+			quote = ch
+		} else if ch == '#' && (i == 0 || value[i-1] == ' ' || value[i-1] == '\t') {
+			value = strings.TrimSpace(value[:i])
+			break
+		}
+	}
+	if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
+		return value[1 : len(value)-1]
+	}
+	if value == "~" || strings.EqualFold(value, "null") {
+		return ""
+	}
+	return value
+}
+
+func isAcceptanceBlockScalar(value string) bool {
+	if value == "" || (value[0] != '|' && value[0] != '>') {
+		return false
+	}
+	for _, ch := range value[1:] {
+		if ch != '+' && ch != '-' && (ch < '1' || ch > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func appendAffects(item *acceptanceItemFields, key, value string) {

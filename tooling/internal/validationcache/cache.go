@@ -2079,7 +2079,17 @@ func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCac
 		case cache.Result == "fail" || cache.Blocking:
 			entry.Reason = fmt.Sprintf("%s cache is a failure record — not rewritten (blocking state must be resolved first)", cmd)
 		default:
-			rewritten, changed := rewriteCacheLayerToStable(string(data), owned)
+			var rewritten string
+			var changed bool
+			if targetKind == "rule" {
+				rewritten, err = projectRuleConfirmation(string(data), cache, targetName)
+				if err != nil {
+					return nil, fmt.Errorf("project rule confirmation: %w", err)
+				}
+				changed = rewritten != string(data)
+			} else {
+				rewritten, changed = rewriteCacheLayerToStable(string(data), owned)
+			}
 			if !changed {
 				entry.Reason = fmt.Sprintf("%s cache needs no layer rewrite", cmd)
 			} else if err := os.WriteFile(cachePath, []byte(rewritten), 0644); err != nil {
@@ -2091,6 +2101,70 @@ func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCac
 		report.Entries = append(report.Entries, entry)
 	}
 	return report, nil
+}
+
+// projectRuleConfirmation preserves the published target's original evidence,
+// but retires prior-stable evidence used only for candidate version advancement.
+// Other checks and unassociated dependencies remain live; no hashes are rebuilt.
+func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (string, error) {
+	candidate := specpaths.RuleCandidateFileRef(ruleID)
+	stable := specpaths.RuleStableFileRef(ruleID)
+	w := CacheWrite{
+		Command: cache.Command, Mode: cache.Mode, Basis: cache.Basis,
+		Result: cache.Result, Target: "stable", Blocking: cache.Blocking,
+		P0Count: cache.P0Count, P1Count: cache.P1Count,
+		P2Count: cache.P2Count, P3Count: cache.P3Count,
+		Timestamp: cache.Timestamp, GateRun: cache.GateRun,
+		InvalidatedChecks: cache.InvalidatedChecks,
+	}
+	for _, source := range cache.Files {
+		e := FileEntry{Path: source.Path, Hash: source.Hash, Deps: source.Deps}
+		for _, check := range source.Checks {
+			e.Checks = append(e.Checks, CheckEntry{Check: check.Check, Status: check.Status, Lens: check.Lens, Deps: check.Deps})
+		}
+		if e.Path == candidate {
+			e.Path = stable
+		} else if e.Path == stable {
+			retired, live := map[string]bool{}, map[string]bool{}
+			var checks []CheckEntry
+			for _, check := range e.Checks {
+				if check.Check == "4" && check.Lens == "" {
+					for _, dep := range check.Deps {
+						retired[dep] = true
+					}
+				} else {
+					checks = append(checks, check)
+					for _, dep := range check.Deps {
+						live[dep] = true
+					}
+				}
+			}
+			e.Checks = checks
+			var deps []string
+			for _, dep := range e.Deps {
+				if !retired[dep] || live[dep] {
+					deps = append(deps, dep)
+				}
+			}
+			e.Deps = deps
+			if len(retired) > 0 && len(e.Checks) == 0 && len(e.Deps) == 0 {
+				continue
+			}
+		}
+		w.Entries = append(w.Entries, e)
+	}
+	frontmatter, err := renderCacheFrontmatter(w, ruleID)
+	if err != nil {
+		return "", err
+	}
+	// Keep the structured judgments and historical reports byte-for-byte.
+	lines := strings.Split(content, "\n")
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return frontmatter + "\n" + strings.Join(lines[i+1:], "\n"), nil
+		}
+	}
+	return "", fmt.Errorf("missing closing cache frontmatter delimiter")
 }
 
 // rewriteLayerFrontmatter transforms a cache file's frontmatter by replacing

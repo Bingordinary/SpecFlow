@@ -23,7 +23,7 @@ func writeOwnershipSpec(t *testing.T, repoRoot, unitName string, unitRefs []stri
 	b.WriteString("acceptance_item_set:\n")
 	b.WriteString("  - id: item_1\n")
 	b.WriteString("    description: test\n")
-	b.WriteString("    verification_type: auto\n")
+	b.WriteString("    verification_type: testable\n")
 	b.WriteString("    verification_surface: src/\n")
 	b.WriteString("    implementation_surface: " + impl + "\n")
 	b.WriteString("    verification_method: check\n")

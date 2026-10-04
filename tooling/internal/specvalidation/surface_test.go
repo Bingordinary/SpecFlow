@@ -30,7 +30,7 @@ func surfaceSpec(values ...string) string {
 		"acceptance_item_set:\n"
 	for i, value := range values {
 		content += fmt.Sprintf(
-			"  - id: item_%d\n    description: test\n    verification_type: auto\n"+
+			"  - id: item_%d\n    description: test\n    verification_type: testable\n"+
 				"    verification_surface: src/\n    implementation_surface: %s\n"+
 				"    verification_method: check\n    pass_condition: ok\n    runnable: yes\n",
 			i+1, value)
@@ -217,7 +217,7 @@ func TestCheckAnchors_ItemRelativeIndentSurfaceResolves(t *testing.T) {
 			"acceptance_item_set:\n"+
 			"    - id: item_1\n"+
 			"      description: test\n"+
-			"      verification_type: auto\n"+
+			"      verification_type: testable\n"+
 			"      verification_surface: src/\n"+
 			"      implementation_surface: internal/demo/a.go\n"+
 			"      verification_method: check\n"+

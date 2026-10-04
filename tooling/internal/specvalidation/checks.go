@@ -33,7 +33,13 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
+	return CheckUnitFrontmatter(string(data), unitName)
+}
+
+// CheckUnitFrontmatter validates the required unit fields, requested identity
+// and status. Candidate checking and publication share this content check.
+func CheckUnitFrontmatter(content, unitName string) CheckResult {
+	fm := specpaths.ReadFrontmatterStringMap(content)
 	if status := fm["status"]; status != "" && status != "active" {
 		return CheckResult{Name: "Frontmatter completeness", Status: Fail, Details: "unit status must be active or absent; deletion uses specflowctl remove"}
 	}
@@ -88,91 +94,7 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	content := string(data)
-
-	if !strings.Contains(content, "acceptance_item_set:") {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Fail,
-			Details: "acceptance_item_set not found",
-		}
-	}
-
-	requiredItemFields := []string{
-		"id:",
-		"description:",
-		"verification_type:",
-		"verification_surface:",
-		"implementation_surface:",
-		"verification_method:",
-		"pass_condition:",
-		"runnable:",
-	}
-
-	itemBlocks := strings.Count(content, "\n  - id:")
-	if itemBlocks == 0 {
-		itemBlocks = strings.Count(content, "- id:")
-	}
-	if itemBlocks == 0 {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Fail,
-			Details: "acceptance_item_set exists but no items found with - id:",
-		}
-	}
-
-	itemSection := content[strings.Index(content, "acceptance_item_set"):]
-	if strings.Contains(itemSection, "\n---") {
-		itemSection = itemSection[:strings.Index(itemSection, "\n---")]
-	}
-
-	var missingFields []string
-	for _, field := range requiredItemFields {
-		if !strings.Contains(itemSection, field) {
-			missingFields = append(missingFields, strings.TrimSuffix(field, ":"))
-		}
-	}
-
-	if len(missingFields) > 0 {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Fail,
-			Details: fmt.Sprintf("%d item(s) found, but missing fields in item section: %s", itemBlocks, strings.Join(missingFields, ", ")),
-		}
-	}
-
-	// Validate runnable values (must be "yes" or "no" per spec_writing_guide.md)
-	itemLines := strings.Split(itemSection, "\n")
-	var invalidValues []string
-	for _, line := range itemLines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "runnable:") {
-			parts := strings.SplitN(trimmed, ":", 2)
-			if len(parts) == 2 {
-				value := strings.TrimSpace(parts[1])
-				if value != "yes" && value != "no" {
-					invalidValues = append(invalidValues, fmt.Sprintf("%q", value))
-				}
-			}
-		}
-	}
-	if len(invalidValues) > 0 {
-		return CheckResult{
-			Name:    "Acceptance items",
-			Status:  Fail,
-			Details: fmt.Sprintf("invalid runnable value(s): %s; must be 'yes' or 'no'", strings.Join(invalidValues, ", ")),
-		}
-	}
-
-	// implementation_surface values are validated by Check 3 (anchor
-	// integrity): each value must be the exact <pending> design-first
-	// placeholder or a path that resolves to a real file.
-
-	return CheckResult{
-		Name:    "Acceptance items",
-		Status:  Pass,
-		Details: fmt.Sprintf("%d item(s) found with required fields", itemBlocks),
-	}
+	return CheckAcceptanceItemSchema(string(data))
 }
 
 // ------------------------------------------------------------

@@ -1285,13 +1285,21 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 			refs = append(refs, appendixRef)
 		}
 	}
-	for _, peer := range allUnitNames(repoRoot) {
+	unitNames, err := allUnitNames(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, peer := range unitNames {
 		if peer == unitName || depUnits[peer] {
 			continue
 		}
 		refs = append(refs, logicalUnitRef(repoRoot, peer, SourceDerived))
 	}
-	ruleIDs := append(parseRefList(content, "rule_refs", ""), globalRuleIDs(repoRoot)...)
+	globalIDs, err := globalRuleIDs(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	ruleIDs := append(parseRefList(content, "rule_refs", ""), globalIDs...)
 	for _, ruleID := range dedupeSorted(ruleIDs) {
 		refs = append(refs, logicalRuleRef(repoRoot, ruleID, SourceDerived))
 	}
@@ -1363,7 +1371,11 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 	} else {
 		refs = append(refs, physicalRef(repoRoot, specpaths.RuleStableFileRef(ruleID), SourceDerived))
 	}
-	for _, unitName := range allUnitNames(repoRoot) {
+	unitNames, err := allUnitNames(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, unitName := range unitNames {
 		refs = append(refs, logicalUnitRef(repoRoot, unitName, SourceDerived))
 	}
 	sortRefs(refs)
@@ -1467,15 +1479,21 @@ func unitAppendices(repoRoot, unitName, layer string) ([]string, error) {
 }
 
 // allUnitNames lists every unit with a main spec in either layer.
-func allUnitNames(repoRoot string) []string {
+func allUnitNames(repoRoot string) ([]string, error) {
 	seen := map[string]bool{}
 	for _, dir := range []string{specpaths.CandidateDir, specpaths.StableDir} {
-		matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(dir), "unit_*.md"))
+		entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(dir)))
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("read unit directory %s: %w", dir, err)
 		}
-		for _, m := range matches {
-			base := strings.TrimSuffix(filepath.Base(m), ".md")
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), "unit_") || !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			base := strings.TrimSuffix(entry.Name(), ".md")
 			name := strings.TrimPrefix(base, "unit_")
 			if name != "" {
 				seen[name] = true
@@ -1487,28 +1505,28 @@ func allUnitNames(repoRoot string) []string {
 		out = append(out, name)
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // globalRuleIDs lists the active global rule (g_rule_*) ids from the stable
 // layer. Candidate global rules are unpublished and do not constrain units.
-func globalRuleIDs(repoRoot string) []string {
-	seen := map[string]bool{}
-	matches, err := filepath.Glob(filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleStableDir), "g_rule_*.md"))
-	if err == nil {
-		for _, match := range matches {
-			id := strings.TrimSuffix(filepath.Base(match), ".md")
-			if id != "" {
-				seen[id] = true
-			}
+func globalRuleIDs(repoRoot string) ([]string, error) {
+	dir := specpaths.RuleStableDir
+	entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(dir)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
+		return nil, fmt.Errorf("read global rule directory %s: %w", dir, err)
 	}
 	var out []string
-	for id := range seen {
-		out = append(out, id)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "g_rule_") && strings.HasSuffix(entry.Name(), ".md") {
+			out = append(out, strings.TrimSuffix(entry.Name(), ".md"))
+		}
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // ------------------------------------------------------------

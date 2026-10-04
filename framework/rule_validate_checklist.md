@@ -125,6 +125,10 @@ Rule validate findings are always presented flat — rules have no batch classif
 
 rule validate grades findings P0/P1. P1 is the contract-decided default for every FAIL check. A P0 grade is judgment-based: the single checks session assigns it directly and must first read the impact surface the P0 claim depends on (the consumer units or the governance file governing the affected mechanism) and establish the §9.3 boundary in `framework/severity_policy.md`. Rule validate has no final synthesis, so no later step re-grades the severity; the session-assigned value is canonical and drives the derived result and counts. The finding's severity appears on its entry line in the report.
 
+## Target-layer applicability
+
+Use the planned `Target layer` (`candidate` or `stable`) shown in the gate mission when applying this checklist. For a targeted run without a gate mission, use the layer resolved by the command: candidate when present, otherwise stable. All seven checks apply to both layers, with the layer-specific path and version conditions defined in Checks 3 and 4. A stable confirmation checks accepted content; it does not require a candidate file or a version increase.
+
 ## Checklist
 
 ### Check 1 — Frontmatter Completeness
@@ -154,15 +158,20 @@ When both are present, `rule_scope` in frontmatter takes precedence (per `spec_w
 
 ### Check 3 — File Path Consistency
 
-Verify the rule file is in the correct layer directory: the file being validated must be at `docs/specs/rules/candidate/{rule_id}.md`. The rule layer is encoded by the file path — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §6).
+Verify the rule file is in the target layer directory: `docs/specs/rules/candidate/{rule_id}.md` for a candidate run, or `docs/specs/rules/stable/{rule_id}.md` for a stable confirmation. The rule layer is encoded by the file path — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §6).
 
 Filenames follow the pattern `{g_or_b}_rule_{id}.md` — `g_rule_` for global rules, `b_rule_` for bound rules.
 
 ### Check 4 — Version Semantics
 
-If this is a brand-new rule (no stable file exists): verify `rule_version` equals `0.1.0`.
+For either target layer, verify `rule_version` is a valid `x.y.z` semantic version. An invalid version → FAIL.
 
-If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read the stable file's frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
+For a **candidate** run:
+
+- If this is a brand-new rule (no stable file exists): verify `rule_version` equals `0.1.0`.
+- If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read its frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
+
+For a **stable** confirmation, version validity completes this check. Do not apply the candidate initial-version or advancement conditions, and do not compare the stable file's version against itself.
 
 ### Check 5 — `promotion_owner_unit` (optional documentation field)
 
@@ -224,10 +233,10 @@ After all 7 checks complete:
 
 ### Stable-only mode
 
-When no candidate rule exists (validate against stable), run the same 7 checks against the **stable** rule file and its current consumers:
+When no candidate rule exists (validate against stable), run all 7 checks against the **stable** rule file and its current consumers using §Target-layer applicability:
 
 1. Read the stable rule: `docs/specs/rules/stable/{rule_id}.md`
-2. Run all 7 checks — the optional owner existence check (Check 5 scanning `docs/specs/units/`) are the live part: consumer units may have changed since promote
+2. Run all 7 checks with the stable conditions of Checks 3 and 4: validate the stable path and current version format, without requiring a candidate or version advancement. The optional owner existence check (Check 5 scanning `docs/specs/units/`) reads live dependencies, which may have changed since promote.
 3. **PASS** → `gate-finalize` writes the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; same coverage sequence as Write cache)
 4. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check; rules have no cross-check; full runs have no `carried` — assembled by `gate-finalize` from the accepted session reports), present the findings, and recommend forking the rule (or reconciling the consumer binding) — do not edit the stable rule directly
 

@@ -30,17 +30,37 @@ type UnitInfo struct {
 func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 	info := &UnitInfo{Name: unitName}
 
-	candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
-	stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+	candidateRef := specpaths.CandidateUnitSpecFileRef(unitName)
+	stableRef := specpaths.StableUnitSpecFileRef(unitName)
+	candidatePath := filepath.Join(repoRoot, filepath.FromSlash(candidateRef))
+	stablePath := filepath.Join(repoRoot, filepath.FromSlash(stableRef))
 
 	if _, err := os.Stat(candidatePath); err == nil {
 		info.HasCandidate = true
-		info.CandidateSpec = fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName)
+		info.CandidateSpec = candidateRef
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat %s: %w", candidateRef, err)
 	}
 
 	if _, err := os.Stat(stablePath); err == nil {
 		info.HasStable = true
-		info.StableSpec = fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
+		info.StableSpec = stableRef
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat %s: %w", stableRef, err)
+	}
+
+	// Candidate is the current spec when present. A read failure is an error,
+	// not permission to substitute stable content or an empty state.
+	specRef := info.CandidateSpec
+	if specRef == "" {
+		specRef = info.StableSpec
+	}
+	if specRef != "" {
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(specRef)))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", specRef, err)
+		}
+		populateSpecInfo(info, string(data))
 	}
 
 	for _, layer := range []string{"candidate", "stable"} {
@@ -55,28 +75,22 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 		}
 	}
 
-	specPath := specpaths.CandidateUnitSpecFileRef(unitName)
-	info.RelatedUnits = discoverRelatedUnits(repoRoot, unitName, specPath)
-	// Read rule_refs and acceptance-item fields from the candidate spec,
-	// falling back to the stable spec.
-	fullPath := filepath.Join(repoRoot, specPath)
-	if data, readErr := os.ReadFile(fullPath); readErr == nil {
-		populateSpecInfo(info, string(data))
-	} else if info.HasStable {
-		stablePath := fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
-		if data, readErr := os.ReadFile(filepath.Join(repoRoot, stablePath)); readErr == nil {
-			populateSpecInfo(info, string(data))
-		}
-	}
-
 	return info, nil
 }
 
-// populateSpecInfo fills the acceptance-item-derived fields of info from
-// the spec content: rule_refs, implementation surfaces, affects files, and
-// acceptance item ids (deduplicated, document order).
+// populateSpecInfo fills references and acceptance-item-derived fields from
+// one selected spec read (deduplicated, document order).
 func populateSpecInfo(info *UnitInfo, content string) {
 	fm := specpaths.ReadFrontmatterStringMap(content)
+	if raw := fm["unit_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
+		var refs []string
+		for _, ref := range specpaths.ParseRefList(raw) {
+			if ref != "" && ref != info.Name {
+				refs = append(refs, ref)
+			}
+		}
+		info.RelatedUnits = dedupe(refs)
+	}
 	if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
 		info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
 	}
@@ -95,34 +109,6 @@ func dedupe(values []string) []string {
 		}
 	}
 	return out
-}
-
-func discoverRelatedUnits(repoRoot, unitName, specPath string) []string {
-	fullPath := filepath.Join(repoRoot, specPath)
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		// Fall back to stable spec (same reading path as rule_refs below)
-		stablePath := fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName)
-		fullPath := filepath.Join(repoRoot, stablePath)
-		data, err = os.ReadFile(fullPath)
-		if err != nil {
-			return nil
-		}
-	}
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	raw := fm["unit_refs"]
-	if raw == "" || strings.EqualFold(raw, "none") {
-		return nil
-	}
-	var refs []string
-	seen := map[string]bool{}
-	for _, ref := range specpaths.ParseRefList(raw) {
-		if ref != "" && ref != unitName && !seen[ref] {
-			seen[ref] = true
-			refs = append(refs, ref)
-		}
-	}
-	return refs
 }
 
 // FormatInfo formats the unit info as a readable output.

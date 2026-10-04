@@ -164,7 +164,11 @@ func codeEvidence(root, file string, extra []string) ([]string, error) {
 			}
 		}
 	}
-	for _, id := range globalRuleIDs(root) {
+	globalIDs, err := globalRuleIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range globalIDs {
 		seen["rule:"+id] = true
 	}
 	for _, p := range extra {
@@ -312,7 +316,11 @@ func protectedCoverage(root string, run *Run) ([]CoverageKey, error) {
 					return nil, err
 				}
 				reads = appendUnique(reads, appendices...)
-				for _, id := range dedupeSorted(append(parseRefList(string(data), "rule_refs", ""), globalRuleIDs(root)...)) {
+				globalIDs, err := globalRuleIDs(root)
+				if err != nil {
+					return nil, err
+				}
+				for _, id := range dedupeSorted(append(parseRefList(string(data), "rule_refs", ""), globalIDs...)) {
 					reads = appendUnique(reads, specpaths.RuleStableFileRef(id))
 				}
 				for _, id := range parseRefList(string(data), "unit_refs", u.Unit) {

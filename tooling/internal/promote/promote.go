@@ -1,11 +1,12 @@
 // Package promote validates candidate specs and archives them to stable.
 // The tooling validates only deterministic format constraints (frontmatter fields,
-// acceptance_item_set presence, appendix file paths). Semantic validation
+// per-item acceptance schema, appendix file paths). Semantic validation
 // (reference integrity, cross-unit consistency, acceptance completeness) is
 // delegated to the validate subagent and is outside the promote tooling scope.
 package promote
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,10 @@ func stageCopy(src, dst string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return stageContent(data, dst, srcInfo.Mode().Perm())
+}
+
+func stageContent(data []byte, dst string, mode os.FileMode) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return "", err
 	}
@@ -72,7 +77,7 @@ func stageCopy(src, dst string) (string, error) {
 	}
 	// CreateTemp creates files with mode 0600; the promoted artifact must
 	// keep the source file's permissions (copy semantics).
-	if err := os.Chmod(tmpPath, srcInfo.Mode().Perm()); err != nil {
+	if err := os.Chmod(tmpPath, mode); err != nil {
 		os.Remove(tmpPath)
 		return "", err
 	}
@@ -85,8 +90,8 @@ func cleanupStaged(staged []stagedCopy) {
 	}
 }
 
-func commitStaged(staged []stagedCopy) error {
-	return commitStagedWith(staged, os.Rename)
+func commitStaged(staged []stagedCopy, removals ...string) error {
+	return commitStagedWith(staged, os.Rename, removals...)
 }
 
 // backupEntry records one destination's pre-commit state during the archive
@@ -96,37 +101,57 @@ type backupEntry struct {
 	dst    string
 }
 
-// commitStagedWith performs the archive phase with backup and rollback so a
-// mid-commit failure never leaves the stable layer partially archived:
+// commitStagedWith backs up replacements and candidate removals before publication
+// and restores that set when publication fails:
 //
-//  1. backup — every destination that already exists is renamed to a
-//     `.sf-backup-*` temp name; a failure here restores the backups taken so far
+//  1. backup — every destination and required candidate is renamed to a unique
+//     `.sf-backup-*` temp name; a failure here restores the prepared destinations
 //  2. commit — each staged temp file is renamed into place via the commit
-//     function; a failure rolls back every committed destination (restore the
-//     backup when one exists, otherwise remove the newly written file) and
-//     cleans up the remaining temp files
-//  3. success — all backups are removed
-func commitStagedWith(staged []stagedCopy, commit func(tmp, dst string) error) error {
-	backups := make([]backupEntry, len(staged))
-
-	for i, s := range staged {
-		if _, err := os.Stat(s.dst); err == nil {
-			b := filepath.Join(filepath.Dir(s.dst), ".sf-backup-"+filepath.Base(s.dst))
-			if err := os.Rename(s.dst, b); err != nil {
-				restoreBackups(backups[:i])
-				return fmt.Errorf("backup %s: %w", s.dst, err)
-			}
-			backups[i] = backupEntry{backup: b, dst: s.dst}
-		} else {
-			backups[i] = backupEntry{dst: s.dst}
+//     function; a failure restores the entire prepared set, including the
+//     failed and not-yet-committed destinations
+//  3. success — remove this transaction's backups; candidate paths are absent
+//
+// The transaction owns staged-file cleanup. Failed restorations are reported
+// alongside the original error, and their backups remain available.
+func commitStagedWith(staged []stagedCopy, commit func(tmp, dst string) error, removals ...string) (err error) {
+	backups := make([]backupEntry, 0, len(staged)+len(removals))
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, restoreBackups(backups))
 		}
+		cleanupStaged(staged)
+	}()
+
+	destinations := make([]string, 0, len(staged)+len(removals))
+	for _, s := range staged {
+		destinations = append(destinations, s.dst)
+	}
+	destinations = append(destinations, removals...)
+	for i, dst := range destinations {
+		if _, err := os.Lstat(dst); os.IsNotExist(err) && i < len(staged) {
+			backups = append(backups, backupEntry{dst: dst})
+			continue
+		} else if err != nil {
+			return fmt.Errorf("inspect publication path %s: %w", dst, err)
+		}
+		file, err := os.CreateTemp(filepath.Dir(dst), ".sf-backup-*")
+		if err != nil {
+			return fmt.Errorf("prepare backup for %s: %w", dst, err)
+		}
+		backup := file.Name()
+		if err := file.Close(); err != nil {
+			os.Remove(backup)
+			return fmt.Errorf("prepare backup for %s: %w", dst, err)
+		}
+		if err := os.Rename(dst, backup); err != nil {
+			os.Remove(backup)
+			return fmt.Errorf("backup %s: %w", dst, err)
+		}
+		backups = append(backups, backupEntry{backup: backup, dst: dst})
 	}
 
-	for i, s := range staged {
-
+	for _, s := range staged {
 		if err := commit(s.tmp, s.dst); err != nil {
-			restoreBackups(backups[:i])
-			cleanupStaged(staged[i:])
 			return fmt.Errorf("commit %s: %w", s.dst, err)
 		}
 	}
@@ -139,17 +164,21 @@ func commitStagedWith(staged []stagedCopy, commit func(tmp, dst string) error) e
 	return nil
 }
 
-// restoreBackups reverts already-committed destinations to their original
-// content: files that had a backup are renamed back (replacing the newly
-// written file), files that had no original are removed.
-func restoreBackups(backups []backupEntry) {
-	for _, b := range backups {
+// restoreBackups restores every prepared destination, whether its replacement
+// committed or not. It continues after errors and preserves failed backups.
+func restoreBackups(backups []backupEntry) error {
+	var errs []error
+	for i := len(backups) - 1; i >= 0; i-- {
+		b := backups[i]
 		if b.backup != "" {
-			os.Rename(b.backup, b.dst)
-		} else {
-			os.Remove(b.dst)
+			if err := os.Rename(b.backup, b.dst); err != nil {
+				errs = append(errs, fmt.Errorf("restore %s from %s: %w", b.dst, b.backup, err))
+			}
+		} else if err := os.Remove(b.dst); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove new destination %s: %w", b.dst, err))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // Promote runs the promote flow for the given unit.
@@ -182,28 +211,15 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 	content := string(data)
 
-	fm := parseFrontmatter(content)
-	if status := fm["status"]; status != "" && status != "active" {
-		r.Issues = append(r.Issues, "unit status must be active or absent; deletion uses specflowctl remove")
+	if header := specvalidation.CheckUnitFrontmatter(content, unitName); header.Status != specvalidation.Pass {
+		r.Issues = append(r.Issues, header.Details)
 		return r
 	}
-	checks := []struct {
-		field string
-		value string
-	}{
-		{"id", fm["id"]},
-	}
+	fm := parseFrontmatter(content)
 
-	for _, c := range checks {
-		if c.value == "" {
-			r.Issues = append(r.Issues, fmt.Sprintf("Missing required field: %s", c.field))
-		}
-	}
-
-	// Step 3: Normal publication requires acceptance items.
-
-	if !strings.Contains(content, "acceptance_item_set:") && !strings.Contains(content, "acceptance_item_set") {
-		r.Issues = append(r.Issues, "No acceptance items found (acceptance_item_set is required)")
+	// Step 3: Check the same per-item schema used by candidate validation.
+	if schema := specvalidation.CheckAcceptanceItemSchema(content); schema.Status != specvalidation.Pass {
+		r.Issues = append(r.Issues, schema.Details)
 	}
 
 	// Step 3b: Check unit_refs don't point to unpromoted candidate-only files
@@ -248,95 +264,71 @@ func Promote(repoRoot, unitName string) *Result {
 		}
 	}
 
-	// Stage candidate appendices for publication.
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+	if len(r.Issues) > 0 {
+		return r
+	}
+
+	appendixCopies, _, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "candidate")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r
 	}
-	var staged []stagedCopy
 
-	for _, appendix := range appendices {
-		m := filepath.Join(repoRoot, filepath.FromSlash(appendix.Path))
-		dest := filepath.Join(stableAppendixDir, filepath.Base(m))
-		tmp, err := stageCopy(m, dest)
+	// Prepare every mandatory artifact before changing accepted truth.
+	verifyDeps, err := validationcache.ReadVerifyDeps(repoRoot, unitName)
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Cannot read verify dependency evidence: %v", err))
+		return r
+	}
+	baselinePath, baselineData, err := baseline.PrepareUnitBaseline(repoRoot, unitName, content, verifyDeps)
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to prepare baseline: %v", err))
+		return r
+	}
+	var staged []stagedCopy
+	var removals, publicationActions []string
+	for _, appendix := range appendixCopies {
+		src := filepath.Join(repoRoot, filepath.FromSlash(appendix.Source))
+		dst := filepath.Join(repoRoot, filepath.FromSlash(appendix.Destination))
+		tmp, err := stageCopy(src, dst)
 		if err != nil {
 			cleanupStaged(staged)
 			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage appendix: %v", err))
-			r.Passed = false
 			return r
 		}
-		staged = append(staged, stagedCopy{tmp: tmp, dst: dest})
-		rel, _ := filepath.Rel(repoRoot, dest)
-		r.Actions = append(r.Actions, fmt.Sprintf("Promoted appendix: %s", rel))
+		staged = append(staged, stagedCopy{tmp: tmp, dst: dst})
+		removals = append(removals, src)
+		rel, _ := filepath.Rel(repoRoot, dst)
+		publicationActions = append(publicationActions, fmt.Sprintf("Promoted appendix: %s", rel))
 	}
-
-	if len(r.Issues) > 0 {
-		r.Passed = false
-		return r
-	}
-
-	// Step 5: Stage the main spec after its appendices.
-
 	tmpSpec, err := stageCopy(candidateSpec, stableSpec)
 	if err != nil {
 		cleanupStaged(staged)
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage spec: %v", err))
-		r.Passed = false
 		return r
 	}
 	staged = append(staged, stagedCopy{tmp: tmpSpec, dst: stableSpec})
-
-	// Phase 2: Publish all staged files. Staging leaves stable untouched.
-	commitList := staged
-	if err := commitStaged(commitList); err != nil {
-		cleanupStaged(staged)
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
-		r.Passed = false
-		return r
-	}
-
-	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
-
-	// Step 6: Record the promote-time code-surface baseline. It
-	// survives the cache cleanup — fresh@stable compares the current code
-	// surface against it. Written before the candidate removal so a failure
-	// leaves the candidate in place and promote can be re-run.
-
-	verifyDeps, err := validationcache.ReadVerifyDeps(repoRoot, unitName)
+	tmpBaseline, err := stageContent(baselineData, baselinePath, 0644)
 	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to read verify dependency evidence: %v — re-run promote", err))
-		r.Passed = false
+		cleanupStaged(staged)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage baseline: %v", err))
 		return r
 	}
-	if err := baseline.WriteUnitBaseline(repoRoot, unitName, content, verifyDeps); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to write baseline: %v — re-run promote or restore the baseline manually", err))
-		r.Passed = false
-		return r
-	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Recorded baseline: docs/specs/meta/baseline/unit/%s.yaml", unitName))
+	staged = append(staged, stagedCopy{tmp: tmpBaseline, dst: baselinePath})
+	removals = append(removals, candidateSpec)
 
-	// Step 7: Remove candidate files so file existence remains an unambiguous
-	// state signal. "Candidate file exists = being edited" — after promote, no
-	// editing is in progress. Appendices are removed first and the main spec
-	// last, so a cleanup failure always leaves the candidate spec in place and
-	// the promote can be safely re-run to completion.
-	for _, appendix := range appendices {
-		m := filepath.Join(repoRoot, filepath.FromSlash(appendix.Path))
-		if err := os.Remove(m); err != nil {
-			r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate appendix: %s (%v)", filepath.Base(m), err))
-			r.Passed = false
-			return r
-		}
-		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate appendix: docs/specs/units/candidate/appendix/%s", filepath.Base(m)))
-	}
-	if err := os.Remove(candidateSpec); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate spec: unit_%s.md (%v)", unitName, err))
-		r.Passed = false
+	// Stable content, its baseline, and candidate removal share one commit.
+	if err := commitStaged(staged, removals...); err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
 		return r
 	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate spec: docs/specs/units/candidate/unit_%s.md", unitName))
+	r.Actions = append(r.Actions, publicationActions...)
+	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/units/candidate/unit_%s.md -> docs/specs/units/stable/unit_%s.md", unitName, unitName))
+	r.Actions = append(r.Actions, fmt.Sprintf("Recorded baseline: docs/specs/meta/baseline/unit/%s.yaml", unitName))
+	for _, path := range removals {
+		rel, _ := filepath.Rel(repoRoot, path)
+		r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate: %s", rel))
+	}
 
 	// Step 7b: Rewrite candidate gate caches into stable confirmation caches.
 	rewriteReport, rewrErr := validationcache.RewriteCachesToStable(repoRoot, "unit", unitName)
@@ -512,40 +504,32 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
 	}
 
-	// Step 7: Copy candidate to stable (pure copy — the layer is encoded by the path), staged and atomic.
+	// Prepare stable content and its baseline without changing accepted truth.
 	tmp, err := stageCopy(candidateRule, stableRule)
 	if err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage rule: %v", err))
-		r.Passed = false
 		return r
 	}
-	if err := commitStaged([]stagedCopy{{tmp: tmp, dst: stableRule}}); err != nil {
-		os.Remove(tmp)
+	staged := []stagedCopy{{tmp: tmp, dst: stableRule}}
+	baselinePath, baselineData, err := baseline.PrepareRuleBaseline(repoRoot, ruleID, tmp)
+	if err != nil {
+		cleanupStaged(staged)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to prepare baseline: %v", err))
+		return r
+	}
+	tmpBaseline, err := stageContent(baselineData, baselinePath, 0644)
+	if err != nil {
+		cleanupStaged(staged)
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage baseline: %v", err))
+		return r
+	}
+	staged = append(staged, stagedCopy{tmp: tmpBaseline, dst: baselinePath})
+	if err := commitStaged(staged, candidateRule); err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit rule: %v", err))
-		r.Passed = false
 		return r
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Promoted: docs/specs/rules/candidate/%s.md -> docs/specs/rules/stable/%s.md", ruleID, ruleID))
-
-	// Record the promote-time baseline. The rule's observable surface is the
-	// archived rule file itself (a rule declares no code surface). Written
-	// before the candidate removal so a failure leaves the candidate in place
-	// and promote can be re-run.
-	if err := baseline.WriteRuleBaseline(repoRoot, ruleID); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to write baseline: %v — re-run promote or restore the baseline manually", err))
-		r.Passed = false
-		return r
-	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Recorded baseline: docs/specs/meta/baseline/rule/%s.yaml", ruleID))
-
-	// Step 8: Delete candidate rule file. A cleanup failure keeps the candidate
-	// rule in place; the stable rule is already archived, so the failure
-	// reports the concrete recovery path instead of claiming success.
-	if err := os.Remove(candidateRule); err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Promote succeeded but failed to remove candidate rule: %s.md (%v). The stable rule is already updated; delete docs/specs/rules/candidate/%s.md manually, or fork from stable to continue editing.", ruleID, err, ruleID))
-		r.Passed = false
-		return r
-	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 
 	// Step 9: Rewrite the candidate validate cache into a stable confirmation
@@ -601,12 +585,13 @@ func FormatRuleResult(r *RuleResult) string {
 	if r.Passed {
 		switch r.ChangeType {
 		case ChangeMajor:
-			buf.WriteString("MAJOR: Rule promoted. Assess consumer impact per rule content.\n")
+			buf.WriteString("MAJOR: Rule promoted.\n")
 		case ChangeMinor, ChangePatch:
-			buf.WriteString("Compatible change: Rule promoted. Assess consumer impact per rule content.\n")
+			buf.WriteString("Compatible change: Rule promoted.\n")
 		default:
 			buf.WriteString("New rule promoted to stable.\n")
 		}
+		fmt.Fprintf(&buf, "Assess consumer impact per rule content: run `specflowctl consumers --rule %s`, then `specflowctl fresh --unit <name>` for applicable consumers. Report required changes and actual gate gaps; gates remain user-triggered.\n", r.RuleID)
 	} else {
 		buf.WriteString("Promote failed. Fix the issues above and try again.\n")
 	}

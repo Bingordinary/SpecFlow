@@ -21,7 +21,7 @@ func writeSurfacesUnitSpec(t *testing.T, repoRoot, unitName, impl string) {
 		"acceptance_item_set:\n" +
 		"  - id: item_1\n" +
 		"    description: test\n" +
-		"    verification_type: auto\n" +
+		"    verification_type: testable\n" +
 		"    verification_surface: src/\n" +
 		"    implementation_surface: " + impl + "\n" +
 		"    verification_method: check\n" +

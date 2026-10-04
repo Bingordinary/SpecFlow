@@ -23,8 +23,14 @@ type Layout struct {
 }
 
 func Resolve(repoRoot string) (Layout, error) {
-	sourcePresent := toolingMarkersPresent(repoRoot, "tooling")
-	installedPresent := toolingMarkersPresent(repoRoot, "specflow/tooling")
+	sourcePresent, err := toolingMarkersPresent(repoRoot, "tooling")
+	if err != nil {
+		return Layout{}, err
+	}
+	installedPresent, err := toolingMarkersPresent(repoRoot, "specflow/tooling")
+	if err != nil {
+		return Layout{}, err
+	}
 
 	switch {
 	case sourcePresent && installedPresent:
@@ -57,13 +63,19 @@ func Relative(root, path string) string {
 	return filepath.ToSlash(filepath.Join(filepath.FromSlash(root), filepath.FromSlash(path)))
 }
 
-func toolingMarkersPresent(repoRoot, toolingRoot string) bool {
+func toolingMarkersPresent(repoRoot, toolingRoot string) (bool, error) {
 	for _, file := range []string{"go.mod", "manifest.tsv"} {
 		path := filepath.Join(repoRoot, filepath.FromSlash(Relative(toolingRoot, file)))
 		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return true
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("inspect specFlow tooling marker %q: %w", path, err)
+		}
+		if !info.IsDir() {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
