@@ -366,6 +366,7 @@ The tooling source fingerprint has a single authoritative implementation: `tooli
 - `push_with_release.sh`/`.ps1` compute the fingerprint via `go run ./cmd/specflowctl tooling-fingerprint` (requires a Go toolchain on the machine running the push) and record it into `tooling/fingerprint.txt` as a release-metadata commit before tagging.
 - `tooling/fingerprint.txt` is tracked by git and ships with every checkout. It is not part of the tooling source input set above, so recording it never changes the fingerprint it records.
 - Consumer projects run `update_tooling_binaries.sh`/`.ps1`, which read `tooling/fingerprint.txt` and download the matching release binary from the `specflow-tooling-<short-fingerprint>` tag. No local hash computation is needed.
+- For all-platform or configured-platform updates, cache reuse requires fetching `SHA256SUMS` from that requested release and verifying every selected binary against it. A local checksum table alone does not establish release identity. Matching cached binaries are retained and the local checksum table is refreshed; unavailable release evidence fails the update. Current-only reuse checks the runnable binary's embedded fingerprint and local checksum.
 
 ## Usage Examples
 

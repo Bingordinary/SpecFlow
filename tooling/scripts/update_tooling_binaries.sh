@@ -23,9 +23,9 @@ Options:
   --all            Download all platforms (default)
   --current-only   Download only the current platform's binary
 
-The script checks whether the local binaries already match the expected
-fingerprint. If any required binary is missing or stale, it downloads
-fresh binaries from the matching GitHub Release.
+For platform sets, the script downloads SHA256SUMS from the requested release
+before checking the local binaries. If any required binary is missing or
+does not match that release, it downloads fresh binaries from the release.
 USAGE
 }
 
@@ -238,12 +238,13 @@ read_binary_fingerprint() {
 verify_checksums() {
   local dir="$1"
   local ctl_name="$2"
+  local sums_path="${3:-${dir}/SHA256SUMS}"
   local current_sums status
   current_sums="$(mktemp)"
 
   awk -v ctl="${ctl_name}" \
     '$2 == ctl { print }' \
-    "${dir}/SHA256SUMS" >"${current_sums}"
+    "${sums_path}" >"${current_sums}"
   if [[ "$(wc -l <"${current_sums}" | tr -d ' ')" != "1" ]]; then
     echo "Error: SHA256SUMS does not contain the expected binary: ${ctl_name}" >&2
     rm -f "${current_sums}"
@@ -305,38 +306,18 @@ needs_download() {
 }
 
 needs_download_all() {
-  local expected_fingerprint="$1"
+  local release_sums="$1"
   shift
-  local suffix ctl_path current_suffix
-  current_suffix="$(platform_suffix 2>/dev/null || true)"
+  local suffix ctl_path
   for suffix in "$@"; do
     ctl_path="${BIN_DIR}/specflowctl-${suffix}"
     if [[ ! -f "${ctl_path}" ]]; then
       return 0
     fi
-    if [[ "${suffix}" == "${current_suffix}" ]]; then
-      if ! needs_download "${expected_fingerprint}" "${ctl_path}"; then
-        continue
-      fi
+    if ! verify_checksums "${BIN_DIR}" "specflowctl-${suffix}" "${release_sums}" >/dev/null 2>&1; then
       return 0
-    else
-      # Cross-platform binary: cannot execute, check existence + checksum only.
-      if ! verify_checksums "${BIN_DIR}" "specflowctl-${suffix}" >/dev/null 2>&1; then
-        return 0
-      fi
     fi
   done
-  # All binaries present — verify SHA256SUMS contains every entry
-  local missing=0
-  for suffix in "$@"; do
-    if ! grep -qF "specflowctl-${suffix}" "${BIN_DIR}/SHA256SUMS" 2>/dev/null; then
-      missing=1
-      break
-    fi
-  done
-  if [[ "${missing}" == "1" ]]; then
-    return 0
-  fi
   return 1
 }
 
@@ -370,7 +351,18 @@ if [[ "${MODE}" == "all" ]]; then
     all_names+=("specflowctl-${suffix}")
   done
 
-  if ! needs_download_all "${fingerprint}" "${all_suffixes[@]}"; then
+  if ! git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+    echo "Error: release tag does not exist on origin: ${tag}" >&2
+    echo "Run push_with_release.sh on main first, then run this script again." >&2
+    exit 1
+  fi
+
+  download_dir="$(mktemp -d)"
+  base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
+  curl -fL -o "${download_dir}/SHA256SUMS" "${base}/SHA256SUMS"
+
+  if ! needs_download_all "${download_dir}/SHA256SUMS" "${all_suffixes[@]}"; then
+    mv "${download_dir}/SHA256SUMS" "${BIN_DIR}/SHA256SUMS"
     write_launchers
     if [[ "${CONFIGURED_SET}" == "1" ]]; then
       echo "Local binaries already match ${tag} (${#all_suffixes[@]} platforms: ${all_suffixes[*]})."
@@ -380,17 +372,7 @@ if [[ "${MODE}" == "all" ]]; then
     exit 0
   fi
 
-  if ! git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-    echo "Error: release tag does not exist on origin: ${tag}" >&2
-    echo "Run push_with_release.sh on main first, then run this script again." >&2
-    exit 1
-  fi
-
-  download_dir="$(mktemp -d)"
-  base="https://github.com/Bingordinary/SpecFlow/releases/download/${tag}"
-
   echo "Downloading ${tag} binaries for ${#all_suffixes[@]} platform(s): ${all_suffixes[*]}..."
-  curl -fL -o "${download_dir}/SHA256SUMS" "${base}/SHA256SUMS"
   for suffix in "${all_suffixes[@]}"; do
     ctl_name="specflowctl-${suffix}"
     echo "  Downloading ${ctl_name}..."

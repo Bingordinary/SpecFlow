@@ -29,9 +29,9 @@ Options:
   -All            Download all platforms (default)
   -CurrentOnly    Download only the current platform's binary
 
-The script checks whether the local binaries already match the expected
-fingerprint. If any required binary is missing or stale, it downloads
-fresh binaries from the matching GitHub Release.
+For platform sets, the script downloads SHA256SUMS from the requested release
+before checking the local binaries. If any required binary is missing or
+does not match that release, it downloads fresh binaries from the release.
 "@)
 }
 
@@ -214,27 +214,29 @@ function Read-BinaryFingerprint {
 function Test-Checksums {
     param(
         [string]$Directory,
-        [string]$CtlName
+        [string]$CtlName,
+        [string]$SumsPath = (Join-Path $Directory "SHA256SUMS")
     )
 
-    $sumsPath = Join-Path $Directory "SHA256SUMS"
-    if (-not (Test-Path -LiteralPath $sumsPath -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $SumsPath -PathType Leaf)) {
         return $false
     }
 
     $expected = @{}
-    foreach ($line in Get-Content -LiteralPath $sumsPath) {
+    $entryCount = 0
+    foreach ($line in Get-Content -LiteralPath $SumsPath) {
         $parts = $line -split "\s+", 2
         if ($parts.Count -ne 2) {
             continue
         }
         $name = $parts[1].Trim()
         if ($name -eq $CtlName) {
+            $entryCount++
             $expected[$name] = $parts[0].Trim().ToLowerInvariant()
         }
     }
 
-    if (-not $expected.ContainsKey($CtlName)) {
+    if ($entryCount -ne 1) {
         return $false
     }
 
@@ -273,13 +275,10 @@ function Test-NeedsDownload {
 
 function Test-NeedsDownloadAll {
     param(
-        [string]$ExpectedFingerprint,
+        [string]$ReleaseSums,
         [string]$BinDir,
         [string[]]$Suffixes
     )
-
-    $currentSuffix = ""
-    try { $currentSuffix = Get-PlatformSuffix } catch { $currentSuffix = "" }
 
     foreach ($suffix in $Suffixes) {
         $ctlName = "specflowctl-$suffix"
@@ -287,26 +286,7 @@ function Test-NeedsDownloadAll {
         if (-not (Test-Path -LiteralPath $ctlPath -PathType Leaf)) {
             return $true
         }
-        if ($suffix -eq $currentSuffix) {
-            if (Test-NeedsDownload $ExpectedFingerprint $ctlPath $BinDir $ctlName) {
-                return $true
-            }
-        } else {
-            # Cross-platform binary: cannot execute, check checksum only.
-            if (-not (Test-Checksums $BinDir $ctlName)) {
-                return $true
-            }
-        }
-    }
-    # All binaries present — verify SHA256SUMS contains every entry
-    $sumsPath = Join-Path $BinDir "SHA256SUMS"
-    if (-not (Test-Path -LiteralPath $sumsPath -PathType Leaf)) {
-        return $true
-    }
-    $content = Get-Content -LiteralPath $sumsPath -Raw -ErrorAction SilentlyContinue
-    if ($null -eq $content) { $content = "" }
-    foreach ($suffix in $Suffixes) {
-        if ($content -notmatch [regex]::Escape("specflowctl-$suffix")) {
+        if (-not (Test-Checksums $BinDir $ctlName $ReleaseSums)) {
             return $true
         }
     }
@@ -374,7 +354,7 @@ try {
         if ($targetSuffixes.Count -eq 0) {
             throw "$platformsFile exists but lists no platform."
         }
-        Write-Host "Platform set from $platformsFile: $($targetSuffixes -join ', ')"
+        Write-Host "Platform set from ${platformsFile}: $($targetSuffixes -join ', ')"
         try {
             $currentCanonical = (Get-PlatformSuffix) -replace '\.exe$', ''
             $configuredCanonical = $targetSuffixes | ForEach-Object { $_ -replace '\.exe$', '' }
@@ -394,7 +374,18 @@ try {
         $allNames = @()
         foreach ($s in $allSuffixes) { $allNames += "specflowctl-$s" }
 
-        if (-not (Test-NeedsDownloadAll $fingerprint $binDir $allSuffixes)) {
+        & git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Release tag does not exist on origin: $tag. Run push_with_release.ps1 on main first, then run this script again."
+        }
+
+        $downloadDir = Join-Path ([System.IO.Path]::GetTempPath()) ("specflow-download-" + [System.Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $downloadDir | Out-Null
+        $base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
+        Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile (Join-Path $downloadDir "SHA256SUMS")
+
+        if (-not (Test-NeedsDownloadAll (Join-Path $downloadDir "SHA256SUMS") $binDir $allSuffixes)) {
+            Move-Item -LiteralPath (Join-Path $downloadDir "SHA256SUMS") -Destination (Join-Path $binDir "SHA256SUMS") -Force
             Write-Launchers -BinDir $binDir
             if ($useConfiguredSet) {
                 Write-Host "Local binaries already match $tag ($($allSuffixes.Count) platforms: $($allSuffixes -join ', '))."
@@ -405,17 +396,7 @@ try {
             exit 0
         }
 
-        & git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Release tag does not exist on origin: $tag. Run push_with_release.ps1 on main first, then run this script again."
-        }
-
-        $downloadDir = Join-Path ([System.IO.Path]::GetTempPath()) ("specflow-download-" + [System.Guid]::NewGuid().ToString("N"))
-        New-Item -ItemType Directory -Path $downloadDir | Out-Null
-        $base = "https://github.com/Bingordinary/SpecFlow/releases/download/$tag"
-
         Write-Host "Downloading $tag binaries for $($allSuffixes.Count) platform(s): $($allSuffixes -join ', ')..."
-        Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile (Join-Path $downloadDir "SHA256SUMS")
         foreach ($suffix in $allSuffixes) {
             $ctlName = "specflowctl-$suffix"
             Write-Host "  Downloading $ctlName..."
