@@ -64,7 +64,7 @@ rule_refs:
   - b_rule_example
 ```
 
-Refs are bare unit or rule names; the ref resolves to the current content (units) or the current `rule_version` (rules).
+Refs are bare unit or rule names; the ref resolves to the target's current content.
 
 `evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
 
@@ -133,7 +133,6 @@ Each rule Spec must include:
 ```yaml
 rule_id: {rule}
 rule_scope: global|bound
-rule_version: x.y.z
 ```
 
 `promotion_owner_unit` is an optional documentation field. It may be present to indicate which unit owns the promotion decision, but it has no effect on tooling behavior.
@@ -147,11 +146,10 @@ When creating a new rule:
 1. Confirm the truth is independent rule truth (not unit-local behavior, binding change, or implementation work).
 2. Check that the same formal rule truth is not already present in another rule file or duplicated as unit-local truth.
 3. Choose the smallest stable rule boundary. One rule file must carry one coherent shared constraint.
-4. A brand-new candidate rule starts at `rule_version: 0.1.0`.
-5. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs`.
-6. Create the candidate rule file at `docs/specs/rules/candidate/{rule_id}.md`.
-7. A rule may remain without consumers. Explain its independent or future value in body prose when useful.
-8. Do not write consumer lists or `bound_objects` into the rule file.
+4. If the target bound shared rule already has a stable sibling, derive the current consumer set from current-layer unit `rule_refs`.
+5. Create the candidate rule file at `docs/specs/rules/candidate/{rule_id}.md`.
+6. A rule may remain without consumers. Explain its independent or future value in body prose when useful.
+7. Do not write consumer lists or `bound_objects` into the rule file.
 
 ### 6.2 Rule Extraction (Unit → Rule)
 
@@ -161,7 +159,7 @@ When extracting existing unit-local formal truth into a rule:
 2. Identify the smallest rule object that carries only the shared constraint.
 3. Build the complete involved-unit set from current repository truth.
 4. If any writeback-required unit is currently stable, stop and create a candidate fork first.
-5. Create or update the target candidate rule file. If this is the first file for a new rule object, write `rule_version: 0.1.0`.
+5. Create or update the target candidate rule file.
 6. `promotion_owner_unit` may be written as an optional documentation field if desired.
 7. Rewrite each source candidate unit so the extracted truth no longer remains as duplicated unit-local formal truth.
 8. Update each affected candidate unit's `rule_refs` and body explanation.
@@ -174,29 +172,7 @@ Rule files must not provide consumer truth. `bound_objects` is ignored as a cons
 
 **Current-layer semantics:** consumer discovery resolves candidate first, stable fallback. This is impact analysis, not deletion approval. Removal checks both physical layers after the planned deletion; publish surviving objects that drop references before final removal. See `framework/removal_workflow.md`.
 
-### 6.4 Rule Version Semantics
-
-Agent sets the rule version when editing the rule file. The version must change when the rule body changes (read-only access does not bump version).
-
-Change type determination — compare the candidate version against the current stable version. The first differing segment (MAJOR → MINOR → PATCH) determines the type:
-
-| Type | Condition | Example |
-|------|-----------|---------|
-| **MAJOR** | Core constraint changes. What was previously allowed is now forbidden, or vice versa. Boundaries tighten or loosen. | `"Must use PostgreSQL"` → `"Must NOT use PostgreSQL"` |
-| **MINOR** | Compatible extension. New exceptions, new options, new clarifications added without changing existing constraint semantics. | `"Must use PostgreSQL"` → `"Must use PostgreSQL, except test environments may use SQLite"` |
-| **PATCH** | Wording clarification only. Typo fix, sentence rephrase, or any change that does not alter the rule's formal meaning. | `"Must use PostgresSQL"` → `"Must use PostgreSQL"` (spelling fix) |
-
-A brand-new rule starts at `0.1.0`. A first publication has no previous stable version, but the published rule still applies to existing units — a global rule by default, a bound rule through existing `rule_refs` — so consumer discovery and impact assessment still run.
-
-**Consumer impact:** every publication, including the first, requires consumer discovery and content-impact assessment per `framework/rule_promote_workflow.md` §Post-promote Consumer Impact. The change type classifies the publication; it does not decide whether this handling runs. There is no automatic cascade — tooling never modifies consumer units. A consumer's validate cache declares `rule:{id}` as a logical reference, so when the content it checked against is no longer the published content, its cache goes stale mechanically and its promote is rejected until it is re-validated; a dependency checked against the identical candidate content stays fresh after promotion.
-
-When editing an existing rule candidate, bump the version deterministically:
-- If any existing constraint changes meaning → bump MAJOR
-- If new compatible content is added without changing existing meaning → bump MINOR
-- If only wording is clarified without meaning change → bump PATCH
-- If multiple types of change exist → use the highest (MAJOR > MINOR > PATCH)
-
-### 6.5 Spec Removal
+### 6.4 Spec Removal
 
 Units, bound and global rules, and appendices use `framework/removal_workflow.md`. The agent decides whether their responsibility or constraint ended, then specifies exact targets to `specflowctl remove`. No consumers is not a deletion reason. Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
 

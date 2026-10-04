@@ -1,6 +1,6 @@
 # Rule Validate Checklist
 
-`validate@{rule}` is the rule path of `validate`. It checks rule metadata structural validity (Checks 1-6) and rule body quality (Check 7).
+`validate@{rule}` is the rule path of `validate`. It checks rule metadata structural validity (Checks 1-5) and rule body quality (Check 6).
 Agent runs this when the target is detected as a Rule via automatic type detection (see `framework/commands.md` §Target Resolution).
 
 **Result:** PASS writes `docs/specs/meta/validation/rule/{id}/validate_result.md`.
@@ -10,7 +10,7 @@ A candidate full-run FAIL writes a failure record (`result: fail` + `blocking: t
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `validate@{rule}` | full | All 7 checks. Quality checks are holistic — always runs full. |
+| `validate@{rule}` | full | All 6 checks. Quality checks are holistic — always runs full. |
 | `validate@{rule}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
 | `validate@{rule}:{keyword}` | targeted | Match keyword to check name. User explicitly chooses focus. Does not write a cache. |
 
@@ -105,10 +105,9 @@ One line per check, numbered as in this file:
 1. Frontmatter completeness: PASS | FAIL — reason
 2. ID/Scope consistency: PASS | FAIL — reason
 3. File path consistency: PASS | FAIL — reason
-4. Version semantics: PASS | FAIL — reason
-5. Promotion owner unit: PASS | WARNING — reason
-6. Prohibited fields: PASS | FAIL — reason
-7. Rule body quality: PASS | WARNING | FAIL — reason
+4. Promotion owner unit: PASS | WARNING — reason
+5. Prohibited fields: PASS | FAIL — reason
+6. Rule body quality: PASS | WARNING | FAIL — reason
 Failed checks: N | Advisory findings: K
 ```
 
@@ -116,7 +115,7 @@ Failed checks: N | Advisory findings: K
 
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks; a/b/c/d the count per severity. rule validate grades findings P0/P1 only — P1 is the contract-decided default, a P0 grade requires the §9 boundary check (see Severity handling below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- WARNING findings (Check 5 / Check 7 step 3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body — they are never counted in `Findings` and never affect `Failed checks`.
+- WARNING findings (Check 4 / Check 6 step 3) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body — they are never counted in `Findings` and never affect `Failed checks`.
 - `Blocking promote` is `yes` when P0/P1 findings exist (rule validate FAIL blocks promote; a full-run FAIL, a delta/repair FAIL, and a stable-only FAIL all write a failure record).
 
 Rule validate findings are always presented flat — rules have no batch classification; each FAIL finding is listed directly under the `Findings:` section in the unified finding format `[{severity}] {location} — {issue} (actionable | needs_decision)`, followed by the shared finding block (`problem:` / `evidence:` / `impact:` / `fix:` or `decision:` — see §Output Format).
@@ -127,7 +126,7 @@ rule validate grades findings P0/P1. P1 is the contract-decided default for ever
 
 ## Target-layer applicability
 
-Use the planned `Target layer` (`candidate` or `stable`) shown in the gate mission when applying this checklist. For a targeted run without a gate mission, use the layer resolved by the command: candidate when present, otherwise stable. All seven checks apply to both layers, with the layer-specific path and version conditions defined in Checks 3 and 4. A stable confirmation checks accepted content; it does not require a candidate file or a version increase.
+Use the planned `Target layer` (`candidate` or `stable`) shown in the gate mission when applying this checklist. For a targeted run without a gate mission, use the layer resolved by the command: candidate when present, otherwise stable. All six checks apply to both layers, with the layer-specific path condition defined in Check 3. A stable confirmation checks accepted content; it does not require a candidate file.
 
 ## Checklist
 
@@ -139,7 +138,6 @@ Verify the rule file has all required frontmatter fields:
 |-------|----------|-------------|
 | `rule_id` | Yes | `g_rule_{name}` or `b_rule_{name}` |
 | `rule_scope` | Yes | `global` or `bound` |
-| `rule_version` | Yes | `x.y.z` (semver) |
 
 If any required field is missing or empty → FAIL.
 
@@ -162,24 +160,13 @@ Verify the rule file is in the target layer directory: `docs/specs/rules/candida
 
 Filenames follow the pattern `{g_or_b}_rule_{id}.md` — `g_rule_` for global rules, `b_rule_` for bound rules.
 
-### Check 4 — Version Semantics
-
-For either target layer, verify `rule_version` is a valid `x.y.z` semantic version. An invalid version → FAIL.
-
-For a **candidate** run:
-
-- If this is a brand-new rule (no stable file exists): verify `rule_version` equals `0.1.0`.
-- If a stable sibling exists (`docs/specs/rules/stable/{rule_id}.md`): read its frontmatter, extract its `rule_version`, and verify the candidate `rule_version` is semantically greater (MAJOR.MINOR.PATCH comparison). If candidate version is not greater than stable version → FAIL.
-
-For a **stable** confirmation, version validity completes this check. Do not apply the candidate initial-version or advancement conditions, and do not compare the stable file's version against itself.
-
-### Check 5 — `promotion_owner_unit` (optional documentation field)
+### Check 4 — `promotion_owner_unit` (optional documentation field)
 
 `promotion_owner_unit` is an optional documentation field with no effect on tooling behavior. This check produces no execution failure.
 
 → WARNING if present but the value does not name a unit that exists in `docs/specs/units/`.
 
-### Check 6 — Prohibited Fields
+### Check 5 — Prohibited Fields
 
 Verify the rule file does NOT contain:
 - `bound_objects` — rule files must not store consumer lists
@@ -187,9 +174,9 @@ Verify the rule file does NOT contain:
 
 If either is found → FAIL.
 
-### Check 7 — Rule Body Quality
+### Check 6 — Rule Body Quality
 
-**Purpose:** Evaluate whether the rule's body content (constraint definition, exceptions, scope) is internally consistent and clearly stated. Unlike Checks 1-6 (metadata structural validity), this check evaluates the rule's written content.
+**Purpose:** Evaluate whether the rule's body content (constraint definition, exceptions, scope) is internally consistent and clearly stated. Unlike Checks 1-5 (metadata structural validity), this check evaluates the rule's written content.
 
 **Execution steps:**
 
@@ -215,7 +202,7 @@ If either is found → FAIL.
 
 ### Write cache (tooling finalize)
 
-After all 7 checks complete:
+After all 6 checks complete:
 
 ==ATOM_BEGIN:cache_evidence_path_forms==
 **Declaring cache evidence — path forms:** spec objects resolved by name other than the run's own target files are declared as **logical references** instead of physical paths — `unit:{name}` for a unit main spec, `unit:{name}:appendix:{file}` for a unit protocol appendix (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file — with the `hash` + `deps` of the file actually read. The run's own target files (the unit's own main spec and appendices; for a rule target, the candidate rule file and its stable sibling) and code files keep physical paths. A logical reference resolves at freshness time to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
@@ -225,18 +212,17 @@ After all 7 checks complete:
   - `gate-finalize` creates `docs/specs/meta/validation/rule/{id}/` as needed
   - Collect dependency evidence for every file read during validation, including:
     - The candidate rule file itself (all checks)
-    - The stable sibling rule file, if present (Check 4 reads its `rule_version`)
-    - All unit spec files searched under `docs/specs/units/` (Check 5 optional owner existence check)
-  - Each session report declares its files' dependency scope in its `Dependency scope:` lines (`ranges` / `sections` / `acceptance_items`); `gate-submit` validates path membership against that session's `read_refs` (not merely the run snapshot), and `gate-finalize` computes the `hash` + `deps` evidence from the accepted reports. The values come from the executor's own `Dependency scope` report (see §Output Format); a file reported as `all` (or not reported) is declared as a whole file. The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration). **The candidate rule file keeps a whole-file declaration** — rule files are contract files, the whole file is the carrier (see `framework/validation_cache.md` §Structural Region Dependencies); the per-check `checks` mapping breaks that whole declaration down per rule check (check key = the agent check number `"1"`–`"7"`; each rule-body check declares the scope its judgment read — see `framework/validation_cache.md` §Format → Per-check evidence → rule validate caches). Unit spec files read for Check 5 record its dependency scope. A rule without consumers remains valid.
+    - All unit spec files searched under `docs/specs/units/` (Check 4 optional owner existence check)
+  - Each session report declares its files' dependency scope in its `Dependency scope:` lines (`ranges` / `sections` / `acceptance_items`); `gate-submit` validates path membership against that session's `read_refs` (not merely the run snapshot), and `gate-finalize` computes the `hash` + `deps` evidence from the accepted reports. The values come from the executor's own `Dependency scope` report (see §Output Format); a file reported as `all` (or not reported) is declared as a whole file. The declared ranges must cover every region the validation judgment depended on — when unsure, declare more (declare-heavy principle; see `framework/validation_cache.md` §Dependency Declaration). **The candidate rule file keeps a whole-file declaration** — rule files are contract files, the whole file is the carrier (see `framework/validation_cache.md` §Structural Region Dependencies); the per-check `checks` mapping breaks that whole declaration down per rule check (check key = the agent check number `"1"`–`"6"`; each rule-body check declares the scope its judgment read — see `framework/validation_cache.md` §Format → Per-check evidence → rule validate caches). Unit spec files read for Check 4 record its dependency scope. A rule without consumers remains valid.
   - The `gate-finalize` write produces `validate_result.md` with `result: pass`, `target: candidate`, `mode: full`, file hashes and dependency CIDs, assembled from the accepted session reports.
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes a pass cache (a failure record is kept — it is already blocking and is the recovery baseline) — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`
 
 ### Stable-only mode
 
-When no candidate rule exists (validate against stable), run all 7 checks against the **stable** rule file and its current consumers using §Target-layer applicability:
+When no candidate rule exists (validate against stable), run all 6 checks against the **stable** rule file and its current consumers using §Target-layer applicability:
 
 1. Read the stable rule: `docs/specs/rules/stable/{rule_id}.md`
-2. Run all 7 checks with the stable conditions of Checks 3 and 4: validate the stable path and current version format, without requiring a candidate or version advancement. The optional owner existence check (Check 5 scanning `docs/specs/units/`) reads live dependencies, which may have changed since promote.
+2. Run all 6 checks with the stable condition of Check 3: validate the stable path. The optional owner existence check (Check 4 scanning `docs/specs/units/`) reads live dependencies, which may have changed since promote.
 3. **PASS** → `gate-finalize` writes the validate cache with `target: stable` (confirmation state consumed by `fresh@stable`; same coverage sequence as Write cache)
 4. **FAIL** → `gate-finalize` writes a failure record (`result: fail` + `blocking: true`, `mode: full`, `basis: full`, and the per-check `status` map — `pass`/`fail` for every executed check; rules have no cross-check; full runs have no `carried` — assembled by `gate-finalize` from the accepted session reports), present the findings, and recommend forking the rule (or reconciling the consumer binding) — do not edit the stable rule directly
 

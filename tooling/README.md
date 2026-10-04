@@ -187,7 +187,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
    - `next --unit <name>`: outputs candidate/stable spec files, appendix files, rule refs, related units, and the acceptance-item-derived fields (implementation surfaces, affects files, acceptance item ids — when the spec declares them)
    - this is a render action: read-only, does not modify any project file
 5. `fork`
-   - copy a stable spec/rule (and appendix files for units) to the candidate layer (a rule fork bumps its `rule_version`)
+   - copy a stable spec/rule (and appendix files for units) to the candidate layer 
    - `fork --unit <name>` / `fork --rule <id>`: rejects if a candidate already exists or the stable source does not exist
    - unit fork resolves all appendix destinations before any write; an existing destination must declare the same unit owner. A foreign owner or unreadable/missing/inconsistent ownership rejects the operation with the path and leaves all files unchanged, including caches. Exempt stable sources remain skipped; exempt destinations cannot bypass ownership.
    - this is the only allowed fork path (see HARD RULE 5 in `framework/concepts.md`)
@@ -251,7 +251,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
    - unit publication preflights the complete appendix destination set before any write. An existing destination must belong to the same unit under current filename/frontmatter rules; foreign or unresolved ownership rejects with the path and leaves main specs, appendices, candidates, caches and baselines unchanged, including when the destination is exempt.
     - validate candidate spec format, copy candidate files to stable directories, remove candidate files, and rewrite the candidate gate caches into stable confirmation caches
    - `promote --unit <name>`: before cache checks, inspects the candidate unit's direct `rule_refs` and pending global drafts. Missing stable explicit refs or different normalized complete bound candidate/stable content block; identical content passes, unrelated bound candidates do not block, and global drafts are advisory. The internal promote operation repeats the shared check before writes; read errors stop with the failing path. It then runs format checks and required-field validation (reference integrity is checked by `validate`; promote additionally rejects unit_refs/rule_refs that point only to candidate-layer files). The tool independently checks validate+verify+appendix cache freshness before promoting; if any cache is missing, stale, or blocking, promote is rejected with guidance to re-run the appropriate step. The merged verify cache must cover both the alignment and quality lenses and be non-blocking (no P0/P1 findings). Every non-exempt candidate appendix must be listed in the validate cache. On success, the candidate gate caches are rewritten into stable confirmation caches (`target: stable`, paths rewritten to `stable/`) — the stable delta-recovery baseline for `fresh@stable`, `re*`, and `fork`. Promote retains all rules; explicit removal follows `framework/removal_workflow.md`.
-   - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate, and rewrites the rule validate cache into a stable confirmation cache. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and version semantics, and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
+   - `promote --rule <id>`: validates rule frontmatter, copies candidate→stable, deletes candidate, and rewrites the rule validate cache into a stable confirmation cache. Consumer impact assessment is the agent's responsibility. The tool validates rule frontmatter and independently checks the rule validate cache freshness; if the cache is missing or stale, promote is rejected with guidance to re-run `validate@{rule}`
    - this is the only write gate
   19. `review collect-default-scope --flow <review_flow>`
     - collect the deterministic default scope for the explicit review flow
@@ -269,7 +269,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
   25. `validate candidate --unit UNIT`
     - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, body layer-path check, dependency cycle check, region locatability)
   26. `validate rule --id RULE_ID`
-    - validate candidate rule structure (checks: frontmatter, ID/scope consistency, version semantics, promotion_owner_unit warning, prohibited fields)
+    - validate candidate rule structure (checks: frontmatter, ID/scope consistency, promotion_owner_unit warning, prohibited fields)
     - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
   27. `operation open`
     - declare a bounded change scope and freeze it (see §Operation scope): `operation open (--unit NAME | --rule ID)? [--allow PATH]... [--require-spec PATH]... [--baseline REF] [--parent OP_ID]`

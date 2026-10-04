@@ -62,7 +62,7 @@ Read the diff output carefully. Extract every structural rule change that affect
 - **Frontmatter field changes**: new required fields, removed fields, renamed fields, changed value format (e.g. `rule_refs` from `@version` suffixed to bare names)
 - **Reference format changes**: how `unit_refs` or `rule_refs` are written, what prefix/suffix is expected
 - **Structural rule changes**: new required sections, removed sections, changed validation rules
-- **Template bootstrap rule changes**: the layout-selected global rule bootstrap file `templates/docs/specs/rules/stable/g_rule_repository_baseline.md` changed — its clause numbering, version semantics, or prohibition clauses are referenced by number from framework instructions (e.g. `framework/unit_validate_checklist.md` Check 8 executes "§6.1 items 4-5"), so a shape change must be migrated to the project copy at `docs/specs/rules/stable/g_rule_repository_baseline.md`
+- **Template bootstrap rule changes**: the layout-selected global rule bootstrap file `templates/docs/specs/rules/stable/g_rule_repository_baseline.md` changed — its clause numbering and prohibition clauses are referenced by number from framework instructions (e.g. `framework/unit_validate_checklist.md` Check 8 executes "§5.1 items 4-5"), so a shape change must be migrated to the project copy at `docs/specs/rules/stable/g_rule_repository_baseline.md`
 
 Do NOT guess or infer changes from memory. Read the actual `git diff` output.
 
@@ -95,7 +95,7 @@ If no structural changes were detected in Step 2, report that no migration is ne
 
 - Move useful `unbound_retention_reason` and owner rationale into rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`. Rules without consumers may remain valid.
 - Inspect legacy `status: retired` unit and appendix files. Under `framework/removal_workflow.md`, the agent decides whether the responsibility ended and identifies exact deletion targets. Delete only within clear existing authorization; discuss unresolved intent. Do not recreate the old promote-based exit logic. Surviving files use normal active/exempt status rules.
-- Rule validate now has seven agent checks: metadata 1–6 and body quality 7. Existing caches using the former check set require normal revalidation against the current contract, not translation of the old retention judgment.
+- Rule validate now has six agent checks: metadata 1–5 and body quality 6. Existing caches using the former check set require normal revalidation against the current contract, not translation of the old retention judgment.
 
 ### Step 4: Verify and report
 
@@ -106,8 +106,8 @@ After migration, run the format compliance check against `framework/spec_writing
 | Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
 | Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present. Compare against `spec_writing_guide.md`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
-| Rule files | For each rule file: `rule_id`, `rule_scope`, `rule_version` present. Path matches convention. |
-| Template bootstrap rule | The project copy `docs/specs/rules/stable/g_rule_repository_baseline.md` agrees with the current template `specflow/templates/docs/specs/rules/stable/g_rule_repository_baseline.md` on clause numbering and version semantics (framework instructions reference its clauses by number); the project's filled content (Tech Stack, Reusable Mechanisms) stays project-owned. |
+| Rule files | For each rule file: `rule_id`, `rule_scope` present. Path matches convention. |
+| Template bootstrap rule | The project copy `docs/specs/rules/stable/g_rule_repository_baseline.md` agrees with the current template `specflow/templates/docs/specs/rules/stable/g_rule_repository_baseline.md` on clause numbering; the project's filled content (Tech Stack, Reusable Mechanisms) stays project-owned. |
 
 Report each check as PASSED or FAILED with details. If any check fails and the cause is a missed migration, fix it. If the cause is unclear or requires business judgment, report it to the user.
 

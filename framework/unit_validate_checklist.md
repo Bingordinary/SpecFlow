@@ -785,14 +785,14 @@ affects.appendices:
 
 **Execution steps:**
 
-1. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). Execute the circular-dependency and layer-order prohibitions exactly as recorded in `g_rule_repository_baseline.md` §6.1 items 4-5 — the rule file carries the graph derivation, tooling cross-check, fail-closed behavior, and resolution path.
+1. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). Execute the circular-dependency and layer-order prohibitions exactly as recorded in `g_rule_repository_baseline.md` §5.1 items 4-5 — the rule file carries the graph derivation, tooling cross-check, fail-closed behavior, and resolution path.
 2. Check the candidate design against each global rule and each bound rule:
 ```
    - Is every "must not" prohibition respected?
    - Is every "must" requirement satisfied?
 ```
-3. **Cycle resolution guidance (when the dependency graph contains a cycle):** follow the resolution path recorded in `g_rule_repository_baseline.md` §6.1 item 4 — analyze the cycle's nature (extract the shared contract region into a rule so the dependencies become star-shaped, or re-draw the unit boundaries), present the analysis to the user, and apply the fix only after explicit approval.
-4. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §3). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule version:
+3. **Cycle resolution guidance (when the dependency graph contains a cycle):** follow the resolution path recorded in `g_rule_repository_baseline.md` §5.1 item 4 — analyze the cycle's nature (extract the shared contract region into a rule so the dependencies become star-shaped, or re-draw the unit boundaries), present the analysis to the user, and apply the fix only after explicit approval.
+4. **Rule exception re-evaluation:** Read the candidate spec's frontmatter `rule_exceptions` field (see `framework/spec_writing_guide.md` §3). For every recorded exception, first verify its reference validity, then re-evaluate whether the exception still holds against the current implementation and the current rule content:
    - Referenced rule is neither a stable global rule nor a bound rule listed in this unit's `rule_refs`, or the reason is missing → FAIL (actionable: correct or remove the invalid exception entry)
    - Exception no longer justified (architecture was rewritten, rule changed, or the reason expired) → FAIL (actionable: report the exception for removal; the removal is applied only after user approval)
    - Exception still justified → keep it and state the re-examination verdict in this check's reason

@@ -1,7 +1,6 @@
 ---
 rule_id: g_rule_repository_baseline
 rule_scope: global
-rule_version: 0.2.0
 ---
 
 # Repository Baseline Rule
@@ -28,20 +27,7 @@ It does not:
 3. host candidate proposals
 4. replace explicit `b_` rule bindings through `rule_refs`
 
-## 2. Version Semantics
-
-`rule_version` uses `MAJOR.MINOR.PATCH`:
-
-1. `MAJOR`
-   - incompatible repository-wide rule change
-2. `MINOR`
-   - new repository-wide default or compatible extension
-3. `PATCH`
-   - wording-only clarification that does not change formal rule meaning
-
-When this file's body changes, `rule_version` must change in the same round. If the file is only read, do not change `rule_version`.
-
-## 3. Tech Stack Baseline
+## 2. Tech Stack Baseline
 
 1. Primary language:
 2. Primary framework / runtime:
@@ -50,7 +36,7 @@ When this file's body changes, `rule_version` must change in the same round. If 
 5. Queue / async jobs:
 6. Testing stack:
 
-## 4. Reusable Mechanisms
+## 3. Reusable Mechanisms
 
 Record only mechanisms that the repository has formally recognized.
 
@@ -63,7 +49,7 @@ Record only mechanisms that the repository has formally recognized.
 7. ID / unique identifier generation:
 8. Retry / degradation strategy:
 
-## 5. Default Selection Rules
+## 4. Default Selection Rules
 
 Record only the preferred default choice.
 
@@ -75,28 +61,28 @@ Record only the preferred default choice.
 6. When a unit needs a reusable local rule that is not a global default, bind a `b_` rule through `rule_refs`.
 7. Multiple units reusing one `b_` rule does not by itself make that rule global.
 8. When a unit's implementation spans multiple modules, prefer one responsibility per module boundary, cut at the natural seams of the behavior domains declared in the unit's acceptance items.
-9. Prefer dependency direction that follows the layer order recorded in §5.1: an upper-layer unit may depend on units in the same or lower layers; reverse dependency requires an explicit recorded exception.
+9. Prefer dependency direction that follows the layer order recorded in §4.1: an upper-layer unit may depend on units in the same or lower layers; reverse dependency requires an explicit recorded exception.
 
-### 5.1 Layer Order
+### 4.1 Layer Order
 
 The repository's architecture layers, recorded from upper to lower:
 
 1. {layer}
 2. {layer}
 
-## 6. Prohibitions And Exceptions
+## 5. Prohibitions And Exceptions
 
-### 6.1 Prohibitions
+### 5.1 Prohibitions
 
 1. Do not introduce two conflicting primary solutions in parallel for the same class of core capability unless the exception is explicitly recorded.
 2. Do not let a unit bypass a formally recognized shared mechanism and rebuild equivalent infrastructure without explanation.
 3. Do not present a temporary implementation choice as the repository-wide engineering baseline.
 4. Do not create circular dependencies between units. Check method: derive the dependency graph from all current-layer units' `unit_refs` (candidate preferred, stable fallback); a cycle (A depends on B while B depends on A, directly or transitively) is a violation. Executed by the agent during unit validate — the agent re-derives the graph independently rather than trusting the mechanical verdict alone — and enforced mechanically by `specflowctl validate` (Check 7 — every unit on a cycle FAILs, blocking promote) and visualized by `specflowctl deps` (graph, cycle members, promotion order; the agent triggers `deps@all` / `deps@{unit}` / `deps@{rule}`, see `specflow/framework/verification_scope.md` §Dependency Analysis). Graph build failures are fail-closed: an unreadable unit spec (permission, corruption) blocks the whole graph, so every unit FAILs Check 7 with the failing file named in the Details — repair the file and re-run validate; `deps@all` reproduces the failure. Resolution: analyze the cycle's nature — a shared contract region repeated across the cycle members' acceptance items should be extracted into a rule (making the dependencies star-shaped), or the unit boundaries should be re-drawn so the coupled contract lives in one unit. Present the analysis to the user; the user decides the resolution, and the fix is applied only after explicit approval. A cycle is never resolvable by promote ordering — promote is per-unit and the cycle members mutually block each other's acceptance items.
-5. Do not reverse the layer order recorded in §5.1 in `unit_refs` unless the unit truth records an explicit exception. Check method: at validate time, resolve the order from this rule's §5.1 recording and each unit's declared architecture layer from its spec truth (architecture section or design decision records); a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation. Units whose spec records no architecture layer are not judged by this prohibition. Executed by the agent during unit validate; tooling enforcement is a candidate follow-up.
+5. Do not reverse the layer order recorded in §4.1 in `unit_refs` unless the unit truth records an explicit exception. Check method: at validate time, resolve the order from this rule's §4.1 recording and each unit's declared architecture layer from its spec truth (architecture section or design decision records); a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation. Units whose spec records no architecture layer are not judged by this prohibition. Executed by the agent during unit validate; tooling enforcement is a candidate follow-up.
 6. Do not let a unit's `implementation_surface` entangle responsibilities that the unit's own acceptance items declare as separate behavior domains. Check method: cross-reference the declared behavior domains against the implementation surface layout at validate time.
 7. Do not introduce abstractions justified only by future or speculative needs. An abstraction must serve a behavior or constraint recorded in the current unit truth.
 
-### 6.2 Exceptions
+### 5.2 Exceptions
 
 An exception is a unit's approved deviation from this rule. Exceptions are recorded in the unit spec frontmatter `rule_exceptions` field with a written reason — never in this rule file. See `specflow/framework/spec_writing_guide.md` §3 for the field contract.
 
