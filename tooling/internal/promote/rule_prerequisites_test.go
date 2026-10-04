@@ -23,7 +23,7 @@ func writePrerequisiteFile(t *testing.T, root, ref, content string) string {
 }
 
 func TestUnitRulePrerequisitesPublication(t *testing.T) {
-	stable := "---\nrule_id: b_rule_http\nrule_scope: bound\nrule_version: 1.0.0\n---\nUse HTTPS.\n"
+	stable := "---\nrule_id: b_rule_http\nrule_scope: bound\n---\nUse HTTPS.\n"
 	for _, tc := range []struct {
 		name      string
 		stable    string
@@ -36,7 +36,6 @@ func TestUnitRulePrerequisitesPublication(t *testing.T) {
 		{"identical", stable, stable, false},
 		{"normalized identical", stable, strings.ReplaceAll(strings.TrimSuffix(stable, "\n"), "\n", "\r\n"), false},
 		{"constraint changed", stable, strings.ReplaceAll(stable, "HTTPS", "HTTP"), true},
-		{"version only", stable, strings.ReplaceAll(stable, "1.0.0", "1.0.1"), true},
 		{"wording only", stable, strings.ReplaceAll(stable, "Use HTTPS.", "Always use HTTPS."), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

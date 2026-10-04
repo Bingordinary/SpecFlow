@@ -13,8 +13,8 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-func publicationRuleText(id, scope, version, constraint string) string {
-	return fmt.Sprintf("---\nrule_id: %s\nrule_scope: %s\nrule_version: %s\n---\n%s\n", id, scope, version, constraint)
+func publicationRuleText(id, scope, constraint string) string {
+	return fmt.Sprintf("---\nrule_id: %s\nrule_scope: %s\n---\n%s\n", id, scope, constraint)
 }
 
 func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs []string) {
@@ -79,14 +79,13 @@ func publicationFiles(t *testing.T, root string) map[string]string {
 }
 
 func TestRulePublicationBlocksFreshAndPromoteWithoutWrites(t *testing.T) {
-	stable := publicationRuleText("b_rule_http", "bound", "1.0.0", "Use HTTPS.")
+	stable := publicationRuleText("b_rule_http", "bound", "Use HTTPS.")
 	for _, tc := range []struct {
 		name, stable, candidate string
 	}{
-		{"candidate only", "", publicationRuleText("b_rule_http", "bound", "0.1.0", "Use HTTPS.")},
-		{"constraint changed", stable, publicationRuleText("b_rule_http", "bound", "1.1.0", "Reject HTTP.")},
-		{"version only", stable, publicationRuleText("b_rule_http", "bound", "1.0.1", "Use HTTPS.")},
-		{"wording only", stable, publicationRuleText("b_rule_http", "bound", "1.0.0", "Always use HTTPS.")},
+		{"candidate only", "", publicationRuleText("b_rule_http", "bound", "Use HTTPS.")},
+		{"constraint changed", stable, publicationRuleText("b_rule_http", "bound", "Reject HTTP.")},
+		{"wording only", stable, publicationRuleText("b_rule_http", "bound", "Always use HTTPS.")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)
@@ -126,15 +125,15 @@ func TestRulePublicationAllowsPublishedContentAndGlobalDrafts(t *testing.T) {
 	for _, identicalCandidate := range []bool{false, true} {
 		t.Run(fmt.Sprintf("identical candidate %t", identicalCandidate), func(t *testing.T) {
 			root := createCLITestRepo(t)
-			bound := publicationRuleText("b_rule_http", "bound", "1.0.0", "Use HTTPS.")
+			bound := publicationRuleText("b_rule_http", "bound", "Use HTTPS.")
 			grWriteFile(t, root, specpaths.RuleStableFileRef("b_rule_http"), bound)
 			if identicalCandidate {
 				grWriteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_http"), strings.ReplaceAll(strings.TrimSuffix(bound, "\n"), "\n", "\r\n"))
 			}
-			grWriteFile(t, root, specpaths.RuleStableFileRef("g_rule_updated"), publicationRuleText("g_rule_updated", "global", "1.0.0", "Old global."))
-			grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_updated"), publicationRuleText("g_rule_updated", "global", "1.1.0", "New global."))
-			grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_new"), publicationRuleText("g_rule_new", "global", "0.1.0", "New global."))
-			grWriteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_unrelated"), publicationRuleText("b_rule_unrelated", "bound", "0.1.0", "Other constraint."))
+			grWriteFile(t, root, specpaths.RuleStableFileRef("g_rule_updated"), publicationRuleText("g_rule_updated", "global", "Old global."))
+			grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_updated"), publicationRuleText("g_rule_updated", "global", "New global."))
+			grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_new"), publicationRuleText("g_rule_new", "global", "New global."))
+			grWriteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_unrelated"), publicationRuleText("b_rule_unrelated", "bound", "Other constraint."))
 			writePublicationUnit(t, root, "consumer", "b_rule_http", []string{"rule:b_rule_http", "rule:g_rule_updated"})
 			detail, err := freshRun(t, root, "--unit", "consumer")
 			if err != nil || !strings.Contains(detail, "READY FOR PROMOTE: yes") || !strings.Contains(detail, "PENDING GLOBAL RULES (advisory)") || strings.Contains(detail, "b_rule_unrelated") {
@@ -157,7 +156,7 @@ func TestRulePublicationSummaryDeduplicatesGlobalAdvisories(t *testing.T) {
 	for _, name := range []string{"one", "two"} {
 		writePublicationUnit(t, root, name, "none", nil)
 	}
-	grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_new"), publicationRuleText("g_rule_new", "global", "0.1.0", "New global."))
+	grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_new"), publicationRuleText("g_rule_new", "global", "New global."))
 	output, err := freshRun(t, root, "--scope", "all")
 	if err != nil || strings.Count(output, "PENDING GLOBAL RULES (advisory):") != 1 || strings.Count(output, "g_rule_new: unpublished global draft") != 1 {
 		t.Fatalf("summary must display global advice once: %v\n%s", err, output)
@@ -172,7 +171,7 @@ func TestRulePublicationPrecedesMissingCachesAndReportsAllBlockers(t *testing.T)
 	root := createCLITestRepo(t)
 	grWriteSpecItems(t, root, "consumer", "none", "[b_rule_z, b_rule_a, b_rule_z]", []string{"consumer.core"})
 	for _, id := range []string{"b_rule_z", "b_rule_a"} {
-		grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "0.1.0", "Constraint."))
+		grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "Constraint."))
 	}
 	output, err := publicationPromote(t, root, "unit", "consumer")
 	if err == nil || strings.Contains(output, "cache not found") || strings.Count(output, "b_rule_a:") != 1 || strings.Count(output, "b_rule_z:") != 1 || strings.Index(output, "b_rule_a:") > strings.Index(output, "b_rule_z:") {
@@ -206,8 +205,8 @@ func TestRulePublicationReadErrorStopsFreshAndPromote(t *testing.T) {
 func TestRulePublicationDroppedBindingDoesNotBlock(t *testing.T) {
 	root := createCLITestRepo(t)
 	id := "b_rule_dropped"
-	grWriteFile(t, root, specpaths.RuleStableFileRef(id), publicationRuleText(id, "bound", "1.0.0", "Old constraint."))
-	grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "1.1.0", "New constraint."))
+	grWriteFile(t, root, specpaths.RuleStableFileRef(id), publicationRuleText(id, "bound", "Old constraint."))
+	grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "New constraint."))
 	grWriteFile(t, root, specpaths.StableUnitSpecFileRef("consumer"), "---\nid: consumer\nunit_refs: none\nrule_refs: b_rule_dropped\n---\n")
 	writePublicationUnit(t, root, "consumer", "none", nil)
 	detail, err := freshRun(t, root, "--unit", "consumer")
@@ -222,8 +221,8 @@ func TestRulePublicationDroppedBindingDoesNotBlock(t *testing.T) {
 func TestRulePublicationEndToEndPreservesUnitGateEvidence(t *testing.T) {
 	root := createCLITestRepo(t)
 	id := "b_rule_http"
-	grWriteFile(t, root, specpaths.RuleStableFileRef(id), publicationRuleText(id, "bound", "1.0.0", "Use HTTPS."))
-	candidate := grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "1.1.0", "Reject HTTP."))
+	grWriteFile(t, root, specpaths.RuleStableFileRef(id), publicationRuleText(id, "bound", "Use HTTPS."))
+	candidate := grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "Reject HTTP."))
 	writeRuleCache(t, root, id, []cacheFileSpec{{path: specpaths.RuleCandidateFileRef(id), hash: computeHash(candidate)}})
 	writePublicationUnit(t, root, "consumer", id, []string{"rule:" + id})
 	cacheDir := filepath.Join(root, "docs/specs/meta/validation/unit/consumer")

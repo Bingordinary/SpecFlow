@@ -400,7 +400,6 @@ func TestForkRule(t *testing.T) {
 	ruleContent := `---
 rule_id: b_rule_auth
 rule_scope: bound
-rule_version: 2.0.0
 ---
 `
 	if err := os.WriteFile(filepath.Join(stableDir, "b_rule_auth.md"), []byte(ruleContent), 0644); err != nil {
@@ -427,8 +426,8 @@ rule_version: 2.0.0
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(candidateData), "rule_version: 2.0.1") {
-		t.Fatalf("expected rule_version: 2.0.1, got:\n%s", string(candidateData))
+	if string(candidateData) != ruleContent {
+		t.Fatalf("expected the candidate to be a verbatim copy of the stable rule, got:\n%s", string(candidateData))
 	}
 }
 
@@ -691,7 +690,7 @@ func TestConsumers_GlobalRuleListsAllUnits(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(ruleDir, "g_rule_naming.md"),
-		[]byte("---\nrule_id: g_rule_naming\nrule_scope: global\nrule_version: 0.1.0\n---\n"), 0644); err != nil {
+		[]byte("---\nrule_id: g_rule_naming\nrule_scope: global\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")

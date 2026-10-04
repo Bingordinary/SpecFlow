@@ -220,9 +220,14 @@ var validateCheckGroups = []struct {
 	{"clarity", SessionKindChecks, []string{ClarityCheck}},
 }
 
-// ruleValidateChecks is the rule validate coverage key set (the 7 rule
+// ruleValidateChecks is the rule validate coverage key set (the 6 rule
 // checks).
-var ruleValidateChecks = []string{"1", "2", "3", "4", "5", "6", "7"}
+var ruleValidateChecks = []string{"1", "2", "3", "4", "5", "6"}
+
+// RuleValidateChecks returns the rule validate coverage key set.
+func RuleValidateChecks() []string {
+	return append([]string(nil), ruleValidateChecks...)
+}
 
 // validateGroupForCheck maps a unit validate check key to its coverage group.
 func validateGroupForCheck(check string) (string, bool) {
@@ -1008,7 +1013,7 @@ func deriveDeltaRerun(repoRoot string, run *Run) (*scopeDerivation, error) {
 			switch {
 			case strings.HasPrefix(entry, "unit:"):
 				if run.TargetKind == TargetKindRule {
-					rerun["5"] = true
+					rerun["4"] = true
 				} else {
 					rerun["7"] = true
 				}

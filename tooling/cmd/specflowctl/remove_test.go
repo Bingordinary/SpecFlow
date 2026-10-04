@@ -23,7 +23,7 @@ func writeBoundRule(t *testing.T, repoRoot, layer, ruleID string, extra string) 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nrule_id: " + ruleID + "\nrule_scope: bound\nrule_version: 0.1.0\n" + extra + "---\n\n# Rule\n"
+	content := "---\nrule_id: " + ruleID + "\nrule_scope: bound\n" + extra + "---\n\n# Rule\n"
 	if err := os.WriteFile(filepath.Join(dir, ruleID+".md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestRemoveRuleGlobalRuleSuccess(t *testing.T) {
 	// A global rule is removable by explicit user invocation when no
 	// current-layer unit explicitly references it — its default applicability
 	// lifts automatically with the file.
-	if err := os.WriteFile(filepath.Join(dir, "g_rule_http.md"), []byte("---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 0.1.0\n---\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "g_rule_http.md"), []byte("---\nrule_id: g_rule_http\nrule_scope: global\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -147,7 +147,7 @@ func TestRemoveRuleGlobalRuleWithExplicitConsumerRejected(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "g_rule_http.md"), []byte("---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 0.1.0\n---\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "g_rule_http.md"), []byte("---\nrule_id: g_rule_http\nrule_scope: global\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")

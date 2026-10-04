@@ -18,16 +18,6 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-// VersionChangeType describes the kind of version change between candidate and stable.
-type VersionChangeType int
-
-const (
-	ChangeNone  VersionChangeType = iota // No stable version exists yet
-	ChangePatch                          // 0.0.x — wording clarification
-	ChangeMinor                          // 0.x.0 — compatible extension
-	ChangeMajor                          // x.0.0 — breaking constraint change
-)
-
 // Result describes the outcome of a promote operation.
 type Result struct {
 	Unit    string
@@ -352,58 +342,21 @@ func Promote(repoRoot, unitName string) *Result {
 	return r
 }
 
-// parseVersion extracts major, minor, patch from a semver string.
-func parseVersion(v string) (major, minor, patch int, ok bool) {
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return 0, 0, 0, false
-	}
-	_, err := fmt.Sscanf(v, "%d.%d.%d", &major, &minor, &patch)
-	return major, minor, patch, err == nil
-}
-
-// versionChangeType determines the type of version change.
-// If stableVersion is empty (brand new rule), returns ChangeNone.
-func versionChangeType(candidateVersion, stableVersion string) VersionChangeType {
-	if stableVersion == "" {
-		return ChangeNone
-	}
-	cMaj, cMin, cPat, cOk := parseVersion(candidateVersion)
-	sMaj, sMin, sPat, sOk := parseVersion(stableVersion)
-	if !cOk || !sOk {
-		return ChangeNone
-	}
-	if cMaj != sMaj {
-		return ChangeMajor
-	}
-	if cMin != sMin {
-		return ChangeMinor
-	}
-	if cPat != sPat {
-		return ChangePatch
-	}
-	return ChangeNone
-}
-
 // RuleResult describes the outcome of a rule promote operation.
 type RuleResult struct {
-	RuleID     string
-	Passed     bool
-	Issues     []string
-	Actions    []string
-	ChangeType VersionChangeType
+	RuleID  string
+	Passed  bool
+	Issues  []string
+	Actions []string
 }
 
 // PromoteRule runs the promote flow for the given rule.
 // Steps:
 //  1. Check candidate rule file exists
 //  2. Check validate cache freshness
-//  3. Validate frontmatter fields (rule_id, rule_scope, layer, rule_version)
-//  4. Detect current stable version
-//  5. Version sanity check (candidate version > stable version)
-//  6. Determine version change type (MAJOR/MINOR/PATCH/none)
-//  7. Copy candidate to stable (pure copy)
-//  8. Delete candidate rule file
+//  3. Validate frontmatter fields (rule_id, rule_scope)
+//  4. Copy candidate to stable (pure copy)
+//  5. Delete candidate rule file
 func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r := &RuleResult{RuleID: ruleID}
 
@@ -448,7 +401,6 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	}{
 		{"rule_id", fm["rule_id"]},
 		{"rule_scope", fm["rule_scope"]},
-		{"rule_version", fm["rule_version"]},
 	}
 
 	for _, f := range requiredFields {
@@ -460,48 +412,6 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	if len(r.Issues) > 0 {
 		r.Passed = false
 		return r
-	}
-
-	candidateVersion := fm["rule_version"]
-
-	// Step 4: Detect current stable version
-	stableVersion := ""
-	if _, err := os.Stat(stableRule); err == nil {
-		stableData, err := os.ReadFile(stableRule)
-		if err == nil {
-			stableFM := parseFrontmatter(string(stableData))
-			stableVersion = stableFM["rule_version"]
-		}
-	}
-
-	if stableVersion != "" {
-		r.Actions = append(r.Actions, fmt.Sprintf("Current stable version: %s", stableVersion))
-		r.Actions = append(r.Actions, fmt.Sprintf("Candidate version: %s", candidateVersion))
-	}
-
-	// Step 5: Version sanity check
-	if stableVersion != "" && candidateVersion == stableVersion {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s is same as stable version — bump the version", candidateVersion))
-		r.Passed = false
-		return r
-	}
-	if stableVersion != "" && !isVersionGreater(candidateVersion, stableVersion) {
-		r.Issues = append(r.Issues, fmt.Sprintf("Candidate version %s must be greater than stable version %s", candidateVersion, stableVersion))
-		r.Passed = false
-		return r
-	}
-
-	// Step 6: Determine version change type
-	r.ChangeType = versionChangeType(candidateVersion, stableVersion)
-	switch r.ChangeType {
-	case ChangeMajor:
-		r.Actions = append(r.Actions, "MAJOR change detected")
-	case ChangeMinor:
-		r.Actions = append(r.Actions, "MINOR change detected")
-	case ChangePatch:
-		r.Actions = append(r.Actions, "PATCH change detected")
-	case ChangeNone:
-		r.Actions = append(r.Actions, "New rule promoted (no previous stable version)")
 	}
 
 	// Prepare stable content and its baseline without changing accepted truth.
@@ -583,37 +493,13 @@ func FormatRuleResult(r *RuleResult) string {
 	}
 
 	if r.Passed {
-		switch r.ChangeType {
-		case ChangeMajor:
-			buf.WriteString("MAJOR: Rule promoted.\n")
-		case ChangeMinor, ChangePatch:
-			buf.WriteString("Compatible change: Rule promoted.\n")
-		default:
-			buf.WriteString("New rule promoted to stable.\n")
-		}
+		buf.WriteString("Rule promoted to stable.\n")
 		fmt.Fprintf(&buf, "Assess consumer impact per rule content: run `specflowctl consumers --rule %s`, then `specflowctl fresh --unit <name>` for applicable consumers. Report required changes and actual gate gaps; gates remain user-triggered.\n", r.RuleID)
 	} else {
 		buf.WriteString("Promote failed. Fix the issues above and try again.\n")
 	}
 
 	return buf.String()
-}
-
-// isVersionGreater checks if v1 > v2 using MAJOR.MINOR.PATCH comparison.
-func isVersionGreater(v1, v2 string) bool {
-	m1, n1, p1, ok1 := parseVersion(v1)
-	m2, n2, p2, ok2 := parseVersion(v2)
-	if !ok1 || !ok2 {
-		return false
-	}
-
-	if m1 != m2 {
-		return m1 > m2
-	}
-	if n1 != n2 {
-		return n1 > n2
-	}
-	return p1 > p2
 }
 
 // FormatResult formats the promote result as readable output.

@@ -27,8 +27,8 @@ func TestGatePlanRejectsDirectoryDiscoveryErrors(t *testing.T) {
 				grWriteSpec(t, root, "demo")
 				peer := strings.ReplaceAll(nextDiscoverySpec("old"), "demo", "peer")
 				grWriteFile(t, root, "docs/specs/units/stable/unit_peer.md", peer)
-				grWriteFile(t, root, "docs/specs/rules/stable/g_rule_required.md", publicationRuleText("g_rule_required", "global", "1.0.0", "Reject unauthenticated requests."))
-				grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_target.md", publicationRuleText("b_rule_target", "bound", "0.1.0", "Name exact owners."))
+				grWriteFile(t, root, "docs/specs/rules/stable/g_rule_required.md", publicationRuleText("g_rule_required", "global", "Reject unauthenticated requests."))
+				grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_target.md", publicationRuleText("b_rule_target", "bound", "Name exact owners."))
 				args := []string{"--gate", "validate", "--target", "candidate"}
 				if tc.targetKind == "unit" {
 					args = append(args, "--unit", "demo", "--relationships", "none")
@@ -131,7 +131,7 @@ func TestGatePlanAllowsAbsentDiscoveryDirectories(t *testing.T) {
 				grWriteSpec(t, root, "demo")
 				args = append(args, "--unit", "demo")
 			} else {
-				grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_target.md", publicationRuleText("b_rule_target", "bound", "0.1.0", "Name exact owners."))
+				grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_target.md", publicationRuleText("b_rule_target", "bound", "Name exact owners."))
 				args = append(args, "--rule", "b_rule_target")
 			}
 			id := grPlan(t, root, args...)

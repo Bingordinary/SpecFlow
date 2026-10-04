@@ -138,15 +138,15 @@ func TestGateRuleFindingRoutesDirectlyToFinalize(t *testing.T) {
 	grWriteFile(t, root, rule, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nUse TLS.\n")
 	runID := grPlan(t, root, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var report strings.Builder
-	for i := 1; i <= 7; i++ {
+	for i := 1; i <= 6; i++ {
 		verdict := "PASS"
-		if i == 7 {
+		if i == 6 {
 			verdict = "FAIL"
 		}
 		fmt.Fprintf(&report, "%d. Check: %s — checked\ncheck-%d: %s: Constraint\n", i, verdict, i, rule)
 	}
 	report.WriteString("[P1] rule — contradictory constraint (actionable)\n  problem: rule body contradicts itself\n  evidence: Use TLS\n  impact: consumers cannot follow both requirements\n  fix: reconcile the constraint\n")
-	fmt.Fprintf(&report, "Finding affects: %s = 7\n", grRunFindingID(runID, gaterun.SessionID([]string{"1", "2", "3", "4", "5", "6", "7"}), 1))
+	fmt.Fprintf(&report, "Finding affects: %s = 6\n", grRunFindingID(runID, gaterun.SessionID([]string{"1", "2", "3", "4", "5", "6"}), 1))
 	output := grSubmitOK(t, root, runID, "checks", report.String())
 	if strings.Contains(output, "--final") || !strings.Contains(output, "gate-finalize") {
 		t.Errorf("rule submission recommends an invalid next step:\n%s", output)

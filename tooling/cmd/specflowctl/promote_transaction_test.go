@@ -16,19 +16,16 @@ import (
 
 func TestRulePublicationConsumerHandoff(t *testing.T) {
 	for _, tc := range []struct {
-		name, scope, priorVersion, version string
-		noUnits                            bool
+		name, scope string
+		prior       bool
+		noUnits     bool
 	}{
-		{"first global", "global", "", "0.1.0", false},
-		{"first bound", "bound", "", "0.1.0", false},
-		{"first global without units", "global", "", "0.1.0", true},
-		{"first bound without units", "bound", "", "0.1.0", true},
-		{"global major", "global", "0.1.0", "1.0.0", false},
-		{"global minor", "global", "0.1.0", "0.2.0", false},
-		{"global patch", "global", "0.1.0", "0.1.1", false},
-		{"bound major", "bound", "0.1.0", "1.0.0", false},
-		{"bound minor", "bound", "0.1.0", "0.2.0", false},
-		{"bound patch", "bound", "0.1.0", "0.1.1", false},
+		{"first global", "global", false, false},
+		{"first bound", "bound", false, false},
+		{"first global without units", "global", false, true},
+		{"first bound without units", "bound", false, true},
+		{"global update", "global", true, false},
+		{"bound update", "bound", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)
@@ -39,9 +36,9 @@ func TestRulePublicationConsumerHandoff(t *testing.T) {
 			}
 			candidate := specpaths.RuleCandidateFileRef(id)
 			stable := specpaths.RuleStableFileRef(id)
-			grWriteFile(t, root, candidate, publicationRuleText(id, tc.scope, tc.version, "Reject unauthenticated requests."))
-			if tc.priorVersion != "" {
-				grWriteFile(t, root, stable, publicationRuleText(id, tc.scope, tc.priorVersion, "Prior constraint."))
+			grWriteFile(t, root, candidate, publicationRuleText(id, tc.scope, "Reject unauthenticated requests."))
+			if tc.prior {
+				grWriteFile(t, root, stable, publicationRuleText(id, tc.scope, "Prior constraint."))
 			}
 			units := map[string]string{}
 			if !tc.noUnits {
@@ -70,13 +67,10 @@ func TestRulePublicationConsumerHandoff(t *testing.T) {
 					units[path] = string(data)
 				}
 			}
-			keys := []string{"1", "2", "3", "4", "5", "6", "7"}
+			keys := []string{"1", "2", "3", "4", "5", "6"}
 			scopes := map[string][]string{}
 			for _, key := range keys {
 				scopes[key] = []string{candidate + ": all"}
-			}
-			if tc.priorVersion != "" {
-				scopes["4"] = append(scopes["4"], stable+": all")
 			}
 			run := grPlan(t, root, "--gate", "validate", "--rule", id, "--target", "candidate")
 			grSubmitOK(t, root, run, "checks", grValidateReport(keys, scopes))
@@ -135,8 +129,8 @@ func TestFirstGlobalRulePublicationRequiresConsumerRecheck(t *testing.T) {
 	}
 	const id = "g_rule_first"
 	candidate := specpaths.RuleCandidateFileRef(id)
-	grWriteFile(t, root, candidate, publicationRuleText(id, "global", "0.1.0", "Reject unauthenticated requests."))
-	keys := []string{"1", "2", "3", "4", "5", "6", "7"}
+	grWriteFile(t, root, candidate, publicationRuleText(id, "global", "Reject unauthenticated requests."))
+	keys := []string{"1", "2", "3", "4", "5", "6"}
 	scopes := map[string][]string{}
 	for _, key := range keys {
 		scopes[key] = []string{candidate + ": all"}
@@ -179,9 +173,9 @@ func TestPromoteTransactionFailureAndRetry(t *testing.T) {
 					candidate = "docs/specs/rules/candidate/" + name + ".md"
 					stable = "docs/specs/rules/stable/" + name + ".md"
 					cleanupDir = "docs/specs/rules/candidate"
-					proposed := publicationRuleText(name, "bound", "1.1.0", "New constraint.")
+					proposed := publicationRuleText(name, "bound", "New constraint.")
 					grWriteFile(t, root, candidate, proposed)
-					grWriteFile(t, root, stable, publicationRuleText(name, "bound", "1.0.0", "Old constraint."))
+					grWriteFile(t, root, stable, publicationRuleText(name, "bound", "Old constraint."))
 					writeRuleCache(t, root, name, []cacheFileSpec{{path: candidate, hash: computeHash(proposed)}})
 				}
 				baselineDir := "docs/specs/meta/baseline/" + kind
@@ -250,35 +244,31 @@ func TestRulePublicationConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		existing, livePrior bool
+		priorBody           string
 	}{
-		{"new_rule_control", false, false},
-		{"existing_rule", true, false},
-		{"prior_stable_still_supports_check_7", true, true},
+		{"new_rule_control", false, false, ""},
+		{"identical_content", true, false, "Validate input before processing."},
+		{"changed_rule_stales_prior_evidence", true, true, "Prior constraint."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)
 			const id = "b_rule_confirmation"
 			candidate := "docs/specs/rules/candidate/" + id + ".md"
 			stable := "docs/specs/rules/stable/" + id + ".md"
-			version := "0.1.0"
 			if tc.existing {
-				version = "1.3.0"
-				grWriteFile(t, root, stable, publicationRuleText(id, "bound", "1.2.0", "Validate input before processing."))
+				grWriteFile(t, root, stable, publicationRuleText(id, "bound", tc.priorBody))
 			}
-			grWriteFile(t, root, candidate, publicationRuleText(id, "bound", version, "Validate input before processing."))
+			grWriteFile(t, root, candidate, publicationRuleText(id, "bound", "Validate input before processing."))
 			consumer := grWriteSpecWithRefs(t, root, "consumer", "none", id)
 			runID := grPlan(t, root, "--gate", "validate", "--rule", id, "--target", "candidate")
-			keys := []string{"1", "2", "3", "4", "5", "6", "7"}
+			keys := []string{"1", "2", "3", "4", "5", "6"}
 			scopes := map[string][]string{}
 			for _, key := range keys {
 				scopes[key] = []string{candidate + ": all"}
 			}
-			scopes["5"] = append(scopes["5"], "unit:consumer: all")
-			if tc.existing {
-				scopes["4"] = append(scopes["4"], stable+": all")
-			}
+			scopes["4"] = append(scopes["4"], "unit:consumer: all")
 			if tc.livePrior {
-				scopes["7"] = append(scopes["7"], stable+": all")
+				scopes["6"] = append(scopes["6"], stable+": all")
 			}
 			grSubmitOK(t, root, runID, "checks", grValidateReport(keys, scopes))
 			grFinalizeOK(t, root, runID)
@@ -307,10 +297,11 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			after, err := validationcache.CheckRuleValidateStable(root, id)
 			if tc.livePrior {
 				if err != nil || after.Fresh {
-					t.Fatalf("discarded still-applicable prior evidence: %+v %v", after, err)
+					t.Fatalf("stale prior evidence must block a fresh confirmation: %+v %v", after, err)
 				}
-				if scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate"); err != nil || strings.Join(scope.Affected, ",") != "7" {
-					t.Fatalf("expected live prior check 7 to require recheck: %+v %v", scope, err)
+				scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate")
+				if err != nil || strings.Join(scope.Affected, ",") != "6" {
+					t.Fatalf("expected check 6 to require recheck after a content change: %+v %v", scope, err)
 				}
 				return
 			}
@@ -328,7 +319,7 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			if err != nil || changed.Fresh {
 				t.Fatalf("consumer change was lost by projection: %+v %v", changed, err)
 			}
-			if scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate"); err != nil || strings.Join(scope.Affected, ",") != "5" {
+			if scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate"); err != nil || strings.Join(scope.Affected, ",") != "4" {
 				t.Fatalf("wrong consumer delta scope: %+v %v", scope, err)
 			}
 		})

@@ -1283,8 +1283,8 @@ func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Coverage) != 7 {
-		t.Fatalf("expected the seven rule check keys, got %v", coverageKeysOf(run))
+	if len(run.Coverage) != 6 {
+		t.Fatalf("expected the six rule check keys, got %v", coverageKeysOf(run))
 	}
 	spec, err := BuildSessionSpec(repoRoot, run, coverageKeysOf(run))
 	if err != nil {
@@ -1310,20 +1310,20 @@ func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	ruleEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/rules/candidate/b_rule_http.md", []validationcache.CheckDeclaration{
-		{Check: "1"}, {Check: "2"}, {Check: "3"}, {Check: "4"}, {Check: "5"}, {Check: "6"}, {Check: "7"},
+		{Check: "1"}, {Check: "2"}, {Check: "3"}, {Check: "4"}, {Check: "5"}, {Check: "6"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	consumerEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "unit:auth", []validationcache.CheckDeclaration{
-		{Check: "5"},
+		{Check: "4"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	statuses := map[string]string{}
 	judgments := JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7"} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6"} {
 		statuses[key] = "pass"
 	}
 	judgmentsData, err := json.Marshal(judgments)
@@ -1344,7 +1344,7 @@ func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The consumer unit changes: check 5 go stale, the rule-body checks
+	// The consumer unit changes: check 4 goes stale, the rule-body checks
 	// stay fresh and are carried over.
 	unitPath := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_auth.md")
 	content, err := os.ReadFile(unitPath)
@@ -1360,10 +1360,10 @@ func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,4,6,7" {
+	if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,5,6" {
 		t.Fatalf("expected the rule-body checks carried over, got %v", run.CarriedKeys)
 	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "5" {
+	if got := strings.Join(coverageKeysOf(run), ","); got != "4" {
 		t.Fatalf("expected the stale check keys as coverage, got %v", got)
 	}
 	spec, err := BuildSessionSpec(repoRoot, run, coverageKeysOf(run))

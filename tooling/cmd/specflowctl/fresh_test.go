@@ -114,7 +114,7 @@ func writeRuleSpec(t *testing.T, repoRoot, id string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, id+".md")
-	content := "---\nrule_id: " + id + "\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
+	content := "---\nrule_id: " + id + "\nrule_scope: bound\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -919,7 +919,7 @@ func writeStableRuleSpec(t *testing.T, repoRoot, id string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, id+".md")
-	content := "---\nrule_id: " + id + "\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
+	content := "---\nrule_id: " + id + "\nrule_scope: bound\n---\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

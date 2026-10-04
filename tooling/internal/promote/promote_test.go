@@ -247,7 +247,7 @@ func TestPromoteRuleSuccess(t *testing.T) {
 	if err := os.MkdirAll(ruleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	rule := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	rule := "---\nrule_id: b_rule_test\nrule_scope: bound\n---\n\n# Rule\n"
 	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_test.md"), []byte(rule), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestPromoteUnitDroppedRuleRefIsRetained(t *testing.T) {
 	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stableRule := "---\nrule_id: b_rule_old\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	stableRule := "---\nrule_id: b_rule_old\nrule_scope: bound\n---\n\n# Rule\n"
 	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_old.md"), []byte(stableRule), 0644)
 	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/rule/b_rule_old.yaml")
 	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
@@ -347,7 +347,7 @@ func TestPromoteUnitDroppedRuleRefIsRetained(t *testing.T) {
 func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	// The dangling fixture from spec_writing_guide.md §6.5: the rule file is
+	// The dangling fixture from spec_writing_guide.md §6.4: the rule file is
 	// already gone (removed before this promote committed), while the stable
 	// unit still lists it in rule_refs and residual baseline/cache metadata
 	// remains. The promote must not fail on the missing rule — it degrades to
@@ -407,7 +407,7 @@ func TestPromoteUnitDroppedRuleRefWithRetentionReasonIsRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Retention rationale is ordinary rule body prose.
-	retainedRule := "---\nrule_id: b_rule_kept\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n\nKeep this constraint for the planned audit pipeline.\n"
+	retainedRule := "---\nrule_id: b_rule_kept\nrule_scope: bound\n---\n\n# Rule\n\nKeep this constraint for the planned audit pipeline.\n"
 	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_kept.md"), []byte(retainedRule), 0644)
 
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -444,7 +444,7 @@ func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_shared.md"), []byte("---\nrule_id: b_rule_shared\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
+	os.WriteFile(filepath.Join(stableRuleDir, "b_rule_shared.md"), []byte("---\nrule_id: b_rule_shared\nrule_scope: bound\n---\n\n# Rule\n"), 0644)
 
 	// Another current-layer unit still references the rule.
 	otherUnitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -484,7 +484,7 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(stableRuleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(stableRuleDir, "g_rule_governance.md"), []byte("---\nrule_id: g_rule_governance\nrule_scope: global\nrule_version: 0.1.0\n---\n\n# Rule\n"), 0644)
+	os.WriteFile(filepath.Join(stableRuleDir, "g_rule_governance.md"), []byte("---\nrule_id: g_rule_governance\nrule_scope: global\n---\n\n# Rule\n"), 0644)
 
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(candDir, 0755); err != nil {
@@ -847,7 +847,7 @@ func TestPromoteRuleCandidateRemovalFailure(t *testing.T) {
 	if err := os.MkdirAll(ruleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	rule := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	rule := "---\nrule_id: b_rule_test\nrule_scope: bound\n---\n\n# Rule\n"
 	if err := os.WriteFile(filepath.Join(ruleDir, "b_rule_test.md"), []byte(rule), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -948,7 +948,7 @@ func TestPromoteRule_WritesBaseline(t *testing.T) {
 	if err := os.MkdirAll(ruleDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	rule := "---\nrule_id: g_rule_test\nrule_scope: global\nrule_version: 0.1.0\n---\n\n# Rule\n"
+	rule := "---\nrule_id: g_rule_test\nrule_scope: global\n---\n\n# Rule\n"
 	if err := os.WriteFile(filepath.Join(ruleDir, "g_rule_test.md"), []byte(rule), 0644); err != nil {
 		t.Fatal(err)
 	}

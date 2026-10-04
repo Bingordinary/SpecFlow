@@ -1952,8 +1952,7 @@ type InheritReport struct {
 // re-runs restore the affected gates). Caches that cannot be inherited
 // (missing, non-pass, blocking) are skipped with a reason — the forked round
 // starts those gates from scratch. Rule forks do not inherit: a rule's cache
-// declares the rule file whole, and the fork's `rule_version` bump stales it
-// into a full re-run anyway.
+// declares the rule file whole, so a forked round always re-runs in full.
 func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
 	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
 	if err != nil {
@@ -2103,9 +2102,10 @@ func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCac
 	return report, nil
 }
 
-// projectRuleConfirmation preserves the published target's original evidence,
-// but retires prior-stable evidence used only for candidate version advancement.
-// Other checks and unassociated dependencies remain live; no hashes are rebuilt.
+// projectRuleConfirmation preserves the published target's original evidence
+// and rewrites the candidate rule path to its stable path. No hashes are
+// rebuilt: evidence that no longer matches the published content goes stale
+// through the normal dependency check and drives the delta re-run scope.
 func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (string, error) {
 	candidate := specpaths.RuleCandidateFileRef(ruleID)
 	stable := specpaths.RuleStableFileRef(ruleID)
@@ -2124,32 +2124,6 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 		}
 		if e.Path == candidate {
 			e.Path = stable
-		} else if e.Path == stable {
-			retired, live := map[string]bool{}, map[string]bool{}
-			var checks []CheckEntry
-			for _, check := range e.Checks {
-				if check.Check == "4" && check.Lens == "" {
-					for _, dep := range check.Deps {
-						retired[dep] = true
-					}
-				} else {
-					checks = append(checks, check)
-					for _, dep := range check.Deps {
-						live[dep] = true
-					}
-				}
-			}
-			e.Checks = checks
-			var deps []string
-			for _, dep := range e.Deps {
-				if !retired[dep] || live[dep] {
-					deps = append(deps, dep)
-				}
-			}
-			e.Deps = deps
-			if len(retired) > 0 && len(e.Checks) == 0 && len(e.Deps) == 0 {
-				continue
-			}
 		}
 		w.Entries = append(w.Entries, e)
 	}

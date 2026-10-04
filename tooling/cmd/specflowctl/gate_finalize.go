@@ -614,13 +614,12 @@ func deriveRuleOutcome(run *gaterun.Run, reports []reportRef, out *gateOutcome) 
 			}
 		}
 	}
-	for i := 1; i <= 7; i++ {
-		key := strconv.Itoa(i)
+	for _, key := range gaterun.RuleValidateChecks() {
 		if _, ok := out.EffectiveStatus[key]; !ok {
 			return fmt.Errorf("rule validate outcome has no logical status for check %q", key)
 		}
 	}
-	if len(out.EffectiveStatus) != 7 {
+	if len(out.EffectiveStatus) != len(gaterun.RuleValidateChecks()) {
 		return fmt.Errorf("rule validate outcome carries unexpected logical statuses: %v", out.EffectiveStatus)
 	}
 	digestState, err := json.Marshal(struct {

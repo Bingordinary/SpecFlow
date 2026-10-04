@@ -123,27 +123,12 @@ func ForkRule(repoRoot, ruleID string) *RuleResult {
 		return r
 	}
 
-	data, err := os.ReadFile(stableRulePath)
-	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Cannot read stable rule: %v", err))
+	if err := fileops.CopyFile(stableRulePath, candidateRulePath); err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy rule: %v", err))
 		r.Passed = false
 		return r
 	}
-
-	fm := specpaths.ReadFrontmatterStringMap(string(data))
-	stableVersion := fm["rule_version"]
-	candidateVersion := fileops.VersionWithBumpPatch(stableVersion)
-
-	copyErr := copyFileWithVersion(
-		stableRulePath, candidateRulePath,
-		"rule_version", candidateVersion,
-	)
-	if copyErr != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy rule: %v", copyErr))
-		r.Passed = false
-		return r
-	}
-	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s (rule_version %s -> %s)", stableRule, candidateRule, stableVersion, candidateVersion))
+	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s", stableRule, candidateRule))
 
 	r.Passed = true
 	return r
@@ -209,51 +194,4 @@ func FormatRuleResult(r *RuleResult) string {
 	return buf.String()
 }
 
-func copyFileWithVersion(src, dst, versionField, newVersion string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	content := string(data)
 
-	lines := strings.Split(content, "\n")
-	found := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, versionField+":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				rawVal := parts[1]
-				trimmedVal := strings.TrimSpace(rawVal)
-				quote := ""
-				if len(trimmedVal) >= 2 {
-					if trimmedVal[0] == '"' && trimmedVal[len(trimmedVal)-1] == '"' {
-						quote = "\""
-					} else if trimmedVal[0] == '\'' && trimmedVal[len(trimmedVal)-1] == '\'' {
-						quote = "'"
-					}
-				}
-				lines[i] = leading + versionField + ": " + quote + newVersion + quote
-				found = true
-			}
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("version field %q not found in frontmatter", versionField)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return err
-	}
-	return os.WriteFile(dst, []byte(strings.Join(lines, "\n")), 0644)
-}
-
-func readFileString(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}

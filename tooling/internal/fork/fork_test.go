@@ -162,7 +162,6 @@ func TestForkRule(t *testing.T) {
 	ruleContent := `---
 rule_id: b_rule_auth
 rule_scope: bound
-rule_version: 1.0.0
 ---
 `
 	os.WriteFile(filepath.Join(stableDir, "b_rule_auth.md"), []byte(ruleContent), 0644)
@@ -181,9 +180,8 @@ rule_version: 1.0.0
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
-	if !strings.Contains(content, "rule_version: 1.0.1") {
-		t.Fatalf("expected rule_version: 1.0.1, got:\n%s", content)
+	if string(data) != ruleContent {
+		t.Fatalf("expected the candidate to be a verbatim copy of the stable rule, got:\n%s", string(data))
 	}
 }
 
@@ -200,7 +198,7 @@ func TestForkRuleCandidateExists(t *testing.T) {
 
 	stableDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
 	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "b_rule_auth.md"), []byte("---\nrule_id: b_rule_auth\nrule_scope: bound\nrule_version: 1.0.0\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "b_rule_auth.md"), []byte("---\nrule_id: b_rule_auth\nrule_scope: bound\n---\n"), 0644)
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/rules/candidate")
 	os.MkdirAll(candidateDir, 0755)

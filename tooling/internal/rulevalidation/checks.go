@@ -30,10 +30,6 @@ func candidateRulePath(repoRoot, ruleID string) string {
 	return filepath.Join(repoRoot, specpaths.RuleCandidateFileRef(ruleID))
 }
 
-func stableRulePath(repoRoot, ruleID string) string {
-	return filepath.Join(repoRoot, specpaths.RuleStableFileRef(ruleID))
-}
-
 func checkFrontmatter(repoRoot, ruleID string) CheckResult {
 	path := candidateRulePath(repoRoot, ruleID)
 
@@ -54,7 +50,6 @@ func checkFrontmatter(repoRoot, ruleID string) CheckResult {
 	}{
 		{"rule_id", "rule_id"},
 		{"rule_scope", "rule_scope"},
-		{"rule_version", "rule_version"},
 	}
 
 	var missing []string
@@ -122,83 +117,6 @@ func checkIDScopeConsistency(repoRoot, ruleID string) CheckResult {
 	}
 
 	return CheckResult{Name: "ID/Scope consistency", Status: Pass}
-}
-
-func isVersionGreater(v1, v2 string) bool {
-	var m1, n1, p1, m2, n2, p2 int
-	if _, err := fmt.Sscanf(v1, "%d.%d.%d", &m1, &n1, &p1); err != nil {
-		return false
-	}
-	if _, err := fmt.Sscanf(v2, "%d.%d.%d", &m2, &n2, &p2); err != nil {
-		return false
-	}
-	if m1 != m2 {
-		return m1 > m2
-	}
-	if n1 != n2 {
-		return n1 > n2
-	}
-	return p1 > p2
-}
-
-func checkVersionSemantics(repoRoot, ruleID string) CheckResult {
-	fm := frontmatterKeys(repoRoot, ruleID)
-	if fm == nil {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Fail,
-			Details: "cannot read frontmatter",
-		}
-	}
-
-	candidateVersion := strings.TrimSpace(fm["rule_version"])
-	if candidateVersion == "" {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Fail,
-			Details: "rule_version is missing",
-		}
-	}
-
-	stablePath := stableRulePath(repoRoot, ruleID)
-	if _, err := os.Stat(stablePath); os.IsNotExist(err) {
-		if candidateVersion != "0.1.0" {
-			return CheckResult{
-				Name:    "Version semantics",
-				Status:  Fail,
-				Details: fmt.Sprintf("new rule must start at 0.1.0, got %s", candidateVersion),
-			}
-		}
-		return CheckResult{Name: "Version semantics", Status: Pass}
-	}
-
-	stableData, err := os.ReadFile(stablePath)
-	if err != nil {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot read stable rule: %v", err),
-		}
-	}
-	stableFM := specpaths.ReadFrontmatterStringMap(string(stableData))
-	stableVersion := strings.TrimSpace(stableFM["rule_version"])
-	if stableVersion == "" {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Fail,
-			Details: "cannot read stable rule_version",
-		}
-	}
-
-	if !isVersionGreater(candidateVersion, stableVersion) {
-		return CheckResult{
-			Name:    "Version semantics",
-			Status:  Fail,
-			Details: fmt.Sprintf("candidate version %s must be greater than stable version %s", candidateVersion, stableVersion),
-		}
-	}
-
-	return CheckResult{Name: "Version semantics", Status: Pass}
 }
 
 func checkPromotionOwner(repoRoot, ruleID string) CheckResult {

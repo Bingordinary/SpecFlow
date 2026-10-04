@@ -124,7 +124,7 @@ func grSessionKeys(run *gaterun.Run, sessionID string) []string {
 		return []string{"cross"}
 	}
 	if run.TargetKind == gaterun.TargetKindRule && sessionID == "checks" {
-		return []string{"1", "2", "3", "4", "5", "6", "7"}
+		return []string{"1", "2", "3", "4", "5", "6"}
 	}
 	sessionID = strings.TrimPrefix(strings.TrimPrefix(sessionID, "detect:"), "analysis:")
 	if run.Gate == gaterun.GateVerify {
@@ -1085,8 +1085,8 @@ func TestGatePlanRulePlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Coverage) != 7 {
-		t.Fatalf("expected the seven rule check keys, got %+v", coverageKeysOf(run))
+	if len(run.Coverage) != 6 {
+		t.Fatalf("expected the six rule check keys, got %+v", coverageKeysOf(run))
 	}
 	if _, err := grPlanRaw(repoRoot, "--gate", "verify", "--rule", "b_rule_http", "--target", "candidate"); err == nil || !strings.Contains(err.Error(), "validate gate only") {
 		t.Fatalf("expected rule verify to be rejected, got %v", err)
@@ -1261,9 +1261,9 @@ func TestGateRunLogicalReference(t *testing.T) {
 func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	mainPath := grWriteSpec(t, repoRoot, "self")
-	stableRulePath := grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 1.0.0\n---\nStable constraint.\n")
-	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 2.0.0\n---\nCandidate draft.\n")
-	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_draft.md", "---\nrule_id: g_rule_draft\nrule_scope: global\nrule_version: 0.1.0\n---\nCandidate-only draft.\n")
+	stableRulePath := grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\n---\nStable constraint.\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\n---\nCandidate draft.\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_draft.md", "---\nrule_id: g_rule_draft\nrule_scope: global\n---\nCandidate-only draft.\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
 	run, err := gaterun.Load(repoRoot, runID)
@@ -1346,10 +1346,10 @@ func TestGateRunRuleTarget(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
 	}
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
 	}
 	grSubmitOK(t, repoRoot, runID, "checks", b.String())
@@ -1372,12 +1372,12 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
 	}
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		scope, decl := rulePath, "Constraint"
-		if c == 5 || c == 7 {
+		if c == 4 {
 			scope, decl = "unit:auth", "Testability / Acceptance Criteria"
 		}
 		fmt.Fprintf(&b, "check-%d: %s: %s\n", c, scope, decl)
@@ -2542,12 +2542,12 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	fullScopes := map[string][]string{}
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		key := fmt.Sprint(c)
 		fullScopes[key] = []string{rulePath + ": Constraint"}
 	}
-	fullScopes["5"] = []string{"unit:auth: Testability / Acceptance Criteria"}
-	grSubmitOK(t, repoRoot, fullRun, "checks", grValidateReport([]string{"1", "2", "3", "4", "5", "6", "7"}, fullScopes))
+	fullScopes["4"] = []string{"unit:auth: Testability / Acceptance Criteria"}
+	grSubmitOK(t, repoRoot, fullRun, "checks", grValidateReport([]string{"1", "2", "3", "4", "5", "6"}, fullScopes))
 	grFinalizeOK(t, repoRoot, fullRun)
 
 	runDelta := func(oldText, newText string) {
@@ -2562,22 +2562,22 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 
 		deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "delta")
 		run := mustLoadRun(t, repoRoot, deltaRun)
-		if got := strings.Join(coverageKeysOf(run), ","); got != "5" {
-			t.Fatalf("expected only consumer check 5 to re-run, got %s", got)
+		if got := strings.Join(coverageKeysOf(run), ","); got != "4" {
+			t.Fatalf("expected only consumer check 4 to re-run, got %s", got)
 		}
-		if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,4,6,7" {
+		if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,5,6" {
 			t.Fatalf("unexpected carried checks: %s", got)
 		}
-		grSubmitKeys(t, repoRoot, deltaRun, []string{"5"}, grValidateReport([]string{"5"}, map[string][]string{
-			"5": {"unit:auth: Testability / Acceptance Criteria"},
+		grSubmitKeys(t, repoRoot, deltaRun, []string{"4"}, grValidateReport([]string{"4"}, map[string][]string{
+			"4": {"unit:auth: Testability / Acceptance Criteria"},
 		}))
 		grFinalizeOK(t, repoRoot, deltaRun)
 
 		state := grReadJudgmentBaseline(t, repoRoot, gaterun.TargetKindRule, "b_rule_http", gaterun.GateValidate)
-		if len(state.LogicalStatus) != 7 {
-			t.Fatalf("expected a complete 7-check judgment baseline after delta, got %v", state.LogicalStatus)
+		if len(state.LogicalStatus) != 6 {
+			t.Fatalf("expected a complete 6-check judgment baseline after delta, got %v", state.LogicalStatus)
 		}
-		for c := 1; c <= 7; c++ {
+		for c := 1; c <= 6; c++ {
 			if state.LogicalStatus[fmt.Sprint(c)] != "pass" {
 				t.Fatalf("expected check %d status pass after delta, got %q", c, state.LogicalStatus[fmt.Sprint(c)])
 			}
@@ -2612,7 +2612,7 @@ func TestRuleOutcomeRejectsCarriedRerunOverlap(t *testing.T) {
 func TestRuleOutcomeDeduplicatesCarriedFindings(t *testing.T) {
 	shared := gaterun.Finding{ID: "checks/F1", Severity: "P1", Text: "shared", SourceKey: "1", AffectedKeys: []string{"2"}}
 	run := &gaterun.Run{TargetKind: gaterun.TargetKindRule}
-	for i := 1; i <= 6; i++ {
+	for i := 1; i <= 5; i++ {
 		key := fmt.Sprint(i)
 		run.CarriedKeys = append(run.CarriedKeys, key)
 		status := "pass"
@@ -2629,14 +2629,14 @@ func TestRuleOutcomeDeduplicatesCarriedFindings(t *testing.T) {
 		spec: &gaterun.SessionSpec{SessionID: "checks", Kind: gaterun.SessionKindChecks},
 		result: &gaterun.SessionResult{
 			SessionID: "checks",
-			Verdicts:  map[string]string{"7": "PASS"},
+			Verdicts:  map[string]string{"6": "PASS"},
 		},
 	}
 	outcome, err := deriveGateOutcome(run, []reportRef{report})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(outcome.Findings) != 1 || outcome.Counts[1] != 1 || len(outcome.EffectiveStatus) != 7 || outcome.SynthesisDigest == "" {
+	if len(outcome.Findings) != 1 || outcome.Counts[1] != 1 || len(outcome.EffectiveStatus) != 6 || outcome.SynthesisDigest == "" {
 		t.Fatalf("expected one canonical carried finding and a complete outcome, got %+v", outcome)
 	}
 }
@@ -3705,18 +3705,18 @@ func TestGateRuleValidateSessionSeverityDrivesResult(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
-	for c := 1; c <= 7; c++ {
-		if c == 7 {
-			fmt.Fprintf(&b, "7. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["7"])
+	for c := 1; c <= 6; c++ {
+		if c == 6 {
+			fmt.Fprintf(&b, "6. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["6"])
 			continue
 		}
 		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
 	}
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
 	}
 	fmt.Fprintf(&b, "[P0] %s:10 — rule body contradicts the declared constraint (needs_decision)\n", rulePath)
-	fmt.Fprintf(&b, "Finding affects: %s = 7\n", grRunFindingID(runID, gaterun.SessionID(grSessionKeys(mustLoadRun(t, repoRoot, runID), "checks")), 1))
+	fmt.Fprintf(&b, "Finding affects: %s = 6\n", grRunFindingID(runID, gaterun.SessionID(grSessionKeys(mustLoadRun(t, repoRoot, runID), "checks")), 1))
 	grSubmitOK(t, repoRoot, runID, "checks", b.String())
 	grFinalizeOK(t, repoRoot, runID)
 
@@ -3731,7 +3731,7 @@ func TestGateRuleValidateSessionSeverityDrivesResult(t *testing.T) {
 }
 
 // TestGateRunRuleValidateCandidateFailWritesFailureRecord: a rule candidate
-// full FAIL writes a failure record with all eight check statuses and the
+// full FAIL writes a failure record with all six check statuses and the
 // repair plan derives from it (same recovery shape as unit validate).
 func TestGateRunRuleValidateCandidateFailWritesFailureRecord(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
@@ -3740,18 +3740,18 @@ func TestGateRunRuleValidateCandidateFailWritesFailureRecord(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	var b strings.Builder
-	for c := 1; c <= 7; c++ {
-		if c == 7 {
-			fmt.Fprintf(&b, "7. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["7"])
+	for c := 1; c <= 6; c++ {
+		if c == 6 {
+			fmt.Fprintf(&b, "6. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["6"])
 			continue
 		}
 		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
 	}
-	for c := 1; c <= 7; c++ {
+	for c := 1; c <= 6; c++ {
 		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
 	}
 	fmt.Fprintf(&b, "[P0] %s:5 — rule body contradicts the declared constraint (needs_decision)\n", rulePath)
-	fmt.Fprintf(&b, "Finding affects: %s = 7\n", grRunFindingID(runID, gaterun.SessionID(grSessionKeys(mustLoadRun(t, repoRoot, runID), "checks")), 1))
+	fmt.Fprintf(&b, "Finding affects: %s = 6\n", grRunFindingID(runID, gaterun.SessionID(grSessionKeys(mustLoadRun(t, repoRoot, runID), "checks")), 1))
 	grSubmitOK(t, repoRoot, runID, "checks", b.String())
 	out := grFinalizeOK(t, repoRoot, runID, "--result", "fail", "--p0-count", "0", "--p1-count", "1")
 	if !strings.Contains(out, "Self-check: BLOCKED") {

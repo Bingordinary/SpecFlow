@@ -12,23 +12,21 @@ import (
 
 func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
 	cases := []struct {
-		name, target, candidateVersion, stableVersion string
-		candidatePass                                 bool
+		name, target      string
+		candidate, stable bool
 	}{
-		{"stable confirmation", "stable", "", "1.2.0", false},
-		{"candidate increase", "candidate", "1.3.0", "1.2.0", true},
-		{"candidate equal", "candidate", "1.2.0", "1.2.0", false},
-		{"candidate lower", "candidate", "1.1.0", "1.2.0", false},
-		{"new candidate", "candidate", "0.1.0", "", true},
+		{"stable confirmation", "stable", false, true},
+		{"candidate over stable", "candidate", true, true},
+		{"new candidate", "candidate", true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)
 			grEnableMissionLayout(t, root)
 			const id = "b_rule_consistency"
-			for layer, version := range map[string]string{"candidate": tc.candidateVersion, "stable": tc.stableVersion} {
-				if version != "" {
-					grWriteFile(t, root, "docs/specs/rules/"+layer+"/"+id+".md", "---\nrule_id: "+id+"\nrule_scope: bound\nrule_version: "+version+"\n---\n\n# Constraint\n\nValidate input before processing.\n")
+			for layer, present := range map[string]bool{"candidate": tc.candidate, "stable": tc.stable} {
+				if present {
+					grWriteFile(t, root, "docs/specs/rules/"+layer+"/"+id+".md", "---\nrule_id: "+id+"\nrule_scope: bound\n---\n\n# Constraint\n\nValidate input before processing.\n")
 				}
 			}
 			runID := grPlan(t, root, "--gate", "validate", "--rule", id, "--target", tc.target)
@@ -43,8 +41,8 @@ func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
 			}
 			if tc.target == "candidate" {
 				result := rulevalidation.ValidateRule(root, id)
-				if result.Passed != tc.candidatePass {
-					t.Fatalf("candidate version gate changed: %+v", result)
+				if !result.Passed {
+					t.Fatalf("candidate validation failed: %+v", result)
 				}
 			}
 		})
@@ -231,7 +229,7 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_http.md", "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
 	ruleRun := grPlan(t, root, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	rule := missionJSON(t, root, ruleRun, "checks")
-	if rule.Sessions[0].ProtocolRef != "framework/rule_validate_checklist.md" || len(rule.Sessions[0].ReportContract.Verdicts) != 7 {
+	if rule.Sessions[0].ProtocolRef != "framework/rule_validate_checklist.md" || len(rule.Sessions[0].ReportContract.Verdicts) != 6 {
 		t.Fatalf("wrong rule mission: %+v", rule.Sessions[0])
 	}
 

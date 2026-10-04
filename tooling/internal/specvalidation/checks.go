@@ -401,7 +401,7 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 // cycleGuidance is the standard resolution guidance attached to every cycle
 // finding. It lists the two structural resolutions without judging which one
 // applies — the tool reports and blocks, the user decides how to unbind.
-const cycleGuidance = "Resolve by extracting the shared contract into a rule (star-shaped dependencies), or re-drawing unit boundaries. See g_rule_repository_baseline.md §6.1 item 4; run `deps@all` for the dependency graph."
+const cycleGuidance = "Resolve by extracting the shared contract into a rule (star-shaped dependencies), or re-drawing unit boundaries. See g_rule_repository_baseline.md §5.1 item 4; run `deps@all` for the dependency graph."
 
 // cycleBuildGuidance is attached when the graph cannot be built at all. The
 // failure cause is unrelated to the validated unit — any unreadable unit

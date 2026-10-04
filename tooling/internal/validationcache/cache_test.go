@@ -555,7 +555,7 @@ func TestCheckRuleValidate(t *testing.T) {
 	os.MkdirAll(ruleDir, 0755)
 
 	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
-	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\n---\n"
 	if err := writeCacheFixtureFile(t, rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +590,7 @@ func TestCheckRuleValidateStale(t *testing.T) {
 	os.MkdirAll(ruleDir, 0755)
 
 	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
-	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\n---\n"
 	if err := writeCacheFixtureFile(t, rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1238,7 +1238,7 @@ func TestCheckRuleValidateMissingMainRuleFails(t *testing.T) {
 	os.MkdirAll(ruleDir, 0755)
 
 	rulePath := filepath.Join(ruleDir, "b_rule_test.md")
-	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\nrule_version: 0.1.0\n---\n"
+	ruleContent := "---\nrule_id: b_rule_test\nrule_scope: bound\n---\n"
 	if err := writeCacheFixtureFile(t, rulePath, []byte(ruleContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1410,7 +1410,7 @@ func TestCheckValidateStable(t *testing.T) {
 	// The rule file is an external dependency of the stable content: when it
 	// changes, the validate@stable confirmation goes stale.
 	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	specHash, _ := fileHash(specPath)
 	ruleHash, _ := fileHash(rulePath)
@@ -1452,7 +1452,7 @@ func TestCheckValidateStable_RuleChanged(t *testing.T) {
 	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	specHash, _ := fileHash(specPath)
 	ruleHash, _ := fileHash(rulePath)
@@ -1463,7 +1463,7 @@ func TestCheckValidateStable_RuleChanged(t *testing.T) {
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The rule changes after the stable validate -> the confirmation goes stale.
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\nrule_version: 2\n---\nAll APIs must use HTTPS and reject cleartext.\n"), 0644)
+	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS and reject cleartext.\n"), 0644)
 
 	result, err := CheckValidateStable(repoRoot, "test")
 	if err != nil {
@@ -1483,7 +1483,7 @@ func TestCheckRuleValidateStable(t *testing.T) {
 	os.MkdirAll(unitsStableDir, 0755)
 
 	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	// A consumer unit is an external dependency of the stable rule: when the
 	// consumer changes, the rule's validate@stable confirmation goes stale.
@@ -1528,7 +1528,7 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	os.MkdirAll(unitsStableDir, 0755)
 
 	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\nrule_version: 1\n---\nAll APIs must use HTTPS.\n"), 0644)
+	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
 	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
@@ -1836,7 +1836,7 @@ func TestGlobalRuleLogicalRefUsesStableOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	stableRulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
-	stableRuleContent := "---\nrule_id: g_rule_http\nrule_scope: global\nrule_version: 1.0.0\n---\nStable constraint.\n"
+	stableRuleContent := "---\nrule_id: g_rule_http\nrule_scope: global\n---\nStable constraint.\n"
 	if err := writeCacheFixtureFile(t, stableRulePath, []byte(stableRuleContent), 0o644); err != nil {
 		t.Fatal(err)
 	}

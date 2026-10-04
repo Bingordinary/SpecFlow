@@ -109,7 +109,7 @@ func writeRuleFile(t *testing.T, repoRoot, layer, id string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nrule_id: " + id + "\nrule_scope: global\nrule_version: 0.1.0\n---\n"
+	content := "---\nrule_id: " + id + "\nrule_scope: global\n---\n"
 	if err := os.WriteFile(filepath.Join(dir, id+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

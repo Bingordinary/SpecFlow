@@ -46,12 +46,12 @@ func TestUnboundRuleNeedsNoRetentionMetadata(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nrule_id: b_rule_future\nrule_scope: bound\nrule_version: 0.1.0\n---\n\n# Future pipeline constraint\n\nKeep this rule for the next pipeline.\n"
+	content := "---\nrule_id: b_rule_future\nrule_scope: bound\n---\n\n# Future pipeline constraint\n\nKeep this rule for the next pipeline.\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 	result := ValidateRule(root, "b_rule_future")
-	if !result.Passed || len(result.Checks) != 5 {
+	if !result.Passed || len(result.Checks) != 4 {
 		t.Fatalf("unbound rule rejected: %+v", result)
 	}
 }
