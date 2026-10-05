@@ -297,7 +297,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		}
 	}
 	if len(session.DeferredFindings) > 0 {
-		glossary = append(glossary, missionTerm{"deferred finding", "a finding routed from another unit for this verify run to dispose", framework + "/verification_scope.md §Deferred findings"})
+		glossary = append(glossary, missionTerm{"deferred finding", "a finding routed from another unit for this verify run to dispose (quality ownership or this unit's own protected stable-record drift)", framework + "/verification_scope.md §Deferred findings"})
 	}
 	if spec.Kind == gaterun.SessionKindCross {
 		// The optional final synthesis consumes every accepted session's

@@ -48,7 +48,10 @@ func loadDeferredFindings(repoRoot, unitName string) ([]DeferredFinding, error) 
 }
 
 // Rebind unit-scoped quality keys while retaining the finding's source
-// identity and leaving public and relationship keys unchanged.
+// identity and leaving public and relationship keys unchanged. A protected
+// stable-record deferral (preserve:<owner>:<item>) rebinds to the owner's own
+// acceptance item: that is the logical key owning the requirement's judgment in
+// the owner's run (see framework/verification_scope.md §Deferred findings).
 func deferredOwnerKey(key, source, owner string) string {
 	if key == reviewKey(SessionKindArchitecture, source, "") {
 		return reviewKey(SessionKindArchitecture, owner, "")
@@ -56,6 +59,10 @@ func deferredOwnerKey(key, source, owner string) string {
 	prefix := SessionKindDesign + ":" + source + ":"
 	if strings.HasPrefix(key, prefix) {
 		return reviewKey(SessionKindDesign, owner, strings.TrimPrefix(key, prefix))
+	}
+	preservePrefix := SessionKindPreserve + ":" + owner + ":"
+	if strings.HasPrefix(key, preservePrefix) {
+		return reviewKey(SessionKindItem, owner, strings.TrimPrefix(key, preservePrefix))
 	}
 	return key
 }
@@ -676,7 +683,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		spec.Context = append(spec.Context, "For Steps 1 and 5, attribute code structures and designs to the responsibility of the unit owning each key before judging surplus; for preserve, assess only the assigned protected stable requirement. Shared-file association is not exclusive ownership. Independent behavior outside that responsibility is not surplus; helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. If attribution evidence is missing, replan with the needed input rather than infer a mismatch from file co-location.")
 	}
 	if kind == SessionKindPreserve {
-		spec.Context = append(spec.Context, "Use only the protected unit's stable spec. Every requirement must be ALIGNED; MISMATCH or CANNOT_DETERMINE blocks the current unit, regardless of ownership.")
+		spec.Context = append(spec.Context, "Use only the protected unit's stable spec. A declared implementation mapping that no longer resolves is MISMATCH — never ALIGNED. When the requirement's behavior is still implemented (the protected unit's own code or its current round declares it), the mismatch is peer-owned record drift: the final synthesis routes it to the protected unit by recorded ownership and it does not block this run. When the behavior is not implemented anywhere, it stays this run's blocking finding.")
 	}
 	return spec, nil
 }

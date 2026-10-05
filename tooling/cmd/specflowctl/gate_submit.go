@@ -323,14 +323,20 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 		return err
 	}
 	var inputFindings []gaterun.Finding
+	var protectedMismatches, protectedIndeterminate []string
 	for _, state := range states {
 		if state.Result == nil {
 			continue
 		}
 		for key, verdict := range state.Result.Verdicts {
-			if strings.HasPrefix(key, "preserve:") && verdict != "ALIGNED" && parsed.EffectiveStatus[key] != "fail" {
-				return fmt.Errorf("protected requirement %s cannot be cleared by synthesis", key)
+			if !strings.HasPrefix(key, "preserve:") || verdict == "ALIGNED" {
+				continue
 			}
+			if verdict == "MISMATCH" {
+				protectedMismatches = append(protectedMismatches, key)
+				continue
+			}
+			protectedIndeterminate = append(protectedIndeterminate, key)
 		}
 	}
 	for _, state := range states {
@@ -350,7 +356,7 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 		if disposition.Action != "retained" {
 			for _, f := range inputFindings {
 				if f.ID == disposition.FindingID && strings.HasPrefix(f.SourceKey, "preserve:") {
-					return fmt.Errorf("protected requirement finding %s cannot be suppressed or deferred", f.ID)
+					return fmt.Errorf("protected requirement finding %s cannot be suppressed or merged", f.ID)
 				}
 			}
 		}
@@ -378,6 +384,29 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 	retained, err = validateOwnerships(absRoot, run, spec, parsed, retained)
 	if err != nil {
 		return err
+	}
+	// A non-ALIGNED protected requirement must either fail its key or — for a
+	// MISMATCH only — be carried by a finding deferred to the protected unit
+	// (peer-owned stable-record drift). CANNOT_DETERMINE is never routable: an
+	// indeterminate requirement stays blocking.
+	deferredKeys := map[string]bool{}
+	for _, finding := range retained {
+		if gateDriving(finding, run.TargetName) {
+			continue
+		}
+		for key := range findingKeySet(finding) {
+			deferredKeys[key] = true
+		}
+	}
+	for _, key := range protectedIndeterminate {
+		if parsed.EffectiveStatus[key] != "fail" {
+			return fmt.Errorf("protected requirement %s cannot be cleared by synthesis", key)
+		}
+	}
+	for _, key := range protectedMismatches {
+		if parsed.EffectiveStatus[key] != "fail" && !deferredKeys[key] {
+			return fmt.Errorf("protected requirement %s cannot be cleared by synthesis", key)
+		}
 	}
 	if err := validateCrossItemFindingLinks(run.Gate, parsed, retained); err != nil {
 		return err
@@ -520,13 +549,17 @@ func sessionDeclaresPath(spec *gaterun.SessionSpec, parsed *parsedReport, path s
 }
 
 // validateOwnerships applies the final synthesis's ownership records to the
-// terminal retained findings. Each record must cite evidence inside the cross
-// session's read refs, covered by a `cross` dependency-scope declaration, and
-// name a unit that exists in the repository — a deferral to a nonexistent
-// unit would route the finding nowhere, so it fails closed here.
+// terminal retained findings. Two classes are deferrable: quality-lens
+// findings whose recorded ownership belongs to another unit, and protected
+// stable-record drift — a preserve finding whose every key is a preserve key
+// of the finding's protected unit, routed back to that unit. Each record must
+// cite evidence inside the cross session's read refs, covered by a `cross`
+// dependency-scope declaration, and name a unit that exists in the repository
+// — a deferral to a nonexistent unit would route the finding nowhere, so it
+// fails closed here.
 func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, findings []gaterun.Finding) ([]gaterun.Finding, error) {
 	if len(parsed.Ownerships) > 0 && run.Gate != gaterun.GateVerify {
-		return nil, fmt.Errorf("ownership records are quality-lens-only — the %s gate has no ownership dimension", run.Gate)
+		return nil, fmt.Errorf("ownership records belong to unit verify — the %s gate has no ownership dimension", run.Gate)
 	}
 	canonical, err := applyOwnerships(findings, parsed.Ownerships)
 	if err != nil {
@@ -540,12 +573,14 @@ func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.SessionS
 		finding := findingByID[ownership.FindingID]
 		keys := findingKeySet(finding)
 		if len(keys) == 0 {
-			return nil, fmt.Errorf("ownership record for finding %q has no quality coverage key", finding.ID)
+			return nil, fmt.Errorf("ownership record for finding %q has no coverage key", finding.ID)
 		}
-		for key := range keys {
-			if run.LensForReportKey(key) != gaterun.LensQuality {
-				return nil, fmt.Errorf("ownership records are quality-lens-only — finding %q affects non-quality key %q", finding.ID, key)
-			}
+		protectedUnit, err := ownershipRoutingTarget(run, finding.ID, keys)
+		if err != nil {
+			return nil, err
+		}
+		if protectedUnit != "" && protectedUnit != ownership.OwnerUnit {
+			return nil, fmt.Errorf("ownership record for finding %q routes a protected requirement of %q; stable-record drift must route to the protected unit (got owner %q)", ownership.FindingID, protectedUnit, ownership.OwnerUnit)
 		}
 		if !run.SessionAllowsDeclaration(absRoot, spec, ownership.EvidencePath) {
 			return nil, fmt.Errorf("ownership record for finding %q cites %q outside session %q's read refs", ownership.FindingID, ownership.EvidencePath, spec.SessionID)
@@ -561,6 +596,47 @@ func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.SessionS
 		}
 	}
 	return canonical, nil
+}
+
+// ownershipKeyScope is the shared explanation for findings whose keys cannot
+// be deferred: only quality findings and one protected unit's own stable-record
+// drift are routable.
+const ownershipKeyScope = "ownership records are quality-lens-only, except a protected unit's own stable-record drift"
+
+// ownershipRoutingTarget classifies a finding's logical keys for ownership
+// routing. Quality findings (every key a quality-lens key) return ""; a
+// protected stable-record drift returns the protected unit — every key is a
+// preserve key of that one unit. Any other combination (item keys, mixed
+// quality and protected keys, several protected units) is not deferrable.
+func ownershipRoutingTarget(run *gaterun.Run, findingID string, keys map[string]bool) (string, error) {
+	qualityCount, preserveCount := 0, 0
+	protectedUnit := ""
+	for key := range keys {
+		if run.LensForReportKey(key) == gaterun.LensQuality {
+			qualityCount++
+			continue
+		}
+		parts := strings.SplitN(key, ":", 3)
+		if len(parts) != 3 || parts[0] != gaterun.SessionKindPreserve || parts[1] == "" || parts[2] == "" {
+			return "", fmt.Errorf("%s — finding %q affects non-quality key %q", ownershipKeyScope, findingID, key)
+		}
+		preserveCount++
+		if protectedUnit == "" {
+			protectedUnit = parts[1]
+			continue
+		}
+		if protectedUnit != parts[1] {
+			return "", fmt.Errorf("ownership record for finding %q affects protected requirements of different units %q and %q — a stable-record deferral names one protected unit", findingID, protectedUnit, parts[1])
+		}
+	}
+	switch {
+	case qualityCount > 0 && preserveCount > 0:
+		return "", fmt.Errorf("%s — finding %q mixes quality and protected keys", ownershipKeyScope, findingID)
+	case preserveCount > 0:
+		return protectedUnit, nil
+	default:
+		return "", nil
+	}
 }
 
 func verdictCount(verdicts map[string]string, token string) int {

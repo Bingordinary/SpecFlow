@@ -1619,3 +1619,34 @@ func TestLoadDeferredFindingsRebindsQualityKeysAndPreservesSource(t *testing.T) 
 		t.Fatalf("source ledger was rewritten: %+v %v", ledger, err)
 	}
 }
+
+// A protected stable-record deferral rebinds preserve:<owner>:<item> to the
+// owner's own item key in both source_key and affected_keys, preserving the
+// finding id, source unit and source run; other units' preserve keys keep
+// their identity.
+func TestLoadDeferredFindingsRebindsProtectedRecordDrift(t *testing.T) {
+	root := newRepo(t)
+	entry := validationcache.DeferredEntry{
+		FindingID: "source-run/preserve:owner:owner.core/F1", OwnerUnit: "owner",
+		SourceUnit: "source", SourceRun: "source-run", Severity: "P1",
+		Text: "protected stable mapping lags its implementation", Detail: "full finding detail",
+		SourceKey:    "preserve:owner:owner.core",
+		AffectedKeys: []string{"preserve:owner:owner.core", "preserve:other:other.core", "code:shared.go"},
+		EvidencePath: "shared.go", Reason: "the owner reconciles its own stable record",
+	}
+	if err := validationcache.WriteDeferredLedger(root, validationcache.DeferredLedger{SchemaVersion: 1, Entries: []validationcache.DeferredEntry{entry}}); err != nil {
+		t.Fatal(err)
+	}
+	findings, err := loadDeferredFindings(root, "owner")
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("load deferral: %+v %v", findings, err)
+	}
+	got := findings[0]
+	if got.SourceUnit != "source" || got.SourceRun != "source-run" || got.Finding.ID != entry.FindingID || got.Finding.SourceKey != "item:owner:owner.core" {
+		t.Fatalf("owner key or provenance lost: %+v", got)
+	}
+	want := "item:owner:owner.core,preserve:other:other.core,code:shared.go"
+	if strings.Join(got.Finding.AffectedKeys, ",") != want {
+		t.Fatalf("affected keys = %v", got.Finding.AffectedKeys)
+	}
+}
