@@ -30,7 +30,7 @@ func TestVerifyContextReplanCarriesTestAndCalleeEvidence(t *testing.T) {
 	}
 
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate",
-		"--input", "tests/auth_test.go", "--input", "internal/helper.go")
+		"--inputs-file", grInputsManifest(t, "tests/auth_test.go", "internal/helper.go"))
 	if _, err := gaterun.Load(root, oldRun); err == nil {
 		t.Fatal("the replaced run is still available")
 	}
@@ -73,7 +73,7 @@ func TestVerifyReplanDiscardsAcceptedSessions(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 
 	oldRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate",
-		"--input", "tests/auth_test.go")
+		"--inputs-file", grInputsManifest(t, "tests/auth_test.go"))
 	accepted := strings.Replace(grVerifyItemReport("auth.core", main, "src/auth.go"),
 		"Part B: skipped — no test files in this fixture", "Part B: B1-B6 checked", 1) +
 		"auth.core: tests/auth_test.go: all\n"
@@ -84,7 +84,7 @@ func TestVerifyReplanDiscardsAcceptedSessions(t *testing.T) {
 	}
 
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate",
-		"--input", "tests/auth_test.go", "--input", "internal/helper.go")
+		"--inputs-file", grInputsManifest(t, "tests/auth_test.go", "internal/helper.go"))
 	if _, err := gaterun.Load(root, oldRun); err == nil {
 		t.Fatal("the old accepted result survived replanning")
 	}

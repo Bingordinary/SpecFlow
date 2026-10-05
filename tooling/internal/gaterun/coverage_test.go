@@ -1296,8 +1296,8 @@ func TestRuleChecklistMatchesPlannedCoverage(t *testing.T) {
 }
 
 // TestRulePlanIncludesDirectoryInputEvidence verifies that a rule validate plan
-// exposes the files expanded from a directory --input to its session
-// (framework/verification_scope.md §Input roles: --input evidence is readable
+// exposes the files expanded from a directory input to its session
+// (framework/verification_scope.md §Input roles: manifest evidence is readable
 // and declarable by every session).
 func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
 	repoRoot := newRepo(t)
@@ -1331,7 +1331,7 @@ func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
 }
 
 // TestRuleDeltaPlanIncludesDirectoryInputEvidence covers the delta/repair rule
-// plan path: the re-run session must expose the same --input evidence.
+// plan path: the re-run session must expose the same input-manifest evidence.
 func TestRuleDeltaPlanIncludesDirectoryInputEvidence(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeRule(t, repoRoot, "candidate", "b_rule_http")

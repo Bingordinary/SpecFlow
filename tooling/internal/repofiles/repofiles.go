@@ -91,6 +91,48 @@ func ExpandDir(repoRoot, dir string) ([]File, error) {
 	return e.Expand(dir)
 }
 
+// IsRepositoryContent reports whether path — absolute or repository-relative —
+// is a repository-content file under the package's Git definition: Git tracks
+// it, or it is untracked and not ignored. A path outside repoRoot is never
+// repository content. The check keeps scratch inputs (for example a gate-plan
+// input manifest) out of the evidence surface.
+func IsRepositoryContent(repoRoot, path string) (bool, error) {
+	abs := path
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(repoRoot, abs)
+	}
+	abs = filepath.Clean(abs)
+	// Resolve symlinks on both sides so a repository reached through a
+	// symlinked path cannot hide a manifest that physically lives inside it.
+	root := repoRoot
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		root = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		// Different volumes (Windows): the path cannot be relative to the
+		// repository, so it is outside it.
+		return false, nil
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return false, nil
+	}
+	out, err := runGit(repoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", rel)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range strings.Split(out, "\x00") {
+		if p == rel {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Expander is one invocation's view of the repository's directory content.
 // While a read-only invocation runs, repository content is fixed, so a
 // directory's expansion is a pure function of the repository and the

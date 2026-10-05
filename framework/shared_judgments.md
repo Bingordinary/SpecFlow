@@ -20,7 +20,7 @@ Reverse surplus checks read complete associated files, then compare only structu
 | `item:<unit>:<item>` | alignment | Verify the current unit's acceptance requirement |
 | `preserve:<unit>:<item>` | alignment | Confirm a related stable requirement of another unit remains ALIGNED |
 
-Batches must have the same kind and lens. Public checks precede design judgments. Public evidence includes repository callers, callees, dependencies and tests without narrowing by the triggering unit. Tool discovery conservatively follows file references; the coordinator must supplement it with related evidence found by repository search through `--input`. If a reviewer finds a missing evidence path, do not submit an incomplete verdict: replan with that path. Newly required evidence invalidates reuse even if existing content dependencies remain unchanged.
+Batches must have the same kind and lens. Public checks precede design judgments. Public evidence includes repository callers, callees, dependencies and tests without narrowing by the triggering unit. Tool discovery conservatively follows file references; the coordinator must supplement it with related evidence found by repository search through the input manifest. If a reviewer finds a missing evidence path, do not submit an incomplete verdict: replan with that path. Newly required evidence invalidates reuse even if existing content dependencies remain unchanged.
 
 A public report contains `File: <key>`, `conclusion: FACTS`, `facts: <assessment>`, potential finding blocks, and whole-file Dependency scope declarations for every public read ref. It must not suppress observations using private spec rationale.
 

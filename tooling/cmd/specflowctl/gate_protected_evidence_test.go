@@ -129,7 +129,7 @@ func TestGateSynthesisRejectsUnplannedPhysicalStableSpec(t *testing.T) {
 	grWriteFile(t, root, "auth.js", "export const auth = true;\n")
 	unrelated := "docs/specs/units/stable/unit_order.md"
 	grWriteFile(t, root, unrelated, "---\nid: order\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nUnrelated stable contract.\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--input", unrelated)
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, unrelated))
 	run := mustLoadRun(t, root, id)
 	spec, err := gaterun.BuildSessionSpec(root, run, []string{gaterun.CrossKey})
 	if err != nil {
@@ -140,7 +140,7 @@ func TestGateSynthesisRejectsUnplannedPhysicalStableSpec(t *testing.T) {
 	}
 	parsed := &parsedReport{Scopes: []parsedScope{{Key: gaterun.RelationshipKey("contract_consistency"), Path: unrelated, Declaration: "all"}}}
 	if err := validateSessionDeclarations(root, run, spec, parsed); err == nil || !strings.Contains(err.Error(), "logical reference") {
-		t.Fatalf("an unrelated --input bypassed the logical-reference contract: %v", err)
+		t.Fatalf("an unrelated manifest entry bypassed the logical-reference contract: %v", err)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestGateSynthesisRejectsUnplannedPhysicalStableSpec(t *testing.T) {
 func TestSharedMovedAcceptedEvidenceDoesNotBlockPlanning(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	grWriteFile(t, root, "moved.js", "export const moved = true;\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "moved.js")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "moved.js"))
 	sharedFinish(t, root, id)
 	data, err := os.ReadFile(filepath.Join(root, authSpec))
 	if err != nil {
@@ -182,7 +182,7 @@ func TestSharedMovedAcceptedEvidenceDoesNotBlockPlanning(t *testing.T) {
 func TestSharedMovedPeerEvidenceDoesNotDeadlockMutualProtection(t *testing.T) {
 	root, authSpec, orderSpec := sharedFixture(t)
 	grWriteFile(t, root, "moved.js", "export const moved = true;\n")
-	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "moved.js")
+	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "moved.js"))
 	sharedFinish(t, root, auth)
 	data, err := os.ReadFile(filepath.Join(root, authSpec))
 	if err != nil {
@@ -192,7 +192,7 @@ func TestSharedMovedPeerEvidenceDoesNotDeadlockMutualProtection(t *testing.T) {
 	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
 		t.Fatal(err)
 	}
-	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--input", "moved.js")
+	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--inputs-file", grInputsManifest(t, "moved.js"))
 	sharedFinish(t, root, order)
 	data, err = os.ReadFile(filepath.Join(root, orderSpec))
 	if err != nil {

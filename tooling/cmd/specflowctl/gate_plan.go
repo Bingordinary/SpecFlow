@@ -15,7 +15,8 @@ import (
 // for a quality-gate run before any executor reads input. The tooling resolves
 // the gate's protocol input surface for the target (the target's spec files,
 // the dependency spec objects, and — for verify — the declared code
-// surface), adds the agent-declared --input entries, computes the coverage set
+// surface), adds the entries listed in the agent-declared input manifest
+// (--inputs-file), computes the coverage set
 // for the run mode, prints it, and persists the run state under meta/gate_runs/
 // with no sessions. The agent partitions the coverage set into reviewer
 // sessions, generates each mission with gate-mission, and records each report
@@ -34,8 +35,16 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	modePtr := fs.String("mode", "full", "run mode: full | delta | repair")
 	formatPtr := fs.String("format", "text", "output format: text | json")
 	relationshipsPtr := fs.String("relationships", "", "relationships touched by this change: comma-separated names, or none (required for units)")
-	inputPtr := repeatedString{}
-	fs.Var(&inputPtr, "input", "extra read input the derived surface cannot see: a path, a directory, or a logical reference (repeatable)")
+	var inputsFile string
+	inputsFileSet := false
+	fs.Func("inputs-file", "input manifest: a plain text file with one extra read input per line — a path, a directory, or a logical reference (single use)", func(v string) error {
+		if inputsFileSet {
+			return errors.New("given more than once")
+		}
+		inputsFileSet = true
+		inputsFile = v
+		return nil
+	})
 	rerunPtr := repeatedString{}
 	fs.Var(&rerunPtr, "rerun", "delta/repair only: force a check key into the re-run set (repeatable)")
 	if err := fs.Parse(args); err != nil {
@@ -83,7 +92,15 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	}
 
 	absRoot := mustAbs(*repoRootPtr)
-	run, err := gaterun.Plan(absRoot, gate, targetKind, targetName, target, mode, inputPtr, rerunPtr, relationships, time.Now().UTC())
+	var extraInputs []string
+	if inputsFileSet {
+		loaded, err := loadInputsManifest(absRoot, inputsFile)
+		if err != nil {
+			return err
+		}
+		extraInputs = loaded
+	}
+	run, err := gaterun.Plan(absRoot, gate, targetKind, targetName, target, mode, extraInputs, rerunPtr, relationships, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -160,7 +177,7 @@ func requireGateTarget(gate, unitName, ruleID, target string, stderr io.Writer) 
 
 func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME --relationships NAMES|none | --rule ID) --target candidate|stable [--mode full|delta|repair] [--input PATH_OR_REF]... [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME --relationships NAMES|none | --rule ID) --target candidate|stable [--mode full|delta|repair] [--inputs-file PATH] [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Fixes the immutable input snapshot and computes the coverage set for a")
 	fmt.Fprintln(w, "quality-gate run before any executor reads input. The tooling resolves the")
@@ -173,9 +190,14 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "run.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Every file a session report may declare must be inside the snapshot. The derived")
-	fmt.Fprintln(w, "surface covers the gate's protocol inputs; --input (repeatable) adds evidence")
-	fmt.Fprintln(w, "available to sessions but never creates coverage keys. A declaration outside a")
-	fmt.Fprintln(w, "session's read refs is rejected by gate-submit.")
+	fmt.Fprintln(w, "surface covers the gate's protocol inputs; --inputs-file lists extra evidence that")
+	fmt.Fprintln(w, "sessions may read and declare but that never creates coverage keys. The manifest is")
+	fmt.Fprintln(w, "a plain text file with one path, directory, or logical reference per line; blank")
+	fmt.Fprintln(w, "lines are skipped and entries are used verbatim. It is scratch input, not evidence:")
+	fmt.Fprintln(w, "keep it under an ignored local-state path such as meta/plan_inputs/ or outside the")
+	fmt.Fprintln(w, "repository — a manifest that is a repository-content file is rejected before the")
+	fmt.Fprintln(w, "plan is fixed. A declaration outside a session's read refs is rejected by")
+	fmt.Fprintln(w, "gate-submit.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (coverage keys derived from a pass")
 	fmt.Fprintln(w, "baseline's stale evidence), repair (coverage keys derived from a failure record's")
@@ -201,8 +223,10 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --rule ID        Rule id (validate only)")
 	fmt.Fprintln(w, "  --target T       candidate | stable (required; stable = stable-only target)")
 	fmt.Fprintln(w, "  --mode M         full | delta | repair (default: full)")
-	fmt.Fprintln(w, "  --input REF      extra read input: path, directory, or logical reference")
-	fmt.Fprintln(w, "                   (unit:{name} / unit:{name}:appendix:{file} / rule:{id}); repeatable")
+	fmt.Fprintln(w, "  --inputs-file PATH  input manifest: one extra read input per line — a path, a")
+	fmt.Fprintln(w, "                   directory, or a logical reference (unit:{name} /")
+	fmt.Fprintln(w, "                   unit:{name}:appendix:{file} / rule:{id}); the file must not be")
+	fmt.Fprintln(w, "                   a repository-content file")
 	fmt.Fprintln(w, "  --rerun KEY      delta/repair only: explicit additional re-run override; repeatable")
 	fmt.Fprintln(w, "  --relationships NAMES|none  required for units: relationships touched by the current change")
 	fmt.Fprintln(w, "                   validate: design_constraints, coverage_scope, cross_unit_cohesion")

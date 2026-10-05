@@ -105,7 +105,8 @@ const (
 	CrossKey = "cross"
 
 	// SourceDerived marks an entry resolved from the gate's protocol input
-	// surface; SourceInput marks an entry declared by the agent via --input.
+	// surface; SourceInput marks an entry declared by the agent through the
+	// plan's input manifest.
 	SourceDerived = "derived"
 	SourceInput   = "input"
 	// SourceDerivedAffects marks a spec-derived evidence file that exists
@@ -765,7 +766,7 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 		if !isLogicalRef(canonical) {
 			canonical, err = repopath.Canonical(repoRoot, input)
 			if err != nil {
-				return nil, fmt.Errorf("--input %q: %w", input, err)
+				return nil, fmt.Errorf("input %q: %w", input, err)
 			}
 		}
 		if !stringInSlice(run.ExtraInputs, canonical) {
@@ -782,7 +783,7 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 		abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))
 		info, err := os.Stat(abs)
 		if err != nil {
-			return nil, fmt.Errorf("--input %q: %v", input, err)
+			return nil, fmt.Errorf("input %q: %v", input, err)
 		}
 		if info.IsDir() {
 			if seenSurfaces[canonical] {
@@ -791,7 +792,7 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 			seenSurfaces[canonical] = true
 			surface, err := d.resolveSurface(Surface{Path: canonical, Source: SourceInput})
 			if err != nil {
-				return nil, fmt.Errorf("--input %q: %w", input, err)
+				return nil, fmt.Errorf("input %q: %w", input, err)
 			}
 			run.Surfaces = append(run.Surfaces, surface)
 			continue
@@ -1099,8 +1100,8 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 		}
 		refs = derived
 	}
-	// The derived part is re-derived; the agent-declared part (--input) is
-	// re-resolved from the stored entries. The two parts are compared
+	// The derived part is re-derived; the agent-declared part (the input
+	// manifest entries) is re-resolved from the stored entries. The two parts are compared
 	// separately so a replaced or missing entry on either side is reported.
 	var derivedStoredRefs, inputStoredRefs, inputCurrentRefs []Ref
 	for _, ref := range run.Refs {

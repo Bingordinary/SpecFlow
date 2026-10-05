@@ -725,7 +725,7 @@ func TestExtraInputs(t *testing.T) {
 	mustContain(t, divergences, "added: tests/new_test.go")
 
 	if _, err := open(t, repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, []string{"missing-dir"}, time.Now()); err == nil {
-		t.Fatal("expected a missing --input path to be rejected")
+		t.Fatal("expected a missing input path to be rejected")
 	}
 }
 

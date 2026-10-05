@@ -49,7 +49,7 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	proof := "evidence/decision.md"
 	grWriteFile(t, root, proof, "The complete source resolves the apparent contradiction.\n")
-	id := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--input", proof)
+	id := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, proof))
 	desc := main + ": Description"
 	accept := main + ": Testability / Acceptance Criteria"
 	grSubmitOK(t, root, id, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{"1": {main + ": frontmatter", desc}, "3": {accept}, "6": {accept}}))
@@ -67,7 +67,7 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 	}
 
 	// An unrelated delta must carry the suppression's dependency with check 2.
-	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "5", "--input", proof)
+	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "5", "--inputs-file", grInputsManifest(t, proof))
 	grSubmitPlannedValidateSessions(t, root, delta, main)
 	grFinalizeOK(t, root, delta)
 	assertSynthesisEvidenceKeys(t, root, "validate", proof, []string{"2"})
@@ -95,7 +95,7 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 		t.Fatalf("rejected promotion created a stable unit: %v", err)
 	}
 
-	delta = grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--input", proof)
+	delta = grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, proof))
 	run := mustLoadRun(t, root, delta)
 	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design" || len(run.Relationships) != 0 {
 		t.Fatalf("changed suppression evidence must rerun only design checks 2/4: %+v", run)
@@ -122,7 +122,7 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	grWriteFile(t, root, proof, "The combined design violates the contract.\n")
 	contract := "evidence/contract.md"
 	grWriteFile(t, root, contract, "The contract requires a consistent combined design.\n")
-	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "design_constraints", "--input", proof, "--input", contract)
+	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "design_constraints", "--inputs-file", grInputsManifest(t, proof, contract))
 	if run := mustLoadRun(t, root, delta); len(run.Coverage) != 0 || !stringInList(run.CarriedKeys, "2") {
 		t.Fatalf("relationship-only run must carry the local design judgment: %+v", run)
 	}
@@ -162,7 +162,7 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	if strings.Join(scope.Affected, ",") != "2,"+relationship || len(scope.Unclaimed) != 0 {
 		t.Fatalf("new synthesis evidence must stale the carried key and relationship: %+v", scope)
 	}
-	repair := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--input", proof)
+	repair := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--inputs-file", grInputsManifest(t, proof))
 	run := mustLoadRun(t, root, repair)
 	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design" || strings.Join(run.Relationships, ",") != "design_constraints" {
 		t.Fatalf("repair must recheck the contradicted carried judgment and relationship: %+v", run)
@@ -180,14 +180,14 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	root, main, _ := sharedFixture(t)
 	proof := "evidence/decision.md"
 	grWriteFile(t, root, proof, "The full contract resolves the local mismatch.\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--input", proof)
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	grSubmitOK(t, root, id, "auth.core", grVerifyMismatchReport("auth.core", main, "contracts.js", "P2"))
 	grAutoSubmitQuality(t, root, id)
 	grSubmitOK(t, root, id, "cross", relationshipReport(t, root, id, map[string]string{"contract_consistency": proof}, ""))
 	grFinalizeOK(t, root, id)
 	finding := grReadJudgmentBaseline(t, root, "unit", "auth", "verify").Findings[0].ID
 
-	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "contract_consistency", "--input", proof)
+	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	key := "item:auth:auth.core"
 	if run := mustLoadRun(t, root, delta); len(run.Coverage) != 0 || !stringInList(run.CarriedKeys, key) {
 		t.Fatalf("relationship-only run must carry the item: %+v", run)

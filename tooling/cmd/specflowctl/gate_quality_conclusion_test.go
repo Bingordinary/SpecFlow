@@ -67,7 +67,7 @@ func TestFinalQualityConclusionUsesDispositionAndOwnEvidence(t *testing.T) {
 			root, main, _ := sharedFixture(t)
 			proof := "evidence/quality.md"
 			grWriteFile(t, root, proof, "Responsibility evidence.\n")
-			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", proof)
+			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, proof))
 			run := mustLoadRun(t, root, id)
 			key := "architecture:auth"
 			report := strings.Replace(grDefaultQualityReport(run, *run.CoverageByKey(key)), "conclusion: acceptable", "conclusion: unacceptable — responsibility violation", 1)
@@ -121,7 +121,7 @@ func TestFinalAttentionWithoutFindingKeepsSynthesisEvidence(t *testing.T) {
 	root, main, _ := sharedFixture(t)
 	proof := "evidence/relationship.md"
 	grWriteFile(t, root, proof, "Responsibility names need attention.\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--input", proof)
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "contracts.js"))
 	grAutoSubmitQuality(t, root, id)
 	report := relationshipReport(t, root, id, map[string]string{"contract_consistency": proof}, "")

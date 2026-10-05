@@ -781,7 +781,7 @@ func TestSharedStableCallerProtectionWithoutAcceptedEvidence(t *testing.T) {
 	grWriteFile(t, root, "login.js", "import {response} from './contracts.js';\nexport function login(token){return response(token);}\n")
 	// login.js is a caller the coordinator discovers by repository search and
 	// passes as a run input (verification_scope.md, evidence discovery).
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--input", "login.js")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--inputs-file", grInputsManifest(t, "login.js"))
 	run := mustLoadRun(t, root, id)
 	ck := run.CoverageByKey("preserve:auth:auth.core")
 	if ck == nil {
@@ -822,7 +822,7 @@ func TestSharedDamagedPeerRecordKeepsEvidenceAssociation(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(root, authSpec))
 	grWriteFile(t, root, authSpec, strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
 	grWriteFile(t, root, "login.js", "export function login(){return global.createResponse();}\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "contracts.js")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "contracts.js"))
 	sharedFinish(t, root, id)
 	before := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
 	data, _ = os.ReadFile(filepath.Join(root, authSpec))

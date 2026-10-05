@@ -79,6 +79,21 @@ func grWriteFile(t *testing.T, repoRoot, rel, content string) string {
 	return path
 }
 
+// grInputsManifest writes an input manifest outside the repository (scratch
+// input, not evidence) and returns its path for --inputs-file.
+func grInputsManifest(t *testing.T, values ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "plan_inputs.txt")
+	content := strings.Join(values, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func grEnableMissionLayout(t *testing.T, repoRoot string) {
 	t.Helper()
 	grWriteFile(t, repoRoot, "tooling/manifest.tsv", "tooling fixture\n")
@@ -1041,7 +1056,7 @@ func TestGatePlanRejectsPhysicalInputsOutsideProject(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 	external := grWriteFile(t, t.TempDir(), "outside.txt", "outside\n")
 
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--input", external); err == nil || !strings.Contains(err.Error(), "outside the repository root") {
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, external)); err == nil || !strings.Contains(err.Error(), "outside the repository root") {
 		t.Fatalf("expected an absolute external input to be rejected, got %v", err)
 	}
 
@@ -1049,7 +1064,7 @@ func TestGatePlanRejectsPhysicalInputsOutsideProject(t *testing.T) {
 	if err := os.Symlink(external, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--input", "external-link"); err == nil || !strings.Contains(err.Error(), "resolves outside the repository root") {
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "external-link")); err == nil || !strings.Contains(err.Error(), "resolves outside the repository root") {
 		t.Fatalf("expected an escaping symlink input to be rejected, got %v", err)
 	}
 }
@@ -2288,7 +2303,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 		},
 		{
 			name: "modified discovered test input",
-			plan: []string{"--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "tests/auth_test.go"},
+			plan: []string{"--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "tests/auth_test.go")},
 			sessions: func(runID string) {
 				grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
 				grSubmitClarity(t, repoRoot, runID, main)
@@ -2995,13 +3010,13 @@ func TestGateRunExtraInputRequiredForOutsideReads(t *testing.T) {
 	report := grVerifyItemBody("auth.core", "ALIGNED", "src/auth.go:1") + "auth.core: " + main + ": Testability / Acceptance Criteria\nauth.core: tests/auth_test.go: all\n"
 
 	// A test file outside the derived code surface is rejected unless the
-	// plan declared it with --input.
+	// plan listed it in the input manifest.
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	if _, err := grSubmit(t, repoRoot, runID, "auth.core", report); err == nil || !strings.Contains(err.Error(), "read refs") {
 		t.Fatalf("expected the outside read to be rejected, got %v", err)
 	}
 
-	runID = grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "tests")
+	runID = grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "tests"))
 	grSubmitOK(t, repoRoot, runID, "auth.core", report)
 	grSubmitClarity(t, repoRoot, runID, main)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
@@ -3013,7 +3028,7 @@ func TestGateRunOverlappingLogicalInputIsAvailableToEverySession(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
 
-	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--input", "unit:auth")
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--inputs-file", grInputsManifest(t, "unit:auth"))
 	run := mustLoadRun(t, repoRoot, runID)
 	for _, key := range []string{"structural", "design", "acceptance", "dependencies"} {
 		spec := grRunSpec(t, repoRoot, runID, key)
@@ -3602,8 +3617,8 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 	grWriteFile(t, repoRoot, "src/two.go", "package two\n\nvar Two = 2\n")
 
 	// Declare no implementation surface: the two evidence files enter the
-	// snapshot as --input evidence only, so the quality lens has no coverage
-	// keys and the test isolates the alignment-lens carried evidence.
+	// snapshot as input-manifest evidence only, so the quality lens has no
+	// coverage keys and the test isolates the alignment-lens carried evidence.
 	specContent, rerr := os.ReadFile(specPath)
 	if rerr != nil {
 		t.Fatal(rerr)
@@ -3612,7 +3627,7 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 		t.Fatal(werr)
 	}
 
-	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "src/big.go", "--input", "src/two.go")
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "src/big.go", "src/two.go"))
 	oneReport := fmt.Sprintf("- auth.one: ALIGNED — src/big.go:300\n  evidence: src/big.go:300 implements the declared behavior\n  deterministic: true\n  Part A: No concerns\n  Part B: skipped — no test files in this fixture\n\nauth.one: %s: acceptance_item:auth.one\nauth.one: src/big.go: 300-310\n", main)
 	grSubmitOK(t, repoRoot, runID, "auth.one", oneReport)
 	grSubmitOK(t, repoRoot, runID, "auth.two", grVerifyItemReport("auth.two", main, "src/two.go"))
@@ -3647,7 +3662,7 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--input", "src/big.go", "--input", "src/two.go")
+	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, "src/big.go", "src/two.go"))
 	run := mustLoadRun(t, repoRoot, deltaID)
 	if grContainsString(run.CarriedKeys, "auth.one") {
 		t.Fatal("changed code must invalidate the entire file judgment")
@@ -3664,9 +3679,9 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 	}
 }
 
-// TestGatePlanRejectsEscapingLogicalInput verifies that a logical `--input`
-// reference whose resolution escapes the repository root is rejected before
-// run state is written (the same containment rule physical inputs obey).
+// TestGatePlanRejectsEscapingLogicalInput verifies that a logical input-
+// manifest entry whose resolution escapes the repository root is rejected
+// before run state is written (the same containment rule physical inputs obey).
 func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
@@ -3689,7 +3704,7 @@ func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 		escape += "/.."
 	}
 	escape += "/tmp/evil"
-	if _, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", escape); err == nil || !strings.Contains(err.Error(), "outside the repository root") {
+	if _, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, escape)); err == nil || !strings.Contains(err.Error(), "outside the repository root") {
 		t.Fatalf("expected the escaping logical input to be rejected, got %v", err)
 	}
 }

@@ -164,7 +164,7 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 	peerRef := "unit:auth_extra:appendix:unit_auth_extra_protocol"
 	grWriteFile(t, root, peer, peerContent)
 	grWriteFile(t, root, peerCandidate, peerContent)
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", peerRef)
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, peerRef))
 	key := "item:auth:auth.core"
 	report := grVerifyItemReport(key, main, "contracts.js") + key + ": " + own + ": all\n" + key + ": " + peerRef + ": all\n"
 	if err := sharedSubmit(t, root, id, key, report); err != nil {

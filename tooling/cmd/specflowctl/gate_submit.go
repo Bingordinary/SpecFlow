@@ -233,7 +233,7 @@ func validateSessionDeclarations(absRoot string, run *gaterun.Run, spec *gaterun
 			return fmt.Errorf("check %q declaration %s: %w", kp.key, kp.path, err)
 		}
 		if !run.SessionAllowsDeclaration(absRoot, spec, kp.path) {
-			return fmt.Errorf("check %q declaration %q is not part of session %q's read refs — add evidence with --input at gate-plan time or use the session that owns this input", kp.key, kp.path, spec.SessionID)
+			return fmt.Errorf("check %q declaration %q is not part of session %q's read refs — add it to the gate-plan input manifest or use the session that owns this input", kp.key, kp.path, spec.SessionID)
 		}
 		decl := validationcache.CheckDeclaration{Check: kp.key}
 		if !m.WholeFile {

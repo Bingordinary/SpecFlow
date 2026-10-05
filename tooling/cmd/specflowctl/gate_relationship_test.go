@@ -84,7 +84,7 @@ func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
 	grWriteFile(t, root, a, "first relationship\n")
 	grWriteFile(t, root, b, "second relationship\n")
 	evidence := map[string]string{"design_constraints": a, "coverage_scope": b}
-	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "design_constraints,coverage_scope", "--input", a, "--input", b)
+	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "design_constraints,coverage_scope", "--inputs-file", grInputsManifest(t, a, b))
 	grSubmitPlannedValidateSessions(t, root, runID, main)
 	if _, err := grSubmitRaw(t, root, runID, "cross", relationshipReport(t, root, runID, evidence, "")); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
 		if err != nil || preview.Degraded || strings.Join(preview.Rerun, ",") != gaterun.RelationshipKey(change.name) {
 			t.Fatalf("fresh preview must select only the stale relationship: %+v %v", preview, err)
 		}
-		deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--input", a, "--input", b)
+		deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, a, b))
 		run := mustLoadRun(t, root, deltaID)
 		if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != change.name {
 			t.Fatalf("delta repeated local work or lost relationship scope: %+v", run)
@@ -125,14 +125,14 @@ func TestGateRelationshipOnlyRepair(t *testing.T) {
 	path := "evidence/contract.md"
 	grWriteFile(t, root, path, "inconsistent relationship\n")
 	evidence := map[string]string{"coverage_scope": path}
-	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "coverage_scope", "--input", path)
+	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "coverage_scope", "--inputs-file", grInputsManifest(t, path))
 	grSubmitPlannedValidateSessions(t, root, runID, main)
 	if _, err := grSubmitRaw(t, root, runID, "cross", relationshipReport(t, root, runID, evidence, "coverage_scope")); err != nil {
 		t.Fatal(err)
 	}
 	grFinalizeOK(t, root, runID)
 	grWriteFile(t, root, path, "reconciled relationship\n")
-	repairID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none", "--input", path)
+	repairID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
 	run := mustLoadRun(t, root, repairID)
 	if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != "coverage_scope" {
 		t.Fatalf("repair must recheck the failed relationship only: %+v", run)

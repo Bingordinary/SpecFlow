@@ -104,7 +104,7 @@ func TestItemRequiredCodeEvidenceCannotBeOmittedFromDependencies(t *testing.T) {
 		t.Run(changed, func(t *testing.T) {
 			root, main, _ := sharedFixture(t)
 			grWriteFile(t, root, "agreement.js", "export const tokenRequired = true;\n")
-			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "agreement.js")
+			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "agreement.js"))
 			key := "item:auth:auth.core"
 			report := grVerifyItemBody(key, "ALIGNED", "contracts.js:1") + key + ": " + main + ": acceptance_item:auth.core\n"
 			if err := sharedSubmit(t, root, id, key, report); err != nil {
@@ -263,12 +263,12 @@ func TestFinalizedFailureSupersedesEarlierAlignedProtection(t *testing.T) {
 			root, _, _ := sharedFixture(t)
 			proof := "agreement.txt"
 			grWriteFile(t, root, proof, "agreed interface\n")
-			initial := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", proof)
+			initial := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, proof))
 			sharedFinish(t, root, initial)
 			previous := grReadJudgmentBaseline(t, root, "unit", "auth", "verify").Records["item:auth:auth.core"]
 			synthesisPromote(t, root, "auth")
 			stable := "docs/specs/units/stable/unit_auth.md"
-			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "stable", "--mode", mode, "--relationships", "contract_consistency", "--input", proof)
+			id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "stable", "--mode", mode, "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 			if mode == "full" {
 				grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", stable, "contracts.js"))
 				grAutoSubmitQuality(t, root, id)

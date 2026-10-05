@@ -258,3 +258,34 @@ func TestExpander_FailsClosedOnNonWorkTreeRoot(t *testing.T) {
 		t.Fatalf("a non-top repository root must fail at construction, got %v", err)
 	}
 }
+
+func TestIsRepositoryContent(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, ".gitignore", "/meta/\n")
+	writeFile(t, repoRoot, "src/app.js", "export {};\n")
+	writeFile(t, repoRoot, "scratch.txt", "untracked\n")
+	writeFile(t, repoRoot, "meta/plan_inputs/verify-auth-candidate.txt", "scratch\n")
+	gitRun(t, repoRoot, "add", "src/app.js")
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"tracked file", filepath.Join(repoRoot, "src/app.js"), true},
+		{"untracked not ignored", filepath.Join(repoRoot, "scratch.txt"), true},
+		{"ignored meta file", filepath.Join(repoRoot, "meta/plan_inputs/verify-auth-candidate.txt"), false},
+		{"outside the repository", filepath.Join(t.TempDir(), "inputs.txt"), false},
+		{"relative path", "src/app.js", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := IsRepositoryContent(repoRoot, tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("IsRepositoryContent(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
