@@ -639,7 +639,7 @@ func deriveCrossOutcome(run *gaterun.Run, reports []reportRef, cross *reportRef,
 		return fmt.Errorf("gate-finalize rejected invalid cross synthesis: %w", err)
 	}
 	if len(cross.result.Ownerships) > 0 && run.Gate != gaterun.GateVerify {
-		return fmt.Errorf("gate-finalize rejected invalid ownership synthesis: ownership records are quality-lens-only — the %s gate has no ownership dimension", run.Gate)
+		return fmt.Errorf("gate-finalize rejected invalid ownership synthesis: ownership records belong to unit verify — the %s gate has no ownership dimension", run.Gate)
 	}
 	retained, err = applyOwnerships(retained, cross.result.Ownerships)
 	if err != nil {

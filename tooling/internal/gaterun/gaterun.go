@@ -660,7 +660,8 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	run.Notices = notices
 
 	// A verify run consumes the unit's pending deferrals: findings another
-	// unit's quality-lens synthesis routed here by recorded ownership. Loading
+	// unit's verify synthesis routed here by recorded ownership (quality
+	// ownership or this unit's own protected stable-record drift). Loading
 	// them at plan time makes them part of the run's immutable input — the
 	// final synthesis must dispose every one of them, exactly like a carried
 	// judgment.
