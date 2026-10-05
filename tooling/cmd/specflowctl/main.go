@@ -75,6 +75,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runFresh(args[1:], stdout, stderr)
 	case "remove":
 		return runRemove(args[1:], stdout, stderr)
+	case "clean":
+		return runClean(args[1:], stdout, stderr)
 	case "gate-evidence":
 		return runGateEvidence(args[1:], stdout, stderr)
 	case "gate-plan":
@@ -238,6 +240,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !result.Passed {
 		return errors.New("promote failed")
 	}
+	sweepAfterLifecycle(absRoot, stderr)
 
 	return nil
 }
@@ -268,8 +271,22 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	if !result.Passed {
 		return errors.New("promote failed")
 	}
+	sweepAfterLifecycle(absRoot, stderr)
 
 	return nil
+}
+
+// sweepAfterLifecycle removes local state orphaned by a successful promote or
+// remove. Cleanup is best-effort: the primary transition already committed, so
+// a failure is reported and never fails the command.
+func sweepAfterLifecycle(absRoot string, stderr io.Writer) {
+	err := gaterun.WithMutation(absRoot, func() error {
+		_, err := gaterun.SweepOrphanedState(absRoot)
+		return err
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "Warning: local-state cleanup failed: %v\n", err)
+	}
 }
 
 func runInit(args []string, stdout, stderr io.Writer) error {
@@ -552,6 +569,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  surfaces   Display code-surface associations, shared files, and per-unit judgments")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  remove     Remove explicitly selected units, rules, and appendices after structured-reference checks")
+	fmt.Fprintln(w, "  clean      Remove orphaned local gate state (runs of missing targets, unreferenced shared tasks, plan inputs)")
 	fmt.Fprintln(w, "  gate-evidence Inspect dependency CIDs (chunk ranges, section/item regions, or the whole acceptance item set) for a file read during a gate run")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
 	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for an agent-chosen key batch (--keys K1,K2 or --final)")

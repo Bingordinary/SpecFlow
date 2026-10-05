@@ -49,7 +49,7 @@ A whole-unit deletion includes all appendices whose `unit` frontmatter identifie
 
 Whole unit/rule deletion clears its selected-layer validation caches. Removing both layers also clears its publication baseline. An appendix deletion clears its owner's caches in the affected layers, preserving its code baseline. Removing a unit from both layers also removes pending deferred findings assigned to that unit; findings owned by other units remain even when this unit was their source.
 
-Deletion shares the gate-state mutation lock. Affected unfinished runs are invalidated in the same transaction as file deletion and record cleanup, so they cannot write obsolete caches afterward. Consumed runs, historical reports, shared judgment records, and shared task history are preserved; there is no history garbage collection.
+Deletion shares the gate-state mutation lock. Affected unfinished runs are invalidated in the same transaction as file deletion and record cleanup, so they cannot write obsolete caches afterward. The removed target's own run state is then swept together with the shared task files no surviving run references (see `framework/validation_cache.md` §Run lifecycle); committed caches and judgment records are never touched, and a removed task file is recreated on demand by the next plan.
 
 The tool checks first, performs one transaction, and checks the deletion list and remaining references again before reporting success. Controlled write failures roll back the transaction. Reports state concrete checks and execution results; they never infer that an object should be deleted because it has no consumers. No exit-state file, new repair workflow, or automatic recovery protocol is introduced.
 

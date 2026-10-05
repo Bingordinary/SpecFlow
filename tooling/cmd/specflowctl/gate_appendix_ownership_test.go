@@ -204,6 +204,9 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
 		t.Fatalf("promote: %v %s", err, out.String())
 	}
+	if _, err := os.Stat(filepath.Join(root, "meta/gate_runs", id)); !os.IsNotExist(err) {
+		t.Fatal("promoted unit's candidate run survived the cleanup sweep")
+	}
 	if _, err := os.Stat(filepath.Join(root, own)); !os.IsNotExist(err) {
 		t.Fatal("promoted own appendix remained in candidate")
 	}

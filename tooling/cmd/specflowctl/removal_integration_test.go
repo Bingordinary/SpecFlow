@@ -12,16 +12,17 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/install"
 )
 
-func TestRemovalInvalidatesUnfinishedChecksWithoutRecreatingCache(t *testing.T) {
+func TestRemovalDiscardsUnfinishedChecksWithoutRecreatingCache(t *testing.T) {
 	root, _, _ := sharedFixture(t)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	var out, errOut bytes.Buffer
 	if err := runRemove([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	run := mustLoadRun(t, root, id)
-	if run.Status != gaterun.StatusInvalidated {
-		t.Fatalf("old run remains writable: %s", run.Status)
+	// The removed unit's run state is swept with the spec: nothing can
+	// finalize obsolete judgments.
+	if _, err := os.Stat(filepath.Join(root, "meta", "gate_runs", id)); !os.IsNotExist(err) {
+		t.Fatal("run of the removed unit survived removal")
 	}
 	if err := runGateFinalize([]string{"--repo-root", root, "--run", id}, &out, &errOut); err == nil {
 		t.Fatal("old run finalized after removal")

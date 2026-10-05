@@ -283,6 +283,9 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
     - adds caller-declared allowed paths and/or required spec paths to the frozen values while the operation is open, records the resulting union as an update event, and keeps the spec-derived part unchanged; it never removes an existing path and rejects a closed operation, a denied/excluded entry, or an update with neither flag
   31. `operation status [--id OP_ID]`
     - read-only: without `--id`, lists every open operation (id, target, baseline, opened_at); with `--id`, prints the full frozen scope, required spec paths, status, and update history
+  32. `clean [--dry-run] [--repo-root PATH]`
+    - remove orphaned local gate state: run directories whose target spec no longer exists, shared task files no surviving run references, and the scratch input manifests under `meta/plan_inputs/`. The orphan sweep (runs and shared tasks) also runs automatically after `gate-plan` and after a successful `promote` or `remove`; only `clean` clears the plan input manifests (see `framework/verification_scope.md` §Input roles)
+    - `--dry-run` previews the same plan and deletes nothing. Committed caches, judgment records, review run-state, and lock files are never touched. See `framework/validation_cache.md` §Run lifecycle
 
 ## Review Run-State Commands
 

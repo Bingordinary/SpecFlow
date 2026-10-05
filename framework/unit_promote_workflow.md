@@ -117,7 +117,7 @@ Summary: ...
 
 ## Truth Semantics
 
-Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable content. Removing candidate files keeps file existence unambiguous. A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.
+Promote records reconciled design as accepted truth. After promote, candidate is removed and stable becomes the sole recorded reference; git history preserves the superseded stable content. Removing candidate files keeps file existence unambiguous. The candidate's local gate-run state and unreferenced shared tasks are swept with it (see `framework/validation_cache.md` §Run lifecycle). A new editing round starts with the fork prerequisite in `framework/concepts.md` §Default Editing Workflow.
 
 
 Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.

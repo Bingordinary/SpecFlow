@@ -38,7 +38,7 @@ The CLI tool performs:
 2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to run `validate@{rule}` first.
 3. **Validate frontmatter** — `rule_id`, `rule_scope`
 4. **Copy candidate→stable** — pure copy (the layer is encoded by the file path — no frontmatter field is transformed)
-5. **Delete candidate** — removes the candidate rule file
+5. **Delete candidate** — removes the candidate rule file (the promoted rule's local gate-run state and unreferenced shared tasks are swept with it; see `framework/validation_cache.md` §Run lifecycle)
 6. **Rewrite the validate cache** into a stable confirmation cache (`target: candidate` → `target: stable`, physical path from `docs/specs/rules/candidate/` to `docs/specs/rules/stable/`) — consumed by `fresh@stable` as the rule's consumer/consistency confirmation state
 
 The cache projection preserves the published target's original evidence and live consumer evidence; no new content hashes or review verdicts are invented. Evidence that no longer matches the published content goes stale through the normal dependency check and drives the delta re-run scope (see `framework/validation_cache.md` §Cache lifecycle).

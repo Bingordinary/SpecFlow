@@ -25,7 +25,8 @@ func runRemove(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
 	request.Layer, request.DryRun = *layer, *dryRun
-	result, err := removal.Run(mustAbs(*root), request)
+	absRoot := mustAbs(*root)
+	result, err := removal.Run(absRoot, request)
 	if result != nil {
 		fmt.Fprintf(stdout, "SPEC REMOVAL — layer: %s · preview: %t\n", *layer, *dryRun)
 		for _, path := range result.Files {
@@ -45,6 +46,7 @@ func runRemove(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Structural checks: PASS. No files changed.")
 	} else {
 		fmt.Fprintln(stdout, "Removal complete. Remaining structured references resolve; selected artifacts and current records are cleared.")
+		sweepAfterLifecycle(absRoot, stderr)
 	}
 	return nil
 }
