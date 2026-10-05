@@ -143,3 +143,117 @@ func TestGateSynthesisRejectsUnplannedPhysicalStableSpec(t *testing.T) {
 		t.Fatalf("an unrelated --input bypassed the logical-reference contract: %v", err)
 	}
 }
+
+// Accepted evidence is historical: once a recorded path moves or disappears,
+// the protected requirement must stay associated and the plan must succeed
+// against the evidence that still resolves.
+func TestSharedMovedAcceptedEvidenceDoesNotBlockPlanning(t *testing.T) {
+	root, authSpec, _ := sharedFixture(t)
+	grWriteFile(t, root, "moved.js", "export const moved = true;\n")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "moved.js")
+	sharedFinish(t, root, id)
+	data, err := os.ReadFile(filepath.Join(root, authSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
+	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "moved.js")); err != nil {
+		t.Fatal(err)
+	}
+	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
+	run := mustLoadRun(t, root, order)
+	ck := run.CoverageByKey("preserve:auth:auth.core")
+	if ck == nil {
+		t.Fatal("moved accepted evidence removed the protected requirement")
+	}
+	if stringInList(ck.ReadRefs, "moved.js") {
+		t.Fatalf("stale accepted evidence entered the read surface: %v", ck.ReadRefs)
+	}
+	if !stringInList(ck.ReadRefs, "contracts.js") {
+		t.Fatalf("resolvable accepted evidence missing from the read surface: %v", ck.ReadRefs)
+	}
+}
+
+// Two units whose stable caches record each other's moved evidence must not
+// deadlock: both plans have to succeed with the stale paths dropped.
+func TestSharedMovedPeerEvidenceDoesNotDeadlockMutualProtection(t *testing.T) {
+	root, authSpec, orderSpec := sharedFixture(t)
+	grWriteFile(t, root, "moved.js", "export const moved = true;\n")
+	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--input", "moved.js")
+	sharedFinish(t, root, auth)
+	data, err := os.ReadFile(filepath.Join(root, authSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
+	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
+		t.Fatal(err)
+	}
+	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--input", "moved.js")
+	sharedFinish(t, root, order)
+	data, err = os.ReadFile(filepath.Join(root, orderSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/stable/unit_order.md", string(data))
+	if _, err := validationcache.RewriteCachesToStable(root, "unit", "order"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "moved.js")); err != nil {
+		t.Fatal(err)
+	}
+	checkProtection := func(unit, key string) {
+		t.Helper()
+		id := grPlan(t, root, "--gate", "verify", "--unit", unit, "--target", "candidate")
+		run := mustLoadRun(t, root, id)
+		ck := run.CoverageByKey(key)
+		if ck == nil {
+			t.Fatalf("%s: moved peer evidence removed the protected requirement %s", unit, key)
+		}
+		if stringInList(ck.ReadRefs, "moved.js") {
+			t.Fatalf("%s: stale peer evidence entered the read surface: %v", unit, ck.ReadRefs)
+		}
+		if !stringInList(ck.ReadRefs, "contracts.js") {
+			t.Fatalf("%s: resolvable shared evidence missing from the read surface: %v", unit, ck.ReadRefs)
+		}
+	}
+	checkProtection("auth", "preserve:order:order.core")
+	checkProtection("order", "preserve:auth:auth.core")
+}
+
+// The historical-evidence filter must not swallow corruption of current
+// declarations: a protected stable spec that declares a rule whose stable file
+// is gone still fails closed.
+func TestSharedMissingCurrentDeclarationStillFailsClosed(t *testing.T) {
+	root, authSpec, _ := sharedFixture(t)
+	rule := "docs/specs/rules/stable/b_rule_evidence.md"
+	ruleBody := "---\nrule_id: b_rule_evidence\nrule_scope: bound\n---\n\n# Constraint\n\nPreserve evidence.\n"
+	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_evidence.md", ruleBody)
+	data, err := os.ReadFile(filepath.Join(root, authSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, authSpec, strings.Replace(string(data), "rule_refs: none", "rule_refs: b_rule_evidence", 1))
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	sharedFinish(t, root, id)
+	data, err = os.ReadFile(filepath.Join(root, authSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
+	grWriteFile(t, root, rule, ruleBody)
+	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
+		t.Fatal(err)
+	}
+	// While the declared stable rule resolves, the peer plan proceeds.
+	grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
+	if err := os.Remove(filepath.Join(root, rule)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := grPlanRaw(root, "--gate", "verify", "--unit", "order", "--target", "candidate"); err == nil || !strings.Contains(err.Error(), "unavailable stable evidence") {
+		t.Fatalf("missing current declaration did not fail closed: %v", err)
+	}
+}

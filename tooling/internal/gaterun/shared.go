@@ -319,7 +319,17 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 			}
 			if related {
 				reads := []string{ref}
-				reads = appendUnique(reads, acceptedInputs...)
+				// Accepted evidence is historical: when a recorded path no
+				// longer resolves it is dropped from the read surface but the
+				// association survives, so the requirement is rechecked
+				// against its current declarations (shared_judgments.md,
+				// Stable requirement protection).
+				for _, p := range acceptedInputs {
+					if refreshRef(root, Ref{Ref: p}).Hash == "" {
+						continue
+					}
+					reads = appendUnique(reads, p)
+				}
 				for _, evidence := range run.PublicEvidence {
 					connected := false
 					for _, input := range evidence {
