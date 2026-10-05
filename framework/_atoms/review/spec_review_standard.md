@@ -4,7 +4,7 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED, or an evidence-backed record-drift routing.
 
 ### 2. Pre-review Setup
 
