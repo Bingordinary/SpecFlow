@@ -773,32 +773,26 @@ func TestSharedSurfaceViewKeepsStableJudgmentBesideDraft(t *testing.T) {
 	}
 }
 
-func TestSharedStableCallerProtectionWithoutAcceptedEvidence(t *testing.T) {
+// A caller the coordinator discovers and passes as a run input is read
+// evidence, not a change-impact relation: the input alone must not select
+// stable protection (shared_judgments.md, Stable requirement protection).
+func TestSharedCoordinatorInputDoesNotSelectProtection(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	data, _ := os.ReadFile(filepath.Join(root, authSpec))
 	data = []byte(strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
 	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
 	grWriteFile(t, root, "login.js", "import {response} from './contracts.js';\nexport function login(token){return response(token);}\n")
-	// login.js is a caller the coordinator discovers by repository search and
-	// passes as a run input (verification_scope.md, evidence discovery).
 	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--inputs-file", grInputsManifest(t, "login.js"))
 	run := mustLoadRun(t, root, id)
-	ck := run.CoverageByKey("preserve:auth:auth.core")
-	if ck == nil {
-		t.Fatal("stable caller requirement escaped protection")
-	}
-	for _, path := range []string{"login.js", "contracts.js", "docs/specs/units/stable/unit_auth.md"} {
-		if !stringInList(ck.ReadRefs, path) {
-			t.Fatal("missing protected evidence", path, ck.ReadRefs)
-		}
+	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
+		t.Fatalf("a coordinator input alone selected stable protection: %v", ck.ReadRefs)
 	}
 }
 
 // A protected requirement whose declared file only shares name text with the
 // current implementation must not be rechecked: protection connects through
-// declarations, callers, dependencies or accepted evidence, not through the
-// public-evidence reading closure (shared_judgments.md, Stable requirement
-// protection).
+// current declarations, not through name-text matches (shared_judgments.md,
+// Stable requirement protection).
 func TestSharedProtectionIgnoresNameOnlyMatches(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteSpecSurface(t, root, "auth", "logger_ui.ts", "")
@@ -817,7 +811,11 @@ func TestSharedProtectionIgnoresNameOnlyMatches(t *testing.T) {
 	}
 }
 
-func TestSharedDamagedPeerRecordKeepsEvidenceAssociation(t *testing.T) {
+// Another stable unit's records and baseline may mention the current unit's
+// files; recorded read surfaces must not select protection. Only the
+// protected item's current declarations do (shared_judgments.md, Stable
+// requirement protection).
+func TestSharedPeerRecordMentionsDoNotSelectProtection(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	data, _ := os.ReadFile(filepath.Join(root, authSpec))
 	grWriteFile(t, root, authSpec, strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
@@ -836,12 +834,8 @@ func TestSharedDamagedPeerRecordKeepsEvidenceAssociation(t *testing.T) {
 	}
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	run := mustLoadRun(t, root, order)
-	ck := run.CoverageByKey("preserve:auth:auth.core")
-	if ck == nil || ck.Source == "reused" {
-		t.Fatal("damaged peer evidence removed or released the protected requirement")
-	}
-	if !stringInList(ck.ReadRefs, "contracts.js") {
-		t.Fatal("shared implementation missing from protection")
+	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
+		t.Fatalf("recorded peer evidence selected stable protection: %v", ck.ReadRefs)
 	}
 }
 

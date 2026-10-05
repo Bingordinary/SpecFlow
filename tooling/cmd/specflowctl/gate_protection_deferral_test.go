@@ -46,14 +46,18 @@ func protectionDriftFixture(t *testing.T) (string, *gaterun.Run) {
 }
 
 // driftStableSpec writes the verified spec content to the stable layer with its
-// declared implementation surface replaced by a moved path.
+// declared implementation surface replaced by a moved path. The item still
+// declares the shared implementation file through affects.files: current
+// declarations are the only protection association, so the stale mapping must
+// stay observable to the peer that shares the file.
 func driftStableSpec(t *testing.T, root, specPath, stablePath, movedPath string) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, specPath))
 	if err != nil {
 		t.Fatal(err)
 	}
-	drifted := strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: "+movedPath, 1)
+	drifted := strings.Replace(string(data), "implementation_surface: contracts.js",
+		"implementation_surface: "+movedPath+"\n    affects:\n      files:\n        - contracts.js", 1)
 	if drifted == string(data) {
 		t.Fatal("fixture could not author the stale declaration")
 	}

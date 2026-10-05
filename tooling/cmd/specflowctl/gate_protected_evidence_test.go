@@ -144,9 +144,10 @@ func TestGateSynthesisRejectsUnplannedPhysicalStableSpec(t *testing.T) {
 	}
 }
 
-// Accepted evidence is historical: once a recorded path moves or disappears,
-// the protected requirement must stay associated and the plan must succeed
-// against the evidence that still resolves.
+// Recorded evidence is a read surface for a requirement the current
+// declarations already associate: a recorded path that moves or disappears is
+// dropped, and the plan must succeed against the evidence that still
+// resolves.
 func TestSharedMovedAcceptedEvidenceDoesNotBlockPlanning(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	grWriteFile(t, root, "moved.js", "export const moved = true;\n")
@@ -178,7 +179,8 @@ func TestSharedMovedAcceptedEvidenceDoesNotBlockPlanning(t *testing.T) {
 }
 
 // Two units whose stable caches record each other's moved evidence must not
-// deadlock: both plans have to succeed with the stale paths dropped.
+// deadlock: current declarations keep both associations, and each plan
+// succeeds with the stale paths dropped.
 func TestSharedMovedPeerEvidenceDoesNotDeadlockMutualProtection(t *testing.T) {
 	root, authSpec, orderSpec := sharedFixture(t)
 	grWriteFile(t, root, "moved.js", "export const moved = true;\n")

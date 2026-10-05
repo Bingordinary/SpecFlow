@@ -218,20 +218,13 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 		return nil, err
 	}
 	root := d.root
-	// The connection set is the current implementation surface plus the
-	// callers, dependencies and tests the coordinator discovered by
-	// repository search and passed as run inputs. The public-evidence
-	// reading closure stays a read surface: reading breadth is not a
-	// change-impact relation (shared_judgments.md, Stable requirement
-	// protection).
+	// The connection set is the current implementation surface: the
+	// spec-derived files this run verifies. Input manifests and recorded
+	// read surfaces are read surfaces, not change-impact relations
+	// (shared_judgments.md, Stable requirement protection).
 	own := map[string]bool{}
 	for _, f := range qualityFiles(run) {
 		own[f] = true
-	}
-	for _, input := range extraInputPaths(run) {
-		if !strings.HasPrefix(input, "docs/specs/") && !isLogicalRef(input) {
-			own[input] = true
-		}
 	}
 	refs, err := judgments.List(root)
 	if err != nil {
@@ -254,8 +247,9 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 			return nil, fmt.Errorf("cannot derive stable protection for %s: %w", u.Unit, err)
 		}
 		for _, item := range specvalidation.ExtractAcceptanceItemIDs(string(data)) {
-			// Match declarations using the same repository-relative paths as
-			// surface discovery and run inputs, including directory scopes.
+			// Match the protected declarations against the current
+			// spec-derived surface, using the same repository-relative
+			// paths, including directory scopes.
 			var declaredPaths []string
 			for _, path := range perItem[item] {
 				canonical, err := repopath.Canonical(root, path)
@@ -267,9 +261,8 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 			related := false
 			var acceptedInputs []string
 			relatedPaths := append([]string(nil), declaredPaths...)
-			// Cache evidence still identifies a requirement's implementation
-			// when its referenced judgment is missing or damaged. The result
-			// itself is never reused without the immutable-record checks.
+			// Recorded evidence stays part of the read surface for an item
+			// this run already protects; it never creates the association.
 			for _, entry := range baseline.Entries {
 				if strings.HasPrefix(entry.Path, "docs/specs/") || isLogicalRef(entry.Path) {
 					continue
@@ -278,9 +271,6 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 					if check.Check == reviewKey(SessionKindItem, u.Unit, item) || check.Check == item {
 						acceptedInputs = appendUnique(acceptedInputs, entry.Path)
 						relatedPaths = appendUnique(relatedPaths, entry.Path)
-						if own[entry.Path] {
-							related = true
-						}
 					}
 				}
 			}
@@ -291,8 +281,8 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 					}
 				}
 			}
-			// Previously accepted evidence can connect a requirement to a shared
-			// implementation even when its declaration names a caller instead.
+			// Recorded dependencies extend the read surface, not the
+			// association set.
 			for _, r := range refs {
 				record, err := judgments.Load(root, r)
 				if err != nil {
@@ -304,9 +294,6 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 				for _, d := range record.Dependencies {
 					if !d.Own && !strings.HasPrefix(d.Path, "docs/specs/") && !isLogicalRef(d.Path) {
 						relatedPaths = appendUnique(relatedPaths, d.Path)
-					}
-					if !d.Own && own[d.Path] {
-						related = true
 					}
 				}
 			}
@@ -323,10 +310,10 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 			}
 			if related {
 				reads := []string{ref}
-				// Accepted evidence is historical: when a recorded path no
-				// longer resolves it is dropped from the read surface but the
-				// association survives, so the requirement is rechecked
-				// against its current declarations (shared_judgments.md,
+				// Recorded evidence is historical: when a recorded path no
+				// longer resolves it is dropped from the read surface. The
+				// association derives from current declarations, so the
+				// requirement is rechecked against them (shared_judgments.md,
 				// Stable requirement protection).
 				for _, p := range acceptedInputs {
 					if refreshRef(root, Ref{Ref: p}).Hash == "" {
