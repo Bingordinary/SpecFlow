@@ -218,15 +218,19 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 		return nil, err
 	}
 	root := d.root
+	// The connection set is the current implementation surface plus the
+	// callers, dependencies and tests the coordinator discovered by
+	// repository search and passed as run inputs. The public-evidence
+	// reading closure stays a read surface: reading breadth is not a
+	// change-impact relation (shared_judgments.md, Stable requirement
+	// protection).
 	own := map[string]bool{}
 	for _, f := range qualityFiles(run) {
 		own[f] = true
 	}
-	for _, inputs := range run.PublicEvidence {
-		for _, input := range inputs {
-			if !strings.HasPrefix(input, "docs/specs/") && !isLogicalRef(input) {
-				own[input] = true
-			}
+	for _, input := range extraInputPaths(run) {
+		if !strings.HasPrefix(input, "docs/specs/") && !isLogicalRef(input) {
+			own[input] = true
 		}
 	}
 	refs, err := judgments.List(root)
@@ -251,7 +255,7 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 		}
 		for _, item := range specvalidation.ExtractAcceptanceItemIDs(string(data)) {
 			// Match declarations using the same repository-relative paths as
-			// surface discovery and public evidence, including directory scopes.
+			// surface discovery and run inputs, including directory scopes.
 			var declaredPaths []string
 			for _, path := range perItem[item] {
 				canonical, err := repopath.Canonical(root, path)

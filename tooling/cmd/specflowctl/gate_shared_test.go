@@ -779,7 +779,9 @@ func TestSharedStableCallerProtectionWithoutAcceptedEvidence(t *testing.T) {
 	data = []byte(strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
 	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
 	grWriteFile(t, root, "login.js", "import {response} from './contracts.js';\nexport function login(token){return response(token);}\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
+	// login.js is a caller the coordinator discovers by repository search and
+	// passes as a run input (verification_scope.md, evidence discovery).
+	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--input", "login.js")
 	run := mustLoadRun(t, root, id)
 	ck := run.CoverageByKey("preserve:auth:auth.core")
 	if ck == nil {
@@ -789,6 +791,29 @@ func TestSharedStableCallerProtectionWithoutAcceptedEvidence(t *testing.T) {
 		if !stringInList(ck.ReadRefs, path) {
 			t.Fatal("missing protected evidence", path, ck.ReadRefs)
 		}
+	}
+}
+
+// A protected requirement whose declared file only shares name text with the
+// current implementation must not be rechecked: protection connects through
+// declarations, callers, dependencies or accepted evidence, not through the
+// public-evidence reading closure (shared_judgments.md, Stable requirement
+// protection).
+func TestSharedProtectionIgnoresNameOnlyMatches(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpecSurface(t, root, "auth", "logger_ui.ts", "")
+	grWriteSpecSurface(t, root, "order", "logger.go", "")
+	data, err := os.ReadFile(filepath.Join(root, "docs/specs/units/candidate/unit_auth.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
+	grWriteFile(t, root, "logger_ui.ts", "// logger utilities for the settings screen\nexport const label = 'Logs';\n")
+	grWriteFile(t, root, "logger.go", "package logger\n\nvar noop = true\n")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
+	run := mustLoadRun(t, root, id)
+	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
+		t.Fatalf("name-only match scheduled stable protection: %v", ck.ReadRefs)
 	}
 }
 
