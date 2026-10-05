@@ -903,7 +903,7 @@ func TestCheckDependencyCycles_FailsBothCycleMembers(t *testing.T) {
 		if !strings.Contains(result.Details, "auth -> payment") {
 			t.Fatalf("expected cycle listing in details, got: %s", result.Details)
 		}
-		if !strings.Contains(result.Details, "g_rule_repository_baseline.md §5.1 item 4") {
+		if !strings.Contains(result.Details, "unit_validate_checklist.md Check 8") {
 			t.Fatalf("expected resolution guidance in details, got: %s", result.Details)
 		}
 	}

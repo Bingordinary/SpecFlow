@@ -22,9 +22,6 @@ func TestCollectDefaultSpecFlowScopeSupportsSourceRepoLayout(t *testing.T) {
 	if scope.FrameworkRoot != "framework" || scope.TemplateRoot != "templates" || scope.ToolingRoot != "tooling" {
 		t.Fatalf("unexpected source roots: %+v", scope)
 	}
-	if scope.ProjectInstanceCompatibilityMode != CompatibilityTemplateBootstrap {
-		t.Fatalf("expected template compatibility mode, got %s", scope.ProjectInstanceCompatibilityMode)
-	}
 	if containsString(scope.FrameworkGuidelineFiles, deletedCommandPolicyPath("framework")) {
 		t.Fatalf("deleted flat command owner must stay outside source scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
@@ -96,7 +93,6 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"framework/_atoms/generate.sh",
 		"framework/_atoms/verify.sh",
 		"templates/meta/governance_review/README.md",
-		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",
 		"templates/CLAUDE.md",

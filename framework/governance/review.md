@@ -47,15 +47,12 @@ Deep-audit review tooling uses a single fixed layout: `source_repo`.
 - framework inputs live under local `framework/`
 - templates live under local `templates/`
 - tooling lives under local `tooling/`
-- project-instance compatibility reviews template bootstrap compatibility
-  under `templates/docs/specs/` and does not require real project-instance
-  `docs/specs/` files
 
 ### Layout-Aware Path Resolution
 
 Files in `framework/` reference paths that resolve to the `source_repo` layout.
-`docs/specs/` paths are template bootstrap files present under `templates/docs/specs/`;
-project-instance files at `docs/specs/` do not exist in this layout and must be
+`docs/specs/` paths are project-instance paths; project-instance files at
+`docs/specs/` do not exist in this layout and must be
 treated as informational references (agents must check path existence before reading
 and skip non-existent paths with a documented note).
 

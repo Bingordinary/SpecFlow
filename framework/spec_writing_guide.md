@@ -76,7 +76,7 @@ Evidence has a defined lifecycle (see §8): adoption records observed behavior, 
 
 ```yaml
 rule_exceptions:
-  - rule: g_rule_repository_baseline
+  - rule: g_rule_layering
     reason: "{written justification}"
 ```
 

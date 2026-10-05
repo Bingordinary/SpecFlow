@@ -295,7 +295,6 @@ Review run-state commands use the `source_repo` layout:
 - framework inputs from `framework/`
 - templates from `templates/`
 - tooling from `tooling/`
-- project-instance compatibility: template bootstrap compatibility under `templates/docs/specs/` (no real project-instance `docs/specs/` required)
 
 They maintain only mechanical fields in:
 

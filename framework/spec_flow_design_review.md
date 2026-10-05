@@ -35,7 +35,6 @@ It uses the fixed `source_repo` layout:
 - framework root: `framework/`
 - template root: `templates/`
 - tooling root: `tooling/`
-- project-instance compatibility mode: template bootstrap compatibility under `templates/docs/specs/`
 
 That default scope includes:
 
@@ -640,7 +639,7 @@ The output must report at least:
 
 1. `review scope`
 2. `review layout`
-3. `framework root`, `template root`, `tooling root`, and `project-instance compatibility mode`
+3. `framework root`, `template root`, and `tooling root`
 4. whether full-scope run state was created, reused, or deleted and recreated
 5. the run-state file path
 6. `review_plan`

@@ -8,7 +8,7 @@ target files via deterministic scripts.
 ## Why Atoms Exist
 
 The specFlow governance framework has documented procedural content that must appear in
-multiple files simultaneously (Section 2.12 self-containment requirement).
+multiple files simultaneously (Section 2.11 self-containment requirement).
 
 Without atoms, updating any shared content requires editing every affected file manually —
 a maintenance risk that has already produced documented drift (see `spec_flow_review:full`

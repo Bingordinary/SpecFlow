@@ -177,7 +177,7 @@ func writeUnitDeps(stdout io.Writer, graph *unitgraph.Graph, unitName string) er
 	if graph.OnCycle(unitName) {
 		fmt.Fprintln(stdout, "Cycle: ON A CYCLE — validate will FAIL this unit. Resolve by extracting the")
 		fmt.Fprintln(stdout, "shared contract into a rule (star-shaped dependencies), or re-drawing unit")
-		fmt.Fprintln(stdout, "boundaries (see g_rule_repository_baseline.md §5.1 item 4).")
+		fmt.Fprintln(stdout, "boundaries (see specflow/framework/unit_validate_checklist.md Check 8).")
 	} else {
 		fmt.Fprintln(stdout, "Cycle: none")
 	}

@@ -10,43 +10,38 @@ import (
 )
 
 const (
-	LayoutSourceRepo       = "source_repo"
-	CompatibilityTemplateBootstrap = "template_bootstrap"
+	LayoutSourceRepo = "source_repo"
 )
 
 type SpecFlowScope struct {
-	Profile                           string
-	Layout                            string
-	FrameworkRoot                     string
-	TemplateRoot                      string
-	ToolingRoot                       string
-	ProjectInstanceCompatibilityMode  string
-	FrameworkGuidelineFiles           []string
-	CommandFiles                      []string
-	CandidateIntentFiles              []string
-	GuidanceSkillFiles                []string
-	RuleGovernanceFiles               []string
-	TemplateGovernanceFiles           []string
-	TemplateProjectInstanceFiles      []string
-	TemplateEntryFiles                []string
-	ProjectEntryFiles                 []string
-	SourceRepoEntryExampleFiles       []string
-	AgentOperabilityFiles             []string
-	ProjectInstanceCompatibilityFiles []string
-	ToolingContractFiles              []string
-	ToolingSourceFiles                []string
-	ToolingScriptFiles                []string
-	ToolingRuntimeFiles               []string
+	Profile                     string
+	Layout                      string
+	FrameworkRoot               string
+	TemplateRoot                string
+	ToolingRoot                 string
+	FrameworkGuidelineFiles     []string
+	CommandFiles                []string
+	CandidateIntentFiles        []string
+	GuidanceSkillFiles          []string
+	RuleGovernanceFiles         []string
+	TemplateGovernanceFiles     []string
+	TemplateEntryFiles          []string
+	ProjectEntryFiles           []string
+	SourceRepoEntryExampleFiles []string
+	AgentOperabilityFiles       []string
+	ToolingContractFiles        []string
+	ToolingSourceFiles          []string
+	ToolingScriptFiles          []string
+	ToolingRuntimeFiles         []string
 }
 
 func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	scope := SpecFlowScope{
-		Profile:                          "default_governance_baseline",
-		Layout:                           LayoutSourceRepo,
-		FrameworkRoot:                    "framework",
-		TemplateRoot:                     "templates",
-		ToolingRoot:                      "tooling",
-		ProjectInstanceCompatibilityMode: CompatibilityTemplateBootstrap,
+		Profile:       "default_governance_baseline",
+		Layout:        LayoutSourceRepo,
+		FrameworkRoot: "framework",
+		TemplateRoot:  "templates",
+		ToolingRoot:   "tooling",
 	}
 
 	frameworkFiles, err := layeredFrameworkFiles(repoRoot, scope.FrameworkRoot)
@@ -74,18 +69,11 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("rule_promote_workflow.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),
 	}
-	templateProjectInstanceFiles := []string{
-		scope.TemplatePath("docs/specs/rules/stable/g_rule_repository_baseline.md"),
-	}
 	toolingContractFiles := []string{
 		scope.FrameworkPath("tooling_execution_policy.md"),
 		scope.ToolingPath("README.md"),
 	}
 	agentOperabilityFiles := collectAgentOperabilityFiles(scope, guidanceSkillFiles, ruleFiles, toolingContractFiles)
-	projectInstanceCompatibilityFiles, err := collectProjectInstanceCompatibilityFiles(repoRoot, scope)
-	if err != nil {
-		return scope, err
-	}
 
 	toolingCmdFiles, err := walkRelativeFiles(repoRoot, scope.ToolingPath("cmd"), ".go")
 	if err != nil {
@@ -116,7 +104,6 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 
 	required := append([]string{}, ruleFiles...)
 	required = append(required, minimumGuidanceSkillFiles...)
-	required = append(required, templateProjectInstanceFiles...)
 	required = append(required, agentOperabilityFiles...)
 	required = append(required, toolingContractFiles...)
 	required = append(required, toolingSourceFiles...)
@@ -129,9 +116,7 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 	scope.FrameworkGuidelineFiles = frameworkFiles
 	scope.GuidanceSkillFiles = sortAndDedupe(guidanceSkillFiles)
 	scope.RuleGovernanceFiles = ruleFiles
-	scope.TemplateProjectInstanceFiles = templateProjectInstanceFiles
 	scope.AgentOperabilityFiles = agentOperabilityFiles
-	scope.ProjectInstanceCompatibilityFiles = projectInstanceCompatibilityFiles
 	scope.ToolingContractFiles = toolingContractFiles
 	scope.ToolingSourceFiles = sortAndDedupe(toolingSourceFiles)
 	scope.ToolingScriptFiles = toolingScriptFiles
@@ -141,12 +126,11 @@ func CollectDefaultSpecFlowScope(repoRoot string) (SpecFlowScope, error) {
 
 func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 	scope := SpecFlowScope{
-		Profile:                          "default_design_baseline",
-		Layout:                           LayoutSourceRepo,
-		FrameworkRoot:                    "framework",
-		TemplateRoot:                     "templates",
-		ToolingRoot:                      "tooling",
-		ProjectInstanceCompatibilityMode: CompatibilityTemplateBootstrap,
+		Profile:       "default_design_baseline",
+		Layout:        LayoutSourceRepo,
+		FrameworkRoot: "framework",
+		TemplateRoot:  "templates",
+		ToolingRoot:   "tooling",
 	}
 
 	designFoundationFiles := []string{
@@ -236,10 +220,6 @@ func layeredFrameworkFiles(repoRoot string, frameworkRoot string) ([]string, err
 		}
 	}
 	return sortAndDedupe(result), nil
-}
-
-func collectProjectInstanceCompatibilityFiles(repoRoot string, scope SpecFlowScope) ([]string, error) {
-	return walkRelativeFiles(repoRoot, scope.TemplatePath("docs/specs"), ".md")
 }
 
 func globRelative(repoRoot, pattern string) ([]string, error) {

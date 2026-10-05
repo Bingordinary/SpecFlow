@@ -35,7 +35,7 @@ It is distinct from spec-aware code-quality review, which is the `quality` lens 
 It does not pass a review only because the required files were read or the required slices were visited.
 Each in-scope rule, file, slice, and cross-convergence path must satisfy the standards in this section.
 
-The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance compatibility`, `project-instance migration closure`, `self-containment`, `tool-enforcement boundary`, `review scope completeness`, `atom system integrity`, `consumer-aware path validation`, and `sub-agent prompt assembly validity`.
+The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance migration closure`, `self-containment`, `tool-enforcement boundary`, `review scope completeness`, `atom system integrity`, `consumer-aware path validation`, and `sub-agent prompt assembly validity`.
 
 ### 2.1 Content Validity
 
@@ -184,7 +184,7 @@ Governance files must be operable by a capable executor without prior `specFlow`
 
 A narrowed review must include commands, project-instance migration, rule governance, hooks, concepts.md, and tooling contracts when the narrowed scope covers those areas.
 
-Agent-operability review must cover execution clarity, content economy, formal rule voice, and self-containment under Section 2.12 — whether Agent-facing instruction files deliver essential phase instructions inline rather than through chain-linked reading.
+Agent-operability review must cover execution clarity, content economy, formal rule voice, and self-containment under Section 2.11 — whether Agent-facing instruction files deliver essential phase instructions inline rather than through chain-linked reading.
 
 A pass claim for an in-scope governance file must not ignore an applicable agent-operability failure.
 
@@ -232,35 +232,7 @@ A narrowed review must read and consume that policy whenever the narrowed scope 
 
 The tooling review must verify tooling necessity, allowed mechanical action surface, forbidden semantic judgment, freshness rules, and agreement between tooling source and tooling-governing documents.
 
-### 2.10 Project-Instance Compatibility
-
-Default full-scope `spec_flow_review` must perform a narrow project-instance compatibility check for the source_repo project-instance surface.
-
-That surface is template bootstrap files under `<template-root>/docs/specs/**` and does not require real project-instance `docs/specs/` files.
-
-This check verifies only whether the current project's SpecFlow instance files can still be read and consumed by the current framework contracts, templates, commands, and tooling.
-It does not review business truth correctness.
-
-The compatibility check may judge only:
-
-1. required file presence for current project-instance entry points
-2. required section, table, field, frontmatter, and binding shape
-3. agreement between project-instance object references and current framework path rules
-4. appendix frontmatter and path agreement for owner and file-prefix shape, without judging the appendix's business content
-
-The compatibility check must not judge:
-
-1. whether a unit or rule describes the right business behavior
-2. whether acceptance criteria are sufficient for the product
-3. whether a candidate or stable Spec should make different design decisions
-4. whether implementation actually satisfies a unit or rule
-5. whether the current governance design is worth using
-
-If the project-instance compatibility check finds old file shape, missing required references, or invalid binding format, it is a `spec_flow_review` finding because the framework cannot safely operate on the current project instance.
-If the compatibility check finds an appendix whose owner or file prefix disagrees with the current framework path rules, it is a `spec_flow_review` finding because current framework commands cannot safely consume that project instance.
-If the discovered concern is only about the truth content being wrong, incomplete, or undesirable as business truth, report that it is outside this check and route it to the owning command or design review.
-
-### 2.11 Project-Instance Migration Closure
+### 2.10 Project-Instance Migration Closure
 
 Default full-scope `spec_flow_review` must review `spec_flow_update` as the owner of project-instance format migration after framework rule updates.
 
@@ -280,7 +252,7 @@ The migration closure check must judge:
 
 If migration can rewrite project files without a current rule-derived target, choose business meaning, or leave an invalidated downstream state without a legal next action, it is a `spec_flow_review` finding.
 
-### 2.12 Self-Containment
+### 2.11 Self-Containment
 
 When a governance file is an Agent-facing instruction file (operation policy that an executor reads directly to decide the next governed action), the file must be self-contained for its essential instructions.
 
@@ -304,7 +276,7 @@ Cross-file links are acceptable only for:
 
 A review must find a self-containment finding when a governance file requires the Agent to follow a chain of two or more links to obtain essential phase instructions for the current decision point that should have been stated directly.
 
-### 2.13 Tool-Enforcement Boundary
+### 2.12 Tool-Enforcement Boundary
 
 When a governance rule describes a hard constraint — an allowed write, forbidden write, required gate, or permission requirement that the executor must not violate — the review must judge whether the rule could be enforced by deterministic tooling (`specflowctl`).
 
@@ -316,7 +288,7 @@ Review rules:
 
 This standard does not require every rule to have tooling enforcement. It requires the review to distinguish between rules that could be enforced (and should be) and rules that inherently require judgment (and must rely on Agent capability).
 
-### 2.14 Review Scope Completeness
+### 2.13 Review Scope Completeness
 
 The review must verify that its own scope definition is complete.
 
@@ -329,7 +301,7 @@ For each file listed in scope, the review must verify:
 
 If the scope definition can be interpreted in multiple ways, or if it includes abstract categories without concrete file lists, the review must report an ambiguity finding.
 
-### 2.15 Atom System Integrity
+### 2.14 Atom System Integrity
 
 When the governance framework uses an atom system (see `framework/_atoms/README.md`) to manage content that appears identically across multiple files, the review must verify atom integrity.
 
@@ -357,7 +329,7 @@ A pass claim for any slice that covers atom-managed content must not ignore an a
 
 Atom system integrity failures are always contract drift findings (Section 2.6) because they represent divergence between the canonical source and its distributed targets.
 
-### 2.16 Consumer-Aware Path Validation
+### 2.15 Consumer-Aware Path Validation
 
 When a deployable file (hook script, platform plugin, template bootstrap script) contains hardcoded paths that are resolved at runtime by a consumer, the reviewer must validate those paths from the consumer's execution context — not from the source layout in which the file was authored.
 
@@ -379,7 +351,7 @@ A pass claim for agent-operability review must not ignore unresolved consumer-pa
 
 Consumer-aware path validation under this section applies only when the deployable files under review are explicitly included in the review scope. In default source_repo layout review (Section 3), deployable hook and plugin artifacts are outside the default scope, and this section does not apply by default. When those files are included in a narrowed or installed-project review, each variant must be validated independently.
 
-### 2.17 Sub-Agent Prompt Assembly Validity
+### 2.16 Sub-Agent Prompt Assembly Validity
 
 A sub-agent is a zero-context, one-shot worker: it has no conversation history and no framework knowledge beyond its mission and the files it is told to read. Every gate mission generated by `specflowctl gate-mission --format prompt` must answer five questions without inference: who am I, what am I doing, why now, what counts as done, and who consumes my output. Other sub-agent scenarios retain their own prompt rules. In the checkpoints below, *mission* means the prompt text delivered to the sub-agent — generated for gate sessions, assembled per the scenario's own rule otherwise.
 
@@ -424,7 +396,6 @@ Default scope uses the fixed `source_repo` layout.
 - framework root: `framework/`
 - template root: `templates/`
 - tooling root: `tooling/`
-- project-instance compatibility mode: template bootstrap compatibility under `templates/docs/specs/`
 
 The default scope includes:
 
@@ -442,9 +413,7 @@ The default scope includes:
 3. framework concept and command rules
    - `<framework-root>/concepts.md`
    - `<framework-root>/guidance/*/SKILL.md`
-4. template-side project-instance bootstrap contracts
-   - `<template-root>/docs/specs/rules/stable/g_rule_repository_baseline.md`
-5. tooling contract and tooling source
+4. tooling contract and tooling source
    - `<framework-root>/tooling_execution_policy.md`
    - `<tooling-root>/README.md`
    - `<tooling-root>/cmd/**/*.go`
@@ -458,21 +427,13 @@ Default scope excludes project-instance truth files under `docs/specs/` from bus
 
 Files excluded from business-truth review include:
 
-1. `docs/specs/rules/stable/g_rule_repository_baseline.md`
-2. `docs/specs/units/**`
-3. `docs/specs/rules/**`
-4. `meta/governance_review/**`
+1. `docs/specs/units/**`
+2. `docs/specs/rules/**`
+3. `meta/governance_review/**`
 
 Those files may be reviewed for business-truth correctness only when the user explicitly narrows `spec_flow_review` to project-instance state, or when a command or rule-governance flow consumes them under its own policy.
 
-Default full-scope `spec_flow_review` must still perform the compatibility check from Section 2.10.
-This check is narrow and does not turn `docs/specs/` into default business-truth review scope.
-
-Compatibility input is template bootstrap compatibility under `<template-root>/docs/specs/**`.
-It must not require real project-instance project truth files.
-
-`meta/governance_review/**` is not part of the compatibility input fingerprint.
-The active full-scope run-state file is governed by the run-state procedure in Section 6, because including that file in its own slice fingerprint would create self-referential stale state.
+The active full-scope run-state file is never a slice input and is excluded from every slice fingerprint, because including that file in its own slice fingerprint would create self-referential stale state; its lifecycle is governed by the run-state procedure in Section 6.
 
 ### Scope Boundary for Deployable Artifacts
 
@@ -484,10 +445,9 @@ Default scope must explicitly cover:
 2. the rule-governance rule set — at minimum `rule_validate_checklist.md` and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected bootstrap), the command packages it routes to (`commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`), rule-governance files, and review policy files
-5. the project-instance compatibility check — at minimum the layout-selected global rule and formal truth compatibility inputs, limited by Section 2.10
-6. the project-instance migration flow — at minimum `operations/update.md`
+5. the project-instance migration flow — at minimum `operations/update.md`
 
-If any one of those six coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
+If any one of those five coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
 
 ## 4. Baseline Slice Catalog
 
@@ -523,13 +483,7 @@ Local slices review one owner area for internal closure, side effects, contract 
 6. `process_and_impact_state`
    - reviews `governance/impact_sync.md`
    - verifies impact handling and governance-review run-state boundaries
-7. `project_instance_contract_compatibility`
-   - reviews the current project-instance files under `docs/specs/` only for format and contract compatibility with current framework rules
-   - reviews `spec_writing_guide.md` as the owner contract for object family, reference format, and rule binding format
-   - reviews `operations/update.md` as the migration owner for project-instance shape drift discovered by this slice
-   - verifies appendix owner/path agreement, reference format, rule binding format, migration writeback boundary, migration blocked-stop handling, and migration output closure
-   - must not judge unit, rule, or appendix business truth correctness
- 8. `hook_check`
+ 7. `hook_check`
     - reviews `framework/hooks.md` for internal consistency of the hook system description
     - verifies `framework/concepts.md` complies with the Bootstrap Contract in `framework/hooks.md`: it contains the required content categories (identity, state model, default editing mode, HARD RULES, trigger routing table, infrastructure) and no phase execution procedures
     - verifies routing closure: every trigger in the routing table names command package files that exist and are non-empty, and the package files carry that phase's instructions
@@ -537,18 +491,18 @@ Local slices review one owner area for internal closure, side effects, contract 
     - when the review range includes a bootstrap reduction, verifies content conservation: every removed block is present in, or was relocated in the same change to, a command package named by the routing table (no silent semantic loss)
     - verifies the injected-content summary in `framework/hooks.md` agrees with actual `framework/concepts.md` content (no contract drift per Section 2.6)
     - reference: `framework/hooks.md` for the full verification checklist
-    - Deployable hook and plugin artifacts are outside the default scope per Section 3 (Scope Boundary for Deployable Artifacts). Consumer-aware path validation (Section 2.16) applies only when the review explicitly targets the installed-project layout.
- 9. `tooling_execution`
+    - Deployable hook and plugin artifacts are outside the default scope per Section 3 (Scope Boundary for Deployable Artifacts). Consumer-aware path validation (Section 2.15) applies only when the review explicitly targets the installed-project layout.
+ 8. `tooling_execution`
    - reviews `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
    - verifies tooling necessity, allowed mechanical action surface, forbidden semantic judgment, freshness, and document/source agreement
-10. `agent_operability_local`
+ 9. `agent_operability_local`
     - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, rule-governance files, review policy files, and Spec writing policy files in the current review scope
     - verifies that `concepts.md` (the hook-injected bootstrap) contains self-contained routing-level instructions: triggers, HARD RULES, state model, and the trigger routing table
-    - verifies that each command package named by the routing table is self-contained for its phase per Section 2.12 (progressive disclosure: entry routing inline, phase procedure in the package)
+    - verifies that each command package named by the routing table is self-contained for its phase per Section 2.11 (progressive disclosure: entry routing inline, phase procedure in the package)
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
-11. `sub_agent_prompt_assembly`
+10. `sub_agent_prompt_assembly`
     - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the session report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (alignment + quality lens protocol), `operations/issues.md` (Step 3), and their referenced checklists
-    - verifies per Section 2.17: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate session kind and an assembled triage prompt, with text-level evidence per checkpoint)
+    - verifies per Section 2.16: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate session kind and an assembled triage prompt, with text-level evidence per checkpoint)
     - verifies the scenario inventory itself is complete via deterministic search; any uncovered sub-agent scenario is a finding
     - verifies mission and assembled-prompt output contracts agree with the unified report skeleton (Section 2.6 drift)
 
@@ -567,11 +521,9 @@ Cross-convergence slices review whether locally correct rules still compose into
 5. `tooling_to_rule_convergence`
    - verifies tooling executes only rule-decided mechanical work and does not become a second semantic source of truth
 6. `supporting_layer_convergence`
-   - depends on `concept_and_command_policy`, `truth_and_implementation_gates`, `project_instance_contract_compatibility`, and `tooling_execution`
+   - depends on `concept_and_command_policy`, `truth_and_implementation_gates`, `process_and_impact_state`, and `tooling_execution`
    - verifies promote path correctly migrates candidate supporting files to stable layer per Section 2.7.1
-7. `project_instance_to_framework_convergence`
-   - verifies the project-instance compatibility check and `spec_flow_update` compose with hook and tooling rules without judging business truth content
- 8. `agent_operability_path_walk`
+ 7. `agent_operability_path_walk`
     - walks representative execution paths starting from the hook-injected bootstrap (`framework/concepts.md`), through trigger routing and command packages, to triggers (`validate`, `verify`, `promote`), commands, and tooling rules
     - verifies a new executor can proceed from the injected content to the correct first command without hidden context or prior `specFlow` knowledge
     - injection-to-command alignment under Section 2.8.1 must be explicitly reported for every walked path
@@ -876,7 +828,7 @@ The output must report at least:
 
 1. the review scope
 2. the review layout
-3. the framework root, template root, tooling root, and project-instance compatibility mode
+3. the framework root, template root, and tooling root
 4. whether full-scope run state was created, reused, deleted and recreated, or not used
 5. the run-state file path when full-scope run state is used
 6. the baseline slice table and slice statuses
@@ -886,7 +838,7 @@ The output must report at least:
 10. the guidance-skill coverage result
 11. the impact-reconciliation coverage result
 12. the tooling coverage result
-13. the project-instance compatibility and migration-flow result
+13. the project-instance migration-flow result
 14. the agent-operability result, including local slice results and path-walk result
 15. the supporting layer result:
    - promote paths reviewed for candidate-to-stable supporting file migration

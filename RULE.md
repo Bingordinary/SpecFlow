@@ -50,7 +50,7 @@ context (the installed layout: `<project>/specflow/...`, `<project>/.agents/...`
 while treating edits to those artifacts as `source_repo` development. Do not
 apply `installed_project` naming conventions or agent-facing standards to
 `source_repo` mechanism files, or source-repository paths to deployed runtime
-behavior. See `framework/spec_flow_review.md` Section 2.16 for the authoritative
+behavior. See `framework/spec_flow_review.md` Section 2.15 for the authoritative
 deployment-layout rule.
 
 

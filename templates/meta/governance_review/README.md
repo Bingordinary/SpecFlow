@@ -33,5 +33,3 @@ Rules:
 15. Each review flow has only one fixed run-state file. Starting a new full-scope review deletes the previous fixed file before the new run state is written.
 16. `meta/governance_review/` must not contain per-flow run-state subdirectories.
 17. Each run-state file records `review_layout`.
-18. `installed_project` layout reviews real project-instance compatibility under `docs/specs/`.
-19. `source_repo` layout reviews template bootstrap compatibility under `templates/docs/specs/` and does not require real project-instance `docs/specs/` files.

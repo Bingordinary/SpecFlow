@@ -123,16 +123,6 @@ func TestInitCreatesSourceRepoRunState(t *testing.T) {
 			t.Fatalf("expected source review entry input %s, got %+v", input, reviewEntrySlice.InputFiles)
 		}
 	}
-	compatSlice := findSlice(t, state, "project_instance_contract_compatibility")
-
-	for _, input := range []string{
-		"framework/core/object_model.md",
-		"framework/spec_writing_guide.md",
-	} {
-		if !containsString(compatSlice.InputFiles, input) {
-			t.Fatalf("expected source compatibility contract input %s, got %+v", input, compatSlice.InputFiles)
-		}
-	}
 	operabilitySlice := findSlice(t, state, "agent_operability_local")
 	for _, input := range []string{
 		"framework/governance/review_scope.md",
@@ -182,7 +172,6 @@ func TestInitIncludesSupportingLayerConvergenceSlice(t *testing.T) {
 		"concept_and_command_policy",
 		"truth_and_implementation_gates",
 		"process_and_impact_state",
-		"project_instance_contract_compatibility",
 		"tooling_execution",
 	} {
 		if !containsString(slice.DependsOn, dependency) {
@@ -197,10 +186,6 @@ func TestInitIncludesSupportingLayerConvergenceSlice(t *testing.T) {
 		if !containsString(slice.InputFiles, input) {
 			t.Fatalf("expected supporting_layer_convergence input %s, got %+v", input, slice.InputFiles)
 		}
-	}
-	projectConvergence := findSlice(t, state, "project_instance_to_framework_convergence")
-	if !containsString(projectConvergence.DependsOn, "supporting_layer_convergence") {
-		t.Fatalf("expected project/framework convergence to depend on supporting_layer_convergence, got %+v", projectConvergence.DependsOn)
 	}
 }
 
@@ -921,39 +906,6 @@ func TestRefreshMarksMissingPassedInputStale(t *testing.T) {
 	}
 }
 
-func TestInitIncludesProjectInstanceCompatibilitySlice(t *testing.T) {
-	repoRoot, file, _ := createInitializedRun(t)
-	state := mustParse(t, file)
-	slice := findSlice(t, state, "project_instance_contract_compatibility")
-	if slice.SliceType != "local" {
-		t.Fatalf("expected project instance compatibility to be local, got %s", slice.SliceType)
-	}
-
-	for _, input := range []string{
-		"framework/core/object_model.md",
-		"framework/spec_writing_guide.md",
-	} {
-		if !containsString(slice.InputFiles, input) {
-			t.Fatalf("expected project compatibility contract input %s, got %+v", input, slice.InputFiles)
-		}
-	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/rules/stable/g_rule_repository_baseline.md") {
-		t.Fatalf("expected global rules input, got %+v", slice.InputFiles)
-	}
-	if !containsString(slice.InputFiles, "templates/docs/specs/units/candidate/unit_demo.md") {
-		t.Fatalf("expected current project truth file input, got %+v", slice.InputFiles)
-	}
-	if !containsString(slice.InputFiles, "framework/operations/update.md") {
-		t.Fatalf("expected migration policy input for project-instance migration compatibility, got %+v", slice.InputFiles)
-	}
-	if containsString(slice.InputFiles, "templates/docs/specs/meta/governance_review/spec_flow_review.md") {
-		t.Fatalf("expected active review run state outside compatibility fingerprint, got %+v", slice.InputFiles)
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "templates/docs/specs/units/candidate/unit_demo.md")); err != nil {
-		t.Fatalf("expected fixture project truth file: %v", err)
-	}
-}
-
 func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) {
 	_, file, _ := createInitializedRun(t)
 	state := mustParse(t, file)
@@ -967,13 +919,13 @@ func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) 
 			t.Fatalf("expected tooling script in tooling execution input files: %s, got %+v", relPath, toolingSlice.InputFiles)
 		}
 	}
-	convergenceSlice := findSlice(t, state, "project_instance_to_framework_convergence")
+	convergenceSlice := findSlice(t, state, "supporting_layer_convergence")
 
 	if !containsString(convergenceSlice.InputFiles, "tooling/scripts/build_release.sh") {
-		t.Fatalf("expected build release script in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
+		t.Fatalf("expected build release script in supporting layer convergence input files, got %+v", convergenceSlice.InputFiles)
 	}
 	if !containsString(convergenceSlice.InputFiles, "tooling/scripts/pull_with_release.sh") {
-		t.Fatalf("expected pull release script in project/framework convergence input files, got %+v", convergenceSlice.InputFiles)
+		t.Fatalf("expected pull release script in supporting layer convergence input files, got %+v", convergenceSlice.InputFiles)
 	}
 
 	toolingConvergenceSlice := findSlice(t, state, "tooling_to_rule_convergence")
@@ -989,7 +941,7 @@ func TestRefreshMarksToolingScriptSlicesStale(t *testing.T) {
 	repoRoot, file, now := createInitializedRun(t)
 	state := mustParse(t, file)
 	setSliceStatus(t, &state, "tooling_execution", slicePassed)
-	setSliceStatus(t, &state, "project_instance_to_framework_convergence", slicePassed)
+	setSliceStatus(t, &state, "supporting_layer_convergence", slicePassed)
 	mustWrite(t, file, renderState(mustConfig(t, FlowSpecFlowReview), state))
 	mustWrite(t, filepath.Join(repoRoot, "tooling/scripts/build_release.sh"), "#!/usr/bin/env bash\necho changed\n")
 
@@ -1000,16 +952,16 @@ func TestRefreshMarksToolingScriptSlicesStale(t *testing.T) {
 	if !containsString(result.StaleSlices, "tooling_execution") {
 		t.Fatalf("expected tooling_execution stale after tooling script change, got %+v", result.StaleSlices)
 	}
-	if !containsString(result.StaleSlices, "project_instance_to_framework_convergence") {
-		t.Fatalf("expected project_instance_to_framework_convergence stale after tooling script change, got %+v", result.StaleSlices)
+	if !containsString(result.StaleSlices, "supporting_layer_convergence") {
+		t.Fatalf("expected supporting_layer_convergence stale after tooling script change, got %+v", result.StaleSlices)
 	}
 
 	refreshed := mustParse(t, file)
 	if got := findSlice(t, refreshed, "tooling_execution").Status; got != sliceStale {
 		t.Fatalf("expected tooling_execution stale, got %s", got)
 	}
-	if got := findSlice(t, refreshed, "project_instance_to_framework_convergence").Status; got != sliceStale {
-		t.Fatalf("expected project_instance_to_framework_convergence stale, got %s", got)
+	if got := findSlice(t, refreshed, "supporting_layer_convergence").Status; got != sliceStale {
+		t.Fatalf("expected supporting_layer_convergence stale, got %s", got)
 	}
 }
 
@@ -1017,7 +969,7 @@ func TestRefreshMarksSupportingLayerAndDependentConvergenceStale(t *testing.T) {
 	repoRoot, file, now := createInitializedRun(t)
 	state := mustParse(t, file)
 	setSliceStatus(t, &state, "supporting_layer_convergence", slicePassed)
-	setSliceStatus(t, &state, "project_instance_to_framework_convergence", slicePassed)
+	setSliceStatus(t, &state, "agent_operability_path_walk", slicePassed)
 	mustWrite(t, file, renderState(mustConfig(t, FlowSpecFlowReview), state))
 	mustWrite(t, filepath.Join(repoRoot, "framework/governance/impact_sync.md"), "# impact_sync changed\n")
 
@@ -1028,16 +980,16 @@ func TestRefreshMarksSupportingLayerAndDependentConvergenceStale(t *testing.T) {
 	if !containsString(result.StaleSlices, "supporting_layer_convergence") {
 		t.Fatalf("expected supporting_layer_convergence stale after command change, got %+v", result.StaleSlices)
 	}
-	if !containsString(result.StaleSlices, "project_instance_to_framework_convergence") {
-		t.Fatalf("expected dependent project/framework convergence stale after supporting truth change, got %+v", result.StaleSlices)
+	if !containsString(result.StaleSlices, "agent_operability_path_walk") {
+		t.Fatalf("expected dependent agent_operability_path_walk stale after supporting truth change, got %+v", result.StaleSlices)
 	}
 
 	refreshed := mustParse(t, file)
 	if got := findSlice(t, refreshed, "supporting_layer_convergence").Status; got != sliceStale {
 		t.Fatalf("expected supporting_layer_convergence stale, got %s", got)
 	}
-	if got := findSlice(t, refreshed, "project_instance_to_framework_convergence").Status; got != sliceStale {
-		t.Fatalf("expected project/framework convergence stale, got %s", got)
+	if got := findSlice(t, refreshed, "agent_operability_path_walk").Status; got != sliceStale {
+		t.Fatalf("expected agent_operability_path_walk stale, got %s", got)
 	}
 }
 
@@ -1156,8 +1108,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"framework/_atoms/verify.sh",
 		"framework/_atoms/misc/report_skeleton.md",
 		"templates/meta/governance_review/README.md",
-		"templates/docs/specs/rules/stable/g_rule_repository_baseline.md",
-		"templates/docs/specs/units/candidate/unit_demo.md",
 		"templates/AGENTS.md",
 		"templates/GEMINI.md",
 		"templates/CLAUDE.md",

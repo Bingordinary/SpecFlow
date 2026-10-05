@@ -90,7 +90,6 @@ Deep-audit tooling for exact `spec_flow_review:full` uses the `source_repo` layo
 - framework root: `framework/`
 - template root: `templates/`
 - tooling root: `tooling/`
-- compatibility input: template bootstrap compatibility under `templates/docs/specs/`, not real project `docs/specs/`
 
 ## Escalation
 

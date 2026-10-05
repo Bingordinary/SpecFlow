@@ -9,7 +9,6 @@
 | `framework_root` | framework/ |
 | `template_root` | templates/ |
 | `tooling_root` | tooling/ |
-| `project_instance_compatibility` | template bootstrap compatibility |
 | `run_state_created` | new |
 | `run_state_path` | meta/governance_review/spec_flow_design_review.md |
 | `created_at` | 2026-06-28T12:00:00Z |

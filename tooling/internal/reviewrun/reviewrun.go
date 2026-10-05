@@ -725,7 +725,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			SliceType:      "local",
 			ReviewQuestion: "Does the default governance baseline scope include every required governance input family.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
-				return union(scope.FrameworkGuidelineFiles, scope.CommandFiles, scope.CandidateIntentFiles, scope.GuidanceSkillFiles, scope.RuleGovernanceFiles, scope.TemplateGovernanceFiles, scope.TemplateProjectInstanceFiles, scope.TemplateEntryFiles, scope.ProjectEntryFiles, scope.SourceRepoEntryExampleFiles, scope.AgentOperabilityFiles, scope.ProjectInstanceCompatibilityFiles, scope.ToolingContractFiles, scope.ToolingSourceFiles, scope.ToolingScriptFiles, scope.ToolingRuntimeFiles)
+				return union(scope.FrameworkGuidelineFiles, scope.CommandFiles, scope.CandidateIntentFiles, scope.GuidanceSkillFiles, scope.RuleGovernanceFiles, scope.TemplateGovernanceFiles, scope.TemplateEntryFiles, scope.ProjectEntryFiles, scope.SourceRepoEntryExampleFiles, scope.AgentOperabilityFiles, scope.ToolingContractFiles, scope.ToolingSourceFiles, scope.ToolingScriptFiles, scope.ToolingRuntimeFiles)
 			},
 		},
 		{
@@ -788,18 +788,6 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			},
 		},
 		{
-			ID:             "project_instance_contract_compatibility",
-			SliceType:      "local",
-			ReviewQuestion: "Do current project-instance SpecFlow files and migration rules remain format-compatible with framework contracts without judging business truth.",
-			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
-				return union([]string{
-					scope.FrameworkPath("core/object_model.md"),
-					scope.FrameworkPath("spec_writing_guide.md"),
-					scope.FrameworkPath("operations/update.md"),
-				}, scope.RuleGovernanceFiles, scope.TemplateProjectInstanceFiles, scope.ProjectInstanceCompatibilityFiles)
-			},
-		},
-		{
 			ID:             "hook_check",
 			SliceType:      "local",
 			ReviewQuestion: "Do hook configuration files and the bootstrap injection contract provide correct agent bootstrap for all platforms.",
@@ -829,7 +817,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "sub_agent_prompt_assembly",
 			SliceType:      "local",
-			ReviewQuestion: "Do the generated gate missions and the triage prompt satisfy the seven Section 2.17 checkpoints with complete mission exercises.",
+			ReviewQuestion: "Do the generated gate missions and the triage prompt satisfy the seven Section 2.16 checkpoints with complete mission exercises.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("verification_scope.md"),
@@ -882,22 +870,15 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 			ID:             "supporting_layer_convergence",
 			SliceType:      "cross_convergence",
 			ReviewQuestion: "Do candidate-to-stable promote paths correctly migrate supporting files per layer rules.",
-			DependsOn:      []string{"concept_and_command_policy", "truth_and_implementation_gates", "process_and_impact_state", "project_instance_contract_compatibility", "tooling_execution"},
-			InputFiles:     reviewDependencyFiles("concept_and_command_policy", "truth_and_implementation_gates", "process_and_impact_state", "project_instance_contract_compatibility", "tooling_execution"),
-		},
-		{
-			ID:             "project_instance_to_framework_convergence",
-			SliceType:      "cross_convergence",
-			ReviewQuestion: "Does project-instance compatibility converge with hook, tooling, and migration rules without judging business truth.",
-			DependsOn:      []string{"project_instance_contract_compatibility", "concept_and_command_policy", "process_and_impact_state", "truth_and_implementation_gates", "shared_governance", "tooling_execution", "supporting_layer_convergence"},
-			InputFiles:     reviewDependencyFiles("project_instance_contract_compatibility", "concept_and_command_policy", "process_and_impact_state", "truth_and_implementation_gates", "shared_governance", "tooling_execution", "supporting_layer_convergence"),
+			DependsOn:      []string{"concept_and_command_policy", "truth_and_implementation_gates", "process_and_impact_state", "tooling_execution"},
+			InputFiles:     reviewDependencyFiles("concept_and_command_policy", "truth_and_implementation_gates", "process_and_impact_state", "tooling_execution"),
 		},
 		{
 			ID:             "agent_operability_path_walk",
 			SliceType:      "cross_convergence",
 			ReviewQuestion: "Can an agent walk from the hook-injected bootstrap through trigger routing, command packages, and tooling rules without hidden decisions.",
-			DependsOn:      []string{"agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "project_instance_contract_compatibility", "supporting_layer_convergence"},
-			InputFiles:     reviewDependencyFiles("agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "project_instance_contract_compatibility", "supporting_layer_convergence"),
+			DependsOn:      []string{"agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "supporting_layer_convergence"},
+			InputFiles:     reviewDependencyFiles("agent_operability_local", "concept_and_command_policy", "truth_and_implementation_gates", "shared_governance", "process_and_impact_state", "supporting_layer_convergence"),
 		},
 	}
 }
