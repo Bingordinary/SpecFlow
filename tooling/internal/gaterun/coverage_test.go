@@ -1071,110 +1071,9 @@ func TestDeltaStableMissingBaselineMessage(t *testing.T) {
 	}
 }
 
-// TestPreviewDeltaScopeFailureRecordUsesRepair verifies that the fresh report's
-// delta scope preview derives the repair plan for a failure-record baseline —
-// the recovery mode gate-plan requires — so the report and the planner never
-// disagree (see framework/verification_scope.md §Delta Runs).
-func TestPreviewDeltaScopeFailureRecordUsesRepair(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckDeclaration
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "1" {
-			status = "fail"
-		}
-		decls = append(decls, validationcache.CheckDeclaration{Check: key, Status: status, Sections: []string{"Description"}})
-		statuses[key] = status
-	}
-	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "delta")
-
-	preview, err := PreviewDeltaScope(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if preview.PlanError != "" {
-		t.Fatalf("expected a repair plan, got refusal %q", preview.PlanError)
-	}
-	if preview.Degraded {
-		t.Fatalf("expected a derived repair plan, got degradation %q", preview.Reason)
-	}
-	if got := strings.Join(preview.Rerun, ","); got != "1,3,6" {
-		t.Fatalf("expected the failed group's checks re-run, got %s", got)
-	}
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(preview.Carried, ","); got != strings.Join(run.CarriedKeys, ",") {
-		t.Fatalf("preview carried %v, plan carried %v", preview.Carried, run.CarriedKeys)
-	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "10,2,4,5,7,8,9" {
-		t.Fatalf("expected the other checks carried over, got %s", got)
-	}
-}
-
-// TestPreviewDeltaScopePassBaselineUsesDelta verifies that a pass baseline
-// still previews the delta plan, and that the preview equals the plan the
-// planner generates for the same baseline.
-func TestPreviewDeltaScopePassBaselineUsesDelta(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckDecls())
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
-
-	// The declared section changes after the baseline: every declared check
-	// is stale.
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_auth.md")
-	content, err := os.ReadFile(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content = []byte(strings.Replace(string(content), "Prose.", "Changed prose.", 1))
-	if err := os.WriteFile(specPath, content, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	preview, err := PreviewDeltaScope(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if preview.PlanError != "" || preview.Degraded {
-		t.Fatalf("expected a derived delta plan, got refusal %q / degradation %q", preview.PlanError, preview.Reason)
-	}
-	if !preview.CoversFull {
-		t.Fatalf("expected the stale section to cover every declared check, got rerun %v carried %v", preview.Rerun, preview.Carried)
-	}
-	if got := strings.Join(preview.Rerun, ","); got != "1,10,2,3,4,5,6,7,8,9" {
-		t.Fatalf("expected every check re-run, got %s", got)
-	}
-	if len(preview.Carried) != 0 {
-		t.Fatalf("expected nothing carried over, got %v", preview.Carried)
-	}
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.CarriedKeys) != 0 {
-		t.Fatalf("expected the plan to carry nothing over, got %v", run.CarriedKeys)
-	}
-}
-
 // TestDeltaPlanRefusesBaselineWithoutJudgments verifies that the derivation
-// shared by fresh@ and gate-plan refuses a partial run that must carry
-// judgments when the baseline cache has no structured judgment state — the
-// preview must report the refusal instead of a carry plan the planner rejects.
+// refuses a partial run that must carry judgments when the baseline cache
+// has no structured judgment state.
 func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "\n## Scope\n\nIn scope.\n")
@@ -1213,16 +1112,8 @@ func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	preview, err := PreviewDeltaScope(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(preview.PlanError, "no structured judgment state") {
-		t.Fatalf("expected the judgment-state refusal in the preview, got %q (rerun %v carried %v)", preview.PlanError, preview.Rerun, preview.Carried)
-	}
-
 	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "no structured judgment state") {
-		t.Fatalf("expected the planner to refuse the same baseline, got %v", err)
+		t.Fatalf("expected the planner to refuse the baseline, got %v", err)
 	}
 }
 

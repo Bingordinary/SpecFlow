@@ -742,8 +742,7 @@ func crossReadRefs(run *Run) []string {
 
 // scopeDerivation is the mechanism-derived re-run scope of one delta/repair
 // plan: the declared judgments that must re-execute, the ones carried over,
-// and every disclosure the plan owes the user. gate-plan and the fresh@
-// DELTA SCOPE preview share this derivation, so both report one scope (see
+// and every disclosure the plan owes the user (see
 // framework/verification_scope.md §Delta Runs).
 type scopeDerivation struct {
 	scope         *validationcache.StaleScope // raw stale evidence (nil when derivation degraded before reading it)
@@ -1167,8 +1166,8 @@ func (d *Derivation) deriveDeltaRerun(run *Run) (*scopeDerivation, error) {
 	sort.Strings(carried)
 
 	// A plan that carries anything over needs the baseline's structured
-	// judgment state; without it the partial run is refused here, where both
-	// `fresh@` (PreviewDeltaScope) and `gate-plan` see the same derivation.
+	// judgment state; without it the partial run is refused here, before any
+	// run state is written.
 	if len(carried) > 0 {
 		if _, err := validatedJudgmentState(baseline); err != nil {
 			return nil, err

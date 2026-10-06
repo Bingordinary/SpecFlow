@@ -92,10 +92,6 @@ func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
 	grFinalizeOK(t, root, runID)
 	for _, change := range []struct{ name, path string }{{"design_constraints", a}, {"coverage_scope", b}} {
 		grWriteFile(t, root, change.path, "changed relationship: "+change.name+"\n")
-		preview, err := gaterun.PreviewDeltaScope(root, "validate", "unit", "auth", "candidate")
-		if err != nil || preview.Degraded || strings.Join(preview.Rerun, ",") != gaterun.RelationshipKey(change.name) {
-			t.Fatalf("fresh preview must select only the stale relationship: %+v %v", preview, err)
-		}
 		deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, a, b))
 		run := mustLoadRun(t, root, deltaID)
 		if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != change.name {

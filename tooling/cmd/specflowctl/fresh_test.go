@@ -461,10 +461,11 @@ func TestFreshUnitVerifyUndeducibleCoverageFailsClosed(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailDeltaScope verifies that a STALE gate with per-check
-// evidence prints the mechanism-derived delta scope: which checks declared
-// the stale dependencies, the unclaimed entries, and the degradation state.
-func TestFreshUnitDetailDeltaScope(t *testing.T) {
+// TestFreshUnitDetailStaleEvidence verifies that a STALE gate with per-check
+// evidence prints its stale evidence — which checks declared the stale
+// dependencies — and no planner-derived plan lines: the delta re-run scope
+// belongs to gate-plan, not to the read-only report.
+func TestFreshUnitDetailStaleEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
@@ -506,8 +507,8 @@ GATE_JUDGMENTS_END -->
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "DELTA SCOPE (validate):") {
-		t.Fatalf("expected delta scope section, got:\n%s", output)
+	if !strings.Contains(output, "STALE EVIDENCE (validate):") {
+		t.Fatalf("expected the stale evidence section, got:\n%s", output)
 	}
 	if !strings.Contains(output, "affected checks: 1") {
 		t.Fatalf("expected check 1 affected, got:\n%s", output)
@@ -515,70 +516,15 @@ GATE_JUDGMENTS_END -->
 	if strings.Contains(output, "affected checks: 5") {
 		t.Fatalf("check 5 must stay unaffected, got:\n%s", output)
 	}
-	if !strings.Contains(output, "carried over: 5 (their dependency evidence is unchanged)") {
-		t.Fatalf("expected check 5 carried over with its evidence statement, got:\n%s", output)
+	if strings.Contains(output, "plan:") {
+		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
 	}
 }
 
-// TestFreshUnitDetailDeltaScopeNoJudgments verifies that a stale baseline
-// whose cache has per-check evidence but no structured judgment state is
-// reported as a refused plan (the same refusal gate-plan applies) instead of
-// a carry plan the planner would reject.
-func TestFreshUnitDetailDeltaScopeNoJudgments(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
-	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	specHash := computeHash(specPath)
-	text, _ := contenthash.FileText(specPath)
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsDep := acceptanceItemsDep(t, text)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
-		"      - check: \"5\"\n        deps:\n          - " + itemsDep + "\n" +
-		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
-		"---\nok\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Edit only the Description section: check 1's dep goes stale, check 5's
-	// would be carried over — but the cache has no judgment state to carry.
-	os.WriteFile(specPath, []byte(strings.Replace(specContent, "Auth prose.", "Auth prose, edited.", 1)), 0644)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "plan: unavailable — baseline cache has no structured judgment state") {
-		t.Fatalf("expected the judgment-less baseline refusal, got:\n%s", output)
-	}
-	if strings.Contains(output, "carried over: 5") {
-		t.Fatalf("a refusal must not promise a carry plan, got:\n%s", output)
-	}
-	if !strings.Contains(output, "run the full command") {
-		t.Fatalf("expected full-run guidance, got:\n%s", output)
-	}
-}
-
-// TestFreshUnitDetailDeltaScopeDegrades verifies the DELTA SCOPE output when
+// TestFreshUnitDetailStaleEvidenceAllChecks verifies the stale evidence when
 // every declared non-cross check is stale while the cross entry stays fresh:
-// the re-run covers every declared check, so no judgment is carried over and
-// the report must say so (the plan is a full-scope re-run).
-func TestFreshUnitDetailDeltaScopeDegrades(t *testing.T) {
+// the affected checks name exactly the stale checks.
+func TestFreshUnitDetailStaleEvidenceAllChecks(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
@@ -628,16 +574,16 @@ func TestFreshUnitDetailDeltaScopeDegrades(t *testing.T) {
 	if !strings.Contains(output, "affected checks: 1, 5") {
 		t.Fatalf("expected checks 1 and 5 affected (cross stays fresh), got:\n%s", output)
 	}
-	if !strings.Contains(output, "the re-run covers every declared check — no judgment is carried over") {
-		t.Fatalf("expected the full-scope re-run statement (every declared non-cross check stale), got:\n%s", output)
+	if strings.Contains(output, "plan:") {
+		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
 	}
 }
 
-// TestFreshUnitDetailDeltaScopeAllUnclaimed verifies the DELTA SCOPE output
+// TestFreshUnitDetailStaleEvidenceAllUnclaimed verifies the stale evidence
 // when the cache carries per-check evidence but every stale dep is unclaimed
 // (declare-heavy extras in the file-level union): the report must say
 // "affected checks: none" instead of the legacy-cache wording.
-func TestFreshUnitDetailDeltaScopeAllUnclaimed(t *testing.T) {
+func TestFreshUnitDetailStaleEvidenceAllUnclaimed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
@@ -687,10 +633,10 @@ func TestFreshUnitDetailDeltaScopeAllUnclaimed(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailDeltaScopeUnionViolation verifies that a STALE gate
-// whose cache violates the union discipline still prints its DELTA SCOPE
-// section with the format error and the rewrite guidance.
-func TestFreshUnitDetailDeltaScopeUnionViolation(t *testing.T) {
+// TestFreshUnitDetailStaleEvidenceUnionViolation verifies that a STALE gate
+// whose cache violates the union discipline still prints its stale evidence
+// section with the format error.
+func TestFreshUnitDetailStaleEvidenceUnionViolation(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
@@ -725,17 +671,14 @@ func TestFreshUnitDetailDeltaScopeUnionViolation(t *testing.T) {
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "DELTA SCOPE (validate):") {
-		t.Fatalf("expected a delta scope section even for a union violation, got:\n%s", output)
+	if !strings.Contains(output, "STALE EVIDENCE (validate):") {
+		t.Fatalf("expected the stale evidence section even for a union violation, got:\n%s", output)
 	}
-	if !strings.Contains(output, "cache format error") {
+	if !strings.Contains(output, "stale evidence unavailable: cache format error") {
 		t.Fatalf("expected the cache format error reported, got:\n%s", output)
 	}
-	if !strings.Contains(output, "plan: unavailable") {
-		t.Fatalf("expected the derivation refusal reported, got:\n%s", output)
-	}
-	if !strings.Contains(output, "run the full command") {
-		t.Fatalf("expected full-run guidance, got:\n%s", output)
+	if strings.Contains(output, "plan:") {
+		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
 	}
 }
 
@@ -825,14 +768,13 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	if strings.Contains(output, "BLOCKED") {
 		t.Fatalf("stale+blocking verify cache must not be BLOCKED:\n%s", output)
 	}
-	// The stale failure record is previewed through the repair derivation
-	// (the recovery mode gate-plan requires), not refused with the delta-mode
-	// "run the full command" fallback.
-	if strings.Contains(output, "plan: unavailable") {
-		t.Fatalf("stale verify failure record must preview the repair plan:\n%s", output)
+	// The read-only report names the stale evidence; the repair plan itself
+	// belongs to gate-plan and is derived when the re-run is triggered.
+	if !strings.Contains(output, "STALE EVIDENCE (verify):") {
+		t.Fatalf("expected the stale evidence section:\n%s", output)
 	}
-	if !strings.Contains(output, "plan: full coverage set") {
-		t.Fatalf("expected the repair degradation in the delta scope section:\n%s", output)
+	if strings.Contains(output, "plan:") {
+		t.Fatalf("a read-only report must not print planner lines:\n%s", output)
 	}
 }
 
@@ -860,12 +802,12 @@ func TestFreshRuleDetail(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailDeltaScopeDegradesForMetadataStale verifies that a STALE
+// TestFreshUnitDetailStaleEvidenceForMetadataStale verifies that a STALE
 // gate whose staleness the declared per-check evidence cannot attribute (here:
-// the cache declares every check but no dependency chunks) is reported as the
-// conservative full-session degradation instead of the "cache is fresh"
-// refusal — the report uses the gate's own freshness classification.
-func TestFreshUnitDetailDeltaScopeDegradesForMetadataStale(t *testing.T) {
+// the cache declares every check but no dependency chunks) reports the
+// untrackable entries instead of the "cache is fresh" refusal — the report
+// uses the gate's own freshness classification.
+func TestFreshUnitDetailStaleEvidenceForMetadataStale(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
@@ -892,11 +834,14 @@ func TestFreshUnitDetailDeltaScopeDegradesForMetadataStale(t *testing.T) {
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "plan: full coverage set — the baseline cache is stale for a cause") {
-		t.Fatalf("expected the conservative degradation, got:\n%s", output)
+	if !strings.Contains(output, "untrackable entries (no dependency chunks):") {
+		t.Fatalf("expected the untrackable entry reported, got:\n%s", output)
 	}
 	if strings.Contains(output, "cache is fresh") {
 		t.Fatalf("a STALE gate must not report the fresh refusal, got:\n%s", output)
+	}
+	if strings.Contains(output, "plan:") {
+		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
 	}
 }
 
@@ -1263,9 +1208,9 @@ func TestFreshStableDetailAdvice(t *testing.T) {
 	}
 }
 
-// TestFreshStableDetailDeltaScope verifies a STALE stable confirmation gate
-// shows its DELTA SCOPE section and the delta recovery suggestion.
-func TestFreshStableDetailDeltaScope(t *testing.T) {
+// TestFreshStableDetailStaleEvidence verifies a STALE stable confirmation
+// gate shows its stale evidence section and the delta recovery suggestion.
+func TestFreshStableDetailStaleEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
 	specHash := computeHash(specPath)
@@ -1274,7 +1219,8 @@ func TestFreshStableDetailDeltaScope(t *testing.T) {
 		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
 
 	// The stable spec changes after the confirmation run -> the declared
-	// dependency chunk is gone -> validate: STALE with a derivable delta scope.
+	// dependency chunk is gone -> validate: STALE with derivable stale
+	// evidence.
 	appendToFile(t, specPath, "# appended\n")
 
 	out, err := freshRun(t, repoRoot, "--unit", "settled")
@@ -1287,8 +1233,8 @@ func TestFreshStableDetailDeltaScope(t *testing.T) {
 	if !strings.Contains(out, "-> suggestion: revalidate@settled (delta recovery)") {
 		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
 	}
-	if !strings.Contains(out, "DELTA SCOPE (validate):") {
-		t.Fatalf("expected DELTA SCOPE section, got:\n%s", out)
+	if !strings.Contains(out, "STALE EVIDENCE (validate):") {
+		t.Fatalf("expected the stale evidence section, got:\n%s", out)
 	}
 }
 
