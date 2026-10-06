@@ -330,12 +330,19 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		}
 	}
 	if spec.Kind == gaterun.SessionKindDesign {
-		results, err := gaterun.PublicResultsForDesign(root, run, spec)
-		if err != nil {
-			return gateMission{}, err
-		}
 		for _, key := range spec.CheckKeys {
-			result := results[key]
+			ck := run.CoverageByKey(key)
+			if ck == nil || ck.Kind != gaterun.SessionKindDesign {
+				continue
+			}
+			if stringInList(spec.CheckKeys, gaterun.DesignPublicKey(*ck)) {
+				// Co-batched: the reviewer collects the public facts itself.
+				continue
+			}
+			result, err := gaterun.PublicResultForDesignKey(root, run, *ck)
+			if err != nil {
+				return gateMission{}, err
+			}
 			if stringInList(run.CarriedKeys, result.SessionID) {
 				session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(result.SessionID, "", &result))
 			} else {

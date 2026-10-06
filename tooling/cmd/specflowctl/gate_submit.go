@@ -757,6 +757,11 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 	if spec.Kind != gaterun.SessionKindCode && spec.Kind != gaterun.SessionKindCross {
 		for _, key := range spec.CheckKeys {
 			ck := run.CoverageByKey(key)
+			if ck.Kind == gaterun.SessionKindCode {
+				// A co-batched code key publishes facts only; it declares no
+				// unit spec evidence.
+				continue
+			}
 			layer := run.Target
 			if ck.Kind == gaterun.SessionKindPreserve {
 				layer = gaterun.TargetStable
@@ -773,19 +778,20 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 			}
 		}
 	}
-	if spec.Kind == gaterun.SessionKindCode {
-		for _, key := range spec.CheckKeys {
-			ck := run.CoverageByKey(key)
-			for _, p := range ck.ReadRefs {
-				found := false
-				for _, scope := range parsed.Scopes {
-					if scope.Key == key && scope.Path == p && scope.Declaration == "all" {
-						found = true
-					}
+	for _, key := range spec.CheckKeys {
+		ck := run.CoverageByKey(key)
+		if ck == nil || ck.Kind != gaterun.SessionKindCode {
+			continue
+		}
+		for _, p := range ck.ReadRefs {
+			found := false
+			for _, scope := range parsed.Scopes {
+				if scope.Key == key && scope.Path == p && scope.Declaration == "all" {
+					found = true
 				}
-				if !found {
-					return fmt.Errorf("public check %s must declare whole-file evidence for %s", key, p)
-				}
+			}
+			if !found {
+				return fmt.Errorf("public check %s must declare whole-file evidence for %s", key, p)
 			}
 		}
 	}
@@ -796,11 +802,24 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 	}
 	if spec.Kind == gaterun.SessionKindDesign {
 		observations := map[string]gaterun.Finding{}
-		results, err := gaterun.PublicResultsForDesign(root, run, spec)
-		if err != nil {
-			return err
+		for _, f := range parsed.Observations {
+			observations[f.ID] = f
 		}
-		for key, result := range results {
+		for _, key := range spec.CheckKeys {
+			ck := run.CoverageByKey(key)
+			if ck == nil || ck.Kind != gaterun.SessionKindDesign {
+				continue
+			}
+			if stringInList(spec.CheckKeys, gaterun.DesignPublicKey(*ck)) {
+				// Co-batched: this report's own code block supplied the
+				// facts — pairing is a batch property, not an observation
+				// count.
+				continue
+			}
+			result, err := gaterun.PublicResultForDesignKey(root, run, *ck)
+			if err != nil {
+				return err
+			}
 			for _, f := range result.Observations {
 				f.SourceKey = key
 				observations[f.ID] = f

@@ -57,8 +57,17 @@ func parseQualitySessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, repo
 		return nil, err
 	}
 	out := &parsedReport{Verdicts: map[string]string{}, FileGateFindings: map[string]string{}}
+	findingNo := 0
 	for _, block := range blocks {
+		// Each block is judged by its own coverage kind, so a co-batched
+		// session can carry code blocks (public facts) and design blocks
+		// (unit judgments) in one report.
+		ck := run.CoverageByKey(block.Key)
+		if ck == nil {
+			return nil, fmt.Errorf("check %q is not part of the run's coverage set", block.Key)
+		}
 		fileSpec := *spec
+		fileSpec.Kind = ck.Kind
 		fileSpec.CheckKeys = []string{block.Key}
 		token, line, index, err := extractVerdict(&fileSpec, block.Key, block.Text)
 		if err != nil {
@@ -67,11 +76,11 @@ func parseQualitySessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, repo
 		if needsReason(&fileSpec, token) && !hasReason(line, token) {
 			return nil, fmt.Errorf("check %q verdict %s carries no reason", block.Key, token)
 		}
-		if err := validateReviewBody(spec.Kind, block.Text); err != nil {
+		if err := validateReviewBody(ck.Kind, block.Text); err != nil {
 			return nil, fmt.Errorf("file %q: %w", block.Key, err)
 		}
 		gateFindings := "none"
-		if spec.Kind != gaterun.SessionKindCode {
+		if ck.Kind != gaterun.SessionKindCode {
 			gateFindings, err = extractGateFindings(block.Text)
 		}
 		if err != nil {
@@ -94,15 +103,19 @@ func parseQualitySessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, repo
 			if extracted.severity == "P3" && !factAnchorRe.MatchString(extracted.detail) {
 				return nil, fmt.Errorf("quality P3 finding [%s] %s carries no non-empty fact_anchor detail line", extracted.severity, extracted.text)
 			}
-			out.Findings = append(out.Findings, gaterun.Finding{
-				ID:       fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, len(out.Findings)+1),
+			findingNo++
+			finding := gaterun.Finding{
+				ID:       fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, findingNo),
 				Severity: extracted.severity, Text: extracted.text, Detail: extracted.detail, SourceKey: block.Key,
-			})
+			}
+			// Code-block observations become the file's public record;
+			// design and architecture findings drive the unit's gate.
+			if ck.Kind == gaterun.SessionKindCode {
+				out.Observations = append(out.Observations, finding)
+			} else {
+				out.Findings = append(out.Findings, finding)
+			}
 		}
-	}
-	if spec.Kind == gaterun.SessionKindCode {
-		out.Observations = out.Findings
-		out.Findings = nil
 	}
 	if spec.Kind == gaterun.SessionKindDesign {
 		for _, match := range regexp.MustCompile(`(?m)^Observation disposition: (\S+) = (retained|suppressed) [—-] (\S[^\n]*)$`).FindAllStringSubmatch(report, -1) {

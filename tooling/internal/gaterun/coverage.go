@@ -624,6 +624,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 	wanted := map[string]bool{}
 	kind := ""
 	lens := ""
+	mixedPair := false
 	for _, key := range keys {
 		ck := run.CoverageByKey(key)
 		if ck == nil {
@@ -632,7 +633,14 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		if kind == "" {
 			kind = ck.Kind
 		} else if ck.Kind != kind {
-			return nil, fmt.Errorf("session mixes report kinds %q and %q — a session covers one kind only", kind, ck.Kind)
+			// A verify quality session may co-batch the code key of a file
+			// with its unit's design key: one reviewer collects the public
+			// facts and judges the unit design in one pass. Any other kind
+			// mix stays rejected — a session covers one kind only.
+			if !(run.Gate == GateVerify && IsQualityKind(kind) && IsQualityKind(ck.Kind)) {
+				return nil, fmt.Errorf("session mixes report kinds %q and %q — a session covers one kind only (a code+design quality pairing is the exception)", kind, ck.Kind)
+			}
+			mixedPair = true
 		}
 		if ck.Lens != "" {
 			if lens == "" {
@@ -642,6 +650,14 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			}
 		}
 		wanted[key] = true
+	}
+	if mixedPair {
+		for _, key := range keys {
+			if ck := run.CoverageByKey(key); ck.Kind != SessionKindCode && ck.Kind != SessionKindDesign {
+				return nil, fmt.Errorf("co-batched session mixes %q with code/design keys — only code+design keys may pair", ck.Kind)
+			}
+		}
+		kind = SessionKindDesign
 	}
 	spec := &SessionSpec{SessionID: SessionID(keys), Kind: kind}
 	for _, ck := range run.Coverage {
@@ -656,9 +672,25 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		if err != nil {
 			return nil, err
 		}
+		pairedCode := map[string]bool{}
+		if mixedPair {
+			for _, key := range keys {
+				if run.CoverageByKey(key).Kind == SessionKindCode {
+					pairedCode[key] = true
+				}
+			}
+		}
 		for _, key := range keys {
 			ck := run.CoverageByKey(key)
-			codeKey := reviewKey(SessionKindCode, "", ck.File)
+			if ck.Kind != SessionKindDesign {
+				continue
+			}
+			codeKey := DesignPublicKey(*ck)
+			if pairedCode[codeKey] {
+				// Co-batched: this session collects the public facts itself;
+				// it depends on no other session for the file.
+				continue
+			}
 			dep := codeKey
 			for _, state := range states {
 				if state.Status == SessionAccepted && stringInSlice(state.Keys, codeKey) {
@@ -671,7 +703,11 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 				spec.DependsOn = appendUnique(spec.DependsOn, dep)
 			}
 		}
-		spec.Context = append(spec.Context, "Consume only the immutable public records for the assigned files, regardless of their execution batch. Actively check the unit spec. Dispose every observation in those records with a reason; retain it as a finding or exclude it with evidence from this unit's design. Never alter the public record.")
+		if mixedPair {
+			spec.Context = append(spec.Context, "Co-batched public+design session. For each code:<file> key, read the complete file and collect facts and potential problems without unit rationale — they publish as the immutable public record. For each design:<unit>:<file> key, dispose every observation you collected for that file with a reason — retain it as a finding or exclude it with evidence from this unit's design — and actively check the unit spec, including violations absent from the facts. The facts stay rationale-free; the unit rationale never alters them.")
+		} else {
+			spec.Context = append(spec.Context, "Consume only the immutable public records for the assigned files, regardless of their execution batch. Actively check the unit spec. Dispose every observation in those records with a reason; retain it as a finding or exclude it with evidence from this unit's design. Never alter the public record.")
+		}
 	}
 	if kind == SessionKindCode {
 		spec.Context = append(spec.Context, "Collect code facts and potential problems only. Do not read unit-private designs or suppress problems by a unit's rationale. Read the whole public evidence surface; missing evidence requires replanning.")

@@ -762,16 +762,21 @@ func bindOwnPath(p string, record *judgments.Record, layer string) string {
 	return p
 }
 
-// PublishPublic accepts public evidence independently of unit synthesis.
+// PublishPublic accepts public evidence independently of unit synthesis. A
+// co-batched session publishes the public records for its code keys here; its
+// design judgments publish at finalize.
 func PublishPublic(root string, run *Run, spec *SessionSpec, state *SessionState) error {
-	if spec.Kind != SessionKindCode {
-		return nil
-	}
-	if err := ClaimShared(root, run, state.Keys); err != nil {
-		return err
-	}
+	published := 0
 	for _, key := range state.Keys {
 		ck := run.CoverageByKey(key)
+		if ck == nil || ck.Kind != SessionKindCode {
+			continue
+		}
+		if published == 0 {
+			if err := ClaimShared(root, run, state.Keys); err != nil {
+				return err
+			}
+		}
 		ref, err := SaveJudgment(root, run, *ck, state.Result, state.Report, nil)
 		if err != nil {
 			return err
@@ -785,6 +790,10 @@ func PublishPublic(root string, run *Run, spec *SessionSpec, state *SessionState
 			return err
 		}
 		run.Records[key] = judgments.Binding{Reference: ref, Layer: run.Target, Source: "executed"}
+		published++
+	}
+	if published == 0 {
+		return nil
 	}
 	return writeRun(root, run)
 }
@@ -958,37 +967,34 @@ func RecordForKey(run *Run, key string) (judgments.Binding, bool) {
 	return binding, ok
 }
 
-// PublicResultsForDesign reads only the immutable public records for this
-// design session's assigned files. Execution batches and carried unit results
-// do not define the design input surface.
-func PublicResultsForDesign(root string, run *Run, spec *SessionSpec) (map[string]SessionResult, error) {
-	results := map[string]SessionResult{}
-	for _, key := range spec.CheckKeys {
-		ck := run.CoverageByKey(key)
-		if ck == nil || ck.Kind != SessionKindDesign {
-			return nil, fmt.Errorf("check %s is not an assigned design check", key)
-		}
-		publicKey := reviewKey(SessionKindCode, "", ck.File)
-		binding, ok := RecordForKey(run, publicKey)
-		if !ok {
-			return nil, fmt.Errorf("design check %s has no accepted public record", key)
-		}
-		if err := judgments.Check(root, binding.Reference, binding.Layer, run.Protocol); err != nil {
-			return nil, err
-		}
-		record, err := judgments.Load(root, binding.Reference)
-		if err != nil {
-			return nil, err
-		}
-		result, err := BoundJudgmentResult(record, CoverageKey{Key: publicKey, Kind: SessionKindCode, File: ck.File}, binding.Layer)
-		if err != nil {
-			return nil, err
-		}
-		result.SessionID = publicKey
-		result.Kind = SessionKindCode
-		results[key] = result
+// DesignPublicKey returns the code coverage key backing a design key's file.
+func DesignPublicKey(ck CoverageKey) string {
+	return reviewKey(SessionKindCode, "", ck.File)
+}
+
+// PublicResultForDesignKey reads the immutable public record for one design
+// key's file. A co-batched session skips this lookup — its facts come from the
+// code block of the same report.
+func PublicResultForDesignKey(root string, run *Run, ck CoverageKey) (SessionResult, error) {
+	publicKey := DesignPublicKey(ck)
+	binding, ok := RecordForKey(run, publicKey)
+	if !ok {
+		return SessionResult{}, fmt.Errorf("design check %s has no accepted public record", ck.Key)
 	}
-	return results, nil
+	if err := judgments.Check(root, binding.Reference, binding.Layer, run.Protocol); err != nil {
+		return SessionResult{}, err
+	}
+	record, err := judgments.Load(root, binding.Reference)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	result, err := BoundJudgmentResult(record, CoverageKey{Key: publicKey, Kind: SessionKindCode, File: ck.File}, binding.Layer)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	result.SessionID = publicKey
+	result.Kind = SessionKindCode
+	return result, nil
 }
 func Persist(root string, run *Run) error { return writeRun(root, run) }
 

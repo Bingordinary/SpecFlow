@@ -490,6 +490,51 @@ func TestBuildSessionSpecRejectsMixedLenses(t *testing.T) {
 	}
 }
 
+// TestBuildSessionSpecCoBatchesCodeAndDesign verifies the code+design pairing:
+// one session may hold a file's code key and its unit's design key — it is
+// self-contained (no DependsOn for the paired file) and carries the combined
+// instruction context — while every other kind mix stays rejected.
+func TestBuildSessionSpecCoBatchesCodeAndDesign(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := BuildSessionSpec(repoRoot, run, []string{"code:src/main.go", "design:auth:src/main.go"})
+	if err != nil {
+		t.Fatalf("code+design pairing rejected: %v", err)
+	}
+	if spec.Kind != SessionKindDesign {
+		t.Fatalf("paired session kind = %q, want %q", spec.Kind, SessionKindDesign)
+	}
+	if len(spec.DependsOn) != 0 {
+		t.Fatalf("paired session depends on %v — it must be self-contained", spec.DependsOn)
+	}
+	combined := false
+	for _, c := range spec.Context {
+		if strings.Contains(c, "Co-batched public+design session") {
+			combined = true
+		}
+	}
+	if !combined {
+		t.Fatalf("paired session lacks the combined context, got %v", spec.Context)
+	}
+	// An unpaired design key in the same batch keeps its dependency.
+	spec, err = BuildSessionSpec(repoRoot, run, []string{"design:auth:src/main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.DependsOn) == 0 {
+		t.Fatal("unpaired design session must still depend on its code session")
+	}
+	// Architecture keys cannot join a pair.
+	if _, err := BuildSessionSpec(repoRoot, run, []string{"code:src/main.go", "architecture:auth"}); err == nil || !strings.Contains(err.Error(), "pair") {
+		t.Fatalf("expected code+architecture mix to be rejected, got %v", err)
+	}
+}
+
 // TestDeltaVerifyPlansNewItems verifies that a delta verify plan re-runs
 // acceptance items the baseline never declared: a new item has no evidence to
 // carry over, so it must execute like a stale judgment.

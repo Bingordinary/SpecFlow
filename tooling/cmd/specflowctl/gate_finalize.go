@@ -1136,6 +1136,12 @@ func keyJudgmentResult(ck gaterun.CoverageKey, original *gaterun.SessionResult) 
 	if !ok {
 		status = statusForVerdict(verdict)
 	}
+	if ck.Kind != gaterun.SessionKindCode {
+		// A design record documents dispositions, not the public facts — the
+		// facts live in the file's public record (a co-batched session's
+		// result carries them, but they must not leak into unit records).
+		result.Observations = nil
+	}
 	result.Verdicts = map[string]string{ck.Key: verdict}
 	result.EffectiveStatus = map[string]string{ck.Key: status}
 	result.Scopes = nil

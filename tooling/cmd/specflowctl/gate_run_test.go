@@ -271,13 +271,18 @@ func grDefaultQualityReport(run *gaterun.Run, ck gaterun.CoverageKey) string {
 	return grQualityArchitecture(ck.Key, "acceptable") + ck.Key + ": " + run.RequiredFiles[0] + ": Description\n" + ck.Key + ": " + ck.File + ": all\n"
 }
 func grPreparePublic(t *testing.T, root string, run *gaterun.Run, keys []string) {
+	inBatch := map[string]bool{}
+	for _, key := range keys {
+		inBatch[key] = true
+	}
 	for _, key := range keys {
 		ck := run.CoverageByKey(key)
 		if ck == nil || ck.Kind != gaterun.SessionKindDesign {
 			continue
 		}
 		public := run.CoverageByKey("code:" + ck.File)
-		if public == nil {
+		if public == nil || inBatch[public.Key] {
+			// A co-batched pair supplies its own public record.
 			continue
 		}
 		states, err := gaterun.LoadSessionStates(root, run)
@@ -1453,6 +1458,68 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 	}
 	if judgments := grGateJudgments(t, cache); !strings.Contains(judgments, `"findings":[]`) {
 		t.Fatalf("expected the zero-finding rule judgment baseline to record an empty findings array, got:\n%s", judgments)
+	}
+}
+
+// ------------------------------------------------------------
+// Co-batched code+design sessions
+// ------------------------------------------------------------
+
+// TestGateRunCoBatchedCodeAndDesign submits one paired report carrying a
+// file's public facts block and its unit design block; the public record
+// publishes at acceptance and finalize binds the design record to it.
+func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	keys := []string{"code:src/auth.go", "design:auth:src/auth.go"}
+	paired := "File: code:src/auth.go\n" +
+		"conclusion: FACTS\n" +
+		"facts: no potential problems in fixture\n" +
+		"Dependency scope:\n" +
+		"code:src/auth.go: src/auth.go: all\n" +
+		"\n" +
+		"File: design:auth:src/auth.go\n" +
+		"spec_requirements: fixture design evidence\n" +
+		"Architecture assessment:\n" +
+		"  conclusion: acceptable\n" +
+		"  module_boundaries: sound — reviewed module boundary\n" +
+		"  responsibility_organization: sound — reviewed responsibility placement\n" +
+		"  dependency_clarity: sound — reviewed dependency direction\n" +
+		"  abstraction_level: sound — reviewed abstraction level\n" +
+		"  extension_landing_points: sound — reviewed extension seams\n" +
+		"  engineering_patterns: sound — reviewed engineering patterns\n" +
+		"  gate_findings: none\n" +
+		"\n" +
+		"Suppressed by spec (0):\n" +
+		"Dependency scope:\n" +
+		"design:auth:src/auth.go: " + main + ": Description\n" +
+		"design:auth:src/auth.go: src/auth.go: all\n"
+	grSubmitKeys(t, repoRoot, runID, keys, paired)
+
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, ok := run.Records["code:src/auth.go"]
+	if !ok || binding.Source != "executed" {
+		t.Fatalf("paired submit must publish the public record, got %+v", binding)
+	}
+
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected verify cache fresh, got: %s", res.Reason)
 	}
 }
 
