@@ -13,7 +13,10 @@ import (
 // runGateStatus reports coverage-run progress. Without --run it lists every
 // open run; with --run it reports one run's coverage progress, session states,
 // attempts, latest rejection reasons, and the next action. It reads run state
-// only and is the recovery point after an interrupted run.
+// only and is the recovery point after an interrupted run. In the unscoped
+// listing a run whose state cannot be read (a bound record that no longer
+// resolves, a damaged session file) degrades to a stale entry so one
+// poisoned run cannot hide the others; --run stays strict.
 func runGateStatus(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-status", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -71,7 +74,8 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 			}
 			view, err := gateRunSnapshot(absRoot, run)
 			if err != nil {
-				return err
+				views = append(views, staleRunView(run, err))
+				continue
 			}
 			views = append(views, view)
 		}
@@ -93,12 +97,16 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 		}
 		states, err := gaterun.LoadSessionStates(absRoot, run)
 		if err != nil {
-			return err
+			fmt.Fprintf(stdout, "stale run state: %s — %v\n", run.RunID, err)
+			listed++
+			continue
 		}
 		accepted, pending, rejected := sessionCounts(states)
 		_, uncovered, err := gaterun.CoverageProgress(run, states)
 		if err != nil {
-			return err
+			fmt.Fprintf(stdout, "stale run state: %s — %v\n", run.RunID, err)
+			listed++
+			continue
 		}
 		fmt.Fprintf(stdout, "%s · %s@%s · %s · mode %s · coverage %d/%d covered · %d session(s) (%d accepted, %d pending, %d rejected) · created %s\n",
 			run.RunID, run.Gate, run.TargetName, run.Target, run.Mode, len(run.Coverage)-len(uncovered), len(run.Coverage), len(states), accepted, pending, rejected, run.CreatedAt)
@@ -111,6 +119,24 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Run `specflowctl gate-status --run <run_id>` for coverage detail and the next action.")
 	}
 	return nil
+}
+
+// staleRunView degrades one unreadable open run to a stub entry instead of
+// failing the whole unscoped listing: a run state whose bound records no
+// longer resolve is audit debris, and the recovery point must stay able to
+// see the runs that do work.
+func staleRunView(run *gaterun.Run, err error) gateRunView {
+	return gateRunView{
+		SchemaVersion: 2, RunID: run.RunID, Gate: run.Gate,
+		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target,
+		Mode: run.Mode, Status: run.Status,
+		Coverage: []gateCoverageView{}, Sessions: []gateSessionView{}, UncoveredKeys: []string{},
+		NextAction:       "none",
+		CarriedKeys:      []string{},
+		Relationships:    []string{},
+		DeferredFindings: []gaterun.DeferredFinding{},
+		Notices:          []string{"stale run state: " + err.Error()},
+	}
 }
 
 // writeRunStatus prints one run's coverage detail and the next action.

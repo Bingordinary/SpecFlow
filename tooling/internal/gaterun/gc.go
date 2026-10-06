@@ -1,6 +1,8 @@
 package gaterun
 
 import (
+	"os"
+
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -13,15 +15,17 @@ type CollectedJudgments struct {
 
 // CollectJudgments deletes stale-protocol judgment records that no live
 // reference can reach. The live set is the union of every published cache's
-// GATE_JUDGMENTS bindings, every accepted item pointer, and every open run's
-// planned bindings, expanded transitively through the record-reference
-// chain. Records outside this closure whose review protocol differs from the
-// deployed protocol can never pass judgments.Check again — a protocol
-// mismatch fails closed and old in-progress runs must be replanned — so they
-// are pure storage debt. Same-protocol superseded history is retained, and a
-// record that cannot be loaded is never deleted: unprovable state is kept
-// for diagnosis, not collected. The caller must hold the repository mutation
-// lock (gate-finalize's transaction).
+// GATE_JUDGMENTS bindings, every accepted item pointer, and every on-disk
+// open run's planned bindings — including run states the strict loader
+// rejects, and the shared task records those runs reach — expanded
+// transitively through the record-reference chain. Records outside this
+// closure whose review protocol differs from the deployed protocol can never
+// pass judgments.Check again — a protocol mismatch fails closed and old
+// in-progress runs must be replanned — so they are pure storage debt.
+// Same-protocol superseded history is retained, and a record that cannot be
+// loaded is never deleted: unprovable state is kept for diagnosis, not
+// collected. The caller must hold the repository mutation lock
+// (gate-finalize's transaction).
 func CollectJudgments(root string) (CollectedJudgments, error) {
 	protocol := judgments.Protocol(root)
 	live := map[string]bool{}
@@ -47,18 +51,35 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 	for _, ref := range acceptedRefs {
 		seed(ref)
 	}
-	runs, err := ListRuns(root)
+	// The open-run closure is enumerated raw, not through ListRuns: a run
+	// state the strict loader rejects (a retired protocol, an invalid shape)
+	// is skipped by every listing, yet its run.json still binds records that
+	// nothing else protects. "Skipped for display" must not become "skipped
+	// for liveness".
+	openRuns, err := openRunStates(root)
 	if err != nil {
 		return CollectedJudgments{}, err
 	}
-	for _, run := range runs {
-		if run.Status != StatusOpen {
-			continue
-		}
+	for _, raw := range openRuns {
 		// An open run's plan may consume its bound records at any moment,
 		// including mid-finalize of another run; its bindings are live.
-		for _, binding := range run.Records {
+		for _, binding := range raw.Records {
 			seed(binding.Reference)
+		}
+		for _, id := range raw.Tasks {
+			task, err := readTask(root, id)
+			if err != nil {
+				if os.IsNotExist(err) {
+					// The sweep severs a rejected run's task references by
+					// removing the task file; a missing file carries no
+					// binding to protect.
+					continue
+				}
+				return CollectedJudgments{}, err
+			}
+			if task.Record != nil {
+				seed(*task.Record)
+			}
 		}
 	}
 	for len(queue) > 0 {

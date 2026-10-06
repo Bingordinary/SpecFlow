@@ -997,6 +997,44 @@ func LoadSessionStates(repoRoot string, run *Run) ([]*SessionState, error) {
 	return sharedStates(repoRoot, run, states)
 }
 
+// sessionStatesIntact reports whether every session state file LoadSessionStates
+// would read is readable, parsable, and carries its required fields. The check
+// separates repairable session-progress damage from permanent evidence
+// failure: an unusable session state file can be removed to reopen its session
+// (a missing session state means the session is still pending), while a dead
+// evidence binding has no repair inside the run. The orphan sweep reclaims
+// only the permanent class (see unresumableEvidence in cleanup.go).
+func sessionStatesIntact(repoRoot string, run *Run) bool {
+	dir, err := sessionsDirPath(repoRoot, run.RunID)
+	if err != nil {
+		return false
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return false
+		}
+		state := &SessionState{}
+		if err := json.Unmarshal(data, state); err != nil {
+			return false
+		}
+		if state.SessionID == "" || state.Status == "" {
+			return false
+		}
+	}
+	return true
+}
+
 // SaveSessionState persists one session's state atomically. Session state
 // files are independent, so concurrent submissions of different sessions never
 // contend.

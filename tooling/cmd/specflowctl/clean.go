@@ -13,11 +13,12 @@ import (
 )
 
 // runClean removes orphaned local gate state on demand: run directories whose
-// target spec no longer exists, shared task files no surviving run references,
-// and the scratch input manifests under meta/plan_inputs/. The orphan sweep
-// (runs and shared tasks) also runs automatically after gate-plan and after a
-// successful promote or remove; only this command clears the plan input
-// manifests.
+// target spec no longer exists or whose open state can no longer resume (a
+// retired protocol, an invalid shape, or planned evidence that no longer
+// resolves), shared task files no surviving run references, and the scratch
+// input manifests under meta/plan_inputs/. The orphan sweep (runs and shared
+// tasks) also runs automatically after gate-plan and after a successful
+// promote or remove; only this command clears the plan input manifests.
 func runClean(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
 	fs.SetOutput(stderr)
