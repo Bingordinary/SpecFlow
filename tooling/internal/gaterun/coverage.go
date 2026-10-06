@@ -1430,7 +1430,11 @@ func allRefNames(run *Run) []string {
 }
 
 // extraInputPaths lists every agent-declared evidence input. These paths are
-// readable by sessions but never define coverage keys.
+// readable by sessions but never define coverage keys. A rule file inside an
+// expanded directory input is listed as its logical reference — the same
+// carried form the ingestion boundary gives a file-form spelling — so a
+// directory spelling of a rule set behaves exactly like listing the rules
+// one by one.
 func extraInputPaths(run *Run) []string {
 	var out []string
 	for _, input := range run.ExtraInputs {
@@ -1440,7 +1444,7 @@ func extraInputPaths(run *Run) []string {
 				continue
 			}
 			for _, entry := range surface.Entries {
-				out = append(out, entry.Path)
+				out = append(out, extraInputEntry(entry.Path))
 			}
 			expanded = true
 			break
@@ -1459,11 +1463,20 @@ func extraInputPaths(run *Run) []string {
 			continue
 		}
 		for _, entry := range surface.Entries {
-			out = append(out, entry.Path)
+			out = append(out, extraInputEntry(entry.Path))
 		}
 	}
 	sort.Strings(out)
 	return dedupeStrings(out)
+}
+
+// extraInputEntry maps one expanded evidence input to its carried form: a
+// rule file's physical path becomes its logical reference.
+func extraInputEntry(p string) string {
+	if ref, ok := LogicalRuleRefForPath(p); ok {
+		return ref
+	}
+	return p
 }
 
 func appendUnique(base []string, values ...string) []string {

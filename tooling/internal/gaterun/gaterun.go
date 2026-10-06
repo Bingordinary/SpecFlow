@@ -777,6 +777,14 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 			if err != nil {
 				return nil, fmt.Errorf("input %q: %w", input, err)
 			}
+			if ref, ok := LogicalRuleRefForPath(canonical); ok {
+				// A rule file is carried by its logical reference at every
+				// boundary downstream, so a manifest's physical spelling is
+				// normalized here — at the one point where inputs enter the
+				// snapshot — instead of being rejected (or made
+				// undeclarable) by each consumer.
+				canonical = ref
+			}
 		}
 		if !stringInSlice(run.ExtraInputs, canonical) {
 			run.ExtraInputs = append(run.ExtraInputs, canonical)
@@ -1542,6 +1550,32 @@ func logicalUnitAppendixRefs(repoRoot, unitName string) ([]Ref, error) {
 // logicalRuleRef builds a rule logical ref (`rule:{id}`).
 func logicalRuleRef(repoRoot, ruleID, source string) Ref {
 	return refreshRef(repoRoot, Ref{Ref: "rule:" + ruleID, Source: source})
+}
+
+// LogicalRuleRefForPath maps a rule file's physical path to the logical
+// reference that carries it: docs/specs/rules/<layer>/<id>.md is carried as
+// rule:<id>. Rule dependencies resolve by name everywhere downstream
+// (freshness and promote re-bind by name, not by path), and the declaration
+// boundary rejects a rule file's physical path — so a physical spelling that
+// entered a run's snapshot would be readable by sessions yet undeclarable, a
+// state no report can satisfy. The physical layer is dropped on purpose: the
+// logical reference resolves by its documented applicability (global rules
+// stable-only, bound rules current-layer), exactly like the same rule
+// spelled logically in the input manifest.
+func LogicalRuleRefForPath(p string) (string, bool) {
+	rest, ok := strings.CutPrefix(p, specpaths.RuleModulesRootDir+"/")
+	if !ok || !strings.HasSuffix(p, ".md") {
+		return "", false
+	}
+	layer, file, ok := strings.Cut(rest, "/")
+	if !ok || strings.Contains(file, "/") || (layer != TargetCandidate && layer != TargetStable) {
+		return "", false
+	}
+	id := strings.TrimSuffix(file, ".md")
+	if id == "" {
+		return "", false
+	}
+	return "rule:" + id, true
 }
 
 // refreshRef re-resolves a ref against the current filesystem: logical unit
