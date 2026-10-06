@@ -563,6 +563,14 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		}
 	}
 
+	// 7. Frontmatter region purity: before the first ## heading only the
+	// YAML block, the # title, and blank lines belong there — stray prose
+	// belongs to no region (unit_validate_checklist.md Check 1 mechanical
+	// pre-pass).
+	if purity := CheckFrontmatterRegionPurity(content); purity.Status == Fail {
+		return purity
+	}
+
 	return CheckResult{
 		Name:    "Region locatability",
 		Status:  Pass,

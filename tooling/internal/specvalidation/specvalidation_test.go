@@ -794,8 +794,8 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 9 {
-		t.Fatalf("expected 9 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 11 {
+		t.Fatalf("expected 11 checks, got %d", len(result.Checks))
 	}
 }
 

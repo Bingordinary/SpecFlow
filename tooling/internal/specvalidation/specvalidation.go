@@ -10,6 +10,8 @@
 //  7. Dependency cycle check (unit_refs graph has no cycles through the unit)
 //  8. Region locatability (section and acceptance item regions are splittable and locatable)
 //  9. Surface associations (declarations resolve; file sharing is allowed)
+//  10. Prose path hygiene (source paths in narrative text — WARNING, advisory)
+//  11. Environment agnosticism (dev-machine paths, local addresses, credentials)
 package specvalidation
 
 import (
@@ -20,7 +22,7 @@ import (
 // CheckResult describes one check outcome.
 type CheckResult struct {
 	Name    string      // check name
-	Status  CheckStatus // pass or fail
+	Status  CheckStatus // pass, fail, or warning (advisory — never blocks)
 	Details string      // human-readable diagnostic
 }
 
@@ -30,6 +32,7 @@ type CheckStatus int
 const (
 	Pass CheckStatus = iota
 	Fail
+	Warn
 )
 
 func (s CheckStatus) String() string {
@@ -38,6 +41,8 @@ func (s CheckStatus) String() string {
 		return "PASS"
 	case Fail:
 		return "FAIL"
+	case Warn:
+		return "WARNING"
 	default:
 		return "UNKNOWN"
 	}
@@ -50,7 +55,7 @@ type Result struct {
 	Checks []CheckResult
 }
 
-// ValidateCandidate runs all 9 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 11 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -63,6 +68,8 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkDependencyCycles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkRegionLocatability(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkSurfaceAssociations(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkProseHygiene(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkEnvironmentAgnosticism(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {
