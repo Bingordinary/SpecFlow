@@ -72,7 +72,7 @@ Summary: ...
    - `candidate/` relative form with spec naming (e.g. `candidate/appendix/unit_{name}_...md`, `candidate/unit_{name}.md`)
 4. For each occurrence, classify into:
    - **Structured field path** — Appears in `implementation_surface`, `affects.files`, `affects.appendices`, or `affects.dependencies` values. These are deterministic spec-to-spec references that must point to stable after promote. Per `framework/spec_writing_guide.md` §Acceptance Item Fields, `implementation_surface` is an "Implementation code surface path" — if it references a spec document path, use the stable layer path instead. A candidate-layer spec path in a structured field is invalid.
-   - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment. Note: `validate` Check 1 step 10 rejects such references at validate time; if one reaches this step, the spec likely predates the rule or bypassed validate.
+   - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment. Note: `validate` rejects such references at validate time (the mechanical Body layer-path check); if one reaches this step, the spec likely predates the rule or bypassed validate.
 5. Report findings:
    - List each matched line with line number and surrounding context
    - Tag each match as `[structured]` or `[narrative]`
