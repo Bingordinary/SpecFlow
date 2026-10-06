@@ -1,0 +1,96 @@
+package gaterun
+
+import (
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
+)
+
+// CollectedJudgments reports what one collection pass removed.
+type CollectedJudgments struct {
+	Count int
+	Bytes int64
+}
+
+// CollectJudgments deletes stale-protocol judgment records that no live
+// reference can reach. The live set is the union of every published cache's
+// GATE_JUDGMENTS bindings, every accepted item pointer, and every open run's
+// planned bindings, expanded transitively through the record-reference
+// chain. Records outside this closure whose review protocol differs from the
+// deployed protocol can never pass judgments.Check again — a protocol
+// mismatch fails closed and old in-progress runs must be replanned — so they
+// are pure storage debt. Same-protocol superseded history is retained, and a
+// record that cannot be loaded is never deleted: unprovable state is kept
+// for diagnosis, not collected. The caller must hold the repository mutation
+// lock (gate-finalize's transaction).
+func CollectJudgments(root string) (CollectedJudgments, error) {
+	protocol := judgments.Protocol(root)
+	live := map[string]bool{}
+	var queue []string
+	seed := func(ref judgments.Reference) {
+		if ref.ID == "" || live[ref.ID] {
+			return
+		}
+		live[ref.ID] = true
+		queue = append(queue, ref.ID)
+	}
+	cacheRefs, err := validationcache.CacheJudgmentReferences(root)
+	if err != nil {
+		return CollectedJudgments{}, err
+	}
+	for _, ref := range cacheRefs {
+		seed(ref)
+	}
+	acceptedRefs, err := judgments.AcceptedReferences(root)
+	if err != nil {
+		return CollectedJudgments{}, err
+	}
+	for _, ref := range acceptedRefs {
+		seed(ref)
+	}
+	runs, err := ListRuns(root)
+	if err != nil {
+		return CollectedJudgments{}, err
+	}
+	for _, run := range runs {
+		if run.Status != StatusOpen {
+			continue
+		}
+		// An open run's plan may consume its bound records at any moment,
+		// including mid-finalize of another run; its bindings are live.
+		for _, binding := range run.Records {
+			seed(binding.Reference)
+		}
+	}
+	for len(queue) > 0 {
+		id := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		record, err := judgments.Load(root, judgments.Reference{ID: id, Digest: id})
+		if err != nil {
+			continue
+		}
+		for _, dep := range record.References {
+			seed(dep.Reference)
+		}
+	}
+	all, err := judgments.List(root)
+	if err != nil {
+		return CollectedJudgments{}, err
+	}
+	var collected CollectedJudgments
+	for _, ref := range all {
+		if live[ref.ID] {
+			continue
+		}
+		record, err := judgments.Load(root, ref)
+		if err != nil || record.Protocol == protocol {
+			continue
+		}
+		bytes, err := judgments.Remove(root, ref.ID)
+		if err != nil {
+			return CollectedJudgments{}, err
+		}
+		collected.Count++
+		collected.Bytes += bytes
+	}
+	return collected, nil
+}

@@ -723,7 +723,7 @@ Unit verify uses `framework/shared_judgments.md`. Its structured block contains 
 
 Code dependencies use exact whole-file fingerprints, including related evidence read by public checks. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated or old-protocol record is a concrete gate gap. Old verify caches require full verify and are never converted into public judgments.
 
-Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. Protected peer paths remain stable. Removal clears this unit's current cache references without deleting shared records. No history cleanup is performed.
+Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. Protected peer paths remain stable. Removal clears this unit's current cache references without deleting shared records. History cleanup runs inside gate-finalize: stale-protocol records unreachable from every current cache binding, accepted pointer, and open run — through the record-reference chain — are collected and reported; same-protocol history and unreadable records are retained.
 
 A schema 4 verify binding example (the ids and digests below are illustrative):
 

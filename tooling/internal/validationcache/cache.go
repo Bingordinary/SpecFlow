@@ -18,6 +18,7 @@ package validationcache
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -2499,6 +2500,61 @@ func extractJudgments(content string) string {
 		return ""
 	}
 	return strings.TrimSpace(content[start : start+finish])
+}
+
+// CacheJudgmentReferences returns every judgment reference bound by the
+// GATE_JUDGMENTS baseline of any published cache file, across all target
+// kinds, target layers, and gates. The judgments tree is excluded: record
+// files never embed the baseline marker. A file carrying the marker whose
+// payload cannot be parsed is an error — the live-reference set must be
+// computed from a fully readable state.
+func CacheJudgmentReferences(repoRoot string) ([]judgments.Reference, error) {
+	base := filepath.Join(repoRoot, "docs", "specs", "meta", "validation")
+	var refs []judgments.Reference
+	seen := map[string]bool{}
+	add := func(ref judgments.Reference) {
+		if ref.ID == "" || seen[ref.ID] {
+			return
+		}
+		seen[ref.ID] = true
+		refs = append(refs, ref)
+	}
+	walkErr := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "judgments" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		payload := extractJudgments(string(data))
+		if strings.TrimSpace(payload) == "" {
+			return nil
+		}
+		var state struct {
+			Records map[string]judgments.Binding `json:"records"`
+		}
+		if err := json.Unmarshal([]byte(payload), &state); err != nil {
+			return fmt.Errorf("parse judgment baseline %s: %w", relPath(repoRoot, p), err)
+		}
+		for _, binding := range state.Records {
+			add(binding.Reference)
+		}
+		return nil
+	})
+	if os.IsNotExist(walkErr) {
+		return nil, nil
+	}
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return refs, nil
 }
 
 // BuildEntryFromChecks computes a cache files entry from per-check

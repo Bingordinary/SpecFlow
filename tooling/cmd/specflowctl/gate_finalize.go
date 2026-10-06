@@ -280,6 +280,13 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if err := updateDeferredLedger(absRoot, run, outcome); err != nil {
 		return fmt.Errorf("%v — the cache at %s was written and is valid, but the deferred-findings ledger could not be updated; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
 	}
+	// Storage collection rides the same transaction as cache publication:
+	// the just-published cache defines the live-reference set this pass
+	// collects against, and a failure leaves the run open for a retry.
+	collected, err := gaterun.CollectJudgments(absRoot)
+	if err != nil {
+		return fmt.Errorf("%v — the cache at %s was written and is valid, but judgment collection failed; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
+	}
 	if expectedBlocked {
 		fmt.Fprintf(stdout, "Self-check: BLOCKED (result: fail — the failure record blocks promote and is the failure-recovery baseline)\n")
 	} else {
@@ -291,6 +298,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "Cache written: %s\n", relToRepo(absRoot, writtenPath))
+	if collected.Count > 0 {
+		fmt.Fprintf(stdout, "Judgment collection: %d stale-protocol record(s) / %.1f MB reclaimed\n", collected.Count, float64(collected.Bytes)/(1<<20))
+	}
 	return nil
 }
 

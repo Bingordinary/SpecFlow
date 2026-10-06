@@ -1138,6 +1138,53 @@ func TestGateRunValidatePassBasic(t *testing.T) {
 	_ = specPath
 }
 
+// Finalize rides judgment store collection in the same transaction:
+// stale-protocol records that no live reference reaches are collected as a
+// side effect of publishing the cache, with no extra step in the flow.
+func TestGateFinalizeCollectsStaleProtocolOrphans(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+
+	plant := func(subject string) judgments.Reference {
+		t.Helper()
+		report := "stale report " + subject
+		ref, err := judgments.Save(repoRoot, judgments.Record{
+			Version: judgments.RecordVersion, Kind: judgments.Code, Subject: subject,
+			Coverage: []string{"code:" + subject}, Inputs: []string{subject},
+			Dependencies: []judgments.Dependency{{Path: subject, Hash: "deadbeef"}},
+			Protocol:     "pre-update-protocol-fingerprint", Verdict: "FACTS",
+			Result: json.RawMessage(`{"observations":[]}`), Report: report,
+			ReportDigest: judgments.Digest([]byte(report)), SourceRun: "20250101-000000-aaaaaa",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ref
+	}
+	orphanA := plant("legacy-a.js")
+	orphanB := plant("legacy-b.js")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
+	out := grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+	if !strings.Contains(out, "Judgment collection: 2 stale-protocol record(s)") {
+		t.Fatalf("expected collection report in finalize output:\n%s", out)
+	}
+	listed, err := judgments.List(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range listed {
+		if ref.ID == orphanA.ID || ref.ID == orphanB.ID {
+			t.Fatal("stale-protocol orphan survived finalize")
+		}
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil || !res.Fresh {
+		t.Fatalf("expected the published cache to stay fresh after collection: %v %s", err, res.Reason)
+	}
+}
+
 func TestGateRunComputesHashAndDeps(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")

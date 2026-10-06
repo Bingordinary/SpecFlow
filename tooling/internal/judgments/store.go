@@ -174,6 +174,66 @@ func List(root string) ([]Reference, error) {
 	return out, nil
 }
 
+// AcceptedReferences returns every accepted item pointer target. Accepted
+// pointers are load-bearing current decisions: a damaged pointer is an
+// error, never a skipped entry.
+func AcceptedReferences(root string) ([]Reference, error) {
+	dir, err := localstate.Path(root, Directory, "accepted")
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []Reference
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var ref Reference
+		if err := json.Unmarshal(data, &ref); err != nil || !idPattern.MatchString(ref.ID) || ref.Digest != ref.ID {
+			return nil, fmt.Errorf("damaged accepted item reference %s", e.Name())
+		}
+		out = append(out, ref)
+	}
+	return out, nil
+}
+
+// Remove deletes one judgment record and any invalidation marker naming it,
+// returning the removed record's size in bytes. The caller must hold the
+// repository lock and must have proven the record unreachable from every
+// live consumer (see gaterun.CollectJudgments); accepted records are
+// otherwise permanent.
+func Remove(root, id string) (int64, error) {
+	p, err := recordPath(root, id)
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.Remove(p); err != nil {
+		return 0, err
+	}
+	marker, err := localstate.Path(root, Directory, "invalidated", id+".json")
+	if err != nil {
+		return info.Size(), err
+	}
+	if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+		return info.Size(), err
+	}
+	return info.Size(), nil
+}
+
 func itemHeadPath(root, unit, subject, context string) (string, error) {
 	if !idPattern.MatchString(context) {
 		return "", fmt.Errorf("invalid item spec context %q", context)

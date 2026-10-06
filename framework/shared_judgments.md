@@ -58,7 +58,7 @@ Full verify repeats this unit's item, design and architecture judgments and may 
 
 Fresh and promote derive required keys again from current declarations and stable associations, then check coverage, evidence, record digests, dependency closure, protocol and blocking findings. Missing or indeterminate state blocks release with the specific gap. Promote never starts reviews. Validate, rule publication and appendix requirements remain in force.
 
-Fork and promote change only this unit's cache layer bindings and verify unchanged content. Protected peers stay bound to stable. Removing a unit clears its current caches while preserving records used by other units. There is no automatic history cleanup.
+Fork and promote change only this unit's cache layer bindings and verify unchanged content. Protected peers stay bound to stable. Removing a unit clears its current caches while preserving records used by other units. History cleanup is automatic and conservative: gate-finalize collects stale-protocol records that no current cache binding, accepted pointer, or open run reaches — including through the record-reference chain — and reports the reclaimed count and size; same-protocol superseded records and records that cannot be read are retained.
 
 ## Previous protocol
 
