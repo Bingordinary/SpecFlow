@@ -17,6 +17,8 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 ## Mode Selection
 
+**Mechanical pre-pass:** for a candidate target, every full and delta `validate@{unit}` run starts with `specflowctl validate candidate --unit {name}` (see Check 1). A mechanical FAIL stops the run — fix and re-run the tool before planning; no gate run is planned and no session launches until it passes.
+
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
 | `validate@{unit}` | full | All 10 checks, grouped into 5 coverage keys by read surface: `structural`, `design`, `acceptance`, `dependencies`, `clarity`. Quality checks are holistic — always runs full. When relationships are assigned or the primary pass produced findings, the final session runs before finalize. |
@@ -158,7 +160,7 @@ Failed checks: N | Advisory findings: K
 **Counting rules:**
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default; a P0 grade requires the §9 boundary check (see Severity handling below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- `Advisory findings` (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- `Advisory findings` (Check 1 step 3 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding under the check line as its own entry in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`, followed by the shared finding block (§Output Format). The entry line must begin with the bracketed severity after optional indentation — the parser accepts indentation or a single leading `-`, but not a numbered prefix, so the session report keeps entries as standalone lines; the presented summary may re-number them (`5a-1`, `5a-2`, ...) as presentation only. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, its resolution type, and the block fields:
@@ -191,54 +193,27 @@ When findings mix resolution types (within one check or across checks), the repo
 
 **Purpose:** Verify the file is parseable and all required fields exist, as a prerequisite for all subsequent checks.
 
-**Execution steps:**
+**Mechanical pre-pass (candidate targets, before gate-plan):** run `specflowctl validate candidate --unit {name}` first. The tool deterministically enforces: frontmatter fields, acceptance item schema and `implementation_surface` resolution, `unit_refs`/`rule_refs`/appendix existence, candidate-layer spec paths in the body and every non-exempt appendix, section/region locatability (at least one `##` heading, unique headings, malformed headings, frontmatter region purity, unique non-empty item ids), dependency cycles, prose path hygiene (WARNING), and environment-specific content — developer-machine absolute paths, local addresses, and credential patterns (narrative hits FAIL; unmarked fenced hits WARNING). A mechanical FAIL stops the run before any session launches — fix and re-run the tool. Warnings are passed to the structural session for confirmation.
+
+**Agent-judged residue (the structural session executes these):**
 
 1. Read `docs/specs/units/candidate/unit_{unit}.md` and all non-exempt appendix files (see Prerequisite)
-2. Verify required frontmatter fields: `id`, `unit_refs`, `rule_refs`. The spec layer is encoded by the file path (`docs/specs/units/candidate/` vs `docs/specs/units/stable/`) — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §3)
-3. Verify `acceptance_item_set` exists with at least one item. Each item must have: `id`, `description`, `verification_type`, `verification_surface`, `implementation_surface`, `verification_method`, `pass_condition`, `runnable`. `implementation_surface` may be the placeholder `<pending>` during design-first rounds (the path is not yet known); the placeholder must be exactly `<pending>` — variants are reported for correction. A leftover `<pending>` is a MISMATCH in verify (Step 6), so it must be replaced with the real path once the implementation exists. Every non-`<pending>` value must be a single repository-relative file or directory path resolving to at least one real file — a directory expands to its repository-content files (the files Git tracks plus untracked files that are not ignored), so semicolon lists, wildcard patterns, nonexistent paths, and directories with no repository-content files are FAIL, reported per item (the mechanical `specflowctl validate` Check 3 and verify planning enforce the same rule)
-4. Verify all `unit_refs` point to existing spec files (bare name, e.g. `agent`). Resolve by searching candidate directory first (`unit_{name}.md`), then fall back to stable (`unit_{name}.md`).
-5. Verify all `rule_refs` point to existing rule files (global or bound)
-6. Verify any appendix files referenced in the spec body exist at the expected path
-7. **Prose-path hygiene check (WARNING):** Verify that prose sections (Description, Responsibility, and any other narrative sections) do not contain code file paths:
-   - Scan narrative text for strings matching source-code file path patterns (backtick-enclosed or bare strings containing `/` and a source-code file extension like `.go`, `.ts`, `.py`, `.js`, `.java`, `.rs`, `.cs`)
-   - Exclusions:
-     - Structured fields: `implementation_surface`, `affects.files` (intentional)
-     - Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — describe the governance system itself
-     - File paths inside code-block examples serving as illustrations
-   - If code file paths are found in prose → WARNING with quoted path, section name, and line reference
-8. **Appendix frontmatter check:** For each non-exempt appendix file, verify:
-   - `unit` frontmatter field matches current unit name
-   - `status`, when present, is one of `active` (or absent), `exempt` — any other value is FAIL
-9. **Appendix path check:** Verify each appendix file's path matches the convention: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
-10. **Layer-prefix path check (FAIL):** Scan the main spec body and every non-exempt appendix for layer-prefixed spec paths that break after promote or mispoint during an active candidate round. Unlike step 7, there is no code-block exemption: paths inside code-block examples are flagged the same as prose.
-    - Absolute forms: `docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`
-    - Relative forms: `candidate/`, `stable/`
-    - Reference appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`) instead — appendix file names do not encode layer, so the reference stays valid before and after promote
-    - Structured field exemption: `implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies` values may contain a stable-layer spec path (it stays valid after promote); a candidate-layer spec path in any structured field is invalid (promote deletes candidate files)
-    - If layer-prefixed spec paths are found → FAIL with quoted path, section name, and line reference
-11. **Section structure check (FAIL):** the unit's own main spec must be splittable into section regions by mechanism — the per-check dependency declarations (`--section`) fail closed otherwise (see `framework/validation_cache.md` §Structural Region Dependencies). Run `specflowctl gate-evidence --file <spec> --sections` and verify:
-    - The spec has at least one `##` heading (frontmatter region + at least one section region)
-    - No `##` heading text is duplicated (a duplicated heading cannot be located unambiguously — fail closed)
-    - The frontmatter region (before the first `##` heading) contains only the YAML frontmatter block, the `#` document title, and blank lines — any other content there is stray prose that belongs to no region
-    - Fix direction: restructure the spec per `framework/spec_writing_guide.md` §13 (section regions)
-12. **Region structure semantics check (FAIL):** the section regions must match the content's semantic structure — the region mechanism's trust (delta scope, cache freshness) is only as correct as the split. Run `specflowctl gate-evidence --file <spec> --sections` and, reading the spec itself, verify:
-    - **The acceptance_item_set region covers every real item** — the region runs from the exact `acceptance_item_set:` marker line to the next `##` heading outside a code fence (the enclosing section's end), or through the last real line of the file. `###` and deeper headings never terminate the set: an item separated from the previous one by a `###` subheading is still part of the set and is verified. An item placed after the enclosing section's `##` heading sits outside the set and cannot be validated as an item — catch that here. Distinguish real items from fenced example blocks — a fenced `- id:` example is content, not an item (the mechanical `specflowctl validate` Check 8 covers the exact-marker and heading-format preconditions; the semantic coverage judgment is this step's)
+2. **Stable-layer spec paths in prose (FAIL):** the tool flags candidate-layer paths everywhere but cannot distinguish structured fields from prose for stable-layer paths — a stable-layer spec path (`docs/specs/units/stable/...`, `docs/specs/rules/stable/...`, or a relative `stable/...*.md` form) in narrative prose mispoints after the referenced unit promotes. Structured fields (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) may hold stable-layer paths. If found → FAIL with quoted path, section, and line reference. Reference appendix files and other specs by concept name or file name instead
+3. **Prose-path hygiene confirmation (WARNING):** review the tool's WARNING hits plus any source-path pattern the scanner cannot express — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference. Exclusions mirror the tool's: structured fields, `framework/` governance paths, `docs/specs/meta/` cache paths, marked fenced examples
+4. **Region structure semantics check (FAIL):** the section regions must match the content's semantic structure — the region mechanism's trust (delta scope, cache freshness) is only as correct as the split. Run `specflowctl gate-evidence --file <spec> --sections` and, reading the spec itself, verify:
+    - **The acceptance_item_set region covers every real item** — the region runs from the exact `acceptance_item_set:` marker line to the next `##` heading outside a code fence (the enclosing section's end), or through the last real line of the file. `###` and deeper headings never terminate the set: an item separated from the previous one by a `###` subheading is still part of the set and is verified. An item placed after the enclosing section's `##` heading sits outside the set and cannot be validated as an item — catch that here. Distinguish real items from fenced example blocks — a fenced `- id:` example is content, not an item (the mechanical pre-pass enforces the exact-marker and heading-format preconditions; the semantic coverage judgment is this step's)
     - **Fenced code blocks are content** — `##`-like lines inside ``` / ~~~ fences must not split regions; when a fence would visually span a section boundary, the spec needs restructuring (a fence cannot cross `##` headings — close the fence before the next heading)
     - **Every region the run will declare is locatable** — for each section the checks will declare (run `--section <heading>` probes), the heading resolves uniquely. A declaration that cannot be located fails closed at gate-finalize time; this step surfaces it at validate time
     - Fix direction: restructure the spec so the split is semantically clean (cohesion per `framework/spec_writing_guide.md` §13); do not fall back to whole-file declarations as a workaround
-13. **Environment and deployment agnosticism check (FAIL):** Verify that the spec body and acceptance item set remain strictly environment-agnostic per `framework/spec_writing_guide.md` §14.1 (Environment & Temporal Agnosticism Law) and §14.2 (Anti-Pattern E):
-    - Must NOT contain developer-machine absolute paths (e.g. `/Users/...`, `/home/...`, `C:\...`) in narrative text or structured fields (use project-relative paths instead).
-    - Must NOT contain fixed local machine IP addresses or ports (e.g. `127.0.0.1:8080`, `localhost:3000`) as hard requirements (illustrations inside fenced code blocks must be explicitly marked as example placeholders).
-    - Must NOT contain live or environment-specific credentials, tokens, or private secrets.
-    - If found → FAIL with quoted text, section name, and line reference (actionable: replace with project-scoped relative paths, abstract placeholders, or configuration-driven parameters).
+5. **Environment agnosticism judgment (FAIL):** the mechanical scan flags the unambiguous patterns; the session judges the residue — whether a narrative value is a hard requirement (FAIL) or an explicitly marked example placeholder (pass), and credential-like content the pattern scan cannot recognize. Must NOT contain fixed local machine IP addresses or ports as hard requirements, or live or environment-specific credentials, tokens, or private secrets. If found → FAIL with quoted text, section name, and line reference (actionable: replace with project-scoped relative paths, abstract placeholders, or configuration-driven parameters)
 
-**PASS:** All format constraints satisfied
+**PASS:** The mechanical pre-pass passed and the residue judgments found no defect
 
-**WARNING (step 7):** Code file paths detected in prose sections — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference
+**WARNING:** Prose-path hygiene hits and unmarked fenced environment content — surfaced by the tool, confirmed or cleared by the session
 
-**FAIL:** Any missing field, reference to a non-existent file, layer-prefixed spec path, or environment-specific hardcoding in prose or structured fields (actionable)
+**FAIL:** Any mechanical pre-pass failure, a stable-layer spec path in narrative prose, or environment-specific hardcoding in prose or structured fields (actionable)
 
-**Check method:** Unidirectional existence check (the only check that does not cross-reference, as it is the prerequisite)
+**Check method:** Deterministic tool pre-pass (`specflowctl validate candidate`) + agent judgment on the semantic residue
 
 **Communication note:** When suggesting Check 1 to a user, describe it as "structural integrity — verifies file structure and reference existence without evaluating design quality."
 
@@ -341,8 +316,8 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 3. Are dependencies, rule bindings, and ownership boundaries explicit?
 4. **Self-consistency check (main spec):**
    - Do the goals and described behaviors agree? (goal description scope matches behavior scope)
-   - Do non-goals conflict with any described behavior? (non-goal says "not doing X" but behavior describes X)
    - Are the boundaries respected by the behavior descriptions? (e.g., boundary is "client-side validation only" but behavior describes server-side logic)
+   - Non-goal conflicts ("non-goal says not doing X but behavior describes X") are NOT judged here — that contradiction is owned by Check 2 Step 1's goal-means analysis, which reads the same declarations; judging it twice reports one defect as two findings.
 5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (actionable: move content to the correct unit or declare scope expansion)
 6. **Unit cohesion / split-candidate detection (WARNING):** Judge whether the unit's content resolves into two or more responsibility clusters that are independently governable. A split candidate is reported as WARNING only when all three conditions hold:
    - **Distinct responsibility subjects** — the clusters' behavior subjects belong to different domains (e.g. authentication vs. notifications), not multiple scenarios of one subject.
@@ -786,7 +761,7 @@ affects.appendices:
 **Execution steps:**
 
 1. Read the stable global rule set (`docs/specs/rules/stable/g_rule_*.md`) and each bound rule listed in `rule_refs`. Stable global rules apply to every current-layer unit by default and are not repeated in `rule_refs` (see `framework/spec_writing_guide.md` §5). Execute the two framework dependency prohibitions:
-   - **Circular dependency prohibition** — derive the dependency graph from all current-layer units' `unit_refs` (candidate preferred, stable fallback); a cycle (A depends on B while B depends on A, directly or transitively) is a violation. Re-derive the graph independently rather than trusting the mechanical verdict alone, and cross-check it with `specflowctl validate` (Check 7 — every unit on a cycle FAILs, blocking promote) and `specflowctl deps` (graph, cycle members, promotion order; trigger `deps@all` / `deps@{unit}` / `deps@{rule}`, see `framework/verification_scope.md` §Dependency Analysis). Graph build failures are fail-closed: an unreadable unit spec (permission, corruption) blocks the whole graph, so every unit FAILs Check 7 with the failing file named in the Details — repair the file and re-run validate; `deps@all` reproduces the failure.
+   - **Circular dependency prohibition** — run the mechanical check first (`specflowctl deps --unit <name>` / `deps@{unit}`, or `specflowctl validate candidate`, whose Check 7 fails every unit on a cycle): the mechanical verdict is authoritative for the FULL dependency graph — do not re-derive the whole graph independently. The session still verifies its own unit's declared edges: read this unit's `unit_refs` (required for the cross-unit work below anyway) and confirm each edge matches the graph the tool reports — a mismatch is a tool-input problem to report, not a judgment call. A cycle (A depends on B while B depends on A, directly or transitively) is a violation; analyze and present cycle-resolution guidance only when the tool reports a cycle. `deps@all` / `deps@{rule}` reproduce the graph, cycle members, and promotion order (see `framework/verification_scope.md` §Dependency Analysis). Graph build failures are fail-closed: an unreadable unit spec (permission, corruption) blocks the whole graph, so every unit FAILs Check 7 with the failing file named in the Details — repair the file and re-run validate; `deps@all` reproduces the failure.
    - **Layer-order prohibition** — for each applicable rule that records a repository layer order, resolve the order from that rule's recording and each unit's declared architecture layer from its spec truth (architecture section or design decision records); a `unit_refs` edge from a lower-layer unit to a higher-layer unit is a violation. Units whose spec records no architecture layer are not judged by this prohibition.
 2. Check the candidate design against each global rule and each bound rule:
 ```
@@ -838,16 +813,16 @@ affects.appendices:
 1. Read the complete unit spec union (see Prerequisite).
 2. For each behavior, mechanism, or decision the spec states, judge whether a reader without code access can understand it from the text alone:
    - **Unclear** — the text names a mechanism, field, or step without saying what it does or how it connects to the rest.
-   - **Underspecified** — an implementation-affecting decision is left for the reader to choose, with no stated boundary (`framework/spec_writing_guide.md` §9 must-close list).
+   - **Underspecified (expression level only)** — the text hides an already-made decision or leaves a reader unable to act on a decision the spec did make (e.g., the governing statement sits where the reader was never pointed, or two passages imply different answers to the same question). A decision that is genuinely OPEN with no stated boundary is NOT reported here — decision closure is owned by Check 2 Step 5 (`framework/spec_writing_guide.md` §9 must-close list). When both readings could apply, Check 2 owns the finding; this check does not duplicate it.
    - **Internally contradictory** — two statements disagree (a value, an error code, a flow direction, or a contract stated differently in two places).
-3. Grade each defect: an internal contradiction or an unclosed implementation-affecting decision is a P0/P1 finding that blocks the downstream executor; a localized wording or presentation gap that does not change meaning is a WARNING.
+3. Grade each defect: an internal contradiction that leaves the downstream executor unable to determine the design is a P0/P1 finding; a localized wording or presentation gap that does not change meaning is a WARNING. Open decisions with no stated boundary are never graded here — Check 2 Step 5 owns them.
 4. A FAIL must carry at least one P0/P1 finding in the standard finding block: quote the unclear or conflicting text, name the concrete subject, and state the concrete repair (`fix:`) or the decision the user must supply (`decision:`).
 
-**PASS:** The spec is clear, its decisions are closed or explicitly bounded, and no statement contradicts another.
+**PASS:** The spec's human-readable part is clear, no statement contradicts another, and every stated decision is readable without guessing.
 
 **WARNING:** Localized clarity gaps (wording, presentation) that do not change the stated design or block the reader.
 
-**FAIL:** An internal contradiction, an unclosed implementation-affecting decision with no stated boundary, or a passage a reader cannot understand — reported as a P0/P1 finding (actionable when a concrete repair exists; needs_decision when the intent must come from the user).
+**FAIL:** An internal contradiction, or a passage a reader cannot understand — reported as a P0/P1 finding (actionable when a concrete repair exists; needs_decision when the intent must come from the user).
 
 **Check method:** Direct semantic reading of the spec by one independent read-only session — no reconstruction and no second session; the verdict and finding block follow the standard checks format.
 
@@ -905,7 +880,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Present Findings
 
-Advisory findings (Check 1 step 7 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding is graded under the same §9 boundary discipline (see Check 2 Step 4). Advisory findings are never emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
+Advisory findings (Check 1 step 3 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding is graded under the same §9 boundary discipline (see Check 2 Step 4). Advisory findings are never emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
 
 ### Batch classification (validate)
 

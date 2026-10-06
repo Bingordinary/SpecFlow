@@ -27,6 +27,7 @@ Coverage keys:
 | Test **quality** (assertion authenticity, mock density, tautology, happy-path-only) | `quality` | Tests are graded as code here. The `alignment` lens uses tests only as behavioral evidence for an item, never as a quality grade. |
 | Code within this unit's responsibility with **no spec basis** (surplus) | `alignment` **first** | The `alignment` lens attributes responsibility before judging surplus. Only if the code survives that decision — the code is legitimate and the spec gap is not a drift — does it become a `quality` judgment. |
 | **Stubs** | by nature | A stub that violates a *declared* behavior is an `alignment` finding (implemented-but-absent). A stub that is merely poor code (unreachable, placeholder without a declared behavior) is a `quality` finding. |
+| **Debt markers** (TODO/FIXME/XXX/HACK comment markers) | `quality` | Dimension 7 owns unplanned-debt markers: a comment marker is a work trace, not a behavioral mismatch. A marker contained in the spec's `known_debt` is suppressed; an undeclared marker is a non-blocking P2/P3 observation. Stubs and placeholders (missing implementation where behavior is declared) remain `alignment` Step 6 findings. |
 | **Spec-sanctioned suppression** | `quality` **only** | A recorded spec rationale suppresses a `quality` finding. The `alignment` lens never suppresses a divergence. |
 | Structural alignment, scope, retirement, acceptance, divergence analysis (Steps 1–7) | `alignment` | — |
 
@@ -41,7 +42,7 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED, or an evidence-backed record-drift routing.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED, or an evidence-backed record-drift routing.
 
 ### 2. Pre-review Setup
 
@@ -52,7 +53,7 @@ Design and architecture checks read their selected unit spec, applicable rules a
 ### 3. Review Process
 
 1. Reuse accepted public observations only when coverage, code content and protocol are valid; otherwise execute the public check.
-2. Consume the public records for the design session's assigned files only, whether executed, reused or carried. For each observation in those records, the design reviewer reports `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>`.
+2. Consume the public records for the design session's assigned files only, whether executed, reused or carried. For each observation in those records, the design reviewer reports `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>`. In a co-batched session the design reviewer disposes the observations collected in the same report's code block instead of consuming a published record: write the code block first, then reference each observation by its tool-assigned id — the k-th potential finding in the code block is `<run>/<session>/F<k>`.
 3. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
 4. Assess the six Dimension 8 fields in the unit's architecture task once.
 5. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
@@ -438,43 +439,13 @@ IF a complete declaration exists in code BUT has no correspondence
     present in code are ALIGNED (extra code fields are not surplus).
 ```
 
-4. **Code surface reverse check** — after completing the spec→code search above, for each implementation file that was visited during steps 1-3, run an independent code→spec scan. File association does not give this unit exclusive ownership of every declaration in a shared file. Read the complete file, then attribute structures to responsibilities before judging surplus. For preserve, scope this comparison to the assigned protected stable requirement and the structures implementing or constraining it:
-
-```
-a. Extract all code-level structures from the file:
-   - Types, structs, interfaces (struct field names and types)
-   - Method receivers (which types have which methods)
-   - Public function declarations
-   - Public constants, variables, error sentinels
-
-b. Establish the structure's responsibility from the implementation,
-   callers, data flow, and the unit's declared behavior:
-   - An independent responsibility outside this unit is not surplus here.
-     Record the code evidence for that boundary; it need not be restated
-     in this unit's spec or create a unit_refs dependency.
-   - Helpers and shared structures implementing or constraining this
-     unit's behavior remain in scope, even if another unit also uses them.
-   - A shared-file declaration alone proves neither ownership nor exclusion.
-   - Missing attribution evidence requires replanning with the needed input;
-     do not infer MISMATCH merely from file co-location. If sufficient evidence
-     still cannot establish alignment, report CANNOT_DETERMINE.
-
-c. For each in-scope structure, check against the full spec:
-   - Does the spec body (protocols, data contracts, terminology, error codes) describe it?
-   - Is it referenced in any acceptance item's description or pass_condition?
-   - No spec correspondence → SURPLUS candidate
-     (do not classify — defer to Step 7)
-
-d. Reports:
-   - Zero surplus → "Unit code surface fully covered — no surplus within its responsibility"
-   - Surplus found → MISMATCH (type: surplus) with structure name, type, and file:line
-```
+4. **Reverse direction:** code→spec surplus discovery is owned by Step 5 Part A (the design-surface scan with its implementation-detail filter). Do not run a second structure-level reverse scan here — Step 5 Part A reads the complete associated files, attributes structures to responsibilities (the attribution rules there cover shared files and preserve scoping), and defers candidates to Step 7. The subset-match exception from step 3 stands on its own: subset-match declarations whose spec-declared fields are all present in code are ALIGNED (extra code fields are not surplus).
 
 **PASS (ALIGNED):** All spec body declarations have structurally consistent implementations
 
 **FAIL (MISMATCH):** Structural differences found between spec and code — defer classification to Step 7
 
-**Check method:** Spec body × implementation code — bidirectional structural cross-reference
+**Check method:** Spec body × implementation code — structural cross-reference in the spec→code direction (the code→spec direction is Step 5 Part A)
 
 ---
 
@@ -486,7 +457,7 @@ d. Reports:
 
 **Execution steps:**
 
-For each acceptance item in the target spec, AND for each technical claim in appendix files:
+For each acceptance item in the target spec (appendix content is read as the item's context, not as an independent scan object — validate Check 5a enforces that every appendix contract has a carrying acceptance item, so the item set is the complete contract surface and appendix claims are verified through the items that carry them):
 
 1. Read `implementation_surface`, `verification_surface`, and `affects.files` to locate the implementation
 2. Parse the `pass_condition` and extract specific verifiable assertions:
@@ -552,7 +523,7 @@ Per-item report format:
 
 **Test design sub-check (for verification_type: testable items only):**
 
-Ownership note: the `alignment` lens records whether tests exist for an item (Part A coverage as annotation evidence); the **quality** of those tests (Part B meaningfulness — mock density, assertion authenticity, tautology, happy-path-only, mock-through, naming) is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above). A test-quality concern is never an `alignment` finding.
+Ownership note: the `alignment` lens records whether tests exist for an item (Part A coverage as annotation evidence); the **quality** of those tests (Part B meaningfulness — mock density, assertion authenticity incl. tautology and mock-through signals, happy-path-only) is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above). A test-quality concern is never an `alignment` finding.
 
 This sub-check has two parts: **A — coverage completeness** (tests exist for implied scenarios) and **B — test meaningfulness** (existing tests are genuine). The agent runs both parts and reports findings per acceptance item.
 
@@ -603,12 +574,23 @@ Mock density above 80% is a **signal**, not a verdict. The agent uses it in comb
 
 #### B2 — Assertion authenticity
 
-**Method:** For each test function, agent reads the full body and evaluates whether assertions genuinely verify the outcome implied by the test name and acceptance item.
+**Method:** For each test function, agent reads the full body and evaluates whether the assertions genuinely verify the outcome implied by the test name and acceptance item — i.e., whether the test would fail if the implementation logic it names were broken.
 
 Checklist per test function:
 - Does the test have at least one assertion?
 - Does the assertion target an actual output value (return value, state change, side effect) rather than a fixed/tautological expression?
 - If the test name describes an error scenario ("returns error when email exists"), does at least one assertion check the error (type, message, presence)?
+
+**Named signals** — two recurring ways an assertion fails this check. Both are evaluated with the same language-agnostic reasoning: the agent reads the assertion call and its arguments and asks whether it could fail under any reasonable code change.
+
+- **Tautological assertion** — the assertion always passes regardless of implementation state:
+  - Is the asserted value an unconditional literal? (`assert.Equal(42, 42)` → always passes)
+  - Is the asserted value the test infrastructure itself? (`assert.NotNil(t)` where one `t` is `*testing.T` → never nil)
+  - Is the assertion checking a property guaranteed by the test setup rather than the implementation? (mock returns a fixed value, then the assertion checks that same fixed value without transformation)
+  - A single tautological assertion in a healthy test file may be accidental; multiple across an acceptance item's tests → stronger ritual-testing signal.
+- **Mock-through** — the mock's return value passes through the function without transformation, validation, or conditional logic, and the assertion checks that same (or derived) value: the test exercises only the mock, not the implementation. Trace the data flow across mock setup → function call → assertion, then apply the decision test:
+  - "Would this test fail if the function body were replaced with a no-op / passthrough?" → No, it passes → CONCERN (only the mock is exercised).
+  - "Would this test fail if the validation/transformation logic were broken?" → Yes → No concern (implementation logic is exercised).
 
 **Reports:**
 
@@ -616,93 +598,24 @@ Checklist per test function:
 {item.id}: CONCERN — Test "TestRegister_DuplicateEmail" describes a conflict scenario
   but contains no error assertion. The test calls the register function but only
   asserts NoError. The conflict logic is never verified.
-```
 
-**Signal usage:** A test missing a meaningful assertion for its stated purpose is a strong indicator of ritual testing. Even one such test per acceptance item warrants a CONCERN.
-
-#### B3 — Tautological assertions
-
-**Method:** Scan test functions for assertion patterns that always pass regardless of implementation state.
-
-**Language-agnostic detection:** Agent reads the assertion call and its arguments, then evaluates whether the assertion could fail under any reasonable code change. The agent does not use hardcoded patterns — it reasons about each assertion:
-
-- Is the asserted value an unconditional literal? (`assert.Equal(42, 42)` → always passes)
-- Is the asserted value the test infrastructure itself? (`assert.NotNil(t, t)` where one `t` is `*testing.T` → never nil)
-- Is the assertion checking a property that is guaranteed by the test setup rather than the implementation? (mock returns a fixed value, then the assertion checks that same fixed value without transformation)
-
-**Reports:**
-
-```
-{item.id}: CONCERN — Tautological assertion in TestRegister_Success
-  assert.Equal(42, 42) at line 23 — compares literal to literal, cannot fail
-
-{item.id}: CONCERN — Tautological assertion in TestGetUser
-  assert.NotNil(t) at line 45 — t is *testing.T, always non-nil in a running test
-```
-
-A single tautological assertion in a healthy test file may be accidental. Multiple tautological assertions across an acceptance item's tests → stronger signal of ritual testing.
-
-#### B4 — All-happy-path detection
-
-**Method:** After Part A has confirmed a happy path exists, count all test functions associated with the acceptance item. If every test exercises a success scenario and none exercises error/invalid/edge paths → CONCERN.
-
-This is distinct from Part A's check: Part A checks whether a *specific implied scenario* is missing. B4 checks the *overall profile* of existing tests — a complete lack of negative testing.
-
-```
-{item.id}: CONCERN — All {N} tests are happy-path only. No test exercises
-  validation rejection, business rule conflict, or dependency failure.
-```
-
-#### B5 — Mock-through detection
-
-**Method:** For each test function, agent traces the data flow across three points:
-
-1. **Mock setup:** What value does the mock return? (`mock.On("Create", ...).Return(User{ID: 1})`)
-2. **Function call:** How is the mocked value consumed? (`result := svc.Register(...)`)
-3. **Assertion:** What does the assertion check? (`assert.Equal(t, 1, result.ID)`)
-
-If the mock return value passes through the function without transformation, validation, or conditional logic, and the assertion checks the same (or derived) value → the test exercises only the mock, not the implementation.
-
-**Judgment criteria:**
-
-Agent evaluates whether a realistic implementation defect would cause this test to FAIL:
-
-```
-Would this test fail if the function body were replaced with a no-op / passthrough?
-  - Mock returns User{ID: 1}
-  - Function: return mock.Create(...)  (direct passthrough — no logic)
-  - Assertion: assert.Equal(t, 1, result.ID)
-  → Test passes. No implementation logic is exercised. → CONCERN
-
-Would this test fail if the validation logic were broken?
-  - Mock returns nil error
-  - Function: validates input, calls mock, transforms result
-  - Assertion: assert.Equal(t, "formatted_name", result.Name)
-  → Test fails if transformation breaks. Implementation logic is exercised. → No concern
-```
-
-**Reports:**
-
-```
 {item.id}: CONCERN — Test "TestRegister_Success" exercises mock passthrough only.
   Mock returns User{ID: 1, Name: "a"}, service returns it unchanged,
   assertion checks ID == 1. The test passes even if all business logic
   is removed.
 ```
 
-#### B6 — Test naming signal
+**Signal usage:** A test missing a meaningful assertion for its stated purpose is a strong indicator of ritual testing. Even one such test per acceptance item warrants a CONCERN.
 
-**Method:** Scan test function names for patterns that suggest lack of care:
+#### B3 — All-happy-path detection
 
-- Numbered names: `Test1`, `Test2`, `test_1` (sequential numbering without semantic meaning)
-- Generic handlers: `TestHandler`, `TestFunc`, `TestMethod`, `test_handler`
-- Vague names: `TestSomething`, `TestMisc`, `test_stuff`
+**Method:** After Part A has confirmed a happy path exists, count all test functions associated with the acceptance item. If every test exercises a success scenario and none exercises error/invalid/edge paths → CONCERN.
 
-**This check is auxiliary only.** A single generically-named test is not a concern. But when B6 flags multiple tests AND other Part B checks (B1–B5) also signal concerns, the naming pattern strengthens the overall assessment.
+This is distinct from Part A's check: Part A checks whether a *specific implied scenario* is missing. B3 checks the *overall profile* of existing tests — a complete lack of negative testing.
 
 ```
-{item.id}: CONCERN (low confidence) — Test functions "Test1", "Test2", "Test3"
-  found. Naming is sequential with no semantic information.
+{item.id}: CONCERN — All {N} tests are happy-path only. No test exercises
+  validation rejection, business rule conflict, or dependency failure.
 ```
 
 ---
@@ -718,7 +631,7 @@ Part A and Part B findings are reported together per acceptance item:
   Part A: No concerns
   Part B: One concern
     - B1 Mock density: 60% — no concern
-    - B4 All happy path: CONCERN — 3 tests, all success scenarios, no error path
+    - B3 All happy path: CONCERN — 3 tests, all success scenarios, no error path
 ```
 
 Part B findings are recorded under the item in the verify output as CONCERN-level annotations. They do not change the item-level verdict (ALIGNED / MISMATCH / CANNOT_DETERMINE).
@@ -931,7 +844,7 @@ Do not classify the resolution direction — defer to Step 7.
 
 ## Step 6 — Stub & Placeholder Scan
 
-**Purpose:** Systematically scan for known "not done" patterns — in the spec's implementation mapping and in implementation files. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders.
+**Purpose:** Systematically scan for stub and placeholder patterns — in the spec's implementation mapping and in implementation files. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders. Debt markers (TODO/FIXME/XXX/HACK comments) are NOT scanned here — they are owned by the `quality` lens (Dimension 7, see §Lenses and boundary ownership).
 
 **Execution steps:**
 
@@ -948,12 +861,7 @@ Do not classify the resolution direction — defer to Step 7.
    grep -n "return null\|return \[\]\|\bplaceholder\b\|not.*implement" <file>
    ```
 
-   b. Debt markers (TODO, FIXME, XXX):
-   ```bash
-   grep -n "TODO\|FIXME\|XXX\|HACK" <file>
-   ```
-
-   c. Empty handler bodies:
+   b. Empty handler bodies:
    ```bash
    grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
    ```
@@ -961,11 +869,10 @@ Do not classify the resolution direction — defer to Step 7.
 4. Per-file result:
    ```
    {file}: CLEAN | STUB_FOUND
-     - line 5: // TODO: connect to database (debt_marker)
      - line 12: return Response.json({}) (empty_response)
    ```
 
-5. Classify each grep hit: **RELEVANT** (real stub/placeholder/debt marker in implementation code) or **IRRELEVANT** (idiomatic constructs — e.g. Go `return nil`, TODO comments matching the spec's `known_debt`, error sentinels, test fixtures). Only RELEVANT hits are MISMATCH.
+5. Classify each grep hit: **RELEVANT** (a real stub or placeholder in implementation code) or **IRRELEVANT** (idiomatic constructs — e.g. Go `return nil`, error sentinels, test fixtures). Only RELEVANT hits are MISMATCH.
 
 6. Any RELEVANT stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
 
