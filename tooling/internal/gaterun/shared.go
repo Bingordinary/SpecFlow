@@ -212,6 +212,14 @@ func (c *evidenceCorpus) evidence(file string, extra []string) []string {
 	return out
 }
 
+// itemDependencyKey identifies the recorded item judgments of one acceptance
+// item: their recorded dependencies extend the read surface of the item's
+// protected requirement.
+type itemDependencyKey struct {
+	unit string
+	item string
+}
+
 func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 	audit, err := d.surfaceAudit()
 	if err != nil {
@@ -230,6 +238,11 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The store is immutable while a derivation runs, so the item
+	// judgments are indexed once, on first use: every record is loaded at
+	// most once per call instead of once per acceptance item
+	// (O(records + items) instead of O(items × records)).
+	var itemDeps map[itemDependencyKey][]string
 	var out []CoverageKey
 	for _, u := range audit.Units {
 		if u.Unit == run.TargetName || u.Layer != TargetStable {
@@ -282,20 +295,29 @@ func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
 				}
 			}
 			// Recorded dependencies extend the read surface, not the
-			// association set.
-			for _, r := range refs {
-				record, err := judgments.Load(root, r)
-				if err != nil {
-					continue
-				}
-				if record.Kind != judgments.Item || record.Unit != u.Unit || record.Subject != item {
-					continue
-				}
-				for _, d := range record.Dependencies {
-					if !d.Own && !strings.HasPrefix(d.Path, "docs/specs/") && !isLogicalRef(d.Path) {
-						relatedPaths = appendUnique(relatedPaths, d.Path)
+			// association set. The index holds the union over every
+			// recorded item judgment of (unit, item), like the scan it
+			// replaces.
+			if itemDeps == nil {
+				itemDeps = map[itemDependencyKey][]string{}
+				for _, r := range refs {
+					record, err := judgments.Load(root, r)
+					if err != nil {
+						continue
+					}
+					if record.Kind != judgments.Item {
+						continue
+					}
+					key := itemDependencyKey{unit: record.Unit, item: record.Subject}
+					for _, dep := range record.Dependencies {
+						if !dep.Own && !strings.HasPrefix(dep.Path, "docs/specs/") && !isLogicalRef(dep.Path) {
+							itemDeps[key] = appendUnique(itemDeps[key], dep.Path)
+						}
 					}
 				}
+			}
+			for _, path := range itemDeps[itemDependencyKey{unit: u.Unit, item: item}] {
+				relatedPaths = appendUnique(relatedPaths, path)
 			}
 			latest, accepted, err := judgments.LatestItem(root, u.Unit, item, TargetStable)
 			if err != nil {

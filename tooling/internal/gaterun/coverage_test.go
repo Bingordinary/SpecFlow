@@ -1158,6 +1158,66 @@ func TestDeltaPlanWithoutJudgmentsWhenNothingIsCarried(t *testing.T) {
 	}
 }
 
+// TestProtectedCoverageUnionsRecordedItemDependencies verifies that a stable
+// peer item's protected read surface unions the recorded dependencies of
+// every item judgment for that item — not only the current accepted one — so
+// indexing the store once per derivation preserves the original scan's
+// semantics.
+func TestProtectedCoverageUnionsRecordedItemDependencies(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+	// The run's quality surface expands src, so it includes the stable peer
+	// item's declared file: the peer item is a protected requirement.
+	writeFile(t, repoRoot, "src/peer.go", "package peer\n")
+	writeFile(t, repoRoot, "src/notes.go", "package auth\n// util\n")
+	writeFile(t, repoRoot, "lib/util.go", "package lib\n")
+	writeUnit(t, repoRoot, "stable", "peer", "none", "none", "src/peer.go", "")
+
+	context, err := judgments.SpecContext(repoRoot, "peer", TargetStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveItem := func(report, dep string) {
+		t.Helper()
+		record := judgments.Record{
+			Version:      judgments.RecordVersion,
+			Kind:         judgments.Item,
+			Unit:         "peer",
+			Subject:      "peer.core",
+			SpecContext:  context,
+			Coverage:     []string{"preserve:peer:peer.core"},
+			Inputs:       []string{"docs/specs/units/stable/unit_peer.md"},
+			Dependencies: []judgments.Dependency{{Path: dep}},
+			Protocol:     judgments.Protocol(repoRoot),
+			Verdict:      "ALIGNED",
+			Result:       json.RawMessage(`{"effective_status":{"preserve:peer:peer.core":"pass"}}`),
+			Report:       report,
+			ReportDigest: judgments.Digest([]byte(report)),
+			SourceRun:    "test-run",
+		}
+		if _, err := judgments.Save(repoRoot, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An older record records lib/util.go; the current accepted record does
+	// not. src/notes.go references util, so only the older record's path
+	// connects the notes evidence — the union must keep it.
+	saveItem("older decision", "lib/util.go")
+	saveItem("current decision", "src/peer.go")
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck := run.CoverageByKey("preserve:peer:peer.core")
+	if ck == nil {
+		t.Fatalf("expected the stable peer item in the protected coverage set, got %v", coverageKeysOf(run))
+	}
+	if !stringInSlice(ck.ReadRefs, "lib/util.go") {
+		t.Fatalf("expected the older record's dependency in the read surface, got %v", ck.ReadRefs)
+	}
+}
+
 // The semantic checklist owns rule checks; its headings and the generated
 // coverage must agree without another independently maintained count.
 func TestRuleChecklistMatchesPlannedCoverage(t *testing.T) {
