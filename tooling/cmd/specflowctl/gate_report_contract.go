@@ -94,9 +94,21 @@ type gateReportContract struct {
 func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateReportContract {
 	c := gateReportContract{Format: "text", Verdicts: []reportVerdict{}, Requirements: []reportRequirement{}}
 	var lines []string
+	codeKeys := map[string]bool{}
 	for _, key := range session.CheckKeys {
-		v := verdictContractFor(session.Kind, key)
-		switch session.Kind {
+		if ck := run.CoverageByKey(key); ck != nil && ck.Kind == gaterun.SessionKindCode {
+			codeKeys[key] = true
+		}
+	}
+	for _, key := range session.CheckKeys {
+		// A co-batched code+design session carries both kinds: each block
+		// follows its own coverage kind's report contract.
+		kind := session.Kind
+		if ck := run.CoverageByKey(key); ck != nil {
+			kind = ck.Kind
+		}
+		v := verdictContractFor(kind, key)
+		switch kind {
 		case gaterun.SessionKindChecks:
 			lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
 		case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
@@ -118,14 +130,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 				"  Severity: <P0|P1|P2|P3>",
 				"  Confidence: <high|medium|low>")
 		case gaterun.SessionKindCode:
-			lines = append(lines, "File: "+key, "conclusion: FACTS", "facts: <code facts and potential problems; no unit design rationale>", "Dependency scope:", key+": <read_ref>: all")
+			lines = append(lines, "File: "+key, "conclusion: FACTS", "facts: <code facts and potential problems; no unit design rationale>")
 		case gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
 			prefix := "File: "
-			if session.Kind == gaterun.SessionKindArchitecture {
+			if kind == gaterun.SessionKindArchitecture {
 				prefix = "Unit: "
 			}
 			lines = append(lines, prefix+key, "conclusion: <acceptable|needs_attention|unacceptable> — <reason>")
-			if session.Kind == gaterun.SessionKindArchitecture {
+			if kind == gaterun.SessionKindArchitecture {
 				for _, field := range qualityDimensions {
 					lines = append(lines, field+": <assessment> — <basis>")
 				}
@@ -133,7 +145,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 				lines = append(lines, "spec_requirements: <active check of the unit requirements> — <basis>", "Observation disposition: <public observation id> = <retained|suppressed> — <unit-specific evidence and reason>")
 			}
 			lines = append(lines, "gate_findings: <none or blocking findings>")
-			if session.Kind == gaterun.SessionKindArchitecture {
+			if kind == gaterun.SessionKindArchitecture {
 				lines = append(lines, "Suppressed by spec (0):")
 			}
 			lines = append(lines, "Dependency scope:", key+": <read_ref>: <section|range|all>", "")
@@ -214,8 +226,8 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	}
-	if session.Kind == gaterun.SessionKindCode {
-		add("public-facts", "one non-empty facts assessment per assigned file and whole-file scopes for every public read ref", "")
+	if len(codeKeys) > 0 {
+		add("public-facts", "one non-empty facts assessment per assigned file; the tooling records each check's own public evidence surface (its coverage key's read refs) as its dependency", "")
 	}
 	if session.Kind == gaterun.SessionKindArchitecture {
 		for _, field := range qualityDimensions {
@@ -281,6 +293,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		}
 	}
 	scopeExample := "Dependency scope:\n  <check_key>: <read_ref>: <section|range|acceptance_item:id|acceptance_items|all>"
+	scopeDescription := "at least one declaration per executed check key; file must be in read_refs"
+	switch {
+	case len(codeKeys) == len(session.CheckKeys):
+		scopeDescription = "no Dependency scope lines: the tooling records each check's own public evidence surface (its coverage key's read refs) as its whole-file dependency"
+		scopeExample = "# No Dependency scope lines — the tooling records each public code check's own public evidence surface (its coverage key's read refs)."
+	case len(codeKeys) > 0:
+		scopeDescription = "at least one declaration per executed design or architecture check key; file must be in read_refs (public code checks need none — the tooling records their whole public evidence surface)"
+	}
 	if session.Kind == gaterun.SessionKindCross {
 		scopeExample = "# Declare each assigned relationship's read evidence under relationship:<name>; use cross: for finding-disposition evidence."
 		if len(session.Relationships) == 0 {
@@ -290,9 +310,12 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 	if session.Kind == gaterun.SessionKindDesign {
 		scopeExample = ""
 	}
-	add("dependency-scope", "at least one declaration per executed check key; file must be in read_refs", scopeExample)
+	add("dependency-scope", scopeDescription, scopeExample)
 	c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	c.Requirements[len(c.Requirements)-1].CountBasis = "per_check_key"
+	if len(codeKeys) == len(session.CheckKeys) {
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+	}
 	c.Template = strings.Join(lines, "\n")
 	return c
 }

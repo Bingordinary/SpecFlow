@@ -9,9 +9,9 @@ import (
 
 // Issue #60: a rule file's physical path in the input manifest must plan as
 // its logical reference. Otherwise the plan copies the physical path into the
-// public code sessions' read refs, where the whole-file evidence check
-// demands a declaration that the logical-reference check rejects — a state no
-// report can satisfy, so the session can never be accepted.
+// public code sessions' read refs, and the tool-recorded whole-file evidence
+// for the public code check would record a physical rule path that the
+// logical-reference check rejects — a state the run cannot finalize.
 func TestPlannedPhysicalRuleInputDoesNotDeadlockSubmit(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteFile(t, root, "docs/specs/rules/stable/g_rule_logging.md",
@@ -40,10 +40,10 @@ func TestPlannedPhysicalRuleInputDoesNotDeadlockSubmit(t *testing.T) {
 		t.Fatalf("public read refs must carry the logical rule reference, got %v", ck.ReadRefs)
 	}
 
-	// The public session's report declares every read ref whole-file (the
-	// standard fixture shape). Before the fix this deadlocked: the required
-	// physical declaration was rejected as a rule path, and the logical
-	// declaration alone did not cover the physical read ref.
+	// The public session's report carries facts only; the tooling records its
+	// read refs as the whole-file evidence. Before the fix the plan carried
+	// the physical rule path, which the recorded evidence would reject as a
+	// rule path while the logical form alone did not cover the read ref.
 	report := grWriteFile(t, t.TempDir(), "quality-report.md", grDefaultQualityReport(run, *ck))
 	var stdout, stderr bytes.Buffer
 	if err := runGateSubmit([]string{"--repo-root", root, "--run", id, "--session", gaterun.SessionID([]string{ck.Key}), "--keys", ck.Key, "--report", report}, &stdout, &stderr); err != nil {

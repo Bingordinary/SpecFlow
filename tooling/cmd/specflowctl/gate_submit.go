@@ -733,8 +733,11 @@ func writeGateSubmitUsage(w io.Writer) {
 	fmt.Fprintln(w, "covered by an accepted session, the session id matches the keys, its")
 	fmt.Fprintln(w, "dependencies are resolved, and the report is structurally complete — every")
 	fmt.Fprintln(w, "assigned check key has exactly one verdict line with an allowed token and")
-	fmt.Fprintln(w, "evidence basis, gate-specific required fields are present, and every check key")
-	fmt.Fprintln(w, "declares at least one Dependency scope line inside the session read refs.")
+	fmt.Fprintln(w, "evidence basis, and gate-specific required fields are present; non-public check")
+	fmt.Fprintln(w, "keys declare at least one Dependency scope line inside the session read refs")
+	fmt.Fprintln(w, "(a public code check records the whole public evidence surface of its own")
+	fmt.Fprintln(w, "file — its coverage key's read refs — as its dependency, recorded by the")
+	fmt.Fprintln(w, "tooling).")
 	fmt.Fprintln(w, "The optional final synthesis is submitted with --session cross --keys cross; it")
 	fmt.Fprintln(w, "must dispose every input finding, publish every effective logical status, and map")
 	fmt.Fprintln(w, "each new cross finding to the logical keys it makes fail. A valid report is")
@@ -775,23 +778,6 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 			}
 			if !found {
 				return fmt.Errorf("check %s must declare its unit spec evidence from %s", key, main)
-			}
-		}
-	}
-	for _, key := range spec.CheckKeys {
-		ck := run.CoverageByKey(key)
-		if ck == nil || ck.Kind != gaterun.SessionKindCode {
-			continue
-		}
-		for _, p := range ck.ReadRefs {
-			found := false
-			for _, scope := range parsed.Scopes {
-				if scope.Key == key && scope.Path == p && scope.Declaration == "all" {
-					found = true
-				}
-			}
-			if !found {
-				return fmt.Errorf("public check %s must declare whole-file evidence for %s", key, p)
 			}
 		}
 	}

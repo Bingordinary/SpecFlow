@@ -252,11 +252,9 @@ func grAutoSubmitQuality(t *testing.T, repoRoot, runID string) {
 }
 func grDefaultQualityReport(run *gaterun.Run, ck gaterun.CoverageKey) string {
 	if ck.Kind == gaterun.SessionKindCode {
-		report := "File: " + ck.Key + "\nconclusion: FACTS\nfacts: no potential problems in fixture\nDependency scope:\n"
-		for _, p := range ck.ReadRefs {
-			report += ck.Key + ": " + p + ": all\n"
-		}
-		return report
+		// Public code checks carry no Dependency scope lines: their whole
+		// public evidence surface is recorded by the tooling.
+		return "File: " + ck.Key + "\nconclusion: FACTS\nfacts: no potential problems in fixture\n"
 	}
 	if ck.Kind == gaterun.SessionKindArchitecture {
 		report := strings.Replace(grQualityArchitecture(ck.Key, "acceptable"), "File:", "Unit:", 1)
@@ -1481,8 +1479,6 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 	paired := "File: code:src/auth.go\n" +
 		"conclusion: FACTS\n" +
 		"facts: no potential problems in fixture\n" +
-		"Dependency scope:\n" +
-		"code:src/auth.go: src/auth.go: all\n" +
 		"\n" +
 		"File: design:auth:src/auth.go\n" +
 		"spec_requirements: fixture design evidence\n" +
@@ -1510,6 +1506,23 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 	if !ok || binding.Source != "executed" {
 		t.Fatalf("paired submit must publish the public record, got %+v", binding)
 	}
+	designCk := run.CoverageByKey("design:auth:src/auth.go")
+	if designCk == nil {
+		t.Fatal("design coverage key missing")
+	}
+	public, err := gaterun.PublicResultForDesignKey(repoRoot, run, *designCk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synthesized := false
+	for _, scope := range public.Scopes {
+		if scope.Key == "code:src/auth.go" && scope.Path == "src/auth.go" && scope.Declaration == "all" {
+			synthesized = true
+		}
+	}
+	if !synthesized {
+		t.Fatalf("expected the tool-recorded whole-file scope for the public code check, got %+v", public.Scopes)
+	}
 
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
@@ -1520,6 +1533,10 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 	}
 	if !res.Fresh {
 		t.Fatalf("expected verify cache fresh, got: %s", res.Reason)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	if !strings.Contains(cache, `check: "code:src/auth.go"`) {
+		t.Fatalf("expected the public code check in the cache checks mapping:\n%s", cache)
 	}
 }
 

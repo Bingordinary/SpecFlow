@@ -396,7 +396,11 @@ the tooling computes the CIDs and writes them into the cache at
    (1-based, inclusive; e.g. `auth.go:120-180`).
 2. Report each such file and its dependency scope in the session report's
    `Dependency scope:` lines (the `{check key}: {file}: {declaration}` form).
-   `gate-submit` validates path membership against that session's `read_refs`; at `gate-finalize`
+   Public code checks are the exception: the reviewer reports no scope lines —
+   the check's whole-file dependency is its own public evidence surface, the
+   read refs of its coverage key, recorded by the tooling. `gate-submit`
+   validates path membership against that session's `read_refs`; at
+   `gate-finalize`
    the tooling resolves the declarations to CIDs and computes the whole-file
    `hash` against the content the gate run bracketed.
 3. `specflowctl gate-evidence` remains the inspection tool for the
@@ -438,7 +442,10 @@ Whole-file declarations remain the mode for code files, rule files, and
 protocol appendices (the whole file is the carrier) — the rule file's
 file-level `deps` stays whole-file, with the per-check `checks` mapping
 breaking that whole declaration down per rule check (see §Format → Per-check
-evidence → rule validate caches).
+evidence → rule validate caches). For a public code check (`code:<file>`) the
+whole-file declaration is entirely mechanical: its own public evidence surface
+— the read refs of its coverage key — is its dependency, recorded by the
+tooling — the report carries no scope lines for it.
 
 **Item-region declarations for unit specs (verify):** a verify judgment for
 one acceptance item declares that item's region (`acceptance_item:<id>`, see
@@ -558,7 +565,7 @@ specflowctl gate-finalize --run <run_id> [--timestamp ...] [--repo-root PATH]
 - **Coverage closure:** every coverage key must be covered by exactly one accepted session (plus the carried baseline judgments for delta/repair). Unit targets require an accepted final synthesis when relationships are assigned or the primary pass produced findings; a run with neither assigned relationships nor findings finalizes directly. Rule validate derives from its accepted session plus every carried baseline judgment; the combined logical-status map must cover every current rule-checklist key exactly once, from the plan’s disjoint executed and carried sets, before a cache can be written.
 - **Snapshot check:** the tool re-resolves the input surface and compares every entry — path set, layer resolution, content hash — against the snapshot. Evidence assembly is bound to the same snapshot: every freshly computed cache entry must have the whole-file hash recorded for that declaration at `gate-plan`, and the complete input surface is compared again after the candidate cache has been rendered and checked, immediately before publication. Any divergence (a modified, added, or removed file; evidence computed from different bytes; a logical reference that now resolves to a different layer; a resolution that appeared or disappeared) rejects the finalize: no cache is written, the run state is deleted, and a new `gate-plan` is required. This is the time-of-check/time-of-use closure: recorded evidence can only describe content that was stable for the whole judgment window.
 - **Judgment is closed by accepted artifacts:** the session executors assign their protocol-owned verdicts/severities, the final synthesis (when it runs) checks only the assigned relationships and disposes existing findings, raises each terminal retained finding's severity conservatively when the read evidence warrants it, and routes deferred findings by recorded ownership, and `gate-finalize` mechanically derives `result`, `blocking`, severity counts, and the already-validated effective-status map from the canonical finding set. No logical key can be marked failed without a gate-driving retained finding, no gate-driving retained finding can leave an affected key marked passed, and no severity other than the canonical one can affect the cache. A finding deferred to another unit is retained for audit and routed, but marks no key and does not block. The canonical severity is written into `GATE_JUDGMENTS` and is the value carried into a later delta/repair run. The coordinator supplies none of these values and cannot override the final synthesis.
-- **Evidence is computed by the tool from the accepted reports:** each report's `Dependency scope:` lines name the files and regions its check keys read (`sections` / `ranges` / `acceptance_items` / `acceptance_item:<id>` — the same grammar `gate-evidence` accepts); the tooling resolves them to CIDs, computes the whole-file hash, builds the `files` entries and the per-check `checks` mapping tagged with each check's lens, and enforces union discipline. The declaration schema has **no `hash` or `deps` fields** — a transcribed CID cannot enter a cache file.
+- **Evidence is computed by the tool from the accepted reports:** each report's `Dependency scope:` lines name the files and regions its check keys read (`sections` / `ranges` / `acceptance_items` / `acceptance_item:<id>` — the same grammar `gate-evidence` accepts; a public code check carries no scope lines — the tooling records its own public evidence surface, whole-file, for it); the tooling resolves them to CIDs, computes the whole-file hash, builds the `files` entries and the per-check `checks` mapping tagged with each check's lens, and enforces union discipline. The declaration schema has **no `hash` or `deps` fields** — a transcribed CID cannot enter a cache file.
 - **Failure-record status map:** for a derived FAIL cache the tooling copies the final synthesis's complete effective-status map and marks unchanged baseline judgments `carried`.
 - **Carried-over evidence and judgments (delta/repair):** the tooling copies both the evidence entries and structured judgments into the run at plan time. The final synthesis consumes carried unit judgments; rule finalize combines the disjoint carried and re-run rule judgments and rejects any overlapping key. The executor does not re-declare carried judgments.
 - **Path-form validation:** a name-resolved spec object declared as a physical path is rejected before the write, with the correct logical spelling in the error — in a unit cache: a unit main spec or protocol appendix that is not the target unit's own, and any rule file; in a rule cache: any unit spec file (main or appendix). The run's own target files and code files stay physical (see §Logical References).

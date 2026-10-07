@@ -124,7 +124,7 @@ Dead code, comment/code contradiction, established-convention deviation, and an 
 
 ### 7. Finding Output Format
 
-Public and design sessions contain exactly one `File: {assigned check key}` block per assigned file. Public blocks contain `conclusion: FACTS`, `facts`, potential observations and whole-file scopes for every public input. Design blocks contain a quality conclusion, `spec_requirements`, `gate_findings`, an evidence-backed disposition for each public observation, new findings and dependency scopes. Architecture uses one `Unit: architecture:{unit}` block, the six Dimension 8 assessments, conclusion, `gate_findings`, `Suppressed by spec (N)` and dependency scopes. Batching never shares one subject's verdict or findings with another.
+Public and design sessions contain exactly one `File: {assigned check key}` block per assigned file. Public blocks contain `conclusion: FACTS`, `facts` and potential observations — no dependency-scope lines: the whole public evidence surface is recorded as their dependency by the tooling. Design blocks contain a quality conclusion, `spec_requirements`, `gate_findings`, an evidence-backed disposition for each public observation, new findings and dependency scopes. Architecture uses one `Unit: architecture:{unit}` block, the six Dimension 8 assessments, conclusion, `gate_findings`, `Suppressed by spec (N)` and dependency scopes. Batching never shares one subject's verdict or findings with another.
 
 ```
 [{severity}] {location} — {issue} (actionable | needs_decision)
@@ -153,11 +153,11 @@ Each finding contains:
 - `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
 - `ref`: (optional) anchor or line reference for tracking only — it carries no meaning the rest of the finding does not already state
 
-**Dependency scope report:** In addition to findings, every sub-agent reports the read scope of its session — for the reviewed file, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
+**Dependency scope report:** In addition to findings, every design or architecture sub-agent reports the read scope of its session — for the reviewed file, the section-region headings (or 1-based closed line ranges; `all` when the assessment covered the whole file) its review judgment actually depended on:
 
 ```
 Dependency scope:
-  {check key}: {file}: {declaration}   # check key = code:<file>, design:<unit>:<file>, or architecture:<unit>; code uses all
+  {check key}: {file}: {declaration}   # check key = design:<unit>:<file> or architecture:<unit>
 ```
 
-Every code input uses an exact whole-file fingerprint, including evidence read by a design, architecture or acceptance judgment. Public checks declare `all` for every input. Spec dependencies may use chapters or acceptance-item regions. The session report declares the scope; `gate-submit` validates it against that session's `read_refs` (not merely the run-wide snapshot), and `gate-finalize` computes the CIDs and records the per-check breakdown (check key = the assigned task key, lens = `quality`) in the cache's `checks` mapping — section headings become section-region dependencies for the unit's own main spec, line ranges become chunk declarations (see `framework/validation_cache.md` §Format → Per-check evidence); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.
+Every code input uses an exact whole-file fingerprint, including evidence read by a design, architecture or acceptance judgment. Public code checks (`code:<file>`) carry no scope lines: each check's own public evidence surface — the read refs of its coverage key — is its dependency, whole-file, and `gate-submit` records it directly from that coverage key's read refs. Design and architecture sessions declare the scope they read; spec dependencies may use chapters or acceptance-item regions. `gate-submit` validates declared scopes against that session's `read_refs` (not merely the run-wide snapshot), and `gate-finalize` computes the CIDs and records the per-check breakdown (check key = the assigned task key, lens = `quality`) in the cache's `checks` mapping — section headings become section-region dependencies for the unit's own main spec, line ranges become chunk declarations (see `framework/validation_cache.md` §Format → Per-check evidence); the declared ranges must cover every region the review judgment depended on, including called functions and referenced structures.

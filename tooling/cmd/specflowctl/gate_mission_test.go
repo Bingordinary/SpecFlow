@@ -243,6 +243,21 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	}
 	grSubmitOK(t, root, verifyRun, "auth.core", grVerifyItemBody("auth.core", "MISMATCH (acceptance)", "broken at src/auth.go:1")+grVerifyAnalysisFields("auth.core")+"auth.core: "+main+": acceptance_item:auth.core\nauth.core: src/auth.go: all\n")
 
+	code := missionJSON(t, root, verifyRun, "code:src/auth.go")
+	if !strings.Contains(code.Sessions[0].ReportContract.Template, "conclusion: FACTS") ||
+		strings.Contains(code.Sessions[0].ReportContract.Template, "Dependency scope:") {
+		t.Fatalf("public code mission template must carry facts only, got:\n%s", code.Sessions[0].ReportContract.Template)
+	}
+	scopeRecorded := false
+	for _, req := range code.Sessions[0].ReportContract.Requirements {
+		if req.ID == "dependency-scope" && strings.Contains(req.Description, "no Dependency scope lines") {
+			scopeRecorded = true
+		}
+	}
+	if !scopeRecorded {
+		t.Fatalf("public code mission must state that the tooling records the evidence surface, got %+v", code.Sessions[0].ReportContract.Requirements)
+	}
+
 	grPreparePublic(t, root, mustLoadRun(t, root, verifyRun), []string{"design:auth:src/auth.go"})
 	file := missionJSON(t, root, verifyRun, "src/auth.go")
 	if file.Sessions[0].ProtocolRef != "framework/unit_verify_checklist.md" || !strings.Contains(file.Sessions[0].ReportContract.Template, "spec_requirements:") {
@@ -253,6 +268,38 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	if len(cross.Sessions[0].Dependencies) != 3 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
 		len(cross.Sessions[0].AdditionalRefs) != 2 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
 		t.Fatalf("wrong cross mission: %+v", cross.Sessions[0])
+	}
+}
+
+// TestGateMissionCoBatchedContractFollowsEachKind pins the co-batched
+// code+design session's report contract: each block follows its own coverage
+// kind — the code block carries the facts form with no scope lines, and the
+// design block carries the design template with its scope example.
+func TestGateMissionCoBatchedContractFollowsEachKind(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+
+	var out, errOut bytes.Buffer
+	keys := "code:src/auth.go,design:auth:src/auth.go"
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", keys, "--format", "json"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	var mission gateMission
+	if err := json.Unmarshal(out.Bytes(), &mission); err != nil {
+		t.Fatal(err)
+	}
+	template := mission.Sessions[0].ReportContract.Template
+	if !strings.Contains(template, "File: code:src/auth.go\nconclusion: FACTS\nfacts:") {
+		t.Fatalf("co-batched template must carry the code block's facts form, got:\n%s", template)
+	}
+	if strings.Contains(template, "File: code:src/auth.go\nconclusion: <acceptable") {
+		t.Fatalf("co-batched template must not ask the code block for a design conclusion:\n%s", template)
+	}
+	if !strings.Contains(template, "File: design:auth:src/auth.go\nconclusion: <acceptable|needs_attention|unacceptable>") {
+		t.Fatalf("co-batched template must carry the design block's conclusion form, got:\n%s", template)
 	}
 }
 

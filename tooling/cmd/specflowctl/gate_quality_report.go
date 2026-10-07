@@ -88,14 +88,23 @@ func parseQualitySessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, repo
 		}
 		out.Verdicts[block.Key] = token
 		out.FileGateFindings[block.Key] = gateFindings
-		scopes, err := extractScopes(run, &fileSpec, block.Text, map[int]bool{index: true})
-		if err != nil {
-			return nil, err
+		if ck.Kind == gaterun.SessionKindCode {
+			// A public code check carries no reviewer-authored scope: its
+			// dependency is its own public evidence surface — the read refs
+			// of its coverage key, whole-file — recorded here from the plan.
+			for _, p := range ck.ReadRefs {
+				out.Scopes = append(out.Scopes, parsedScope{Key: block.Key, Path: p, Declaration: "all"})
+			}
+		} else {
+			scopes, err := extractScopes(run, &fileSpec, block.Text, map[int]bool{index: true})
+			if err != nil {
+				return nil, err
+			}
+			if len(scopes) == 0 {
+				return nil, fmt.Errorf("check %q declares no Dependency scope line in its file block", block.Key)
+			}
+			out.Scopes = append(out.Scopes, scopes...)
 		}
-		if len(scopes) == 0 {
-			return nil, fmt.Errorf("check %q declares no Dependency scope line in its file block", block.Key)
-		}
-		out.Scopes = append(out.Scopes, scopes...)
 		for _, extracted := range extractFindings(block.Text) {
 			if !resolutionLabelRe.MatchString(extracted.text) {
 				return nil, fmt.Errorf("finding [%s] %s carries no resolution label (`(actionable)` or `(needs_decision)`)", extracted.severity, extracted.text)

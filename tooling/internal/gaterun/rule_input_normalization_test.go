@@ -55,9 +55,9 @@ func TestExtraInputPathsNormalizeRuleDirectoryExpansion(t *testing.T) {
 
 // A rule file's physical spelling in the input manifest must plan exactly
 // like its logical spelling. A physical path that reached the snapshot would
-// be readable by the public code sessions yet undeclarable at gate-submit:
-// the whole-file evidence check and the logical-reference check contradict
-// each other, and no report can satisfy both (issue #60).
+// be readable by the public code sessions while the tool-recorded whole-file
+// evidence rejects it as a rule path — the logical-reference check and the
+// recorded evidence contradict each other (issue #60).
 func TestPlanNormalizesPhysicalRuleInputToLogicalRef(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "g_rule_logging", "src/a.go", "")

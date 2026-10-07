@@ -284,7 +284,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		{"session", "one independently reviewed batch of coverage keys in a gate run", framework + "/verification_scope.md §Coverage model"},
 		{"check_keys", "the checks this session must report, excluding carried checks", framework + "/verification_scope.md §Session record"},
 		{"read_refs", "the exact evidence entries this session may declare", framework + "/verification_scope.md §Session record"},
-		{"Dependency scope", "one line per executed check naming the file and region used for its judgment", framework + "/validation_cache.md §Dependency Declaration"},
+		{"Dependency scope", "the files and regions a judgment used; declared by the reviewer, recorded by the tooling for public code checks", framework + "/validation_cache.md §Dependency Declaration"},
 	}
 	if spec.Kind == gaterun.SessionKindCross {
 		glossary = append(glossary,
