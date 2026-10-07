@@ -2,132 +2,131 @@ package gaterun
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 )
 
-// legacyCodeEvidence is the pre-shared-corpus derivation, kept verbatim as the
-// test's reference: evidence for a file is derived from a corpus of the
-// extension-filtered repository plus the file itself, with a per-file
-// expansion and read. The shared evidenceCorpus must produce identical output
-// for every file of a run.
-func legacyCodeEvidence(t *testing.T, root, file string, extra []string) []string {
-	t.Helper()
-	files, err := repofiles.ExpandDir(root, ".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	texts := map[string]string{}
-	for _, f := range files {
-		if strings.HasPrefix(f.Path, "docs/specs/") || strings.HasPrefix(f.Path, "specflow/") || strings.HasPrefix(f.Path, "meta/") {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(f.Path))
-		if f.Path != file && !strings.Contains(codeEvidenceExts, "|"+ext+"|") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f.Path)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.IndexByte(string(data), 0) >= 0 {
-			continue
-		}
-		texts[f.Path] = string(data)
-	}
-	seen := map[string]bool{file: true}
-	queue := []string{file}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for p, text := range texts {
-			if seen[p] {
-				continue
-			}
-			base := filepath.Base(current)
-			stem := strings.TrimSuffix(base, filepath.Ext(base))
-			other := filepath.Base(p)
-			otherStem := strings.TrimSuffix(other, filepath.Ext(other))
-			linked := strings.Contains(text, base) || len(stem) > 2 && strings.Contains(text, stem) || strings.Contains(texts[current], other) || len(otherStem) > 2 && strings.Contains(texts[current], otherStem)
-			if linked {
-				seen[p] = true
-				queue = append(queue, p)
-			}
-		}
-	}
-	rules, err := globalRuleIDs(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range rules {
-		seen["rule:"+id] = true
-	}
-	for _, p := range extra {
-		if !strings.HasPrefix(p, "docs/specs/units/") && !strings.HasPrefix(p, "unit:") {
-			seen[p] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// TestEvidenceCorpusMatchesPerFileDerivation pins the work-sharing contract of
-// loadEvidenceCorpus: hoisting the repository expansion and corpus read out of
-// the per-file loop must not change any file's public evidence set, including
-// the corner cases — a quality file with a filtered-out extension (visible to
-// its own derivation, invisible to the others'), a NUL-byte file, and the
-// governance-tree exclusion.
-func TestEvidenceCorpusMatchesPerFileDerivation(t *testing.T) {
+// TestEvidenceCorpusDerivation pins the public evidence surface derivation:
+// the file itself, the files that reference it, and the files it references —
+// one hop in each direction, never a transitive closure. References are
+// identifier-level (case-folded name tokens or explicit path forms); data
+// files link only by path form; framework deployment artifacts and governance
+// files never participate; global rules always do.
+func TestEvidenceCorpusDerivation(t *testing.T) {
 	repoRoot := newRepo(t)
-	writeFile(t, repoRoot, "src/alpha.go", "package src\n\n// uses beta.go and the config.json surface.\n")
-	writeFile(t, repoRoot, "src/beta.go", "package src\n")
-	writeFile(t, repoRoot, "src/null.go", "package src\n\x00\n")
-	writeFile(t, repoRoot, "src/config.json", "{}\n")
+	writeFile(t, repoRoot, "src/logger.go", "package src\n\n// Logger writes logs.\n")
+	writeFile(t, repoRoot, "src/factory.go", "package src\n\nfunc NewLogger() {}\n")
+	writeFile(t, repoRoot, "src/service.ts", "export class Logger {}\n")
+	writeFile(t, repoRoot, "src/blogger.go", "package src\n\n// blogger prose only.\n")
+	writeFile(t, repoRoot, "src/model.go", "package src\n")
+	writeFile(t, repoRoot, "src/remodel.go", "package src\n\n// remodel process\n")
+	writeFile(t, repoRoot, "src/user_auth.go", "package src\n")
+	writeFile(t, repoRoot, "src/UserAuthService.ts", "export class UserAuthService {}\n")
+	writeFile(t, repoRoot, "src/user_authorization.go", "package src\n\n// user authorization\n")
+	writeFile(t, repoRoot, "src/config.json", "{\"logger\": true}\n")
+	writeFile(t, repoRoot, "src/loader.go", "package src\n\n// loads src/config.json\n")
+	writeFile(t, repoRoot, "src/v2.go", "package src\n")
+	writeFile(t, repoRoot, "src/pin.go", "package src\n\n// pins v2.go\n")
+	writeFile(t, repoRoot, "src/myv2.go", "package src\n\n// xv2.go in prose\n")
+	writeFile(t, repoRoot, "src/chain_a.go", "package src\n\n// uses chain_b.go\n")
+	writeFile(t, repoRoot, "src/chain_b.go", "package src\n\n// uses chain_c.go\n")
+	writeFile(t, repoRoot, "src/chain_c.go", "package src\n")
+	writeFile(t, repoRoot, "src/alpha.go", "package src\n")
 	writeFile(t, repoRoot, "notes/schema.txt", "schema notes referencing alpha\n")
+	writeFile(t, repoRoot, "src/null.go", "package src\n\x00\n")
+	writeFile(t, repoRoot, ".opencode/plugins/specflow.js", "// logger plugin\n")
+	writeFile(t, repoRoot, ".claude-plugin/plugin.json", "{\"logger\": true}\n")
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", "---\nid: auth\n---\n")
-	writeFile(t, repoRoot, "docs/specs/rules/stable/g_rule_tls.md", "---\nid: g_rule_tls\n---\n")
+	writeFile(t, repoRoot, "docs/specs/rules/stable/g_rule_tls.md", "---\nid: g_rule_tls\nscope: unit\n---\n")
 
-	files := []string{"src/alpha.go", "src/beta.go", "notes/schema.txt", "docs/specs/gone.md"}
 	derivation, err := NewDerivation(repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	corpus, err := derivation.loadEvidenceCorpus(files)
+	corpus, err := derivation.loadEvidenceCorpus([]string{"notes/schema.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	extra := []string{"tools/gen.py"}
-	for _, file := range files {
-		got := corpus.evidence(file, extra)
-		want := legacyCodeEvidence(t, repoRoot, file, extra)
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("evidence drift for %q:\n shared corpus: %v\n per-file:     %v", file, got, want)
+
+	cases := []struct {
+		file string
+		want []string
+	}{
+		// Case-folded name tokens: Logger, NewLogger and logger all reference
+		// logger.go; the blogger substring does not.
+		{"src/logger.go", []string{"rule:g_rule_tls", "src/factory.go", "src/logger.go", "src/service.ts", "tools/gen.py"}},
+		// "remodel" is not "model".
+		{"src/model.go", []string{"rule:g_rule_tls", "src/model.go", "tools/gen.py"}},
+		// Multi-token names match as contiguous identifier sequences.
+		{"src/user_auth.go", []string{"rule:g_rule_tls", "src/UserAuthService.ts", "src/user_auth.go", "tools/gen.py"}},
+		// A data file links by path form, in both directions.
+		{"src/config.json", []string{"rule:g_rule_tls", "src/config.json", "src/loader.go", "tools/gen.py"}},
+		// Short names match only by path form, at identifier boundaries;
+		// "xv2.go" in prose does not reference v2.go.
+		{"src/v2.go", []string{"rule:g_rule_tls", "src/pin.go", "src/v2.go", "tools/gen.py"}},
+		// No transitive closure: chain_c.go is not chain_a.go's evidence.
+		{"src/chain_a.go", []string{"rule:g_rule_tls", "src/chain_a.go", "src/chain_b.go", "tools/gen.py"}},
+		// A non-code target links only by path form; its prose mention of
+		// alpha stays local.
+		{"notes/schema.txt", []string{"notes/schema.txt", "rule:g_rule_tls", "tools/gen.py"}},
+		{"docs/specs/units/candidate/unit_auth.md", []string{"docs/specs/units/candidate/unit_auth.md", "rule:g_rule_tls", "tools/gen.py"}},
+	}
+	for _, tc := range cases {
+		got := corpus.evidence(tc.file, extra)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("evidence for %q:\n got: %v\nwant: %v", tc.file, got, tc.want)
 		}
 	}
 
-	// The NUL-byte file is excluded from the corpus: no derivation may see it.
-	for _, p := range corpus.evidence("src/alpha.go", nil) {
-		if p == "src/null.go" {
-			t.Fatalf("NUL-byte file leaked into evidence: %v", corpus.evidence("src/alpha.go", nil))
-		}
-	}
-	// The governance tree never participates in the corpus: no file's
-	// evidence may reach a governance file (the degenerate target-itself
-	// entry is the only allowed occurrence).
-	for _, file := range files {
+	// The NUL-byte file and the framework deployment artifacts are excluded
+	// from the corpus: no derivation may see them.
+	for _, file := range []string{"src/logger.go", "src/factory.go"} {
 		for _, p := range corpus.evidence(file, nil) {
-			if strings.HasPrefix(p, "docs/specs/") && p != file {
-				t.Fatalf("governance file %q leaked into evidence for %q", p, file)
+			if p == "src/null.go" || p == ".opencode/plugins/specflow.js" || p == ".claude-plugin/plugin.json" {
+				t.Fatalf("excluded file %q leaked into evidence for %q", p, file)
 			}
 		}
+	}
+	// Governance trees never participate in the corpus (the degenerate
+	// target-itself entry is the only allowed occurrence).
+	for _, tc := range cases {
+		for _, p := range corpus.evidence(tc.file, nil) {
+			if strings.HasPrefix(p, "docs/specs/") && p != tc.file {
+				t.Fatalf("governance file %q leaked into evidence for %q", p, tc.file)
+			}
+		}
+	}
+}
+
+// TestEvidenceSurfaceDump prints the derived public evidence surface of every
+// corpus file for a repository given in SPECFLOW_SURFACE_DUMP (a git worktree
+// root). It is a read-only inspection aid, not an assertion: run it on the
+// same checkout before and after a derivation-rule change and diff the log.
+//
+//	SPECFLOW_SURFACE_DUMP=/path/to/repo go test ./internal/gaterun -run TestEvidenceSurfaceDump -v
+func TestEvidenceSurfaceDump(t *testing.T) {
+	root := os.Getenv("SPECFLOW_SURFACE_DUMP")
+	if root == "" {
+		t.Skip("set SPECFLOW_SURFACE_DUMP to a git worktree root to dump evidence surfaces")
+	}
+	derivation, err := NewDerivation(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := derivation.loadEvidenceCorpus(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := make([]string, 0, len(corpus.entries))
+	for p := range corpus.entries {
+		files = append(files, p)
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		surface := corpus.evidence(file, nil)
+		t.Logf("%s (%d)\n  %s", file, len(surface), strings.Join(surface, "\n  "))
 	}
 }
