@@ -102,7 +102,7 @@ func runOperationClose(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	repoRoot := fs.String("repo-root", ".", "repository root")
 	opID := fs.String("id", "", "operation id")
-	abandon := fs.Bool("abandon", false, "end a violating operation explicitly, recording the abandoned outcome")
+	abandon := fs.Bool("abandon", false, "end a violating operation explicitly (prints the abandoned outcome; removes the state)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -286,7 +286,7 @@ func writeOperationUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --id ID           Operation id (required for check/close/update)")
-	fmt.Fprintln(w, "  --abandon         close: end a violating operation explicitly (records outcome abandoned)")
+	fmt.Fprintln(w, "  --abandon         close: end a violating operation explicitly (prints outcome abandoned; state removed)")
 	fmt.Fprintln(w, "  --unit NAME       Target unit (scope derived from its current-layer spec)")
 	fmt.Fprintln(w, "  --rule ID         Target rule (scope derived from its current-layer rule file)")
 	fmt.Fprintln(w, "  --allow PATH      Explicitly declared allowed path (repeatable)")

@@ -985,8 +985,10 @@ func TestTargetedInvalidationReachesPublicEvidenceFromOpenRun(t *testing.T) {
 	if err := runGateInvalidate([]string{"--repo-root", root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--check", key}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if source := mustLoadRun(t, root, id); source.Status != gaterun.StatusInvalidated {
-		t.Fatalf("source run remained usable: %s", source.Status)
+	// The invalidated source run's state is removed by the invalidation, so
+	// it can no longer be loaded.
+	if _, err := gaterun.Load(root, id); err == nil || !strings.Contains(err.Error(), "cannot read gate run") {
+		t.Fatalf("invalidated source run state must be removed, got %v", err)
 	}
 	if _, err := gaterun.LoadSessionStates(root, peer); err == nil || !strings.Contains(err.Error(), "invalidated") {
 		t.Fatalf("consumer kept contradicted public evidence: %v", err)

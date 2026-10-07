@@ -370,6 +370,11 @@ func grSubmitKeys(t *testing.T, repoRoot, runID string, keys []string, report st
 // grFinalize runs gate-finalize and returns its stdout and error.
 func grFinalize(t *testing.T, repoRoot, runID string, args ...string) (string, error) {
 	t.Helper()
+	// A missing run is returned as the helper's error, not a test abort: a
+	// concluded run is a legitimate expectation under test.
+	if _, err := gaterun.Load(repoRoot, runID); err != nil {
+		return "", err
+	}
 	grAutoSubmitQuality(t, repoRoot, runID)
 	var stdout, stderr bytes.Buffer
 	var supported []string
@@ -2975,11 +2980,13 @@ func TestGateRunConsumedRunCloses(t *testing.T) {
 	grSubmitValidateSessions(t, repoRoot, runID, main)
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
-	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil || !strings.Contains(err.Error(), "consumed") {
-		t.Fatalf("expected a consumed run to reject a second finalize, got %v", err)
+	// The finalize concluded the run by removing its state, so the run can no
+	// longer accept a second finalize or any submission.
+	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil || !strings.Contains(err.Error(), "cannot read gate run") {
+		t.Fatalf("expected a concluded run to reject a second finalize, got %v", err)
 	}
-	if _, err := grSubmit(t, repoRoot, runID, "cross", grCrossReport(main, "Description")); err == nil || !strings.Contains(err.Error(), "consumed") {
-		t.Fatalf("expected a consumed run to reject submissions, got %v", err)
+	if _, err := grSubmit(t, repoRoot, runID, "cross", grCrossReport(main, "Description")); err == nil || !strings.Contains(err.Error(), "cannot read gate run") {
+		t.Fatalf("expected a concluded run to reject submissions, got %v", err)
 	}
 }
 

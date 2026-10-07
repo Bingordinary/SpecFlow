@@ -2,6 +2,7 @@ package gaterun
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -949,12 +950,8 @@ func TestInvalidateTargetedMarksMatchingOpenRunOnly(t *testing.T) {
 	if strings.Join(result.InvalidatedRunIDs, ",") != validateRun.RunID {
 		t.Fatalf("invalidated runs = %v, want %s", result.InvalidatedRunIDs, validateRun.RunID)
 	}
-	loadedValidate, err := Load(repoRoot, validateRun.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loadedValidate.Status != StatusInvalidated {
-		t.Fatalf("matching run status = %q", loadedValidate.Status)
+	if _, err := Load(repoRoot, validateRun.RunID); err == nil || !os.IsNotExist(errors.Unwrap(err)) {
+		t.Fatalf("the invalidated run state must be removed, got %v", err)
 	}
 	loadedVerify, err := Load(repoRoot, verifyRun.RunID)
 	if err != nil {

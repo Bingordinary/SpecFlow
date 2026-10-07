@@ -211,8 +211,6 @@ func TestSweepReclaimsUnresumableOpenRun(t *testing.T) {
 	writeRetiredRunState(t, repoRoot, rejected, StatusOpen, map[string]judgments.Binding{
 		"code:bound.js": {Reference: bound, Layer: TargetCandidate, Source: "executed"},
 	})
-	// A finished rejected run is audit state, not a resumable plan.
-	writeRetiredRunState(t, repoRoot, "20260101-000000-a11d02", StatusConsumed, nil)
 
 	planned, err := PlanSweep(repoRoot)
 	if err != nil {
@@ -238,9 +236,6 @@ func TestSweepReclaimsUnresumableOpenRun(t *testing.T) {
 	if _, err := os.Stat(runDirPath(t, repoRoot, rejected)); !os.IsNotExist(err) {
 		t.Fatal("rejected open run survived the sweep")
 	}
-	if _, err := os.Stat(runDirPath(t, repoRoot, "20260101-000000-a11d02")); err != nil {
-		t.Fatalf("a finished rejected run was removed: %v", err)
-	}
 
 	// With the rejected run gone, nothing protects its stale record anymore:
 	// reclaiming the run terminates the GC-protected-forever leak.
@@ -253,6 +248,138 @@ func TestSweepReclaimsUnresumableOpenRun(t *testing.T) {
 	}
 	if _, err := judgments.Load(repoRoot, bound); err == nil {
 		t.Fatal("record freed by the reclaim survived collection")
+	}
+}
+
+// writeRunState rewrites a run's state file in place, staging a shape the
+// current commands no longer produce (a surviving terminal run).
+func writeRunState(t *testing.T, repoRoot string, run *Run) {
+	t.Helper()
+	if err := writeRun(repoRoot, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A terminal run's command removes its own state; a surviving consumed or
+// invalidated run is a crash leftover or a state written before that policy,
+// and the sweep is its migration path.
+func TestSweepRemovesFinishedLeftoversOnly(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	terminal := planOrFail(t, repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull)
+	terminal.Status = StatusConsumed
+	writeRunState(t, repoRoot, terminal)
+
+	planned, err := PlanSweep(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Audits) != 1 || planned.Audits[0].ID != terminal.RunID {
+		t.Fatalf("planned terminal leftovers = %+v, want only %s", planned.Audits, terminal.RunID)
+	}
+	if len(planned.Runs) != 0 {
+		t.Fatalf("a terminal run must never be reclaimed as an open run: %+v", planned.Runs)
+	}
+	if _, err := os.Stat(runDirPath(t, repoRoot, terminal.RunID)); err != nil {
+		t.Fatal("PlanSweep must not delete state")
+	}
+
+	result, err := SweepOrphanedState(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Audits) != 1 || result.Audits[0].ID != terminal.RunID {
+		t.Fatalf("sweep removed %+v, want the terminal leftover", result.Audits)
+	}
+	if _, err := os.Stat(runDirPath(t, repoRoot, terminal.RunID)); !os.IsNotExist(err) {
+		t.Fatal("terminal leftover survived the sweep")
+	}
+}
+
+// A terminal audit leftover is never selected by the open-run rule: the
+// open-run sweep reclaims only open state, so an unresumable-looking consumed
+// run takes the audit path, not the dead-target path.
+func TestSweepTerminalLeftoverIsNotAnOpenRun(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	leftoverID := "20260101-000000-abcdef"
+	writeLoadableRunState(t, repoRoot, leftoverID, "fixture-protocol", []CoverageKey{
+		{Key: "code:reused.js", Kind: SessionKindCode, Lens: LensQuality, Task: "task-0001", Unit: "auth"},
+	}, map[string]judgments.Binding{})
+	leftover, err := Load(repoRoot, leftoverID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leftover.Status = StatusInvalidated
+	writeRunState(t, repoRoot, leftover)
+
+	planned, err := PlanSweep(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Runs) != 0 {
+		t.Fatalf("an invalidated run must not be reclaimed as an open run: %+v", planned.Runs)
+	}
+	if len(planned.Audits) != 1 || planned.Audits[0].ID != leftoverID {
+		t.Fatalf("planned audits = %+v, want the invalidated leftover", planned.Audits)
+	}
+}
+
+// meta/ is the framework-owned disposable tree: an entry outside the declared
+// layout is a stray and every sweep point removes it. Declared directories,
+// the lock carrier, and declared content are never strays.
+func TestSweepRemovesUndeclaredMetaEntries(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	strayDir := filepath.Join(repoRoot, "meta", "missions")
+	strayFile := filepath.Join(repoRoot, "meta", "notes.txt")
+	lockCarrier := filepath.Join(repoRoot, "meta", ".gate_runs.lock")
+	declared := filepath.Join(repoRoot, "meta", "plan_inputs", "verify-auth.txt")
+	for _, dir := range []string{strayDir, filepath.Dir(declared)} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{strayFile, lockCarrier, declared} {
+		if err := os.WriteFile(file, []byte("x\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	planned, err := PlanSweep(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Strays) != 2 || planned.Strays[0] != "missions" || planned.Strays[1] != "notes.txt" {
+		t.Fatalf("planned strays = %v, want [missions notes.txt]", planned.Strays)
+	}
+	if len(planned.Inputs) != 1 || planned.Inputs[0] != "verify-auth.txt" {
+		t.Fatalf("plan inputs must stay on their own sweep rule, got %+v", planned.Inputs)
+	}
+
+	result, err := SweepOrphanedState(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Strays) != 2 {
+		t.Fatalf("sweep removed %+v, want the two strays", result.Strays)
+	}
+	for _, path := range []string{strayDir, strayFile} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stray %s survived the sweep", path)
+		}
+	}
+	if _, err := os.Stat(lockCarrier); err != nil {
+		t.Fatal("the lock carrier was swept")
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "meta", "operations")); err != nil && !os.IsNotExist(err) {
+		t.Fatal("a declared directory was swept")
+	}
+	if _, err := os.Stat(declared); !os.IsNotExist(err) {
+		t.Fatal("a consumed plan input must follow the input sweep, not the stray rule")
 	}
 }
 
@@ -446,5 +573,81 @@ func TestSweepKeepsRepairableSessionDamage(t *testing.T) {
 	}
 	if result, err := SweepOrphanedState(repoRoot); err != nil || len(result.Runs) != 0 {
 		t.Fatalf("repaired run must stay: %+v %v", result, err)
+	}
+}
+
+// Every deletion target of the sweep is resolved through the local-state
+// boundary: a plan-input or shared-task directory that is a link resolving
+// outside its declared state root fails the sweep closed before anything is
+// listed or deleted, instead of listing and deleting files at the link
+// target.
+func TestSweepRefusesEscapingStateDirs(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, repoRoot string) string // returns the link path to create
+	}{
+		{
+			name: "plan inputs",
+			setup: func(t *testing.T, repoRoot string) string {
+				t.Helper()
+				return filepath.Join(repoRoot, "meta", "plan_inputs")
+			},
+		},
+		{
+			name: "shared tasks",
+			setup: func(t *testing.T, repoRoot string) string {
+				t.Helper()
+				link := filepath.Join(repoRoot, "meta", "gate_runs", "shared")
+				if err := os.RemoveAll(link); err != nil {
+					t.Fatal(err)
+				}
+				return link
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := newRepo(t)
+			writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src/a.go", "")
+			writeFile(t, repoRoot, "src/a.go", "package a\n")
+			run := planOrFail(t, repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull)
+			if err := os.Remove(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_auth.md")); err != nil {
+				t.Fatal(err)
+			}
+
+			outside := t.TempDir()
+			keep := filepath.Join(outside, "keep.txt")
+			if err := os.WriteFile(keep, []byte("outside\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			link := tc.setup(t, repoRoot)
+			if err := os.Symlink(outside, link); err != nil {
+				t.Skipf("cannot create symlink: %v", err)
+			}
+
+			if _, err := PlanSweep(repoRoot); err == nil || !strings.Contains(err.Error(), "resolves outside") {
+				t.Fatalf("PlanSweep error = %v, want an escaping-path refusal", err)
+			}
+			if _, err := SweepOrphanedState(repoRoot); err == nil || !strings.Contains(err.Error(), "resolves outside") {
+				t.Fatalf("SweepOrphanedState error = %v, want an escaping-path refusal", err)
+			}
+			if _, err := os.Stat(runDirPath(t, repoRoot, run.RunID)); err != nil {
+				t.Fatal("the sweep deleted state despite the escaping link")
+			}
+			if _, err := os.Stat(keep); err != nil {
+				t.Fatal("the sweep deleted a file at the escaping link target")
+			}
+
+			// Control: without the link the same fixture is sweepable.
+			if err := os.Remove(link); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := SweepOrphanedState(repoRoot); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(runDirPath(t, repoRoot, run.RunID)); !os.IsNotExist(err) {
+				t.Fatal("the orphaned run survived the repaired sweep")
+			}
+		})
 	}
 }

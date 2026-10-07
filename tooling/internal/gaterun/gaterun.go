@@ -1126,11 +1126,16 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 	return divergences, nil
 }
 
-// Consume marks a run as finalized. The run state is kept for audit and is
-// replaced by the next Plan for the same tuple.
+// Consume concludes a finalized run: the cache is already published when
+// Consume returns, so the run's state — and with it the input snapshot and
+// the session transcripts — has no reader left. The terminal command removes
+// its own artifacts; nothing downstream ever reads a consumed run.
 func Consume(repoRoot string, run *Run) error {
 	run.Status = StatusConsumed
-	return writeRun(repoRoot, run)
+	if err := writeRun(repoRoot, run); err != nil {
+		return err
+	}
+	return Delete(repoRoot, run)
 }
 
 func invalidateOpenRunsFor(repoRoot, gate, targetKind, targetName, target string, checkKeys []string) ([]string, error) {
@@ -1143,9 +1148,11 @@ func invalidateOpenRunsFor(repoRoot, gate, targetKind, targetName, target string
 		if run.Status != StatusOpen || run.Gate != gate || run.TargetKind != targetKind || run.TargetName != targetName || run.Target != target {
 			continue
 		}
-		run.Status = StatusInvalidated
-		run.Notices = append(run.Notices, "targeted P0/P1 invalidated checks "+strings.Join(checkKeys, ", ")+" — plan a new run")
-		if err := writeRun(repoRoot, run); err != nil {
+		// The replaced run is a terminal state: the targeted P0/P1 has
+		// contradicted its evidence, no submission or finalize can proceed on
+		// it, and the recovery path is a fresh plan — so the invalidation
+		// removes the state instead of preserving a dead run for audit.
+		if err := Delete(repoRoot, run); err != nil {
 			return nil, err
 		}
 		ids = append(ids, run.RunID)

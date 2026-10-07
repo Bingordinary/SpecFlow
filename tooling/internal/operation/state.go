@@ -488,6 +488,91 @@ func OpenOperations(ops []*Operation) []*Operation {
 	return out
 }
 
+// closedState is one selectable closed operation state: the file name under
+// StateDir and the identity the file proved when loaded.
+type closedState struct {
+	file string
+	id   string
+}
+
+// scanClosedStates lists the operation state files that load as complete,
+// valid, closed operation states, in ReadDir's file-name order. Open states
+// are live state and are never selected; a file that does not load as a
+// complete, valid closed state is unprovable — unprovable state is never
+// acted on.
+func scanClosedStates(repoRoot string) ([]closedState, error) {
+	dir := filepath.Join(repoRoot, filepath.FromSlash(StateDir))
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read operation directory: %w", err)
+	}
+	var states []closedState
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		op, err := Load(repoRoot, strings.TrimSuffix(entry.Name(), ".json"))
+		if err != nil {
+			continue
+		}
+		if op.Status != StatusClosed {
+			continue
+		}
+		states = append(states, closedState{file: entry.Name(), id: op.OperationID})
+	}
+	return states, nil
+}
+
+// PlanClosedSweep reports the operation ids SweepClosed would remove, sorted,
+// without removing anything. It applies the sweep's exact selection rule
+// (scanClosedStates), so a preview and a sweep can never disagree about which
+// states are provably closed.
+func PlanClosedSweep(repoRoot string) ([]string, error) {
+	states, err := scanClosedStates(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(states))
+	for i, state := range states {
+		ids[i] = state.id
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// SweepClosed removes every closed operation state file and returns the swept
+// ids. Closed states are audit records this tooling never consumes again, so
+// their only lifecycle end is an explicit sweep. The sweep holds the
+// operation mutation lock, so a concurrent close or update cannot lose its
+// write to a state file that was just selected for removal. Selection is
+// scanClosedStates — the same rule PlanClosedSweep previews: open and
+// unprovable states stay, and the sweep removes exactly the file it selected.
+func SweepClosed(repoRoot string) ([]string, error) {
+	var swept []string
+	err := withMutation(repoRoot, func() error {
+		states, err := scanClosedStates(repoRoot)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Join(repoRoot, filepath.FromSlash(StateDir))
+		for _, state := range states {
+			if err := os.Remove(filepath.Join(dir, state.file)); err != nil {
+				return fmt.Errorf("remove closed operation %s: %w", state.id, err)
+			}
+			swept = append(swept, state.id)
+		}
+		return nil
+	})
+	if err != nil {
+		return swept, err
+	}
+	sort.Strings(swept)
+	return swept, nil
+}
+
 // newOperationID generates a new operation id in the same form as gate run
 // ids (UTC timestamp + random suffix).
 func newOperationID(now time.Time) (string, error) {

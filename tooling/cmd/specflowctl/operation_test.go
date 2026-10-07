@@ -129,12 +129,11 @@ func TestOperationCLIEndToEnd(t *testing.T) {
 		t.Fatalf("expected close confirmation, got:\n%s", stdout)
 	}
 
+	// The close is the operation's lifecycle end: the state file is gone, so
+	// status can no longer find it.
 	stdout, _, err = opRun("status", "--id", opID, "--repo-root", repoRoot)
-	if err != nil {
-		t.Fatalf("status failed: %v", err)
-	}
-	if !strings.Contains(stdout, "Status: closed") {
-		t.Fatalf("expected closed status, got:\n%s", stdout)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected the closed operation state to be removed, got %v\n%s", err, stdout)
 	}
 }
 
@@ -161,12 +160,10 @@ func TestOperationCLIAbandon(t *testing.T) {
 		t.Fatalf("expected an abandoned close with the violation report, got:\n%s", stdout)
 	}
 
+	// The abandoned close is terminal too: the state is removed.
 	stdout, _, err = opRun("status", "--id", opID, "--repo-root", repoRoot)
-	if err != nil {
-		t.Fatalf("status failed: %v", err)
-	}
-	if !strings.Contains(stdout, "Close outcome: abandoned") {
-		t.Fatalf("expected the abandoned outcome in status, got:\n%s", stdout)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected the abandoned operation state to be removed, got %v\n%s", err, stdout)
 	}
 }
 

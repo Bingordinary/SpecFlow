@@ -2,6 +2,7 @@ package gaterun
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -729,7 +730,7 @@ func TestExtraInputs(t *testing.T) {
 	}
 }
 
-func TestConsumeDeleteAndLoad(t *testing.T) {
+func TestConsumeRemovesRunState(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
@@ -740,18 +741,13 @@ func TestConsumeDeleteAndLoad(t *testing.T) {
 	if err := Consume(repoRoot, run); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := Load(repoRoot, run.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Status != StatusConsumed {
-		t.Fatalf("expected consumed status, got %q", loaded.Status)
-	}
-	if _, err := Compare(repoRoot, loaded); err == nil {
-		t.Fatal("expected a consumed run to be rejected by Compare")
+	// Consume concludes the run: the terminal command removes its own state,
+	// so nothing downstream can load a consumed run on disk.
+	if _, err := Load(repoRoot, run.RunID); err == nil || !os.IsNotExist(errors.Unwrap(err)) {
+		t.Fatalf("expected a consumed run state to be gone, got %v", err)
 	}
 	if err := Delete(repoRoot, run); err != nil {
-		t.Fatal(err)
+		t.Fatalf("deleting a consumed run's directory must be a no-op: %v", err)
 	}
 	if _, err := Load(repoRoot, run.RunID); err == nil {
 		t.Fatal("expected the deleted run to be gone")

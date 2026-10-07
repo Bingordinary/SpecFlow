@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -524,7 +525,7 @@ func TestLoadRejectsSpecDerivedPathReplacedByExternalSymlink(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsUnknownParent(t *testing.T) {
+func TestOpenRejectsMalformedParent(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
@@ -544,6 +545,33 @@ func TestOpenRecordsParent(t *testing.T) {
 	child := mustOpen(t, repoRoot, OpenOptions{Unit: "demo", Allow: []string{"scripts/eval"}, Parent: parent.Operation.OperationID})
 	if child.Operation.ParentOperation != parent.Operation.OperationID {
 		t.Fatalf("parent = %q, want %q", child.Operation.ParentOperation, parent.Operation.OperationID)
+	}
+}
+
+// TestOpenAcceptsSweptParent covers the documented re-authorization flow
+// across the closed-state lifecycle: the predecessor is ended and may be
+// swept by `specflowctl clean` before the successor opens. The link is
+// declared lineage, so the predecessor state is not required to exist.
+func TestOpenAcceptsSweptParent(t *testing.T) {
+	repoRoot := newGitRepo(t)
+	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
+	commitAll(t, repoRoot, "fixture")
+
+	parent := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	if _, err := Close(repoRoot, parent.OperationID, false, testNow()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SweepClosed(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+	sweptPath := filepath.Join(repoRoot, filepath.FromSlash(StateDir), parent.OperationID+".json")
+	if _, err := os.Stat(sweptPath); !os.IsNotExist(err) {
+		t.Fatal("predecessor state survived the sweep; the swept case is not covered")
+	}
+
+	child := mustOpen(t, repoRoot, OpenOptions{Unit: "demo", Parent: parent.OperationID})
+	if child.Operation.ParentOperation != parent.OperationID {
+		t.Fatalf("parent = %q, want %q", child.Operation.ParentOperation, parent.OperationID)
 	}
 }
 
@@ -1086,15 +1114,10 @@ func TestCloseFailClosedThenPass(t *testing.T) {
 	if report.Result != "PASS" {
 		t.Fatalf("result = %s, want PASS", report.Result)
 	}
-	reloaded, err = Load(repoRoot, op.OperationID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.Status != StatusClosed || reloaded.ClosedAt == "" {
-		t.Fatalf("status = %s closed_at = %q, want closed with timestamp", reloaded.Status, reloaded.ClosedAt)
-	}
-	if reloaded.CloseOutcome != CloseOutcomePassed {
-		t.Fatalf("close outcome = %q, want %q", reloaded.CloseOutcome, CloseOutcomePassed)
+	// The close is the lifecycle end: the state file is removed, so the
+	// operation can no longer be loaded, updated, or closed again.
+	if _, err := Load(repoRoot, op.OperationID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected the closed operation state to be removed, got %v", err)
 	}
 
 	if _, err := Update(repoRoot, op.OperationID, UpdateOptions{Allow: []string{"scripts/x"}, HasAllow: true}, testNow()); err == nil {
@@ -1119,17 +1142,13 @@ func TestCloseAbandonEndsViolatingOperation(t *testing.T) {
 	if report.Result != "FAIL" || !contains(report.OutOfScope, "core/runtime/x.go") {
 		t.Fatalf("abandon must still surface the violation report: %+v", report)
 	}
-
-	reloaded, err := Load(repoRoot, op.OperationID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.Status != StatusClosed || reloaded.CloseOutcome != CloseOutcomeAbandoned {
-		t.Fatalf("status = %s outcome = %q, want closed/abandoned", reloaded.Status, reloaded.CloseOutcome)
+	// The abandoned close is terminal too: the state is removed.
+	if _, err := Load(repoRoot, op.OperationID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected the abandoned operation state to be removed, got %v", err)
 	}
 }
 
-func TestCheckOnClosedOperationStillEvaluates(t *testing.T) {
+func TestCheckOnClosedOperationIsGone(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
@@ -1139,9 +1158,8 @@ func TestCheckOnClosedOperationStillEvaluates(t *testing.T) {
 	}
 
 	writeFile(t, repoRoot, "core/x.go", "package core\n")
-	report := mustCheck(t, repoRoot, op.OperationID)
-	if report.Result != "FAIL" {
-		t.Fatalf("result = %s, want FAIL (read-only historical evaluation)", report.Result)
+	if _, err := Check(repoRoot, op.OperationID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected a closed operation to be gone, got %v", err)
 	}
 }
 
@@ -1196,8 +1214,10 @@ func TestListAndOpenOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 2 {
-		t.Fatalf("list = %d operations, want 2", len(all))
+	// The closed operation's state was removed by its own close, so the list
+	// holds only the open one.
+	if len(all) != 1 {
+		t.Fatalf("list = %d operations, want 1", len(all))
 	}
 	open := OpenOperations(all)
 	if len(open) != 1 || open[0].OperationID != first.OperationID {
@@ -1273,4 +1293,99 @@ func TestMutationsSerializeOnRepositoryLock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSweepClosedRemovesClosedStatesOnly(t *testing.T) {
+	repoRoot := newGitRepo(t)
+	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
+	commitAll(t, repoRoot, "fixture")
+
+	// The close command removes its own state, so surviving closed states are
+	// leftovers from an older tooling version that persisted them. Stage both
+	// outcomes the way those leftovers look on disk.
+	passed := writeClosedState(t, repoRoot, "demo", CloseOutcomePassed)
+	abandoned := writeClosedState(t, repoRoot, "demo", CloseOutcomeAbandoned)
+	open := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+
+	// Unprovable state is never deleted: a malformed state file and a
+	// "closed" file missing its closed-only fields both stay.
+	stateDir := filepath.Join(repoRoot, filepath.FromSlash(StateDir))
+	malformed := filepath.Join(stateDir, "20260101-000000-aaaaaa.json")
+	if err := os.WriteFile(malformed, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	notActuallyClosed := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	notActuallyClosed.Status = StatusClosed
+	data, err := json.MarshalIndent(notActuallyClosed, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedPath, err := statePath(repoRoot, notActuallyClosed.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(closedPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{abandoned, passed}
+	sort.Strings(want)
+
+	// The preview applies the sweep's exact selection: the same two provable
+	// closed states, none of the open or unprovable ones, and nothing
+	// deleted yet.
+	planned, err := PlanClosedSweep(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned) != len(want) || planned[0] != want[0] || planned[1] != want[1] {
+		t.Fatalf("planned = %v, want %v", planned, want)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, passed+".json")); err != nil {
+		t.Fatal("PlanClosedSweep deleted state")
+	}
+
+	swept, err := SweepClosed(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(swept) != len(want) || swept[0] != want[0] || swept[1] != want[1] {
+		t.Fatalf("swept = %v, want %v", swept, want)
+	}
+	for _, id := range want {
+		if _, err := os.Stat(filepath.Join(stateDir, id+".json")); !os.IsNotExist(err) {
+			t.Fatalf("closed operation %s was not removed", id)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, open.OperationID+".json")); err != nil {
+		t.Fatal("SweepClosed removed an open operation")
+	}
+	if _, err := os.Stat(malformed); err != nil {
+		t.Fatal("SweepClosed removed a malformed state file")
+	}
+	if _, err := os.Stat(closedPath); err != nil {
+		t.Fatal("SweepClosed removed a malformed closed state file")
+	}
+}
+
+// writeClosedState stages a valid closed operation state on disk — the shape
+// a leftover from an older tooling version takes — and returns its id.
+func writeClosedState(t *testing.T, repoRoot, unit, outcome string) string {
+	t.Helper()
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: unit}).Operation
+	op.Status = StatusClosed
+	op.CloseOutcome = outcome
+	op.ClosedAt = op.UpdatedAt
+	data, err := json.MarshalIndent(op, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := statePath(repoRoot, op.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return op.OperationID
 }

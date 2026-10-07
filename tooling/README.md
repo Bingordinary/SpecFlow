@@ -132,7 +132,7 @@ The state object's exact fields (this table is the schema contract for `operatio
 | `baseline` | object | `{ref, sha, recorded_at}` — `ref` is the requested ref (non-empty); `sha` is the resolved full lowercase commit id (40 or 64 hex); `recorded_at` is UTC `YYYY-MM-DDTHH:MM:SSZ` and not after `opened_at` |
 | `allowed_paths` | array | non-empty, sorted by `path`, no duplicates; each `{path, source}` — `path` is a canonical repository-relative path that resolves inside the repository; `source` is `spec:file` (must match the target's spec path), `spec:implementation_surface` / `spec:affects.files` (unit targets only), or `declared` |
 | `required_spec_paths` | array | canonical candidate spec paths (see Required spec paths), unique and sorted |
-| `parent_operation` | string, optional | id of the predecessor operation; must not equal `operation_id` |
+| `parent_operation` | string, optional | id of the predecessor operation recorded as declared lineage; must not equal `operation_id`; only the id form is validated — the predecessor state is not required to exist (a closed predecessor may have been swept) |
 | `opened_at` / `updated_at` | string | UTC `YYYY-MM-DDTHH:MM:SSZ`; `updated_at` must not be before `opened_at` |
 | `closed_at` | string, optional | required on `closed`; must equal `updated_at` and not be before `opened_at`; forbidden on `open` |
 | `close_outcome` | string, optional | `passed` or `abandoned`; required on `closed`; forbidden on `open` |
@@ -144,7 +144,7 @@ Unknown JSON fields and trailing JSON values are rejected, so every field a stat
 |---|---|
 | `operation open` | Declare an operation: resolve the scope sources, freeze the allowed scope, record the baseline commit, write the state file. Prints the operation id. |
 | `operation check` | Read-only evaluation of the frozen scope against the current change set. Exit code 1 when the result is `FAIL`. |
-| `operation close` | The same evaluation as `check`; marks the operation `closed` only on `PASS`. On `FAIL` it refuses the close and leaves the state unchanged (exit code 1). With `--abandon`, a violating operation is ended explicitly: the state records the `abandoned` close outcome and the violation report is printed — an operation is never silently passed, but it is also never a trap. |
+| `operation close` | The same evaluation as `check`; on `PASS` ends the operation and removes its state. On `FAIL` it refuses the close and leaves the state unchanged (exit code 1). With `--abandon`, a violating operation is ended explicitly: the state is removed and the `abandoned` close outcome is printed with the violation report — an operation is never silently passed, but it is also never a trap. |
 | `operation update` | Add caller-declared scope and/or required spec paths to the frozen values, recording the resulting union as an update event. Only while the operation is open; an update never removes an existing path. |
 | `operation status` | Read-only listing of open operations, or detail for one `--id`. |
 
@@ -168,11 +168,13 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
 
 **Matching.** Every entry is a path scope, not a file snapshot: a changed path is in scope when it equals the entry or starts with `entry + "/"`. Directory entries therefore cover files created during the operation. There is no glob support.
 
-**Result.** `PASS` requires all three lists empty: out-of-scope changed paths, static-policy violations, and missing required spec paths. On `FAIL` the caller must resolve the violation by one of: reverting the out-of-scope changes; ending the current operation with `operation close --abandon` (the state records the `abandoned` outcome) and opening a new user-authorized operation for the newly authorized target (`--parent` records the lineage); or widening the scope through `operation update` after explicit user approval. Whether that approval happened is declared by the caller — the tooling records the update and cannot verify authorization.
+**Result.** `PASS` requires all three lists empty: out-of-scope changed paths, static-policy violations, and missing required spec paths. On `FAIL` the caller must resolve the violation by one of: reverting the out-of-scope changes; ending the current operation with `operation close --abandon` (the close prints the `abandoned` outcome and removes the state) and opening a new user-authorized operation for the newly authorized target (`--parent` records the lineage); or widening the scope through `operation update` after explicit user approval. Whether that approval happened is declared by the caller — the tooling records the update and cannot verify authorization.
 
 **Concurrency and attribution.** The comparison is a mechanical baseline diff over the shared working tree. When other sessions or processes change the same working tree, `operation check` cannot attribute a change to an author, and it deliberately does not guess: every out-of-scope path is reported conservatively. For reliable attribution, run the operation in a dedicated `git worktree` — operation state is per working tree (`meta/` is local), and the baseline is that worktree's commit.
 
-**Fail closed.** A missing git repository, a missing operation, a missing baseline commit, a malformed state file, an invalid or mismatched operation id, an operation-state path outside `meta/operations/`, a scope path that currently resolves outside the repository, or a git error makes `check`/`close` fail with exit code 1. `check` never modifies project files; `close` changes only its own validated state file (`status`, `close_outcome`, and timestamps).
+**Fail closed.** A missing git repository, a missing operation, a missing baseline commit, a malformed state file, an invalid or mismatched operation id, an operation-state path outside `meta/operations/`, a scope path that currently resolves outside the repository, or a git error makes `check`/`close` fail with exit code 1. `check` never modifies project files; `close` removes only its own validated state file.
+
+**Closed-state lifecycle.** The close command is the operation's lifecycle end: a successful close removes the operation state, and a crash during the close simply leaves the operation open — its state was never rewritten — so the close can be re-run. The only surviving closed states come from an older tooling version that persisted them; `specflowctl clean` sweeps them, previewing the removal with `--dry-run` and holding the operation mutation lock so a concurrent close or update cannot lose its write to a file selected for removal. Open states are live state and are never swept, and a state that does not load as a complete, valid state is unprovable and stays.
 
 ## Current Command Surface
 
@@ -243,7 +245,7 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
     - corresponds to the tooled cache write of every complete-coverage quality-gate run (see `framework/commands.md` and `framework/validation_cache.md` §Write Rules → Tooled writes)
   16. `gate-invalidate`
     - `gate-invalidate --gate validate|verify (--unit NAME | --rule ID) --target candidate|stable --check CHECK_KEY [--check CHECK_KEY]...`: record a targeted P0/P1 without publishing a targeted result cache
-    - under the gate-run mutation lock, deletes a matching pass cache or persists sorted, duplicate-free `invalidated_checks` on a matching failure record; also marks matching open gate runs `invalidated`, so an earlier plan cannot later overwrite the targeted finding. Verify invalidates selected immutable judgments and their consumers without deleting history. Acceptance-item ids normalize to `item:<unit>:<item>` and select the requested spec context's current decision even without a cache; different candidate and stable contexts stay independent
+    - under the gate-run mutation lock, deletes a matching pass cache or persists sorted, duplicate-free `invalidated_checks` on a matching failure record; also removes matching open gate runs, so an earlier plan cannot later overwrite the targeted finding. Verify invalidates selected immutable judgments and their consumers without deleting history. Acceptance-item ids normalize to `item:<unit>:<item>` and select the requested spec context's current decision even without a cache; different candidate and stable contexts stay independent
     - repair reads the persisted keys automatically. An unmappable key degrades to the full coverage set; successful finalize clears the handled invalidations, while rejected finalize leaves the failure record unchanged
   18. `promote`
    - unit publication and `validate candidate` share the required-frontmatter check: `id`, `unit_refs` and `rule_refs` must be non-empty, `id` must match the requested unit, and `status` must be absent or `active`. Missing fields and identity mismatches reject before publication writes; the tool never fills missing references or changes the id.
@@ -275,17 +277,35 @@ Renames are deliberately decomposed into delete + add (`--no-renames`) so both p
     - declare a bounded change scope and freeze it (see §Operation scope): `operation open (--unit NAME | --rule ID)? [--allow PATH]... [--require-spec PATH]... [--baseline REF] [--parent OP_ID]`
     - resolves the spec-derived scope (target spec files, `implementation_surface`, `affects.files`) plus the caller-declared `--allow` entries, rejects entries inside denied write zones or the exclusions, records the resolved baseline commit, writes `meta/operations/<operation_id>.json`, prints the operation id and the frozen scope, and prints an informational notice when the working tree already contains changes outside the declared scope
     - a path-only operation (no `--unit`/`--rule`) requires at least one `--allow` entry; `--unit`/`--rule` are mutually exclusive
+    - `--parent OP_ID` records the predecessor's id as declared lineage and validates the id form only, so a predecessor state already swept by `clean` does not block the re-authorization link
   28. `operation check --id OP_ID`
     - read-only evaluation of the frozen scope against the change set since the baseline: reports out-of-scope paths, static-policy violations, missing required spec paths, and the `PASS`/`FAIL` result; exit code 1 on `FAIL` or on any fail-closed error (missing operation, missing baseline commit, git error)
   29. `operation close --id OP_ID [--abandon]`
-    - runs the same evaluation; on `PASS` marks the operation `closed` and records `closed_at` with close outcome `passed`; on `FAIL` refuses (exit code 1) and leaves the state unchanged, unless `--abandon` is given — then the operation is ended explicitly, the close outcome `abandoned` is recorded, and the violation report is printed (exit code 0)
+    - runs the same evaluation; on `PASS` ends the operation and removes its state, printing the close outcome `passed`; on `FAIL` refuses (exit code 1) and leaves the state unchanged, unless `--abandon` is given — then the operation is ended explicitly, printing the close outcome `abandoned` with the violation report, and the state is removed (exit code 0)
   30. `operation update --id OP_ID [--allow PATH]... [--require-spec PATH]...`
     - adds caller-declared allowed paths and/or required spec paths to the frozen values while the operation is open, records the resulting union as an update event, and keeps the spec-derived part unchanged; it never removes an existing path and rejects a closed operation, a denied/excluded entry, or an update with neither flag
   31. `operation status [--id OP_ID]`
     - read-only: without `--id`, lists every open operation (id, target, baseline, opened_at); with `--id`, prints the full frozen scope, required spec paths, status, and update history
   32. `clean [--dry-run] [--repo-root PATH]`
-    - remove orphaned local gate state: run directories whose target spec no longer exists, shared task files no surviving run references, and the scratch input manifests under `meta/plan_inputs/`. The orphan sweep (runs and shared tasks) also runs automatically after `gate-plan` and after a successful `promote` or `remove`; only `clean` clears the plan input manifests (see `framework/verification_scope.md` §Input roles)
+    - remove disposable local state: run directories whose target spec no longer exists or whose open state can no longer resume, terminal run leftovers (a concluded run removes its own state; a surviving consumed or invalidated run is a crash leftover or pre-policy state), shared task files no surviving run references, the consumed scratch input manifests under `meta/plan_inputs/`, undeclared entries under `meta/` (strays — the framework-owned tree holds only the declared layout), and closed operation states under `meta/operations/` (whose normal lifecycle ends in the close command itself). The same sweep also runs automatically after `gate-plan` and after a successful `promote` or `remove`; `clean` adds the closed-operation sweep (see `framework/verification_scope.md` §Input roles and `framework/validation_cache.md` §Run lifecycle)
     - `--dry-run` previews the same plan and deletes nothing. Committed caches, judgment records, review run-state, and lock files are never touched. See `framework/validation_cache.md` §Run lifecycle
+
+## Local State Lifecycle
+
+`meta/` is the framework-owned disposable tree for machine-local state. It holds only work in progress: every state ends when the command that concluded it runs, and the sweep reclaims crash leftovers, unconsumed scratch, and undeclared entries. `docs/specs/meta/` (validation caches, baselines, judgment records) is durable, version-controlled project state and is never swept.
+
+| Entry under `meta/` | Content | Lifecycle end |
+|---|---|---|
+| `gate_runs/<run_id>/` (open) | Immutable input snapshot, coverage set, session states | Removed by `gate-finalize` on success or by `gate-invalidate`; replaced by the next `gate-plan` for the same (gate, target, layer); swept when the target spec is gone or the run can no longer resume |
+| `gate_runs/<run_id>/` (terminal) | Concluded run | Removed by the concluding command; a surviving consumed or invalidated run is a crash leftover or pre-policy state and is swept at every sweep point |
+| `gate_runs/shared/*.json` | Cross-run public task records | Removed when no surviving run references the task |
+| `plan_inputs/` | Scratch `--inputs-file` manifests | Consumed once by `gate-plan`; the sweep clears the directory at every sweep point |
+| `operations/<id>.json` | Frozen operation scope | Removed by `operation close` (passed or abandoned); a surviving closed state is swept by `clean` |
+| `governance_review/` | Review run-state (full-scope and design reviews) | Owned by the review flows: `review run-init` deletes a closed state or an open state older than seven days before starting a new run |
+| Anything else | Undeclared entry (misplaced working file, editor artifact) | Removed as a stray at every sweep point; hidden entries and the lock files (`.gate_runs.lock`, `.operations.lock`) are preserved |
+| Undecodable or unprovable state | State that does not load as a complete, valid state | Never deleted — unprovable state is never acted on |
+
+Sweep points: after `gate-plan`, after a successful `promote` or `remove`, and on demand through `specflowctl clean` (`--dry-run` previews). Do not store personal files under `meta/`: it is disposable by contract — use `.tmp/` or a path outside the repository.
 
 ## Review Run-State Commands
 

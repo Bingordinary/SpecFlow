@@ -93,8 +93,10 @@ func TestGateInvalidatePreventsOlderRunFromFinalizing(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Invalidated open gate run(s): "+runID) {
 		t.Fatalf("open-run invalidation was not disclosed: %s", stdout.String())
 	}
-	if _, err := grFinalize(t, repoRoot, runID); err == nil || !strings.Contains(err.Error(), "invalidated") {
-		t.Fatalf("expected older finalize to be rejected as invalidated, got %v", err)
+	// The invalidated run's state is removed by the invalidation itself, so an
+	// older finalize can no longer load it.
+	if _, err := grFinalize(t, repoRoot, runID); err == nil || !strings.Contains(err.Error(), "cannot read gate run") {
+		t.Fatalf("expected older finalize to fail on the removed run, got %v", err)
 	}
 }
 

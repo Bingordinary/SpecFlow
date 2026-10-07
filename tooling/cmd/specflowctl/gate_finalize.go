@@ -294,7 +294,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	}
 
 	if err := gaterun.Consume(absRoot, run); err != nil {
-		return fmt.Errorf("%v — the cache at %s was written and is valid, but the run state could not be marked consumed", err, relToRepo(absRoot, writtenPath))
+		return fmt.Errorf("%v — the cache at %s was written and is valid, but the run state could not be concluded and removed", err, relToRepo(absRoot, writtenPath))
 	}
 
 	fmt.Fprintf(stdout, "Cache written: %s\n", relToRepo(absRoot, writtenPath))

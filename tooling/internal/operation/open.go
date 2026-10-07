@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
@@ -85,9 +86,15 @@ func Open(repoRoot string, opts OpenOptions, now time.Time) (*OpenResult, error)
 		return nil, err
 	}
 
+	// The parent link is declared lineage, like the authorization it records:
+	// only the id form is validated, and the predecessor's state file is not
+	// required to exist. A closed predecessor may be swept by
+	// `specflowctl clean` before its successor is opened (see
+	// tooling/README.md §Operation scope, Closed-state lifecycle), so an
+	// existence check would break the documented re-authorization flow.
 	parent := strings.TrimSpace(opts.Parent)
 	if parent != "" {
-		if _, err := Load(absRoot, parent); err != nil {
+		if err := localstate.ValidateID(parent); err != nil {
 			return nil, fmt.Errorf("parent operation: %w", err)
 		}
 	}
