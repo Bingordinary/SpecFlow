@@ -1118,9 +1118,6 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 			return err
 		}
 		layer, source := run.Target, "executed"
-		if ck.Kind == gaterun.SessionKindPreserve {
-			layer = gaterun.TargetStable
-		}
 		if bound {
 			source = binding.Source
 		}
@@ -1179,8 +1176,8 @@ func finalizedKeyResult(ck gaterun.CoverageKey, original *gaterun.SessionResult,
 	status := outcome.EffectiveStatus[ck.Key]
 	verdict := original.Verdicts[ck.Key]
 	if gaterun.IsItemKind(ck.Kind) {
-		// Passing an advisory gate does not prove an indeterminate requirement.
-		// Preserve consumers still need the original alignment verdict.
+		// Passing an advisory gate does not prove an indeterminate requirement:
+		// keep the original alignment verdict.
 		if status == "pass" && verdict != "CANNOT_DETERMINE" {
 			verdict = "ALIGNED"
 		} else if verdict != "CANNOT_DETERMINE" {

@@ -249,3 +249,45 @@ func TestExtractAcceptanceFields_ItemRelativeIndent(t *testing.T) {
 		})
 	}
 }
+
+const extractionEvidenceSpec = `---
+id: demo
+unit_refs: none
+rule_refs: none
+---
+acceptance_item_set:
+  - id: demo.core
+    description: Demo behavior.
+    verification_type: auto
+    verification_surface: internal_flow
+    implementation_surface: internal/demo
+    verification_method: check
+    pass_condition: ok
+    runnable: yes
+    affects:
+      files:
+        - internal/demo/handler.go
+      evidence_files:
+        - internal/demo/handler_test.go
+        - internal/peer/peer_test.go
+  - id: demo.aux
+    description: Aux behavior.
+    verification_type: auto
+    verification_surface: internal_flow
+    implementation_surface: <pending>
+    verification_method: check
+    pass_condition: ok
+    runnable: yes
+`
+
+func TestExtractAffectsEvidenceFiles(t *testing.T) {
+	got := ExtractAffectsEvidenceFiles(extractionEvidenceSpec)
+	want := []string{"internal/demo/handler_test.go", "internal/peer/peer_test.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	// Evidence files never leak into the implementation declaration list.
+	if got, want := ExtractAffectsFiles(extractionEvidenceSpec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected affects.files %v, got %v", want, got)
+	}
+}

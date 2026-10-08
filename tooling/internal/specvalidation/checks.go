@@ -142,6 +142,9 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	if len(missingFiles) > 0 {
 		problems = append(problems, fmt.Sprintf("affects.files paths not found: %s", strings.Join(missingFiles, ", ")))
 	}
+	for _, evidenceProblem := range CheckEvidenceFiles(repoRoot, content) {
+		problems = append(problems, evidenceProblem.String())
+	}
 
 	if len(problems) > 0 {
 		return CheckResult{
@@ -151,18 +154,19 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 		}
 	}
 
-	if len(anchorFiles) == 0 {
+	evidenceCount := len(ExtractAffectsEvidenceFiles(content))
+	if len(anchorFiles) == 0 && evidenceCount == 0 {
 		return CheckResult{
 			Name:    "Anchor integrity",
 			Status:  Pass,
-			Details: "no affects.files entries to check; implementation_surface values resolve",
+			Details: "no affects.files or affects.evidence_files entries to check; implementation_surface values resolve",
 		}
 	}
 
 	return CheckResult{
 		Name:    "Anchor integrity",
 		Status:  Pass,
-		Details: fmt.Sprintf("%d affects.files path(s) exist; implementation_surface values resolve", len(anchorFiles)),
+		Details: fmt.Sprintf("%d affects.files path(s) and %d evidence file(s) exist; implementation_surface values resolve", len(anchorFiles), evidenceCount),
 	}
 }
 

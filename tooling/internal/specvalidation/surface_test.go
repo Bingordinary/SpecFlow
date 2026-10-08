@@ -270,3 +270,46 @@ func TestCheckAnchors_ResolvableSurfaceAndMissingAnchorFail(t *testing.T) {
 		t.Fatalf("resolvable implementation_surface must not be reported: %s", result.Details)
 	}
 }
+
+// evidenceFilesSpec builds a candidate spec whose single acceptance item
+// declares the given affects.evidence_files values.
+func evidenceFilesSpec(values ...string) string {
+	content := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n" +
+		"acceptance_item_set:\n" +
+		"  - id: item_1\n    description: test\n    verification_type: testable\n" +
+		"    verification_surface: src/\n    implementation_surface: <pending>\n" +
+		"    verification_method: check\n    pass_condition: ok\n    runnable: yes\n" +
+		"    affects:\n      evidence_files:\n"
+	for _, value := range values {
+		content += fmt.Sprintf("        - %s\n", value)
+	}
+	return content
+}
+
+func TestCheckEvidenceFiles_ResolvableFilePasses(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/peer/peer_test.go", "package peer\n")
+
+	problems := CheckEvidenceFiles(repoRoot, evidenceFilesSpec("internal/peer/peer_test.go"))
+	if len(problems) != 0 {
+		t.Fatalf("expected a resolvable evidence file to pass, got %v", problems)
+	}
+}
+
+func TestCheckEvidenceFiles_MissingDirectoryAndPendingFail(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/peer/a.go", "package peer\n")
+
+	problems := CheckEvidenceFiles(repoRoot, evidenceFilesSpec("internal/missing_test.go", "internal/peer", "<pending>"))
+	if len(problems) != 3 {
+		t.Fatalf("expected three problems, got %v", problems)
+	}
+	for _, p := range problems {
+		if p.Field != "affects.evidence_files" {
+			t.Fatalf("problem field = %q, want affects.evidence_files (%v)", p.Field, problems)
+		}
+	}
+	mustSurfaceReason(t, problems, "item_1", "path does not exist")
+	mustSurfaceReason(t, problems, "item_1", "single file")
+	mustSurfaceReason(t, problems, "item_1", "<pending> placeholder does not apply")
+}

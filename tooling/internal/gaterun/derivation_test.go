@@ -3,9 +3,9 @@ package gaterun
 import "testing"
 
 // TestDerivationSharesAuditAndExpansions pins the invocation-sharing
-// contract: deriving several units through one Derivation computes the
-// repo-wide surface audit once and expands D distinct directories once,
-// instead of repeating the audit and its per-declaration expansions per unit.
+// contract: deriving several units through one Derivation expands
+// D distinct directories once instead of repeating the per-declaration
+// expansions per unit.
 func TestDerivationSharesAuditAndExpansions(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "src/alpha.go", "package src\n")
@@ -26,12 +26,5 @@ func TestDerivationSharesAuditAndExpansions(t *testing.T) {
 	// not multiply either.
 	if got := d.expander.Expansions(); got != 2 {
 		t.Fatalf("two units declaring D=1 directory must expand D+corpus times, got %d", got)
-	}
-	if !d.auditDone {
-		t.Fatal("the derivation must have computed the repo-wide surface audit")
-	}
-	audit, err := d.surfaceAudit()
-	if err != nil || audit != d.audit {
-		t.Fatalf("surfaceAudit must memoize its report, got %+v, %v", audit, err)
 	}
 }

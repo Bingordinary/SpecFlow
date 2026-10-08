@@ -3904,3 +3904,41 @@ func writeCacheFixture(t *testing.T, root, kind, name string, w CacheWrite) (str
 	}
 	return p, writeCacheFixtureFile(t, p, data, 0644)
 }
+
+// TestBuildEntryResolvesSubsectionDeclarationToEnclosingSection pins issue
+// #64's normalization: a dependency-scope declaration that cites a uniquely
+// named ### subsection records the enclosing ## section region's dep — the
+// same dep the ## heading itself records — and an ambiguous subsection still
+// fails closed.
+func TestBuildEntryResolvesSubsectionDeclarationToEnclosingSection(t *testing.T) {
+	repoRoot := t.TempDir()
+	specPath := writeSpecWithSections(t, repoRoot, "self", "Prose.")
+	content := string(mustRead(t, specPath))
+	content = strings.Replace(content, "Prose.", "Prose.\n\n### Design notes\n\nDetail.", 1)
+	if err := writeCacheFixtureFile(t, specPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rel := "docs/specs/units/candidate/unit_self.md"
+	direct, err := BuildEntryFromChecks(repoRoot, rel, []CheckDeclaration{{Check: "1", Sections: []string{"Description"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	derived, err := BuildEntryFromChecks(repoRoot, rel, []CheckDeclaration{{Check: "1", Sections: []string{"Design notes"}}})
+	if err != nil {
+		t.Fatalf("subsection declaration rejected: %v", err)
+	}
+	if strings.Join(direct.Deps, ",") != strings.Join(derived.Deps, ",") {
+		t.Fatalf("subsection must record the enclosing section's dep: direct=%v derived=%v", direct.Deps, derived.Deps)
+	}
+	if !strings.Contains(strings.Join(derived.Deps, ","), "region:section:Description:") {
+		t.Fatalf("derived dep must name the enclosing section: %v", derived.Deps)
+	}
+
+	ambiguous := content + "\n### Design notes\n\nSecond.\n"
+	if err := writeCacheFixtureFile(t, specPath, []byte(ambiguous), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildEntryFromChecks(repoRoot, rel, []CheckDeclaration{{Check: "1", Sections: []string{"Design notes"}}}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("duplicated subsection must fail closed, got %v", err)
+	}
+}

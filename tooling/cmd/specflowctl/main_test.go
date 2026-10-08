@@ -167,7 +167,7 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-    description: Test check passes.
+    description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
     implementation_surface: internal/demo.go
@@ -453,7 +453,7 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-    description: Test check passes.
+    description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
     implementation_surface: internal/demo.go
@@ -546,7 +546,7 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-    description: Test check passes.
+    description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
     implementation_surface: internal/demo.go
@@ -647,7 +647,7 @@ rule_refs: none
 
 acceptance_item_set:
   - id: test.check
-    description: Test check.
+    description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
     implementation_surface: internal
@@ -801,7 +801,7 @@ Test unit for promote testing.
 
 acceptance_item_set:
   - id: test.check
-    description: Test check passes.
+    description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
     implementation_surface: internal/demo.go

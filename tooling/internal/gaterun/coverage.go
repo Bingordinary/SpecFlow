@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -48,10 +50,8 @@ func loadDeferredFindings(repoRoot, unitName string) ([]DeferredFinding, error) 
 }
 
 // Rebind unit-scoped quality keys while retaining the finding's source
-// identity and leaving public and relationship keys unchanged. A protected
-// stable-record deferral (preserve:<owner>:<item>) rebinds to the owner's own
-// acceptance item: that is the logical key owning the requirement's judgment in
-// the owner's run (see framework/verification_scope.md §Deferred findings).
+// identity and leaving public and relationship keys unchanged
+// (see framework/verification_scope.md §Deferred findings).
 func deferredOwnerKey(key, source, owner string) string {
 	if key == reviewKey(SessionKindArchitecture, source, "") {
 		return reviewKey(SessionKindArchitecture, owner, "")
@@ -59,10 +59,6 @@ func deferredOwnerKey(key, source, owner string) string {
 	prefix := SessionKindDesign + ":" + source + ":"
 	if strings.HasPrefix(key, prefix) {
 		return reviewKey(SessionKindDesign, owner, strings.TrimPrefix(key, prefix))
-	}
-	preservePrefix := SessionKindPreserve + ":" + owner + ":"
-	if strings.HasPrefix(key, preservePrefix) {
-		return reviewKey(SessionKindItem, owner, strings.TrimPrefix(key, preservePrefix))
 	}
 	return key
 }
@@ -327,11 +323,7 @@ func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindCode, "", file), Kind: SessionKindCode, Lens: LensQuality, File: file, ReadRefs: reads}, CoverageKey{Key: reviewKey(SessionKindDesign, run.TargetName, file), Kind: SessionKindDesign, Lens: LensQuality, File: file, Unit: run.TargetName})
 	}
 	coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindArchitecture, run.TargetName, ""), Kind: SessionKindArchitecture, Lens: LensQuality, Unit: run.TargetName})
-	protected, err := d.protectedCoverage(run)
-	if err != nil {
-		return nil, err
-	}
-	return append(coverage, protected...), nil
+	return coverage, nil
 }
 
 // coverageReportKeys lists the reviewer report check keys one coverage key
@@ -526,7 +518,7 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 		}
 		seen[key] = true
 		switch ck.Kind {
-		case SessionKindChecks, SessionKindItem, SessionKindDesign, SessionKindCode, SessionKindArchitecture, SessionKindPreserve:
+		case SessionKindChecks, SessionKindItem, SessionKindDesign, SessionKindCode, SessionKindArchitecture:
 		default:
 			return fmt.Errorf("coverage key %q has invalid kind %q", key, ck.Kind)
 		}
@@ -536,7 +528,7 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 				return fmt.Errorf("coverage key %q has no lens — a verify key must be tagged alignment or quality", key)
 			}
 		case LensAlignment:
-			if ck.Kind != SessionKindItem && ck.Kind != SessionKindPreserve {
+			if ck.Kind != SessionKindItem {
 				return fmt.Errorf("alignment coverage key %q has kind %q, expected %q", key, ck.Kind, SessionKindItem)
 			}
 		case LensQuality:
@@ -618,7 +610,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			CheckKeys:     []string{CrossKey},
 			ReadRefs:      crossReadRefs(run),
 			Relationships: append([]string(nil), run.Relationships...),
-			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. If no relationships are assigned, only dispose existing findings and derive effective statuses."},
+			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
 		}, nil
 	}
 	wanted := map[string]bool{}
@@ -710,16 +702,18 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		}
 	}
 	if kind == SessionKindCode {
-		spec.Context = append(spec.Context, "Collect code facts and potential problems only. Do not read unit-private designs or suppress problems by a unit's rationale. Read the whole public evidence surface; missing evidence requires replanning.")
+		spec.Context = append(spec.Context, "Collect code facts and potential problems only. Do not read unit-private designs or suppress problems by a unit's rationale. Read the whole public evidence surface; if a required file is missing from read_refs, report it instead of judging from incomplete context.")
 	}
 	if kind == SessionKindArchitecture {
 		spec.Context = append(spec.Context, "Assess all six Dimension 8 architecture fields once for the whole unit.")
 	}
 	if IsItemKind(kind) {
-		spec.Context = append(spec.Context, "For Steps 1 and 5, attribute code structures and designs to the responsibility of the unit owning each key before judging surplus; for preserve, assess only the assigned protected stable requirement. Shared-file association is not exclusive ownership. Independent behavior outside that responsibility is not surplus; helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. If attribution evidence is missing, replan with the needed input rather than infer a mismatch from file co-location.")
-	}
-	if kind == SessionKindPreserve {
-		spec.Context = append(spec.Context, "Use only the protected unit's stable spec. A declared implementation mapping that no longer resolves is MISMATCH — never ALIGNED. When the requirement's behavior is still implemented (the protected unit's own code or its current round declares it), the mismatch is peer-owned record drift: the final synthesis routes it to the protected unit by recorded ownership and it does not block this run. When the behavior is not implemented anywhere, it stays this run's blocking finding.")
+		spec.Context = append(spec.Context, "For Steps 1 and 5, attribute code structures and designs to the responsibility of the unit owning each key before judging surplus. Shared-file association is not exclusive ownership. Independent behavior outside that responsibility is not surplus; helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location.")
+		for _, notice := range run.Notices {
+			if strings.HasPrefix(notice, "stub scan:") {
+				spec.Context = append(spec.Context, notice)
+			}
+		}
 	}
 	return spec, nil
 }
@@ -738,13 +732,23 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 	case SessionKindItem:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
+		read = appendUnique(read, affectsEvidencePaths(run)...)
+		// Tool-driven one-hop evidence discovery for item keys: the item
+		// judgment may use the same public evidence surface the quality
+		// sessions derive for this unit's files — callers, callees,
+		// dependencies and tests — so a related file no longer forces a
+		// replan (framework/verification_scope.md §Verify evidence
+		// discovery before planning).
+		for _, evidence := range run.PublicEvidence {
+			read = appendUnique(read, evidence...)
+		}
 		for _, ref := range run.Refs {
 			if strings.HasPrefix(ref.Ref, "rule:") {
 				read = appendUnique(read, ref.Ref)
 			}
 		}
 		return appendUnique(read, extraInputPaths(run)...)
-	case SessionKindCode, SessionKindPreserve:
+	case SessionKindCode:
 		return ck.ReadRefs
 	case SessionKindArchitecture:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
@@ -1026,9 +1030,6 @@ func (d *Derivation) deriveDeltaRerun(run *Run) (*scopeDerivation, error) {
 				continue
 			}
 			binding.Layer = run.Target
-			if ck.Kind == SessionKindPreserve {
-				binding.Layer = TargetStable
-			}
 			inputs, err := normalizeOwnInputs(repoRoot, coverageReadRefs(repoRoot, run, ck), ck.Unit, binding.Layer)
 			if err != nil {
 				return nil, err
@@ -1546,4 +1547,60 @@ func expectedBaselineSchema(b *validationcache.GateBaseline) int {
 		return 4
 	}
 	return 3
+}
+
+// stubScanPatterns are the deterministic stub/placeholder patterns of verify
+// Step 6. A hit is a candidate signal, not a verdict: the reviewer classifies
+// each hit RELEVANT (a real stub) or IRRELEVANT (an idiomatic construct such
+// as Go's `return nil`).
+var stubScanPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`return null`),
+	regexp.MustCompile(`return \[\]`),
+	regexp.MustCompile(`\bplaceholder\b`),
+	regexp.MustCompile(`not.*implement`),
+	regexp.MustCompile(`return Response\.json\(\{\}\)`),
+	regexp.MustCompile(`w\.WriteHeader\(204\)`),
+}
+
+// stubScanNotice scans the run's spec-derived code surface with the Step 6
+// patterns and renders one plan notice listing the candidate hits, so the
+// reviewer classifies a tool-produced list instead of running the greps.
+// It returns "" when the surface is clean or unreadable.
+func stubScanNotice(repoRoot string, run *Run) string {
+	type stubHit struct {
+		path string
+		line int
+		text string
+	}
+	var hits []stubHit
+	for _, file := range qualityFiles(run) {
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(file)))
+		if err != nil {
+			continue
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			for _, pat := range stubScanPatterns {
+				if pat.MatchString(line) {
+					hits = append(hits, stubHit{path: file, line: i + 1, text: strings.TrimSpace(line)})
+					break
+				}
+			}
+		}
+	}
+	if len(hits) == 0 {
+		return ""
+	}
+	const limit = 20
+	rendered := make([]string, 0, limit)
+	for _, h := range hits {
+		if len(rendered) == limit {
+			break
+		}
+		rendered = append(rendered, fmt.Sprintf("%s:%d: %s", h.path, h.line, h.text))
+	}
+	more := ""
+	if len(hits) > limit {
+		more = fmt.Sprintf(" … and %d more", len(hits)-limit)
+	}
+	return fmt.Sprintf("stub scan: %d candidate hit(s) over the declared code surface — classify each during the sequence review (verify Step 6); a RELEVANT stub is a MISMATCH: %s%s", len(hits), strings.Join(rendered, " | "), more)
 }

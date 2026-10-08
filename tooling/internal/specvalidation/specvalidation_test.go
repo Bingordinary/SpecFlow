@@ -227,7 +227,7 @@ func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T)
 		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
-			"    description: test item\n"+
+			"    description: Given a caller, When the check runs, Then it passes.\n"+
 			"    verification_type: testable\n"+
 			"    verification_surface: src/\n"+
 			"    implementation_surface: <pending>\n"+
@@ -1122,5 +1122,28 @@ func TestCheckRegionLocatability_FencedHeadingDoesNotFail(t *testing.T) {
 	result := checkRegionLocatability(repoRoot, "fenced")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for fenced heading-like lines, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAnchors_MissingEvidenceFileFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "src/handler.go", "package main\n")
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test\n"+
+			"    verification_type: testable\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: src/\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n"+
+			"    affects:\n"+
+			"      evidence_files:\n"+
+			"        - peer/missing_test.go\n")
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Fail || !strings.Contains(result.Details, "affects.evidence_files") {
+		t.Fatalf("expected FAIL naming affects.evidence_files, got %s: %s", result.Status, result.Details)
 	}
 }

@@ -52,11 +52,7 @@ func sharedFinish(t *testing.T, root, id string) {
 		}
 		report := grDefaultQualityReport(run, ck)
 		if gaterun.IsItemKind(ck.Kind) {
-			spec := run.RequiredFiles[0]
-			if ck.Kind == gaterun.SessionKindPreserve {
-				spec = "docs/specs/units/stable/unit_" + ck.Unit + ".md"
-			}
-			report = grVerifyItemReport(ck.Key, spec, "contracts.js")
+			report = grVerifyItemReport(ck.Key, run.RequiredFiles[0], "contracts.js")
 		}
 		if err := sharedSubmit(t, root, id, ck.Key, report); err != nil {
 			t.Fatalf("%s: %v", ck.Key, err)
@@ -194,135 +190,6 @@ func TestSharedInvalidationAndWholeFileIdentity(t *testing.T) {
 		t.Fatalf("recheck after record damage: %+v %v", check, err)
 	}
 }
-func TestSharedProtectsStableDespiteUnfinishedCandidate(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
-	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	sharedFinish(t, root, auth)
-	data, err := os.ReadFile(filepath.Join(root, authSpec))
-	if err != nil {
-		t.Fatal(err)
-	}
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
-	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
-		t.Fatal(err)
-	}
-	grWriteFile(t, root, authSpec, "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n## Draft\nUnfinished replacement.\n")
-	grWriteFile(t, root, "contracts.js", "export function response() { return {}; }\n")
-	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	run, err := gaterun.Load(root, order)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ck := run.CoverageByKey("preserve:auth:auth.core")
-	if ck == nil {
-		t.Fatal("no stable protection")
-	}
-	spec, err := grBuildSessionSpec(root, run, []string{ck.Key})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(strings.Join(spec.ReadRefs, "\n"), "stable/unit_auth.md") || strings.Contains(strings.Join(spec.ReadRefs, "\n"), "candidate/unit_auth.md") {
-		t.Fatal("protection used draft design")
-	}
-	report := grVerifyItemBody(ck.Key, "CANNOT_DETERMINE", "token behavior missing") + ck.Key + ": docs/specs/units/stable/unit_auth.md: acceptance_item:auth.core\n" + ck.Key + ": contracts.js: all\n"
-	if err := sharedSubmit(t, root, order, ck.Key, report); err != nil {
-		t.Fatal(err)
-	}
-	grAutoSubmitQuality(t, root, order)
-	grSubmitOK(t, root, order, "order.core", grVerifyItemReport("order.core", run.RequiredFiles[0], "contracts.js"))
-	cross := grCompleteCrossReport(t, root, run, grCrossReport(run.RequiredFiles[0], "Description"))
-	cross = strings.ReplaceAll(cross, "Effective status: "+ck.Key+" = fail", "Effective status: "+ck.Key+" = pass")
-	if err := sharedSubmit(t, root, order, "cross", cross); err == nil {
-		t.Fatal("protected requirement cleared by synthesis")
-	}
-	grSubmitOK(t, root, order, "cross", grCrossReport(run.RequiredFiles[0], "Description"))
-	grFinalizeOK(t, root, order)
-	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || result.Fresh || result.Category != validationcache.CategoryBlocked {
-		t.Fatalf("broken stable behavior released: %+v %v", result, err)
-	}
-	sharedValidateFixture(t, root, "order")
-	var out, errOut bytes.Buffer
-	if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err == nil || !strings.Contains(out.String(), "Verify cache") {
-		t.Fatalf("promote did not block protected token requirement: %v %s", err, out.String())
-	}
-}
-
-func TestSharedProtectionCanonicalizesDeclaredPaths(t *testing.T) {
-	for _, field := range []string{"implementation_surface", "affects.files"} {
-		for _, declared := range []string{"contracts.js", "./contracts.js", "nested/../contracts.js", "shared", "./shared/", "shared/../shared/"} {
-			t.Run(field+"/"+declared, func(t *testing.T) {
-				root, authSpec, _ := sharedFixture(t)
-				file := "contracts.js"
-				if strings.Contains(declared, "shared") {
-					file = "shared/contracts.js"
-					grWriteFile(t, root, file, "export function response(token) { return {token}; }\n")
-					grWriteSpecSurface(t, root, "order", file, "")
-				}
-				grWriteFile(t, root, "caller.js", "import {response} from './"+file+"';\n")
-				surface, extra := declared, ""
-				if field == "affects.files" {
-					surface = "unrelated.js"
-					extra = "    affects:\n      files:\n        - " + declared + "\n"
-					grWriteFile(t, root, surface, "export const separate = true;\n")
-				}
-				grWriteSpecSurface(t, root, "auth", surface, extra)
-				data, err := os.ReadFile(filepath.Join(root, authSpec))
-				if err != nil {
-					t.Fatal(err)
-				}
-				stable := "docs/specs/units/stable/unit_auth.md"
-				grWriteFile(t, root, stable, string(data))
-				id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-				ck := mustLoadRun(t, root, id).CoverageByKey("preserve:auth:auth.core")
-				if ck == nil {
-					t.Fatalf("stable protection omitted for %s: %s", field, declared)
-				}
-				for _, required := range []string{stable, file, "caller.js"} {
-					found := false
-					for _, ref := range ck.ReadRefs {
-						found = found || ref == required
-					}
-					if !found {
-						t.Fatalf("protected review omitted connected evidence %s: %v", required, ck.ReadRefs)
-					}
-				}
-			})
-		}
-	}
-}
-
-func TestSharedProtectionRequiredByFreshAndPromote(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	sharedFinish(t, root, id)
-	data, err := os.ReadFile(filepath.Join(root, authSpec))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stable := strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: ./contracts.js", 1)
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", stable)
-	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || result.Fresh || !strings.Contains(result.Reason, "preserve:auth:auth.core") {
-		t.Fatalf("verify without stable protection remained fresh: %+v %v", result, err)
-	}
-	sharedValidateFixture(t, root, "order")
-	var out, errOut bytes.Buffer
-	if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err == nil {
-		t.Fatal("promote accepted verification without stable protection")
-	}
-	id = grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	if mustLoadRun(t, root, id).CoverageByKey("preserve:auth:auth.core") == nil {
-		t.Fatal("replan omitted stable protection")
-	}
-	sharedFinish(t, root, id)
-	if result, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !result.Fresh {
-		t.Fatalf("complete protection did not become fresh: %+v %v", result, err)
-	}
-	out.Reset()
-	if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err != nil {
-		t.Fatalf("promote with complete protection: %v %s", err, out.String())
-	}
-}
-
 func TestSharedRejectedBatchDoesNotReserveTasks(t *testing.T) {
 	for _, command := range []string{"mission", "submit"} {
 		for _, blocker := range []string{"owner", "accepted", "session"} {
@@ -548,9 +415,6 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	sharedFinish(t, root, order)
 	orderCache := grReadJudgmentBaseline(t, root, "unit", "order", "verify")
-	if orderCache.Records["preserve:auth:auth.core"].ID != before.Records["item:auth:auth.core"].ID {
-		t.Fatal("stable protection did not reuse confirmed acceptance evidence")
-	}
 	if err := runRemove([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
@@ -561,13 +425,6 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 	if _, err := judgments.Load(root, before.Records["item:auth:auth.core"].Reference); err != nil {
 		t.Fatal("removal deleted history", err)
 	}
-	// The removed stable requirement cannot be carried; replan order without it.
-	next := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--mode", "delta")
-	run := mustLoadRun(t, root, next)
-	if run.CoverageByKey("preserve:auth:auth.core") != nil {
-		t.Fatal("removed unit remains protected")
-	}
-	sharedFinish(t, root, next)
 	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
 		t.Fatalf("after remove: %+v %v", check, err)
 	}
@@ -668,81 +525,6 @@ func TestSharedOldRunRequiresReplanAndOneBatchOwnsTask(t *testing.T) {
 		t.Fatalf("old run accepted: %v", err)
 	}
 }
-
-func TestSharedProtectionUsesPublishedRuleAndRetainsReusedFailure(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
-	data, _ := os.ReadFile(filepath.Join(root, authSpec))
-	stable := strings.Replace(string(data), "rule_refs: none", "rule_refs: b_rule_token", 1)
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", stable)
-	grWriteFile(t, root, "docs/specs/rules/stable/b_rule_token.md", "---\nid: b_rule_token\n---\n\n## Constraint\nReturn token.\n")
-	grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_token.md", "---\nid: b_rule_token\n---\n\nUnfinished replacement.\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	run := mustLoadRun(t, root, id)
-	ck := run.CoverageByKey("preserve:auth:auth.core")
-	if ck == nil {
-		t.Fatal("no protection")
-	}
-	refs := strings.Join(ck.ReadRefs, "\n")
-	if !strings.Contains(refs, "rules/stable/b_rule_token.md") || strings.Contains(refs, "rules/candidate/") {
-		t.Fatal("protected rule uses candidate", refs)
-	}
-	report := grVerifyItemReport(ck.Key, "docs/specs/units/stable/unit_auth.md", "contracts.js") + ck.Key + ": docs/specs/rules/stable/b_rule_token.md: Constraint\n"
-	if err := sharedSubmit(t, root, id, ck.Key, report); err != nil {
-		t.Fatal(err)
-	}
-	sharedFinish(t, root, id)
-	sharedValidateFixture(t, root, "order")
-	var out, errOut bytes.Buffer
-	if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err != nil {
-		t.Fatalf("promote: %v %s", err, out.String())
-	}
-	if result := fork.Fork(root, "order"); !result.Passed {
-		t.Fatal(result.Issues)
-	}
-	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
-		t.Fatalf("protected rule binding changed during fork: %+v %v", check, err)
-	}
-
-	// An accepted peer item with an advisory mismatch must still block preservation.
-	// Its original record and severity remain immutable; only the current task is strict.
-	newRoot, _, _ := sharedFixture(t)
-	auth := grPlan(t, newRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	authRun := mustLoadRun(t, newRoot, auth)
-	if err := sharedSubmit(t, newRoot, auth, "item:auth:auth.core", strings.ReplaceAll(grVerifyMismatchReport("item:auth:auth.core", authRun.RequiredFiles[0], "contracts.js", "P2"), "acceptance_item:item:auth:auth.core", "acceptance_item:auth.core")); err != nil {
-		t.Fatal(err)
-	}
-	grAutoSubmitQuality(t, newRoot, auth)
-	grSubmitOK(t, newRoot, auth, "cross", grCrossReport(authRun.RequiredFiles[0], "Description"))
-	grFinalizeOK(t, newRoot, auth)
-	original := grReadJudgmentBaseline(t, newRoot, "unit", "auth", "verify")
-	specData, _ := os.ReadFile(filepath.Join(newRoot, authRun.RequiredFiles[0]))
-	grWriteFile(t, newRoot, "docs/specs/units/stable/unit_auth.md", string(specData))
-	if _, err := validationcache.RewriteCachesToStable(newRoot, "unit", "auth"); err != nil {
-		t.Fatal(err)
-	}
-	order := grPlan(t, newRoot, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	orderRun := mustLoadRun(t, newRoot, order)
-	if orderRun.CoverageByKey("preserve:auth:auth.core").Source != "reused" {
-		t.Fatal("valid peer evidence not reused")
-	}
-	grAutoSubmitQuality(t, newRoot, order)
-	grSubmitOK(t, newRoot, order, "order.core", grVerifyItemReport("order.core", orderRun.RequiredFiles[0], "contracts.js"))
-	grSubmitOK(t, newRoot, order, "cross", grCrossReport(orderRun.RequiredFiles[0], "Description"))
-	grFinalizeOK(t, newRoot, order)
-	if check, err := checkUnitVerifyMerged(freshDerivation(t, newRoot), newRoot, "order", "candidate"); err != nil || check.Category != validationcache.CategoryBlocked {
-		t.Fatalf("advisory peer mismatch released changes: %+v %v", check, err)
-	}
-	record, err := judgments.Load(newRoot, original.Records["item:auth:auth.core"].Reference)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var res gaterun.SessionResult
-	json.Unmarshal(record.Result, &res)
-	if res.Findings[0].Severity != "P2" {
-		t.Fatal("protection changed original peer severity")
-	}
-}
-
 func TestSharedSurfaceViewKeepsStableJudgmentBesideDraft(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
@@ -772,73 +554,6 @@ func TestSharedSurfaceViewKeepsStableJudgmentBesideDraft(t *testing.T) {
 		t.Fatal("draft design falsely shown as reviewed", out.String())
 	}
 }
-
-// A caller the coordinator discovers and passes as a run input is read
-// evidence, not a change-impact relation: the input alone must not select
-// stable protection (shared_judgments.md, Stable requirement protection).
-func TestSharedCoordinatorInputDoesNotSelectProtection(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
-	data, _ := os.ReadFile(filepath.Join(root, authSpec))
-	data = []byte(strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
-	grWriteFile(t, root, "login.js", "import {response} from './contracts.js';\nexport function login(token){return response(token);}\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--inputs-file", grInputsManifest(t, "login.js"))
-	run := mustLoadRun(t, root, id)
-	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
-		t.Fatalf("a coordinator input alone selected stable protection: %v", ck.ReadRefs)
-	}
-}
-
-// A protected requirement whose declared file only shares name text with the
-// current implementation must not be rechecked: protection connects through
-// current declarations, not through name-text matches (shared_judgments.md,
-// Stable requirement protection).
-func TestSharedProtectionIgnoresNameOnlyMatches(t *testing.T) {
-	root := createCLITestRepo(t)
-	grWriteSpecSurface(t, root, "auth", "logger_ui.ts", "")
-	grWriteSpecSurface(t, root, "order", "logger.go", "")
-	data, err := os.ReadFile(filepath.Join(root, "docs/specs/units/candidate/unit_auth.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
-	grWriteFile(t, root, "logger_ui.ts", "// logger utilities for the settings screen\nexport const label = 'Logs';\n")
-	grWriteFile(t, root, "logger.go", "package logger\n\nvar noop = true\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	run := mustLoadRun(t, root, id)
-	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
-		t.Fatalf("name-only match scheduled stable protection: %v", ck.ReadRefs)
-	}
-}
-
-// Another stable unit's records and baseline may mention the current unit's
-// files; recorded read surfaces must not select protection. Only the
-// protected item's current declarations do (shared_judgments.md, Stable
-// requirement protection).
-func TestSharedPeerRecordMentionsDoNotSelectProtection(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
-	data, _ := os.ReadFile(filepath.Join(root, authSpec))
-	grWriteFile(t, root, authSpec, strings.Replace(string(data), "implementation_surface: contracts.js", "implementation_surface: login.js", 1))
-	grWriteFile(t, root, "login.js", "export function login(){return global.createResponse();}\n")
-	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "contracts.js"))
-	sharedFinish(t, root, id)
-	before := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
-	data, _ = os.ReadFile(filepath.Join(root, authSpec))
-	grWriteFile(t, root, "docs/specs/units/stable/unit_auth.md", string(data))
-	if _, err := validationcache.RewriteCachesToStable(root, "unit", "auth"); err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(root, judgments.Directory, before.Records["item:auth:auth.core"].ID+".json")
-	if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	run := mustLoadRun(t, root, order)
-	if ck := run.CoverageByKey("preserve:auth:auth.core"); ck != nil {
-		t.Fatalf("recorded peer evidence selected stable protection: %v", ck.ReadRefs)
-	}
-}
-
 func TestSharedRequiresPrivateSpecEvidenceAndTracksPublishedRules(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	rule := "docs/specs/rules/stable/g_rule_contract.md"
@@ -879,95 +594,6 @@ func TestSharedRequiresPrivateSpecEvidenceAndTracksPublishedRules(t *testing.T) 
 		t.Fatalf("extended shared constraint kept old PASS: %+v %v", check, err)
 	}
 }
-
-func TestTargetedInvalidationReachesProtectedConsumers(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		key   string
-		cache string
-	}{
-		{name: "pass cache and qualified key", key: "item:auth:auth.core", cache: "pass"},
-		{name: "pass cache and item id", key: "auth.core", cache: "pass"},
-		{name: "missing cache and item id", key: "auth.core", cache: "missing"},
-		{name: "failure cache and item id", key: "auth.core", cache: "fail"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root, _, _ := sharedFixture(t)
-			auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-			sharedFinish(t, root, auth)
-			synthesisPromote(t, root, "auth")
-			order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-			sharedFinish(t, root, order)
-			before, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
-			if err != nil || !before.Fresh {
-				t.Fatalf("fixture not fresh: %+v %v", before, err)
-			}
-			openConsumer := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-			baseline := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
-			item := baseline.Records["item:auth:auth.core"]
-			public := baseline.Records["code:contracts.js"]
-			cachePath := filepath.Join(root, "docs/specs/meta/validation/unit/auth/verify_result.md")
-			if tc.cache == "missing" {
-				if err := os.Remove(cachePath); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if tc.cache == "fail" {
-				data, err := os.ReadFile(cachePath)
-				if err != nil {
-					t.Fatal(err)
-				}
-				failure := strings.Replace(string(data), "result: pass", "result: fail", 1)
-				failure = strings.Replace(failure, "blocking: false", "blocking: true", 1)
-				failure = strings.Replace(failure, "p1_count: 0", "p1_count: 1", 1)
-				if err := os.WriteFile(cachePath, []byte(failure), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			var out, errOut bytes.Buffer
-			if err := runGateInvalidate([]string{"--repo-root", root, "--gate", "verify", "--unit", "auth", "--target", "stable", "--check", tc.key}, &out, &errOut); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(out.String(), "Invalidated judgment(s): "+item.ID) {
-				t.Fatalf("immutable invalidation was not disclosed: %s", out.String())
-			}
-			if _, err := judgments.Load(root, item.Reference); err != nil {
-				t.Fatalf("history was deleted: %v", err)
-			}
-			if err := judgments.Check(root, public.Reference, "stable", judgments.Protocol(root)); err != nil {
-				t.Fatalf("unrelated public evidence was invalidated: %v", err)
-			}
-			if tc.cache == "fail" {
-				failure, err := validationcache.ReadGateBaseline(root, "unit", "auth", "verify")
-				if err != nil || strings.Join(failure.InvalidatedChecks, ",") != "item:auth:auth.core" {
-					t.Fatalf("failure record lost canonical invalidation: %+v %v", failure, err)
-				}
-			}
-			after, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate")
-			if err != nil || after.Fresh || !strings.Contains(after.Reason, "invalidated") {
-				t.Fatalf("consumer freshness: %+v %v", after, err)
-			}
-			if err := runGateFinalize([]string{"--repo-root", root, "--run", openConsumer}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "invalidated") {
-				t.Fatalf("open consumer finalized contradicted evidence: %v", err)
-			}
-			sharedValidateFixture(t, root, "order")
-			out.Reset()
-			if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err == nil {
-				t.Fatal("consumer promoted with a contradicted protected judgment")
-			}
-			retry := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate", "--mode", "delta")
-			run := mustLoadRun(t, root, retry)
-			if ck := run.CoverageByKey("preserve:auth:auth.core"); ck == nil || ck.Source != "executed" {
-				t.Fatalf("invalidated item was reused: %+v", ck)
-			}
-			sharedFinish(t, root, retry)
-			if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
-				t.Fatalf("rechecked consumer not fresh: %+v %v", check, err)
-			}
-		})
-	}
-}
-
 func TestTargetedInvalidationReachesPublicEvidenceFromOpenRun(t *testing.T) {
 	root, _, _ := sharedFixture(t)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
@@ -1021,7 +647,7 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	grWriteFile(t, root, main, strings.Replace(string(data), "description: Behavior.", "description: Revised candidate behavior.", 1))
+	grWriteFile(t, root, main, strings.Replace(string(data), "description: Given a caller, When the behavior runs, Then it is accepted.", "description: Revised candidate behavior.", 1))
 	var out, errOut bytes.Buffer
 	if err := runGateInvalidate([]string{"--repo-root", root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--check", "auth.core"}, &out, &errOut); err != nil {
 		t.Fatal(err)
@@ -1116,5 +742,91 @@ func TestArchitectureDeferralCanBeRetainedByOwner(t *testing.T) {
 	}
 	if ledger := grReadDeferredLedger(t, root); len(ledger.Entries) != 0 {
 		t.Fatalf("handled deferral was not consumed: %+v", ledger.Entries)
+	}
+}
+
+// TestPromoteReportsStaleStablePeers pins the promote-time impact sweep: a
+// promoted change stales the confirmation caches of stable units whose
+// declared evidence covers the changed content, and the promote output must
+// make that impact surface loud (dependency freshness is the propagation
+// path — see framework/shared_judgments.md).
+func TestPromoteReportsStaleStablePeers(t *testing.T) {
+	root, _, _ := sharedFixture(t)
+	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
+	sharedFinish(t, root, order)
+	sharedValidateFixture(t, root, "order")
+	var out, errOut bytes.Buffer
+	if err := runPromote([]string{"--repo-root", root, "--unit", "order"}, &out, &errOut); err != nil {
+		t.Fatalf("promote order: %v %s", err, out.String())
+	}
+	// Change the shared code file both units declare: order's stable verify
+	// confirmation covers it, so the change stales order.
+	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token, changed: true}; }\n")
+	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	sharedFinish(t, root, auth)
+	sharedValidateFixture(t, root, "auth")
+	out.Reset()
+	errOut.Reset()
+	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
+		t.Fatalf("promote auth: %v %s", err, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "Impact:") || !strings.Contains(got, "order: verify STALE") {
+		t.Fatalf("promote did not report the staled stable peer:\n%s", got)
+	}
+	if strings.Contains(got, "auth: verify") {
+		t.Fatalf("promote reported the promoted unit itself:\n%s", got)
+	}
+}
+
+// TestGateExtendKeepsAcceptedSessions pins the missing-read-ref recovery
+// path: the coordinator extends the open run instead of replanning, so the
+// accepted session keeps its verdict, the run id is unchanged, and the
+// extended input becomes readable by the remaining sessions.
+func TestGateExtendKeepsAcceptedSessions(t *testing.T) {
+	root, main, _ := sharedFixture(t)
+	grEnableMissionLayout(t, root)
+	grWriteFile(t, root, "extra/helper.js", "export const helper = true;\n")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	key := "item:auth:auth.core"
+	if err := sharedSubmit(t, root, id, key, grVerifyItemReport(key, main, "contracts.js")); err != nil {
+		t.Fatal(err)
+	}
+	planned := mustLoadRun(t, root, id)
+	if err := sharedSubmit(t, root, id, "code:contracts.js", grDefaultQualityReport(planned, *planned.CoverageByKey("code:contracts.js"))); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if err := runGateExtend([]string{"--repo-root", root, "--run", id, "--paths", "extra/helper.js"}, &out, &errOut); err != nil {
+		t.Fatalf("gate-extend: %v %s", err, out.String())
+	}
+	run := mustLoadRun(t, root, id)
+	found := false
+	for _, ref := range run.Refs {
+		if ref.Ref == "extra/helper.js" && ref.Source == gaterun.SourceInput {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("extended input missing from the snapshot: %+v", run.Refs)
+	}
+	states, err := gaterun.LoadSessionStates(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered, _, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := covered[key]; !ok {
+		t.Fatalf("extending the run lost the accepted session for %s", key)
+	}
+	out.Reset()
+	errOut.Reset()
+	if err := runGateMission([]string{"--repo-root", root, "--run", id, "--keys", "design:auth:contracts.js", "--format", "json"}, &out, &errOut); err != nil {
+		t.Fatalf("gate-mission: %v %s", err, errOut.String())
+	}
+	if !strings.Contains(out.String(), "extra/helper.js") {
+		t.Fatalf("extended input is not readable by the remaining sessions:\n%s", out.String())
 	}
 }

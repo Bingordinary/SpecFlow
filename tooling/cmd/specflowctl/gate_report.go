@@ -54,7 +54,6 @@ var (
 	gateFindingsRe      = regexp.MustCompile(`(?mi)^[ \t]*gate_findings:\s*(\S[^\n]*)$`)
 	gateFindingsEntryRe = regexp.MustCompile(`^\[(?:P0|P1)\][ \t]+\S`)
 	alnumRe             = regexp.MustCompile(`[A-Za-z0-9]`)
-	effectiveStatusRe   = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Effective status:\s*(.+?)\s*=\s*(` + strings.Join(crossStatuses, "|") + `)\s*$`)
 	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(` + strings.Join(crossDispositions, "|") + `)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
 	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
@@ -374,7 +373,8 @@ func itemContinuationBlock(lines []string, idx int) []string {
 }
 
 // validateVerifyItemBlock validates one acceptance item's field block: one
-// non-empty evidence, deterministic, Part A, and Part B line.
+// non-empty evidence, deterministic, and Part A line. Test meaningfulness is
+// owned by the quality lens (see framework/unit_verify_checklist.md Step 2).
 func validateVerifyItemBlock(block []string) error {
 	text := strings.Join(block, "\n")
 	for _, field := range verifyItemFields {
@@ -382,23 +382,11 @@ func validateVerifyItemBlock(block []string) error {
 		if field == "deterministic" {
 			pat = `(?mi)^[ \t]*-?[ \t]*deterministic:[ \t]*(true|false)[ \t]*$`
 		}
-		if field == "Part A" || field == "Part B" {
+		if field == "Part A" {
 			pat = `(?mi)^[ \t]*` + regexp.QuoteMeta(field) + `:[ \t]*(\S[^\n]*)$`
 		}
 		if count := len(regexp.MustCompile(pat).FindAllStringSubmatch(text, -1)); count != 1 {
 			return fmt.Errorf("verify item block must declare exactly one non-empty %s field", field)
-		}
-	}
-	// When Part B does not apply, the report must use the explicit
-	// `skipped — {reason}` form; a bare `skipped` carries no reason.
-	if partB := regexp.MustCompile(`(?mi)^[ \t]*Part B:[ \t]*(\S[^\n]*)$`).FindStringSubmatch(text); partB != nil {
-		content := strings.TrimSpace(partB[1])
-		if strings.HasPrefix(strings.ToLower(content), "skipped") {
-			reason := strings.TrimSpace(content[len("skipped"):])
-			reason = strings.Trim(reason, " \t—–-:;,.")
-			if reason == "" {
-				return fmt.Errorf("verify item Part B `skipped` must carry a reason (`skipped — {reason}`)")
-			}
 		}
 	}
 	return nil
@@ -507,9 +495,6 @@ func parseVerifyItemReport(run *gaterun.Run, spec *gaterun.SessionSpec, report s
 		block := itemContinuationBlock(lines, lineIdx)
 		if err := validateVerifyItemBlock(block); err != nil {
 			return nil, fmt.Errorf("check %q: %w", item, err)
-		}
-		if token == "CANNOT_DETERMINE" && spec.Kind == gaterun.SessionKindPreserve {
-			out.Findings = append(out.Findings, gaterun.Finding{ID: fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, len(out.Findings)+1), Severity: "P1", Text: item + " cannot establish preservation", Detail: "Problem: " + line + "\nSuggested direction: blocked", SourceKey: item})
 		}
 		if token == "MISMATCH" {
 			finding, err := parseItemMismatch(run, spec, item, block, len(out.Findings)+1)
@@ -679,16 +664,6 @@ func parseCrossSynthesis(report string, out *parsedReport) error {
 		}
 		out.QualityConclusions[key] = verdict
 	}
-	for _, m := range effectiveStatusRe.FindAllStringSubmatch(report, -1) {
-		key := strings.TrimSpace(m[1])
-		if key == "" {
-			return fmt.Errorf("cross report carries an empty Effective status key")
-		}
-		if _, exists := out.EffectiveStatus[key]; exists {
-			return fmt.Errorf("cross report declares Effective status for %q more than once", key)
-		}
-		out.EffectiveStatus[key] = m[2]
-	}
 	seen := map[string]bool{}
 	for _, m := range dispositionRe.FindAllStringSubmatch(report, -1) {
 		id, action := m[1], m[2]
@@ -809,7 +784,7 @@ func extractVerdict(spec *gaterun.SessionSpec, key, report string) (string, stri
 	switch spec.Kind {
 	case gaterun.SessionKindChecks:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(` + allowed + `)\b`
-	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+	case gaterun.SessionKindItem:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b(?:\s*\(([^)\n]*)\))?`
 	case gaterun.SessionKindDesign, gaterun.SessionKindCode, gaterun.SessionKindArchitecture:
 		pat = `(?m)^[ \t]*-?[ \t]*conclusion:\s*((?i:` + allowed + `))\b`

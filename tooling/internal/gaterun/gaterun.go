@@ -86,7 +86,6 @@ const (
 	SessionKindDesign       = "design"
 	SessionKindCode         = "code"
 	SessionKindArchitecture = "architecture"
-	SessionKindPreserve     = "preserve"
 	SessionKindCross        = "cross"
 
 	// Lens tags distinguish the two judgment stances the merged `verify` gate
@@ -372,10 +371,6 @@ type Run struct {
 	Relationships   []string                     `json:"relationships"`
 	CarriedResults  []SessionResult              `json:"carried_results,omitempty"`
 
-	// ProtectedEvidence holds the stable spec paths selected for requirement
-	// protection before execution scope is narrowed by delta or repair.
-	ProtectedEvidence []string `json:"protected_evidence,omitempty"`
-
 	// DeferredFindings are the pending deferrals this run's unit must dispose,
 	// loaded from the deferred-findings ledger at plan time (verify unit runs;
 	// gate-finalize writes the ledger for the same gate/kind).
@@ -519,6 +514,143 @@ func Plan(repoRoot, gate, targetKind, targetName, target, mode string, extraInpu
 	return planned, err
 }
 
+// Extend adds supplementary evidence inputs to an OPEN run in place, under the
+// repository mutation lock, without replacing the run. The added entries join
+// the run snapshot exactly as plan-time manifest entries do (physical refs,
+// logical rule refs, directory surfaces) and join every read surface they
+// broaden. The coverage keys and accepted sessions stay fixed: a supplement
+// broadens what sessions may read, not what their plan required them to read.
+// Uncovered keys re-mission with the extended read refs. An input the run
+// already carries is ignored; extending with only such inputs reports no new
+// inputs.
+func Extend(repoRoot, runID string, extraInputs []string, now time.Time) (*Run, error) {
+	if err := localstate.ValidateID(runID); err != nil {
+		return nil, err
+	}
+	var extended *Run
+	err := WithMutation(repoRoot, func() error {
+		run, err := Load(repoRoot, runID)
+		if err != nil {
+			return err
+		}
+		if run.Status != StatusOpen {
+			return fmt.Errorf("run %s is %s — only an open run can be extended", runID, run.Status)
+		}
+		d, err := NewDerivation(repoRoot)
+		if err != nil {
+			return err
+		}
+		added, err := d.appendRunInputs(run, extraInputs)
+		if err != nil {
+			return err
+		}
+		if len(added) == 0 {
+			return fmt.Errorf("no new inputs — every declared path is already part of run %s", runID)
+		}
+		// The public code read surface is materialized at plan time: every
+		// quality file's evidence — its extra inputs included — is folded
+		// into PublicEvidence and then into each code key's read refs. A
+		// supplement must refresh both, or a re-missioned public check would
+		// still not see the added evidence — the exact gap gate-extend
+		// exists to close.
+		if run.Gate == GateVerify {
+			if err := d.addReviewInputs(run); err != nil {
+				return err
+			}
+			for i := range run.Coverage {
+				if run.Coverage[i].Kind == SessionKindCode {
+					run.Coverage[i].ReadRefs = run.PublicEvidence[run.Coverage[i].File]
+				}
+			}
+		}
+		if err := validateSnapshotPaths(repoRoot, run.Refs, run.Surfaces); err != nil {
+			return err
+		}
+		run.Notices = append(run.Notices, fmt.Sprintf("evidence extended (%s): added %s; accepted sessions remain valid — the supplement broadens available read refs, not the required surface; uncovered keys re-mission with the extended refs", now.UTC().Format(timestampLayout), strings.Join(added, ", ")))
+		if err := writeRun(repoRoot, run); err != nil {
+			return err
+		}
+		extended = run
+		return nil
+	})
+	return extended, err
+}
+
+// appendRunInputs normalizes and adds agent-declared supplementary evidence
+// inputs to a run: physical paths become snapshot refs (SourceInput), logical
+// references become logical refs, and directories become SourceInput surfaces
+// expanded to their repository-content files. Duplicate and already-present
+// inputs are ignored. It returns the canonical spellings actually added.
+func (d *Derivation) appendRunInputs(run *Run, inputs []string) ([]string, error) {
+	repoRoot := d.root
+	seenRefs := map[string]bool{}
+	for _, ref := range run.Refs {
+		seenRefs[ref.Ref] = true
+	}
+	seenSurfaces := map[string]bool{}
+	for _, surface := range run.Surfaces {
+		seenSurfaces[surface.Path] = true
+	}
+	var added []string
+	for _, input := range inputs {
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+		canonical := input
+		if !isLogicalRef(canonical) {
+			var err error
+			canonical, err = repopath.Canonical(repoRoot, input)
+			if err != nil {
+				return nil, fmt.Errorf("input %q: %w", input, err)
+			}
+			if ref, ok := LogicalRuleRefForPath(canonical); ok {
+				// A rule file is carried by its logical reference at every
+				// boundary downstream, so a manifest's physical spelling is
+				// normalized here — at the one point where inputs enter the
+				// snapshot — instead of being rejected (or made
+				// undeclarable) by each consumer.
+				canonical = ref
+			}
+		}
+		if !stringInSlice(run.ExtraInputs, canonical) {
+			run.ExtraInputs = append(run.ExtraInputs, canonical)
+			added = append(added, canonical)
+		}
+		if isLogicalRef(canonical) {
+			if seenRefs[canonical] {
+				continue
+			}
+			seenRefs[canonical] = true
+			run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
+			continue
+		}
+		abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))
+		info, err := os.Stat(abs)
+		if err != nil {
+			return nil, fmt.Errorf("input %q: %v", input, err)
+		}
+		if info.IsDir() {
+			if seenSurfaces[canonical] {
+				continue
+			}
+			seenSurfaces[canonical] = true
+			surface, err := d.resolveSurface(Surface{Path: canonical, Source: SourceInput})
+			if err != nil {
+				return nil, fmt.Errorf("input %q: %w", input, err)
+			}
+			run.Surfaces = append(run.Surfaces, surface)
+			continue
+		}
+		if seenRefs[canonical] {
+			continue
+		}
+		seenRefs[canonical] = true
+		run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
+	}
+	return added, nil
+}
+
 // WithMutation serializes one complete gate-run state transition across
 // processes. Callers must enter before loading mutable run state and hold the
 // lock through the final write or cache publication.
@@ -644,9 +776,7 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 			for _, key := range carried {
 				if ref, ok := state.Records[key]; ok {
 					ref.Source = "carried"
-					if !strings.HasPrefix(key, "preserve:") {
-						ref.Layer = target
-					}
+					ref.Layer = target
 					run.Records[key] = ref
 				}
 			}
@@ -661,8 +791,7 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	run.Notices = notices
 
 	// A verify run consumes the unit's pending deferrals: findings another
-	// unit's verify synthesis routed here by recorded ownership (quality
-	// ownership or this unit's own protected stable-record drift). Loading
+	// unit's verify synthesis routed here by recorded ownership. Loading
 	// them at plan time makes them part of the run's immutable input — the
 	// final synthesis must dispose every one of them, exactly like a carried
 	// judgment.
@@ -686,6 +815,12 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	}
 	run.RunID = runID
 	run.CreatedAt = now.UTC().Format(timestampLayout)
+	if gate == GateVerify && targetKind == TargetKindUnit {
+		run.Notices = append(run.Notices, "evidence discovery: item sessions read the spec-derived surface plus the unit's one-hop public evidence (callers, callees, dependencies, tests); if a reviewer reports a missing file, add it to this open run with `specflowctl gate-extend --run "+run.RunID+" --paths <path>` — extending keeps every accepted session, while a new gate-plan would replace the run")
+		if notice := stubScanNotice(repoRoot, run); notice != "" {
+			run.Notices = append(run.Notices, notice)
+		}
+	}
 	if err := writeRun(repoRoot, run); err != nil {
 		return nil, err
 	}
@@ -758,67 +893,8 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 		}
 		run.OwnSpecFiles = append(run.OwnSpecFiles, appendices...)
 	}
-	seenRefs := map[string]bool{}
-	for _, ref := range run.Refs {
-		seenRefs[ref.Ref] = true
-	}
-	seenSurfaces := map[string]bool{}
-	for _, surface := range run.Surfaces {
-		seenSurfaces[surface.Path] = true
-	}
-	for _, input := range extraInputs {
-		input = strings.TrimSpace(input)
-		if input == "" {
-			continue
-		}
-		canonical := input
-		if !isLogicalRef(canonical) {
-			canonical, err = repopath.Canonical(repoRoot, input)
-			if err != nil {
-				return nil, fmt.Errorf("input %q: %w", input, err)
-			}
-			if ref, ok := LogicalRuleRefForPath(canonical); ok {
-				// A rule file is carried by its logical reference at every
-				// boundary downstream, so a manifest's physical spelling is
-				// normalized here — at the one point where inputs enter the
-				// snapshot — instead of being rejected (or made
-				// undeclarable) by each consumer.
-				canonical = ref
-			}
-		}
-		if !stringInSlice(run.ExtraInputs, canonical) {
-			run.ExtraInputs = append(run.ExtraInputs, canonical)
-		}
-		if isLogicalRef(canonical) {
-			if seenRefs[canonical] {
-				continue
-			}
-			seenRefs[canonical] = true
-			run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
-			continue
-		}
-		abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))
-		info, err := os.Stat(abs)
-		if err != nil {
-			return nil, fmt.Errorf("input %q: %v", input, err)
-		}
-		if info.IsDir() {
-			if seenSurfaces[canonical] {
-				continue
-			}
-			seenSurfaces[canonical] = true
-			surface, err := d.resolveSurface(Surface{Path: canonical, Source: SourceInput})
-			if err != nil {
-				return nil, fmt.Errorf("input %q: %w", input, err)
-			}
-			run.Surfaces = append(run.Surfaces, surface)
-			continue
-		}
-		if seenRefs[canonical] {
-			continue
-		}
-		seenRefs[canonical] = true
-		run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
+	if _, err := d.appendRunInputs(run, extraInputs); err != nil {
+		return nil, err
 	}
 	if gate == GateVerify {
 		if err := d.addReviewInputs(run); err != nil {
@@ -1230,13 +1306,6 @@ func (r *Run) SessionAllowsDeclaration(repoRoot string, session *SessionSpec, de
 	return false
 }
 
-// IsProtectedStableInput identifies the physical stable spec evidence selected
-// by planning. It remains available when a delta carries the preserve checks.
-func (r *Run) IsProtectedStableInput(repoRoot, declared string) bool {
-	canonical := canonicalPath(repoRoot, declared)
-	return stringInSlice(r.ProtectedEvidence, canonical)
-}
-
 // ------------------------------------------------------------
 // Surface derivation
 // ------------------------------------------------------------
@@ -1320,20 +1389,40 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	for _, ruleID := range dedupeSorted(ruleIDs) {
 		refs = append(refs, logicalRuleRef(repoRoot, ruleID, SourceDerived))
 	}
-	for _, affected := range dedupeStrings(specvalidation.ExtractAffectsFiles(content)) {
+	evidenceRefs, err := specAffectsRefs(repoRoot, append(
+		specvalidation.ExtractAffectsFiles(content),
+		specvalidation.ExtractAffectsEvidenceFiles(content)...,
+	))
+	if err != nil {
+		return nil, err
+	}
+	refs = append(refs, evidenceRefs...)
+	sortRefs(refs)
+	return refs, nil
+}
+
+// specAffectsRefs resolves spec-declared affects paths (affects.files and
+// affects.evidence_files) into SourceDerivedAffects refs. They are part of
+// the run's read surface for local sessions — validate sessions may read and
+// declare them, and verify item sessions read them as evidence — but they
+// never define the code surface or a coverage key. A path that does not
+// resolve is skipped here; validate Check 3 and verify planning fail closed
+// on their own rules.
+func specAffectsRefs(repoRoot string, paths []string) ([]Ref, error) {
+	var refs []Ref
+	for _, affected := range dedupeStrings(paths) {
 		if strings.TrimSpace(affected) == "" || strings.TrimSpace(affected) == "<pending>" {
 			continue
 		}
 		raw := affected
-		affected, err = repopath.Canonical(repoRoot, affected)
+		canonical, err := repopath.Canonical(repoRoot, affected)
 		if err != nil {
-			return nil, fmt.Errorf("affects.files path %q: %w", raw, err)
+			return nil, fmt.Errorf("affects path %q: %w", raw, err)
 		}
-		if fileExists(filepath.Join(repoRoot, filepath.FromSlash(affected))) {
-			refs = append(refs, physicalRef(repoRoot, affected, SourceDerivedAffects))
+		if fileExists(filepath.Join(repoRoot, filepath.FromSlash(canonical))) {
+			refs = append(refs, physicalRef(repoRoot, canonical, SourceDerivedAffects))
 		}
 	}
-	sortRefs(refs)
 	return refs, nil
 }
 
@@ -1370,6 +1459,17 @@ func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surfa
 	if err != nil {
 		return nil, nil, err
 	}
+	// A cited evidence file is the item judgment's proof: an unresolvable
+	// declaration fail-closes here instead of producing a judgment that
+	// cannot read its evidence.
+	if problems := specvalidation.CheckEvidenceFiles(repoRoot, content); len(problems) > 0 {
+		return nil, nil, fmt.Errorf("declared affects.evidence_files cannot resolve to a file — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
+	}
+	evidenceRefs, err := specAffectsRefs(repoRoot, specvalidation.ExtractAffectsEvidenceFiles(content))
+	if err != nil {
+		return nil, nil, err
+	}
+	refs = append(refs, evidenceRefs...)
 	sortRefs(refs)
 	sortSurfaces(surfaces)
 	return refs, surfaces, nil

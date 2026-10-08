@@ -780,6 +780,64 @@ func LocateSectionRegion(text, heading string) (SectionRegion, bool) {
 	return found, true
 }
 
+// LocateEnclosingSectionRegion resolves a subsection heading (a `###` or
+// deeper heading, outside a fence) to the unique `##` section region that
+// contains it. ok is false when no subsection has that text, when more than
+// one does, or when the match sits in the frontmatter region — the resolver
+// never guesses between ambiguous targets, and the caller keeps its
+// fail-closed error. It powers declaration normalization: a reviewer that
+// cites the subsection it actually read binds to the enclosing `##` region,
+// a unique superset of what it read (framework/validation_cache.md
+// §Structural Region Dependencies).
+func LocateEnclosingSectionRegion(text, heading string) (SectionRegion, bool) {
+	lines := strings.Split(text, "\n")
+	fence := fenceTracker{}
+	match := -1
+	count := 0
+	for i, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if h, ok := subsectionHeadingText(line); ok && h == heading {
+			match = i
+			count++
+		}
+		fence.advance(line)
+	}
+	if count != 1 {
+		return SectionRegion{}, false
+	}
+	for _, r := range SectionRegions(text) {
+		if r.Heading == "" {
+			continue
+		}
+		if r.Start <= match+1 && match+1 <= r.End {
+			return r, true
+		}
+	}
+	return SectionRegion{}, false
+}
+
+// subsectionHeadingText extracts the heading text of a `###` or deeper
+// heading line. A malformed deeper heading (no whitespace after the hashes,
+// e.g. `###x`) is content, not a heading — the same rule isSectionHeading
+// applies at level two.
+func subsectionHeadingText(line string) (string, bool) {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "###") {
+		return "", false
+	}
+	rest := strings.TrimPrefix(t, "###")
+	for len(rest) > 0 && rest[0] == '#' {
+		rest = rest[1:]
+	}
+	if rest == "" || (rest[0] != ' ' && rest[0] != '\t') {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
+
 // HasSectionHeading reports whether any section region has the given heading
 // text (without the `## ` prefix). Duplicated headings count as present — the
 // check is presence, not locatability (LocateSectionRegion is the locatability

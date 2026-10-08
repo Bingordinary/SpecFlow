@@ -284,8 +284,8 @@ func TestBootstrapGateProceduresRemainInRoutedPackages(t *testing.T) {
 		"including items that a delta/repair run might carry",
 		"including files already in the declared code surface",
 		"The coordinator does not submit that text as a session report",
-		"re-runs `gate-plan` with the union of previously discovered and new paths",
-		"executes the replacement run's coverage set again",
+		"extends the open run in place",
+		"only the uncovered key re-missions with the extended refs",
 		"only when `gate-status` reports next action `finalize`",
 		"`finalize` when ready to publish",
 		"targeted runs execute directly in the main agent session",
@@ -293,7 +293,7 @@ func TestBootstrapGateProceduresRemainInRoutedPackages(t *testing.T) {
 		requireText(t, scope, required)
 	}
 	shared := readPackage("shared_judgments.md")
-	for _, required := range []string{"public", "design", "architecture", "preserve", "waits for the assigned run"} {
+	for _, required := range []string{"public", "design", "architecture", "unit-private design", "waits for the assigned run"} {
 		requireText(t, shared, required)
 	}
 }

@@ -789,7 +789,17 @@ func sectionDep(text, heading string) (string, error) {
 	}
 	region, ok := contenthash.LocateSectionRegion(text, heading)
 	if !ok {
-		return "", fmt.Errorf("section %q not found (or declared more than once) — list the sections with gate-evidence --sections", requested)
+		// A reviewer may cite the subsection it actually read. A uniquely
+		// named ### heading resolves to its enclosing ## section region —
+		// the unique, conservative superset of what was read — instead of
+		// rejecting the whole report; ambiguous or absent citations still
+		// fail closed.
+		if requested != "frontmatter" {
+			if enclosing, found := contenthash.LocateEnclosingSectionRegion(text, requested); found {
+				return "region:section:" + enclosing.Heading + ":" + contenthash.RegionCID(enclosing.Text), nil
+			}
+		}
+		return "", fmt.Errorf("section %q not found (or declared more than once) — cite a top-level `##` heading (a uniquely named deeper heading resolves to its enclosing section); list the sections with gate-evidence --sections", requested)
 	}
 	return "region:section:" + heading + ":" + contenthash.RegionCID(region.Text), nil
 }

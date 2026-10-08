@@ -72,20 +72,16 @@ func verifyRecords(root string, cache *cacheFile) error {
 			if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err != nil {
 				return fmt.Errorf("%s: %w", check.Check, err)
 			}
-			r, err := judgments.Load(root, binding.Reference)
-			if err != nil {
+			if _, err := judgments.Load(root, binding.Reference); err != nil {
 				return err
-			}
-			if cache.Result == "pass" && strings.HasPrefix(check.Check, "preserve:") && r.Verdict != "ALIGNED" {
-				return fmt.Errorf("protected requirement %s is %s", check.Check, r.Verdict)
 			}
 		}
 	}
 	return nil
 }
 
-// Rewrite only the current unit's binding. Protected stable units remain bound
-// to stable, and content-addressed records keep their original bytes and ids.
+// Rewrite only the current unit's binding. Content-addressed records keep
+// their original bytes and ids.
 func rewriteJudgmentBindings(content, unit, from, to string) string {
 	raw := extractJudgments(content)
 	if raw == "" {

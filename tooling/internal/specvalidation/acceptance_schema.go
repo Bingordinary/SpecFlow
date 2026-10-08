@@ -2,6 +2,7 @@ package specvalidation
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
@@ -53,6 +54,19 @@ func CheckAcceptanceItemSchema(content string) CheckResult {
 		if item.fields["runnable"] == "no" && strings.TrimSpace(item.fields["not_runnable_reason"]) == "" {
 			issue("missing or empty required field not_runnable_reason when runnable is no")
 		}
+		// Gherkin-style description convention (framework/spec_writing_guide.md
+		// §Gherkin-style Description Convention): this is the mechanical half
+		// of the retired Check 5d — testable items must carry a
+		// Given…When…Then scenario sequence, and .feature file syntax is
+		// rejected.
+		if item.fields["verification_type"] == "testable" {
+			description := item.fields["description"]
+			if keyword := featureSyntaxLine(description); keyword != "" {
+				issue(fmt.Sprintf("description uses .feature syntax (%s); use Gherkin-style Given/When/Then scenarios (framework/spec_writing_guide.md §Gherkin-style Description Convention)", keyword))
+			} else if !gherkinSequenceRe.MatchString(description) {
+				issue("testable item description must contain a Given…When…Then scenario sequence (framework/spec_writing_guide.md §Gherkin-style Description Convention)")
+			}
+		}
 	}
 	if len(issues) != 0 {
 		result.Details = strings.Join(issues, "; ")
@@ -62,3 +76,23 @@ func CheckAcceptanceItemSchema(content string) CheckResult {
 	result.Details = fmt.Sprintf("%d item(s) found with required fields", len(items))
 	return result
 }
+
+// featureSyntaxLine reports the first `.feature` keyword a description line
+// starts with, or "" when the description uses no `.feature` syntax.
+func featureSyntaxLine(description string) string {
+	keywords := []string{"Feature:", "Scenario:", "Scenario Outline:", "Examples:", "Background:"}
+	for _, line := range strings.Split(description, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, keyword := range keywords {
+			if strings.HasPrefix(trimmed, keyword) {
+				return keyword
+			}
+		}
+	}
+	return ""
+}
+
+// gherkinSequenceRe matches a Given…When…Then sequence in order anywhere in
+// the description — the mechanical form of the Gherkin-style convention
+// (line breaks are presentation; the sequence is the content).
+var gherkinSequenceRe = regexp.MustCompile(`(?is)\bgiven\b.*\bwhen\b.*\bthen\b`)

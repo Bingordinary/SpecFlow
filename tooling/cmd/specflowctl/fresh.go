@@ -239,6 +239,50 @@ func stableRuleSummaryLine(repoRoot, ruleID string) string {
 		ruleID, vStatus, stableDriftLabel(repoRoot, ruleID, baseline.CheckRuleBaseline(repoRoot, ruleID)))
 }
 
+// writeStaleImpactAfterPromote reports the stable units whose confirmation
+// state is not FRESH immediately after a successful promote. Dependency
+// freshness is the propagation path for cross-unit impact — a promoted change
+// stales the confirmation caches of units whose declared evidence covers the
+// changed content — so the sweep makes that impact surface loud at promote
+// time instead of leaving it to be rediscovered (see
+// framework/shared_judgments.md §Cache, delta and release — missing or
+// indeterminate confirmation state blocks a unit's release with the specific
+// gap; its own next gate re-confirms the affected surface).
+// The promoted unit itself is excluded; its caches were just confirmed by the
+// promotion. The sweep is informational.
+func writeStaleImpactAfterPromote(stdout io.Writer, absRoot, promotedUnit string) error {
+	unitNames, err := stableUnitNames(absRoot)
+	if err != nil {
+		return err
+	}
+	derivation, err := gaterun.NewDerivation(absRoot)
+	if err != nil {
+		return err
+	}
+	var lines []string
+	for _, name := range unitNames {
+		if name == promotedUnit {
+			continue
+		}
+		for _, gate := range []string{"validate", "verify"} {
+			status, reason, _ := checkStableUnitGate(derivation, absRoot, name, gate)
+			if status != gateStale && status != gateBlocked {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("  %s: %s %s — %s", name, gate, status, reason))
+		}
+	}
+	if len(lines) == 0 {
+		fmt.Fprintln(stdout, "Impact: no other stable unit confirmation is stale.")
+		return nil
+	}
+	fmt.Fprintf(stdout, "Impact: %d stable unit confirmation(s) are not FRESH (dependency freshness) — each owner's next gate re-confirms:\n", len(lines))
+	for _, line := range lines {
+		fmt.Fprintln(stdout, line)
+	}
+	return nil
+}
+
 // stableDriftLabel maps a baseline check status to the drift column label.
 func stableDriftLabel(repoRoot, name string, result baseline.CheckResult) string {
 	switch result.Status {

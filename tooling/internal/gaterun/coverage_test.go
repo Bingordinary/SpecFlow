@@ -1200,66 +1200,6 @@ func TestDeltaPlanWithoutJudgmentsWhenNothingIsCarried(t *testing.T) {
 	}
 }
 
-// TestProtectedCoverageUnionsRecordedItemDependencies verifies that a stable
-// peer item's protected read surface unions the recorded dependencies of
-// every item judgment for that item — not only the current accepted one — so
-// indexing the store once per derivation preserves the original scan's
-// semantics.
-func TestProtectedCoverageUnionsRecordedItemDependencies(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnitItemsSpec(t, repoRoot, "auth.core")
-	// The run's quality surface expands src, so it includes the stable peer
-	// item's declared file: the peer item is a protected requirement.
-	writeFile(t, repoRoot, "src/peer.go", "package peer\n")
-	writeFile(t, repoRoot, "src/notes.go", "package auth\n// util\n")
-	writeFile(t, repoRoot, "lib/util.go", "package lib\n")
-	writeUnit(t, repoRoot, "stable", "peer", "none", "none", "src/peer.go", "")
-
-	context, err := judgments.SpecContext(repoRoot, "peer", TargetStable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	saveItem := func(report, dep string) {
-		t.Helper()
-		record := judgments.Record{
-			Version:      judgments.RecordVersion,
-			Kind:         judgments.Item,
-			Unit:         "peer",
-			Subject:      "peer.core",
-			SpecContext:  context,
-			Coverage:     []string{"preserve:peer:peer.core"},
-			Inputs:       []string{"docs/specs/units/stable/unit_peer.md"},
-			Dependencies: []judgments.Dependency{{Path: dep}},
-			Protocol:     judgments.Protocol(repoRoot),
-			Verdict:      "ALIGNED",
-			Result:       json.RawMessage(`{"effective_status":{"preserve:peer:peer.core":"pass"}}`),
-			Report:       report,
-			ReportDigest: judgments.Digest([]byte(report)),
-			SourceRun:    "test-run",
-		}
-		if _, err := judgments.Save(repoRoot, record); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// An older record records lib/util.go; the current accepted record does
-	// not. src/notes.go references util, so only the older record's path
-	// connects the notes evidence — the union must keep it.
-	saveItem("older decision", "lib/util.go")
-	saveItem("current decision", "src/peer.go")
-
-	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ck := run.CoverageByKey("preserve:peer:peer.core")
-	if ck == nil {
-		t.Fatalf("expected the stable peer item in the protected coverage set, got %v", coverageKeysOf(run))
-	}
-	if !stringInSlice(ck.ReadRefs, "lib/util.go") {
-		t.Fatalf("expected the older record's dependency in the read surface, got %v", ck.ReadRefs)
-	}
-}
-
 // The semantic checklist owns rule checks; its headings and the generated
 // coverage must agree without another independently maintained count.
 func TestRuleChecklistMatchesPlannedCoverage(t *testing.T) {
@@ -1613,33 +1553,230 @@ func TestLoadDeferredFindingsRebindsQualityKeysAndPreservesSource(t *testing.T) 
 	}
 }
 
-// A protected stable-record deferral rebinds preserve:<owner>:<item> to the
-// owner's own item key in both source_key and affected_keys, preserving the
-// finding id, source unit and source run; other units' preserve keys keep
-// their identity.
-func TestLoadDeferredFindingsRebindsProtectedRecordDrift(t *testing.T) {
-	root := newRepo(t)
-	entry := validationcache.DeferredEntry{
-		FindingID: "source-run/preserve:owner:owner.core/F1", OwnerUnit: "owner",
-		SourceUnit: "source", SourceRun: "source-run", Severity: "P1",
-		Text: "protected stable mapping lags its implementation", Detail: "full finding detail",
-		SourceKey:    "preserve:owner:owner.core",
-		AffectedKeys: []string{"preserve:owner:owner.core", "preserve:other:other.core", "code:shared.go"},
-		EvidencePath: "shared.go", Reason: "the owner reconciles its own stable record",
-	}
-	if err := validationcache.WriteDeferredLedger(root, validationcache.DeferredLedger{SchemaVersion: 1, Entries: []validationcache.DeferredEntry{entry}}); err != nil {
+// TestVerifyEvidenceFilesAreReadOnlyEvidence pins the affects.evidence_files
+// contract: a cited evidence file joins the run snapshot and the item
+// session's read refs, but it never becomes a quality coverage key
+// (code:/design:) and never enters the code surface.
+func TestVerifyEvidenceFilesAreReadOnlyEvidence(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	evidence := "peer/peer_test.go"
+	writeFile(t, repoRoot, evidence, "package peer\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src",
+		"    affects:\n      evidence_files:\n        - "+evidence+"\n")
+
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
 		t.Fatal(err)
 	}
-	findings, err := loadDeferredFindings(root, "owner")
-	if err != nil || len(findings) != 1 {
-		t.Fatalf("load deferral: %+v %v", findings, err)
+	run, err := d.resolveRun(GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	got := findings[0]
-	if got.SourceUnit != "source" || got.SourceRun != "source-run" || got.Finding.ID != entry.FindingID || got.Finding.SourceKey != "item:owner:owner.core" {
-		t.Fatalf("owner key or provenance lost: %+v", got)
+	coverage, err := d.computeCoverage(run)
+	if err != nil {
+		t.Fatal(err)
 	}
-	want := "item:owner:owner.core,preserve:other:other.core,code:shared.go"
-	if strings.Join(got.Finding.AffectedKeys, ",") != want {
-		t.Fatalf("affected keys = %v", got.Finding.AffectedKeys)
+	ref, ok := refByRef(run, evidence)
+	if !ok || ref.Source != SourceDerivedAffects {
+		t.Fatalf("evidence file is not a derived read-only ref: %+v (found=%v)", ref, ok)
+	}
+	var item *CoverageKey
+	for i := range coverage {
+		ck := &coverage[i]
+		if ck.Key == "code:"+evidence || ck.Key == "design:auth:"+evidence {
+			t.Fatalf("evidence file became a quality coverage key: %s", ck.Key)
+		}
+		if ck.Key == "item:auth:auth.core" {
+			item = ck
+		}
+	}
+	if _, ok := surfaceByPath(run, evidence); ok {
+		t.Fatal("evidence file entered the code surface")
+	}
+	if item == nil {
+		t.Fatal("missing item coverage key")
+	}
+	reads := coverageReadRefs(repoRoot, run, *item)
+	found := false
+	for _, p := range reads {
+		if p == evidence {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("item session cannot read its cited evidence: %v", reads)
+	}
+}
+
+// TestVerifyMissingEvidenceFileFailsPlanning pins the fail-closed rule: an
+// affects.evidence_files entry that does not resolve rejects the verify plan
+// before any run state is written.
+func TestVerifyMissingEvidenceFileFailsPlanning(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src",
+		"    affects:\n      evidence_files:\n        - peer/missing_test.go\n")
+
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.resolveRun(GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil); err == nil {
+		t.Fatal("missing evidence file did not fail verify planning")
+	}
+}
+
+// TestExtendAddsInputsInPlaceKeepsCoverage pins the gate-extend contract: an
+// open run gains supplementary evidence in place (same run id, same coverage
+// set), the addition is persisted, and duplicate input is refused.
+func TestExtendAddsInputsInPlaceKeepsCoverage(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	writeFile(t, repoRoot, "extra/helper_test.go", "package extra\n")
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := strings.Join(coverageKeysOf(run), ",")
+	extended, err := Extend(repoRoot, run.RunID, []string{"extra/helper_test.go"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extended.RunID != run.RunID {
+		t.Fatalf("extension replaced the run: %s -> %s", run.RunID, extended.RunID)
+	}
+	if after := strings.Join(coverageKeysOf(extended), ","); after != before {
+		t.Fatalf("extension changed the coverage set: %s -> %s", before, after)
+	}
+	ref, ok := refByRef(extended, "extra/helper_test.go")
+	if !ok || ref.Source != SourceInput {
+		t.Fatalf("extended input is not a SourceInput ref: %+v (found=%v)", ref, ok)
+	}
+	if !stringInSlice(extended.ExtraInputs, "extra/helper_test.go") {
+		t.Fatalf("extended input missing from ExtraInputs: %v", extended.ExtraInputs)
+	}
+	if len(extended.Notices) == 0 || !strings.Contains(extended.Notices[len(extended.Notices)-1], "evidence extended") {
+		t.Fatalf("extension notice missing: %v", extended.Notices)
+	}
+	reloaded, err := Load(repoRoot, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := refByRef(reloaded, "extra/helper_test.go"); !ok {
+		t.Fatal("extended input was not persisted")
+	}
+	if _, err := Extend(repoRoot, run.RunID, []string{"extra/helper_test.go"}, time.Now()); err == nil || !strings.Contains(err.Error(), "no new inputs") {
+		t.Fatalf("duplicate extension not refused: %v", err)
+	}
+}
+
+// TestExtendRefreshesUncoveredSessionReadRefs pins the recovery contract: a
+// supplement must reach the read refs of every session that re-missions over
+// it — including a public code key, whose read surface is materialized at
+// plan time and must be refreshed, not left at its plan-time value.
+func TestExtendRefreshesUncoveredSessionReadRefs(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	writeFile(t, repoRoot, "extra/helper.go", "package extra\n")
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extended, err := Extend(repoRoot, run.RunID, []string{"extra/helper.go"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"item:auth:auth.core", "code:src/main.go"} {
+		spec, err := BuildSessionSpec(repoRoot, extended, []string{key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stringInSlice(spec.ReadRefs, "extra/helper.go") {
+			t.Fatalf("%s session cannot read the extended input: %v", key, spec.ReadRefs)
+		}
+	}
+}
+
+func TestExtendRejectsClosedRun(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Status = StatusConsumed
+	if err := writeRun(repoRoot, run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Extend(repoRoot, run.RunID, []string{"src/main.go"}, time.Now()); err == nil || !strings.Contains(err.Error(), "only an open run") {
+		t.Fatalf("closed run was not rejected: %v", err)
+	}
+}
+
+// TestItemReadRefsIncludeOneHopEvidence pins the discovery extension: an item
+// session may read the same one-hop public evidence the quality sessions
+// derive for the unit's files, so a related file does not force a replan.
+func TestItemReadRefsIncludeOneHopEvidence(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "src/main.go", "package main\n\nfunc main() {}\n")
+	writeFile(t, repoRoot, "lib/lib.go", "package lib\n\n// calls main.go helpers\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := d.resolveRun(GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := d.computeCoverage(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var item *CoverageKey
+	for i := range coverage {
+		if coverage[i].Key == "item:auth:auth.core" {
+			item = &coverage[i]
+		}
+	}
+	if item == nil {
+		t.Fatal("missing item coverage key")
+	}
+	reads := coverageReadRefs(repoRoot, run, *item)
+	if !stringInSlice(reads, "lib/lib.go") {
+		t.Fatalf("item read refs lack the one-hop evidence: %v", reads)
+	}
+}
+
+// TestStubScanNoticeListsCandidates pins the Step 6 mechanization: gate-plan
+// scans the declared code surface and records candidate hits in the run's
+// notice; a clean surface produces no scan notice.
+func TestStubScanNoticeListsCandidates(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n\n// placeholder implementation\n")
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notices := strings.Join(run.Notices, "\n")
+	if !strings.Contains(notices, "stub scan: 1 candidate hit") || !strings.Contains(notices, "src/main.go:3") {
+		t.Fatalf("expected a stub-scan notice with the candidate, got:\n%s", notices)
+	}
+
+	// A clean surface produces no scan notice.
+	writeUnit(t, repoRoot, "candidate", "beta", "none", "none", "src-beta", "")
+	writeFile(t, repoRoot, "src-beta/clean.go", "package main\n\nfunc f() int { return 1 }\n")
+	clean, err := Plan(repoRoot, GateVerify, TargetKindUnit, "beta", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(clean.Notices, "\n"), "stub scan:") {
+		t.Fatalf("clean surface must produce no scan notice, got: %v", clean.Notices)
 	}
 }

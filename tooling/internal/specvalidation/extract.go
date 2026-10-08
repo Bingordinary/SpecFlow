@@ -12,6 +12,7 @@ type acceptanceItemFields struct {
 	duplicateFields       []string
 	implementationSurface string
 	affectsFiles          []string
+	affectsEvidenceFiles  []string
 	affectsAppendices     []string
 	affectsDependencies   []string
 	affectsRules          []string
@@ -152,6 +153,8 @@ func appendAffects(item *acceptanceItemFields, key, value string) {
 	switch key {
 	case "files":
 		item.affectsFiles = append(item.affectsFiles, value)
+	case "evidence_files":
+		item.affectsEvidenceFiles = append(item.affectsEvidenceFiles, value)
 	case "appendices":
 		item.affectsAppendices = append(item.affectsAppendices, value)
 	case "dependencies":
@@ -249,6 +252,19 @@ func ExtractAffectsFiles(content string) []string {
 	return files
 }
 
+// ExtractAffectsEvidenceFiles returns the file paths declared in the
+// affects.evidence_files blocks of structurally located acceptance items, in
+// document order. Evidence files are read-only verification evidence: they
+// back the item's judgment but are never part of the unit's implementation
+// surface or quality coverage keys (framework/spec_writing_guide.md §7).
+func ExtractAffectsEvidenceFiles(content string) []string {
+	var files []string
+	for _, item := range parseAcceptanceItems(content) {
+		files = append(files, item.affectsEvidenceFiles...)
+	}
+	return files
+}
+
 // ExtractAcceptanceItemIDs returns the id values of all acceptance items,
 // in document order. Empty values are skipped. The scan is the same
 // structural one item-region location uses (contenthash.AcceptanceItemIDs):
@@ -277,17 +293,4 @@ func ExtractImplementationSurfaces(content string) []string {
 		}
 	}
 	return surfaces
-}
-
-// AcceptanceSurfaces preserves the item-to-file relationship for protection planning.
-func AcceptanceSurfaces(content string) map[string][]string {
-	out := map[string][]string{}
-	for _, item := range parseAcceptanceItems(content) {
-		files := append([]string(nil), item.affectsFiles...)
-		if item.implementationSurface != "" && item.implementationSurface != SurfacePending {
-			files = append(files, item.implementationSurface)
-		}
-		out[item.id] = files
-	}
-	return out
 }

@@ -48,7 +48,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\nid: %s\nunit_refs: %s\nrule_refs: %s\n---\n\n# %s\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", name, unitRefs, ruleRefs, name)
 	for _, item := range items {
-		fmt.Fprintf(&b, "  - id: %s\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item)
+		fmt.Fprintf(&b, "  - id: %s\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item)
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) string {
 	t.Helper()
 	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
-		"  - id: " + name + ".core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+		"  - id: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
 }
 
@@ -425,7 +425,7 @@ func grValidateReport(checks []string, scopes map[string][]string) string {
 	for _, c := range checks {
 		fmt.Fprintf(&b, "%s. %s: PASS — checked\n", c, grCheckNames[c])
 		if c == "5" {
-			for _, subcheck := range []string{"5a", "5b", "5c", "5d", "5e", "5f", "5g", "5h", "5i"} {
+			for _, subcheck := range []string{"5a", "5b", "5e", "5h"} {
 				fmt.Fprintf(&b, "  %s. Required acceptance sub-check: PASS — checked\n", subcheck)
 			}
 		}
@@ -560,28 +560,6 @@ func grCompleteCrossReport(t *testing.T, repoRoot string, run *gaterun.Run, repo
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(report, "\n"))
 	b.WriteString("\n")
-	failedKeys := map[string]bool{}
-	for _, state := range states {
-		if state.Status != gaterun.SessionAccepted || state.Result == nil || state.SessionID == gaterun.CrossKey {
-			continue
-		}
-		for _, finding := range resultFindings(state.Result) {
-			for key := range findingKeySet(finding) {
-				failedKeys[key] = true
-			}
-		}
-	}
-	for _, result := range run.CarriedResults {
-		for _, finding := range resultFindings(&result) {
-			for key := range findingKeySet(finding) {
-				failedKeys[key] = true
-			}
-		}
-	}
-	seen := map[string]bool{}
-	for _, m := range effectiveStatusRe.FindAllStringSubmatch(report, -1) {
-		seen[strings.TrimSpace(m[1])] = true
-	}
 	dispositionSeen := map[string]bool{}
 	for _, m := range dispositionRe.FindAllStringSubmatch(report, -1) {
 		dispositionSeen[strings.TrimSpace(m[1])] = true
@@ -597,39 +575,13 @@ func grCompleteCrossReport(t *testing.T, repoRoot string, run *gaterun.Run, repo
 			}
 		}
 	}
-	for _, ck := range run.Coverage {
-		for _, key := range run.ReportKeys(ck) {
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			status := "pass"
-			if failedKeys[key] {
-				status = "fail"
-			}
-			fmt.Fprintf(&b, "Effective status: %s = %s\n", key, status)
-		}
-	}
 	for _, result := range run.CarriedResults {
-		for key, status := range result.EffectiveStatus {
-			if !seen[key] {
-				fmt.Fprintf(&b, "Effective status: %s = %s\n", key, status)
-				seen[key] = true
-			}
-		}
 		for _, finding := range result.Findings {
 			if !dispositionSeen[finding.ID] {
 				fmt.Fprintf(&b, "Finding disposition: %s = retained\n", finding.ID)
 				dispositionSeen[finding.ID] = true
 			}
 		}
-	}
-	if !seen[gaterun.CrossKey] {
-		crossStatus := "pass"
-		if strings.Contains(report, "Cross-check: FAIL") {
-			crossStatus = "fail"
-		}
-		fmt.Fprintf(&b, "Effective status: cross = %s\n", crossStatus)
 	}
 	grCompleteQualityConclusions(run, states, &b)
 	return b.String()
@@ -1656,22 +1608,6 @@ func TestGateVerifyMismatchRequiresStructuredType(t *testing.T) {
 	good := grVerifyItemBody("auth.core", "MISMATCH (structural)", "broken at src/auth.go:1") + grVerifyAnalysisFields("auth.core") + "auth.core: " + main + ": Testability / Acceptance Criteria\n"
 	grSubmitOK(t, repoRoot, runID, "auth.core", good)
 }
-
-func TestGateVerifyPartBSkippedRequiresReason(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	grWriteSpec(t, repoRoot, "auth")
-	main := "docs/specs/units/candidate/unit_auth.md"
-	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
-
-	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	noReason := "- auth.core: ALIGNED — src/auth.go:1\n  evidence: src/auth.go:1 implements it\n  deterministic: true\n  Part A: No concerns\n  Part B: skipped\n\nauth.core: " + main + ": Testability / Acceptance Criteria\nauth.core: src/auth.go: all\n"
-	if _, err := grSubmit(t, repoRoot, runID, "auth.core", noReason); err == nil || !strings.Contains(err.Error(), "must carry a reason") {
-		t.Fatalf("expected the bare skipped rejection, got %v", err)
-	}
-	withReason := strings.Replace(noReason, "Part B: skipped\n", "Part B: skipped — no test files in this fixture\n", 1)
-	grSubmitOK(t, repoRoot, runID, "auth.core", withReason)
-}
-
 func TestGateFindingsRequireResolutionLabel(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
@@ -1791,7 +1727,7 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	grFinalizeOK(t, repoRoot, fullID)
 
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Behavior.", "  - id: auth.login\n    description: Behavior, edited.", 1)
+	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -2647,7 +2583,7 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(peerPath, []byte(strings.Replace(string(data), "Behavior.", "Behavior, changed.", 1)), 0644); err != nil {
+	if err := os.WriteFile(peerPath, []byte(strings.Replace(string(data), "Given a caller, When the behavior runs, Then it is accepted.", "Given a caller, When the behavior runs, Then it is accepted. Changed.", 1)), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2735,8 +2671,8 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 		}
 	}
 
-	runDelta("Behavior.", "Behavior changed.")
-	runDelta("Behavior changed.", "Behavior changed again.")
+	runDelta("Given a caller, When the behavior runs, Then it is accepted.", "Given a caller, When the behavior runs, Then it is accepted. Changed.")
+	runDelta("Given a caller, When the behavior runs, Then it is accepted. Changed.", "Given a caller, When the behavior runs, Then it is accepted. Changed again.")
 }
 
 func TestRuleOutcomeRejectsCarriedRerunOverlap(t *testing.T) {
@@ -3244,7 +3180,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Behavior.", "  - id: auth.login\n    description: Behavior, edited.", 1)
+	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -3296,13 +3232,6 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	latest, accepted, err := judgments.LatestItem(repoRoot, "auth", "auth.logout", "stable")
 	if err != nil || !accepted || latest != binding.Reference {
 		t.Fatalf("promotion lost the carried current decision: %+v %v %v", latest, accepted, err)
-	}
-	grWriteSpecSurface(t, repoRoot, "order", "src/auth.go", "")
-	orderID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	order := mustLoadRun(t, repoRoot, orderID)
-	protected := order.Records["preserve:auth:auth.logout"]
-	if protected.Source != "reused" || protected.Reference != binding.Reference {
-		t.Fatalf("stable protection did not reuse the carried decision: %+v", protected)
 	}
 }
 
@@ -3441,7 +3370,7 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Behavior.", "  - id: auth.beta\n    description: Behavior, revised.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3489,7 +3418,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Behavior.", "  - id: auth.beta\n    description: Behavior, revised.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3792,7 +3721,7 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Behavior.", "  - id: auth.two\n    description: Behavior, revised.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}
@@ -3997,7 +3926,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Behavior.", "  - id: auth.two\n    description: Behavior, revised.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}
@@ -4348,4 +4277,30 @@ func grBuildSessionSpec(root string, run *gaterun.Run, keys []string) (*gaterun.
 		mapped[i] = grSessionKeys(run, key)[0]
 	}
 	return gaterun.BuildSessionSpec(root, run, mapped)
+}
+
+// TestDependencyScopeSubsectionResolvesToEnclosingSection pins the #64
+// end-to-end recovery: a reviewer that declares the ### subsection it
+// actually read is accepted, and the recorded dependency names the enclosing
+// ## section region.
+func TestDependencyScopeSubsectionResolvesToEnclosingSection(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	data, err := os.ReadFile(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, "docs/specs/units/candidate/unit_auth.md", strings.Replace(string(data), "## Testability / Acceptance Criteria", "## Testability / Acceptance Criteria\n\n### Acceptance detail\n\nDetail prose.", 1))
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	key := "item:auth:auth.core"
+	report := grVerifyItemBody(key, "ALIGNED", "src/auth.go:1") + key + ": " + main + ": Acceptance detail\n" + key + ": src/auth.go: all\n"
+	grSubmitOK(t, root, runID, "auth.core", report)
+	grAutoSubmitQuality(t, root, runID)
+	grFinalizeOK(t, root, runID)
+	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	if !strings.Contains(cache, "region:section:Testability / Acceptance Criteria:") {
+		t.Fatalf("cache must record the enclosing section dep:\n%s", cache)
+	}
 }

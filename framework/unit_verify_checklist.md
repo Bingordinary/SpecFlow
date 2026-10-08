@@ -17,7 +17,7 @@ Coverage keys:
 
 | Lens | Coverage keys |
 |---|---|
-| `alignment` | `item:<unit>:<item>` and `preserve:<unit>:<item>` |
+| `alignment` | `item:<unit>:<item>` |
 | `quality` | `code:<file>`, `design:<unit>:<file>`, and one `architecture:<unit>` |
 
 **Boundary ownership** — which lens owns which judgment:
@@ -42,11 +42,11 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED, or an evidence-backed record-drift routing.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority.
 
 ### 2. Pre-review Setup
 
-Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path requires replanning.
+Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
 
 Design and architecture checks read their selected unit spec, applicable rules and code. Extract accepted trade-offs, architectural decisions, design constraints, known debt and non-goals from that unit's published design context.
 
@@ -220,7 +220,7 @@ The unit's complete spec is the union of the main spec and all non-exempt append
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `verify@{unit}` | full | Verify all spec content and the declared code surface: the `alignment` lens (Steps 1–7 per acceptance item) and the `quality` lens (public code and unit design per file, plus one unit architecture task), and protection of related stable requirements. Sessions share the same kind and lens. |
+| `verify@{unit}` | full | Verify all spec content and the declared code surface: the `alignment` lens (Steps 1–7 per acceptance item) and the `quality` lens (public code and unit design per file, plus one unit architecture task). Sessions share the same kind and lens. |
 | `verify@{unit}:{keyword}` | targeted | Match keyword to spec content by title, feature name, API path, or structure → verify that content. Does not write a cache. |
 
 **Keyword domain:** verify keywords resolve to spec content — section titles, feature names, API paths, acceptance item ids, appendix files. A keyword matching no spec content is a no-match — ask the user for clarification.
@@ -242,7 +242,7 @@ Verify is a **static structural alignment check** — it compares what the spec 
 | Every normative claim has deterministic evidence, no counterexample | ALIGNED |
 | At least one claim has a confirmed counterexample | MISMATCH (affected claims listed) |
 | No counterexample, but ≥1 claim cannot be proven statically | CANNOT_DETERMINE (gap listed) |
-| Test absence / Part A-B concerns | No verdict change — recorded as annotations |
+| Test absence (coverage completeness) | No verdict change — recorded as an annotation |
 
 Fold order: MISMATCH > CANNOT_DETERMINE > ALIGNED. A claim supported only by the existence of a test is not deterministic evidence — tests are annotations, not proof of implementation behavior.
 
@@ -319,7 +319,7 @@ Next step: {concrete next command with reason, or "None"}
   - Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive. Batch-group entries carry the same fields; terse one-line values are fine.
   - Findings whose recorded ownership routes them to another unit are presented in a `Deferred to {unit}:` section after the Findings section, with the same block fields plus an `ownership:` line. They are retained and routed but do not count toward `Key counts`, `Blocking promote`, or the gate result (see `framework/unit_verify_checklist.md` §Output Format → Deferred findings).
   - Each finding's `[{severity}]` is assigned by the session that raises the finding. When the final synthesis (`framework/verification_scope.md` §Final synthesis) retains or merges findings, it may raise a retained finding's canonical severity conservatively — never lower it; counts and blocking derive from the canonical severities (see `framework/severity_policy.md`).
-- `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the gate's check identifier (validate: `check-{n}`; verify `alignment`: `item:<unit>:<item>` or `preserve:<unit>:<item>`; verify `quality`: `code:<file>`, `design:<unit>:<file>` or `architecture:<unit>`). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify alignment judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Public code checks (`code:<file>`) carry no scope lines: each check's own public evidence surface — the read refs of its coverage key — is recorded whole-file by the tooling as its dependency. Every read-only subagent reports the scope it declares for the checks in its session; the report is submitted verbatim via `gate-submit`, which validates the declarations against that session's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown, tagged with the session's lens, in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly → Check / session scope). Targeted runs may omit it.
+- `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the gate's check identifier (validate: `check-{n}`; verify `alignment`: `item:<unit>:<item>`; verify `quality`: `code:<file>`, `design:<unit>:<file>` or `architecture:<unit>`). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`; a uniquely named `###` subsection resolves to its enclosing `##` section region), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify alignment judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Public code checks (`code:<file>`) carry no scope lines: each check's own public evidence surface — the read refs of its coverage key — is recorded whole-file by the tooling as its dependency. Every read-only subagent reports the scope it declares for the checks in its session; the report is submitted verbatim via `gate-submit`, which validates the declarations against that session's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown, tagged with the session's lens, in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly → Check / session scope). Targeted runs may omit it.
 - `Incremental scope:` — delta runs only (mode `delta`). One line per re-run coverage key in the run's own structure (e.g. validate: "structural (checks 1, 3, 6): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-6, 8-10: carried over — their dependency evidence is unchanged"). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or code file has no evidence to carry, so it executes like a stale judgment), and fixes the re-run coverage set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the re-run set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, and any explicit `--rerun` overrides; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full coverage set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. A finding's fix lifecycle has three states with fixed wording: `finding_open` → "Resolve the findings, then re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}`) to confirm"; `fixed_pending_recheck` → "Fixes applied; re-run the target-appropriate re-check command to confirm." — only after the approved fix was actually written; `verified` → "Re-check passed." — only after a re-check confirmed the fix. A gate report is always produced before any fix is applied (nothing is implemented before the user approves the findings), so an actionable finding's report-time `Next step` is always the `finding_open` wording. Other guidance: both gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}"; nothing further → `None`.
 
@@ -439,7 +439,7 @@ IF a complete declaration exists in code BUT has no correspondence
     present in code are ALIGNED (extra code fields are not surplus).
 ```
 
-4. **Reverse direction:** code→spec surplus discovery is owned by Step 5 Part A (the design-surface scan with its implementation-detail filter). Do not run a second structure-level reverse scan here — Step 5 Part A reads the complete associated files, attributes structures to responsibilities (the attribution rules there cover shared files and preserve scoping), and defers candidates to Step 7. The subset-match exception from step 3 stands on its own: subset-match declarations whose spec-declared fields are all present in code are ALIGNED (extra code fields are not surplus).
+4. **Reverse direction:** code→spec surplus discovery is owned by Step 5 Part A (the design-surface scan with its implementation-detail filter). Do not run a second structure-level reverse scan here — Step 5 Part A reads the complete associated files, attributes structures to responsibilities (the attribution rules there cover shared files), and defers candidates to Step 7. The subset-match exception from step 3 stands on its own: subset-match declarations whose spec-declared fields are all present in code are ALIGNED (extra code fields are not surplus).
 
 **PASS (ALIGNED):** All spec body declarations have structurally consistent implementations
 
@@ -523,13 +523,13 @@ Per-item report format:
 
 **Test design sub-check (for verification_type: testable items only):**
 
-Ownership note: the `alignment` lens records whether tests exist for an item (Part A coverage as annotation evidence); the **quality** of those tests (Part B meaningfulness — mock density, assertion authenticity incl. tautology and mock-through signals, happy-path-only) is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above). A test-quality concern is never an `alignment` finding.
+Ownership note: the `alignment` lens records whether tests exist for an item (coverage completeness, as annotation evidence) and verifies the evidence-carry check for cited `affects.evidence_files`. The **quality** of the unit's own test files — behavioral vs implementation-coupled, assertion meaningfulness, failure-mode coverage, brittle duplication — is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above). A test-quality concern is never an `alignment` finding.
 
-This sub-check has two parts: **A — coverage completeness** (tests exist for implied scenarios) and **B — test meaningfulness** (existing tests are genuine). The agent runs both parts and reports findings per acceptance item.
+This sub-check identifies significantly implied but missing test scenarios; the alignment reviewer reports them per acceptance item.
 
 **Language-agnostic approach:** The agent reads test files and self-identifies the testing framework (mock libraries, assertion libraries, test runner conventions) rather than relying on a hardcoded language list. When a test framework or assertion style is unfamiliar, the agent reports CANNOT_DETERMINE rather than guessing.
 
-For a coverage run, the coordinator locates relevant test and code-context file paths before `gate-plan`, without assessing their behavior, and lists every discovered file in the input manifest (`--inputs-file`). Include files already in the declared implementation surface so delta/repair can detect evidence missing from the baseline. This discovery covers every acceptance item in full, delta, and repair modes. The independent alignment reviewer reads and declares the relevant tests from its session `read_refs`; a required test or context file missing from those refs is an incomplete session, not evidence that no test exists.
+For a coverage run, the coordinator locates relevant test and code-context file paths before `gate-plan`, without assessing their behavior, and lists every discovered file in the input manifest (`--inputs-file`). Include files already in the declared implementation surface so delta/repair can detect evidence missing from the baseline. This discovery covers every acceptance item in full, delta, and repair modes. The independent alignment reviewer reads and declares the relevant tests from its session `read_refs`; a required test or context file missing from those refs is an incomplete session, not evidence that no test exists. The coordinator recovers it by extending the open run with `specflowctl gate-extend` — accepted keys keep their verdicts — not by replanning.
 
 ---
 
@@ -546,99 +546,22 @@ Part A is **not** an exhaustive coverage audit. It flags obvious omissions. A si
 
 ---
 
-### Part B — Test meaningfulness
+### Reporting
 
-Existing tests are not automatically meaningful. This part checks whether the tests that *do* exist are structured as genuine validation — or are ritual tests that pass regardless of implementation correctness.
-
-**Execution steps:**
-
-For each acceptance item with `verification_type: testable`, locate the corresponding test files. For each test function found, apply the following checks:
-
-#### B1 — Mock density
-
-**Method:** Identify all import paths in the test file. Separate mock/stub/fake imports (e.g. `testify/mock`, `gomock`, `jest.mock`, `sinon`, `unittest.mock`, `pytest-mock`) from regular imports. Calculate the ratio.
-
-```
-mock_ratio = mock_imports / total_imports
-```
-
-**Language-agnostic detection:** Agent reads imports and identifies mock/stub/fake libraries by name convention and usage context rather than a hardcoded list. Libraries whose primary purpose is creating test doubles are counted as mocks.
-
-| Ratio | Report |
-|-------|--------|
-| < 80% | No concern |
-| ≥ 80% | CONCERN — "Mock density is {n}%. Most dependencies are mocked; only orchestration is exercised." |
-| 100% | CONCERN — "Every dependency is mocked. Test exercises wiring only, not real behavior." |
-
-Mock density above 80% is a **signal**, not a verdict. The agent uses it in combination with other Part B checks. A well-written test with 100% mocks that verifies interaction patterns (e.g. "did the service call repository with the correct transformed data") is meaningful. A test with 100% mocks that calls a function and asserts a tautology is not.
-
-#### B2 — Assertion authenticity
-
-**Method:** For each test function, agent reads the full body and evaluates whether the assertions genuinely verify the outcome implied by the test name and acceptance item — i.e., whether the test would fail if the implementation logic it names were broken.
-
-Checklist per test function:
-- Does the test have at least one assertion?
-- Does the assertion target an actual output value (return value, state change, side effect) rather than a fixed/tautological expression?
-- If the test name describes an error scenario ("returns error when email exists"), does at least one assertion check the error (type, message, presence)?
-
-**Named signals** — two recurring ways an assertion fails this check. Both are evaluated with the same language-agnostic reasoning: the agent reads the assertion call and its arguments and asks whether it could fail under any reasonable code change.
-
-- **Tautological assertion** — the assertion always passes regardless of implementation state:
-  - Is the asserted value an unconditional literal? (`assert.Equal(42, 42)` → always passes)
-  - Is the asserted value the test infrastructure itself? (`assert.NotNil(t)` where one `t` is `*testing.T` → never nil)
-  - Is the assertion checking a property guaranteed by the test setup rather than the implementation? (mock returns a fixed value, then the assertion checks that same fixed value without transformation)
-  - A single tautological assertion in a healthy test file may be accidental; multiple across an acceptance item's tests → stronger ritual-testing signal.
-- **Mock-through** — the mock's return value passes through the function without transformation, validation, or conditional logic, and the assertion checks that same (or derived) value: the test exercises only the mock, not the implementation. Trace the data flow across mock setup → function call → assertion, then apply the decision test:
-  - "Would this test fail if the function body were replaced with a no-op / passthrough?" → No, it passes → CONCERN (only the mock is exercised).
-  - "Would this test fail if the validation/transformation logic were broken?" → Yes → No concern (implementation logic is exercised).
-
-**Reports:**
-
-```
-{item.id}: CONCERN — Test "TestRegister_DuplicateEmail" describes a conflict scenario
-  but contains no error assertion. The test calls the register function but only
-  asserts NoError. The conflict logic is never verified.
-
-{item.id}: CONCERN — Test "TestRegister_Success" exercises mock passthrough only.
-  Mock returns User{ID: 1, Name: "a"}, service returns it unchanged,
-  assertion checks ID == 1. The test passes even if all business logic
-  is removed.
-```
-
-**Signal usage:** A test missing a meaningful assertion for its stated purpose is a strong indicator of ritual testing. Even one such test per acceptance item warrants a CONCERN.
-
-#### B3 — All-happy-path detection
-
-**Method:** After Part A has confirmed a happy path exists, count all test functions associated with the acceptance item. If every test exercises a success scenario and none exercises error/invalid/edge paths → CONCERN.
-
-This is distinct from Part A's check: Part A checks whether a *specific implied scenario* is missing. B3 checks the *overall profile* of existing tests — a complete lack of negative testing.
-
-```
-{item.id}: CONCERN — All {N} tests are happy-path only. No test exercises
-  validation rejection, business rule conflict, or dependency failure.
-```
-
----
-
-### Part A/B integration
-
-Part A and Part B findings are reported together per acceptance item:
+The coverage-completeness concern is recorded under the item in the verify output as an annotation. It does not change the item-level verdict (ALIGNED / MISMATCH / CANNOT_DETERMINE).
 
 ```
 {item.id}: ALIGNED
   - evidence: grep -n "201" src/api/user.go → line 42
   - deterministic: true
   Part A: No concerns
-  Part B: One concern
-    - B1 Mock density: 60% — no concern
-    - B3 All happy path: CONCERN — 3 tests, all success scenarios, no error path
 ```
 
-Part B findings are recorded under the item in the verify output as CONCERN-level annotations. They do not change the item-level verdict (ALIGNED / MISMATCH / CANNOT_DETERMINE).
+**Edge case:** If acceptance item has no tests at all, the sub-check flags the missing scenarios.
 
-**Edge case:** If test files are not in a language the agent can parse with confidence, or if the test framework is unfamiliar, report CANNOT_DETERMINE for all Part B checks on that acceptance item. Do not guess.
+**Evidence-carry check (items citing `affects.evidence_files`):**
 
-**Edge case:** If acceptance item has no tests at all, Part A flags the missing scenarios; Part B is skipped entirely (no tests to evaluate).
+An item may cite read-only evidence files — typically tests or code owned by another unit — in `affects.evidence_files`. For each cited file, the item judgment verifies that the file actually carries the behavior or assertion the item claims: locate the referenced behavior in the cited file and confirm it matches the item's `description` or `pass_condition` at the claimed location. A citation that does not resolve to the claimed behavior is a MISMATCH of this item (root cause and direction per Step 7). The cited file's own quality is never judged here — it is another unit's implementation surface, reviewed by its owner's gates — and an evidence file never enters this unit's quality coverage keys. The unit's own test files keep their quality-lens grading.
 
 ---
 
@@ -655,7 +578,7 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
 - Is the nature of the change consistent with the behavior described?
   (If item says "add login handler" but the file only has imports → flag)
 - Does this file participate in the declared behavior? Shared implementation is permitted;
-  check this unit's requirements and preserve related stable requirements independently
+  check this unit's requirements independently
   (see `framework/shared_judgments.md`).
 ```
 
@@ -718,7 +641,7 @@ Part B findings are recorded under the item in the verify output as CONCERN-leve
 
 ## Step 5 — Implementation integrity & surplus detection
 
-**Purpose:** Discover code designs within this unit's responsibility that are not declared in its spec (code surplus) and assess non-runnable items. Do not classify surplus findings yet — defer to Step 7. The reverse-check responsibility boundary from Step 1 also applies here. A preserve task assesses only the protected stable requirement and the designs implementing or constraining it; unrelated behavior in the same file does not become a protected mismatch.
+**Purpose:** Discover code designs within this unit's responsibility that are not declared in its spec (code surplus) and assess non-runnable items. Do not classify surplus findings yet — defer to Step 7. The reverse-check responsibility boundary from Step 1 also applies here.
 
 **Execution steps:**
 
@@ -765,11 +688,10 @@ e. Identify cross-cutting mechanisms
 
 ```
 For each design construct discovered in step 1:
-- Establish whether it implements or constrains this unit's responsibility
-  (for preserve, the assigned protected stable requirement).
+- Establish whether it implements or constrains this unit's responsibility.
 - Record evidence and exclude independent responsibilities outside that scope.
   Another unit sharing the file is not, by itself, proof of exclusion.
-- If evidence is missing, replan with the needed input before judging surplus.
+- If evidence is missing, add it to the open run with `specflowctl gate-extend` before judging surplus.
 
 For each remaining in-scope construct:
 - Does the spec body (protocol, architecture, responsibility sections) describe it?
@@ -844,43 +766,39 @@ Do not classify the resolution direction — defer to Step 7.
 
 ## Step 6 — Stub & Placeholder Scan
 
-**Purpose:** Systematically scan for stub and placeholder patterns — in the spec's implementation mapping and in implementation files. This is a deterministic check — running it twice produces identical results. It catches incomplete implementations that pass structural checks (the structure exists) but are placeholders. Debt markers (TODO/FIXME/XXX/HACK comments) are NOT scanned here — they are owned by the `quality` lens (Dimension 7, see §Lenses and boundary ownership).
+**Purpose:** Ensure no incomplete implementation hides behind a structurally complete surface. The scan is deterministic and **tool-performed**: `gate-plan` scans the declared code surface with the fixed stub patterns and records candidate hits in the run's plan notice; item missions carry the hit list in their session context. The reviewer classifies the tool's candidates — it does not grep by hand. Debt markers (TODO/FIXME/XXX/HACK) are NOT scanned here — they are owned by the `quality` lens (Dimension 7).
 
 **Execution steps:**
 
-1. **Spec-side placeholder check (before collecting files):** For each acceptance item, read the `implementation_surface` value:
-   - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled — the mapping must be completed before verify can locate the implementation (do not classify yet — defer to Step 7)
-   - Value is not `<pending>` but resolves to no file — a missing path, or a directory with no repository-content files (the files Git tracks plus untracked files that are not ignored) → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
+1. **Spec-side placeholder check:** For each acceptance item, read the `implementation_surface` value:
+   - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled (do not classify yet — defer to Step 7)
+   - Value is not `<pending>` but resolves to no file → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
 
-2. Collect all implementation files from `implementation_surface` paths and `affects.files` across all acceptance items. If `affects.files` is incomplete, also collect files from the spec body's implementation references.
+2. **Adjudicate the tool's candidates:** the plan notice lists every candidate hit as `{file}:{line}: {text}` over the declared code surface (patterns: `return null`, `return []`, `placeholder`, `not…implement`, `return Response.json({})`, `w.WriteHeader(204)`). Classify each hit:
+   - **RELEVANT** — a real stub or placeholder in implementation code → MISMATCH (do not classify yet — defer to Step 7)
+   - **IRRELEVANT** — an idiomatic construct, e.g. Go `return nil`, error sentinels, test fixtures
 
-3. For each file, run these commands and record findings:
+3. **Residue:** a stub pattern you encounter while reading a file that the scan did not list (the scan covers the declared surface only) is reported the same way: record the per-file result and classify it.
 
-   a. Stub/empty patterns:
-   ```bash
-   grep -n "return null\|return \[\]\|\bplaceholder\b\|not.*implement" <file>
-   ```
+Per-file result format:
 
-   b. Empty handler bodies:
-   ```bash
-   grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
-   ```
+```
+{file}: CLEAN | STUB_FOUND
+  - line 12: return Response.json({}) (empty_response)
+```
 
-4. Per-file result:
-   ```
-   {file}: CLEAN | STUB_FOUND
-     - line 12: return Response.json({}) (empty_response)
-   ```
+If no fresh plan notice is available in the session context (e.g. a rerun under changed state), the fixed commands remain the fallback:
 
-5. Classify each grep hit: **RELEVANT** (a real stub or placeholder in implementation code) or **IRRELEVANT** (idiomatic constructs — e.g. Go `return nil`, error sentinels, test fixtures). Only RELEVANT hits are MISMATCH.
+```bash
+grep -n "return null\|return \[\]\|\bplaceholder\b\|not.*implement" <file>
+grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
+```
 
-6. Any RELEVANT stub finding is a MISMATCH — code has placeholder where real implementation is expected (do not classify yet — defer to Step 7)
+**PASS:** No RELEVANT stubs or placeholders found
 
-**PASS:** No stubs or placeholders found
+**FAIL (MISMATCH):** One or more files contain a RELEVANT stub — defer classification to Step 7
 
-**FAIL (MISMATCH):** One or more files contain stub patterns — defer classification to Step 7
-
-**Check method:** grep — deterministic, outputs are identical across runs
+**Check method:** Tool-performed deterministic scan (plan-time) + reviewer adjudication of the candidates
 
 ---
 
@@ -892,15 +810,15 @@ Do not classify the resolution direction — defer to Step 7.
 
 For each MISMATCH detected in Steps 1-6, the assigned **read-only item reviewer** completes Step 7 in the same session. Analyze each item independently, including when several items share a batch. The initial report includes the verdict, root cause, suggested direction, severity, confidence, evidence and affected keys; acceptance completes both alignment and divergence analysis.
 
-> **Full mode note:** In full mode the coverage set contains `item:<unit>:<item>`, `preserve:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>` and `architecture:<unit>`. The agent batches uncovered tasks into sessions with the same kind and lens (see `framework/verification_scope.md` §Coverage model). A session that covers item(s) reports the alignment verdicts; each `MISMATCH` also names its affected keys and includes the completed Step 7 analysis.
+> **Full mode note:** In full mode the coverage set contains `item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>` and `architecture:<unit>`. The agent batches uncovered tasks into sessions with the same kind and lens (see `framework/verification_scope.md` §Coverage model). A session that covers item(s) reports the alignment verdicts; each `MISMATCH` also names its affected keys and includes the completed Step 7 analysis.
 
 > **Delta mode note:** A delta/repair run fixes the re-run coverage set (the stale keys plus the current keys the baseline never declared). Carried items bring their prior structured judgment into the run. The final synthesis consumes the new resolved judgments and the carried judgments together.
 
 ### Item reviewer protocol
 
-Before reviewing uncovered `item` or `preserve` keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies Steps 1-7, exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
+Before reviewing uncovered `item` keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies Steps 1-7, exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
 
-The item reviewer locates and analyzes the mismatch while executing Steps 1-7. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. When unsure whether a region informed the judgment, it declares more in `Dependency scope:`. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it discovers the missing path, re-plans with all accumulated manifest entries, and re-executes the replacement run. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
+The item reviewer locates and analyzes the mismatch while executing Steps 1-7. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. When unsure whether a region informed the judgment, it declares more in `Dependency scope:`. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it adds the path to the open run with `specflowctl gate-extend --run {run_id} --paths <path>` — every accepted session keeps its verdict, and the uncovered key re-missions with the extended read refs. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
 
 For surplus mismatches, the first-principles analysis additionally evaluates:
 - Is this a genuine design decision that belongs in the spec? → **spec_gap**
@@ -939,7 +857,6 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
 4. Root cause analysis (choose the best fit):
    - Code is incomplete — spec intent is clear, code hasn't caught up
    - Spec is stale — code has evolved, spec wasn't updated
-   - Protected record stale (preserve tasks) — the protected stable requirement's declared implementation mapping no longer resolves while its behavior is still implemented; the protected unit's record lags and only its own promote refreshes it
    - Shadow specification / over-specification — the spec mirrored private, internal, or obsolete implementation details of another unit that have evolved or been removed
    - Invalid file association — a declared file does not participate in this item's behavior
    - Design divergence — both sides made different valid trade-offs
@@ -952,7 +869,6 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - needs_design: neither side is clearly right — the design itself needs rethinking
    - blocked: the mismatch depends on an external input or unresolved decision
    - **Shadow specification anti-regression rule (MANDATORY):** If the root cause is a shadow specification (non-owner unit hardcoding unexported/private parameters of a collaborating unit), the recommended direction MUST be **spec_gap** (update the peripheral spec to restore behavioral abstraction or use public contract anchors). **NEVER recommend code_gap to re-introduce removed parameters or dead code into a collaborating unit solely to satisfy a shadow spec.**
-   - **Protected record drift (MANDATORY, preserve tasks):** When the protected stable requirement's declared implementation mapping no longer resolves while its behavior is still implemented, the item verdict is MISMATCH — never ALIGNED. Root cause is `stale`, the suggested direction is `spec_gap` (the protected unit refreshes its own record), and the fix names that stale mapping. The final synthesis routes the finding to the protected unit as peer-owned record drift (`framework/verification_scope.md` §Deferred findings); it does not block the current unit. A protected requirement whose behavior is not implemented anywhere is not record drift — it stays a gate-driving mismatch of the current unit.
 
 6. Confidence:
    - high: clear evidence supports one direction
@@ -1022,7 +938,9 @@ The `Problem:` / `Evidence:` / `Impact:` / `Fix:` (or `Decision:`) fields are th
 
 **Failure path:** an item reviewer that cannot complete Steps 1-7 reports:
 "Verification could not complete — {reason}" without a verdict. Do not submit
-an incomplete report; resolve the missing input and re-plan when necessary.
+an incomplete report; resolve the missing input (extend the open run with
+`specflowctl gate-extend`, or re-plan when the required surface itself
+changed).
 
 **Constraints:**
 
@@ -1079,7 +997,7 @@ When the plan assigns relationships or the primary pass produced findings, one i
    - Evidence rules (§9.4): raising requires positive evidence read from the target; no evidence → keep the session-assigned severity
    - Deterministic severity mappings (e.g. Step 1 declaration table rows) keep their contract-decided grade
    - The canonical severities drive the derived counts and blocking; they are not restated as a report section
-3. `gate-submit` verifies that the final synthesis disposes every input finding exactly once, publishes the complete effective status map and one reasoned `Quality conclusion` for every design and architecture key (including carried keys), and binds every consumed result digest. A non-`ALIGNED` preserve verdict fails its key or is carried by a finding deferred to that protected unit as peer-owned record drift; a preserve finding cannot be suppressed or merged (`framework/verification_scope.md` §Deferred findings)
+3. `gate-submit` verifies that the final synthesis disposes every input finding exactly once, supplies the relationship results and one reasoned `Quality conclusion` for every design and architecture key (including carried keys), and binds every consumed result digest. The tooling derives the effective status map from the terminal retained set — the report carries no status lines. A failed relationship finding that restates a root cause already stated by an input finding must merge the input finding into it (`merged -> {new_id}`); the group is counted once.
 4. The main agent classifies the retained findings per §Batch classification (skip when the activation threshold is not met); this presentation classification cannot change severity, retention, or the gate result
 5. Present the tool-derived consolidated findings summary (§Summary format)
 6. Wait for the user's decision per HARD RULE 3a:

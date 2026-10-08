@@ -384,7 +384,7 @@ func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		edited := strings.Replace(string(data), "description: Behavior.", "description: Behavior, edited.", 1)
+		edited := strings.Replace(string(data), "description: Given a caller, When the behavior runs, Then it is accepted.", "description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 		if edited == string(data) {
 			t.Fatal("fixture assumption broken: item description not found")
 		}

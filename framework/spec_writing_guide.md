@@ -101,7 +101,7 @@ Everything else in the unit (body prose, evidence appendices, background, motiva
 
 **Contract statement definition:** A contract statement is a statement declaring the unit's externally-observable behavior — behavior a caller or dependent unit must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a caller must respect). Internal implementation detail (internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout) is not a contract statement even when it states concrete values — it is design expression, and a dependent unit does not read it through carriers. The **external-visibility boundary** is this definition's core judgment: a statement declaring externally-observable behavior is a contract statement; internal implementation detail is design expression. `validate` Check 5h enforces this boundary on prose, and Check 5a applies the same boundary to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
 
-Contract statements must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5i), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers and declares its cache dependencies over exactly those regions, so unrelated edits to non-carrier content do not stale dependent units' caches.
+Contract statements must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5e), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers and declares its cache dependencies over exactly those regions, so unrelated edits to non-carrier content do not stale dependent units' caches.
 
 It does not mean:
 
@@ -185,7 +185,7 @@ The section must include structured acceptance items:
 ```yaml
 acceptance_item_set:
   - id: demo.core
-    description: Demo behavior is accepted.
+    description: Given a demo input, When the demo behavior runs, Then it is accepted.
     verification_type: testable          # testable | inspectable | reviewable
     verification_surface: internal_flow
     implementation_surface: AgentCore/internal/demo
@@ -197,6 +197,8 @@ acceptance_item_set:
     affects:                             # scope that verify must check globally
       files:
         - internal/demo/handler.go
+      evidence_files:
+        - internal/demo/handler_test.go
       appendices: []
       rules: []
       dependencies: []
@@ -220,6 +222,7 @@ acceptance_item_set:
 | `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name) |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
 | `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Files may be shared; behavior dependencies are expressed through `unit_refs` and `affects.dependencies` (see §14.4 File Associations and Shared Agreements) |
+| `affects.evidence_files` | recommended | Read-only verification evidence files (typically tests or code owned by another unit) cited to back this item's judgment. They join the run snapshot and the item session's read refs, but they never define implementation participation, quality coverage keys, or operation write scope. Each cited file must exist and must actually carry the behavior or assertion the item claims — the alignment judgment verifies the citation (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check). The cited file's own quality belongs to its owner's gates |
 | `affects.appendices` | recommended | Appendix names that must be checked |
 | `affects.rules` | recommended | Rule names that must be respected |
 | `affects.dependencies` | recommended | Stable unit dependency names that must be maintained |
@@ -307,11 +310,11 @@ Splitting is legitimate when any condition fails. Examples:
 
 #### Relationship to validate
 
-`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains — error paths, boundary cases, and state transitions of the same behavior subject are scenarios of one domain, not separate domains — and over-split detection reports items that satisfy all four conditions above as merge candidates. The correspondence runs both ways: an item whose behavior subject no longer appears as a designed behavior in the spec union is an orphan and is retired in the same round (see §9 Cleanup obligation); `validate` Check 5a fails it. Extraction targets only formal behavior (see `framework/spec_writing_guide.md` §4 Formal behavior carriers): non-constraining narrative (design discussion, motivation, illustrative examples) does not create coverage obligations. See `framework/unit_validate_checklist.md` §5a.
+`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains — error paths, boundary cases, and state transitions of the same behavior subject are scenarios of one domain, not separate domains. The correspondence runs both ways: an item whose behavior subject no longer appears as a designed behavior in the spec union is an orphan and is retired in the same round (see §9 Cleanup obligation); `validate` Check 5a fails it. Extraction targets only formal behavior (see `framework/spec_writing_guide.md` §4 Formal behavior carriers): non-constraining narrative (design discussion, motivation, illustrative examples) does not create coverage obligations. See `framework/unit_validate_checklist.md` §5a.
 
 ### Contract Substance Baseline
 
-Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5i enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §14 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
+Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5e enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §14 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
 
 | Rule | Requirement | Rejected form |
 |---|---|---|
@@ -501,12 +504,12 @@ This rule does not apply to:
 - Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — these describe the governance system itself
 - File paths in code-block examples that serve as illustrations rather than navigation
 
-All code file path references must be expressed exclusively through the structured fields `implementation_surface` and `affects.files` in the acceptance item set.
+All code file path references must be expressed exclusively through the structured fields `implementation_surface`, `affects.files`, and `affects.evidence_files` in the acceptance item set.
 
 Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, or the relative forms `candidate/`, `stable/`) — in prose or in code-block examples. Unlike code file paths, layer-prefixed spec paths break or mispoint in any context: candidate files are deleted on promote, and stable paths point to the prior-consensus layer during an active candidate round. Reference appendix files and other specs by concept name or file name instead (e.g. `unit_auth_account_token_claims`) — appendix file names do not encode layer, so the reference stays valid before and after promote.
 
 This rule does not apply to:
-- Structured field values (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) — when a structured field references a spec document, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid
+- Structured field values (`implementation_surface`, `affects.files`, `affects.evidence_files`, `affects.appendices`, `affects.dependencies`) — when a structured field references a spec document, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid
 
 ## 13. Section Regions
 
@@ -515,7 +518,7 @@ The unit's own main spec is declared by **section regions** in validation caches
 1. **`##`-organized body:** all spec body content must live inside `##` heading sections. The frontmatter region may contain only the YAML frontmatter block, the `#` document title, and blank lines — any other content before the first `##` heading is stray prose that lands inside the frontmatter region (the region mechanism carries it in the frontmatter region's content identity, and validate Check 1 fails the spec on it — restructure the spec so the region holds only the YAML block, the title, and blank lines).
 2. **Unique headings:** `##` heading texts must be unique within the file. A duplicated heading cannot be located unambiguously — section-region declarations on it fail closed (validate Check 1 fails it).
 3. **One topic per section (cohesion):** each `##` section must cover one semantic topic, so an edit is contained in one section. If editing any small part of a section tends to touch content across its whole span, the section is too coarse — split it. Cohesion is what makes the region granularity pay off: a change that stales one section re-runs only the checks that declared that section.
-4. **`###` and deeper headings** belong to their `##` section — they are not separate regions. Use them for structure inside a section, not for region boundaries.
+4. **`###` and deeper headings** belong to their `##` section — they are not separate regions. Use them for structure inside a section, not for region boundaries. A `Dependency scope:` declaration that cites a uniquely named deeper heading resolves to its enclosing `##` region (see `framework/validation_cache.md` §Structural Region Dependencies); an ambiguous or absent deeper heading fails closed.
 5. **Naming stability:** headings are part of the region content — renaming a heading changes the region's content identity and stales declarations on it. Rename deliberately (a rename is a semantic signal, not a cosmetic edit).
 6. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
 7. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and protocol appendices are contract files declared whole and need no section structure (see `framework/validation_cache.md` §Structural Region Dependencies).
@@ -525,7 +528,7 @@ A spec that fails the structure (no `##` heading, duplicated headings, the reser
 
 ## 14. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
 
-A specification requires determinism to be verifiable, but over-specification destroys resilience and creates brittle, dangling couplings. This section establishes the **Truth Ownership Framework** to resolve the tension between contract substance (the concrete value requirement of §7 and Check 5i) and unacceptable hardcoding.
+A specification requires determinism to be verifiable, but over-specification destroys resilience and creates brittle, dangling couplings. This section establishes the **Truth Ownership Framework** to resolve the tension between contract substance (the concrete value requirement of §7 and Check 5e) and unacceptable hardcoding.
 
 ### 14.1 The Core Principle: Truth Ownership Laws
 
@@ -570,10 +573,10 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 
 ### 14.4 File Associations and Shared Agreements
 
-`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create `unit_refs` dependencies or require an abstraction unit.
+`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create `unit_refs` dependencies or require an abstraction unit. `affects.evidence_files` is a different relation: it names read-only verification evidence — typically tests or code owned by another unit — that backs the citing item's judgment. An evidence file is never implementation participation of the citing unit, never a quality coverage key, and never operation write scope; its behavior and its quality belong to its owner's gates. The citing item's judgment verifies only that the cited file actually carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check).
 
 Units describe independent responsibilities. Behavior, data meaning and shared agreements still have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`, rather than being restated in unit specs. Genuine behavior dependencies continue to use `unit_refs` and per-item `affects.dependencies`.
 
-Declare paths relevant to the acceptance item. Check 9 validates declarations and shared-agreement consistency; unit responsibility boundaries remain the responsibility of the design and scope checks. File overlap alone is not a finding.
+Declare paths relevant to the acceptance item. Check 6 verifies that each declaration participates in the item's behavior; Check 7 owns shared-agreement single-source consistency; Check 9 reports the mechanical file-association audit. Unit responsibility boundaries remain the responsibility of the design and scope checks. File overlap alone is not a finding.
 
-`specflowctl surfaces` derives current and stable file associations and displays each associated unit's separate design result alongside reusable public code judgments. See `framework/shared_judgments.md` for verification, stable requirement protection and immutable record storage.
+`specflowctl surfaces` derives current and stable file associations and displays each associated unit's separate design result alongside reusable public code judgments. See `framework/shared_judgments.md` for verification and immutable record storage.

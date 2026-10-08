@@ -81,6 +81,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runGateEvidence(args[1:], stdout, stderr)
 	case "gate-plan":
 		return runGatePlan(args[1:], stdout, stderr)
+	case "gate-extend":
+		return runGateExtend(args[1:], stdout, stderr)
 	case "gate-mission":
 		return runGateMission(args[1:], stdout, stderr)
 	case "gate-status":
@@ -240,6 +242,9 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !result.Passed {
 		return errors.New("promote failed")
 	}
+	if err := writeStaleImpactAfterPromote(stdout, absRoot, unitName); err != nil {
+		fmt.Fprintf(stderr, "Warning: impact sweep failed: %v\n", err)
+	}
 	sweepAfterLifecycle(absRoot, stderr)
 
 	return nil
@@ -270,6 +275,9 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	}
 	if !result.Passed {
 		return errors.New("promote failed")
+	}
+	if err := writeStaleImpactAfterPromote(stdout, absRoot, ""); err != nil {
+		fmt.Fprintf(stderr, "Warning: impact sweep failed: %v\n", err)
 	}
 	sweepAfterLifecycle(absRoot, stderr)
 
@@ -572,6 +580,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  clean      Remove disposable local state (orphaned and terminal runs, unreferenced shared tasks, plan inputs, strays, closed operations)")
 	fmt.Fprintln(w, "  gate-evidence Inspect dependency CIDs (chunk ranges, section/item regions, or the whole acceptance item set) for a file read during a gate run")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
+	fmt.Fprintln(w, "  gate-extend Add supplementary evidence inputs to an open gate run in place (keeps accepted sessions)")
 	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for an agent-chosen key batch (--keys K1,K2 or --final)")
 	fmt.Fprintln(w, "  gate-status Report coverage progress and uncovered keys (--format text|json)")
 	fmt.Fprintln(w, "  gate-submit Record one session report after mechanical validation (accepted or rejected)")

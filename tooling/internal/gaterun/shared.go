@@ -11,9 +11,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -83,15 +81,12 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 	}
 	for _, key := range keys {
 		parts := strings.SplitN(key, ":", 3)
-		if len(parts) != 3 || parts[0] != SessionKindItem && parts[0] != SessionKindPreserve {
+		if len(parts) != 3 || parts[0] != SessionKindItem {
 			continue
 		}
 		layer := target
-		if parts[0] == SessionKindItem && parts[1] != unit {
+		if parts[1] != unit {
 			continue
-		}
-		if parts[0] == SessionKindPreserve {
-			layer = TargetStable
 		}
 		ref, accepted, err := judgments.LatestItem(root, parts[1], parts[2], layer)
 		if err != nil {
@@ -374,188 +369,9 @@ func tokenStream(text string) string {
 	return out.String()
 }
 
-// itemDependencyKey identifies the recorded item judgments of one acceptance
-// item: their recorded dependencies extend the read surface of the item's
-// protected requirement.
-type itemDependencyKey struct {
-	unit string
-	item string
-}
-
-func (d *Derivation) protectedCoverage(run *Run) ([]CoverageKey, error) {
-	audit, err := d.surfaceAudit()
-	if err != nil {
-		return nil, err
-	}
-	root := d.root
-	// The connection set is the current implementation surface: the
-	// spec-derived files this run verifies. Input manifests and recorded
-	// read surfaces are read surfaces, not change-impact relations
-	// (shared_judgments.md, Stable requirement protection).
-	own := map[string]bool{}
-	for _, f := range qualityFiles(run) {
-		own[f] = true
-	}
-	refs, err := judgments.List(root)
-	if err != nil {
-		return nil, err
-	}
-	// The store is immutable while a derivation runs, so the item
-	// judgments are indexed once, on first use: every record is loaded at
-	// most once per call instead of once per acceptance item
-	// (O(records + items) instead of O(items × records)).
-	var itemDeps map[itemDependencyKey][]string
-	var out []CoverageKey
-	for _, u := range audit.Units {
-		if u.Unit == run.TargetName || u.Layer != TargetStable {
-			continue
-		}
-		ref := targetLayerSpecRef(TargetKindUnit, u.Unit, TargetStable)
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ref)))
-		if err != nil {
-			return nil, err
-		}
-
-		perItem := specvalidation.AcceptanceSurfaces(string(data))
-		baseline, err := validationcache.ReadGateBaseline(root, "unit", u.Unit, GateVerify)
-		if err != nil {
-			return nil, fmt.Errorf("cannot derive stable protection for %s: %w", u.Unit, err)
-		}
-		for _, item := range specvalidation.ExtractAcceptanceItemIDs(string(data)) {
-			// Match the protected declarations against the current
-			// spec-derived surface, using the same repository-relative
-			// paths, including directory scopes.
-			var declaredPaths []string
-			for _, path := range perItem[item] {
-				canonical, err := repopath.Canonical(root, path)
-				if err != nil {
-					return nil, fmt.Errorf("cannot derive stable protection for %s item %s path %q: %w", u.Unit, item, path, err)
-				}
-				declaredPaths = appendUnique(declaredPaths, canonical)
-			}
-			related := false
-			var acceptedInputs []string
-			relatedPaths := append([]string(nil), declaredPaths...)
-			// Recorded evidence stays part of the read surface for an item
-			// this run already protects; it never creates the association.
-			for _, entry := range baseline.Entries {
-				if strings.HasPrefix(entry.Path, "docs/specs/") || isLogicalRef(entry.Path) {
-					continue
-				}
-				for _, check := range entry.Checks {
-					if check.Check == reviewKey(SessionKindItem, u.Unit, item) || check.Check == item {
-						acceptedInputs = appendUnique(acceptedInputs, entry.Path)
-						relatedPaths = appendUnique(relatedPaths, entry.Path)
-					}
-				}
-			}
-			for _, p := range declaredPaths {
-				for file := range own {
-					if file == p || strings.HasPrefix(file, strings.TrimSuffix(p, "/")+"/") {
-						related = true
-					}
-				}
-			}
-			// Recorded dependencies extend the read surface, not the
-			// association set. The index holds the union over every
-			// recorded item judgment of (unit, item), like the scan it
-			// replaces.
-			if itemDeps == nil {
-				itemDeps = map[itemDependencyKey][]string{}
-				for _, r := range refs {
-					record, err := judgments.Load(root, r)
-					if err != nil {
-						continue
-					}
-					if record.Kind != judgments.Item {
-						continue
-					}
-					key := itemDependencyKey{unit: record.Unit, item: record.Subject}
-					for _, dep := range record.Dependencies {
-						if !dep.Own && !strings.HasPrefix(dep.Path, "docs/specs/") && !isLogicalRef(dep.Path) {
-							itemDeps[key] = appendUnique(itemDeps[key], dep.Path)
-						}
-					}
-				}
-			}
-			for _, path := range itemDeps[itemDependencyKey{unit: u.Unit, item: item}] {
-				relatedPaths = appendUnique(relatedPaths, path)
-			}
-			latest, accepted, err := judgments.LatestItem(root, u.Unit, item, TargetStable)
-			if err != nil {
-				return nil, err
-			}
-			if accepted {
-				if record, err := judgments.Load(root, latest); err == nil {
-					for _, dep := range record.Dependencies {
-						acceptedInputs = appendUnique(acceptedInputs, judgments.InputPath(dep, u.Unit, TargetStable))
-					}
-				}
-			}
-			if related {
-				reads := []string{ref}
-				// Recorded evidence is historical: when a recorded path no
-				// longer resolves it is dropped from the read surface. The
-				// association derives from current declarations, so the
-				// requirement is rechecked against them (shared_judgments.md,
-				// Stable requirement protection).
-				for _, p := range acceptedInputs {
-					if refreshRef(root, Ref{Ref: p}).Hash == "" {
-						continue
-					}
-					reads = appendUnique(reads, p)
-				}
-				for _, evidence := range run.PublicEvidence {
-					connected := false
-					for _, input := range evidence {
-						for _, path := range relatedPaths {
-							if input == path || strings.HasPrefix(input, strings.TrimSuffix(path, "/")+"/") {
-								connected = true
-							}
-						}
-					}
-					if connected {
-						for _, input := range evidence {
-							if !isLogicalRef(input) && !strings.HasPrefix(input, "docs/specs/") {
-								reads = appendUnique(reads, input)
-							}
-						}
-					}
-				}
-				for _, f := range u.Files {
-					reads = appendUnique(reads, f.Path)
-				}
-				appendices, err := unitAppendices(root, u.Unit, TargetStable)
-				if err != nil {
-					return nil, err
-				}
-				reads = appendUnique(reads, appendices...)
-				globalIDs, err := globalRuleIDs(root)
-				if err != nil {
-					return nil, err
-				}
-				for _, id := range dedupeSorted(append(parseRefList(string(data), "rule_refs", ""), globalIDs...)) {
-					reads = appendUnique(reads, specpaths.RuleStableFileRef(id))
-				}
-				for _, id := range parseRefList(string(data), "unit_refs", u.Unit) {
-					reads = appendUnique(reads, targetLayerSpecRef(TargetKindUnit, id, TargetStable))
-					appendices, err := unitAppendices(root, id, TargetStable)
-					if err != nil {
-						return nil, err
-					}
-					reads = appendUnique(reads, appendices...)
-				}
-				out = append(out, CoverageKey{Key: reviewKey(SessionKindPreserve, u.Unit, item), Kind: SessionKindPreserve, Lens: LensAlignment, Unit: u.Unit, Item: item, ReadRefs: reads})
-			}
-		}
-	}
-	return out, nil
-}
-
 func (d *Derivation) addReviewInputs(run *Run) error {
 	root := d.root
 	run.PublicEvidence = map[string][]string{}
-	run.ProtectedEvidence = nil
 	content, err := readSpecContent(root, mainSpecRef(run))
 	if err != nil {
 		return err
@@ -578,24 +394,6 @@ func (d *Derivation) addReviewInputs(run *Run) error {
 			addSnapshotRef(root, run, p)
 		}
 	}
-	protected, err := d.protectedCoverage(run)
-	if err != nil {
-		return err
-	}
-	for _, ck := range protected {
-		for _, p := range ck.ReadRefs {
-			current := refreshRef(root, Ref{Ref: p})
-			if current.Hash == "" {
-				return fmt.Errorf("protected requirement %s has unavailable stable evidence %s", ck.Key, p)
-			}
-			addSnapshotRef(root, run, p)
-			canonical := canonicalPath(root, p)
-			if strings.HasPrefix(canonical, "docs/specs/units/stable/") || strings.HasPrefix(canonical, "docs/specs/rules/stable/") {
-				run.ProtectedEvidence = appendUnique(run.ProtectedEvidence, canonical)
-			}
-		}
-	}
-	sort.Strings(run.ProtectedEvidence)
 	return nil
 }
 func addSnapshotRef(root string, run *Run, p string) {
@@ -655,34 +453,14 @@ func prepareSharedChecks(root string, run *Run) error {
 	for i := range run.Coverage {
 		ck := &run.Coverage[i]
 		ck.Source = "executed"
-		if ck.Kind != SessionKindCode && ck.Kind != SessionKindPreserve {
+		if ck.Kind != SessionKindCode {
 			continue
 		}
 		inputs := coverageReadRefs(root, run, *ck)
 		layer := run.Target
-		if ck.Kind == SessionKindPreserve {
-			layer = TargetStable
-		}
 		normalized, err := normalizeOwnInputs(root, inputs, ck.Unit, layer)
 		if err != nil {
 			return err
-		}
-		if ck.Kind == SessionKindPreserve {
-			layer = TargetStable
-			ref, accepted, err := judgments.LatestItem(root, ck.Unit, ck.Item, layer)
-			if err != nil {
-				return err
-			}
-			if accepted {
-				record, err := judgments.Load(root, ref)
-				if err == nil && record.Kind == judgments.Item && record.Unit == ck.Unit && record.Subject == ck.Item && judgments.CoversInputs(record.Inputs, normalized) && judgments.Check(root, ref, layer, run.Protocol) == nil {
-					run.Records[ck.Key] = judgments.Binding{Reference: ref, Layer: layer, Source: "reused"}
-					ck.Source = "reused"
-				}
-			}
-			// An unusable current decision requires a new protected review;
-			// never search history for an older ALIGNED judgment.
-			continue
 		}
 		for j := len(refs) - 1; j >= 0; j-- {
 			record, err := judgments.Load(root, refs[j])
@@ -843,22 +621,6 @@ func sharedStates(root string, run *Run, states []*SessionState) ([]*SessionStat
 		if err != nil {
 			return nil, err
 		}
-		for i := range result.Findings {
-			if ck.Kind == SessionKindPreserve {
-				// One source finding can affect several protected items. Each
-				// projection is a distinct judgment in the consuming run.
-				result.Findings[i].ID = ck.Key + "/" + result.Findings[i].ID
-				result.Findings[i].OwnedBy = ""
-			}
-		}
-		if ck.Kind == SessionKindPreserve && result.Verdicts[ck.Key] != "ALIGNED" {
-			for i := range result.Findings {
-				result.Findings[i] = result.Findings[i].WithMinimumSeverity("P1")
-			}
-			if len(result.Findings) == 0 {
-				result.Findings = append(result.Findings, Finding{ID: run.RunID + "/" + ck.Key + "/protected", SourceKey: ck.Key, Severity: "P1", Text: "protected stable requirement is not ALIGNED", Detail: "[P1] " + ck.Key + " — protected stable requirement is not ALIGNED (actionable)\n  problem: the accepted result cannot confirm the stable requirement\n  evidence: " + result.Verdicts[ck.Key] + "\n  impact: current changes may break confirmed behavior\n  fix: verify and restore the protected requirement"})
-			}
-		}
 		result.SessionID = SessionID([]string{ck.Key})
 		result.Kind = ck.Kind
 		semanticData, _ := json.Marshal(result)
@@ -968,12 +730,9 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	if kind == SessionKindArchitecture {
 		subject = ck.Unit
 	}
-	if kind == SessionKindItem || kind == SessionKindPreserve {
+	if kind == SessionKindItem {
 		kind = judgments.Item
 		subject = ck.Item
-		if ck.Kind == SessionKindPreserve {
-			layer = TargetStable
-		}
 	}
 	inputs := coverageReadRefs(root, run, ck)
 	var owned []string
@@ -1163,7 +922,7 @@ func Persist(root string, run *Run) error { return writeRun(root, run) }
 func IsQualityKind(kind string) bool {
 	return kind == SessionKindDesign || kind == SessionKindCode || kind == SessionKindArchitecture
 }
-func IsItemKind(kind string) bool { return kind == SessionKindItem || kind == SessionKindPreserve }
+func IsItemKind(kind string) bool { return kind == SessionKindItem }
 
 func ExpectedCheckFor(root string, run *Run, ck CoverageKey) validationcache.ExpectedCheck {
 	layer := run.Target
@@ -1172,12 +931,9 @@ func ExpectedCheckFor(root string, run *Run, ck CoverageKey) validationcache.Exp
 	if kind == SessionKindArchitecture {
 		subject = ck.Unit
 	}
-	if kind == SessionKindItem || kind == SessionKindPreserve {
+	if kind == SessionKindItem {
 		subject = ck.Item
 		kind = judgments.Item
-		if ck.Kind == SessionKindPreserve {
-			layer = TargetStable
-		}
 	}
 	return validationcache.ExpectedCheck{Key: ck.Key, Lens: ck.Lens, Kind: kind, Unit: ck.Unit, Layer: layer, Subject: subject, Inputs: coverageReadRefs(root, run, ck)}
 }

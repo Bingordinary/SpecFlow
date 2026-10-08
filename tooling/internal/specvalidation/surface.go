@@ -14,20 +14,25 @@ import (
 // design-first rounds: the item's implementation path is not yet known.
 const SurfacePending = "<pending>"
 
-// SurfaceProblem is one acceptance item whose implementation_surface cannot
-// produce a code surface: the item id, the declared value (empty when the
-// field has no value), and an actionable reason.
+// SurfaceProblem is one acceptance item declaration that cannot resolve: the
+// item id, the declaring field, the declared value (empty when the field has
+// no value), and an actionable reason.
 type SurfaceProblem struct {
 	ItemID string
+	Field  string
 	Value  string
 	Reason string
 }
 
 func (p SurfaceProblem) String() string {
-	if p.Value == "" {
-		return fmt.Sprintf("item %s: implementation_surface is empty — %s", p.ItemID, p.Reason)
+	field := p.Field
+	if field == "" {
+		field = "implementation_surface"
 	}
-	return fmt.Sprintf("item %s: implementation_surface %q — %s", p.ItemID, p.Value, p.Reason)
+	if p.Value == "" {
+		return fmt.Sprintf("item %s: %s is empty — %s", p.ItemID, field, p.Reason)
+	}
+	return fmt.Sprintf("item %s: %s %q — %s", p.ItemID, field, p.Value, p.Reason)
 }
 
 // FormatSurfaceProblems renders problems as one semicolon-separated line for
@@ -70,6 +75,47 @@ func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem 
 		}
 		if reason := surfaceValueProblem(repoRoot, value); reason != "" {
 			problems = append(problems, SurfaceProblem{ItemID: item.id, Value: value, Reason: reason})
+		}
+	}
+	return problems
+}
+
+// CheckEvidenceFiles validates every structurally located acceptance item's
+// affects.evidence_files declarations against the working tree. Evidence files
+// are read-only verification evidence: they must name an existing
+// repository-relative file, but they never define the unit's implementation
+// surface or quality coverage keys (framework/spec_writing_guide.md §7).
+// A declared value that is missing, empty, the <pending> placeholder, or a
+// directory is reported with the item id and the mechanical reason.
+// Mechanical validate Check 3 and verify planning share this check, so an
+// item whose cited evidence cannot be read fail-closed before any judgment.
+func CheckEvidenceFiles(repoRoot, specContent string) []SurfaceProblem {
+	var problems []SurfaceProblem
+	for _, item := range parseAcceptanceItems(specContent) {
+		for _, raw := range item.affectsEvidenceFiles {
+			value := strings.TrimSpace(raw)
+			if value == "" || value == SurfacePending {
+				problems = append(problems, SurfaceProblem{
+					ItemID: item.id,
+					Field:  "affects.evidence_files",
+					Value:  value,
+					Reason: "evidence_files entries must name an existing repository-relative file (the <pending> placeholder does not apply — evidence is observed behavior)",
+				})
+				continue
+			}
+			canonical, err := repopath.Canonical(repoRoot, value)
+			if err != nil {
+				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.evidence_files", Value: value, Reason: fmt.Sprintf("cannot be resolved: %v", err)})
+				continue
+			}
+			info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(canonical)))
+			if err != nil {
+				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.evidence_files", Value: value, Reason: "path does not exist — evidence_files must name an existing file (framework/spec_writing_guide.md §7)"})
+				continue
+			}
+			if info.IsDir() {
+				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.evidence_files", Value: value, Reason: "evidence_files must name a single file, not a directory — list the individual evidence files"})
+			}
 		}
 	}
 	return problems

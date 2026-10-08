@@ -276,3 +276,86 @@ func TestGateFullFailureWithCarriedRelationshipKeepsRepairSmall(t *testing.T) {
 		t.Fatalf("local-only repair lost the carried relationship or lens evidence: %+v %v", check, err)
 	}
 }
+
+// TestCrossSynthesisStatusesAreToolDerived pins the WS4 split: the final
+// synthesis authors dispositions, findings and relationship results only; the
+// tool derives the effective-status closure over the terminal retained
+// findings. A report without any Effective status line is accepted.
+func TestCrossSynthesisStatusesAreToolDerived(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitQuality(t, root, runID)
+	report := fmt.Sprintf(
+		"Cross item: contract_consistency = FAIL — producer and consumer disagree\n"+
+			"Cross item finding: contract_consistency = %s/cross/F1\n"+
+			"relationship:contract_consistency: %s: all\n"+
+			"Cross-check: 0/1 FAIL — relationship check complete\n"+
+			"Quality conclusion: design:auth:src/auth.go = acceptable — fixture design reviewed\n"+
+			"Quality conclusion: architecture:auth = acceptable — fixture architecture reviewed\n"+
+			"[P1] relationship — two otherwise valid parts disagree (actionable)\n"+
+			"  problem: definitions disagree\n"+
+			"  evidence: both definitions read\n"+
+			"  impact: combined behavior is wrong\n"+
+			"  fix: reconcile the definitions\n"+
+			"Finding affects: %s/cross/F1 = relationship:contract_consistency\n",
+		runID, main, runID)
+	if _, err := grSubmitRaw(t, root, runID, "cross", report); err != nil {
+		t.Fatalf("cross report without Effective status lines was rejected: %v", err)
+	}
+	grFinalizeOK(t, root, runID)
+	baseline := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	status := baseline.LogicalStatus
+	if status["relationship:contract_consistency"] != "fail" || status["cross"] != "fail" {
+		t.Fatalf("tool-derived closure missed the relationship failure: %+v", status)
+	}
+	for _, key := range []string{"item:auth:auth.core", "code:src/auth.go", "architecture:auth"} {
+		if status[key] != "pass" {
+			t.Fatalf("tool-derived closure marks %s = %q, want pass: %+v", key, status[key], status)
+		}
+	}
+}
+
+// TestRelationshipRestatingLocalFindingMergesToCountOnce pins the WS4
+// root-cause rule: when a failed relationship's finding restates a local
+// finding's root cause, the synthesis merges them into one terminal finding —
+// both keys fail and the defect is counted once.
+func TestRelationshipRestatingLocalFindingMergesToCountOnce(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	grSubmitOK(t, root, runID, "auth.core", grVerifyMismatchReport("auth.core", main, "src/auth.go", "P1"))
+	grAutoSubmitQuality(t, root, runID)
+	localID := grRunFindingID(runID, "auth.core", 1)
+	report := fmt.Sprintf(
+		"Cross item: contract_consistency = FAIL — the local mismatch restates the producer/consumer disagreement\n"+
+			"Cross item finding: contract_consistency = %s/cross/F1\n"+
+			"relationship:contract_consistency: %s: all\n"+
+			"Cross-check: 0/1 FAIL — relationship check complete\n"+
+			"Quality conclusion: design:auth:src/auth.go = acceptable — fixture design reviewed\n"+
+			"Quality conclusion: architecture:auth = acceptable — fixture architecture reviewed\n"+
+			"Finding disposition: %s = merged -> %s/cross/F1 — same root cause as the relationship finding\n"+
+			"[P1] relationship — producer/consumer payload boundary defect (actionable)\n"+
+			"  problem: the local mismatch and the relationship finding describe one defect\n"+
+			"  evidence: both sides read\n"+
+			"  impact: combined behavior is wrong\n"+
+			"  fix: reconcile the boundary\n"+
+			"Finding affects: %s/cross/F1 = relationship:contract_consistency,item:auth:auth.core\n",
+		runID, main, localID, runID, runID)
+	if _, err := grSubmitRaw(t, root, runID, "cross", report); err != nil {
+		t.Fatalf("merge disposition was rejected: %v", err)
+	}
+	grFinalizeOK(t, root, runID)
+	baseline := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	if len(baseline.Findings) != 1 {
+		t.Fatalf("one root cause counted as %d findings: %+v", len(baseline.Findings), baseline.Findings)
+	}
+	if baseline.LogicalStatus["item:auth:auth.core"] != "fail" || baseline.LogicalStatus["relationship:contract_consistency"] != "fail" || baseline.LogicalStatus["cross"] != "fail" {
+		t.Fatalf("merged finding must fail both keys and cross: %+v", baseline.LogicalStatus)
+	}
+}

@@ -9,8 +9,8 @@ import (
 
 // These declarations drive both session instructions and fixed-field report
 // validation. Dynamic synthesis checks remain in gate-submit.
-var unitAcceptanceSubchecks = []string{"5a", "5b", "5c", "5d", "5e", "5f", "5g", "5h", "5i"}
-var verifyItemFields = []string{"evidence", "deterministic", "Part A", "Part B"}
+var unitAcceptanceSubchecks = []string{"5a", "5b", "5e", "5h"}
+var verifyItemFields = []string{"evidence", "deterministic", "Part A"}
 var qualityDimensions = []string{"module_boundaries", "responsibility_organization", "dependency_clarity", "abstraction_level", "extension_landing_points", "engineering_patterns"}
 var analysisFields = []string{"Problem", "Impact", "Root cause", "Suggested direction", "Severity", "Confidence"}
 var mismatchTypes = []string{"structural", "acceptance", "scope", "stub", "surplus"}
@@ -19,7 +19,6 @@ var analysisDirections = []string{"spec_gap", "code_gap", "needs_design", "block
 var analysisConfidences = []string{"high", "medium", "low"}
 var severityLevels = []string{"P0", "P1", "P2", "P3"}
 var crossDispositions = []string{"retained", "suppressed", "merged"}
-var crossStatuses = []string{"pass", "fail"}
 var verifyCrossItems = gaterun.RelationshipNames(gaterun.GateVerify)
 var validateCrossItems = gaterun.RelationshipNames(gaterun.GateValidate)
 
@@ -28,15 +27,12 @@ func crossItemsFor(run *gaterun.Run) []string {
 }
 
 func unitAcceptanceAllowed(subcheck string) []string {
-	if subcheck == "5a" {
-		return []string{"PASS", "WARNING", "FAIL"}
-	}
 	return []string{"PASS", "FAIL"}
 }
 
 // isUnitValidateCheck5 reports whether the session judges the unit validate
 // Check 5 batch (acceptance coverage & correctness), whose report carries the
-// fixed 5a-5i sub-check lines in addition to the check verdict.
+// fixed 5a/5b/5e/5h sub-check lines in addition to the check verdict.
 func isUnitValidateCheck5(run *gaterun.Run, spec *gaterun.SessionSpec) bool {
 	return run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit &&
 		spec.Kind == gaterun.SessionKindChecks && stringInList(spec.CheckKeys, "5")
@@ -56,7 +52,7 @@ func verdictContractFor(kind, key string) reportVerdict {
 		v.Line = key + ". <check name>"
 		v.Allowed = []string{"PASS", "WARNING", "FAIL"}
 		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
-	case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+	case gaterun.SessionKindItem:
 		v.Allowed = []string{"ALIGNED", "MISMATCH", "CANNOT_DETERMINE"}
 		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
 	case gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
@@ -111,13 +107,12 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		switch kind {
 		case gaterun.SessionKindChecks:
 			lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
-		case gaterun.SessionKindItem, gaterun.SessionKindPreserve:
+		case gaterun.SessionKindItem:
 			lines = append(lines,
 				fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key),
 				"  evidence: <file:line or quoted fact>",
 				"  deterministic: <true|false>",
 				"  Part A: <concerns or No concerns>",
-				"  Part B: <test-quality assessment or skipped — <reason>>",
 				"  # for a MISMATCH, append the finding fields inside the same item block:",
 				"  Problem: <one line>",
 				"  Evidence:",
@@ -191,9 +186,6 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 				c.Requirements[len(c.Requirements)-1].Allowed = []string{"true", "false"}
 			}
 		}
-		add("part-b-skipped", "a skipped Part B requires a reason", "")
-		c.Requirements[len(c.Requirements)-1].When = "if_part_b_skipped"
-		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		for _, field := range analysisFields {
 			allowed := analysisAllowed(field)
 			example := "  " + field + ": <value>"
@@ -257,10 +249,6 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		c.Requirements[len(c.Requirements)-1].Allowed = crossDispositions
-		add("cross-effective-status", "one effective status per logical key and cross", "Effective status: <key> = <pass|fail>")
-		c.Requirements[len(c.Requirements)-1].CountBasis = "logical_keys_plus_cross"
-		c.Requirements[len(c.Requirements)-1].MaxCount = -1
-		c.Requirements[len(c.Requirements)-1].Allowed = crossStatuses
 		if run.Gate == gaterun.GateVerify {
 			add("cross-quality-conclusions", "one author-declared final quality conclusion with reason per design and architecture key, including carried judgments; unacceptable iff finalized gate-driving P0/P1 findings exist; do not infer quality from pass/fail", "Quality conclusion: <design_or_architecture_key> = <acceptable|needs_attention|unacceptable> — <reason>")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "unit_quality_keys"

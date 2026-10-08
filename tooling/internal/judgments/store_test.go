@@ -189,7 +189,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 		t.Fatal("unchanged MISMATCH verdict hid changed blocking severity")
 	}
 	r.SourceRun = "20240101-000000-abcdef"
-	r.Result = json.RawMessage(`{"effective_status":{"preserve:auth:auth.core":"fail"},"findings":[{"id":"consumer/F9","severity":"P1","text":"divergence","detail":"evidence"}]}`)
+	r.Result = json.RawMessage(`{"effective_status":{"item:auth:auth.core":"fail"},"findings":[{"id":"consumer/F9","severity":"P1","text":"divergence","detail":"evidence"}]}`)
 	equivalent, err := Save(root, r)
 	if err != nil {
 		t.Fatal(err)

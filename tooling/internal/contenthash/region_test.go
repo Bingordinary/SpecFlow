@@ -808,3 +808,36 @@ func TestListMissingDepsAcceptanceItem(t *testing.T) {
 		t.Fatalf("unknown item must be reported missing, got %v", missing)
 	}
 }
+
+func TestLocateEnclosingSectionRegion(t *testing.T) {
+	spec := "## One\n\n### Alpha\n\ncontent\n\n## Two\n\n### Beta\n\nmore\n"
+	region, ok := LocateEnclosingSectionRegion(spec, "Alpha")
+	if !ok || region.Heading != "One" {
+		t.Fatalf("unique subsection must resolve to its enclosing section, got %+v ok=%v", region, ok)
+	}
+	direct, ok := LocateSectionRegion(spec, "One")
+	if !ok || RegionCID(region.Text) != RegionCID(direct.Text) {
+		t.Fatalf("subsection must resolve to the same region as the ## heading, got %+v", region)
+	}
+	if region, ok := LocateEnclosingSectionRegion(spec, "Beta"); !ok || region.Heading != "Two" {
+		t.Fatalf("subsection under the second section must resolve there, got %+v ok=%v", region, ok)
+	}
+	if _, ok := LocateEnclosingSectionRegion(spec, "Gamma"); ok {
+		t.Fatal("an absent subsection must not resolve")
+	}
+
+	dup := "## One\n\n### Same\n\ncontent\n\n## Two\n\n### Same\n\nmore\n"
+	if _, ok := LocateEnclosingSectionRegion(dup, "Same"); ok {
+		t.Fatal("a duplicated subsection name must fail closed")
+	}
+
+	noSection := "### Orphan\n\ncontent\n"
+	if _, ok := LocateEnclosingSectionRegion(noSection, "Orphan"); ok {
+		t.Fatal("a subsection with no enclosing ## section must not resolve")
+	}
+
+	fenced := "## One\n\n```\n### Fenced\n```\n\ncontent\n"
+	if _, ok := LocateEnclosingSectionRegion(fenced, "Fenced"); ok {
+		t.Fatal("a heading inside a fence is content, not a subsection")
+	}
+}

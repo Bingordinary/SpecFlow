@@ -184,7 +184,7 @@ Flows that currently define an execution position:
 2. `spec_flow_design_review` — procedure step 13 (`framework/spec_flow_design_review.md`)
 3. the `quality` lens of `verify` — the final synthesis (`framework/unit_verify_checklist.md` §Final synthesis, `framework/verification_scope.md` §Final synthesis)
 4. the `alignment` lens of `verify` — Step 7 analysis / final synthesis (`framework/unit_verify_checklist.md`)
-5. `validate` — P0 adjudications (P1 is the contract-decided default and is not re-graded) and Check 2 Step 4 advisory findings (`framework/unit_validate_checklist.md`)
+5. `validate` — P0 adjudications (P1 is the contract-decided default and is not re-graded) and advisory findings (Check 1 hygiene) (`framework/unit_validate_checklist.md`)
 6. `validate` (rule) — P0 adjudications (P1 is the contract-decided default and is not re-graded) (`framework/rule_validate_checklist.md`)
 7. scoped review — conclusion stage (`framework/governance/review_scope.md`)
 
@@ -210,7 +210,7 @@ Each severity implies an impact claim. The check verifies the claim against read
 
 ### 9.5 Execution Rules
 
-1. **Execution position.** In a coverage gate run (`validate`, `verify`) the check is the independent final synthesis, which runs for assigned relationships or findings. Severity verification applies to retained, merged, or newly discovered relationship findings; a run with neither relationships nor findings skips the final session. Rule validate has no final synthesis: its single checks session assigns each finding's severity directly and no later step re-grades it. In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. Advisory findings that never enter the final synthesis — validate's Check 2 Step 4 advisory findings — are graded by the session executor that produced the check line (see `framework/unit_validate_checklist.md` §Step 4).
+1. **Execution position.** In a coverage gate run (`validate`, `verify`) the check is the independent final synthesis, which runs for assigned relationships or findings. Severity verification applies to retained, merged, or newly discovered relationship findings; a run with neither relationships nor findings skips the final session. Rule validate has no final synthesis: its single checks session assigns each finding's severity directly and no later step re-grades it. In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. Advisory findings that never enter the final synthesis — validate's Check 1 hygiene WARNING — are graded by the session executor that produced the check line (see `framework/unit_validate_checklist.md` §Present Findings).
 2. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
 3. The check runs after existence validation (the final synthesis, when it runs) and before the cache write or final output, so a raised severity determines blocking status and cache content.
 4. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
@@ -228,11 +228,11 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority; protected stable requirements must be ALIGNED, or an evidence-backed record-drift routing.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority.
 
 ### 2. Pre-review Setup
 
-Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path requires replanning.
+Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
 
 Design and architecture checks read their selected unit spec, applicable rules and code. Extract accepted trade-offs, architectural decisions, design constraints, known debt and non-goals from that unit's published design context.
 

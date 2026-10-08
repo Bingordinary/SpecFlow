@@ -18,7 +18,7 @@ func TestPlannedPhysicalRuleInputDoesNotDeadlockSubmit(t *testing.T) {
 		"---\nid: g_rule_logging\nscope: unit\n---\n\n# g_rule_logging\n\n## Constraint\n\nMust log.\n")
 	grWriteFile(t, root, "docs/specs/units/candidate/unit_auth.md",
 		"---\nid: auth\nunit_refs: none\nrule_refs: g_rule_logging\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n"+
-			"  - id: auth.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: contracts.js\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
+			"  - id: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: contracts.js\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
 	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token}; }\n")
 
 	physical := "docs/specs/rules/stable/g_rule_logging.md"

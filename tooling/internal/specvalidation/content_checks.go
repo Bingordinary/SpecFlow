@@ -39,7 +39,7 @@ func CheckProsePathHygiene(content string) CheckResult {
 	return CheckResult{
 		Name:    "Prose path hygiene",
 		Status:  Warn,
-		Details: "source-code paths in narrative text — relocate to implementation_surface or affects.files, or reference by concept name: " + strings.Join(hits, "; "),
+		Details: "source-code paths in narrative text — relocate to implementation_surface, affects.files, or affects.evidence_files, or reference by concept name: " + strings.Join(hits, "; "),
 	}
 }
 

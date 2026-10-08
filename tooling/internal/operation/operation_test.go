@@ -1389,3 +1389,26 @@ func writeClosedState(t *testing.T, repoRoot, unit, outcome string) string {
 	}
 	return op.OperationID
 }
+
+// TestOpenExcludesEvidenceFilesFromScope pins the affects.evidence_files
+// contract at the operation boundary: evidence files are read-only and never
+// enter the operation's writable scope, while affects.files still does.
+func TestOpenExcludesEvidenceFilesFromScope(t *testing.T) {
+	repoRoot := newGitRepo(t)
+	writeFile(t, repoRoot, "internal/demo/main.go", "package demo\n")
+	writeFile(t, repoRoot, "peer/peer_test.go", "package peer\n")
+	spec := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n\n# demo\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
+		"  - id: demo.core\n    description: Demo.\n    verification_type: testable\n    verification_surface: api\n" +
+		"    implementation_surface: internal/demo\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" +
+		"    affects:\n      files:\n        - internal/demo/main.go\n      evidence_files:\n        - peer/peer_test.go\n"
+	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_demo.md", spec)
+	commitAll(t, repoRoot, "fixture")
+
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	if containsAllowedPath(op.AllowedPaths, "peer/peer_test.go") {
+		t.Fatalf("evidence file entered operation write scope: %+v", op.AllowedPaths)
+	}
+	if !containsAllowedPath(op.AllowedPaths, "internal/demo/main.go") {
+		t.Fatalf("declared implementation file missing from write scope: %+v", op.AllowedPaths)
+	}
+}

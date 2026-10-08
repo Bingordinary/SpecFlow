@@ -238,8 +238,11 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	verifyRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	item := missionJSON(t, root, verifyRun, "auth.core")
-	if item.Sessions[0].ProtocolScope != "Steps 1-7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
+	if item.Sessions[0].ProtocolScope != "Steps 1-7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part A:") || strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
 		t.Fatalf("wrong verify item mission: %+v", item.Sessions[0])
+	}
+	if !strings.Contains(strings.Join(item.Constraints, "\n"), "missing read ref: <repo-relative path>") {
+		t.Fatalf("item mission lacks the missing-read-ref constraint: %v", item.Constraints)
 	}
 	grSubmitOK(t, root, verifyRun, "auth.core", grVerifyItemBody("auth.core", "MISMATCH (acceptance)", "broken at src/auth.go:1")+grVerifyAnalysisFields("auth.core")+"auth.core: "+main+": acceptance_item:auth.core\nauth.core: src/auth.go: all\n")
 
@@ -257,6 +260,9 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	if !scopeRecorded {
 		t.Fatalf("public code mission must state that the tooling records the evidence surface, got %+v", code.Sessions[0].ReportContract.Requirements)
 	}
+	if !strings.Contains(strings.Join(code.Constraints, "\n"), "missing read ref: <repo-relative path>") {
+		t.Fatalf("public code mission lacks the missing-read-ref constraint: %v", code.Constraints)
+	}
 
 	grPreparePublic(t, root, mustLoadRun(t, root, verifyRun), []string{"design:auth:src/auth.go"})
 	file := missionJSON(t, root, verifyRun, "src/auth.go")
@@ -266,7 +272,7 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grSubmitOK(t, root, verifyRun, "src/auth.go", grQualityReport("src/auth.go", main))
 	cross := missionJSON(t, root, verifyRun, "cross")
 	if len(cross.Sessions[0].Dependencies) != 3 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
-		len(cross.Sessions[0].AdditionalRefs) != 2 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
+		len(cross.Sessions[0].AdditionalRefs) != 2 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Finding disposition:") || strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
 		t.Fatalf("wrong cross mission: %+v", cross.Sessions[0])
 	}
 }

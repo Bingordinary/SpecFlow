@@ -35,7 +35,6 @@ func currentVerifyFixture(t *testing.T, root, unit, target, extra string) {
 		}
 		report := grDefaultQualityReport(run, ck)
 		if gaterun.IsItemKind(ck.Kind) {
-			spec := main
 			code := ""
 			for _, surface := range run.Surfaces {
 				for _, f := range surface.Entries {
@@ -44,16 +43,7 @@ func currentVerifyFixture(t *testing.T, root, unit, target, extra string) {
 					}
 				}
 			}
-			if ck.Kind == gaterun.SessionKindPreserve {
-				spec = "docs/specs/units/stable/unit_" + ck.Unit + ".md"
-				for _, p := range ck.ReadRefs {
-					if !strings.HasPrefix(p, "docs/specs/") {
-						code = p
-						break
-					}
-				}
-			}
-			report = grVerifyItemBody(ck.Key, "ALIGNED", code+":1") + ck.Key + ": " + spec + ": acceptance_item:" + ck.Item + "\n" + ck.Key + ": " + code + ": all\n"
+			report = grVerifyItemBody(ck.Key, "ALIGNED", code+":1") + ck.Key + ": " + main + ": acceptance_item:" + ck.Item + "\n" + ck.Key + ": " + code + ": all\n"
 		}
 		if !strings.Contains(string(data), "## Description") {
 			report = strings.ReplaceAll(report, main+": Description", main+": all")

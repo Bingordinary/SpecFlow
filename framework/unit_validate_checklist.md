@@ -108,7 +108,7 @@ Next step: {concrete next command with reason, or "None"}
   - Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive. Batch-group entries carry the same fields; terse one-line values are fine.
   - Findings whose recorded ownership routes them to another unit are presented in a `Deferred to {unit}:` section after the Findings section, with the same block fields plus an `ownership:` line. They are retained and routed but do not count toward `Key counts`, `Blocking promote`, or the gate result (see `framework/unit_verify_checklist.md` §Output Format → Deferred findings).
   - Each finding's `[{severity}]` is assigned by the session that raises the finding. When the final synthesis (`framework/verification_scope.md` §Final synthesis) retains or merges findings, it may raise a retained finding's canonical severity conservatively — never lower it; counts and blocking derive from the canonical severities (see `framework/severity_policy.md`).
-- `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the gate's check identifier (validate: `check-{n}`; verify `alignment`: `item:<unit>:<item>` or `preserve:<unit>:<item>`; verify `quality`: `code:<file>`, `design:<unit>:<file>` or `architecture:<unit>`). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify alignment judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Public code checks (`code:<file>`) carry no scope lines: each check's own public evidence surface — the read refs of its coverage key — is recorded whole-file by the tooling as its dependency. Every read-only subagent reports the scope it declares for the checks in its session; the report is submitted verbatim via `gate-submit`, which validates the declarations against that session's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown, tagged with the session's lens, in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly → Check / session scope). Targeted runs may omit it.
+- `Dependency scope:` — one line per check the run executed: `{check key}: {file}: {declaration}`. `{check key}` is the gate's check identifier (validate: `check-{n}`; verify `alignment`: `item:<unit>:<item>`; verify `quality`: `code:<file>`, `design:<unit>:<file>` or `architecture:<unit>`). `{declaration}` is the section-region heading text the check's judgment read (e.g. `Description`, `Testability / Acceptance Criteria`; the frontmatter region is `frontmatter`; a uniquely named `###` subsection resolves to its enclosing `##` section region), `acceptance_item:<id>[,<id>...]` (one or more acceptance item regions of the spec's `acceptance_item_set` — the precise declaration for a judgment over specific items, e.g. one verify alignment judgment), the reserved token `acceptance_items` (the whole `acceptance_item_set` structural region — for judgments over the set as a whole, e.g. validate's acceptance coverage check), 1-based closed line ranges (e.g. `120-180,300-320`), or `all` when the judgment covered the whole file. Public code checks (`code:<file>`) carry no scope lines: each check's own public evidence surface — the read refs of its coverage key — is recorded whole-file by the tooling as its dependency. Every read-only subagent reports the scope it declares for the checks in its session; the report is submitted verbatim via `gate-submit`, which validates the declarations against that session's `read_refs` — not merely the run-wide snapshot — (path membership and declaration parseability), and `gate-finalize` computes the CIDs and records the per-check breakdown, tagged with the session's lens, in the cache's `checks` mapping (see `framework/validation_cache.md` §Format → Per-check evidence). Delta/repair runs report the scope of the re-run checks only — carried-over checks are not re-executed and get no new declaration (see `framework/verification_scope.md` §Sub-agent Prompt Assembly → Check / session scope). Targeted runs may omit it.
 - `Incremental scope:` — delta runs only (mode `delta`). One line per re-run coverage key in the run's own structure (e.g. validate: "structural (checks 1, 3, 6): re-run — section `Description` of the unit's own spec changed"), followed by a line declaring the carried-over checks ("checks 1-6, 8-10: carried over — their dependency evidence is unchanged"). The scope is mechanism-derived at plan time from the cache's per-check evidence: `gate-plan` maps stale regions to the checks that declared them, adds the current keys the baseline never declared (a new acceptance item or code file has no evidence to carry, so it executes like a stale judgment), and fixes the re-run coverage set (see `framework/verification_scope.md` §Delta Runs). For a failure-record recovery (`basis: repair` — the run recovers a delta FAIL's failure record or a full-run FAIL's record), the re-run set is the record's failed checks plus its persisted `invalidated_checks` (written by `gate-invalidate` after a targeted P0/P1), the newly affected checks, the current keys the baseline never declared, and any explicit `--rerun` overrides; carried-over checks are the remaining `pass`/`carried` entries (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record whose per-check status map is absent or incomplete (legacy or malformed), or whose invalidated key cannot map to the current judgment surface, degrades the plan to the full coverage set — nothing is carried over. When the re-run covers every declared check, the plan covers the full scope — nothing is carried over. The incremental scope is reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. A finding's fix lifecycle has three states with fixed wording: `finding_open` → "Resolve the findings, then re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}`) to confirm"; `fixed_pending_recheck` → "Fixes applied; re-run the target-appropriate re-check command to confirm." — only after the approved fix was actually written; `verified` → "Re-check passed." — only after a re-check confirmed the fix. A gate report is always produced before any fix is applied (nothing is implemented before the user approves the findings), so an actionable finding's report-time `Next step` is always the `finding_open` wording. Other guidance: both gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}"; nothing further → `None`.
 
@@ -135,19 +135,14 @@ One line per check, numbered as in this file:
 3. Scope integrity: PASS | WARNING | FAIL — reason
 4. Evidence-driven vs design-driven consistency: PASS | FAIL — reason
 5. Acceptance coverage & correctness: PASS | FAIL — reason
-  5a. Coverage & item-set correspondence: PASS | WARNING | FAIL — reason
-  5b. Content alignment: PASS | FAIL — reason
-  5c. Internal consistency: PASS | FAIL — reason
-  5d. Description format compliance: PASS | FAIL — reason
-  5e. Falsifiability: PASS | FAIL — reason
-  5f. Description actionability: PASS | FAIL — reason
-  5g. Pass condition / description coupling: PASS | FAIL — reason
+  5a. Coverage & item-set correspondence: PASS | FAIL — reason
+  5b. Semantic consistency: PASS | FAIL — reason
+  5e. Item substance: PASS | FAIL — reason
   5h. Contract statement carry-over: PASS | FAIL — reason
-  5i. Contract substance: PASS | FAIL — reason
 6. Affects-source validity: PASS | FAIL — reason
 7. Cross-unit consistency: PASS | WARNING | FAIL — reason
 8. Constraint alignment: PASS | FAIL — reason
-9. File associations and shared agreements: PASS | FAIL — reason
+9. File associations (mechanical): PASS | FAIL — reason
 10. Clarity: PASS | WARNING | FAIL — reason
 ```
 
@@ -160,7 +155,7 @@ Failed checks: N | Advisory findings: K
 **Counting rules:**
 - `Findings: N (P0: a | P1: b | P2: c | P3: d)` — N is the total number of distinct findings across all FAIL checks (quality-bar findings merged per the per-item merge rule, see Per-item merge rule below); a/b/c/d the count per severity. validate grades findings P0/P1 only — P1 is the contract-decided default; a P0 grade requires the §9 boundary check (see Severity handling below) — so `c` and `d` are always 0. In targeted runs, only executed checks are counted.
 - `Failed checks` is the number of FAIL checks among executed checks, shown in the body's check lines. WARNING is not a failed check.
-- `Advisory findings` (Check 1 step 3 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented on their check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
+- `Advisory findings` (Check 1 step 3 hygiene WARNING) are presented on the check line's reason and counted separately as `Advisory findings: K` in the body. They are never counted in `Findings` and never affect `Failed checks`.
 - The same counts are reused in the Present Findings summary (`Findings` N = batch group items + decision group items).
 
 **Multi-finding enumeration:** When a FAIL reason contains multiple distinct findings, list each finding under the check line as its own entry in the unified finding format `[{severity}] {location} — {finding} (actionable | needs_decision)`, followed by the shared finding block (§Output Format). The entry line must begin with the bracketed severity after optional indentation — the parser accepts indentation or a single leading `-`, but not a numbered prefix, so the session report keeps entries as standalone lines; the presented summary may re-number them (`5a-1`, `5a-2`, ...) as presentation only. Each entry carries a location reference (the contradicting information sources, per Execution Rules), the finding statement, its resolution type, and the block fields:
@@ -181,7 +176,7 @@ Failed checks: N | Advisory findings: K
 
 A check with a single finding keeps the existing one-line reason format plus the finding entry and block.
 
-**Per-item merge rule (quality-bar family):** Findings from sub-checks 5e, 5f, 5g, and 5i that reference the same acceptance item (same location) and whose fix is a rewrite of that item are merged into **one finding**. The merged entry's issue line summarizes the item defect; its `evidence:` block quotes each violated sub-check's rule and the offending text (following 5i's "quote the violated rule" format). The check lines in the body keep their individual PASS/FAIL status, but the finding entries merge everywhere: the merged entry is presented once, under the lowest-numbered violating sub-check's line (e.g. `5e-1`), and the other violating sub-checks' reasons reference it without re-enumerating — so per-check enumerations in the body and `Findings` N use the same post-merge count. The merged entry's severity is the highest among its violating sub-checks (P0 > P1); a P0 grade still requires the §9 boundary check per the Severity handling section. `Findings` N counts merged findings — one item defect is one finding, regardless of how many sub-checks it violates. Findings from 5a (located at spec body regions), 5b/5c (each contradiction is an independent fix edit), and 5h (located at prose statements) are not merged — their locations and fixes differ.
+**Per-item merge rule:** Findings from sub-check 5e that reference the same acceptance item (same location) and whose fix is a rewrite of that item are merged into **one finding**: the merged entry's issue line summarizes the item defect, and its `evidence:` block quotes each violated rule and the offending text. The merged entry's severity is the highest among its violated rules (P0 > P1); a P0 grade still requires the §9 boundary check per the Severity handling section. Findings from 5a (spec body regions), 5b (each contradiction is an independent fix edit), and 5h (prose statements) are not merged — their locations and fixes differ.
 
 When findings mix resolution types (within one check or across checks), the report presents each finding with its own resolution — a `needs_decision` finding stops the flow and requires user input per Execution Rules.
 
@@ -193,13 +188,13 @@ When findings mix resolution types (within one check or across checks), the repo
 
 **Purpose:** Verify the file is parseable and all required fields exist, as a prerequisite for all subsequent checks.
 
-**Mechanical pre-pass (candidate targets, before gate-plan):** run `specflowctl validate candidate --unit {name}` first. The tool deterministically enforces: frontmatter fields, acceptance item schema and `implementation_surface` resolution, `unit_refs`/`rule_refs`/appendix existence, candidate-layer spec paths in the body and every non-exempt appendix, section/region locatability (at least one `##` heading, unique headings, malformed headings, frontmatter region purity, unique non-empty item ids), dependency cycles, prose path hygiene (WARNING), and environment-specific content — developer-machine absolute paths, local addresses, and credential patterns (narrative hits FAIL; unmarked fenced hits WARNING). A mechanical FAIL stops the run before any session launches — fix and re-run the tool. Warnings are passed to the structural session for confirmation.
+**Mechanical pre-pass (candidate targets, before gate-plan):** run `specflowctl validate candidate --unit {name}` first. The tool deterministically enforces: frontmatter fields; acceptance item schema (required fields; `testable` items need a Gherkin-style Given/When/Then description, and `.feature` syntax is rejected) and `implementation_surface` resolution; `affects.files` and `affects.evidence_files` path existence; `unit_refs`/`rule_refs`/appendix existence; candidate-layer spec paths in the body and every non-exempt appendix; section/region locatability (at least one `##` heading, unique headings, malformed headings, frontmatter region purity, unique non-empty item ids); dependency cycles; prose path hygiene (WARNING); and environment-specific content — developer-machine absolute paths, local addresses, and credential patterns (narrative hits FAIL; unmarked fenced hits WARNING). A mechanical FAIL stops the run before any session launches — fix and re-run the tool. Warnings are passed to the structural session for confirmation.
 
 **Agent-judged residue (the structural session executes these):**
 
 1. Read `docs/specs/units/candidate/unit_{unit}.md` and all non-exempt appendix files (see Prerequisite)
 2. **Stable-layer spec paths in prose (FAIL):** the tool flags candidate-layer paths everywhere but cannot distinguish structured fields from prose for stable-layer paths — a stable-layer spec path (`docs/specs/units/stable/...`, `docs/specs/rules/stable/...`, or a relative `stable/...*.md` form) in narrative prose mispoints after the referenced unit promotes. Structured fields (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) may hold stable-layer paths. If found → FAIL with quoted path, section, and line reference. Reference appendix files and other specs by concept name or file name instead
-3. **Prose-path hygiene confirmation (WARNING):** review the tool's WARNING hits plus any source-path pattern the scanner cannot express — relocate to `implementation_surface` or `affects.files`, or convert to a concept name reference. Exclusions mirror the tool's: structured fields, `framework/` governance paths, `docs/specs/meta/` cache paths, marked fenced examples
+3. **Prose-path hygiene confirmation (WARNING):** review the tool's WARNING hits plus any source-path pattern the scanner cannot express — relocate to `implementation_surface`, `affects.files`, or `affects.evidence_files`, or convert to a concept name reference. Exclusions mirror the tool's: structured fields, `framework/` governance paths, `docs/specs/meta/` cache paths, marked fenced examples
 4. **Region structure semantics check (FAIL):** the section regions must match the content's semantic structure — the region mechanism's trust (delta scope, cache freshness) is only as correct as the split. Run `specflowctl gate-evidence --file <spec> --sections` and, reading the spec itself, verify:
     - **The acceptance_item_set region covers every real item** — the region runs from the exact `acceptance_item_set:` marker line to the next `##` heading outside a code fence (the enclosing section's end), or through the last real line of the file. `###` and deeper headings never terminate the set: an item separated from the previous one by a `###` subheading is still part of the set and is verified. An item placed after the enclosing section's `##` heading sits outside the set and cannot be validated as an item — catch that here. Distinguish real items from fenced example blocks — a fenced `- id:` example is content, not an item (the mechanical pre-pass enforces the exact-marker and heading-format preconditions; the semantic coverage judgment is this step's)
     - **Fenced code blocks are content** — `##`-like lines inside ``` / ~~~ fences must not split regions; when a fence would visually span a section boundary, the spec needs restructuring (a fence cannot cross `##` headings — close the fence before the next heading)
@@ -261,18 +256,7 @@ Actively search for design flaws in both main spec and appendix content. Read ap
 
 If a plausible critical flaw is identified that the spec does not address → FAIL (needs_decision: needs user judgment on whether this is a design gap or intentional)
 
-**Step 4 — Design decision taste level**
-Assess only the design decisions the spec has actually recorded (design decision records, architecture descriptions, component trees, data types in main spec and appendices). Evaluate taste-level quality of those recorded decisions:
-- Are module/component boundaries cut at the natural seams of the stated behavior domains?
-- Does each recorded responsibility stay single-purpose?
-- Are extension landing points explicit where the spec records future-work expectations?
-- Do the recorded decisions follow the repository's established engineering patterns?
-
-Output P2/P3 advisory findings — these do NOT affect the PASS/FAIL verdict and do not block promote. If the spec records no design decisions (no architecture section, no design decision records, and no appendix design content) → report "Step 4: N/A (no recorded design decisions)" and proceed. This step must not invent architecture the spec does not record; it evaluates only what is written. Objective design defects remain Step 3's territory.
-
-Before presenting advisory findings, confirm each P2/P3 grading per `framework/severity_policy.md` §9: read the appendix or body section the finding judges and any section its impact claim depends on, beyond the section it was graded on (§9.5 Execution Rules, rule 2), and verify the §9.3 boundary. This is a judgment discipline, not a run record. Advisory gradings are judgment-based and never contract-decided, so all of them are in scope.
-
-**Step 5 — Authoring Baseline verification (decision closure)**
+**Step 4 — Authoring Baseline verification (decision closure)**
 Verify that the spec closes every implementation-affecting decision in `framework/spec_writing_guide.md` §9: the downstream executor must not be forced to choose. The §9 expression points are NOT judged here — the clarity check (Check 10) reads the spec and reports what is unclear, underspecified, or internally contradictory. This step verifies the decision closure that Check 10 does not test.
 
 - **Input discipline:** the spec text is the ONLY input (main spec + non-exempt appendices). Do not fill spec gaps with implementation knowledge from this session — if the spec omits a decision, the gap is real and must be reported. Reading the implementation defeats this check's purpose: a spec that only makes sense with code knowledge forces the downstream executor to choose, which is exactly what the baseline forbids.
@@ -287,21 +271,15 @@ Verify that the spec closes every implementation-affecting decision in `framewor
 
 **FAIL:** a Step 1 goal-means flag (default severity P1; extraction artifact required), a Step 2 rationale gap, a Step 3 critical flaw; or any of the seven decisions is left open AND not explicitly bounded with a reason (actionable: record the decision / declare the boundary; needs_decision when recording it requires user input — Execution Rules "missing decision")
 
-**Step 6 — Abstraction level & implementation agnosticism (The Truth Ownership Check)**
-Verify that the spec text adheres to `framework/spec_writing_guide.md` §14 (Truth Ownership Framework):
+**Step 5 — Abstraction level & implementation agnosticism — owned by Check 7**
 
-- **Mechanism vs. Behavior (Anti-Pattern B):** Verify the spec does not mandate internal data structures or language-level execution mechanisms (e.g. "must use sync.RWMutex", "must store records in a map[string]any", specific internal channel buffer capacities, or private struct layouts) instead of behavioral invariants and concurrency guarantees (e.g. atomicity, thread-safety, idempotent processing).
-- **Causal Synchronization vs. Brittle Temporal Sleep (Anti-Pattern D):** Verify the design does not specify arbitrary physical wall-clock sleep durations (e.g. "wait 500ms and verify status") for asynchronous workflows. Asynchronous transitions must specify causal state changes ("until status is ready", "upon event reception") with bounded timeout semantics.
-- **Test Double & Fixture Isolation (Anti-Pattern C):** Verify the design does not leak test doubles, mock runner names, or ephemeral test fixtures (`mockRunner`, `test_tool`) into formal architecture or component definitions.
+The Truth Ownership rules of `framework/spec_writing_guide.md` §14 (Anti-Patterns B, C, D: mandated internal mechanisms, brittle wall-clock sleeps, test-double leakage) are judged once, by Check 7 step 8 (shadow specification / over-specification). Check 2 does not re-judge them; Check 7's verdict and finding route apply.
 
-If the spec specifies internal implementation mechanisms, arbitrary physical sleep waits, or leaks test doubles:
-- **FAIL (P1: Over-specification)** (actionable: restate as observable behavioral invariants or causal state transitions)
-
-**Step 7 — Verdict**
-- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all seven §9 decisions closed or explicitly bounded, no critical flaws found, and abstraction boundaries respected per §14
+**Step 6 — Verdict**
+- PASS: goal-means aligned, per-item rationale documented (evidence-driven items waived per Step 2), all seven §9 decisions closed or explicitly bounded, and no critical flaws found
 - FAIL: specific findings reported
 
-**Check method:** Content reasoning + adversarial analysis + taste-level assessment + authoring baseline verification + abstraction boundary check (the subagent makes active engineering judgments)
+**Check method:** Content reasoning + adversarial analysis + authoring baseline verification (the subagent makes active engineering judgments)
 
 ---
 
@@ -319,23 +297,11 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
    - Are the boundaries respected by the behavior descriptions? (e.g., boundary is "client-side validation only" but behavior describes server-side logic)
    - Non-goal conflicts ("non-goal says not doing X but behavior describes X") are NOT judged here — that contradiction is owned by Check 2 Step 1's goal-means analysis, which reads the same declarations; judging it twice reports one defect as two findings.
 5. **Appendix scope check:** Verify that appendix content does not exceed the unit's declared scope. If an appendix describes behavior belonging to a different unit's responsibility → FAIL (actionable: move content to the correct unit or declare scope expansion)
-6. **Unit cohesion / split-candidate detection (WARNING):** Judge whether the unit's content resolves into two or more responsibility clusters that are independently governable. A split candidate is reported as WARNING only when all three conditions hold:
-   - **Distinct responsibility subjects** — the clusters' behavior subjects belong to different domains (e.g. authentication vs. notifications), not multiple scenarios of one subject.
-   - **No shared design center** — no shared state, no shared actor journey, and no contract the clusters jointly define links them: a designed change in one cluster does not require a change in the other. Constraint-type content the clusters share (protocols, component contracts) is not a design center: it is extracted as a shared rule at split time (`framework/spec_writing_guide.md` §2 item 3).
-   - **Independently governable** — each cluster could carry its own acceptance item set and be validated, verified, reviewed, and promoted without editing the other cluster's content (constraints shared between them would be extracted as a rule, `framework/spec_writing_guide.md` §2 item 3).
-   Spanning multiple directories is not a signal by itself (`framework/spec_writing_guide.md` §2 item 2 allows cross-directory units) — the judgment reads coupling and governance lifecycle, not directory layout. This step is the unit-level mirror of sub-check 5a step 7 (over-split items are merge candidates): 5a detects one behavior domain split across items; this step detects independently governable responsibilities merged into one unit.
-   A reported WARNING carries:
-   - **Required evidence (no artifact, no WARNING):** quote each cluster's declared responsibility statement or behavior subjects (from the body and the acceptance item set) and state the independence judgment — which shared-state, shared-contract, and shared-journey surfaces were checked and why none links the clusters (same evidence discipline as Check 2 Step 1 and sub-check 5a step 9).
-   - **Recommendation:** split the unit — one unit per responsibility (a user-confirmed structure change per `framework/spec_writing_guide.md` §2, never an automatic edit) — and extract constraints shared between the parts as rules. Do not satisfy this finding by moving content into appendices: non-exempt appendices stay inside the same unit's validation union and reduce neither its gate work set nor its governance weight.
-   - **Resolution:** advisory WARNING only — it never causes FAIL, never blocks promote, is presented on the check line's reason, and is counted under `Advisory findings`. It is not a cross-synthesized finding and must never be emitted as a bracketed `[Px]` entry (validate grades findings P0/P1 only).
-
 **PASS:** Scope is clear and self-consistent; no non-goal is violated; appendix content stays within unit scope
-
-**WARNING (step 6):** The unit's content resolves into independently governable responsibility clusters — split candidate. Recommendation: split into one unit per responsibility (user-confirmed structure change, `framework/spec_writing_guide.md` §2); extract shared constraints as rules; non-exempt appendix offload does not reduce the unit's governance weight
 
 **FAIL:** Ambiguous scope, goal/non-goal contradiction, boundary violation, or out-of-scope appendix content (actionable)
 
-**Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content) + unit-cohesion judgment (responsibility-cluster independence)
+**Check method:** Multi-field cross-reference (goal × non-goal × behaviors × appendix content)
 
 ---
 
@@ -372,42 +338,39 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 
 ## Check 5 — Acceptance coverage & correctness
 
-**Purpose:** The spec body and acceptance items must cover each other bidirectionally — every designed behavior has an item (5a forward coverage), every design-driven item maps back to a designed behavior (5a orphan detection; evidence-driven and replacement/cleanup items excepted), over-split items are merge candidates (5a) — match semantically (5b), and contain no internal contradictions (5c). Acceptance items must also have falsifiable pass_conditions (5e), actionable descriptions (5f), and coupled pass_condition/description pairs that add value (5g).
+**Purpose:** The spec body and acceptance items must cover each other bidirectionally — every designed behavior has an item (5a forward coverage), and every design-driven item maps back to a designed behavior (5a orphan detection; evidence-driven and replacement/cleanup items excepted). Body and item content must match semantically and contain no internal contradictions (5b), and every acceptance item must be falsifiable, actionable, and carry contract substance beyond its description (5e).
 
 **Execution steps:**
 
 ### Sub-check 5a — Coverage & item-set correspondence
 
-**Purpose:** Every behavior domain in the spec body and appendices must have at least one corresponding acceptance item, every design-driven acceptance item must correspond to a designed behavior (orphan detection, step 8), and the item's surface fields must be consistent with the behavior type. Granularity baseline: behavior domains as defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity — one item = one behavior domain with its full scenario set (happy path + error paths + boundary cases). Enhanced from the original forward coverage check to a bidirectional check.
+**Purpose:** Every behavior domain in the spec body and appendices must have at least one corresponding acceptance item, every design-driven acceptance item must correspond to a designed behavior (orphan detection, step 7), and the item's surface fields must be consistent with the behavior type. Granularity baseline: behavior domains as defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity — one item = one behavior domain with its full scenario set (happy path + error paths + boundary cases). Enhanced from the original forward coverage check to a bidirectional check.
 
 **Execution steps:**
 
-1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5g (which requires `pass_condition` to carry constraints beyond `description`).
+1. **Coverage input source:** A behavior is covered when any acceptance item describes it in its `description` (Given/When/Then scenarios) OR constrains it in its `pass_condition`. The coverage judgment input is the union of `description` and `pass_condition` — a behavior constraint that already appears in some item's `pass_condition` counts as covered, consistent with sub-check 5e (whose information-increment rule requires `pass_condition` to carry constraints beyond `description`).
 2. **Extraction premise (shared with sub-check 5h):** Behavior-domain extraction targets only formal behavior declared in the spec body and appendices — a behavior subject (endpoint, function, state machine, or flow entry point) together with its behavior semantics. The subject must be externally observable per `framework/spec_writing_guide.md` §4: internal implementation detail (internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout) is design expression, not a behavior domain source, and creates no coverage obligation — the same boundary step 6 and sub-check 5h apply on their surfaces. Non-constraining narrative (design discussion, illustrative examples, motivation, variant elaboration) is NOT a behavior domain source and does not create coverage obligations. Extract all behavior domains at the granularity defined in `framework/spec_writing_guide.md` §Acceptance Item Granularity: group behavior variants around one behavior subject into one domain (error paths, boundary cases, and state transitions of the same subject are scenarios of that domain, not separate domains); do not split scenarios of the same domain into separate coverage requirements.
 3. For each behavior domain, verify at least one acceptance item covers it (using the union input from step 1)
 4. For each covered domain, verify the item's `implementation_surface` and `verification_surface` are consistent with the behavior's nature (e.g., REST API behavior should have surface `api`, not `db`)
 5. If a behavior domain has no acceptance item → flag (possible untested behavior)
 6. **Appendix behavior coverage check:** Extract all behavior domains, API contracts, data type definitions, and state machine transitions from appendix files — for contract content, apply the external-visibility boundary of `framework/spec_writing_guide.md` §4 first: internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, and configuration layout are design expression, not contract content, and create no coverage obligation. For each extracted domain or contract, verify there is at least one acceptance item in the main spec covering it. If an appendix describes contract or behavior content that has no corresponding acceptance item → **FAIL (actionable)** — the acceptance item set is the complete formal behavior carrier (see `framework/spec_writing_guide.md` §4), and contract content without item coverage is invisible to the cross-unit consistency check of every dependent unit. If appendix content directly contradicts an acceptance item (e.g., appendix says "timeout: 30s", item says "respond within 5s") → FAIL (actionable)
-7. **Over-splitting detection (reverse check):** If multiple acceptance items satisfy the same behavior domain judgment (same behavior subject + same `verification_surface` + same `implementation_surface` + same `verification_type`), they are merge candidates → WARNING recommending a merge into one item. Merge method: keep one item id, delete the rest — the surviving id's process evidence stays valid. Items differing in `verification_type` are legitimate splits, not merge candidates.
-8. **Orphan item detection (reverse check, FAIL):** For each design-driven acceptance item — an item whose `affects.appendices` does not reference the evidence appendix (Check 4 step 1) — verify the item's behavior subject (endpoint, function, state machine, or flow entry point, per the extraction premise in step 2) appears as a designed behavior somewhere in the candidate spec union: the main spec body or a non-evidence, non-exempt appendix. The subject may be designed as part of a larger flow; the test is subject presence, not narrative repetition of every contract element — the carrier obligation runs only one way, and contract elements are carried by the item itself under `framework/spec_writing_guide.md` §4. Exclusions: evidence-driven items are out of scope (their correspondence partner is the evidence appendix, enforced by Check 4); replacement/cleanup items are out of scope — `verification_type: inspectable` items whose `evidence_requirements` include `old_code_deleted` and `no_remaining_refs` are round-transitional verification requirements, not behavior declarations (the Check 4 step 1 replacement signal). If the subject appears in no designed behavior → **FAIL (P1, actionable):** retire the item together with its surviving narrative and appendix content (`framework/spec_writing_guide.md` §9 Cleanup obligation), or restore the behavior's design if it was dropped by mistake.
-9. **Extraction evidence (required for every uncovered-domain and orphan-item FAIL):** Each uncovered-domain finding (steps 3, 5, and step 6's uncovered-content case) and each orphan-item finding (step 8) must carry an extraction artifact that makes the claim falsifiable:
+7. **Orphan item detection (reverse check, FAIL):** For each design-driven acceptance item — an item whose `affects.appendices` does not reference the evidence appendix (Check 4 step 1) — verify the item's behavior subject (endpoint, function, state machine, or flow entry point, per the extraction premise in step 2) appears as a designed behavior somewhere in the candidate spec union: the main spec body or a non-evidence, non-exempt appendix. The subject may be designed as part of a larger flow; the test is subject presence, not narrative repetition of every contract element — the carrier obligation runs only one way, and contract elements are carried by the item itself under `framework/spec_writing_guide.md` §4. Exclusions: evidence-driven items are out of scope (their correspondence partner is the evidence appendix, enforced by Check 4); replacement/cleanup items are out of scope — `verification_type: inspectable` items whose `evidence_requirements` include `old_code_deleted` and `no_remaining_refs` are round-transitional verification requirements, not behavior declarations (the Check 4 step 1 replacement signal). If the subject appears in no designed behavior → **FAIL (P1, actionable):** retire the item together with its surviving narrative and appendix content (`framework/spec_writing_guide.md` §9 Cleanup obligation), or restore the behavior's design if it was dropped by mistake.
+8. **Extraction evidence (required for every uncovered-domain and orphan-item FAIL):** Each uncovered-domain finding (steps 3, 5, and step 6's uncovered-content case) and each orphan-item finding (step 7) must carry an extraction artifact that makes the claim falsifiable:
    - **Source quote:** for an uncovered domain, the section heading and quoted text in the spec body or appendix that declares the behavior domain; for an orphan item, the item id and the quoted subject terms from its `description` / `pass_condition`
    - **Granularity judgment:** for an uncovered domain, why the quoted text is formal behavior (per the extraction premise in step 2, including the §4 external-visibility boundary applied to both body behavior domains and appendix contract content) rather than non-constraining narrative or internal design detail, and why its behavior variants form one domain (per the four granularity conditions in `framework/spec_writing_guide.md` §Acceptance Item Granularity) rather than scenarios of an already-covered domain; for an orphan item, why the quoted terms name a formal behavior subject of this unit (endpoint, function, state machine, or flow entry point) rather than a scenario of a designed domain or a dependency's behavior
    - **Absence claim:** for an uncovered domain, the covered surface checked (the union of every item's `description` and `pass_condition`, per step 1) and how the absence of any covering item was verified; for an orphan item, the surfaces checked (the main spec body and every non-evidence, non-exempt appendix) and how the absence of a designed behavior for that subject was verified
    A step-6 contradiction finding (appendix content contradicting an acceptance item) carries the two-sided quoted evidence step 6 itself requires — it is a conflict claim, not an uncovered-domain claim, and is not subject to this template.
    A finding without this artifact is not presented — the independent final synthesis re-verifies the artifact before classification and marks unfaithful claims suppressed (a subject actually mentioned in an item, or variants split out of a covered domain, or a designed behavior whose subject matches an allegedly orphaned item — see §Step 9 → Extraction re-verification).
 
-**PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; every design-driven item corresponds to a designed behavior; no merge candidates found
+**PASS:** All behavior domains (main spec + appendices) have corresponding items with appropriate surface fields; every design-driven item corresponds to a designed behavior
 
-**WARNING:** Merge candidates (over-split acceptance items)
+**FAIL:** Uncovered behavior domain or surface type mismatch (actionable); orphan design-driven item with no corresponding designed behavior (step 7, actionable); appendix contract/behavior content without item coverage (actionable); appendix-main spec contradiction (actionable); contract statement without carrier coverage (5h, actionable); item violating the item-substance rules (5e, actionable)
 
-**FAIL:** Uncovered behavior domain or surface type mismatch (actionable); orphan design-driven item with no corresponding designed behavior (step 8, actionable); appendix contract/behavior content without item coverage (actionable); appendix-main spec contradiction (actionable); contract statement without carrier coverage (5h, actionable); item violating the Contract Substance Baseline (5i, actionable)
-
-**Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for orphan and over-splitting detection)
+**Check method:** Spec body + appendices × acceptance item set bidirectional cross-reference (body → items for coverage; items → body for orphan detection)
 
 ---
 
-### Sub-check 5b — Content alignment (NEW)
+### Sub-check 5b — Semantic consistency
 
 **Purpose:** For each behavior–item pair, detect semantic contradictions between the spec body description and the item's `pass_condition`. This catches body edits that invalidate item content — whether from recent changes or historical drift.
 
@@ -425,181 +388,42 @@ If the spec specifies internal implementation mechanisms, arbitrary physical sle
 | Direction conflict | "increment counter" | "decrement counter" |
 
 4. For each contradiction, report with **exact quotes** from both sources and a reasoning statement
+5. **Items × items (internal consistency):** group items sharing a `verification_surface`, and items sharing an `affects.files` entry; compare their `pass_condition` texts for contradictions — value conflicts (item A says "returns 201", item B says "200" for the same API), behavior conflicts (item A says "write requires auth", item B says "write is public"), numeric contradictions (one says <100ms latency, another <5s for the same operation), and logical contradictions (one says "enabled by default", another says "opt-in only"). Report each with quoted evidence from both items.
 
 **PASS:** No contradictions found
 
 **FAIL:** One or more contradictions found, with quoted evidence (actionable)
 
-**Check method:** Spec body × acceptance item pass_condition — semantic cross-reference with quoted evidence
+**Check method:** Spec body × item pass_condition, and item × item (by verification_surface and affects.files) — semantic cross-reference with quoted evidence
 
 ---
 
-### Sub-check 5c — Internal consistency (NEW)
+### Sub-check 5d — Description format (mechanized)
 
-**Purpose:** Detect contradictions between acceptance items within the same spec. Two items targeting the same verification surface must not describe contradictory requirements.
+Testable items must use Gherkin-style Given/When/Then descriptions. The rule is enforced mechanically by `specflowctl validate candidate` Check 2 (`CheckAcceptanceItemSchema`): a testable item whose `description` lacks a Given…When…Then sequence, or that uses `.feature` file syntax, fails the mechanical pre-pass before any session launches. The session does not re-check description format.
 
-**Execution steps:**
+### Sub-check 5e — Item substance
 
-1. **Group by `verification_surface`:** items sharing the same surface are likely checking the same endpoint/module
-   - Compare their `pass_condition` texts for contradictions
-   - Example: item A says "returns 201", item B says "returns 200" for same API → conflict
+**Purpose:** Every acceptance item must be a concrete, testable, information-bearing statement: falsifiable, actionable, carrying contract substance, and adding value beyond its description.
 
-2. **Group by `affects.files`:** items referencing the same implementation file
-   - Check if their behavioral descriptions conflict
-   - Example: item A says "write requires auth", item B says "write is public" → conflict
+**Execution steps (per item):**
 
-3. **Cross-item value/assumption check:**
-   - Detect obvious numeric contradictions (one says <100ms latency, another says <5s for same operation)
-   - Detect logical contradictions (one says "enabled by default", another says "opt-in only")
+1. **Falsifiability:** apply first-principles reasoning — "if the implementation were broken, would there be a way for this pass_condition to reveal it?" Identify a concrete, observable, and distinct failure scenario and write: "This item would FAIL if [specific code behavior or condition] occurs." No identifiable scenario → FAIL — Unfalsifiable (actionable: replace with a specific, measurable pass_condition). Pass conditions referring to external systems or runtime constraints that are not statically verifiable are recorded as CANNOT_DETERMINE in verify, not failed here.
+2. **Actionability:** for `verification_type: testable` items, the `description` must contain enough detail to derive specific test scenarios — inputs or conditions, expected output or state change, and at least one boundary or edge case. A single vague sentence with no scenario breakdown → FAIL; a long but purely narrative description with no testable specifics → FAIL. Descriptions must not hardcode test doubles, mock runner names, or transient fixtures (`framework/spec_writing_guide.md` §14.2 Anti-Pattern C) → FAIL (actionable: restate using domain roles).
+3. **Information increment:** compare `description` and `pass_condition` — the pass_condition must reference specific values, status codes, field names, error types, state transitions, timeouts, or behavior variants the description does not. A pass_condition semantically equivalent to or vaguer than the description → FAIL.
+4. **Contract substance (S1–S5, `framework/spec_writing_guide.md` §7):**
+   - **S1 — Contract element sufficiency:** description and/or pass_condition carries at least one concrete contract element (numeric constraint, HTTP status code, field/type/enum name, error code, protocol format, timing/consistency assumption); pure narration → FAIL.
+   - **S2 — Specific-value obligation:** constraints use concrete values — `201` not `2xx`, `5s` not "fast", enumerated methods not "multiple methods" → FAIL otherwise.
+   - **S3 — Scenario completeness:** the Gherkin scenario set includes the happy path plus at least one failure or boundary scenario (testable items); non-testable items carry at least one failure or edge condition in the pass_condition → FAIL otherwise.
+   - **S4 — Information increment:** overlaps rule 3; a pure rephrase → FAIL.
+   - **S5 — No template phrasing:** no content-free boilerplate ("behaves as expected", "processed correctly", "meets user expectations") → FAIL.
+5. **Boundary:** the specific values S1/S2 require must be genuine Contract Anchors owned by this unit or public contracts exported by dependencies (`framework/spec_writing_guide.md` §14); private implementation details, arbitrary wall-clock sleep durations, or a collaborating unit's unexported fields do not satisfy contract substance — the Truth Ownership judgment itself is Check 7 step 8's.
 
-**PASS:** No conflicts found
+**PASS:** All items are falsifiable, actionable, and carry contract substance beyond their descriptions
 
-**FAIL:** One or more conflicts found, with quoted evidence from both items (actionable)
+**FAIL:** One or more items violate any rule above (quote the violated rule and the offending text)
 
-**Check method:** Cross-item cross-reference by verification_surface and affects.files
-
----
-
-### Sub-check 5d — Description format compliance
-
-**Purpose:** Verify that each acceptance item with `verification_type: testable` uses Gherkin-style Given/When/Then format in its `description`, as required by `framework/spec_writing_guide.md` §Gherkin-style Description Convention.
-
-**Execution steps:**
-
-1. For each acceptance item in scope:
-   - If `verification_type` is `testable`, read the `description` field
-2. Check that the description contains at least one `Given`…`When`…`Then` sequence (case-insensitive pattern: lines starting with `Given`, `When`, `Then` in order)
-3. Reject `.feature` file syntax (`Feature:`, `Scenario:`, `Scenario Outline:`, `Examples:`, `Background:`) — the Gherkin-style convention explicitly does not use these
-4. If any testable item lacks the Given/When/Then pattern → FAIL with item ID and quoted description
-
-**PASS:** All testable items use Gherkin-style description format
-
-**FAIL:** One or more testable items have non-compliant description format (actionable)
-
-**Check method:** Acceptance item description × verification_type — format pattern check
-
----
-
-### Sub-check 5e — Falsifiability (NEW)
-
-**Purpose:** Every acceptance item's `pass_condition` must be falsifiable — there must exist a concrete, identifiable scenario where the implementation could fail it. An unfalsifiable pass_condition can be "satisfied" by any implementation, making the item meaningless as a quality gate.
-
-**Execution steps:**
-
-For each acceptance item:
-
-1. Read `pass_condition`
-2. Apply first-principles reasoning: "If the implementation were broken, would there be a way for this pass_condition to reveal it?"
-3. Identify a specific failure scenario that would cause the pass_condition to FAIL:
-   - Concrete: names a specific behavior change ("returns 200 instead of 201", "missing field X in response", "allows duplicate email registration")
-   - Observable: the failure could be detected by reading code or test output
-   - Distinct: the failure scenario is different from "the code doesn't exist" (that's structural, covered by Step 1)
-4. If agent cannot identify a concrete failure scenario → the item is unfalsifiable
-5. Write an explicit statement for each item: "This item would FAIL if [specific code behavior or condition] occurs."
-
-**Reports:**
-
-```
-{item.id}: PASS
-  - pass_condition: "Returns HTTP 201 with {id, email, created_at}"
-  - Would FAIL if: missing created_at field, returns 200, returns 500 on valid input
-
-{item.id}: FAIL — Unfalsifiable
-  - pass_condition: "registration works correctly"
-  - "works correctly" is a value judgment, not a verifiable condition.
-    No concrete code change would cause this specific condition to FAIL.
-  - actionable: Replace with a specific, measurable pass_condition
-```
-
-**Edge cases:**
-- Pass conditions referring to external systems or runtime constraints that are not statically verifiable → not automatically unfalsifiable. Agent records them as CANNOT_DETERMINE in verify but does not fail validate.
-
-**PASS:** All items have an identifiable failure scenario
-
-**FAIL:** One or more items are unfalsifiable
-
-**Check method:** First-principles reasoning — agent must articulate a concrete failure mode and write an explicit "Would FAIL if" statement per item
-
----
-
-### Sub-check 5f — Description actionability (NEW)
-
-**Purpose:** For `verification_type: testable` items, the `description` must contain enough detail to derive specific test scenarios. A vague description produces vague tests — or leaves the agent to invent scenarios that don't reflect the author's intent.
-
-**Execution steps:**
-
-1. For each acceptance item with `verification_type: testable`:
-   - Read `description`
-   - Judge whether it contains enough information to derive:
-     - Specific input values or conditions
-     - Expected output or state change
-     - At least one boundary or edge case
-   - Verify absence of test double/fixture leakage (Anti-Pattern C): Description must NOT hardcode test doubles, mock runner names, or transient test fixtures (e.g. `mockRunner`, `test_tool`) into formal Given/When/Then scenarios — formal acceptance items must describe domain interactions, not test harness artifacts (see `framework/spec_writing_guide.md` §14.2 Anti-Pattern C). Leaking test fixtures → FAIL (actionable: restate using domain roles)
-2. If the description is a single vague sentence with no scenario breakdown → FAIL
-3. If the description is short but specific (e.g., "Returns 201 when valid email and password are provided") → PASS
-4. If the description is long but purely narrative with no testable specifics → FAIL
-
-**Reports:**
-
-```
-{item.id}: PASS
-  - description: "User registers with email and password. Returns 201 with {id, email, created_at}. Returns 409 if email exists."
-  - Verdict: Enough detail to derive happy path, conflict scenario
-
-{item.id}: FAIL — Description too vague for test derivation
-  - description: "User can register"
-  - Verdict: No inputs, no expected outputs, no conditions.
-  - actionable: Expand description with Given/When/Then scenarios or specific pass conditions
-```
-
-**PASS:** All testable items have actionable descriptions
-
-**FAIL:** One or more testable items lack sufficient descriptive detail for test derivation or leak test doubles/fixtures (actionable)
-
-**Check method:** Semantic assessment — agent judges whether description is specific enough to derive test inputs and expected outcomes
-
----
-
-### Sub-check 5g — Pass condition / description coupling (NEW)
-
-**Purpose:** The `pass_condition` must add specific, verifiable constraints beyond what the `description` already communicates. If the pass_condition merely rephrases the description in vaguer or equivalent terms, it contributes no value and the acceptance item cannot be meaningfully verified.
-
-**Execution steps:**
-
-For each acceptance item:
-
-1. Read both `description` and `pass_condition`
-2. Compare them semantically:
-   - Does `pass_condition` reference specific values, status codes, field names, error types, state transitions, timeouts, or behavior variants that the `description` does not?
-   - Is the `pass_condition` more abstract or vague than the `description`?
-3. If the `pass_condition` is semantically equivalent to or vaguer than the `description` → FAIL
-
-**Examples:**
-
-```
-FAIL — pass_condition adds nothing:
-  description:  "User registers with email and password"
-  pass_condition: "registration completes successfully"
-  → "completes successfully" is a vague rephrase of "registers"
-
-PASS — pass_condition adds specific constraints:
-  description:  "User registers with email and password"
-  pass_condition: "Returns 201 with {id, email, created_at}. Returns 409 if email exists. Email field must be normalized to lowercase."
-  → Adds three verifiable constraints not present in description
-
-PASS — pass_condition provides complementary information:
-  description:  "System exports data as CSV"
-  pass_condition: "File is valid CSV: comma-separated, quoted strings, header row matches schema fields"
-  → Adds specific format criteria not in description
-```
-
-**PASS:** All pass_conditions add specific value beyond their descriptions
-
-**FAIL:** One or more pass_conditions are vague rephrasings of their descriptions
-
-**Check method:** Semantic cross-reference — agent compares information content of description vs pass_condition
-
----
+**Check method:** Per-item semantic assessment with quoted evidence; one item's violations are reported as one merged finding (see Per-item merge rule).
 
 ### Sub-check 5h — Contract statement carry-over (NEW)
 
@@ -631,32 +455,6 @@ PASS — pass_condition provides complementary information:
 **FAIL:** One or more contract statements lack carrier coverage (actionable)
 
 **Check method:** Body + non-evidence appendices × (acceptance item set ∪ protocol appendices) — contract-level cross-reference, quoted evidence per statement
-
----
-
-### Sub-check 5i — Contract substance (NEW)
-
-**Purpose:** The acceptance item set is the primary formal behavior carrier; empty-but-compliant items ("correct handling", "behaves as expected") leave the cross-unit check nothing to compare against. Every item must satisfy the Contract Substance Baseline, enforced here.
-
-**Execution steps:**
-
-For each acceptance item, apply the five baseline rules (S1–S5, see `framework/spec_writing_guide.md` §7 Contract Substance Baseline):
-
-1. **S1 — Contract element sufficiency:** `description` and/or `pass_condition` must carry at least one concrete contract element (numeric constraint, HTTP status code, field/type/enum name, error code, protocol format, timing/consistency assumption). Pure behavior narration with no element → FAIL (e.g. "User can log in", "System handles requests correctly")
-2. **S2 — Specific-value obligation:** constraints use concrete values — `201` not `2xx`, `5s` not "fast", methods enumerated (`OAuth2 + API Key`) not "multiple methods". Generalized values → FAIL
-3. **S3 — Scenario completeness:** the Gherkin scenario set includes the happy path plus at least one failure or boundary scenario. Happy-path-only items with a testable verification type → FAIL (non-testable items: the pass_condition must carry at least one failure/edge condition instead)
-4. **S4 — Information increment:** `pass_condition` carries constraints the `description` does not. Pure rephrase → FAIL (overlaps Check 5g by design — 5g judges value, 5i judges substance; both are FAIL-level)
-5. **S5 — No template phrasing:** no content-free boilerplate ("behaves as expected", "processed correctly", "meets user expectations") → FAIL
-
-**Relationship to 5e/5f/5g:** 5e judges falsifiability, 5f actionability, 5g information increment — 5i judges **contract information content** (presence of concrete elements, specific values, scenario coverage, boilerplate). The checks are complementary; a single item may fail several at once. When an item fails 5i, quote the violated rule and the offending text.
-
-**Contract substance vs. over-specification boundary:** Specific values mandated by S1 and S2 must represent genuine Contract Anchors owned by this unit or public contracts exported by dependencies per `framework/spec_writing_guide.md` §14 (Truth Ownership Framework). Hardcoding private implementation details, arbitrary wall-clock sleep durations, or collaborating unit unexported fields does NOT satisfy contract substance — it violates abstraction boundaries and is flagged under Check 2 and Check 7.
-
-**PASS:** All items satisfy the Contract Substance Baseline
-
-**FAIL:** One or more items violate S1–S5 (actionable, with the violated rule quoted)
-
-**Check method:** Contract Substance Baseline × acceptance item set — rule-by-rule semantic assessment with quoted evidence
 
 ---
 
@@ -701,7 +499,9 @@ affects.appendices:
 
 3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (actionable: update or remove the invalid path reference)
 
-**PASS:** All affects declarations are valid, evidence appendix is semantically consistent, appendix file path references exist
+4. **Behavior participation (folded from Check 9):** for each declared implementation file (`implementation_surface` + `affects.files`), confirm the file participates in the declared behavior — read it and the item; shared implementation is permitted, and file overlap alone is never FAIL. A declared file with no relevant code → possible over-declared scope; undeclared relevant code is verify Step 3's finding, not this check's.
+
+**PASS:** All affects declarations are valid, evidence appendix is semantically consistent, appendix file path references exist, and each declared implementation file participates in its item's behavior
 
 **FAIL:** Reference inconsistency, appendix content contradicts declaration, or appendix references non-existent file paths (actionable)
 
@@ -733,8 +533,8 @@ affects.appendices:
        If not declared → FAIL (needs_decision: needs user confirmation on downstream impact)
 ```
 6. **Protocol appendix cross-unit check:** Include the dependency unit's protocol appendix contracts in the cross-unit comparison (they are carriers). If a protocol appendix defines a contract, data format, or protocol that conflicts with another unit's spec → FAIL (actionable: resolve the cross-unit inconsistency)
-7. **Carrier substance warning:** if a dependency unit's carriers (item set or protocol appendices) are compliant but carry no comparable contract statements (e.g. items with no concrete values, codes, or formats to compare against) → WARNING naming the unit and the empty carriers, recommending the dependency unit enrich its acceptance items per `framework/spec_writing_guide.md` §7 Contract Substance Baseline. Not a FAIL — the dependency unit's own validate Check 5i gates empty carriers at promote; this warning surfaces the coupling risk to the user.
-8. **Cross-Unit Private Implementation Leakage (Anti-Shadowing Rule, FAIL):** Enforce the Truth Ownership Visibility Law (`framework/spec_writing_guide.md` §14.1 and §14.2 Anti-Pattern A). A non-owner unit must never enumerate volatile, unexported, or private internal parameters/fields of collaborating units.
+7. **Shared agreements and dependency declarations (folded from Check 9):** shared behavior, data meaning, and boundary agreements must have one authoritative source — shared constraints live in rules consumed through `rule_refs`, not restated independently in several specs. Keep actual behavior dependencies in `unit_refs`/`affects.dependencies`; never infer a dependency from a shared file alone.
+8. **Cross-Unit Private Implementation Leakage (Anti-Shadowing Rule, FAIL):** This step is the single owner of the Truth Ownership rules (`framework/spec_writing_guide.md` §14.1 and §14.2); Check 2 Step 5 and Check 5e's boundary reference it. Enforce the Truth Ownership Visibility Law (`framework/spec_writing_guide.md` §14.1 and §14.2 Anti-Pattern A). A non-owner unit must never enumerate volatile, unexported, or private internal parameters/fields of collaborating units.
    - For every attribute, parameter, field name, or payload structure cited by the candidate spec regarding a dependency unit, verify that it resolves to one of:
      - **Public Contract Anchor:** An exported public contract symbol or explicit schema property declared in the dependency's formal behavior carriers (acceptance item set or protocol appendix), such as `contracts.SpanAttr*`, standard exported protocol events, or public REST/gRPC response keys.
      - **Behavioral Specification:** A behavioral description that does not hardcode unexported parameter names (e.g. "records delegation goal and child execution identifier" instead of literal private parameter names `goal, role, child_run_id`).
@@ -745,8 +545,6 @@ affects.appendices:
 **Dependency scope report:** Report the carrier regions actually depended on — the dependency unit's acceptance item set and the whole protocol appendix files. The item set is declared as a **structural region dependency** (`acceptance_items` in the session report's `Dependency scope:` lines; `specflowctl gate-evidence --acceptance-items` inspects the same region, see `framework/validation_cache.md` §Structural Region Dependencies): it is located by structure, so prose edits elsewhere in the same file — even inside the same content-defined chunk — do not stale this cache. When the no-contradiction assertion also reads a dependency unit's contract section (e.g. a protocol description in a named `##` section), declare that section region too (`sections` heading declaration). Protocol appendices are contract files and are declared whole.
 
 **PASS:** No contradictions across related units; acknowledged contract changes are declared; no shadow specifications found
-
-**WARNING (step 7):** Dependency unit carriers carry no comparable contract statements — consider enriching them per the Contract Substance Baseline
 
 **FAIL:** Contradiction found (actionable), shadow specification / private implementation leakage found (actionable), or unacknowledged contract breakage (needs_decision)
 
@@ -783,25 +581,20 @@ affects.appendices:
 
 ---
 
-## Check 9 — File associations and shared agreements
+## Check 9 — File associations (mechanical)
 
-**Purpose:** Validate the declared files and the consistency of shared agreements. `implementation_surface` and `affects.files` describe participation in behavior, rather than exclusive file ownership. Unit responsibility boundaries are judged by Checks 2 and 3.
+**Purpose:** Report the mechanical surface-association audit for this unit's declarations. The semantic halves of the former Check 9 live with their owning checks: whether each declaration participates in its item's behavior is Check 6 step 4; shared-agreement single-source consistency and `unit_refs` accuracy are Check 7 step 7.
 
 **Execution steps:**
 
-1. Run the mechanical `Surface associations` check and `specflowctl surfaces`. Read current and stable associations, directory expansion and each unit's declared scope. Invalid paths are handled by the anchor checks.
-2. Confirm that each declaration participates in the item's behavior. File overlap and shared-directory expansion are permitted and do not imply unit dependencies.
-3. Confirm that shared behavior, data meaning and boundary agreements have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`; do not restate them independently in unit specs.
-4. Declare every spec region used in this comparison. Keep actual behavior dependencies in `unit_refs`/`affects.dependencies`; do not infer a dependency from a shared file alone.
+1. Run `specflowctl surfaces` and confirm the mechanical `Surface associations` audit for the target passed. Read current and stable associations, directory expansion, and each unit's declared scope: every declared file resolves, and the derived associations agree with the declarations. Invalid paths are handled by the anchor checks.
+2. Report the mechanical verdict: PASS when the audit passes and neither Check 6 nor Check 7 reported an association contradiction; FAIL when the audit reveals an anomaly (an unresolvable or inconsistent association), with the file and the contradiction named — the semantic judgment is routed to Check 6 or Check 7.
 
-**PASS:** Valid declarations and consistent shared agreements.
+**PASS:** The association audit passes and no owning check reported an association contradiction.
 
-**FAIL:** An invalid behavioral declaration or contradictory/redeclared shared agreement — P1 with the existing evidence and resolution fields. File overlap alone is never FAIL.
+**FAIL:** An association anomaly the audit reveals — P1 with the existing evidence fields. File overlap alone is never FAIL.
 
-**Check method:** Derived association view and semantic agreement comparison. See `framework/shared_judgments.md`.
-
----
-
+**Check method:** Mechanical association audit + consistency with the owning checks. See `framework/shared_judgments.md`.
 ## Check 10 — Clarity
 
 **Purpose:** Read the unit spec and report what is unclear, underspecified, or internally contradictory. This is a single independent session, judged like every other validate check (report `PASS | WARNING | FAIL` plus the standard finding block) — there is no reader/verifier split and no closed-book reconstruction. It judges the Reader Contract (`framework/spec_writing_guide.md` §9) directly: whether the spec's human-readable part states the design clearly enough that its readers can understand it without guessing, and whether any statement conflicts with another.
@@ -813,9 +606,9 @@ affects.appendices:
 1. Read the complete unit spec union (see Prerequisite).
 2. For each behavior, mechanism, or decision the spec states, judge whether a reader without code access can understand it from the text alone:
    - **Unclear** — the text names a mechanism, field, or step without saying what it does or how it connects to the rest.
-   - **Underspecified (expression level only)** — the text hides an already-made decision or leaves a reader unable to act on a decision the spec did make (e.g., the governing statement sits where the reader was never pointed, or two passages imply different answers to the same question). A decision that is genuinely OPEN with no stated boundary is NOT reported here — decision closure is owned by Check 2 Step 5 (`framework/spec_writing_guide.md` §9 must-close list). When both readings could apply, Check 2 owns the finding; this check does not duplicate it.
+   - **Underspecified (expression level only)** — the text hides an already-made decision or leaves a reader unable to act on a decision the spec did make (e.g., the governing statement sits where the reader was never pointed, or two passages imply different answers to the same question). A decision that is genuinely OPEN with no stated boundary is NOT reported here — decision closure is owned by Check 2 Step 4 (`framework/spec_writing_guide.md` §9 must-close list). When both readings could apply, Check 2 owns the finding; this check does not duplicate it.
    - **Internally contradictory** — two statements disagree (a value, an error code, a flow direction, or a contract stated differently in two places).
-3. Grade each defect: an internal contradiction that leaves the downstream executor unable to determine the design is a P0/P1 finding; a localized wording or presentation gap that does not change meaning is a WARNING. Open decisions with no stated boundary are never graded here — Check 2 Step 5 owns them.
+3. Grade each defect: an internal contradiction that leaves the downstream executor unable to determine the design is a P0/P1 finding; a localized wording or presentation gap that does not change meaning is a WARNING. Open decisions with no stated boundary are never graded here — Check 2 Step 4 owns them.
 4. A FAIL must carry at least one P0/P1 finding in the standard finding block: quote the unclear or conflicting text, name the concrete subject, and state the concrete repair (`fix:`) or the decision the user must supply (`decision:`).
 
 **PASS:** The spec's human-readable part is clear, no statement contradicts another, and every stated decision is readable without guessing.
@@ -837,7 +630,7 @@ affects.appendices:
 
 ## Step 9 — Write validate cache (tooling finalize)
 
-When relationships are assigned or findings exist, after all local check sessions complete the independent final session re-verifies the extraction artifacts of Check 2 Step 1 and Check 5 FAIL findings (sub-check 5a step 9 / sub-check 5h step 4), checks only the assigned validate relationships without repeating local checks, and publishes the complete effective check-status/finding synthesis. `gate-finalize` then decides the cache mechanically from that accepted synthesis:
+When relationships are assigned or findings exist, after all local check sessions complete the independent final session re-verifies the extraction artifacts of Check 2 Step 1 and Check 5 FAIL findings (sub-check 5a step 8 / sub-check 5h step 4), checks only the assigned validate relationships without repeating local checks, and supplies the dispositions and relationship results the tooling's status closure consumes (the effective check-status map is tool-derived — the report carries no status lines). `gate-finalize` then decides the cache mechanically from that accepted synthesis:
 
 ==ATOM_BEGIN:cache_evidence_path_forms==
 **Declaring cache evidence — path forms:** spec objects resolved by name other than the run's own target files are declared as **logical references** instead of physical paths — `unit:{name}` for a unit main spec, `unit:{name}:appendix:{file}` for a unit protocol appendix (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file — with the `hash` + `deps` of the file actually read. The run's own target files (the unit's own main spec and appendices; for a rule target, the candidate rule file and its stable sibling) and code files keep physical paths. A logical reference resolves at freshness time to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose dependency content is unchanged (see `framework/validation_cache.md` §Logical References).
@@ -845,7 +638,7 @@ When relationships are assigned or findings exist, after all local check session
 
 ### Extraction re-verification (Check 2 Step 1, Check 5)
 
-Step 1 goal-means findings (Check 2), uncovered-domain and orphan-item findings (sub-check 5a, step 9 artifact), and uncarried-contract findings (sub-check 5h step 4) carry an extraction artifact. Before classification (cross synthesis), the independent final synthesis re-verifies each artifact with deterministic checks:
+Step 1 goal-means findings (Check 2), uncovered-domain and orphan-item findings (sub-check 5a, step 8 artifact), and uncarried-contract findings (sub-check 5h step 4) carry an extraction artifact. Before classification (cross synthesis), the independent final synthesis re-verifies each artifact with deterministic checks:
 
 - Sub-agent claims a Check 2 Step 1 flag holds ("the flagged behavior serves no stated goal", "the described behaviors cannot meet the goal", "the behavior violates a non-goal", or "a smaller design surface would achieve the same goal") → re-read the goal or non-goal declaration and the flagged behavior or design surface; a quote that does not establish the claimed relationship — including a proportionality claim resting on preference rather than an establishable smaller surface — drops the finding
 - Sub-agent claims "no item covers behavior subject X" → re-read the item set (the union of every item's `description` and `pass_condition`) and confirm X's quoted subject terms are really absent; a subject actually mentioned, or behavior variants split out of a covered domain (granularity violation), drops the finding
@@ -853,7 +646,7 @@ Step 1 goal-means findings (Check 2), uncovered-domain and orphan-item findings 
 - Sub-agent claims "no carrier states contract value Y" → grep the item set and the protocol appendices for the quoted value; a value actually carried at comparable granularity drops the finding
 - Sub-agent claims "Z is a behavior domain" (5a step 2), "Z is a contract statement" (5h), or "Z is appendix contract content requiring acceptance coverage" (5a step 6) → check the classification against the external-visibility boundary of `framework/spec_writing_guide.md` §4 (externally-observable behavior vs internal design detail); content reclassified as internal detail drops the finding
 
-Re-verification failure → the cross result marks the finding `suppressed` and publishes the affected check's effective PASS status if no retained finding supports FAIL. This runs before classification because a post-execution check re-run cannot detect a wrong-direction fix. Every suppression remains visible in the cross audit artifact with its location and reason; only retained findings enter the generated user report and counts.
+Re-verification failure → the cross result marks the finding `suppressed`; the affected check's tool-derived effective status is PASS if no retained finding supports FAIL. This runs before classification because a post-execution check re-run cannot detect a wrong-direction fix. Every suppression remains visible in the cross audit artifact with its location and reason; only retained findings enter the generated user report and counts.
 
 - **If all checks PASS (after re-verification):** the coverage run writes the validate cache per `framework/validation_cache.md` format:
   - `gate-finalize` creates `docs/specs/meta/validation/unit/{name}/` as needed
@@ -880,7 +673,7 @@ Candidate targets, plus stable-only targets with a usable baseline — a delta r
 
 ## Present Findings
 
-Advisory findings (Check 1 step 3 hygiene WARNING, Check 2 Step 4 taste-level P2/P3, Check 3 step 6 split-candidate WARNING, Check 5a step 7 merge-candidate WARNING, Check 7 step 7 carrier-substance WARNING) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Each Check 2 Step 4 advisory finding is graded under the same §9 boundary discipline (see Check 2 Step 4). Advisory findings are never emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
+Advisory findings (Check 1 step 3 hygiene WARNING) are presented for awareness only — they enter neither the batch group nor the decision group, need no decision, and do not block the flow. They are presented on their check line's reason even when all checks PASS. Advisory findings are never emitted as bracketed findings — validate grades findings P0/P1 only, and a retained P2/P3 finding rejects the run's synthesis at `gate-finalize`.
 
 ### Batch classification (validate)
 
@@ -890,9 +683,8 @@ When FAIL items exist, the main agent classifies each finding into a **batch gro
 - Check 1: missing required frontmatter fields (standard: the required fields list)
 - Check 1: unit_refs / rule_refs / appendix references to non-existent files (standard: file existence)
 - Check 1: appendix path or naming not following the convention (standard: the path convention)
-- Check 5d: testable item description missing Given/When/Then (standard: the Gherkin-style convention in `framework/spec_writing_guide.md`)
 
-All other FAIL findings — including 5e/5f/5g/5i content rewrites, Checks 2/3/4/6/7/8, and every needs_decision item — go to the decision group. **needs_decision items always go to the decision group.**
+All other FAIL findings — including 5e item-substance rewrites, Checks 2/3/4/6/7/8, and every needs_decision item — go to the decision group. **needs_decision items always go to the decision group.**
 
 No activation threshold: findings are aggregated at check level rather than presented flat per item, so splitting out the batch group adds constant cost and always reduces the decisions the user must make — there is no over-splitting scenario. The batch group is inherently limited by the fix-type list above.
 
@@ -915,7 +707,7 @@ After classification, present the findings (§Summary format) and wait for the u
 
 ### Severity handling
 
-validate grades findings P0/P1. Each finding's severity is assigned by the session that raises it; the final synthesis (when the run has relationships to check or findings) may raise the canonical severity of a retained or merged finding conservatively — never lower it — and counts and blocking derive from those canonical severities. A P0 grade is a judgment-based assignment: the session that raises it must read the impact surface the grade depends on (the downstream consumer, dependent unit, or the section/appendix the claim relies on) and establish the boundary in `framework/severity_policy.md` §9. The contract-decided P1 default needs no boundary check. Check 2 Step 4 advisory findings are judgment-based gradings outside the finding contract (see Check 2 Step 4); they are never emitted as bracketed findings. Targeted runs apply the same grading discipline but do not create run state.
+validate grades findings P0/P1. Each finding's severity is assigned by the session that raises it; the final synthesis (when the run has relationships to check or findings) may raise the canonical severity of a retained or merged finding conservatively — never lower it — and counts and blocking derive from those canonical severities. A P0 grade is a judgment-based assignment: the session that raises it must read the impact surface the grade depends on (the downstream consumer, dependent unit, or the section/appendix the claim relies on) and establish the boundary in `framework/severity_policy.md` §9. The contract-decided P1 default needs no boundary check. Targeted runs apply the same grading discipline but do not create run state.
 
 ### Summary format
 
