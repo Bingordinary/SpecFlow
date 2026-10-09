@@ -185,7 +185,7 @@ When findings mix resolution types (within one check or across checks), the repo
 
 **Purpose:** Verify the file is parseable and all required fields exist, as a prerequisite for all subsequent checks.
 
-**Mechanical pre-pass (candidate targets, before gate-plan):** run `specflowctl validate candidate --unit {name}` first. The tool deterministically enforces: frontmatter fields; acceptance item schema (required fields; `testable` items need a Gherkin-style Given/When/Then description, and `.feature` syntax is rejected) and `implementation_surface` resolution; `affects.files` and `affects.evidence_files` path existence; `unit_refs`/`rule_refs`/appendix existence; candidate-layer spec paths in the body and every non-exempt appendix; section/region locatability (at least one `##` heading, unique headings, malformed headings, frontmatter region purity, unique non-empty item ids); dependency cycles; prose path hygiene (WARNING); and environment-specific content — developer-machine absolute paths, local addresses, and credential patterns (narrative hits FAIL; unmarked fenced hits WARNING). A mechanical FAIL stops the run before any session launches — fix and re-run the tool. Warnings are passed to the structural session for confirmation.
+**Mechanical pre-pass (candidate targets, before gate-plan):** run `specflowctl validate candidate --unit {name}` first. The tool deterministically enforces: frontmatter fields; acceptance item schema (required fields; `testable` items need a Gherkin-style Given/When/Then description, and `.feature` syntax is rejected) and `implementation_surface` resolution; `affects.files` and `affects.evidence_files` path resolution and existence; `unit_refs`/`rule_refs`/appendix existence; candidate-layer spec paths in the body and every non-exempt appendix; section/region locatability (at least one `##` heading, unique headings, malformed headings, frontmatter region purity, unique non-empty item ids); dependency cycles; prose path hygiene (WARNING); and environment-specific content — developer-machine absolute paths, local addresses, and credential patterns (narrative hits FAIL; unmarked fenced hits WARNING). A mechanical FAIL stops the run before any session launches — fix and re-run the tool. Warnings are passed to the structural session for confirmation.
 
 **Agent-judged residue (the structural session executes these):**
 
@@ -496,11 +496,11 @@ affects.appendices:
 
 3. **Appendix file path references:** For each non-exempt appendix, scan its content for code file path references (strings containing `/` and a source-code file extension). For each path found, verify it points to an existing file in the project. If any path does not exist → FAIL (actionable: update or remove the invalid path reference)
 
-4. **Behavior participation (folded from Check 9):** for each declared implementation file (`implementation_surface` + `affects.files`), confirm the file participates in the declared behavior — read it and the item; shared implementation is permitted, and file overlap alone is never FAIL. A declared file with no relevant code → possible over-declared scope; undeclared relevant code is verify Step 3's finding, not this check's.
-
-**PASS:** All affects declarations are valid, evidence appendix is semantically consistent, appendix file path references exist, and each declared implementation file participates in its item's behavior
+**PASS:** All affects declarations are valid, evidence appendix is semantically consistent, and appendix file path references exist
 
 **FAIL:** Reference inconsistency, appendix content contradicts declaration, or appendix references non-existent file paths (actionable)
+
+**Boundary — declared-vs-actual surface is verify's judgment:** whether a declared `implementation_surface` / `affects.files` file actually participates in the item's behavior requires reading code, so it is owned by `framework/unit_verify_checklist.md` Step 3 (declared vs actual surface), which covers both over-declared and undeclared scope. Validate judges the declaration itself — resolution, ownership, path existence, mutual consistency — and reads no code; validate's read surface carries no implementation files.
 
 **Check method:** affects.* × frontmatter refs cross-reference + appendix content semantic assessment
 
@@ -580,7 +580,7 @@ affects.appendices:
 
 ## Check 9 — File associations (mechanical)
 
-**Purpose:** Report the mechanical surface-association audit for this unit's declarations. The semantic halves of the former Check 9 live with their owning checks: whether each declaration participates in its item's behavior is Check 6 step 4; shared-agreement single-source consistency and `unit_refs` accuracy are Check 7 step 7.
+**Purpose:** Report the mechanical surface-association audit for this unit's declarations. The semantic halves of the former Check 9 live with their owning checks: whether each declaration participates in its item's behavior is verify Step 3 (`framework/unit_verify_checklist.md`) — a spec-vs-code judgment outside validate's spec-quality scope; shared-agreement single-source consistency and `unit_refs` accuracy are Check 7 step 7.
 
 **Execution steps:**
 
@@ -652,7 +652,7 @@ Re-verification failure → the cross result marks the finding `suppressed`; the
   - Collect dependency evidence for every file read during validation, including:
     - Main spec file
     - Every non-exempt appendix file
-    - All referenced files (unit_refs, rule_refs, affects.files are already included)
+    - All referenced files (unit_refs, rule_refs are already included)
   - `gate-finalize` assembles the cache from the accepted reports and the run input surface: one entry per input-surface file (whole-file hash + ordered chunk sequence) and one marker per executed check (check key = the agent check number; see `framework/validation_cache.md` §Format).
   - The `gate-finalize` write produces `validate_result.md` with `result: pass`, `target: candidate`, `mode: full`, and the complete input-surface evidence (whole-file hash + ordered chunk sequence per file).
   - Targeted runs (`:check-{n}` / `:{keyword}`) never write a cache, and a targeted run that FAILs deletes a pass cache (a failure record is kept — it is already blocking and is the recovery baseline) — any FAIL at any granularity means promote must not proceed — see `framework/validation_cache.md`

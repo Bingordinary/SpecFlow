@@ -111,8 +111,8 @@ const (
 	SourceInput   = "input"
 	// SourceDerivedAffects marks a spec-derived evidence file that exists
 	// because the target spec declares it in an acceptance item's
-	// affects.files. Validate's read surface includes these files, so local
-	// validate sessions may read and declare them; they never define work
+	// affects.evidence_files. Verify item sessions read them as evidence;
+	// they never enter a validate read surface and never define work
 	// sessions.
 	SourceDerivedAffects = "derived_affects"
 
@@ -1321,12 +1321,12 @@ func (d *Derivation) derive(gate, targetKind, targetName, target string) ([]Ref,
 
 // deriveUnitValidate resolves a validate unit run's inputs: the unit's own
 // spec files in the target layer, the unit_refs dependency units (current
-// layer) with their protocol appendices, the bound and global rules, and the
-// spec's affects.files entries. Cross-unit edges are one-way: a unit reads the
-// providers it declares, never unrelated peers — Check 7 reads only the
-// declared dependencies' carriers, and Check 9 is the mechanical
-// `specflowctl surfaces` audit, which reads the repository directly and needs
-// no peer spec read refs.
+// layer) with their protocol appendices, and the bound and global rules.
+// affects.files are verify inputs and never join this surface. Cross-unit
+// edges are one-way: a unit reads the providers it declares, never unrelated
+// peers — Check 7 reads only the declared dependencies' carriers, and Check 9
+// is the mechanical `specflowctl surfaces` audit, which reads the repository
+// directly and needs no peer spec read refs.
 func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
@@ -1360,25 +1360,16 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	for _, ruleID := range dedupeSorted(ruleIDs) {
 		refs = append(refs, logicalRuleRef(repoRoot, ruleID, SourceDerived))
 	}
-	evidenceRefs, err := specAffectsRefs(repoRoot, append(
-		specvalidation.ExtractAffectsFiles(content),
-		specvalidation.ExtractAffectsEvidenceFiles(content)...,
-	))
-	if err != nil {
-		return nil, err
-	}
-	refs = append(refs, evidenceRefs...)
 	sortRefs(refs)
 	return refs, nil
 }
 
-// specAffectsRefs resolves spec-declared affects paths (affects.files and
-// affects.evidence_files) into SourceDerivedAffects refs. They are part of
-// the run's read surface for local sessions — validate sessions may read and
-// declare them, and verify item sessions read them as evidence — but they
-// never define the code surface or a coverage key. A path that does not
-// resolve is skipped here; validate Check 3 and verify planning fail closed
-// on their own rules.
+// specAffectsRefs resolves spec-declared affects.evidence_files paths into
+// SourceDerivedAffects refs. They are part of a verify run's read surface —
+// item sessions read them as evidence — but they never define the code
+// surface or a coverage key, and they never enter a validate read surface. A
+// path that does not resolve is skipped here; validate Check 3 and verify
+// planning fail closed on their own rules.
 func specAffectsRefs(repoRoot string, paths []string) ([]Ref, error) {
 	var refs []Ref
 	for _, affected := range dedupeStrings(paths) {

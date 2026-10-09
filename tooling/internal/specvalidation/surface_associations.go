@@ -242,13 +242,14 @@ func distinctDeclUnits(refs []SurfaceRef) int {
 	return len(seen)
 }
 
-// checkSurfaceAssociations provides declaration evidence for semantic Check 9.
+// checkSurfaceAssociations provides the mechanical declaration evidence behind
+// agent Check 9 (framework/unit_validate_checklist.md Check 9).
 func checkSurfaceAssociations(repoRoot, unitName string) CheckResult {
 	const name = "Surface associations"
 	if _, err := SurfaceAudit(repoRoot); err != nil {
 		return CheckResult{Name: name, Status: Fail, Details: err.Error()}
 	}
-	return CheckResult{Name: name, Status: Pass, Details: "file associations are valid; shared agreements require semantic Check 9"}
+	return CheckResult{Name: name, Status: Pass, Details: "file associations are valid; shared agreements are judged by Check 7 step 7"}
 }
 
 // FormatSurfaceAudit displays associations, including confirmed stable designs.

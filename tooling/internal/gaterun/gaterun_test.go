@@ -104,7 +104,6 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 		"unit:dep:appendix:unit_dep_protocol",
 		"rule:b_rule_x",
 		"rule:g_rule_repo",
-		"docs/notes.md",
 	} {
 		ref, ok := refByRef(run, want)
 		if !ok {
@@ -116,6 +115,11 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 		if ref.Hash == "" {
 			t.Fatalf("expected a hash for %q", want)
 		}
+	}
+	// Issue #69: affects.files are verify inputs; they never join the validate
+	// input surface or any validate session's read refs.
+	if _, ok := refByRef(run, "docs/notes.md"); ok {
+		t.Fatalf("affects.files must not enter a validate run's input surface: %+v", run.Refs)
 	}
 	global, ok := refByRef(run, "rule:g_rule_repo")
 	if !ok || global.Resolved != "docs/specs/rules/stable/g_rule_repo.md" {

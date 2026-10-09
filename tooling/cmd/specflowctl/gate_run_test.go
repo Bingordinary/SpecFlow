@@ -3141,37 +3141,38 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	}
 }
 
-// TestValidateSessionDeclaresAffectsEvidence verifies that a spec-derived
-// affects.files evidence file is part of the local validate sessions' read
-// refs: a check may read it.
-func TestValidateSessionDeclaresAffectsEvidence(t *testing.T) {
+// TestValidateSessionExcludesAffectsFiles pins the issue-#69 boundary: affects
+// declarations are verify inputs, so a validate session's read surface carries
+// no implementation file. Neither affects.files nor affects.evidence_files may
+// enter any validate session read refs.
+func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
 	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
-		"  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n"
+		"  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
 	grWriteFile(t, repoRoot, specPath, spec)
 	grWriteFile(t, repoRoot, "docs/notes/auth_contract.md", "# Auth contract\n")
+	grWriteFile(t, repoRoot, "docs/notes/auth_evidence.md", "# Auth evidence\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	structural := grRunSpec(t, repoRoot, runID, "structural")
-	found := false
-	for _, ref := range structural.ReadRefs {
-		if ref == "docs/notes/auth_contract.md" {
-			found = true
+	for _, key := range []string{"structural", "design", "acceptance"} {
+		session := grRunSpec(t, repoRoot, runID, key)
+		for _, ref := range session.ReadRefs {
+			switch {
+			case ref == "docs/notes/auth_contract.md" || ref == "docs/notes/auth_evidence.md":
+				t.Fatalf("%s validate session must not read the affects path %q: %v", key, ref, session.ReadRefs)
+			case strings.HasSuffix(ref, ".go"):
+				t.Fatalf("%s validate session must not carry a code file %q: %v", key, ref, session.ReadRefs)
+			}
 		}
-	}
-	if !found {
-		t.Fatalf("expected the affects evidence file in the structural session's read refs, got %v", structural.ReadRefs)
 	}
 
 	report := "1. Structural integrity: PASS — ok\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n\n" +
 		"check-1: " + specPath + ": Description\n" +
 		"check-3: " + specPath + ": Description\n" +
-		"check-6: docs/notes/auth_contract.md: all\n"
-	if _, err := grSubmit(t, repoRoot, runID, "structural", report); err != nil {
-		t.Fatalf("expected the affects evidence declaration to be accepted, got %v", err)
-	}
+		"check-6: " + specPath + ": Description\n"
+	grSubmitOK(t, repoRoot, runID, "structural", report)
 }
 
 // TestFinalizeDiscardsRunWhenInputSurfaceUnresolvable verifies the divergence

@@ -128,19 +128,13 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	for _, surfaceProblem := range CheckImplementationSurfaces(repoRoot, content) {
 		problems = append(problems, surfaceProblem.String())
 	}
-
-	anchorFiles := ExtractAffectsFiles(content)
-
-	var missingFiles []string
-	for _, af := range anchorFiles {
-		fullPath := filepath.Join(repoRoot, filepath.FromSlash(af))
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			missingFiles = append(missingFiles, af)
-		}
-	}
-
-	if len(missingFiles) > 0 {
-		problems = append(problems, fmt.Sprintf("affects.files paths not found: %s", strings.Join(missingFiles, ", ")))
+	// affects.files is a repository-boundary declaration like the other two
+	// code-path fields: canonical resolution rejects a lexical `..` escape or
+	// an in-project symlink that resolves outside the project, and the
+	// resolved path must exist. The check judges the declaration only and
+	// never reads code.
+	for _, affectsProblem := range CheckAffectsFiles(repoRoot, content) {
+		problems = append(problems, affectsProblem.String())
 	}
 	for _, evidenceProblem := range CheckEvidenceFiles(repoRoot, content) {
 		problems = append(problems, evidenceProblem.String())
@@ -154,6 +148,7 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 		}
 	}
 
+	anchorFiles := ExtractAffectsFiles(content)
 	evidenceCount := len(ExtractAffectsEvidenceFiles(content))
 	if len(anchorFiles) == 0 && evidenceCount == 0 {
 		return CheckResult{

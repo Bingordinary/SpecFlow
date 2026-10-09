@@ -121,6 +121,34 @@ func CheckEvidenceFiles(repoRoot, specContent string) []SurfaceProblem {
 	return problems
 }
 
+// CheckAffectsFiles validates every structurally located acceptance item's
+// affects.files declarations against the working tree. Each entry must name a
+// repository-contained path that resolves inside the project root and exists —
+// a file, or a directory (verify expands a directory to its repository-content
+// files). Resolution applies the same boundary implementation_surface and
+// affects.evidence_files already enforce: a lexical `..` escape or an
+// in-project symlink that resolves outside the project is rejected rather than
+// resolved literally. The check is the spec-quality half of the field — it
+// judges the declaration alone and never reads code. Mechanical validate
+// Check 3 owns it.
+func CheckAffectsFiles(repoRoot, specContent string) []SurfaceProblem {
+	var problems []SurfaceProblem
+	for _, item := range parseAcceptanceItems(specContent) {
+		for _, raw := range item.affectsFiles {
+			value := strings.TrimSpace(raw)
+			canonical, err := repopath.Canonical(repoRoot, value)
+			if err != nil {
+				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.files", Value: value, Reason: fmt.Sprintf("cannot be resolved: %v", err)})
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(canonical))); err != nil {
+				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.files", Value: value, Reason: "path does not exist — affects.files must name an existing repository-relative file or directory (framework/spec_writing_guide.md §7)"})
+			}
+		}
+	}
+	return problems
+}
+
 // surfaceValueProblem returns "" when value is a single repository-contained
 // path that resolves to at least one real file, or the mechanical reason it
 // does not. The value is matched literally and is never classified by shape:

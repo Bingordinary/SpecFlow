@@ -872,14 +872,14 @@ func sortedKeySet(keys map[string]bool) []string {
 // read those logical objects for cross-unit and constraint judgments. The
 // logical refs here are the declared unit_refs and rule_refs only — a unit
 // validate never carries unrelated peers (Check 9 is the mechanical
-// `specflowctl surfaces` audit and needs no peer spec read ref). The design,
-// acceptance, and clarity groups stay limited to the unit's own truth and
-// shared evidence inputs; they do not receive unrelated logical objects, code
-// evidence, or extra read refs beyond the agent-declared shared inputs.
+// `specflowctl surfaces` audit and needs no peer spec read ref).
+// Validate is a spec-quality gate: every group reads only the unit's own spec
+// truth, the agent-declared shared inputs, and (structural/dependencies) the
+// declared logical refs. No group receives code evidence — affects.files and
+// affects.evidence_files are verify inputs, never validate read refs.
 func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []string {
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(run)...)
-	read = appendUnique(read, affectsEvidencePaths(run)...)
 	if groupID == "structural" || groupID == "dependencies" {
 		read = appendUnique(read, logicalRefNames(run)...)
 	}
@@ -895,9 +895,9 @@ func isRuleValidateCheck(check string) bool {
 	return false
 }
 
-// affectsEvidencePaths lists the spec-derived affects.files evidence files
-// (SourceDerivedAffects). They are part of the validate read surface: local
-// validate sessions may read and declare them, but they never create coverage
+// affectsEvidencePaths lists the spec-derived affects.evidence_files evidence
+// files (SourceDerivedAffects). They are part of a verify item session's read
+// surface; they never enter a validate read surface and never create coverage
 // keys.
 func affectsEvidencePaths(run *Run) []string {
 	var out []string

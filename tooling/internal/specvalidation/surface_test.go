@@ -263,7 +263,7 @@ func TestCheckAnchors_ResolvableSurfaceAndMissingAnchorFail(t *testing.T) {
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for the missing affects.files anchor, got %s: %s", result.Status, result.Details)
 	}
-	if !strings.Contains(result.Details, "affects.files paths not found: internal/demo/gone.go") {
+	if !strings.Contains(result.Details, "affects.files") || !strings.Contains(result.Details, "internal/demo/gone.go") || !strings.Contains(result.Details, "path does not exist") {
 		t.Fatalf("expected the affects.files failure detail, got %s", result.Details)
 	}
 	if strings.Contains(result.Details, "internal/demo/a.go") {
@@ -312,4 +312,64 @@ func TestCheckEvidenceFiles_MissingDirectoryAndPendingFail(t *testing.T) {
 	mustSurfaceReason(t, problems, "item_1", "path does not exist")
 	mustSurfaceReason(t, problems, "item_1", "single file")
 	mustSurfaceReason(t, problems, "item_1", "<pending> placeholder does not apply")
+}
+
+// affectsFilesSpec builds a candidate spec whose single acceptance item
+// declares the given affects.files values.
+func affectsFilesSpec(values ...string) string {
+	content := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n\n" +
+		"acceptance_item_set:\n" +
+		"  - id: item_1\n    description: test\n    verification_type: testable\n" +
+		"    verification_surface: src/\n    implementation_surface: <pending>\n" +
+		"    verification_method: check\n    pass_condition: ok\n    runnable: yes\n" +
+		"    affects:\n      files:\n"
+	for _, value := range values {
+		content += fmt.Sprintf("        - %s\n", value)
+	}
+	return content
+}
+
+func TestCheckAffectsFiles_ResolvableFileAndDirectoryPass(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeSurfaceFile(t, repoRoot, "internal/demo/sub/b.go", "package sub\n")
+
+	problems := CheckAffectsFiles(repoRoot, affectsFilesSpec("internal/demo/a.go", "internal/demo"))
+	if len(problems) != 0 {
+		t.Fatalf("expected resolvable affects.files to pass, got %v", problems)
+	}
+}
+
+func TestCheckAffectsFiles_MissingFileFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	problems := CheckAffectsFiles(repoRoot, affectsFilesSpec("internal/demo/gone.go"))
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %v", problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "path does not exist")
+}
+
+// TestCheckAffectsFiles_OutsideRepositoryFails pins the issue-#69 regression
+// repair: after validate stopped deriving affects refs, the field lost its
+// canonical resolution. An affects.files value that escapes the repository
+// must still fail the declaration check instead of being stat-ed literally.
+func TestCheckAffectsFiles_OutsideRepositoryFails(t *testing.T) {
+	problems := CheckAffectsFiles(t.TempDir(), affectsFilesSpec("../outside.go"))
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %v", problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "cannot be resolved")
+}
+
+// TestCheckAnchors_OutsideRepositoryAffectsFileFails verifies mechanical
+// validate Check 3 rejects the escaping declaration end to end, so a validate
+// run fails before any session is planned.
+func TestCheckAnchors_OutsideRepositoryAffectsFileFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeCandidate(t, repoRoot, "test_unit", affectsFilesSpec("../outside.go"))
+
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Fail || !strings.Contains(result.Details, "cannot be resolved") {
+		t.Fatalf("expected FAIL naming the unresolvable affects.files path, got %s: %s", result.Status, result.Details)
+	}
 }

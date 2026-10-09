@@ -116,6 +116,44 @@ func TestUnitValidateCoverageReadRefs(t *testing.T) {
 	}
 }
 
+// TestUnitValidateExcludesCodeSurface pins issue #69's boundary: a unit validate
+// run's input surface and every session read ref carry no implementation file.
+// implementation_surface, affects.files, and affects.evidence_files are verify
+// inputs — validate judges only their declarations, never their contents.
+func TestUnitValidateExcludesCodeSurface(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src/auth",
+		"    affects:\n      files:\n        - src/extra.go\n      evidence_files:\n        - peer/peer_test.go\n")
+	writeFile(t, repoRoot, "src/auth/impl.go", "package auth\n")
+	writeFile(t, repoRoot, "src/extra.go", "package auth\n")
+	writeFile(t, repoRoot, "peer/peer_test.go", "package peer\n")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"src/auth/impl.go", "src/extra.go", "peer/peer_test.go"} {
+		if _, ok := refByRef(run, code); ok {
+			t.Fatalf("validate input surface carries code file %q: %+v", code, run.Refs)
+		}
+		if _, ok := surfaceByPath(run, code); ok {
+			t.Fatalf("validate run carries a code surface entry %q", code)
+		}
+	}
+	for i := range run.Coverage {
+		ck := run.Coverage[i]
+		if ck.Kind != SessionKindChecks {
+			continue
+		}
+		reads := coverageReadRefs(repoRoot, run, ck)
+		for _, ref := range reads {
+			if !isLogicalRef(ref) && strings.HasSuffix(ref, ".go") {
+				t.Fatalf("%s validate group read refs carry a code file %q: %v", ck.Key, ref, reads)
+			}
+		}
+	}
+}
+
 // TestUnitValidateExcludesUnrelatedPeers pins the one-way dependency direction:
 // a unit validate reads its declared unit_refs providers and rule_refs, never
 // unrelated peers. Adding an unrelated unit in either layer must not change the
