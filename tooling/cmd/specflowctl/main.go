@@ -77,8 +77,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runRemove(args[1:], stdout, stderr)
 	case "clean":
 		return runClean(args[1:], stdout, stderr)
-	case "gate-evidence":
-		return runGateEvidence(args[1:], stdout, stderr)
 	case "gate-plan":
 		return runGatePlan(args[1:], stdout, stderr)
 	case "gate-extend":
@@ -192,9 +190,6 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
-	if validateResult.Note != "" {
-		fmt.Fprintf(stdout, "Note: %s\n", validateResult.Note)
-	}
 	fmt.Fprintln(stdout, "")
 
 	// Merged verify cache: one cache covering both lenses. It must exist,
@@ -215,9 +210,6 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		return errors.New("verify cache check failed")
 	}
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
-	if verifyResult.Note != "" {
-		fmt.Fprintf(stdout, "Note: %s\n", verifyResult.Note)
-	}
 	fmt.Fprintln(stdout, "")
 
 	// Check appendix files are included in validate cache
@@ -263,9 +255,6 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
-	if validateResult.Note != "" {
-		fmt.Fprintf(stdout, "Note: %s\n", validateResult.Note)
-	}
 	fmt.Fprintln(stdout, "")
 
 	result := promote.PromoteRule(absRoot, ruleID)
@@ -578,7 +567,6 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  remove     Remove explicitly selected units, rules, and appendices after structured-reference checks")
 	fmt.Fprintln(w, "  clean      Remove disposable local state (orphaned and terminal runs, unreferenced shared tasks, plan inputs, strays, closed operations)")
-	fmt.Fprintln(w, "  gate-evidence Inspect dependency CIDs (chunk ranges, section/item regions, or the whole acceptance item set) for a file read during a gate run")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
 	fmt.Fprintln(w, "  gate-extend Add supplementary evidence inputs to an open gate run in place (keeps accepted sessions)")
 	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for an agent-chosen key batch (--keys K1,K2 or --final)")

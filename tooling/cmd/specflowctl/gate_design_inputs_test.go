@@ -120,6 +120,7 @@ func TestGateDesignMissionUsesAssignedPublicRecords(t *testing.T) {
 			// Re-execute one design while carrying both public records and the
 			// unrelated unit judgments. Only its own public record is an input.
 			delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", designKeys[0])
+			grReviewAccept(t, root, delta)
 			submitDesignWithMissionObservations(t, root, delta, designKeys[:1], true)
 			finishDesignInputRun(t, root, delta, run.RequiredFiles[0], "src/a.go")
 

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -11,14 +10,13 @@ import (
 )
 
 // parsedReport is the mechanically extracted content of one session report:
-// verdicts, dependency declarations, findings, and synthesis records.
+// verdicts, findings, and synthesis records.
 type parsedReport struct {
 	Observations            []gaterun.Finding
 	ObservationDispositions []gaterun.FindingDisposition
 	Verdicts                map[string]string // check key -> verdict token
 	CrossItems              map[string]string // fixed cross item -> PASS | FAIL
 	CrossItemFindings       map[string]string // failed cross item -> new cross finding id
-	Scopes                  []parsedScope
 	Findings                []gaterun.Finding
 	EffectiveStatus         map[string]string
 	QualityConclusions      map[string]string
@@ -26,13 +24,7 @@ type parsedReport struct {
 	Ownerships              []gaterun.FindingOwnership
 	Analysis                map[string]string
 	FileGateFindings        map[string]string // file key -> gate_findings content
-}
-
-// parsedScope is one `{check key}: {file}: {declaration}` line.
-type parsedScope struct {
-	Key         string
-	Path        string
-	Declaration string // all | line ranges | acceptance_items | section heading
+	Review                  *gaterun.ReviewRecord
 }
 
 // verifyMismatchTypes is the fixed MISMATCH type vocabulary of the verify
@@ -47,7 +39,6 @@ var verifyMismatchTypes = func() map[string]bool {
 }()
 
 var (
-	rangeDeclRe         = regexp.MustCompile(`^\d+-\d+(,\d+-\d+)*$`)
 	findingRe           = regexp.MustCompile(`^[ \t]*-?[ \t]*\[(P0|P1|P2|P3)\][ \t]*(.+)$`)
 	resolutionLabelRe   = regexp.MustCompile(`\((?:actionable|needs_decision)\)\s*$`)
 	factAnchorRe        = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*fact_anchor:\s*\S`)
@@ -61,78 +52,52 @@ var (
 	crossItemLineRe     = regexp.MustCompile(`^Cross item:\s*([a-z][a-z0-9_]*)\s*=\s*(PASS|FAIL)\s+[—-]\s+(\S.*)$`)
 	crossItemFindingRe  = regexp.MustCompile(`^Cross item finding:\s*([a-z][a-z0-9_]*)\s*=\s*(\S+)\s*$`)
 	crossSummaryRe      = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Cross-check:[ \t]*(\d+)[ \t]*/[ \t]*(\d+)[ \t]+(PASS|FAIL)[ \t]+[—-][ \t]+(\S[^\n]*)$`)
+	reviewResultRe      = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Review result:[ \t]*(accept|recheck|escalate-full)[ \t]*[—-][ \t]*(\S[^\n]*)$`)
+	reviewRecheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Recheck:[ \t]*(\S[^\n]*)$`)
 )
 
-// itemDeclPrefix is the reserved declaration prefix for acceptance item
-// regions: `acceptance_item:<id>[,<id>...]`.
-const itemDeclPrefix = "acceptance_item:"
-
-// declParts is one `Dependency scope:` declaration parsed into its forms.
-// The zero value declares nothing; WholeFile ("all") covers every other form.
-// Accepts (the whole item set) and Items (specific item regions) may coexist
-// — the deps are the union (declare-heavy conservatism).
-type declParts struct {
-	WholeFile bool
-	Ranges    []string
-	Sections  []string
-	Accepts   bool
-	Items     []string
-}
-
-// parseDecl classifies one dependency-scope declaration string. The grammar
-// is shared by the session-report validation (gate-submit) and the cache
-// assembly (gate-finalize) so the two can never drift.
-func parseDecl(decl string) (declParts, error) {
-	decl = strings.TrimSpace(decl)
-	switch {
-	case decl == "" || decl == "all":
-		return declParts{WholeFile: true}, nil
-	case rangeDeclRe.MatchString(decl):
-		return declParts{Ranges: []string{decl}}, nil
-	case decl == "acceptance_items":
-		return declParts{Accepts: true}, nil
-	case strings.HasPrefix(decl, itemDeclPrefix):
-		var items []string
-		for _, tok := range strings.Split(strings.TrimPrefix(decl, itemDeclPrefix), ",") {
-			id := strings.TrimSpace(tok)
-			if id == "" {
-				return declParts{}, fmt.Errorf("declaration %q carries an empty acceptance item id", decl)
-			}
-			items = append(items, id)
-		}
-		return declParts{Items: items}, nil
-	default:
-		return declParts{Sections: []string{decl}}, nil
-	}
-}
-
-// mergeDecl merges one parsed declaration into the accumulator of one
-// (check, path) pair. A whole-file declaration ("all") covers every other
-// form, so it replaces them regardless of line order.
-func mergeDecl(m *declParts, d declParts) {
-	if d.WholeFile {
-		*m = declParts{WholeFile: true}
-		return
-	}
-	if m.WholeFile {
-		return
-	}
-	m.Ranges = append(m.Ranges, d.Ranges...)
-	m.Sections = append(m.Sections, d.Sections...)
-	m.Accepts = m.Accepts || d.Accepts
-	m.Items = append(m.Items, d.Items...)
-}
-
 // parseSessionReport validates one session report against its planned session:
-// every check key has exactly one verdict line with an allowed token, blocking
-// verdicts carry a reason, and every check key declares at least one
-// dependency-scope line whose file belongs to the run snapshot. See
+// every check key has exactly one verdict line with an allowed token and
+// blocking verdicts carry a reason. The tooling records evidence from the
+// run's input surface — the report declares no dependency scope. See
 // framework/verification_scope.md §Coverage Model → Session report contract.
+// parseDeltaReviewReport parses the delta review session contract: one
+// `Review result:` line with a reason, plus a `Recheck:` key list when the
+// result is recheck. The review produces no check verdicts.
+func parseDeltaReviewReport(spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
+	out := &parsedReport{Verdicts: map[string]string{}}
+	results := reviewResultRe.FindAllStringSubmatch(report, -1)
+	if len(results) != 1 {
+		return nil, fmt.Errorf("delta review report must carry exactly one `Review result: accept|recheck|escalate-full` line with a reason")
+	}
+	result := results[0][1]
+	reason := strings.TrimSpace(results[0][2])
+	var recheck []string
+	if result == "recheck" {
+		lines := reviewRecheckRe.FindAllStringSubmatch(report, -1)
+		if len(lines) != 1 {
+			return nil, fmt.Errorf("a recheck review must carry exactly one `Recheck: key[, key...]` line")
+		}
+		for _, tok := range strings.Split(lines[0][1], ",") {
+			key := strings.TrimSpace(tok)
+			if key == "" {
+				return nil, fmt.Errorf("the recheck key list carries an empty key")
+			}
+			recheck = append(recheck, key)
+		}
+	}
+	out.Review = &gaterun.ReviewRecord{Result: result, Recheck: recheck, Reason: reason, Session: spec.SessionID}
+	return out, nil
+}
+
 func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
 	if strings.TrimSpace(report) == "" {
 		return nil, fmt.Errorf("empty report")
 	}
 	report = strings.ReplaceAll(report, "\r\n", "\n")
+	if spec.Kind == gaterun.SessionKindDeltaReview {
+		return parseDeltaReviewReport(spec, report)
+	}
 	if gaterun.IsQualityKind(spec.Kind) {
 		return parseQualitySessionReport(run, spec, report)
 	}
@@ -164,23 +129,6 @@ func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report stri
 			return nil, err
 		}
 	}
-	scopes, err := extractScopes(run, spec, report, verdictLines)
-	if err != nil {
-		return nil, err
-	}
-	for _, key := range spec.RequiredScopeKeys() {
-		found := false
-		for _, s := range scopes {
-			if s.Key == key {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("check %q declares no Dependency scope line (`{check key}: {file}: {declaration}`)", key)
-		}
-	}
-	out.Scopes = scopes
 	if !gaterun.IsItemKind(spec.Kind) {
 		// Finding ids are run-scoped — {run_id}/{session_id}/F{n} — so they
 		// are unique by construction across runs: a finding authored by this
@@ -356,7 +304,7 @@ func validateUnitAcceptanceBody(report string) error {
 // itemContinuationBlock returns the verdict line at idx plus its contiguous
 // indented continuation lines — the per-item block a verify session report
 // must carry. The block ends at the first non-empty, unindented line (the next
-// item's verdict or the Dependency scope section).
+// item's verdict).
 func itemContinuationBlock(lines []string, idx int) []string {
 	block := []string{lines[idx]}
 	for i := idx + 1; i < len(lines); i++ {
@@ -860,102 +808,4 @@ func hasReason(line, token string) bool {
 	}
 	rest = strings.Trim(rest, " \t—–-:()[]`,;")
 	return alnumRe.MatchString(rest)
-}
-
-// extractScopes parses every `{check key}: {file}: {declaration}` line for
-// the session's check keys, skipping lines already consumed as verdicts.
-func extractScopes(_ *gaterun.Run, spec *gaterun.SessionSpec, report string, verdictLines map[int]bool) ([]parsedScope, error) {
-	paths := declarationPaths(spec)
-	lines := strings.Split(report, "\n")
-	var out []parsedScope
-	for i, raw := range lines {
-		if verdictLines[i] {
-			continue
-		}
-		t := strings.TrimSpace(raw)
-		t = strings.TrimSpace(strings.TrimPrefix(t, "- "))
-		if t == "" {
-			continue
-		}
-		matched := false
-		for _, key := range spec.ScopeKeys() {
-			prefixes := []string{key + ":"}
-			if spec.Kind == gaterun.SessionKindChecks {
-				prefixes = append(prefixes, "check-"+key+":")
-			}
-			for _, p := range prefixes {
-				if !strings.HasPrefix(t, p) {
-					continue
-				}
-				rest := strings.TrimSpace(t[len(p):])
-				file, decl, ok := splitPathDecl(rest, paths)
-				if !ok {
-					return nil, fmt.Errorf("check %q dependency scope line %q: its file is not part of this session's read refs", key, strings.TrimSpace(raw))
-				}
-				out = append(out, parsedScope{Key: key, Path: file, Declaration: decl})
-				matched = true
-				break
-			}
-			if matched {
-				break
-			}
-		}
-	}
-	return out, nil
-}
-
-// declarationPaths lists every path spelling a report may name: physical
-// snapshot refs, resolved logical refs, and surface entry files. Sorted by
-// length descending so the longest path wins a prefix match.
-func declarationPaths(spec *gaterun.SessionSpec) []string {
-	seen := map[string]bool{}
-	var paths []string
-	add := func(p string) {
-		if p == "" || seen[p] {
-			return
-		}
-		seen[p] = true
-		paths = append(paths, p)
-	}
-	for _, ref := range spec.ReadRefs {
-		add(ref)
-	}
-	sort.Slice(paths, func(i, j int) bool {
-		if len(paths[i]) != len(paths[j]) {
-			return len(paths[i]) > len(paths[j])
-		}
-		return paths[i] < paths[j]
-	})
-	return paths
-}
-
-// splitPathDecl splits `{file}: {declaration}` against the known paths. A
-// known snapshot path (longest match) wins; otherwise the file is the part
-// before the first ": " — downstream validation reports the precise reason
-// (outside the snapshot / wrong path form).
-func splitPathDecl(rest string, paths []string) (string, string, bool) {
-	rest = strings.TrimSpace(rest)
-	if rest == "" {
-		return "", "", false
-	}
-	for _, p := range paths {
-		if rest == p {
-			return p, "all", true
-		}
-		if strings.HasPrefix(rest, p+":") {
-			return p, declOf(rest[len(p)+1:]), true
-		}
-	}
-	if idx := strings.Index(rest, ": "); idx >= 0 {
-		return strings.TrimSpace(rest[:idx]), declOf(rest[idx+1:]), true
-	}
-	return rest, "all", true
-}
-
-func declOf(raw string) string {
-	decl := strings.Trim(strings.TrimSpace(raw), "`\"'")
-	if decl == "" {
-		return "all"
-	}
-	return decl
 }

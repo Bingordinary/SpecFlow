@@ -106,6 +106,35 @@ func loadCarriedResults(repoRoot string, run *Run, carried []string) ([]SessionR
 	return results, nil
 }
 
+// capturedCarriedLenses snapshots the lens tag of every carried check from
+// the baseline cache into the run state. gate-finalize reads the run's
+// immutable snapshot instead of a baseline another run may have rewritten
+// between plan and finalize (see framework/validation_cache.md §Write Rules).
+// A carried key without a recorded check marker fails closed.
+func capturedCarriedLenses(repoRoot string, run *Run, carried []string) (map[string]string, error) {
+	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
+	if err != nil {
+		return nil, err
+	}
+	lensByKey := map[string]string{}
+	for _, entry := range baseline.Entries {
+		for _, c := range entry.Checks {
+			if existing, seen := lensByKey[c.Check]; !seen || existing == "" {
+				lensByKey[c.Check] = c.Lens
+			}
+		}
+	}
+	out := make(map[string]string, len(carried))
+	for _, key := range carried {
+		lens, ok := lensByKey[key]
+		if !ok {
+			return nil, fmt.Errorf("carried-over check %q has no check evidence in the baseline cache — plan a new run", key)
+		}
+		out[key] = lens
+	}
+	return out, nil
+}
+
 // validatedJudgmentState re-reads and validates the baseline cache's
 // structured judgment state (the GATE_JUDGMENTS schema-3 block). A cache
 // without it cannot supply carried semantic results or a complete findings
@@ -142,66 +171,6 @@ func validatedJudgmentState(baseline *validationcache.GateBaseline) (JudgmentBas
 		}
 	}
 	return state, nil
-}
-
-// loadCarriedEvidence snapshots the baseline evidence entries for the
-// carried checks into the run at plan time. The snapshot is the run's
-// immutable input: gate-finalize merges carried evidence from it instead of
-// re-reading the baseline cache, which another run may have rewritten between
-// plan and finalize.
-func loadCarriedEvidence(repoRoot string, run *Run, carried []string) ([]CarriedEvidenceEntry, error) {
-	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
-	if err != nil {
-		return nil, err
-	}
-	if !baseline.Exists {
-		return nil, fmt.Errorf("carried-over checks %s have no baseline cache — plan a new full run", strings.Join(carried, ", "))
-	}
-	carriedSet := map[string]bool{}
-	for _, key := range carried {
-		carriedSet[key] = true
-	}
-	var out []CarriedEvidenceEntry
-	for _, entry := range baseline.Entries {
-		var checks []CarriedCheckEntry
-		for _, c := range entry.Checks {
-			if carriedSet[c.Check] {
-				checks = append(checks, CarriedCheckEntry{Check: c.Check, Lens: c.Lens, Deps: append([]string(nil), c.Deps...)})
-			}
-		}
-		if len(checks) == 0 {
-			continue
-		}
-		// Snapshot only the file-level remainder no check owns: check deps
-		// travel with their check entries, and a re-run check's superseded
-		// deps must not be merged back into the new entry (they may name
-		// changed content the re-run judgment no longer depends on).
-		owned := map[string]bool{}
-		for _, c := range entry.Checks {
-			for _, dep := range c.Deps {
-				owned[dep] = true
-			}
-		}
-		var remainder []string
-		for _, dep := range entry.Deps {
-			if !owned[dep] {
-				remainder = append(remainder, dep)
-			}
-		}
-		out = append(out, CarriedEvidenceEntry{Path: entry.Path, Hash: entry.Hash, Deps: remainder, Checks: checks})
-	}
-	covered := map[string]bool{}
-	for _, entry := range out {
-		for _, c := range entry.Checks {
-			covered[c.Check] = true
-		}
-	}
-	for _, key := range carried {
-		if !covered[key] {
-			return nil, fmt.Errorf("carried-over check %q has no baseline evidence — plan a new full run", key)
-		}
-	}
-	return out, nil
 }
 
 // validateCheckGroups is the coverage decomposition of the unit validate
@@ -330,6 +299,9 @@ func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 // owns: the group's check numbers (validate unit), the check number (rule),
 // or the key itself (verify item / quality file).
 func coverageReportKeys(run *Run, ck CoverageKey) []string {
+	if ck.Kind == SessionKindDeltaReview {
+		return []string{DeltaReviewKey}
+	}
 	switch classifyRun(run) {
 	case classUnitValidate:
 		return append([]string(nil), groupChecks(ck.Key)...)
@@ -353,13 +325,6 @@ func (r *Run) LensForReportKey(key string) string {
 		for _, owned := range coverageReportKeys(r, ck) {
 			if owned == key {
 				return ck.Lens
-			}
-		}
-	}
-	for _, entry := range r.CarriedEvidence {
-		for _, check := range entry.Checks {
-			if check.Check == key {
-				return check.Lens
 			}
 		}
 	}
@@ -422,43 +387,32 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		return nil, nil, nil, nil, err
 	}
 	if run.Mode == ModeFull {
-		carried, err := fullRelationshipScope(d.root, run)
+		carried, notices, err := planFullRunCarry(d.root, run)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		if err := validateCoverage(run, full); err != nil {
-			return nil, nil, nil, nil, err
-		}
-		return full, carried, required, nil, nil
-	}
-	derivation, err := d.deriveDeltaRerun(run)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	if derivation.degraded {
-		// A full rerun must not forget relationships checked by its baseline.
-		if baseline, err := validationcache.ReadGateBaseline(d.root, run.TargetKind, run.TargetName, run.Gate); err == nil {
-			for _, entry := range baseline.Entries {
-				for _, check := range entry.Checks {
-					if IsRelationshipKey(check.Check) {
-						run.Relationships = appendUnique(run.Relationships, relationshipName(check.Check))
-					}
-				}
-			}
+		if run.ChangeSetFP != "" {
+			// Standing relationship conclusions await the change review;
+			// the full coverage set runs beside it.
+			full = append([]CoverageKey{{Key: DeltaReviewKey, Kind: SessionKindDeltaReview}}, full...)
+			notices = append(notices, "change review: the standing relationship conclusions await accept-or-recheck against the recorded change set")
 		}
 		if err := validateCoverage(run, full); err != nil {
 			return nil, nil, nil, nil, err
 		}
-		return full, nil, required, derivation.notices, nil
+		return full, carried, required, notices, nil
 	}
-	coverage, err := filterCoverage(full, derivation.rerunCoverage)
-	if err != nil {
-		return nil, nil, nil, nil, err
+	if run.Mode == ModeDelta || run.Mode == ModeRepair {
+		coverage, carried, required, notices, err := d.buildReviewPlan(run)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if err := validateCoverage(run, coverage); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		return coverage, carried, required, notices, nil
 	}
-	if err := validateCoverage(run, coverage); err != nil {
-		return nil, nil, nil, nil, err
-	}
-	return coverage, derivation.carried, required, derivation.notices, nil
+	return nil, nil, nil, nil, fmt.Errorf("unsupported run mode %q", run.Mode)
 }
 
 // filterCoverage keeps the coverage keys whose key is in want, preserving the
@@ -519,12 +473,16 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 		seen[key] = true
 		switch ck.Kind {
 		case SessionKindChecks, SessionKindItem, SessionKindDesign, SessionKindCode, SessionKindArchitecture:
+		case SessionKindDeltaReview:
+			if key != DeltaReviewKey {
+				return fmt.Errorf("delta review coverage key %q must be %q", key, DeltaReviewKey)
+			}
 		default:
 			return fmt.Errorf("coverage key %q has invalid kind %q", key, ck.Kind)
 		}
 		switch ck.Lens {
 		case "":
-			if run.Gate == GateVerify && run.TargetKind == TargetKindUnit {
+			if ck.Kind != SessionKindDeltaReview && run.Gate == GateVerify && run.TargetKind == TargetKindUnit {
 				return fmt.Errorf("coverage key %q has no lens — a verify key must be tagged alignment or quality", key)
 			}
 		case LensAlignment:
@@ -611,6 +569,22 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			ReadRefs:      crossReadRefs(run),
 			Relationships: append([]string(nil), run.Relationships...),
 			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
+		}, nil
+	}
+	if len(keys) == 1 && keys[0] == DeltaReviewKey {
+		if run.CoverageByKey(DeltaReviewKey) == nil {
+			return nil, fmt.Errorf("key %q is not part of run %s's coverage set", DeltaReviewKey, run.RunID)
+		}
+		return &SessionSpec{
+			SessionID: DeltaReviewKey,
+			Kind:      SessionKindDeltaReview,
+			CheckKeys: []string{DeltaReviewKey},
+			ReadRefs:  reviewReadRefs(repoRoot, run),
+			Context: []string{
+				"Judge only whether the standing conclusions are affected by the change set. Produce no check verdicts.",
+				"Focus on the changed content, but read any input-surface file you need for context — a change can affect a conclusion anchored elsewhere.",
+				"When in doubt, name the re-run keys or escalate; accepting is the consequential call.",
+			},
 		}, nil
 	}
 	wanted := map[string]bool{}
@@ -780,29 +754,27 @@ func crossReadRefs(run *Run) []string {
 	return appendUnique(read, extraInputPaths(run)...)
 }
 
-// scopeDerivation is the mechanism-derived re-run scope of one delta/repair
-// plan: the declared judgments that must re-execute, the ones carried over,
-// and every disclosure the plan owes the user (see
-// framework/verification_scope.md §Delta Runs).
-type scopeDerivation struct {
-	scope         *validationcache.StaleScope // raw stale evidence (nil when derivation degraded before reading it)
-	current       []string                    // current non-cross judgment keys (items, quality files, or check numbers)
-	newKeys       []string                    // current keys absent from the baseline declaration — no evidence to carry
-	rerun         []string                    // sorted effective re-run check keys
-	rerunCoverage []string                    // sorted coverage keys that must re-execute
-	carried       []string                    // sorted declared keys that stay carried over
-	coversFull    bool                        // the re-run covers every declared check — nothing is carried over
-	degraded      bool                        // the plan is the full coverage set because no scope could be derived
-	reason        string                      // degradation reason (degraded only)
-	notices       []string
+// InputSurface lists every file a run may read: the union of every coverage
+// key's read surface plus the cross-synthesis surface. Cache evidence is
+// assembled from exactly this surface — the entry set IS the input surface
+// (framework/validation_cache.md §Format), so a change anywhere in it is
+// visible to the freshness comparison and the change diff.
+func InputSurface(repoRoot string, run *Run) []string {
+	var out []string
+	for _, ck := range run.Coverage {
+		if ck.Kind == SessionKindDeltaReview {
+			continue
+		}
+		out = appendUnique(out, coverageReadRefs(repoRoot, run, ck)...)
+	}
+	out = appendUnique(out, crossReadRefs(run)...)
+	return out
 }
 
-// baselineFailureRecord reports whether a baseline cache is a failure record
-// whose recovery runs in `--mode repair` (see
-// framework/verification_scope.md §Delta Runs → Failure recovery). A failure
-// record declares `result: fail` (and `blocking: true`).
-func baselineFailureRecord(baseline *validationcache.GateBaseline) bool {
-	return baseline.Result == "fail"
+// TargetMainFile returns the run target's own main artifact reference in the
+// run's layer — the unit main spec or the rule file.
+func TargetMainFile(run *Run) string {
+	return mainSpecRef(run)
 }
 
 // noUsableBaselineError is the documented message for a stable-only target
@@ -810,427 +782,6 @@ func baselineFailureRecord(baseline *validationcache.GateBaseline) bool {
 // §Delta Runs → Layer applicability): the full confirmation run or a fork.
 func noUsableBaselineError(run *Run) error {
 	return fmt.Errorf("No usable confirmation baseline. Run the full `%s@%s` (confirmation check) first, or `specflowctl fork %s` to start a new round.", run.Gate, run.TargetName, gateTargetFlags(run))
-}
-
-// deriveDeltaRerun derives the delta/repair re-run scope from the baseline
-// cache's per-check evidence. The re-run set is the stale-judgment set, the
-// force-listed keys, and every current key the baseline never declared — a new
-// acceptance item or quality file has no evidence to carry over, so it must
-// execute exactly like a stale judgment. The derived check set is then
-// expressed over the coverage set (rerunCoverage). Where the derivation cannot
-// trust its association it degrades conservatively to the full coverage set
-// and reports the degradation.
-func (d *Derivation) deriveDeltaRerun(run *Run) (*scopeDerivation, error) {
-	repoRoot := d.root
-	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
-	if err != nil {
-		return nil, err
-	}
-	switch run.Mode {
-	case ModeDelta:
-		if !baseline.Exists {
-			if run.Target == TargetStable {
-				return nil, noUsableBaselineError(run)
-			}
-			return nil, fmt.Errorf("no baseline cache for this target — run the full command instead: `specflowctl gate-plan --gate %s %s --target %s`", run.Gate, gateTargetFlags(run), run.Target)
-		}
-		if baseline.Mode != "full" {
-			return nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
-		}
-		// The cached declarations must agree with each other before either
-		// one is trusted as a pass baseline: a cache that says result: fail
-		// while claiming not to block (or the reverse) is malformed state and
-		// cannot say what passed, so nothing may be carried over (see
-		// framework/validation_cache.md §Format: the blocking field).
-		if strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking {
-			return nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
-		}
-		if baselineFailureRecord(baseline) {
-			return nil, fmt.Errorf("baseline is a failure record — use `--mode repair` after resolving the findings")
-		}
-		if baseline.Result != "pass" {
-			return nil, fmt.Errorf("baseline cache result is %q, expected pass — run the full command instead", baseline.Result)
-		}
-	case ModeRepair:
-		if !baseline.Exists && run.Target == TargetStable {
-			return nil, noUsableBaselineError(run)
-		}
-		if !baseline.Exists || baseline.Result != "fail" || !baseline.Blocking {
-			return nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) — none found; run the full command instead")
-		}
-	default:
-		return nil, fmt.Errorf("delta derivation requires --mode delta or --mode repair")
-	}
-
-	degraded := func(reason string, scope *validationcache.StaleScope) *scopeDerivation {
-		return &scopeDerivation{
-			scope:    scope,
-			degraded: true,
-			reason:   reason,
-			notices:  []string{reason + " — the plan covers the full scope"},
-		}
-	}
-
-	if run.Mode == ModeRepair {
-		// The failure baseline must declare a status for every check: absent
-		// status means pass only on a pass baseline, never on a failure one.
-		// The values are a closed set and a full-run record never carries a
-		// judgment — an unknown value or an illegal carried entry cannot say
-		// which judgments failed, so nothing may be carried over (see
-		// framework/verification_scope.md §Delta Runs → Failure recovery).
-		declared := map[string]bool{}
-		statusByCheck := map[string]string{}
-		var missing, invalid []string
-		missingSeen := map[string]bool{}
-		invalidSeen := map[string]bool{}
-		addInvalid := func(reason string) {
-			if !invalidSeen[reason] {
-				invalidSeen[reason] = true
-				invalid = append(invalid, reason)
-			}
-		}
-		for _, entry := range baseline.Entries {
-			for _, c := range entry.Checks {
-				declared[c.Check] = true
-				status := strings.TrimSpace(c.Status)
-				// A check declared with conflicting statuses across entries
-				// cannot say which judgment failed; take the fail-closed
-				// degradation path instead of trusting the first occurrence.
-				if prior, ok := statusByCheck[c.Check]; ok {
-					if prior != status {
-						addInvalid(c.Check + "=conflicting")
-					}
-				} else {
-					statusByCheck[c.Check] = status
-				}
-				switch {
-				case status == "":
-					if !missingSeen[c.Check] {
-						missingSeen[c.Check] = true
-						missing = append(missing, c.Check)
-					}
-				case status != "pass" && status != "fail" && status != "carried":
-					addInvalid(c.Check + "=" + status)
-				case status == "carried" && !IsRelationshipKey(c.Check) && (baseline.Basis == ModeFull || baseline.Basis == ""):
-					// `basis: full` (or absent — legacy records) has no
-					// carried judgments (see framework/validation_cache.md
-					// §Format: the basis field).
-					addInvalid(c.Check + "=carried")
-				}
-			}
-		}
-		if len(missing) > 0 {
-			return degraded("the failure record carries an incomplete per-check status map (missing: "+strings.Join(missing, ", ")+")", nil), nil
-		}
-		if len(invalid) > 0 {
-			return degraded("the failure record carries an invalid per-check status map (invalid: "+strings.Join(invalid, ", ")+")", nil), nil
-		}
-		// The status map must describe exactly the judgments the record's
-		// structured baseline holds: a status map and a judgment baseline
-		// that disagree on the key set cannot say which judgments failed, so
-		// nothing may be carried over. An absent or older judgment schema is
-		// left to the carry-time check, which refuses a partial plan that
-		// must carry a judgment with the "run the full command" guidance.
-		if state, err := validatedJudgmentState(baseline); err == nil {
-			var mismatch []string
-			for key := range declared {
-				if _, ok := state.LogicalStatus[key]; !ok {
-					mismatch = append(mismatch, key)
-				}
-			}
-			for key := range state.LogicalStatus {
-				// The reserved final-synthesis key is a synthesis status, not
-				// a per-check status, and has no `checks` entry to match.
-				if key == CrossKey {
-					continue
-				}
-				if !declared[key] {
-					mismatch = append(mismatch, key)
-				}
-			}
-			if len(mismatch) > 0 {
-				sort.Strings(mismatch)
-				return degraded("the failure record's per-check status map does not match its judgment baseline (unmatched: "+strings.Join(mismatch, ", ")+")", nil), nil
-			}
-		}
-	}
-	if run.Gate == GateVerify {
-		recorded := make(map[string]bool, len(baseline.Entries))
-		for _, entry := range baseline.Entries {
-			recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
-		}
-		var newEvidence []string
-		for _, path := range extraInputPaths(run) {
-			if !isLogicalRef(path) && !recorded[filepath.ToSlash(filepath.Clean(path))] {
-				newEvidence = append(newEvidence, path)
-			}
-		}
-		if len(newEvidence) > 0 {
-			return degraded("verify evidence absent from the baseline cache: "+strings.Join(newEvidence, ", "), nil), nil
-		}
-	}
-
-	scope, err := validationcache.DeriveStaleScope(repoRoot, run.TargetKind, run.TargetName, run.Gate)
-	if err != nil {
-		return nil, err
-	}
-	if len(scope.Unreadable) > 0 {
-		return degraded("the baseline cache lists entries that cannot be resolved or read: "+strings.Join(scope.Unreadable, ", "), scope), nil
-	}
-	if !baseline.HasChecks || len(baseline.Checks) == 0 {
-		reason := "the baseline cache carries no per-check evidence"
-		if run.Mode == ModeRepair {
-			reason = "the failure record carries no per-check status map"
-		}
-		return degraded(reason, scope), nil
-	}
-	// A baseline entry without dependency chunks over a file with content, or
-	// a baseline files list that does not cover the target's main file, is
-	// stale for a cause the declared per-check evidence cannot attribute.
-	// Degrade here — before any execution — instead of planning a partial run
-	// the finalize self-check must reject (see
-	// framework/verification_scope.md §Delta Runs → Incremental scope).
-	if len(scope.Untrackable) > 0 {
-		return degraded("the baseline cache is stale for a cause the declared per-check evidence cannot attribute (no dependency chunks): "+strings.Join(scope.Untrackable, ", "), scope), nil
-	}
-	for _, required := range requiredFiles(run) {
-		listed := false
-		for _, entry := range baseline.Entries {
-			if filepath.ToSlash(filepath.Clean(entry.Path)) == filepath.ToSlash(filepath.Clean(required)) {
-				listed = true
-				break
-			}
-		}
-		if !listed {
-			return degraded("the baseline cache files list does not include the main file "+required, scope), nil
-		}
-	}
-
-	declaredNonCross := map[string]bool{}
-	for _, c := range baseline.Checks {
-		if c.Check != CrossKey {
-			declaredNonCross[c.Check] = true
-		}
-	}
-
-	rerun := map[string]bool{}
-	if run.Gate == GateVerify {
-		state, err := validatedJudgmentState(baseline)
-		if err != nil {
-			return nil, err
-		}
-		current, err := d.computeCoverage(run)
-		if err != nil {
-			return nil, err
-		}
-		for _, ck := range current {
-			binding, ok := state.Records[ck.Key]
-			if !ok {
-				scope.Affected = appendUnique(scope.Affected, ck.Key)
-				continue
-			}
-			binding.Layer = run.Target
-			inputs, err := normalizeOwnInputs(repoRoot, coverageReadRefs(repoRoot, run, ck), ck.Unit, binding.Layer)
-			if err != nil {
-				return nil, err
-			}
-			record, err := judgments.Load(repoRoot, binding.Reference)
-			if err != nil || judgments.Check(repoRoot, binding.Reference, binding.Layer, run.Protocol) != nil || !judgments.CoversInputs(record.Inputs, inputs) {
-				scope.Affected = appendUnique(scope.Affected, ck.Key)
-			}
-		}
-	}
-	for _, key := range append([]string(nil), scope.Affected...) {
-		if strings.HasPrefix(key, "code:") {
-			scope.Affected = appendUnique(scope.Affected, "design:"+run.TargetName+":"+strings.TrimPrefix(key, "code:"))
-		}
-	}
-	for _, k := range scope.Affected {
-		rerun[k] = true
-	}
-	for _, k := range run.RerunKeys {
-		rerun[k] = true
-	}
-	for _, name := range run.Relationships {
-		rerun[RelationshipKey(name)] = true
-	}
-	if run.Mode == ModeRepair {
-		for _, k := range baseline.InvalidatedChecks {
-			rerun[k] = true
-		}
-	}
-
-	// Map unclaimed stale sources by the command's fixed association; where
-	// no association exists, degrade.
-	for _, entry := range scope.Unclaimed {
-		switch run.Gate {
-		case GateValidate:
-			switch {
-			case strings.HasPrefix(entry, "unit:"):
-				if run.TargetKind == TargetKindRule {
-					rerun["4"] = true
-				} else {
-					rerun["7"] = true
-				}
-			case strings.HasPrefix(entry, "rule:"):
-				rerun["8"] = true
-			default:
-				return degraded(fmt.Sprintf("stale dependency %s has no fixed check association", entry), scope), nil
-			}
-		default:
-			return degraded(fmt.Sprintf("stale dependency %s has no fixed check association", entry), scope), nil
-		}
-	}
-
-	if run.Mode == ModeRepair {
-		for _, c := range baseline.Checks {
-			if c.Status == "fail" {
-				rerun[c.Check] = true
-			}
-		}
-	}
-
-	current, err := d.currentGateKeys(run)
-	if err != nil {
-		return nil, err
-	}
-	for key := range declaredNonCross {
-		if IsRelationshipKey(key) {
-			name := relationshipName(key)
-			if !stringInSlice(RelationshipNames(run.Gate), name) || run.TargetKind == TargetKindRule {
-				return nil, fmt.Errorf("baseline declares unknown relationship %q", key)
-			}
-			current = appendUnique(current, key)
-		}
-	}
-	for _, name := range run.Relationships {
-		current = appendUnique(current, RelationshipKey(name))
-	}
-	currentSet := map[string]bool{}
-	for _, key := range current {
-		currentSet[key] = true
-	}
-	var newKeys []string
-	for _, key := range current {
-		if !declaredNonCross[key] && !rerun[key] {
-			newKeys = append(newKeys, key)
-			rerun[key] = true
-		}
-	}
-	sort.Strings(newKeys)
-
-	if run.Mode == ModeDelta && len(scope.StaleDeps) == 0 && len(scope.Affected) == 0 && len(scope.Unclaimed) == 0 && len(newKeys) == 0 && len(run.RerunKeys) == 0 && len(run.Relationships) == 0 {
-		// Nothing re-executes under the per-check derivation. That means either
-		// the cache is genuinely fresh, or it is stale for a cause the declared
-		// per-check evidence cannot attribute (e.g. an entry with no dependency
-		// chunks, or the main file missing from the files list). The gate's own
-		// freshness chain decides — the report and the plan must not disagree.
-		check, err := validationcache.CheckWriteResult(repoRoot, run.TargetKind, run.TargetName, run.Gate, run.Target)
-		if err != nil {
-			return nil, err
-		}
-		if !check.Fresh {
-			return degraded("the baseline cache is stale for a cause the declared per-check evidence cannot attribute: "+check.Reason, scope), nil
-		}
-		return nil, fmt.Errorf("cache is fresh — no incremental re-run needed")
-	}
-
-	// Recorded or forced judgments that no longer exist in the current
-	// surface cannot be re-executed or carried — fail closed.
-	for _, key := range sortedKeySet(declaredNonCross) {
-		if !currentSet[key] {
-			return degraded(fmt.Sprintf("recorded judgment %q is no longer in the current coverage surface", key), scope), nil
-		}
-	}
-	for key := range rerun {
-		if declaredNonCross[key] {
-			continue
-		}
-		if !currentSet[key] {
-			return degraded(fmt.Sprintf("re-run judgment %q is not in the current coverage surface", key), scope), nil
-		}
-	}
-
-	// Reject keys the gate cannot own, then expand the re-run set to its
-	// effective coverage (a unit validate group re-runs every check it owns).
-	effective := map[string]bool{}
-	if run.TargetKind == TargetKindRule {
-		for key := range rerun {
-			if !isRuleValidateCheck(key) {
-				return degraded(fmt.Sprintf("recorded check %q is not a rule validate check", key), scope), nil
-			}
-			effective[key] = true
-		}
-	} else if run.Gate == GateValidate {
-		for key := range rerun {
-			if IsRelationshipKey(key) {
-				effective[key] = true
-				continue
-			}
-			group, ok := validateGroupForCheck(key)
-			if !ok {
-				return degraded(fmt.Sprintf("recorded check %q is not a unit validate check", key), scope), nil
-			}
-			for _, c := range groupChecks(group) {
-				effective[c] = true
-			}
-		}
-	} else {
-		for key := range rerun {
-			effective[key] = true
-		}
-	}
-
-	if len(effective) == 0 {
-		// Stale evidence that maps to no coverage key cannot be re-judged by
-		// a partial run, so the plan degrades to the full coverage set.
-		return degraded("the stale evidence has no coverage key in the coverage model", scope), nil
-	}
-	rerunCoverage := coverageKeysForRerun(run, effective)
-	run.Relationships = nil
-	for _, key := range sortedKeySet(effective) {
-		if IsRelationshipKey(key) {
-			run.Relationships = append(run.Relationships, relationshipName(key))
-		}
-	}
-
-	carried := make([]string, 0, len(declaredNonCross))
-	for key := range declaredNonCross {
-		if !effective[key] {
-			carried = append(carried, key)
-		}
-	}
-	sort.Strings(carried)
-
-	// A plan that carries anything over needs the baseline's structured
-	// judgment state; without it the partial run is refused here, before any
-	// run state is written.
-	if len(carried) > 0 {
-		if _, err := validatedJudgmentState(baseline); err != nil {
-			return nil, err
-		}
-	}
-
-	derivation := &scopeDerivation{
-		scope:         scope,
-		current:       current,
-		newKeys:       newKeys,
-		rerun:         sortedKeySet(effective),
-		rerunCoverage: rerunCoverage,
-		carried:       carried,
-		coversFull:    len(carried) == 0,
-	}
-	if len(rerunCoverage) == 0 && len(run.Relationships) == 0 {
-		return nil, fmt.Errorf("cache is fresh — no incremental re-run needed")
-	}
-	if len(baseline.InvalidatedChecks) > 0 {
-		derivation.notices = append(derivation.notices, "persisted targeted invalidations: "+strings.Join(baseline.InvalidatedChecks, ", "))
-	}
-	derivation.notices = append(derivation.notices, rerunPlanNotice(derivation))
-	if derivation.coversFull {
-		derivation.notices = append(derivation.notices, "the re-run covers every declared check — the plan covers the full scope")
-	}
-	return derivation, nil
 }
 
 // coverageKeysForRerun maps the effective re-run check set onto the run's
@@ -1331,23 +882,6 @@ func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []stri
 		read = appendUnique(read, logicalRefNames(run)...)
 	}
 	return append([]string(nil), read...)
-}
-
-// rerunPlanNotice renders the plan's re-run/carry disclosure. The carried
-// clause states the trust basis the delta run relies on: carried judgments
-// keep their dependency evidence unchanged (see
-// framework/verification_scope.md §Delta Runs).
-func rerunPlanNotice(derivation *scopeDerivation) string {
-	msg := "re-run coverage keys " + strings.Join(derivation.rerunCoverage, ", ")
-	if len(derivation.newKeys) > 0 {
-		msg += "; new checks not in the baseline: " + strings.Join(derivation.newKeys, ", ")
-	}
-	if len(derivation.carried) > 0 {
-		msg += "; carried over: " + strings.Join(derivation.carried, ", ") + " (their dependency evidence is unchanged)"
-	} else {
-		msg += "; nothing carried over"
-	}
-	return msg
 }
 
 func isRuleValidateCheck(check string) bool {

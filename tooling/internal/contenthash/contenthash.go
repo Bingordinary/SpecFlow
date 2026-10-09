@@ -1,5 +1,5 @@
 // Package contenthash provides content-defined chunking (CDC) for
-// content-addressed freshness checks.
+// content-addressed change detection.
 //
 // A file's normalized text is split into content-defined chunks using a
 // rolling buzhash. Each chunk gets a content identifier (CID) — the SHA-256
@@ -8,10 +8,9 @@
 // content sits in the file. Inserting or deleting content only re-aligns
 // chunk boundaries near the edit; content far from the edit keeps its CID.
 //
-// The agent declares which line ranges it actually depended on during a
-// validate/verify run; CIDsForRanges maps those ranges onto the
-// chunks they overlap. Only the resulting CIDs are recorded in the cache —
-// line numbers and positions are never persisted.
+// The delta-review model records a file's ordered chunk sequence with line
+// positions (ChunkRecord) and aligns it against current content to report
+// what changed (DiffChunks) — the reviewer reads that change set.
 package contenthash
 
 import (
@@ -21,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -196,61 +194,6 @@ func ChunkFile(path string) (FileChunks, error) {
 		return FileChunks{}, err
 	}
 	return ChunkText(text), nil
-}
-
-// ParseRanges parses a comma-separated list of inclusive line ranges,
-// e.g. "120-180,300-320". Line numbers are 1-based. An empty string
-// returns no ranges.
-func ParseRanges(s string) ([][2]int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-	var out [][2]int
-	for _, tok := range strings.Split(s, ",") {
-		tok = strings.TrimSpace(tok)
-		if tok == "" {
-			continue
-		}
-		parts := strings.SplitN(tok, "-", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid range %q: expected START-END", tok)
-		}
-		a, errA := strconv.Atoi(strings.TrimSpace(parts[0]))
-		b, errB := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if errA != nil || errB != nil || a < 1 || b < 1 || a > b {
-			return nil, fmt.Errorf("invalid range %q: expected START-END with 1 <= START <= END", tok)
-		}
-		out = append(out, [2]int{a, b})
-	}
-	return out, nil
-}
-
-// CIDsForRanges maps inclusive 1-based line ranges onto the chunks they
-// overlap and returns the distinct chunk CIDs in file order. A range maps
-// to whole chunks — the chunk boundary is the mechanical granularity line:
-// content adjacent to the declared range inside the same chunk is included.
-// Callers must ensure ranges are within the file's line count.
-func CIDsForRanges(fc FileChunks, ranges [][2]int) []string {
-	seen := make(map[string]bool)
-	var out []string
-	for _, r := range ranges {
-		a, b := r[0], r[1]
-		if a < 1 || b > fc.LineCount() || a > b {
-			continue
-		}
-		startOff := fc.LineStarts[a-1]
-		endOff := fc.LineStarts[b]
-		for _, c := range fc.Chunks {
-			if c.Start < endOff && c.End > startOff {
-				if !seen[c.CID] {
-					seen[c.CID] = true
-					out = append(out, c.CID)
-				}
-			}
-		}
-	}
-	return out
 }
 
 // AcceptanceItemsRegion locates the acceptance_item_set structural region of

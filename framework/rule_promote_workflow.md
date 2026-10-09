@@ -35,7 +35,7 @@ The agent may report cache state to help the user decide:
 The CLI tool performs:
 
 1. **Check candidate exists** — `docs/specs/rules/candidate/{rule_id}.md`
-2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (dependency chunk changed), rejects promote with guidance to run `validate@{rule}` first.
+2. **Check validate cache freshness** — reads `docs/specs/meta/validation/rule/{id}/validate_result.md`. If missing or stale (recorded content changed), rejects promote with guidance to run `validate@{rule}` first.
 3. **Validate frontmatter** — `rule_id`, `rule_scope`
 4. **Copy candidate→stable** — pure copy (the layer is encoded by the file path — no frontmatter field is transformed)
 5. **Delete candidate** — removes the candidate rule file (the promoted rule's local gate-run state and unreferenced shared tasks are swept with it; see `framework/validation_cache.md` §Run lifecycle)

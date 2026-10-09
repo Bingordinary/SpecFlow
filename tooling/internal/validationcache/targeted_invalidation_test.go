@@ -17,13 +17,14 @@ func writeInvalidationFixture(t *testing.T, repoRoot, result string, blocking bo
 	if err := os.WriteFile(specPath, []byte("# auth\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	entry, err := BuildEntryFromChecks(repoRoot, specRel, []CheckDeclaration{{
-		Check:  "auth.login",
-		Status: map[bool]string{true: "pass", false: ""}[blocking],
-	}})
+	entry, err := BuildEvidenceEntry(repoRoot, specRel)
 	if err != nil {
 		t.Fatal(err)
 	}
+	entry.Checks = []CheckEntry{{
+		Check:  "auth.login",
+		Status: map[bool]string{true: "pass", false: ""}[blocking],
+	}}
 	cachePath, err := WriteCache(repoRoot, "unit", "auth", CacheWrite{
 		Command:   "verify",
 		Unit:      "auth",
@@ -36,7 +37,7 @@ func writeInvalidationFixture(t *testing.T, repoRoot, result string, blocking bo
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: `{"schema_version":2,"logical_status":{"auth.login":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
 		Body:      "ORIGINAL BODY\n",
-		Entries:   []FileEntry{entry},
+		Entries:   []FileEntry{*entry},
 	})
 	if err != nil {
 		t.Fatal(err)

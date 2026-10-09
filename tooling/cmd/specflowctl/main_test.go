@@ -33,20 +33,20 @@ func writeMergedVerifyCache(t *testing.T, repoRoot, unit, specRel, codeRel, resu
 
 }
 
-// cacheDeps renders a deps block for a cache file entry covering the whole
-// file (whole-file dependency — the conservative declaration).
+// cacheDeps renders the recorded chunk evidence block for a cache file entry.
 func cacheDeps(t *testing.T, path string) string {
 	t.Helper()
-	fc, err := contenthash.ChunkFile(path)
+	text, err := contenthash.FileText(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	records := contenthash.ChunkRecords(text)
 	var b strings.Builder
-	if len(fc.Chunks) > 0 {
-		b.WriteString("    deps:\n")
+	if len(records) > 0 {
+		b.WriteString("    chunker: " + contenthash.ChunkerVersion + "\n    chunks:\n")
 	}
-	for _, c := range fc.Chunks {
-		fmt.Fprintf(&b, "      - %s\n", c.CID)
+	for _, c := range records {
+		fmt.Fprintf(&b, "      - cid: %q\n        start: %d\n        end: %d\n", c.CID, c.StartLine, c.EndLine)
 	}
 	return b.String()
 }
@@ -827,12 +827,11 @@ acceptance_item_set:
 	}
 
 	// Verify cache with only the alignment check — no quality section.
-	specEntry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_test_unit.md", []validationcache.CheckDeclaration{
-		{Check: "test.check", Lens: "alignment", AcceptanceItemIDs: []string{"test.check"}},
-	})
+	specEntry, err := validationcache.BuildEvidenceEntry(repoRoot, "docs/specs/units/candidate/unit_test_unit.md")
 	if err != nil {
 		t.Fatal(err)
 	}
+	specEntry.Checks = []validationcache.CheckEntry{{Check: "test.check", Lens: "alignment"}}
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "test_unit", validationcache.CacheWrite{
 		Command:   "verify",
 		Unit:      "test_unit",
@@ -840,7 +839,7 @@ acceptance_item_set:
 		Result:    "pass",
 		Target:    "candidate",
 		Timestamp: "2026-06-30T11:00:00Z",
-		Entries:   []validationcache.FileEntry{specEntry},
+		Entries:   []validationcache.FileEntry{*specEntry},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 // runGateSubmit records one reviewer session's report for an agent-assigned
@@ -142,14 +141,19 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 		return reject(perr.Error())
 	}
 	normalizeDeclaredPaths(absRoot, parsed)
-	if derr := validateSessionDeclarations(absRoot, run, spec, parsed); derr != nil {
-		return reject(derr.Error())
-	}
 	if derr := validateReviewDependencies(absRoot, run, spec, parsed); derr != nil {
 		return reject(derr.Error())
 	}
 	if derr := validateSessionSemantics(absRoot, run, spec, parsed, report); derr != nil {
 		return reject(derr.Error())
+	}
+	if spec.Kind == gaterun.SessionKindDeltaReview {
+		if parsed.Review == nil {
+			return reject("delta review report carries no review record")
+		}
+		if aerr := gaterun.ApplyReviewLocked(absRoot, run, *parsed.Review); aerr != nil {
+			return reject(aerr.Error())
+		}
 	}
 
 	state.SessionID = sessionID
@@ -185,70 +189,21 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	return nil
 }
 
-// normalizeDeclaredPaths rewrites every parsed declaration path — dependency
-// scopes and ownership evidence — to its canonical repo-relative spelling
-// before validation and persistence, so the run snapshot, the stored session
-// result, and the finalize-time cache assembly all speak one path form
-// (see framework/validation_cache.md §Format: `./` prefixes, absolute paths,
-// and platform separators in a recorded path are equivalent).
+// normalizeDeclaredPaths rewrites every parsed declaration path — ownership
+// evidence — to its canonical repo-relative spelling before validation and
+// persistence, so the run snapshot and the stored session result speak one
+// path form (see framework/validation_cache.md §Format: `./` prefixes,
+// absolute paths, and platform separators in a recorded path are equivalent).
 func normalizeDeclaredPaths(absRoot string, parsed *parsedReport) {
-	for i := range parsed.Scopes {
-		parsed.Scopes[i].Path = gaterun.CanonicalDeclPath(absRoot, parsed.Scopes[i].Path)
-	}
 	for i := range parsed.Ownerships {
 		parsed.Ownerships[i].EvidencePath = gaterun.CanonicalDeclPath(absRoot, parsed.Ownerships[i].EvidencePath)
 	}
 }
 
-// validateSessionDeclarations validates every dependency-scope line's path
-// form, snapshot membership, and declaration parseability.
-func validateSessionDeclarations(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
-	// Merge the declarations of one check key onto one path: multiple scope
-	// lines for the same (key, path) declare the union of their scopes; a
-	// single "all" line makes the declaration whole-file.
-	type keyPath struct {
-		key  string
-		path string
-	}
-	merged := map[keyPath]*declParts{}
-	var order []keyPath
-	for _, s := range parsed.Scopes {
-		kp := keyPath{s.Key, s.Path}
-		m := merged[kp]
-		if m == nil {
-			m = &declParts{}
-			merged[kp] = m
-			order = append(order, kp)
-		}
-		d, derr := parseDecl(s.Declaration)
-		if derr != nil {
-			return fmt.Errorf("check %q declaration for %s: %w", kp.key, kp.path, derr)
-		}
-		mergeDecl(m, d)
-	}
-	for _, kp := range order {
-		m := merged[kp]
-		if err := validationcache.ValidateEntryPathForm(absRoot, run.TargetKind, run.TargetName, kp.path); err != nil {
-			return fmt.Errorf("check %q declaration %s: %w", kp.key, kp.path, err)
-		}
-		if !run.SessionAllowsDeclaration(absRoot, spec, kp.path) {
-			return fmt.Errorf("check %q declaration %q is not part of session %q's read refs — add it to the gate-plan input manifest or use the session that owns this input", kp.key, kp.path, spec.SessionID)
-		}
-		decl := validationcache.CheckDeclaration{Check: kp.key}
-		if !m.WholeFile {
-			decl.Sections = m.Sections
-			decl.Ranges = strings.Join(m.Ranges, ",")
-			decl.AcceptanceItems = m.Accepts
-			decl.AcceptanceItemIDs = m.Items
-		}
-		if _, err := validationcache.BuildEntryFromChecks(absRoot, kp.path, []validationcache.CheckDeclaration{decl}); err != nil {
-			return fmt.Errorf("check %q declaration for %s is invalid: %w", kp.key, kp.path, err)
-		}
-	}
-	return nil
-}
-
 func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, report string) error {
+	if spec.Kind == gaterun.SessionKindDeltaReview {
+		return nil
+	}
 	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.SessionKindCross {
 		return errors.New("ownership records belong to the final synthesis")
 	}
@@ -310,6 +265,9 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 		expectedStatus[gaterun.RelationshipKey(name)] = true
 	}
 	for _, ck := range run.Coverage {
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			continue
+		}
 		for _, key := range run.ReportKeys(ck) {
 			expectedStatus[key] = true
 		}
@@ -478,21 +436,6 @@ func validateCrossItemFindingLinks(gate string, parsed *parsedReport, retained [
 	return nil
 }
 
-// sessionDeclaresPath reports whether the report carries a Dependency scope
-// declaration for path. A cross session's evidence must be covered by a `cross`
-// scope line; other kinds match any of their own declarations.
-func sessionDeclaresPath(spec *gaterun.SessionSpec, parsed *parsedReport, path string) bool {
-	for _, scope := range parsed.Scopes {
-		if scope.Path != path {
-			continue
-		}
-		if spec.Kind != gaterun.SessionKindCross || scope.Key == gaterun.CrossKey {
-			return true
-		}
-	}
-	return false
-}
-
 // validateOwnerships applies the final synthesis's ownership records to the
 // terminal retained findings. Quality-lens findings whose recorded ownership
 // belongs to another unit are the deferrable class. Each record must
@@ -523,9 +466,6 @@ func validateOwnerships(absRoot string, run *gaterun.Run, spec *gaterun.SessionS
 		}
 		if !run.SessionAllowsDeclaration(absRoot, spec, ownership.EvidencePath) {
 			return nil, fmt.Errorf("ownership record for finding %q cites %q outside session %q's read refs", ownership.FindingID, ownership.EvidencePath, spec.SessionID)
-		}
-		if !sessionDeclaresPath(spec, parsed, ownership.EvidencePath) {
-			return nil, fmt.Errorf("ownership record for finding %q cites %q without a matching Dependency scope declaration", ownership.FindingID, ownership.EvidencePath)
 		}
 		if err := specpaths.ValidateTargetName("unit", ownership.OwnerUnit); err != nil {
 			return nil, fmt.Errorf("ownership record for finding %q: %w", ownership.FindingID, err)
@@ -574,15 +514,10 @@ func blockingFindingCount(findings []gaterun.Finding) int {
 }
 
 func sessionResult(spec *gaterun.SessionSpec, parsed *parsedReport, digest string) *gaterun.SessionResult {
-	scopes := make([]gaterun.Scope, 0, len(parsed.Scopes))
-	for _, scope := range parsed.Scopes {
-		scopes = append(scopes, gaterun.Scope{Key: scope.Key, Path: scope.Path, Declaration: scope.Declaration})
-	}
 	return &gaterun.SessionResult{
 		SessionID:               spec.SessionID,
 		Kind:                    spec.Kind,
 		Verdicts:                parsed.Verdicts,
-		Scopes:                  scopes,
 		Findings:                parsed.Findings,
 		Observations:            parsed.Observations,
 		ObservationDispositions: parsed.ObservationDispositions,
@@ -647,11 +582,9 @@ func writeGateSubmitUsage(w io.Writer) {
 	fmt.Fprintln(w, "covered by an accepted session, the session id matches the keys, its")
 	fmt.Fprintln(w, "dependencies are resolved, and the report is structurally complete — every")
 	fmt.Fprintln(w, "assigned check key has exactly one verdict line with an allowed token and")
-	fmt.Fprintln(w, "evidence basis, and gate-specific required fields are present; non-public check")
-	fmt.Fprintln(w, "keys declare at least one Dependency scope line inside the session read refs")
-	fmt.Fprintln(w, "(a public code check records the whole public evidence surface of its own")
-	fmt.Fprintln(w, "file — its coverage key's read refs — as its dependency, recorded by the")
-	fmt.Fprintln(w, "tooling).")
+	fmt.Fprintln(w, "evidence basis, and gate-specific required fields are present. Reports carry")
+	fmt.Fprintln(w, "no dependency declarations: the tooling records the run's whole input surface")
+	fmt.Fprintln(w, "as the cache evidence.")
 	fmt.Fprintln(w, "The optional final synthesis is submitted with --session cross --keys cross; it")
 	fmt.Fprintln(w, "must dispose every input finding, publish every effective logical status, and map")
 	fmt.Fprintln(w, "each new cross finding to the logical keys it makes fail. A valid report is")
@@ -668,28 +601,11 @@ func writeGateSubmitUsage(w io.Writer) {
 }
 
 func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
-	if run.Gate != gaterun.GateVerify {
+	if spec.Kind == gaterun.SessionKindDeltaReview {
 		return nil
 	}
-	if spec.Kind != gaterun.SessionKindCode && spec.Kind != gaterun.SessionKindCross {
-		for _, key := range spec.CheckKeys {
-			ck := run.CoverageByKey(key)
-			if ck.Kind == gaterun.SessionKindCode {
-				// A co-batched code key publishes facts only; it declares no
-				// unit spec evidence.
-				continue
-			}
-			main := "docs/specs/units/" + run.Target + "/unit_" + ck.Unit + ".md"
-			found := false
-			for _, scope := range parsed.Scopes {
-				if scope.Key == key && scope.Path == main {
-					found = true
-				}
-			}
-			if !found {
-				return fmt.Errorf("check %s must declare its unit spec evidence from %s", key, main)
-			}
-		}
+	if run.Gate != gaterun.GateVerify {
+		return nil
 	}
 	if spec.Kind == gaterun.SessionKindDesign {
 		observations := map[string]gaterun.Finding{}

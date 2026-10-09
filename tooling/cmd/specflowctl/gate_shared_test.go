@@ -50,6 +50,10 @@ func sharedFinish(t *testing.T, root, id string) {
 		if _, ok := covered[ck.Key]; ok {
 			continue
 		}
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			grSubmitOK(t, root, id, "review", "Review result: accept — shared fixture review\n")
+			continue
+		}
 		report := grDefaultQualityReport(run, ck)
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, run.RequiredFiles[0], "contracts.js")
@@ -378,11 +382,11 @@ func TestSharedNewCallerRequiresFreshCoverageAndPrivateDelta(t *testing.T) {
 
 func sharedValidateFixture(t *testing.T, root, unit string) {
 	t.Helper()
-	entry, err := validationcache.BuildEntry(root, validationcache.EntryDeclaration{Path: "docs/specs/units/candidate/unit_" + unit + ".md"})
+	entry, err := validationcache.BuildEvidenceEntry(root, "docs/specs/units/candidate/unit_"+unit+".md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", unit, validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Entries: []validationcache.FileEntry{entry}}); err != nil {
+	if _, err := validationcache.WriteCache(root, "unit", unit, validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Entries: []validationcache.FileEntry{*entry}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -554,16 +558,17 @@ func TestSharedSurfaceViewKeepsStableJudgmentBesideDraft(t *testing.T) {
 		t.Fatal("draft design falsely shown as reviewed", out.String())
 	}
 }
-func TestSharedRequiresPrivateSpecEvidenceAndTracksPublishedRules(t *testing.T) {
-	root, authSpec, _ := sharedFixture(t)
+
+// TestSharedItemJudgmentPinsItsSpecAndTracksPublishedRules pins the record
+// contract: an item judgment pins its own spec item region regardless of the
+// report's prose, and the published rule it read is recorded in the input
+// surface, so extending the rule stales the gate.
+func TestSharedItemJudgmentPinsItsSpecAndTracksPublishedRules(t *testing.T) {
+	root, _, _ := sharedFixture(t)
 	rule := "docs/specs/rules/stable/g_rule_contract.md"
 	grWriteFile(t, root, rule, "---\nid: g_rule_contract\nrule_scope: global\n---\n\n## Constraint\nPreserve token.\n")
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	body := grVerifyItemBody("item:auth:auth.core", "ALIGNED", "contracts.js:1") + "item:auth:auth.core: contracts.js: all\n"
-	if err := sharedSubmit(t, root, id, "item:auth:auth.core", body); err == nil || !strings.Contains(err.Error(), "unit spec evidence") {
-		t.Fatalf("unit judgment with no spec dependency was accepted: %v", err)
-	}
-	body += "item:auth:auth.core: " + authSpec + ": acceptance_item:auth.core\n"
 	if err := sharedSubmit(t, root, id, "item:auth:auth.core", body); err != nil {
 		t.Fatal(err)
 	}
@@ -573,14 +578,29 @@ func TestSharedRequiresPrivateSpecEvidenceAndTracksPublishedRules(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	tracked := false
+	regionPinned := false
 	for _, dep := range record.Dependencies {
-		if dep.Path == "rule:g_rule_contract" && dep.Hash != "" {
+		for _, d := range dep.Deps {
+			if strings.HasPrefix(d, "region:acceptance_item:auth.core:") {
+				regionPinned = true
+			}
+		}
+	}
+	if !regionPinned {
+		t.Fatalf("item judgment does not pin its own spec item region: %+v", record.Dependencies)
+	}
+	baseline, err := validationcache.ReadGateBaseline(root, "unit", "auth", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := false
+	for _, entry := range baseline.Entries {
+		if entry.Path == "rule:g_rule_contract" {
 			tracked = true
 		}
 	}
 	if !tracked {
-		t.Fatal("published rule omitted from item dependencies")
+		t.Fatal("published rule omitted from the recorded input surface")
 	}
 	file, err := os.OpenFile(filepath.Join(root, rule), os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {

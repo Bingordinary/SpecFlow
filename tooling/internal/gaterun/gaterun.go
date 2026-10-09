@@ -56,9 +56,10 @@ const (
 	TargetCandidate = "candidate"
 	TargetStable    = "stable"
 
-	// Run modes: full generates every session; delta derives the re-run set
-	// from a pass baseline's stale evidence; repair derives it from a
-	// failure record's status map.
+	// Run modes: full runs the complete coverage set; delta plans a change
+	// review over the mechanically detected change set plus the mechanically
+	// forced keys; repair adds a failure record's failed and invalidated
+	// judgments to the forced set.
 	ModeFull   = "full"
 	ModeDelta  = "delta"
 	ModeRepair = "repair"
@@ -231,13 +232,6 @@ type FindingOwnership struct {
 	Reason       string `json:"reason"`
 }
 
-// Scope is one dependency declaration parsed from a session report.
-type Scope struct {
-	Key         string `json:"key"`
-	Path        string `json:"path"`
-	Declaration string `json:"declaration"`
-}
-
 // FindingDisposition is the cross result's decision for one input finding.
 type FindingDisposition struct {
 	FindingID string `json:"finding_id"`
@@ -254,7 +248,6 @@ type SessionResult struct {
 	SessionID               string               `json:"session_id"`
 	Kind                    string               `json:"kind"`
 	Verdicts                map[string]string    `json:"verdicts,omitempty"`
-	Scopes                  []Scope              `json:"scopes,omitempty"`
 	Findings                []Finding            `json:"findings,omitempty"`
 	EffectiveStatus         map[string]string    `json:"effective_status,omitempty"`
 	QualityConclusions      map[string]string    `json:"quality_conclusions,omitempty"`
@@ -320,56 +313,43 @@ type SessionState struct {
 	ConsumedResultDigests map[string]string `json:"consumed_result_digests,omitempty"`
 }
 
-// CarriedEvidenceEntry is the plan-time snapshot of one baseline file entry
-// whose checks are carried over by a delta/repair run. The plan fixes it
-// before execution so gate-finalize merges carried evidence from the run's
-// immutable input instead of re-reading a baseline that another run may have
-// rewritten since (see framework/validation_cache.md §Write Rules → Tooled
-// writes). Deps carries only the declare-heavy remainder the entry owns
-// beyond its checks — file-level deps no check declared — so a re-run check's
-// superseded deps can never be resurrected into the new entry; each carried
-// check's own deps travel in Checks.
-type CarriedEvidenceEntry struct {
-	Path   string              `json:"path"`
-	Hash   string              `json:"hash"`
-	Deps   []string            `json:"deps,omitempty"`
-	Checks []CarriedCheckEntry `json:"checks,omitempty"`
-}
-
-// CarriedCheckEntry is one carried check's dependency evidence.
-type CarriedCheckEntry struct {
-	Check string   `json:"check"`
-	Lens  string   `json:"lens,omitempty"`
-	Deps  []string `json:"deps,omitempty"`
-}
-
 // Run is the persisted plan of one gate run: the immutable input snapshot,
 // the coverage set that must be judged, and the run mode. It carries no
 // sessions: the agent creates them under their chosen key batches.
 type Run struct {
-	PublicEvidence  map[string][]string          `json:"public_evidence,omitempty"`
-	RunID           string                       `json:"run_id"`
-	SchemaVersion   int                          `json:"schema_version,omitempty"`
-	Protocol        string                       `json:"protocol,omitempty"`
-	Records         map[string]judgments.Binding `json:"records,omitempty"`
-	Gate            string                       `json:"gate"`
-	TargetKind      string                       `json:"target_kind"`
-	TargetName      string                       `json:"target_name"`
-	Target          string                       `json:"target"`
-	CreatedAt       string                       `json:"created_at"`
-	Status          string                       `json:"status"`
-	Mode            string                       `json:"mode"`
-	Refs            []Ref                        `json:"refs"`
-	Surfaces        []Surface                    `json:"surfaces"`
-	ExtraInputs     []string                     `json:"extra_inputs,omitempty"`
-	RequiredFiles   []string                     `json:"required_files,omitempty"`
-	OwnSpecFiles    []string                     `json:"own_spec_files,omitempty"`
-	CarriedKeys     []string                     `json:"carried_keys,omitempty"`
-	CarriedEvidence []CarriedEvidenceEntry       `json:"carried_evidence,omitempty"`
-	RerunKeys       []string                     `json:"rerun_keys,omitempty"`
-	Coverage        []CoverageKey                `json:"coverage"`
-	Relationships   []string                     `json:"relationships"`
-	CarriedResults  []SessionResult              `json:"carried_results,omitempty"`
+	PublicEvidence map[string][]string          `json:"public_evidence,omitempty"`
+	RunID          string                       `json:"run_id"`
+	SchemaVersion  int                          `json:"schema_version,omitempty"`
+	Protocol       string                       `json:"protocol,omitempty"`
+	Records        map[string]judgments.Binding `json:"records,omitempty"`
+	Gate           string                       `json:"gate"`
+	TargetKind     string                       `json:"target_kind"`
+	TargetName     string                       `json:"target_name"`
+	Target         string                       `json:"target"`
+	CreatedAt      string                       `json:"created_at"`
+	Status         string                       `json:"status"`
+	Mode           string                       `json:"mode"`
+	Refs           []Ref                        `json:"refs"`
+	Surfaces       []Surface                    `json:"surfaces"`
+	ExtraInputs    []string                     `json:"extra_inputs,omitempty"`
+	RequiredFiles  []string                     `json:"required_files,omitempty"`
+	OwnSpecFiles   []string                     `json:"own_spec_files,omitempty"`
+	CarriedKeys    []string                     `json:"carried_keys,omitempty"`
+	CarriedLenses  map[string]string            `json:"carried_lenses,omitempty"`
+	RerunKeys      []string                     `json:"rerun_keys,omitempty"`
+	Coverage       []CoverageKey                `json:"coverage"`
+	Relationships  []string                     `json:"relationships"`
+	CarriedResults []SessionResult              `json:"carried_results,omitempty"`
+
+	// Review-scoped runs (delta) carry the mechanically detected change set
+	// and the recorded review outcome. The change set decides nothing itself;
+	// the reviewer's recorded judgment does (see internal/gaterun/review.go).
+	ChangeReport   *validationcache.ChangeReport `json:"change_report,omitempty"`
+	ChangeSetFP    string                        `json:"change_set_fingerprint,omitempty"`
+	BaselineKeys   []string                      `json:"baseline_keys,omitempty"`
+	BaselineStatus map[string]string             `json:"baseline_status,omitempty"`
+	Review         *ReviewRecord                 `json:"review,omitempty"`
+	Escalated      bool                          `json:"escalated,omitempty"`
 
 	// DeferredFindings are the pending deferrals this run's unit must dispose,
 	// loaded from the deferred-findings ledger at plan time (verify unit runs;
@@ -764,6 +744,11 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 			return nil, cerr
 		}
 		run.CarriedResults = carriedResults
+		lenses, cerr := capturedCarriedLenses(repoRoot, run, carried)
+		if cerr != nil {
+			return nil, cerr
+		}
+		run.CarriedLenses = lenses
 		if gate == GateVerify {
 			baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, gate)
 			if err != nil {
@@ -781,11 +766,6 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 				}
 			}
 		}
-		carriedEvidence, cerr := loadCarriedEvidence(repoRoot, run, carried)
-		if cerr != nil {
-			return nil, cerr
-		}
-		run.CarriedEvidence = carriedEvidence
 	}
 	run.RequiredFiles = required
 	run.Notices = notices

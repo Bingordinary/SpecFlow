@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,13 +32,13 @@ const (
 type CheckResult struct {
 	Status  Status
 	Details string
-	Note    string
 }
 
 type entry struct {
-	Path string
-	Hash string
-	Deps []string
+	Path    string
+	Hash    string
+	Chunker string
+	Chunks  []contenthash.ChunkRecord
 }
 
 type surface struct {
@@ -52,16 +53,15 @@ func baselinePath(repoRoot, kind, name string) string {
 	return filepath.Join(repoRoot, "docs/specs/meta/baseline", kind, name+".yaml")
 }
 
-// WriteUnitBaseline records the hash snapshot of the code surface declared by
-// the unit spec (implementation_surface + affects.files). Directories expand
-// to their repository-content files so that later additions are detected as
-// drift too. The <pending> placeholder is not a real surface and is skipped.
-// verifyDeps carries the dependency chunk CIDs declared by the promote-time
-// verify run (path -> deps, keys in canonical repo-relative slash form as
-// returned by ReadVerifyDeps): files with declared dependencies are judged on
-// chunk existence, files without them on the whole-file hash.
-func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) error {
-	path, data, err := PrepareUnitBaseline(repoRoot, unitName, specContent, verifyDeps)
+// WriteUnitBaseline records the evidence snapshot of the code surface
+// declared by the unit spec (implementation_surface + affects.files).
+// Directories expand to their repository-content files so that later
+// additions are detected as drift too. The <pending> placeholder is not a
+// real surface and is skipped. Each entry records the whole-file hash and the
+// ordered chunk sequence at promote time; drift detection compares them with
+// the same ordered bidirectional chunk diff the gates use.
+func WriteUnitBaseline(repoRoot, unitName, specContent string) error {
+	path, data, err := PrepareUnitBaseline(repoRoot, unitName, specContent)
 	if err != nil {
 		return err
 	}
@@ -70,19 +70,15 @@ func WriteUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[st
 
 // PrepareUnitBaseline computes the publication record without writing it.
 // Promote stages these bytes in the same transaction as accepted truth.
-func PrepareUnitBaseline(repoRoot, unitName, specContent string, verifyDeps map[string][]string) (string, []byte, error) {
+func PrepareUnitBaseline(repoRoot, unitName, specContent string) (string, []byte, error) {
 	surfaces, err := collectSurfaces(repoRoot,
 		specvalidation.ExtractImplementationSurfaces(specContent),
 		specvalidation.ExtractAffectsFiles(specContent))
 	if err != nil {
 		return "", nil, err
 	}
-	for i := range surfaces {
-		for j := range surfaces[i].Entries {
-			if deps, ok := verifyDeps[surfaces[i].Entries[j].Path]; ok {
-				surfaces[i].Entries[j].Deps = deps
-			}
-		}
+	if err := addChunkEvidence(repoRoot, surfaces); err != nil {
+		return "", nil, err
 	}
 	return baselinePath(repoRoot, "unit", unitName), renderBaseline("unit", unitName, surfaces), nil
 }
@@ -106,7 +102,12 @@ func PrepareRuleBaseline(repoRoot, ruleID, artifactPath string) (string, []byte,
 	if err != nil {
 		return "", nil, err
 	}
-	s := surface{Path: "docs/specs/rules/stable/" + ruleID + ".md", Entries: []entry{{Path: "docs/specs/rules/stable/" + ruleID + ".md", Hash: hash}}}
+	text, err := contenthash.FileText(artifactPath)
+	if err != nil {
+		return "", nil, err
+	}
+	e := entry{Path: "docs/specs/rules/stable/" + ruleID + ".md", Hash: hash, Chunker: contenthash.ChunkerVersion, Chunks: contenthash.ChunkRecords(text)}
+	s := surface{Path: e.Path, Entries: []entry{e}}
 	return baselinePath(repoRoot, "rule", ruleID), renderBaseline("rule", ruleID, []surface{s}), nil
 }
 
@@ -186,6 +187,23 @@ func collectSurfaces(repoRoot string, surfacePaths, filePaths []string) ([]surfa
 	return surfaces, nil
 }
 
+// addChunkEvidence fills each surface entry with the ordered chunk sequence of
+// its current content.
+func addChunkEvidence(repoRoot string, surfaces []surface) error {
+	for i := range surfaces {
+		for j := range surfaces[i].Entries {
+			full := filepath.Join(repoRoot, filepath.FromSlash(surfaces[i].Entries[j].Path))
+			text, err := contenthash.FileText(full)
+			if err != nil {
+				return err
+			}
+			surfaces[i].Entries[j].Chunker = contenthash.ChunkerVersion
+			surfaces[i].Entries[j].Chunks = contenthash.ChunkRecords(text)
+		}
+	}
+	return nil
+}
+
 // ------------------------------------------------------------
 // Serialization (YAML subset, dependency-free)
 // ------------------------------------------------------------
@@ -205,10 +223,13 @@ func renderBaseline(kind, name string, surfaces []surface) []byte {
 		for _, e := range s.Entries {
 			fmt.Fprintf(&buf, "      - path: %q\n", e.Path)
 			fmt.Fprintf(&buf, "        hash: %q\n", e.Hash)
-			if len(e.Deps) > 0 {
-				buf.WriteString("        deps:\n")
-				for _, d := range e.Deps {
-					fmt.Fprintf(&buf, "          - %q\n", d)
+			if e.Chunker != "" && len(e.Chunks) > 0 {
+				fmt.Fprintf(&buf, "        chunker: %q\n", e.Chunker)
+				buf.WriteString("        chunks:\n")
+				for _, c := range e.Chunks {
+					fmt.Fprintf(&buf, "          - cid: %q\n", c.CID)
+					fmt.Fprintf(&buf, "            start: %d\n", c.StartLine)
+					fmt.Fprintf(&buf, "            end: %d\n", c.EndLine)
 				}
 			}
 		}
@@ -237,7 +258,7 @@ func readBaseline(path string) (*parsedBaseline, error) {
 	b := &parsedBaseline{}
 	var cur *surface
 	var curEntry *entry
-	inDeps := false
+	inChunks := false
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
@@ -250,24 +271,38 @@ func readBaseline(path string) (*parsedBaseline, error) {
 			}
 			cur.Entries = append(cur.Entries, entry{Path: unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")))})
 			curEntry = &cur.Entries[len(cur.Entries)-1]
-			inDeps = false
+			inChunks = false
 		case strings.HasPrefix(line, "        hash:"):
 			if curEntry != nil {
 				curEntry.Hash = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "hash:")))
 			}
-		case strings.HasPrefix(line, "        deps:"):
+		case strings.HasPrefix(line, "        chunker:"):
 			if curEntry != nil {
-				inDeps = true
+				curEntry.Chunker = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "chunker:")))
 			}
-		case strings.HasPrefix(line, "          - "):
-			if inDeps && curEntry != nil {
-				curEntry.Deps = append(curEntry.Deps, unquote(strings.TrimSpace(strings.TrimPrefix(line, "          - "))))
+		case strings.HasPrefix(line, "        chunks:"):
+			if curEntry != nil {
+				inChunks = true
+			}
+		case strings.HasPrefix(trimmed, "- cid:"):
+			if inChunks && curEntry != nil {
+				curEntry.Chunks = append(curEntry.Chunks, contenthash.ChunkRecord{CID: unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- cid:")))})
+			}
+		case strings.HasPrefix(trimmed, "start:"):
+			if inChunks && curEntry != nil && len(curEntry.Chunks) > 0 {
+				n, _ := strconv.Atoi(unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "start:"))))
+				curEntry.Chunks[len(curEntry.Chunks)-1].StartLine = n
+			}
+		case strings.HasPrefix(trimmed, "end:"):
+			if inChunks && curEntry != nil && len(curEntry.Chunks) > 0 {
+				n, _ := strconv.Atoi(unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "end:"))))
+				curEntry.Chunks[len(curEntry.Chunks)-1].EndLine = n
 			}
 		case strings.HasPrefix(trimmed, "- path:"):
 			b.surfaces = append(b.surfaces, surface{Path: unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")))})
 			cur = &b.surfaces[len(b.surfaces)-1]
 			curEntry = nil
-			inDeps = false
+			inChunks = false
 		case strings.HasPrefix(trimmed, "kind:"):
 			b.kind = strings.TrimSpace(strings.TrimPrefix(trimmed, "kind:"))
 		case strings.HasPrefix(trimmed, "name:"):
@@ -298,7 +333,8 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 		return CheckResult{Status: StatusChanged, Details: fmt.Sprintf("cannot read baseline: %v", err)}
 	}
 
-	var changed, missing, added, notes []string
+	var changedDetail []string
+	var missing, added []string
 	for _, s := range b.surfaces {
 		full := filepath.Join(repoRoot, filepath.FromSlash(s.Path))
 		info, err := os.Stat(full)
@@ -317,79 +353,50 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 			if err != nil {
 				return CheckResult{Status: StatusChanged, Details: fmt.Sprintf("cannot expand surface %q: %v", s.Path, err)}
 			}
-			currentEntries := make(map[string]string)
+			currentPaths := make(map[string]bool, len(files))
 			for _, f := range files {
-				currentEntries[f.Path] = f.Hash
+				currentPaths[f.Path] = true
 			}
 			for p, be := range baselineEntries {
-				ce, ok := currentEntries[p]
-				if !ok {
+				if !currentPaths[p] {
 					missing = append(missing, p)
 					continue
 				}
-				if len(be.Deps) > 0 {
-					ok, note := depsPresent(filepath.Join(repoRoot, filepath.FromSlash(p)), be)
-					if !ok {
-						changed = append(changed, p)
-					} else if note != "" {
-						notes = append(notes, note)
-					}
-					continue
-				}
-				if ce != be.Hash {
-					changed = append(changed, p)
+				if detail, drifted := entryDrift(repoRoot, p, be); drifted {
+					changedDetail = append(changedDetail, detail)
 				}
 			}
-			for p := range currentEntries {
-				if _, ok := baselineEntries[p]; !ok {
-					added = append(added, p)
+			for _, f := range files {
+				if _, ok := baselineEntries[f.Path]; !ok {
+					added = append(added, f.Path)
 				}
 			}
 			continue
 		}
 		// File surface
 		if len(s.Entries) != 1 {
-			changed = append(changed, s.Path)
+			changedDetail = append(changedDetail, s.Path+" (surface changed)")
 			continue
 		}
 		e := s.Entries[0]
-		if len(e.Deps) > 0 {
-			ok, note := depsPresent(full, e)
-			if !ok {
-				changed = append(changed, e.Path)
-			} else if note != "" {
-				notes = append(notes, note)
-			}
-			continue
-		}
-		currentHash, err := specpaths.FileHash(full)
-		if err != nil {
-			missing = append(missing, e.Path)
-			continue
-		}
-		if currentHash != e.Hash {
-			changed = append(changed, e.Path)
+		if detail, drifted := entryDrift(repoRoot, e.Path, e); drifted {
+			changedDetail = append(changedDetail, detail)
 		}
 	}
 
-	sort.Strings(changed)
+	sort.Strings(changedDetail)
 	sort.Strings(missing)
 	sort.Strings(added)
-	sort.Strings(notes)
+	changedDetail = dedupeStrings(changedDetail)
+	missing = dedupeStrings(missing)
+	added = dedupeStrings(added)
 
-	if len(changed) == 0 && len(missing) == 0 && len(added) == 0 {
-		if len(notes) > 0 {
-			return CheckResult{
-				Status:  StatusOK,
-				Details: "code surface matches the promote-time baseline (outside the declared dependencies)",
-				Note:    strings.Join(notes, "; "),
-			}
-		}
+	if len(changedDetail) == 0 && len(missing) == 0 && len(added) == 0 {
 		return CheckResult{Status: StatusOK, Details: "code surface matches the promote-time baseline"}
 	}
 	var parts []string
-	if len(changed) > 0 {
-		parts = append(parts, "changed: "+strings.Join(changed, ", "))
+	if len(changedDetail) > 0 {
+		parts = append(parts, "changed: "+strings.Join(changedDetail, ", "))
 	}
 	if len(missing) > 0 {
 		parts = append(parts, "missing: "+strings.Join(missing, ", "))
@@ -400,31 +407,57 @@ func checkBaseline(repoRoot, kind, name string) CheckResult {
 	return CheckResult{Status: StatusChanged, Details: strings.Join(parts, "; ") + " — code changed since promote, run verify against stable to confirm"}
 }
 
-// depsPresent reports whether every declared dependency CID still exists in
-// the file's current content. Chunk CIDs are matched against the chunk set;
-// structural region dependencies (`region:<type>:<cid>`, e.g. a dependency
-// unit's acceptance_item_set) are re-located by structure and compared by
-// content identity. ok=false means a declared dependency is gone — the file
-// drifted. ok=true with a non-empty note means the content changed outside
-// the declared dependencies: informational only, the file is still considered
-// conforming (mirrors the cache freshness note semantics in
-// framework/validation_cache.md).
-func depsPresent(full string, e entry) (bool, string) {
-	data, err := os.ReadFile(full)
+// dedupeStrings collapses adjacent duplicates (inputs are sorted).
+func dedupeStrings(in []string) []string {
+	if len(in) < 2 {
+		return in
+	}
+	out := in[:1]
+	for _, s := range in[1:] {
+		if s != out[len(out)-1] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// entryDrift compares one baseline entry against current content. With a
+// recorded chunk sequence the comparison is the same ordered bidirectional
+// chunk diff the gates use, and the detail names the changed line spans. A
+// legacy baseline entry without chunks falls back to whole-file hash equality.
+func entryDrift(repoRoot, rel string, be entry) (string, bool) {
+	full := filepath.Join(repoRoot, filepath.FromSlash(rel))
+	text, err := contenthash.FileText(full)
 	if err != nil {
-		return false, ""
+		return be.Path + " (unreadable)", true
 	}
-	text := specpaths.NormalizeText(string(data))
-
-	if !contenthash.DepsPresent(text, e.Deps) {
-		return false, ""
+	if len(be.Chunks) > 0 {
+		changes := contenthash.DiffChunks(be.Chunks, text)
+		if len(changes) == 0 {
+			return "", false
+		}
+		var spans []string
+		for _, c := range changes {
+			switch c.Kind {
+			case contenthash.ChangeAdded:
+				spans = append(spans, fmt.Sprintf("added lines %d-%d", c.StartLine, c.EndLine))
+			case contenthash.ChangeChanged:
+				spans = append(spans, fmt.Sprintf("changed lines %d-%d", c.StartLine, c.EndLine))
+			case contenthash.ChangeRemoved:
+				if c.StartLine == c.EndLine {
+					spans = append(spans, fmt.Sprintf("removed near line %d", c.StartLine))
+				} else {
+					spans = append(spans, fmt.Sprintf("removed between lines %d-%d", c.StartLine, c.EndLine))
+				}
+			}
+		}
+		return be.Path + " (" + strings.Join(spans, "; ") + ")", true
 	}
-
 	currentHash := contenthash.FileHashText(text)
-	if e.Hash != "" && normalizeCID(currentHash) != normalizeCID(e.Hash) {
-		return true, fmt.Sprintf("%s: content changed outside declared dependencies — re-verify if semantic coupling exists", e.Path)
+	if be.Hash != "" && normalizeCID(currentHash) != normalizeCID(be.Hash) {
+		return be.Path + " (content changed; no localization recorded)", true
 	}
-	return true, ""
+	return "", false
 }
 
 // normalizeCID strips a "sha256:" prefix so stored and computed CIDs compare

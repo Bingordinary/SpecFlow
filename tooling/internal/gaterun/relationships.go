@@ -2,6 +2,7 @@ package gaterun
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -50,60 +51,104 @@ func (r *Run) AllRelationships() []string {
 	return append([]string{}, dedupeSorted(names)...)
 }
 
-// ScopeKeys separates the final session's summary verdict from each
-// relationship's evidence. Cross evidence is for finding dispositions only.
-func (s *SessionSpec) ScopeKeys() []string {
-	keys := append([]string(nil), s.CheckKeys...)
-	for _, name := range s.Relationships {
-		keys = append(keys, RelationshipKey(name))
-	}
-	return keys
-}
-
-func (s *SessionSpec) RequiredScopeKeys() []string {
-	if s.Kind != SessionKindCross || len(s.Relationships) == 0 {
-		return append([]string(nil), s.CheckKeys...)
-	}
-	var keys []string
-	for _, name := range s.Relationships {
-		keys = append(keys, RelationshipKey(name))
-	}
-	return keys
-}
-
-// A full local review still preserves unchanged relationship evidence. This
-// keeps later re* runs aware of relationships established by earlier changes.
-func fullRelationshipScope(repoRoot string, run *Run) ([]string, error) {
+// planFullRunCarry preserves the baseline's standing relationship
+// conclusions in a full run. Failed conclusions re-run; unchanged pass
+// conclusions carry mechanically when nothing changed, and otherwise await a
+// change review (the run gains the `review` coverage key and the reviewer
+// accepts or names rechecks). There is no mechanical staleness scope: an
+// explicit --rerun key or a failed baseline status forces a re-run, the
+// reviewer judges the recorded change set for everything else.
+func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 	if run.TargetKind == TargetKindRule {
-		return nil, nil
+		return nil, nil, nil
 	}
 	baseline, err := validationcache.ReadGateBaseline(repoRoot, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !baseline.Exists {
-		return nil, nil
+		return nil, nil, nil
 	}
 	state, err := validatedJudgmentState(baseline)
 	if err != nil {
-		return nil, nil
-	} // A full run does not rely on an unusable baseline.
-	scope, err := validationcache.DeriveStaleScope(repoRoot, run.TargetKind, run.TargetName, run.Gate)
-	if err != nil {
-		return nil, err
+		// A full run does not rely on an unusable baseline: the assigned
+		// relationships re-run, the rest cannot be enumerated.
+		return nil, nil, nil
 	}
-	var carried []string
+	var candidates, notices []string
 	for _, name := range state.Relationships {
 		key := RelationshipKey(name)
 		if !stringInSlice(RelationshipNames(run.Gate), name) {
-			return nil, fmt.Errorf("baseline declares unknown relationship %q", name)
+			return nil, nil, fmt.Errorf("baseline declares unknown relationship %q", name)
 		}
-		if stringInSlice(run.Relationships, name) || state.LogicalStatus[key] != "pass" || stringInSlice(scope.Affected, key) || len(scope.Unreadable) > 0 || len(scope.Untrackable) > 0 {
+		if stringInSlice(run.Relationships, name) {
+			continue
+		}
+		if state.LogicalStatus[key] != "pass" {
 			run.Relationships = appendUnique(run.Relationships, name)
-		} else {
-			carried = append(carried, key)
+			notices = append(notices, "baseline relationship "+key+" did not pass — it re-runs")
+			continue
 		}
+		candidates = append(candidates, key)
 	}
 	run.Relationships = dedupeSorted(run.Relationships)
-	return dedupeSorted(carried), nil
+	if len(candidates) == 0 {
+		return nil, notices, nil
+	}
+	report, err := validationcache.DeriveChangeReport(repoRoot, run.TargetKind, run.TargetName, run.Gate)
+	if err != nil {
+		return nil, nil, err
+	}
+	// New physical inputs the baseline never recorded are part of the change
+	// set: the reviewer sees them as added files. Logical references resolve
+	// through the freshness chain and are not duplicated here.
+	if run.Gate == GateVerify {
+		recorded := map[string]bool{}
+		for _, entry := range baseline.Entries {
+			recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+		}
+		for _, p := range extraInputPaths(run) {
+			if isLogicalRef(p) {
+				continue
+			}
+			clean := filepath.ToSlash(filepath.Clean(p))
+			if recorded[clean] {
+				continue
+			}
+			report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: p, Kind: "added"})
+		}
+	}
+	if len(report.Legacy()) > 0 {
+		// The change is known but not localizable: the standing conclusions
+		// re-run instead of being reviewed unanchored.
+		for _, key := range candidates {
+			run.Relationships = appendUnique(run.Relationships, relationshipName(key))
+		}
+		run.Relationships = dedupeSorted(run.Relationships)
+		notices = append(notices, "the standing relationship conclusions cannot be localized against the baseline evidence — they re-run: "+strings.Join(candidates, ", "))
+		return nil, notices, nil
+	}
+	fingerprint, err := report.Fingerprint()
+	if err != nil {
+		return nil, nil, err
+	}
+	run.ChangeSetFP = fingerprint
+	run.ChangeReport = report
+	if run.BaselineStatus == nil {
+		run.BaselineStatus = map[string]string{}
+	}
+	for _, key := range candidates {
+		run.BaselineKeys = append(run.BaselineKeys, key)
+		run.BaselineStatus[key] = state.LogicalStatus[key]
+	}
+	run.BaselineKeys = dedupeSorted(run.BaselineKeys)
+	if report.Empty() {
+		// Nothing changed since promote: the standing conclusions carry
+		// mechanically and the run needs no review session.
+		run.ChangeSetFP = ""
+		run.ChangeReport = nil
+		notices = append(notices, "no content change — the standing relationship conclusions carry mechanically: "+strings.Join(candidates, ", "))
+		return candidates, notices, nil
+	}
+	return candidates, notices, nil
 }

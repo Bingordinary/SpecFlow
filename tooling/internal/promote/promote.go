@@ -265,12 +265,7 @@ func Promote(repoRoot, unitName string) *Result {
 	}
 
 	// Prepare every mandatory artifact before changing accepted truth.
-	verifyDeps, err := validationcache.ReadVerifyDeps(repoRoot, unitName)
-	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Cannot read verify dependency evidence: %v", err))
-		return r
-	}
-	baselinePath, baselineData, err := baseline.PrepareUnitBaseline(repoRoot, unitName, content, verifyDeps)
+	baselinePath, baselineData, err := baseline.PrepareUnitBaseline(repoRoot, unitName, content)
 	if err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to prepare baseline: %v", err))
 		return r

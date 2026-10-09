@@ -42,8 +42,8 @@ func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	}
 }
 
-// writeVerifyCache writes a minimal passing verify cache for the unit so
-// promote can read the verify-time dependency evidence (ReadVerifyDeps).
+// writeVerifyCache writes a minimal passing verify cache for the unit so the
+// promote flow consumes a realistically shaped candidate cache set.
 func writeVerifyCache(t *testing.T, repoRoot, unit string) {
 	t.Helper()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", unit)
@@ -224,18 +224,19 @@ func writeRuleValidateCache(t *testing.T, repoRoot, ruleID string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fc, err := contenthash.ChunkFile(rulePath)
+	text, err := contenthash.FileText(rulePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var deps strings.Builder
-	if len(fc.Chunks) > 0 {
-		deps.WriteString("    deps:\n")
+	records := contenthash.ChunkRecords(text)
+	var chunks strings.Builder
+	if len(records) > 0 {
+		chunks.WriteString("    chunker: " + contenthash.ChunkerVersion + "\n    chunks:\n")
 	}
-	for _, c := range fc.Chunks {
-		fmt.Fprintf(&deps, "      - %s\n", c.CID)
+	for _, c := range records {
+		fmt.Fprintf(&chunks, "      - cid: \"%s\"\n        start: %d\n        end: %d\n", c.CID, c.StartLine, c.EndLine)
 	}
-	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n" + deps.String() + "---\n"
+	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n" + chunks.String() + "---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -899,17 +900,15 @@ func TestPromoteUnit_WritesBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify cache carrying declared dependency CIDs for the code file. The
-	// code file path is recorded as an absolute path — the same variant the
-	// gate's resolvePath tolerates — proving ReadVerifyDeps canonicalizes
-	// keys before the baseline matching (a non-canonical key would silently
-	// drop the deps and the assertion below would fail).
+	// Verify pass cache for the code surface. The baseline no longer copies
+	// verify-time dependency declarations: promote computes each surface
+	// file's whole-file hash and ordered chunk sequence itself.
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/demo")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	depCID := contenthash.CID([]byte(codeContent))
-	cache := "---\ncommand: verify\nunit: demo\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-01-01T00:00:00Z\"\nfiles:\n  - path: \"docs/specs/units/candidate/unit_demo.md\"\n    hash: \"sha256:abc\"\n  - path: \"" + codePath + "\"\n    hash: \"" + depCID + "\"\n    deps:\n      - \"" + depCID + "\"\n---\n"
+	cache := "---\ncommand: verify\nunit: demo\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-01-01T00:00:00Z\"\nfiles:\n  - path: \"docs/specs/units/candidate/unit_demo.md\"\n    hash: \"sha256:abc\"\n  - path: \"" + codePath + "\"\n    hash: \"" + depCID + "\"\n---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -924,21 +923,8 @@ func TestPromoteUnit_WritesBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline not written: %v", err)
 	}
-	if !strings.Contains(string(data), "deps:") || !strings.Contains(string(data), depCID) {
-		t.Fatalf("baseline missing verify dependency CIDs:\n%s", data)
-	}
-}
-
-func TestPromoteUnit_NoVerifyCacheFails(t *testing.T) {
-	repoRoot := t.TempDir()
-	writeCandidateUnit(t, repoRoot, "demo")
-
-	result := Promote(repoRoot, "demo")
-	if result.Passed {
-		t.Fatal("expected promote to fail without verify dependency evidence")
-	}
-	if !strings.Contains(strings.Join(result.Issues, " "), "verify dependency evidence") {
-		t.Fatalf("expected verify dependency issue, got: %v", result.Issues)
+	if !strings.Contains(string(data), "chunker:") || !strings.Contains(string(data), "chunks:") {
+		t.Fatalf("baseline missing chunk evidence:\n%s", data)
 	}
 }
 

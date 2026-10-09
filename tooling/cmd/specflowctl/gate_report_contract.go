@@ -89,6 +89,21 @@ type gateReportContract struct {
 
 func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateReportContract {
 	c := gateReportContract{Format: "text", Verdicts: []reportVerdict{}, Requirements: []reportRequirement{}}
+	if session.Kind == gaterun.SessionKindDeltaReview {
+		c.Verdicts = append(c.Verdicts, reportVerdict{
+			Line:              "Review result",
+			Allowed:           []string{"accept", "recheck", "escalate-full"},
+			ReasonRequiredFor: []string{"accept", "recheck", "escalate-full"},
+		})
+		c.Requirements = append(c.Requirements, reportRequirement{
+			ID:          "review-result",
+			Description: "exactly one `Review result: accept|recheck|escalate-full` line with a reason",
+			When:        "always", MinCount: 1, MaxCount: 1,
+			Allowed: []string{"accept", "recheck", "escalate-full"},
+		})
+		c.Template = "Review result: <accept|recheck|escalate-full> — <reason>\nRecheck: <key>[, <key>...]   # required when the result is recheck\n"
+		return c
+	}
 	var lines []string
 	codeKeys := map[string]bool{}
 	for _, key := range session.CheckKeys {
@@ -143,7 +158,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			if kind == gaterun.SessionKindArchitecture {
 				lines = append(lines, "Suppressed by spec (0):")
 			}
-			lines = append(lines, "Dependency scope:", key+": <read_ref>: <section|range|all>", "")
+			lines = append(lines, "")
 
 		case gaterun.SessionKindCross:
 			if items := crossItemsFor(run); len(items) > 0 {
@@ -205,7 +220,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 	}
 	if session.Kind == gaterun.SessionKindDesign {
-		add("quality-file-block", "exactly one File: <assigned path> block per file; verdicts, assessments, findings and dependency scopes belong to that file", "")
+		add("quality-file-block", "exactly one File: <assigned path> block per file; verdicts, assessments, and findings belong to that file", "")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		for _, field := range []string{"spec_requirements"} {
 			add("quality-"+field, "exactly one assessment and non-empty basis per file block", "")
@@ -240,9 +255,6 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1
 			c.Requirements[len(c.Requirements)-1].CountBasis = "failed_cross_items"
-		}
-		for _, item := range run.Relationships {
-			lines = append(lines, gaterun.RelationshipKey(item)+": <read_ref>: <section|range|all>")
 		}
 		add("cross-dispositions", "dispose every input finding once", "Finding disposition: <finding_id> = <retained|suppressed|merged> [reason or merge target]")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "input_findings"
@@ -279,30 +291,6 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		}
-	}
-	scopeExample := "Dependency scope:\n  <check_key>: <read_ref>: <section|range|acceptance_item:id|acceptance_items|all>"
-	scopeDescription := "at least one declaration per executed check key; file must be in read_refs"
-	switch {
-	case len(codeKeys) == len(session.CheckKeys):
-		scopeDescription = "no Dependency scope lines: the tooling records each check's own public evidence surface (its coverage key's read refs) as its whole-file dependency"
-		scopeExample = "# No Dependency scope lines — the tooling records each public code check's own public evidence surface (its coverage key's read refs)."
-	case len(codeKeys) > 0:
-		scopeDescription = "at least one declaration per executed design or architecture check key; file must be in read_refs (public code checks need none — the tooling records their whole public evidence surface)"
-	}
-	if session.Kind == gaterun.SessionKindCross {
-		scopeExample = "# Declare each assigned relationship's read evidence under relationship:<name>; use cross: for finding-disposition evidence."
-		if len(session.Relationships) == 0 {
-			scopeExample += "\nDependency scope:\n  cross: <read_ref>: <section|range|all>"
-		}
-	}
-	if session.Kind == gaterun.SessionKindDesign {
-		scopeExample = ""
-	}
-	add("dependency-scope", scopeDescription, scopeExample)
-	c.Requirements[len(c.Requirements)-1].MaxCount = -1
-	c.Requirements[len(c.Requirements)-1].CountBasis = "per_check_key"
-	if len(codeKeys) == len(session.CheckKeys) {
-		c.Requirements[len(c.Requirements)-1].MinCount = 0
 	}
 	c.Template = strings.Join(lines, "\n")
 	return c

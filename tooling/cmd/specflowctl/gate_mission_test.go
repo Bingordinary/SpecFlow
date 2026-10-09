@@ -102,12 +102,11 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if mission.Sessions[0].LastRejection != "" || strings.Contains(jsonOut.String(), "last_rejection") || strings.Contains(prompt.String(), "Previous submission was rejected:") {
 		t.Fatalf("first-attempt mission carries retry feedback: %s", prompt.String())
 	}
-	for _, want := range []string{mission.RunID, mission.Sessions[0].ProtocolRef, "Checks: 1, 3, 6", "Dependency scope:", "gate-submit"} {
+	for _, want := range []string{mission.RunID, mission.Sessions[0].ProtocolRef, "Checks: 1, 3, 6", "gate-submit"} {
 		if !strings.Contains(prompt.String(), want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, prompt.String())
 		}
 	}
-	main := "docs/specs/units/candidate/unit_auth.md"
 	report := mission.Sessions[0].ReportContract.Template
 	for _, pair := range [][2]string{
 		{"1. <check name>: <PASS|WARNING|FAIL> — <reason>", "1. Structural integrity: PASS — checked"},
@@ -117,8 +116,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		report = strings.Replace(report, pair[0], pair[1], 1)
 	}
 	report = strings.Replace(report, "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>\n", "", 1)
-	report = strings.Replace(report, "Finding affects: <finding_id> = <check_key>[,<check_key>...]\n", "", 1)
-	report = strings.Replace(report, "  <check_key>: <read_ref>: <section|range|acceptance_item:id|acceptance_items|all>", "  check-1: "+main+": frontmatter\n  check-3: "+main+": Description\n  check-6: "+main+": Description", 1)
+	report = strings.Replace(report, "Finding affects: <finding_id> = <check_key>[,<check_key>...]", "", 1)
 	if strings.Contains(report, "<") {
 		t.Fatalf("unfilled report template:\n%s", report)
 	}
@@ -251,14 +249,10 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 		strings.Contains(code.Sessions[0].ReportContract.Template, "Dependency scope:") {
 		t.Fatalf("public code mission template must carry facts only, got:\n%s", code.Sessions[0].ReportContract.Template)
 	}
-	scopeRecorded := false
 	for _, req := range code.Sessions[0].ReportContract.Requirements {
-		if req.ID == "dependency-scope" && strings.Contains(req.Description, "no Dependency scope lines") {
-			scopeRecorded = true
+		if strings.Contains(req.Description, "Dependency scope") {
+			t.Fatalf("public code mission must not carry a dependency-scope requirement, got %+v", req)
 		}
-	}
-	if !scopeRecorded {
-		t.Fatalf("public code mission must state that the tooling records the evidence surface, got %+v", code.Sessions[0].ReportContract.Requirements)
 	}
 	if !strings.Contains(strings.Join(code.Constraints, "\n"), "missing read ref: <repo-relative path>") {
 		t.Fatalf("public code mission lacks the missing-read-ref constraint: %v", code.Constraints)

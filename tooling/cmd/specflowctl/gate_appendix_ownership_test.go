@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -171,31 +170,27 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	sharedFinish(t, root, id)
-	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
-	record, err := judgments.Load(root, state.Records[key].Reference)
+	baseline, err := validationcache.ReadGateBaseline(root, "unit", "auth", "verify")
 	if err != nil {
 		t.Fatal(err)
 	}
 	foundPeer := false
-	for _, dep := range record.Dependencies {
-		if dep.Path == peerRef {
+	for _, entry := range baseline.Entries {
+		if entry.Path == peerRef {
 			foundPeer = true
-			if dep.Own {
-				t.Fatal("peer appendix became an own-spec dependency")
-			}
 		}
 	}
 	if !foundPeer {
-		t.Fatal("explicit peer evidence lost its logical binding")
+		t.Fatal("explicit peer evidence lost its logical binding in the recorded input surface")
 	}
 	sharedValidateFixture(t, root, "auth")
 	var entries []validationcache.FileEntry
 	for _, path := range []string{main, own} {
-		entry, err := validationcache.BuildEntry(root, validationcache.EntryDeclaration{Path: path})
+		entry, err := validationcache.BuildEvidenceEntry(root, path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		entries = append(entries, entry)
+		entries = append(entries, *entry)
 	}
 	if _, err := validationcache.WriteCache(root, "unit", "auth", validationcache.CacheWrite{Command: "validate", Unit: "auth", Mode: "full", Result: "pass", Target: "candidate", Entries: entries}); err != nil {
 		t.Fatal(err)

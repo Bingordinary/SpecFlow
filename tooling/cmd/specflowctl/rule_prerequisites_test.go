@@ -32,11 +32,11 @@ func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs 
 	specRef := specpaths.CandidateUnitSpecFileRef(name)
 	var validateEntries []validationcache.FileEntry
 	for _, ref := range append([]string{specRef}, ruleInputs...) {
-		entry, err := validationcache.BuildEntry(root, validationcache.EntryDeclaration{Path: ref})
+		entry, err := validationcache.BuildEvidenceEntry(root, ref)
 		if err != nil {
 			t.Fatal(err)
 		}
-		validateEntries = append(validateEntries, entry)
+		validateEntries = append(validateEntries, *entry)
 	}
 	if _, err := validationcache.WriteCache(root, "unit", name, validationcache.CacheWrite{
 		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Entries: validateEntries,

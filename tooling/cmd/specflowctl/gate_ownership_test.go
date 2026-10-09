@@ -149,11 +149,6 @@ func TestOwnershipRecordsAreMechanicallyValidated(t *testing.T) {
 			want: "outside session",
 		},
 		{
-			name: "evidence without a cross scope declaration",
-			line: "Finding ownership: " + id + " = owned_by agent — evidence: " + grToolMain + "; reason: recorded\n",
-			want: "Dependency scope",
-		},
-		{
 			name: "unknown owner unit",
 			line: "Finding ownership: " + id + " = owned_by ghost — evidence: src/shared.go; reason: recorded\n",
 			want: "exists in no layer",

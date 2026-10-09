@@ -94,10 +94,16 @@ func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
 		grWriteFile(t, root, change.path, "changed relationship: "+change.name+"\n")
 		deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, a, b))
 		run := mustLoadRun(t, root, deltaID)
-		if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != change.name {
-			t.Fatalf("delta repeated local work or lost relationship scope: %+v", run)
+		if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+			t.Fatalf("expected the review coverage only, got %s", got)
 		}
-		if view, err := gateRunSnapshot(root, run); err != nil || view.NextAction != "synthesize" {
+		// The reviewer attributes the evidence change to the relationship.
+		grSubmitOK(t, root, deltaID, "review", "Review result: recheck — evidence changed\nRecheck: relationship:"+change.name+"\n")
+		updated := mustLoadRun(t, root, deltaID)
+		if strings.Join(updated.Relationships, ",") != change.name {
+			t.Fatalf("delta lost the rechecked relationship scope: %+v", updated)
+		}
+		if view, err := gateRunSnapshot(root, updated); err != nil || view.NextAction != "synthesize" {
 			t.Fatalf("relationship-only delta must synthesize: %+v %v", view, err)
 		}
 		if _, err := grSubmitRaw(t, root, deltaID, "cross", relationshipReport(t, root, deltaID, evidence, "")); err != nil {
@@ -130,9 +136,13 @@ func TestGateRelationshipOnlyRepair(t *testing.T) {
 	grWriteFile(t, root, path, "reconciled relationship\n")
 	repairID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
 	run := mustLoadRun(t, root, repairID)
-	if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != "coverage_scope" {
-		t.Fatalf("repair must recheck the failed relationship only: %+v", run)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+		t.Fatalf("repair must review the changed evidence and recheck the failed relationship only: %+v", run)
 	}
+	if strings.Join(run.Relationships, ",") != "coverage_scope" {
+		t.Fatalf("repair lost the failed relationship: %+v", run)
+	}
+	grReviewAccept(t, root, repairID)
 	if _, err := grSubmitRaw(t, root, repairID, "cross", relationshipReport(t, root, repairID, evidence, "")); err != nil {
 		t.Fatal(err)
 	}
@@ -189,9 +199,13 @@ func TestGateDeltaIntroducesRelationshipWithoutLocalChanges(t *testing.T) {
 	grFinalizeOK(t, root, runID)
 	deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "coverage_scope")
 	run := mustLoadRun(t, root, deltaID)
-	if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != "coverage_scope" {
-		t.Fatalf("new relationship should not repeat fresh local judgments: %+v", run)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+		t.Fatalf("expected the review coverage only, got %s", got)
 	}
+	if strings.Join(run.Relationships, ",") != "coverage_scope" {
+		t.Fatalf("new relationship scope lost: %+v", run)
+	}
+	grReviewAccept(t, root, deltaID)
 	if _, err := grSubmitRaw(t, root, deltaID, "cross", relationshipReport(t, root, deltaID, map[string]string{"coverage_scope": main}, "")); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +221,6 @@ func TestGateRelationshipReportRejectsUnassignedOrUnboundWork(t *testing.T) {
 	fail := relationshipReport(t, root, runID, map[string]string{"coverage_scope": main}, "coverage_scope")
 	for _, tc := range []struct{ report, want string }{
 		{pass + "Cross item: design_constraints = PASS — unassigned\n", "unknown Cross item"},
-		{strings.ReplaceAll(pass, "relationship:coverage_scope: "+main+": all\n", ""), "declares no Dependency scope"},
 		{strings.ReplaceAll(fail, "Finding affects: "+runID+"/cross/F1 = relationship:coverage_scope", "Finding affects: "+runID+"/cross/F1 = 2"), "finding must affect"},
 		{pass + "[P2] local — repeats a local audit (actionable)\nFinding affects: " + runID + "/cross/F1 = 2\n", "must explain a failed assigned relationship"},
 	} {

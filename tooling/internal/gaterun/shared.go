@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -642,10 +643,6 @@ func BoundJudgmentResult(record *judgments.Record, ck CoverageKey, layer string)
 		result.EffectiveStatus = map[string]string{ck.Key: status}
 		break
 	}
-	for i := range result.Scopes {
-		result.Scopes[i].Key = ck.Key
-		result.Scopes[i].Path = bindOwnPath(result.Scopes[i].Path, record, layer)
-	}
 	for i := range result.Findings {
 		result.Findings[i].SourceKey = ck.Key
 		result.Findings[i].AffectedKeys = nil
@@ -671,19 +668,6 @@ func normalizeOwnInputs(root string, inputs []string, unit, layer string) ([]str
 	}
 	sort.Strings(out)
 	return out, nil
-}
-func bindOwnPath(p string, record *judgments.Record, layer string) string {
-	for _, dep := range record.Dependencies {
-		if !dep.Own {
-			continue
-		}
-		for _, old := range []string{TargetStable, TargetCandidate} {
-			if p == judgments.InputPath(dep, record.Unit, old) {
-				return judgments.InputPath(dep, record.Unit, layer)
-			}
-		}
-	}
-	return p
 }
 
 // PublishPublic accepts public evidence independently of unit synthesis. A
@@ -747,7 +731,6 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	}
 	copyResult := *result
 	copyResult.Verdicts = map[string]string{ck.Key: result.Verdicts[ck.Key]}
-	copyResult.Scopes = nil
 	copyResult.Findings = nil
 	copyResult.Observations = nil
 	copyResult.ObservationDispositions = nil
@@ -783,14 +766,6 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 			}
 		}
 	}
-	var deps []judgments.Dependency
-	for _, scope := range result.Scopes {
-		if scope.Key != ck.Key {
-			continue
-		}
-		copyResult.Scopes = append(copyResult.Scopes, scope)
-		inputs = appendUnique(inputs, scope.Path)
-	}
 	for _, f := range result.Findings {
 		if f.SourceKey == ck.Key {
 			copyResult.Findings = append(copyResult.Findings, f)
@@ -801,42 +776,95 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 			copyResult.Observations = append(copyResult.Observations, f)
 		}
 	}
-	// Every read code file uses whole-file identity. Spec scopes use the
-	// existing region dependencies assembled by the command layer below.
-	for _, p := range inputs {
-		declared := false
-		for _, scope := range copyResult.Scopes {
-			if scope.Path == p {
-				declared = true
-			}
-		}
-		isRule := strings.HasPrefix(p, "rule:") || strings.HasPrefix(p, "docs/specs/rules/")
-		isSpec := strings.HasPrefix(p, "docs/specs/") || isLogicalRef(p)
-		if ck.Kind != SessionKindCode && isSpec && !declared && !isRule {
-			continue
-		}
+	// Record dependencies are the conclusion's own object, derived from the
+	// spec structure and the run's input surface — never from a report
+	// declaration (the declaration layer was removed with the change-review
+	// model). The delta mechanical floor re-runs a key when its own object
+	// changed; every other change is the change review's business.
+	mainSpec := mainSpecRef(run)
+	mainSpecText := func() (string, error) {
+		return contenthash.FileText(filepath.Join(root, filepath.FromSlash(mainSpec)))
+	}
+	verifySnapshot := func(p string) (string, error) {
 		h, ok := run.SnapshotHash(root, p)
 		if !ok || h == "" {
-			return judgments.Reference{}, fmt.Errorf("judgment input %s absent from snapshot", p)
+			return "", fmt.Errorf("judgment input %s absent from snapshot", p)
 		}
 		current := refreshRef(root, Ref{Ref: p})
 		if current.Hash != h {
-			return judgments.Reference{}, fmt.Errorf("judgment input changed: %s", p)
+			return "", fmt.Errorf("judgment input changed: %s", p)
+		}
+		return h, nil
+	}
+	ownPath := func(p string) (string, bool) {
+		if suffix, ok := judgments.OwnSuffix(p, unit, layer, owned); ok {
+			return suffix, true
+		}
+		return p, false
+	}
+	var deps []judgments.Dependency
+	addWholeFile := func(p string) error {
+		h, err := verifySnapshot(p)
+		if err != nil {
+			return err
 		}
 		dep := judgments.Dependency{Path: p, Hash: h}
-		if ck.Kind != SessionKindCode && isSpec && !isRule {
-			dep.Hash = ""
-			dep.Deps = recordSpecDeps(root, p, ck.Key, result.Scopes)
-		}
-		if suffix, ok := judgments.OwnSuffix(p, unit, layer, owned); ok {
-			dep.Path = suffix
-			dep.Own = true
-		}
-
-		if dep.Hash == "" && len(dep.Deps) == 0 {
-			dep.Hash = h
-		}
+		dep.Path, dep.Own = ownPath(p)
 		deps = append(deps, dep)
+		return nil
+	}
+	addRegion := func(p, dep string) error {
+		if _, err := verifySnapshot(p); err != nil {
+			return err
+		}
+		d := judgments.Dependency{Path: p, Deps: []string{dep}}
+		d.Path, d.Own = ownPath(p)
+		deps = append(deps, d)
+		return nil
+	}
+	switch ck.Kind {
+	case SessionKindCode:
+		// The public record covers a whole public evidence surface: every
+		// read ref is pinned whole-file.
+		for _, p := range inputs {
+			if err := addWholeFile(p); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+	case SessionKindItem:
+		text, err := mainSpecText()
+		if err != nil {
+			return judgments.Reference{}, err
+		}
+		region, ok := contenthash.LocateAcceptanceItemRegion(text, ck.Item)
+		if !ok {
+			return judgments.Reference{}, fmt.Errorf("acceptance item %q region cannot be located in %s — the judgment cannot be pinned", ck.Item, mainSpec)
+		}
+		if err := addRegion(mainSpec, "region:acceptance_item:"+ck.Item+":"+contenthash.RegionCID(region.Text)); err != nil {
+			return judgments.Reference{}, err
+		}
+	case SessionKindDesign:
+		// A design judgment reviews the named file against the whole unit
+		// spec: both are its own object, so both are pinned whole-file.
+		if err := addWholeFile(mainSpec); err != nil {
+			return judgments.Reference{}, err
+		}
+		if err := addWholeFile(ck.File); err != nil {
+			return judgments.Reference{}, err
+		}
+	case SessionKindArchitecture:
+		// Architecture covers the whole unit: the spec and every declared
+		// code-surface file are pinned whole-file.
+		if err := addWholeFile(mainSpec); err != nil {
+			return judgments.Reference{}, err
+		}
+		for _, f := range surfaceFiles(run, false) {
+			if err := addWholeFile(f); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+	default:
+		return judgments.Reference{}, fmt.Errorf("no record inputs are defined for session kind %q", ck.Kind)
 	}
 	data, err := json.Marshal(copyResult)
 	if err != nil {
@@ -854,33 +882,6 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		}
 	}
 	return judgments.Save(root, record)
-}
-
-// Scope dependencies use the same cache builder as gate-finalize.
-func recordSpecDeps(root, path, key string, scopes []Scope) []string {
-	var out []string
-	for _, scope := range scopes {
-		if scope.Key != key || scope.Path != path {
-			continue
-		}
-		declaration := validationcache.CheckDeclaration{Check: key}
-		switch d := scope.Declaration; {
-		case d == "all":
-		case d == "acceptance_items":
-			declaration.AcceptanceItems = true
-		case strings.HasPrefix(d, "acceptance_item:"):
-			declaration.AcceptanceItemIDs = strings.Split(strings.TrimPrefix(d, "acceptance_item:"), ",")
-		case len(d) > 0 && d[0] >= '0' && d[0] <= '9':
-			declaration.Ranges = d
-		default:
-			declaration.Sections = []string{d}
-		}
-		entry, err := validationcache.BuildEntryFromChecks(root, path, []validationcache.CheckDeclaration{declaration})
-		if err == nil {
-			out = appendUnique(out, entry.Deps...)
-		}
-	}
-	return out
 }
 
 func RecordForKey(run *Run, key string) (judgments.Binding, bool) {

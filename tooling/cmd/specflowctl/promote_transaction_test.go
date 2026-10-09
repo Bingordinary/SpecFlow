@@ -176,7 +176,7 @@ func TestPromoteTransactionFailureAndRetry(t *testing.T) {
 					proposed := publicationRuleText(name, "bound", "New constraint.")
 					grWriteFile(t, root, candidate, proposed)
 					grWriteFile(t, root, stable, publicationRuleText(name, "bound", "Old constraint."))
-					writeRuleCache(t, root, name, []cacheFileSpec{{path: candidate, hash: computeHash(proposed)}})
+					writeRuleCache(t, root, name, []cacheFileSpec{{path: candidate, hash: computeHash(filepath.Join(root, filepath.FromSlash(candidate)))}})
 				}
 				baselineDir := "docs/specs/meta/baseline/" + kind
 				baselineFile := baselineDir + "/" + name + ".yaml"
@@ -248,7 +248,7 @@ func TestRulePublicationConfirmation(t *testing.T) {
 	}{
 		{"new_rule_control", false, false, ""},
 		{"identical_content", true, false, "Validate input before processing."},
-		{"changed_rule_stales_prior_evidence", true, true, "Prior constraint."},
+		{"changed_rule_supersedes_prior_evidence", true, true, "Prior constraint."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)
@@ -296,12 +296,15 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			t.Log(fresh)
 			after, err := validationcache.CheckRuleValidateStable(root, id)
 			if tc.livePrior {
-				if err != nil || after.Fresh {
-					t.Fatalf("stale prior evidence must block a fresh confirmation: %+v %v", after, err)
+				// The promoted artifact defines the confirmation: the prior
+				// stable publication that promotion replaces must not pin the
+				// confirmation to superseded content.
+				if err != nil || !after.Fresh {
+					t.Fatalf("promoted confirmation must be FRESH: %+v %v", after, err)
 				}
-				scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate")
-				if err != nil || strings.Join(scope.Affected, ",") != "6" {
-					t.Fatalf("expected check 6 to require recheck after a content change: %+v %v", scope, err)
+				report, rerr := validationcache.DeriveChangeReport(root, "rule", id, "validate")
+				if rerr != nil || !report.Empty() {
+					t.Fatalf("no content change after promote: %+v %v", report, rerr)
 				}
 				return
 			}
@@ -319,8 +322,9 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			if err != nil || changed.Fresh {
 				t.Fatalf("consumer change was lost by projection: %+v %v", changed, err)
 			}
-			if scope, err := validationcache.DeriveStaleScope(root, "rule", id, "validate"); err != nil || strings.Join(scope.Affected, ",") != "4" {
-				t.Fatalf("wrong consumer delta scope: %+v %v", scope, err)
+			report, rerr := validationcache.DeriveChangeReport(root, "rule", id, "validate")
+			if rerr != nil || report.Empty() {
+				t.Fatalf("expected the consumer change in the change report: %+v %v", report, rerr)
 			}
 		})
 	}

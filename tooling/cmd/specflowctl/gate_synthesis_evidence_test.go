@@ -12,34 +12,29 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-func assertSynthesisEvidenceKeys(t *testing.T, root, gate, path string, keys []string) {
+// assertSynthesisEvidenceRecorded verifies that the evidence a final
+// synthesis relied on is part of the recorded input surface (its file is a
+// cache entry), so a later change to it is visible to the change report, and
+// that the final synthesis never creates an independent cache check.
+func assertSynthesisEvidenceRecorded(t *testing.T, root, gate, path string) {
 	t.Helper()
 	baseline, err := validationcache.ReadGateBaseline(root, "unit", "auth", gate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
+	found := false
 	for _, entry := range baseline.Entries {
 		for _, check := range entry.Checks {
 			if check.Check == gaterun.CrossKey {
 				t.Fatal("final synthesis created an independent cache check")
 			}
-			if entry.Path == path {
-				got = append(got, check.Check)
-				if len(check.Deps) == 0 {
-					t.Fatalf("synthesis evidence has no dependencies for %s", check.Check)
-				}
-				for _, dep := range check.Deps {
-					if !containsString(entry.Deps, dep) {
-						t.Fatalf("synthesis evidence is missing from the file-level union: %s", check.Check)
-					}
-				}
-			}
+		}
+		if gaterun.CanonicalDeclPath(root, entry.Path) == gaterun.CanonicalDeclPath(root, path) {
+			found = true
 		}
 	}
-	sortCheckKeys(got)
-	if strings.Join(got, ",") != strings.Join(keys, ",") {
-		t.Fatalf("%s evidence keys = %v, want %v", path, got, keys)
+	if !found {
+		t.Fatalf("synthesis evidence %s is missing from the recorded input surface", path)
 	}
 }
 
@@ -59,7 +54,7 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 	grSubmitClarity(t, root, id, main)
 	grSubmitOK(t, root, id, "cross", "Cross-check: PASS — complete decision resolves the apparent contradiction\nFinding disposition: "+grRunFindingID(id, "design", 1)+" = suppressed — the decision evidence resolves the apparent contradiction\nEffective status: 2 = pass\nEffective status: cross = pass\ncross: "+proof+": all\n")
 	grFinalizeOK(t, root, id)
-	assertSynthesisEvidenceKeys(t, root, "validate", proof, []string{"2"})
+	assertSynthesisEvidenceRecorded(t, root, "validate", proof)
 	currentVerifyFixture(t, root, "auth", "candidate", "")
 	check, err := validationcache.CheckValidate(root, "auth")
 	if err != nil || !check.Fresh {
@@ -68,9 +63,10 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 
 	// An unrelated delta must carry the suppression's dependency with check 2.
 	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "5", "--inputs-file", grInputsManifest(t, proof))
+	grReviewAccept(t, root, delta)
 	grSubmitPlannedValidateSessions(t, root, delta, main)
 	grFinalizeOK(t, root, delta)
-	assertSynthesisEvidenceKeys(t, root, "validate", proof, []string{"2"})
+	assertSynthesisEvidenceRecorded(t, root, "validate", proof)
 
 	grWriteFile(t, root, proof, "The decision now confirms the design contradiction.\n")
 	check, err = validationcache.CheckValidate(root, "auth")
@@ -97,7 +93,13 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 
 	delta = grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, proof))
 	run := mustLoadRun(t, root, delta)
-	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design" || len(run.Relationships) != 0 {
+	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+		t.Fatalf("expected the review coverage only, got %s", got)
+	}
+	// Changed suppression evidence must re-run the design group only.
+	grReviewRecheck(t, root, delta, "2")
+	run = mustLoadRun(t, root, delta)
+	if len(run.Coverage) != 2 || run.Coverage[0].Key != "review" || run.Coverage[1].Key != "design" || len(run.Relationships) != 0 {
 		t.Fatalf("changed suppression evidence must rerun only design checks 2/4: %+v", run)
 	}
 	grSubmitOK(t, root, delta, "design", grValidateReport([]string{"2", "4"}, map[string][]string{"2": {desc, proof + ": all"}, "4": {desc}}))
@@ -123,9 +125,10 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	contract := "evidence/contract.md"
 	grWriteFile(t, root, contract, "The contract requires a consistent combined design.\n")
 	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "design_constraints", "--inputs-file", grInputsManifest(t, proof, contract))
-	if run := mustLoadRun(t, root, delta); len(run.Coverage) != 0 || !stringInList(run.CarriedKeys, "2") {
+	if run := mustLoadRun(t, root, delta); strings.Join(coverageKeysOf(run), ",") != "review" || !stringInList(run.CarriedKeys, "2") {
 		t.Fatalf("relationship-only run must carry the local design judgment: %+v", run)
 	}
+	grReviewAccept(t, root, delta)
 	relationship := gaterun.RelationshipKey("design_constraints")
 	report := relationshipReport(t, root, delta, map[string]string{"design_constraints": contract}, "design_constraints")
 	report = strings.ReplaceAll(report, "Finding affects: "+delta+"/cross/F1 = "+relationship, "Finding affects: "+delta+"/cross/F1 = "+relationship+", 2")
@@ -133,7 +136,7 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	report += "cross: " + proof + ": all\n"
 	grSubmitOK(t, root, delta, "cross", report)
 	grFinalizeOK(t, root, delta)
-	assertSynthesisEvidenceKeys(t, root, "validate", proof, []string{"2", relationship})
+	assertSynthesisEvidenceRecorded(t, root, "validate", proof)
 
 	// A finding that connects a new relationship and a carried local judgment
 	// must keep both sides' original evidence, not only the new cross input.
@@ -145,28 +148,34 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	if err := os.WriteFile(main, []byte(changed), 0644); err != nil {
 		t.Fatal(err)
 	}
-	scope, err := validationcache.DeriveStaleScope(root, "unit", "auth", "validate")
-	if err != nil || !stringInList(scope.Affected, relationship) {
-		t.Fatalf("synthesis dropped the carried source judgment's evidence: %+v %v", scope, err)
+	changeReport, rerr := validationcache.DeriveChangeReport(root, "unit", "auth", "validate")
+	if rerr != nil || changeReport.Empty() {
+		t.Fatalf("a recorded main-spec change must appear in the change report: %+v %v", changeReport, rerr)
 	}
 	if err := os.WriteFile(main, original, 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	grWriteFile(t, root, proof, "The combined design now satisfies the contract.\n")
-	scope, err = validationcache.DeriveStaleScope(root, "unit", "auth", "validate")
-	if err != nil {
+	changeReport, rerr = validationcache.DeriveChangeReport(root, "unit", "auth", "validate")
+	if rerr != nil {
 		t.Fatal(err)
 	}
-	sortCheckKeys(scope.Affected)
-	if strings.Join(scope.Affected, ",") != "2,"+relationship || len(scope.Unclaimed) != 0 {
-		t.Fatalf("new synthesis evidence must stale the carried key and relationship: %+v", scope)
+	localized := false
+	for _, entry := range changeReport.Entries {
+		if gaterun.CanonicalDeclPath(root, entry.Path) == gaterun.CanonicalDeclPath(root, proof) {
+			localized = true
+		}
+	}
+	if !localized {
+		t.Fatalf("new synthesis evidence must appear in the change report: %+v", changeReport)
 	}
 	repair := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--inputs-file", grInputsManifest(t, proof))
 	run := mustLoadRun(t, root, repair)
-	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design" || strings.Join(run.Relationships, ",") != "design_constraints" {
-		t.Fatalf("repair must recheck the contradicted carried judgment and relationship: %+v", run)
+	if strings.Join(coverageKeysOf(run), ",") != "review,design" || strings.Join(run.Relationships, ",") != "design_constraints" {
+		t.Fatalf("repair must review the changed evidence and recheck the failed judgment and relationship: %+v", run)
 	}
+	grReviewAccept(t, root, repair)
 	grSubmitPlannedValidateSessions(t, root, repair, main)
 	grSubmitOK(t, root, repair, "cross", relationshipReport(t, root, repair, map[string]string{"design_constraints": proof}, ""))
 	grFinalizeOK(t, root, repair)
@@ -189,16 +198,17 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 
 	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	key := "item:auth:auth.core"
-	if run := mustLoadRun(t, root, delta); len(run.Coverage) != 0 || !stringInList(run.CarriedKeys, key) {
+	if run := mustLoadRun(t, root, delta); strings.Join(coverageKeysOf(run), ",") != "review" || !stringInList(run.CarriedKeys, key) {
 		t.Fatalf("relationship-only run must carry the item: %+v", run)
 	}
+	grReviewAccept(t, root, delta)
 	report := relationshipReport(t, root, delta, map[string]string{"contract_consistency": proof}, "")
 	report = strings.ReplaceAll(report, "Finding disposition: "+finding+" = retained", "Finding disposition: "+finding+" = suppressed — the complete decision proves alignment")
 	report = strings.ReplaceAll(report, "Effective status: "+key+" = fail", "Effective status: "+key+" = pass")
 	report += "cross: " + proof + ": all\ncross: " + main + ": Description\n"
 	grSubmitOK(t, root, delta, "cross", report)
 	grFinalizeOK(t, root, delta)
-	assertSynthesisEvidenceKeys(t, root, "verify", proof, []string{"code:contracts.js", key, gaterun.RelationshipKey("contract_consistency")})
+	assertSynthesisEvidenceRecorded(t, root, "verify", proof)
 	record := synthesisItemRecord(t, root, "auth")
 	if record.Verdict != "ALIGNED" {
 		t.Fatalf("carried mismatch was not suppressed: %s", record.Verdict)
@@ -206,15 +216,18 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
 	binding := state.Records[key]
 	grWriteFile(t, root, proof, "The full contract confirms the local mismatch.\n")
-	if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err == nil {
-		t.Fatal("changed synthesis evidence left the immutable item judgment fresh")
+	// The item record pins only its own spec object: a changed synthesis
+	// evidence file does not invalidate it mechanically — the recorded change
+	// set below is what the delta review judges.
+	if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err != nil {
+		t.Fatalf("the item record's own object is unchanged; it must stay valid: %v", err)
 	}
 	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || check.Fresh {
 		t.Fatalf("changed synthesis evidence left verify fresh: %+v %v", check, err)
 	}
-	scope, err := validationcache.DeriveStaleScope(root, "unit", "auth", "verify")
-	if err != nil || !stringInList(scope.Affected, key) {
-		t.Fatalf("synthesis evidence did not select the item for delta work: %+v %v", scope, err)
+	changeReport, rerr := validationcache.DeriveChangeReport(root, "unit", "auth", "verify")
+	if rerr != nil || changeReport.Empty() {
+		t.Fatalf("changed synthesis evidence did not appear in the change report: %+v %v", changeReport, rerr)
 	}
 }

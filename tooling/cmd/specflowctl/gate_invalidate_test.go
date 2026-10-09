@@ -13,14 +13,11 @@ import (
 func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
-	entry, err := validationcache.BuildEntryFromChecks(repoRoot, "docs/specs/units/candidate/unit_auth.md", []validationcache.CheckDeclaration{{
-		Check:    "auth.core",
-		Status:   "pass",
-		Sections: []string{"Description"},
-	}})
+	entry, err := validationcache.BuildEvidenceEntry(repoRoot, "docs/specs/units/candidate/unit_auth.md")
 	if err != nil {
 		t.Fatal(err)
 	}
+	entry.Checks = []validationcache.CheckEntry{{Check: "auth.core", Status: "pass"}}
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
 		Command:   "verify",
 		Unit:      "auth",
@@ -32,7 +29,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 		P1Count:   1,
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: `{"schema_version":3,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
-		Entries:   []validationcache.FileEntry{entry},
+		Entries:   []validationcache.FileEntry{*entry},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -106,19 +103,20 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 
 	statuses := map[string]string{}
-	var decls []validationcache.CheckDeclaration
+	var checks []validationcache.CheckEntry
 	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.ClarityCheck, gaterun.CrossKey} {
 		status := "pass"
 		if key == "1" {
 			status = "fail"
 		}
 		statuses[key] = status
-		decls = append(decls, validationcache.CheckDeclaration{Check: key, Status: status, Sections: []string{"Description"}})
+		checks = append(checks, validationcache.CheckEntry{Check: key, Status: status})
 	}
-	entry, err := validationcache.BuildEntryFromChecks(repoRoot, main, decls)
+	entry, err := validationcache.BuildEvidenceEntry(repoRoot, main)
 	if err != nil {
 		t.Fatal(err)
 	}
+	entry.Checks = checks
 	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +132,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		P1Count:   1,
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: string(judgments),
-		Entries:   []validationcache.FileEntry{entry},
+		Entries:   []validationcache.FileEntry{*entry},
 	}); err != nil {
 		t.Fatal(err)
 	}

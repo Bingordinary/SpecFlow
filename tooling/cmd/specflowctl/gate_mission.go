@@ -205,6 +205,8 @@ type missionSession struct {
 	ReadInputs       []missionReadInput        `json:"read_inputs"`
 	DependsOn        []string                  `json:"depends_on"`
 	Context          []string                  `json:"context,omitempty"`
+	ChangeSet        []string                  `json:"change_set,omitempty"`
+	Standing         []string                  `json:"standing_conclusions,omitempty"`
 	Dependencies     []missionDependency       `json:"dependency_results"`
 	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
@@ -268,6 +270,24 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule {
 		session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
 	}
+	// A run with a review session (delta/repair, or a full run preserving
+	// standing relationship conclusions) shows every session the mechanically
+	// detected change set and the standing conclusions it must judge against.
+	if run.ChangeReport != nil {
+		for _, entry := range run.ChangeReport.Entries {
+			switch entry.Kind {
+			case "changed":
+				for _, c := range entry.Changes {
+					session.ChangeSet = append(session.ChangeSet, fmt.Sprintf("%s: %s lines %d-%d", entry.Path, c.Kind, c.StartLine, c.EndLine))
+				}
+			default:
+				session.ChangeSet = append(session.ChangeSet, entry.Path+": "+entry.Kind)
+			}
+		}
+		for _, key := range run.BaselineKeys {
+			session.Standing = append(session.Standing, key+": "+run.BaselineStatus[key])
+		}
+	}
 	if state.Status == gaterun.SessionRejected {
 		if len(state.Attempts) == 0 || strings.TrimSpace(state.Attempts[len(state.Attempts)-1].RejectionReason) == "" {
 			return gateMission{}, fmt.Errorf("rejected session %q has no rejection reason", spec.SessionID)
@@ -283,8 +303,8 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	glossary := []missionTerm{
 		{"session", "one independently reviewed batch of coverage keys in a gate run", framework + "/verification_scope.md §Coverage model"},
 		{"check_keys", "the checks this session must report, excluding carried checks", framework + "/verification_scope.md §Session record"},
-		{"read_refs", "the exact evidence entries this session may declare", framework + "/verification_scope.md §Session record"},
-		{"Dependency scope", "the files and regions a judgment used; declared by the reviewer, recorded by the tooling for public code checks", framework + "/validation_cache.md §Dependency Declaration"},
+		{"read_refs", "the exact evidence files this session may read", framework + "/verification_scope.md §Session record"},
+		{"input surface", "every file a run records as evidence; each cache entry holds the whole-file hash and ordered chunk sequence", framework + "/validation_cache.md §Format"},
 	}
 	if spec.Kind == gaterun.SessionKindCross {
 		glossary = append(glossary,
@@ -386,6 +406,18 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 
 	fmt.Fprintf(w, "Run: %s\nGate: %s\nTarget kind: %s\nTarget name: %s\nTarget layer: %s\nSession: %s\nKind: %s\nChecks: %s\nMode: %s\n", mission.RunID, mission.Gate, mission.TargetKind, mission.TargetName, mission.Target, p.SessionID, p.Kind, strings.Join(p.CheckKeys, ", "), mission.Mode)
 	fmt.Fprintf(w, "Spec source: %s\n", mission.SpecSource)
+	if len(p.ChangeSet) > 0 {
+		fmt.Fprintln(w, "Change set (mechanically detected; complete for the input surface):")
+		for _, line := range p.ChangeSet {
+			fmt.Fprintf(w, "  - %s\n", line)
+		}
+	}
+	if len(p.Standing) > 0 {
+		fmt.Fprintln(w, "Standing conclusions (accepted):")
+		for _, line := range p.Standing {
+			fmt.Fprintf(w, "  - %s\n", line)
+		}
+	}
 	if p.Kind == gaterun.SessionKindCross {
 		fmt.Fprintf(w, "Assigned relationships: %s\n", strings.Join(p.Relationships, ", "))
 	}
@@ -579,6 +611,8 @@ func missionTextFor(kind string) string {
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
 	case gaterun.SessionKindCross:
 		return "Check only the assigned relationships using current source and accepted/carried judgments. Do not repeat local checks. Dispose existing findings and raise severity conservatively on retain or merge — the tooling derives the effective status map from your dispositions and findings. An empty relationship scope means finding disposition only."
+	case gaterun.SessionKindDeltaReview:
+		return "Review the change set against the standing conclusions: accept them, name the keys that must re-run, or escalate to a full run. Produce no check verdicts; focus on the changed content but read any input-surface file you need for context."
 	}
 	return "Judge only the session's check keys and report evidence for each judgment."
 }
@@ -591,6 +625,8 @@ func protocolScopeFor(kind string, keys []string) string {
 		return "quality assessment of " + strings.Join(keys, ", ")
 	case gaterun.SessionKindCross:
 		return "cross synthesis"
+	case gaterun.SessionKindDeltaReview:
+		return "change review"
 	default:
 		return "checks " + strings.Join(keys, ", ")
 	}

@@ -34,7 +34,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	targetPtr := fs.String("target", "", "layer checked: candidate | stable")
 	modePtr := fs.String("mode", "full", "run mode: full | delta | repair")
 	formatPtr := fs.String("format", "text", "output format: text | json")
-	relationshipsPtr := fs.String("relationships", "", "relationships touched by this change: comma-separated names, or none (required for units)")
+	relationshipsPtr := fs.String("relationships", "", "relationships touched by this change: comma-separated names, or none (required for full unit runs)")
 	var inputsFile string
 	inputsFileSet := false
 	fs.Func("inputs-file", "input manifest: a plain text file with one extra read input per line — a path, a directory, or a logical reference (single use)", func(v string) error {
@@ -79,9 +79,10 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	var relationships []string
 	if targetKind == gaterun.TargetKindUnit {
 		if strings.TrimSpace(*relationshipsPtr) == "" {
-			return errors.New("--relationships is required for unit runs: declare the relationships touched by this change, or none")
-		}
-		if strings.TrimSpace(*relationshipsPtr) != "none" {
+			if mode == gaterun.ModeFull {
+				return errors.New("--relationships is required for full unit runs: declare the relationships touched by this change, or none")
+			}
+		} else if strings.TrimSpace(*relationshipsPtr) != "none" {
 			relationships = splitKeys(*relationshipsPtr)
 			if len(relationships) == 0 {
 				return errors.New("--relationships must name relationships or explicitly declare none")
@@ -177,7 +178,7 @@ func requireGateTarget(gate, unitName, ruleID, target string, stderr io.Writer) 
 
 func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME --relationships NAMES|none | --rule ID) --target candidate|stable [--mode full|delta|repair] [--inputs-file PATH] [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME | --rule ID) --target candidate|stable [--relationships NAMES|none] [--mode full|delta|repair] [--inputs-file PATH] [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Fixes the immutable input snapshot and computes the coverage set for a")
 	fmt.Fprintln(w, "quality-gate run before any executor reads input. The tooling resolves the")
@@ -189,19 +190,22 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "One open run exists per (gate, target, layer); a new plan replaces the previous")
 	fmt.Fprintln(w, "run.")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Every file a session report may declare must be inside the snapshot. The derived")
-	fmt.Fprintln(w, "surface covers the gate's protocol inputs; --inputs-file lists extra evidence that")
-	fmt.Fprintln(w, "sessions may read and declare but that never creates coverage keys. The manifest is")
+	fmt.Fprintln(w, "Every file a run records as evidence — and every path a report cites")
+	fmt.Fprintln(w, "(ownership evidence) — must be inside the snapshot. The derived surface")
+	fmt.Fprintln(w, "covers the gate's protocol inputs; --inputs-file lists extra evidence that")
+	fmt.Fprintln(w, "sessions may read but that never creates coverage keys. The manifest is")
 	fmt.Fprintln(w, "a plain text file with one path, directory, or logical reference per line; blank")
 	fmt.Fprintln(w, "lines are skipped and entries are used verbatim. It is scratch input, not evidence:")
 	fmt.Fprintln(w, "keep it under an ignored local-state path such as meta/plan_inputs/ or outside the")
 	fmt.Fprintln(w, "repository — a manifest that is a repository-content file is rejected before the")
-	fmt.Fprintln(w, "plan is fixed. A declaration outside a session's read refs is rejected by")
+	fmt.Fprintln(w, "plan is fixed. A cited path outside the citing session's read refs is rejected by")
 	fmt.Fprintln(w, "gate-submit.")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (coverage keys derived from a pass")
-	fmt.Fprintln(w, "baseline's stale evidence), repair (coverage keys derived from a failure record's")
-	fmt.Fprintln(w, "status map). --rerun explicitly forces a check key (validate: 1-10; verify:")
+	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (change review: the reviewer")
+	fmt.Fprintln(w, "accepts the change set, names re-run keys, or escalates; invalidated verify")
+	fmt.Fprintln(w, "records and current keys the baseline never declared are forced), repair (change")
+	fmt.Fprintln(w, "review over a failure record: failed and persisted-invalidated judgments re-run")
+	fmt.Fprintln(w, "unconditionally). --rerun explicitly forces a check key (validate: 1-10; verify:")
 	fmt.Fprintln(w, "acceptance item id or code file path) into the delta/repair re-run set. Targeted")
 	fmt.Fprintln(w, "P0/P1 findings are persisted by gate-invalidate and included in repair automatically;")
 	fmt.Fprintln(w, "they do not rely on --rerun.")
@@ -228,7 +232,8 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "                   unit:{name}:appendix:{file} / rule:{id}); the file must not be")
 	fmt.Fprintln(w, "                   a repository-content file")
 	fmt.Fprintln(w, "  --rerun KEY      delta/repair only: explicit additional re-run override; repeatable")
-	fmt.Fprintln(w, "  --relationships NAMES|none  required for units: relationships touched by the current change")
+	fmt.Fprintln(w, "  --relationships NAMES|none  required for full unit runs: relationships touched by the current change;")
+	fmt.Fprintln(w, "                   optional for delta/repair unit runs")
 	fmt.Fprintln(w, "                   validate: design_constraints, coverage_scope, cross_unit_cohesion")
 	fmt.Fprintln(w, "                   verify: contract_consistency, data_definition_drift, state_machine_coherence,")
 	fmt.Fprintln(w, "                   error_code_conflict, cross_reference_integrity")

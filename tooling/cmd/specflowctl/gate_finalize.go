@@ -79,6 +79,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
 	}
+	if run.Escalated {
+		return fmt.Errorf("the change review escalated this run to a full run — run the full command instead: `specflowctl gate-plan --gate %s %s --target %s --mode full`", run.Gate, gateRunTargetFlags(run), run.Target)
+	}
 
 	states, err := gaterun.LoadSessionStates(absRoot, run)
 	if err != nil {
@@ -105,6 +108,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		}
 		return fmt.Errorf("gate-finalize rejected: coverage incomplete — uncovered key(s): %s%s\nSubmit them first: `specflowctl gate-mission --run %s --keys <keys> --format prompt`, then `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`",
 			strings.Join(uncovered, ", "), detail, run.RunID, run.RunID)
+	}
+	if run.HasReviewCoverage() && run.Review == nil {
+		return fmt.Errorf("gate-finalize rejected: the review session is covered but the run carries no review record — plan a new run")
 	}
 
 	var reports []reportRef
@@ -162,12 +168,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	result := outcome.Result
 	counts := outcome.Counts
 
-	synthesisKeys := synthesisEvidenceKeys(run, reports, outcome)
-	entries, err := assembleEntries(absRoot, run, reports, synthesisKeys)
+	entries, err := assembleEntries(absRoot, run)
 	if err != nil {
 		return err
 	}
-	if evidenceDivergences := evidenceSnapshotDivergences(absRoot, run, entries, freshEvidencePaths(reports)); len(evidenceDivergences) > 0 {
+	if evidenceDivergences := evidenceSnapshotDivergences(absRoot, run, entries); len(evidenceDivergences) > 0 {
 		return rejectSnapshotDivergence(absRoot, run, evidenceDivergences)
 	}
 	if result == "fail" {
@@ -197,7 +202,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	schema := 3
 	if run.Gate == gaterun.GateVerify {
 		schema = 4
-		if err := publishUnitJudgments(absRoot, run, reports, outcome, synthesisKeys); err != nil {
+		if err := publishUnitJudgments(absRoot, run, reports, outcome); err != nil {
 			return err
 		}
 	}
@@ -231,6 +236,12 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		Judgments: string(judgmentData),
 		Body:      body.String(),
 		Entries:   entries,
+	}
+	if run.Review != nil {
+		write.ReviewChangeSet = run.Review.ChangeSet
+		write.ReviewResult = run.Review.Result
+		write.ReviewSession = run.Review.Session
+		write.ReviewRecheck = append([]string(nil), run.Review.Recheck...)
 	}
 
 	rendered, err := validationcache.RenderCache(run.TargetName, write)
@@ -290,7 +301,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if expectedBlocked {
 		fmt.Fprintf(stdout, "Self-check: BLOCKED (result: fail — the failure record blocks promote and is the failure-recovery baseline)\n")
 	} else {
-		fmt.Fprintf(stdout, "Self-check: FRESH (result: %s, dependency chunks of %d file(s) unchanged)\n", result, len(entries))
+		fmt.Fprintf(stdout, "Self-check: FRESH (result: %s, whole-file content of %d file(s) unchanged)\n", result, len(entries))
 	}
 
 	if err := gaterun.Consume(absRoot, run); err != nil {
@@ -665,32 +676,11 @@ func deriveCrossOutcome(run *gaterun.Run, reports []reportRef, cross *reportRef,
 	return nil
 }
 
-// freshEvidencePaths lists the paths this run's accepted reports declared —
-// the entries whose evidence is computed from current bytes at assembly time.
-// Paths whose evidence is only carried over from the baseline are excluded:
-// they keep their baseline entries by contract (their declared deps were
-// verified against current content at plan time), and a whole-file change
-// outside those deps is a documented fresh state that must not reject the
-// finalize (see framework/verification_scope.md §Delta Runs → Execution and
-// framework/validation_cache.md §Staleness Detection).
-func freshEvidencePaths(reports []reportRef) map[string]bool {
-	fresh := map[string]bool{}
-	for _, rep := range reports {
-		for _, scope := range rep.result.Scopes {
-			fresh[scope.Path] = true
-		}
-	}
-	return fresh
-}
-
-// evidenceSnapshotDivergences binds every freshly assembled cache entry to
-// the immutable plan-time snapshot. BuildEntryFromChecks reads live files;
-// comparing the hash produced from that exact read prevents a file change
-// between the initial surface comparison and evidence assembly from entering
-// the cache. Carried-only entries are validated for snapshot presence only —
-// their evidence comes from the baseline, not from a read of current bytes
-// (the plan → finalize content window for them is covered by gaterun.Compare).
-func evidenceSnapshotDivergences(absRoot string, run *gaterun.Run, entries []validationcache.FileEntry, fresh map[string]bool) []string {
+// evidenceSnapshotDivergences binds every assembled cache entry to the
+// immutable plan-time snapshot. assembleEntries reads live files; comparing
+// the hash produced from that exact read prevents a file change between the
+// plan-time surface comparison and evidence assembly from entering the cache.
+func evidenceSnapshotDivergences(absRoot string, run *gaterun.Run, entries []validationcache.FileEntry) []string {
 	var divergences []string
 	for _, entry := range entries {
 		expected, ok := run.SnapshotHash(absRoot, entry.Path)
@@ -699,7 +689,7 @@ func evidenceSnapshotDivergences(absRoot string, run *gaterun.Run, entries []val
 			divergences = append(divergences, "evidence path absent from snapshot: "+entry.Path)
 		case expected == "":
 			divergences = append(divergences, "snapshot has no content hash for evidence path: "+entry.Path)
-		case fresh[entry.Path] && normalizeEvidenceHash(entry.Hash) != normalizeEvidenceHash(expected):
+		case normalizeEvidenceHash(entry.Hash) != normalizeEvidenceHash(expected):
 			divergences = append(divergences, "evidence differs from snapshot: "+entry.Path)
 		}
 	}
@@ -717,186 +707,124 @@ func rejectSnapshotDivergence(absRoot string, run *gaterun.Run, divergences []st
 		strings.Join(divergences, "\n  "), run.Gate, gateRunTargetFlags(run), run.Target, run.Mode)
 }
 
-// assembleEntries builds the cache files list from the accepted reports'
-// dependency-scope declarations plus the carried-over baseline evidence
-// (delta/repair). It also enforces coverage: the coverage set's report keys and
-// the target's required files must all appear.
-func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef, synthesisKeys map[string]map[string]bool) ([]validationcache.FileEntry, error) {
-	type pathAgg struct {
-		path  string
-		keys  []string
-		decls map[string]*declParts
-	}
-	agg := map[string]*pathAgg{}
-	var pathOrder []string
-	var scopes []gaterun.Scope
-	reportedKeys := map[string]bool{}
-	for _, rep := range reports {
-		for _, s := range rep.result.Scopes {
-			if s.Key != gaterun.CrossKey {
-				scopes = append(scopes, s)
-				reportedKeys[s.Key] = true
-			}
-		}
-	}
-	// `cross` has no independent check entry. Its disposition/ownership
-	// evidence and each finding group's source evidence belong to the logical
-	// judgments that consumed them, including suppressed and carried findings.
-	var affectedKeys []string
-	for key := range synthesisKeys {
-		affectedKeys = append(affectedKeys, key)
-	}
-	sortCheckKeys(affectedKeys)
-	for _, key := range affectedKeys {
-		scopes = append(scopes, synthesisScopesForKey(key, reports, synthesisKeys[key])...)
-	}
-	for _, s := range scopes {
-		p := agg[s.Path]
-		if p == nil {
-			p = &pathAgg{path: s.Path, decls: map[string]*declParts{}}
-			agg[s.Path] = p
-			pathOrder = append(pathOrder, s.Path)
-		}
-		if _, ok := p.decls[s.Key]; !ok {
-			p.decls[s.Key] = &declParts{}
-			p.keys = append(p.keys, s.Key)
-		}
-		d, derr := parseDecl(s.Declaration)
-		if derr != nil {
-			return nil, fmt.Errorf("check %q declaration for %s: %w", s.Key, s.Path, derr)
-		}
-		mergeDecl(p.decls[s.Key], d)
-	}
+// assembleEntries builds the cache files list from the run's input surface.
+// Every entry records the whole-file hash and the ordered chunk sequence of
+// one surface file, computed from current bytes and bound to the plan-time
+// snapshot by the caller. Checks are markers attached to the file that owns
+// them — validate/verify judgment keys on the target's own main file, code
+// checks on their file, carried checks on the target's own main file — with
+// the lens tag and, for failure records, the status. There is no per-check
+// dependency attribution: the entry set IS the input surface
+// (framework/validation_cache.md §Format).
+func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEntry, error) {
+	surface := append([]string{gaterun.TargetMainFile(run)}, run.OwnSpecFiles...)
+	surface = append(surface, gaterun.InputSurface(absRoot, run)...)
 
-	// Carried-over evidence comes from the run's plan-time snapshot — the
-	// immutable input fixed before execution — not from the baseline cache,
-	// which another run may have rewritten in the meantime. The snapshot
-	// copies the baseline entries' hash + deps + check evidence verbatim
-	// (their CIDs are unchanged by construction — they were not stale
-	// sources); statuses are dropped (absent means pass on the new cache).
-	type carriedEntry struct {
-		hash   string
-		deps   []string
-		checks []validationcache.CheckEntry
+	type agg struct {
+		entry validationcache.FileEntry
 	}
-	carried := map[string]*carriedEntry{}
-	carriedKeys := map[string]bool{}
-	for _, key := range run.CarriedKeys {
-		carriedKeys[key] = true
+	aggByAbs := map[string]*agg{}
+	var order []string
+	ensure := func(ref string) (*agg, error) {
+		abs := gaterun.CanonicalDeclPath(absRoot, ref)
+		if a := aggByAbs[abs]; a != nil {
+			return a, nil
+		}
+		entry, err := validationcache.BuildEvidenceEntry(absRoot, ref)
+		if err != nil {
+			return nil, err
+		}
+		if entry == nil {
+			return nil, nil
+		}
+		a := &agg{entry: *entry}
+		aggByAbs[abs] = a
+		order = append(order, abs)
+		return a, nil
 	}
-	if len(run.CarriedKeys) > 0 {
-		if len(run.CarriedEvidence) == 0 {
-			return nil, fmt.Errorf("carried-over checks %s have no evidence snapshot in the run state — plan a new run", strings.Join(run.CarriedKeys, ", "))
+	seenRef := map[string]bool{}
+	for _, ref := range surface {
+		if ref == "" || seenRef[ref] {
+			continue
 		}
-		for _, entry := range run.CarriedEvidence {
-			ce := &carriedEntry{hash: entry.Hash, deps: append([]string(nil), entry.Deps...)}
-			for _, c := range entry.Checks {
-				ce.checks = append(ce.checks, validationcache.CheckEntry{Check: c.Check, Lens: c.Lens, Deps: append([]string(nil), c.Deps...)})
-				for _, key := range affectedKeys {
-					if key != c.Check && synthesisKeys[key][c.Check] {
-						ce.checks = append(ce.checks, validationcache.CheckEntry{Check: key, Lens: run.LensForReportKey(key), Deps: append([]string(nil), c.Deps...)})
-					}
-				}
-			}
-			carried[entry.Path] = ce
-			pathOrder = append(pathOrder, entry.Path)
-		}
-		for _, key := range run.CarriedKeys {
-			found := false
-			for _, ce := range carried {
-				if hasCheckKey(ce.checks, key) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return nil, fmt.Errorf("carried-over check %q has no evidence snapshot — plan a new run", key)
-			}
+		seenRef[ref] = true
+		if _, err := ensure(ref); err != nil {
+			return nil, err
 		}
 	}
 
-	seenPath := map[string]bool{}
-	for _, p := range pathOrder {
-		seenPath[p] = true
-	}
-	var paths []string
-	for p := range seenPath {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-
-	var entries []validationcache.FileEntry
 	seenKey := map[string]bool{}
-	for _, path := range paths {
-		p := agg[path]
-		var entry validationcache.FileEntry
-		if p != nil && len(p.keys) > 0 {
-			keys := append([]string(nil), p.keys...)
-			sortCheckKeys(keys)
-			var checks []validationcache.CheckDeclaration
-			for _, k := range keys {
-				m := p.decls[k]
-				cd := validationcache.CheckDeclaration{Check: k, Lens: run.LensForReportKey(k)}
-				if !m.WholeFile {
-					cd.Sections = m.Sections
-					cd.Ranges = strings.Join(m.Ranges, ",")
-					cd.AcceptanceItems = m.Accepts
-					cd.AcceptanceItemIDs = m.Items
-				}
-				checks = append(checks, cd)
-			}
-			built, berr := validationcache.BuildEntryFromChecks(absRoot, path, checks)
-			if berr != nil {
-				return nil, berr
-			}
-			entry = built
-		} else {
-			entry.Path = path
+	attach := func(ref, key, lens string) error {
+		a, err := ensure(ref)
+		if err != nil {
+			return err
 		}
-		if ce := carried[path]; ce != nil {
-			if entry.Hash == "" {
-				entry.Hash = ce.hash
-			}
-			for _, dep := range ce.deps {
-				if !containsString(entry.Deps, dep) {
-					entry.Deps = append(entry.Deps, dep)
+		if a == nil {
+			return fmt.Errorf("no evidence file for check %q (path %s)", key, ref)
+		}
+		a.entry.Checks = append(a.entry.Checks, validationcache.CheckEntry{Check: key, Lens: lens})
+		seenKey[key] = true
+		return nil
+	}
+	for _, ck := range run.Coverage {
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			continue
+		}
+		for _, key := range run.ReportKeys(ck) {
+			ref := gaterun.TargetMainFile(run)
+			if ck.Kind == gaterun.SessionKindCode {
+				// A public check's artifact is its own file: the check key is
+				// `code:<file>` and the coverage key carries the file path.
+				ref = ck.File
+				if ref == "" {
+					ref = strings.TrimPrefix(key, "code:")
 				}
 			}
-			for _, c := range ce.checks {
-				if carriedKeys[c.Check] && reportedKeys[c.Check] {
-					return nil, fmt.Errorf("check %q is both re-run and carried over — plan a new run", c.Check)
-				}
-				index := -1
-				for i := range entry.Checks {
-					if entry.Checks[i].Check == c.Check {
-						index = i
-						break
-					}
-				}
-				if index < 0 {
-					entry.Checks = append(entry.Checks, c)
-				} else {
-					for _, dep := range c.Deps {
-						if !containsString(entry.Checks[index].Deps, dep) {
-							entry.Checks[index].Deps = append(entry.Checks[index].Deps, dep)
-						}
-					}
-				}
-				for _, dep := range c.Deps {
-					if !containsString(entry.Deps, dep) {
-						entry.Deps = append(entry.Deps, dep)
-					}
-				}
+			if err := attach(ref, key, run.LensForReportKey(key)); err != nil {
+				return nil, err
 			}
 		}
-		sortChecks(entry.Checks)
-		for _, c := range entry.Checks {
-			seenKey[c.Check] = true
+	}
+	for _, key := range run.CarriedKeys {
+		// A carried key's lens is part of the run's immutable plan-time
+		// snapshot (captured from the baseline at plan time), so finalize
+		// never depends on a baseline another run may have rewritten.
+		lens, ok := run.CarriedLenses[key]
+		if !ok {
+			return nil, fmt.Errorf("carried-over check %q has no lens snapshot in the run state — plan a new run", key)
 		}
-		entries = append(entries, entry)
+		if lens == "" {
+			lens = run.LensForReportKey(key)
+		}
+		if err := attach(gaterun.TargetMainFile(run), key, lens); err != nil {
+			return nil, err
+		}
+	}
+	// Standing relationship conclusions are judgment keys too: their check
+	// markers make the published cache carry every logical conclusion the
+	// judgment baseline records, so a later repair status map or delta lens
+	// snapshot can resolve them.
+	for _, name := range run.AllRelationships() {
+		key := gaterun.RelationshipKey(name)
+		if seenKey[key] {
+			continue
+		}
+		if err := attach(gaterun.TargetMainFile(run), key, run.LensForReportKey(key)); err != nil {
+			return nil, err
+		}
 	}
 
+	sort.Strings(order)
+	var entries []validationcache.FileEntry
+	for _, abs := range order {
+		a := aggByAbs[abs]
+		sortChecks(a.entry.Checks)
+		entries = append(entries, a.entry)
+	}
 	for _, ck := range run.Coverage {
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			continue
+		}
 		for _, key := range run.ReportKeys(ck) {
 			if !seenKey[key] {
 				return nil, fmt.Errorf("coverage incomplete: check %q has no evidence in the assembled cache — plan a new run", key)
@@ -906,7 +834,7 @@ func assembleEntries(absRoot string, run *gaterun.Run, reports []reportRef, synt
 	for _, required := range run.RequiredFiles {
 		found := false
 		for _, entry := range entries {
-			if entry.Path == required {
+			if gaterun.CanonicalDeclPath(absRoot, entry.Path) == gaterun.CanonicalDeclPath(absRoot, required) {
 				found = true
 				break
 			}
@@ -1027,13 +955,13 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for delta/repair), and no")
 	fmt.Fprintln(w, "input may have changed since gate-plan (a divergence discards the run). A run")
 	fmt.Fprintln(w, "that produced findings must carry an accepted final synthesis (the optional")
-	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles each")
-	fmt.Fprintln(w, "files entry and the per-check checks mapping from the reports' Dependency scope")
-	fmt.Fprintln(w, "declarations, computes hash + deps, enforces union discipline and path-form")
-	fmt.Fprintln(w, "rules, derives the failure-record status map mechanically, then re-reads and")
-	fmt.Fprintln(w, "runs the gate's own freshness chain (pass → FRESH, failure record → BLOCKED;")
-	fmt.Fprintln(w, "validate@ additionally checks appendix coverage). Result, blocking, severity")
-	fmt.Fprintln(w, "counts, and failure statuses are derived from accepted artifacts.")
+	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles one")
+	fmt.Fprintln(w, "files entry per run input-surface file (whole-file hash + ordered chunk")
+	fmt.Fprintln(w, "sequence), attaches each check's lens and failure status, derives the")
+	fmt.Fprintln(w, "failure-record status map mechanically, then re-reads and runs the gate's own")
+	fmt.Fprintln(w, "freshness chain (pass → FRESH, failure record → BLOCKED; validate@")
+	fmt.Fprintln(w, "additionally checks appendix coverage). Result, blocking, severity counts,")
+	fmt.Fprintln(w, "and failure statuses are derived from accepted artifacts.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --run RUN_ID     gate run id printed by gate-plan (required)")
@@ -1041,7 +969,7 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")
 }
 
-func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, outcome *gateOutcome, synthesisKeys map[string]map[string]bool) error {
+func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, outcome *gateOutcome) error {
 	coverage, err := gaterun.RequiredCoverage(root, run)
 	if err != nil {
 		return err
@@ -1102,7 +1030,6 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 		if cross := crossReport(reports); cross != nil && changed {
 			// The decision includes the final review's evidence, even when the
 			// original item was ALIGNED or was carried without re-execution.
-			canonical.Scopes = append(canonical.Scopes, synthesisScopesForKey(ck.Key, reports, synthesisKeys[ck.Key])...)
 			report += "\n\nFinal synthesis:\n" + cross.text
 		}
 		var refs []judgments.Binding
@@ -1141,12 +1068,6 @@ func keyJudgmentResult(ck gaterun.CoverageKey, original *gaterun.SessionResult) 
 	}
 	result.Verdicts = map[string]string{ck.Key: verdict}
 	result.EffectiveStatus = map[string]string{ck.Key: status}
-	result.Scopes = nil
-	for _, scope := range original.Scopes {
-		if scope.Key == ck.Key {
-			result.Scopes = append(result.Scopes, scope)
-		}
-	}
 	result.Findings = nil
 	for _, finding := range original.Findings {
 		if findingKeySet(finding)[ck.Key] {
@@ -1156,19 +1077,6 @@ func keyJudgmentResult(ck gaterun.CoverageKey, original *gaterun.SessionResult) 
 		}
 	}
 	return result
-}
-
-func synthesisScopesForKey(key string, reports []reportRef, sources map[string]bool) []gaterun.Scope {
-	var scopes []gaterun.Scope
-	for _, rep := range reports {
-		for _, scope := range rep.result.Scopes {
-			if sources[scope.Key] {
-				scope.Key = key
-				scopes = append(scopes, scope)
-			}
-		}
-	}
-	return scopes
 }
 
 func finalizedKeyResult(ck gaterun.CoverageKey, original *gaterun.SessionResult, outcome *gateOutcome) gaterun.SessionResult {

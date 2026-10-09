@@ -53,6 +53,7 @@ func TestQualityConclusionSurvivesPublicationAndDelta(t *testing.T) {
 				}
 				assertConclusion()
 				id = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "contract_consistency")
+				grReviewAccept(t, root, id)
 				grSubmitOK(t, root, id, "cross", relationshipReport(t, root, id, map[string]string{"contract_consistency": main}, ""))
 				grFinalizeOK(t, root, id)
 				assertConclusion()

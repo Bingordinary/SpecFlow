@@ -64,7 +64,7 @@ func setupRepo(t *testing.T) string {
 
 func writeUnitBaseline(t *testing.T, repoRoot string) {
 	t.Helper()
-	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, nil); err != nil {
+	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec); err != nil {
 		t.Fatalf("WriteUnitBaseline: %v", err)
 	}
 }
@@ -248,7 +248,7 @@ func TestCheckUnitBaseline_NoBaseline(t *testing.T) {
 func TestWriteUnitBaseline_PendingPlaceholderSkipped(t *testing.T) {
 	repoRoot := setupRepo(t)
 	pendingSpec := strings.Replace(unitSpec, "implementation_surface: internal/demo", "implementation_surface: <pending>", 1)
-	if err := WriteUnitBaseline(repoRoot, "demo", pendingSpec, nil); err != nil {
+	if err := WriteUnitBaseline(repoRoot, "demo", pendingSpec); err != nil {
 		t.Fatalf("WriteUnitBaseline: %v", err)
 	}
 	result := CheckUnitBaseline(repoRoot, "demo")
@@ -257,238 +257,93 @@ func TestWriteUnitBaseline_PendingPlaceholderSkipped(t *testing.T) {
 	}
 }
 
-func TestWriteUnitBaseline_DepsRoundTrip(t *testing.T) {
+func TestWriteUnitBaseline_ChunksRoundTrip(t *testing.T) {
 	repoRoot := setupRepo(t)
-	full := filepath.Join(repoRoot, "internal/demo/handler.go")
-	fc, err := contenthash.ChunkFile(full)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cids []string
-	for _, c := range fc.Chunks {
-		cids = append(cids, c.CID)
-	}
-	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, map[string][]string{"internal/demo/handler.go": cids}); err != nil {
-		t.Fatal(err)
-	}
+	writeUnitBaseline(t, repoRoot)
 
 	path := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
 	b, err := readBaseline(path)
 	if err != nil {
 		t.Fatalf("baseline cannot be read back: %v", err)
 	}
-	var got []string
+	found := false
 	for _, s := range b.surfaces {
 		for _, e := range s.Entries {
-			if e.Path == "internal/demo/handler.go" {
-				got = e.Deps
+			if e.Path != "internal/demo/handler.go" {
+				continue
+			}
+			found = true
+			if e.Chunker != contenthash.ChunkerVersion || len(e.Chunks) == 0 {
+				t.Fatalf("expected recorded chunk evidence, got chunker=%q chunks=%d", e.Chunker, len(e.Chunks))
 			}
 		}
 	}
-	if len(got) != len(cids) {
-		t.Fatalf("deps did not round-trip: got %v want %v", got, cids)
+	if !found {
+		t.Fatal("handler.go entry not found in the baseline")
 	}
 
 	result := CheckUnitBaseline(repoRoot, "demo")
 	if result.Status != StatusOK {
-		t.Fatalf("expected OK with unchanged deps, got %s: %s", result.Status, result.Details)
-	}
-	if result.Note != "" {
-		t.Fatalf("expected no note on unchanged content, got: %s", result.Note)
+		t.Fatalf("expected OK with unchanged content, got %s: %s", result.Status, result.Details)
 	}
 }
 
-func TestCheckUnitBaseline_DepChanged(t *testing.T) {
+// TestCheckUnitBaseline_LocalizesChange pins the drift detail contract: a
+// changed file is reported with the line span of the change, computed from
+// the recorded chunk sequence with the same ordered bidirectional diff the
+// gates use.
+func TestCheckUnitBaseline_LocalizesChange(t *testing.T) {
 	repoRoot := setupRepo(t)
 	full := filepath.Join(repoRoot, "internal/demo/handler.go")
-	if err := os.WriteFile(full, []byte("package demo\n"), 0644); err != nil {
+	var sb strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&sb, "line %03d: some padding content to grow the chunk set beyond one chunk\n", i)
+	}
+	if err := os.WriteFile(full, []byte(sb.String()), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fc, err := contenthash.ChunkFile(full)
+	writeUnitBaseline(t, repoRoot)
+
+	modified := strings.Replace(sb.String(), "line 150:", "line 150: modified", 1)
+	if err := os.WriteFile(full, []byte(modified), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusChanged {
+		t.Fatalf("expected CHANGED, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "handler.go") || !strings.Contains(result.Details, "lines") {
+		t.Fatalf("expected a localized line span in the details, got: %s", result.Details)
+	}
+}
+
+// TestCheckUnitBaseline_LegacyEntryHashFallback pins the graceful display
+// fallback for baselines written before chunk evidence existed: the drift is
+// detected by whole-file hash and reported without localization.
+func TestCheckUnitBaseline_LegacyEntryHashFallback(t *testing.T) {
+	repoRoot := setupRepo(t)
+	full := filepath.Join(repoRoot, "internal/demo/handler.go")
+	text, err := contenthash.FileText(full)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, map[string][]string{"internal/demo/handler.go": {fc.Chunks[0].CID}}); err != nil {
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
 		t.Fatal(err)
 	}
-
-	// Changing the declared chunk content removes its CID.
+	yaml := fmt.Sprintf("kind: unit\nname: demo\ntimestamp: 2026-08-09T00:00:00Z\nsurfaces:\n  - path: %q\n    entries:\n      - path: %q\n        hash: %q\n",
+		"internal/demo", "internal/demo/handler.go", contenthash.FileHashText(text))
+	if err := os.WriteFile(basePath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(full, []byte("package demo\n// changed\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	result := CheckUnitBaseline(repoRoot, "demo")
 	if result.Status != StatusChanged {
-		t.Fatalf("expected CHANGED when a declared dep chunk changes, got %s", result.Status)
+		t.Fatalf("expected CHANGED from the hash fallback, got %s: %s", result.Status, result.Details)
 	}
-	if !strings.Contains(result.Details, "handler.go") {
-		t.Fatalf("expected handler.go in details, got: %s", result.Details)
-	}
-}
-
-func TestCheckUnitBaseline_DepCIDMissing(t *testing.T) {
-	repoRoot := setupRepo(t)
-	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, map[string][]string{"src/a.go": {"sha256:deadbeef"}}); err != nil {
-		t.Fatal(err)
-	}
-	result := CheckUnitBaseline(repoRoot, "demo")
-	if result.Status != StatusChanged {
-		t.Fatalf("expected CHANGED for a missing dep CID, got %s", result.Status)
-	}
-	if !strings.Contains(result.Details, "src/a.go") {
-		t.Fatalf("expected src/a.go in details, got: %s", result.Details)
-	}
-}
-
-func TestCheckUnitBaseline_DepOutsideChangeOKWithNote(t *testing.T) {
-	repoRoot := setupRepo(t)
-	var sb strings.Builder
-	for i := 0; i < 300; i++ {
-		fmt.Fprintf(&sb, "line %03d: some padding content to grow the chunk set beyond one chunk\n", i)
-	}
-	content := sb.String()
-	full := filepath.Join(repoRoot, "internal/demo/handler.go")
-	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Baseline records the middle chunk only.
-	fc, err := contenthash.ChunkFile(full)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(fc.Chunks) < 3 {
-		t.Fatalf("test setup expected multiple chunks, got %d", len(fc.Chunks))
-	}
-	mid := fc.Chunks[len(fc.Chunks)/2]
-	if err := WriteUnitBaseline(repoRoot, "demo", unitSpec, map[string][]string{"internal/demo/handler.go": {mid.CID}}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Modify the first line — a different chunk than the declared one. The
-	// declared chunk's CID must survive (content-defined chunking), while the
-	// whole-file hash changes.
-	newline := strings.Index(content, "\n")
-	modified := "modified first line\n" + content[newline+1:]
-	if err := os.WriteFile(full, []byte(modified), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := CheckUnitBaseline(repoRoot, "demo")
-	if result.Status != StatusOK {
-		t.Fatalf("expected OK (declared dep unchanged), got %s: %s", result.Status, result.Details)
-	}
-	if result.Note == "" {
-		t.Fatal("expected note when content changed outside the declared dependencies")
-	}
-	if !strings.Contains(result.Note, "handler.go") {
-		t.Fatalf("expected handler.go in note, got: %s", result.Note)
-	}
-}
-
-// regionDepContent is a surface file whose formal-behavior region (the
-// acceptance_item_set section) is declared as the only dependency. Prose
-// edits outside the region must not drift the baseline.
-const regionDepContent = `---
-id: demo
-unit_refs: none
-rule_refs: none
----
-
-# Demo
-
-## Description
-
-Background prose about the surface file.
-
-## Testability / Acceptance Criteria
-
-acceptance_item_set:
-  - id: demo.core
-    description: Core behavior.
-    pass_condition: Passes.
-
-## Notes
-
-Trailing section.
-`
-
-// writeRegionDepBaseline records a baseline whose surface entry depends only
-// on the acceptance_item_set structural region of the file — the verify-time
-// dependency form that must resolve through the same dependency matching as
-// the validation caches.
-func writeRegionDepBaseline(t *testing.T, repoRoot, content string) {
-	t.Helper()
-	full := filepath.Join(repoRoot, "internal/demo/handler.go")
-	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	text, err := contenthash.FileText(full)
-	if err != nil {
-		t.Fatal(err)
-	}
-	regionCID, err := contenthash.AcceptanceItemSetCID(text)
-	if err != nil {
-		t.Fatalf("test content must contain a valid acceptance_item_set: %v", err)
-	}
-
-	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
-	if err := os.MkdirAll(filepath.Dir(basePath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	yaml := fmt.Sprintf("kind: unit\nname: demo\ntimestamp: 2026-08-09T00:00:00Z\nsurfaces:\n  - path: %q\n    entries:\n      - path: %q\n        hash: %q\n        deps:\n          - %q\n",
-		"internal/demo/handler.go", "internal/demo/handler.go", contenthash.FileHashText(text), "region:acceptance_items:"+regionCID)
-	if err := os.WriteFile(basePath, []byte(yaml), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCheckUnitBaseline_RegionDepProseEditStaysOK(t *testing.T) {
-	repoRoot := setupRepo(t)
-	writeRegionDepBaseline(t, repoRoot, regionDepContent)
-
-	edited := strings.Replace(regionDepContent, "Background prose about the surface file.", "Background prose edited during iteration.", 1)
-	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := CheckUnitBaseline(repoRoot, "demo")
-	if result.Status != StatusOK {
-		t.Fatalf("expected OK after prose edit outside the declared region, got %s: %s", result.Status, result.Details)
-	}
-	if result.Note == "" {
-		t.Fatal("expected informational note when content changed outside the declared region")
-	}
-}
-
-func TestCheckUnitBaseline_RegionDepEditInsideRegionChanged(t *testing.T) {
-	repoRoot := setupRepo(t)
-	writeRegionDepBaseline(t, repoRoot, regionDepContent)
-
-	edited := strings.Replace(regionDepContent, "Core behavior.", "Core behavior changed.", 1)
-	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := CheckUnitBaseline(repoRoot, "demo")
-	if result.Status != StatusChanged {
-		t.Fatalf("expected CHANGED after region edit, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "handler.go") {
-		t.Fatalf("expected handler.go in details, got: %s", result.Details)
-	}
-}
-
-func TestCheckUnitBaseline_RegionDepMarkerRemovedChanged(t *testing.T) {
-	repoRoot := setupRepo(t)
-	writeRegionDepBaseline(t, repoRoot, regionDepContent)
-
-	edited := strings.Replace(regionDepContent, "acceptance_item_set:\n", "", 1)
-	if err := os.WriteFile(filepath.Join(repoRoot, "internal/demo/handler.go"), []byte(edited), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := CheckUnitBaseline(repoRoot, "demo")
-	if result.Status != StatusChanged {
-		t.Fatalf("expected CHANGED (fail closed) when the region marker is gone, got %s: %s", result.Status, result.Details)
+	if !strings.Contains(result.Details, "no localization recorded") {
+		t.Fatalf("expected the fallback wording in the details, got: %s", result.Details)
 	}
 }

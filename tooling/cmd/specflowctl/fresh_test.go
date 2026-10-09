@@ -101,7 +101,7 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	sb.WriteString("files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:%s\n", f.path, f.hash)
-		deps := cacheDepsAt(t, repoRoot, f.path)
+		sb.WriteString(cacheDepsAt(t, repoRoot, f.path))
 		if len(f.checks) > 0 {
 			sb.WriteString("    checks:\n")
 			for _, c := range f.checks {
@@ -109,10 +109,8 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 				if c.lens != "" {
 					fmt.Fprintf(&sb, "        lens: %s\n", c.lens)
 				}
-				sb.WriteString(indentBlock(deps, "    "))
 			}
 		}
-		sb.WriteString(deps)
 	}
 	sb.WriteString("---\nok\n")
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {
@@ -167,20 +165,21 @@ func freshRun(t *testing.T, repoRoot string, args ...string) (string, error) {
 	return stdout.String(), err
 }
 
-// cacheDepsAt renders a whole-file dependency block for a cache entry.
+// cacheDepsAt renders the recorded chunk evidence block for a cache entry.
 func cacheDepsAt(t *testing.T, repoRoot, relPath string) string {
 	t.Helper()
 	full := filepath.Join(repoRoot, filepath.FromSlash(relPath))
-	fc, err := contenthash.ChunkFile(full)
+	text, err := contenthash.FileText(full)
 	if err != nil {
 		t.Fatal(err)
 	}
+	records := contenthash.ChunkRecords(text)
 	var b strings.Builder
-	if len(fc.Chunks) > 0 {
-		b.WriteString("    deps:\n")
+	if len(records) > 0 {
+		b.WriteString("    chunker: " + contenthash.ChunkerVersion + "\n    chunks:\n")
 	}
-	for _, c := range fc.Chunks {
-		fmt.Fprintf(&b, "      - %s\n", c.CID)
+	for _, c := range records {
+		fmt.Fprintf(&b, "      - cid: %q\n        start: %d\n        end: %d\n", c.CID, c.StartLine, c.EndLine)
 	}
 	return b.String()
 }
@@ -325,8 +324,8 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
 	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", verifyFiles)
-	// Deliberately stale verify cache: the spec changes after the cache is written,
-	// so the declared dependency chunk is gone.
+	// Deliberately stale verify cache: the spec changes after the cache is
+	// written, so its recorded whole-file hash no longer matches.
 	data, err := os.ReadFile(specPath)
 	if err != nil {
 		t.Fatal(err)
@@ -344,18 +343,17 @@ func TestFreshUnitDetailStaleVerify(t *testing.T) {
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "verify", "STALE")
-	if !strings.Contains(output, "dependency chunks have changed") {
-		t.Fatalf("expected changed-dependency detail, got:\n%s", output)
+	if !strings.Contains(output, "CHANGE REPORT (verify):") {
+		t.Fatalf("expected the change report detail, got:\n%s", output)
 	}
 	if !strings.Contains(output, "READY FOR PROMOTE: no") {
 		t.Fatalf("expected ready no, got:\n%s", output)
 	}
 }
 
-// TestFreshUnitVerifySurfacesStaleLens pins D10: the fresh report names which
-// lens of the merged verify cache is stale. A spec-only change stales the
-// alignment lens while quality stays fresh; a code-only change stales both.
-func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
+// TestFreshUnitVerifySurfacesStaleEvidence pins the stale report contract: a
+// changed recorded file stales the cache and is named in the reason.
+func TestFreshUnitVerifySurfacesStaleEvidence(t *testing.T) {
 	setup := func(t *testing.T) (repoRoot, specPath, codePath string) {
 		t.Helper()
 		repoRoot = createCLITestRepo(t)
@@ -372,7 +370,7 @@ func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
 		return repoRoot, specPath, codePath
 	}
 
-	t.Run("spec-only change stales alignment", func(t *testing.T) {
+	t.Run("spec change stales the cache", func(t *testing.T) {
 		repoRoot, specPath, _ := setup(t)
 		out, err := freshRun(t, repoRoot, "--unit", "auth")
 		if err != nil {
@@ -397,12 +395,12 @@ func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertGateStatus(t, out, "verify", "STALE")
-		if !strings.Contains(out, "alignment stale") || !strings.Contains(out, "quality fresh") {
-			t.Fatalf("expected alignment stale / quality fresh, got:\n%s", out)
+		if !strings.Contains(out, "unit_auth.md") || !strings.Contains(out, "CHANGE REPORT (verify):") {
+			t.Fatalf("expected the changed spec named in the reason, got:\n%s", out)
 		}
 	})
 
-	t.Run("code-only change stales both lenses", func(t *testing.T) {
+	t.Run("code change stales the cache", func(t *testing.T) {
 		repoRoot, _, codePath := setup(t)
 		appendToFile(t, codePath, "\n// changed\n")
 
@@ -411,8 +409,8 @@ func TestFreshUnitVerifySurfacesStaleLens(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertGateStatus(t, out, "verify", "STALE")
-		if !strings.Contains(out, "quality stale") || !strings.Contains(out, "alignment stale") {
-			t.Fatalf("expected quality stale / alignment stale, got:\n%s", out)
+		if !strings.Contains(out, "src/auth.go") || !strings.Contains(out, "CHANGE REPORT (verify):") {
+			t.Fatalf("expected the changed code named in the reason, got:\n%s", out)
 		}
 	})
 }
@@ -461,10 +459,9 @@ func TestFreshUnitVerifyUndeducibleCoverageFailsClosed(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailStaleEvidence verifies that a STALE gate with per-check
-// evidence prints its stale evidence — which checks declared the stale
-// dependencies — and no planner-derived plan lines: the delta re-run scope
-// belongs to gate-plan, not to the read-only report.
+// TestFreshUnitDetailStaleEvidence verifies that a STALE gate prints the
+// mechanical change report: the changed file with the localized line spans
+// computed from the recorded chunk evidence.
 func TestFreshUnitDetailStaleEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
@@ -473,33 +470,12 @@ func TestFreshUnitDetailStaleEvidence(t *testing.T) {
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	specHash := computeHash(specPath)
-	text, _ := contenthash.FileText(specPath)
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsDep := acceptanceItemsDep(t, text)
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "", []cacheFileSpec{{
+		path:   "docs/specs/units/candidate/unit_user_auth.md",
+		hash:   computeHash(specPath),
+		checks: []cacheCheckSpec{{key: "1"}, {key: "5"}},
+	}})
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
-		"      - check: \"5\"\n        deps:\n          - " + itemsDep + "\n" +
-		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
-		"---\nok\n" +
-		`<!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":3,"logical_status":{"1":"pass","5":"pass"},"findings":[],"synthesis_digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}
-GATE_JUDGMENTS_END -->
-`
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Edit only the Description section: check 1's dep goes stale, check 5's does not.
 	os.WriteFile(specPath, []byte(strings.Replace(specContent, "Auth prose.", "Auth prose, edited.", 1)), 0644)
 
 	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
@@ -507,181 +483,19 @@ GATE_JUDGMENTS_END -->
 		t.Fatalf("fresh failed: %v", err)
 	}
 	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "STALE EVIDENCE (validate):") {
-		t.Fatalf("expected the stale evidence section, got:\n%s", output)
+	if !strings.Contains(output, "CHANGE REPORT (validate):") {
+		t.Fatalf("expected the change report section, got:\n%s", output)
 	}
-	if !strings.Contains(output, "affected checks: 1") {
-		t.Fatalf("expected check 1 affected, got:\n%s", output)
-	}
-	if strings.Contains(output, "affected checks: 5") {
-		t.Fatalf("check 5 must stay unaffected, got:\n%s", output)
+	if !strings.Contains(output, "unit_user_auth.md: changed") || !strings.Contains(output, "lines") {
+		t.Fatalf("expected the localized change reported, got:\n%s", output)
 	}
 	if strings.Contains(output, "plan:") {
 		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
 	}
 }
 
-// TestFreshUnitDetailStaleEvidenceAllChecks verifies the stale evidence when
-// every declared non-cross check is stale while the cross entry stays fresh:
-// the affected checks name exactly the stale checks.
-func TestFreshUnitDetailStaleEvidenceAllChecks(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
-	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	specHash := computeHash(specPath)
-	text, _ := contenthash.FileText(specPath)
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsDep := acceptanceItemsDep(t, text)
-	scopeRegion, ok := contenthash.LocateSectionRegion(text, "Scope")
-	if !ok {
-		t.Fatal("expected Scope section")
-	}
-	scopeDep := "region:section:Scope:" + contenthash.RegionCID(scopeRegion.Text)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
-		"      - check: \"5\"\n        deps:\n          - " + itemsDep + "\n" +
-		"      - check: cross\n        deps:\n          - " + scopeDep + "\n" +
-		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n      - " + scopeDep + "\n" +
-		"---\nok\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Edit the Description and item sections: checks 1 and 5 go stale; the
-	// cross entry (Scope section) stays fresh.
-	edited := strings.Replace(specContent, "Auth prose.", "Auth prose, edited.", 1)
-	edited = strings.Replace(edited, "Passes.", "Passes promptly.", 1)
-	os.WriteFile(specPath, []byte(edited), 0644)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "affected checks: 1, 5") {
-		t.Fatalf("expected checks 1 and 5 affected (cross stays fresh), got:\n%s", output)
-	}
-	if strings.Contains(output, "plan:") {
-		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
-	}
-}
-
-// TestFreshUnitDetailStaleEvidenceAllUnclaimed verifies the stale evidence
-// when the cache carries per-check evidence but every stale dep is unclaimed
-// (declare-heavy extras in the file-level union): the report must say
-// "affected checks: none" instead of the legacy-cache wording.
-func TestFreshUnitDetailStaleEvidenceAllUnclaimed(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
-	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	specHash := computeHash(specPath)
-	text, _ := contenthash.FileText(specPath)
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-	itemsDep := acceptanceItemsDep(t, text)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	// The items dep is a declare-heavy extra: it sits in the file-level union
-	// but no check declared it.
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
-		"    deps:\n      - " + descDep + "\n      - " + itemsDep + "\n" +
-		"---\nok\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Edit the acceptance items region (unclaimed by any check).
-	os.WriteFile(specPath, []byte(strings.Replace(specContent, "Passes.", "Passes promptly.", 1)), 0644)
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "affected checks: none") {
-		t.Fatalf("expected 'affected checks: none', got:\n%s", output)
-	}
-	if strings.Contains(output, "no per-check evidence") {
-		t.Fatalf("cache has per-check evidence — legacy wording must not appear, got:\n%s", output)
-	}
-	if !strings.Contains(output, "unclaimed entries:") {
-		t.Fatalf("expected the unclaimed entry reported, got:\n%s", output)
-	}
-}
-
-// TestFreshUnitDetailStaleEvidenceUnionViolation verifies that a STALE gate
-// whose cache violates the union discipline still prints its stale evidence
-// section with the format error.
-func TestFreshUnitDetailStaleEvidenceUnionViolation(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
-	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	specHash := computeHash(specPath)
-	text, _ := contenthash.FileText(specPath)
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	// The file-level deps union omits check 1's dep — a union violation that
-	// fails the gate closed.
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n        deps:\n          - " + descDep + "\n" +
-		"    deps:\n      - sha256:0000000000000000000000000000000000000000000000000000000000000000\n" +
-		"---\nok\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "STALE EVIDENCE (validate):") {
-		t.Fatalf("expected the stale evidence section even for a union violation, got:\n%s", output)
-	}
-	if !strings.Contains(output, "stale evidence unavailable: cache format error") {
-		t.Fatalf("expected the cache format error reported, got:\n%s", output)
-	}
-	if strings.Contains(output, "plan:") {
-		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
-	}
-}
-
+// TestFreshUnitDetailMissingVerify verifies a unit with no verify cache
+// reports the verify gate as MISSING.
 func TestFreshUnitDetailMissingVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "user_auth")
@@ -768,10 +582,10 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	if strings.Contains(output, "BLOCKED") {
 		t.Fatalf("stale+blocking verify cache must not be BLOCKED:\n%s", output)
 	}
-	// The read-only report names the stale evidence; the repair plan itself
+	// The read-only report names the change set; the repair plan itself
 	// belongs to gate-plan and is derived when the re-run is triggered.
-	if !strings.Contains(output, "STALE EVIDENCE (verify):") {
-		t.Fatalf("expected the stale evidence section:\n%s", output)
+	if !strings.Contains(output, "CHANGE REPORT (verify):") {
+		t.Fatalf("expected the change report section:\n%s", output)
 	}
 	if strings.Contains(output, "plan:") {
 		t.Fatalf("a read-only report must not print planner lines:\n%s", output)
@@ -802,49 +616,7 @@ func TestFreshRuleDetail(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailStaleEvidenceForMetadataStale verifies that a STALE
-// gate whose staleness the declared per-check evidence cannot attribute (here:
-// the cache declares every check but no dependency chunks) reports the
-// untrackable entries instead of the "cache is fresh" refusal — the report
-// uses the gate's own freshness classification.
-func TestFreshUnitDetailStaleEvidenceForMetadataStale(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
-	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
-	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	specHash := computeHash(specPath)
-
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
-		"  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:" + specHash + "\n" +
-		"    checks:\n" +
-		"      - check: \"1\"\n      - check: \"2\"\n      - check: \"3\"\n      - check: \"4\"\n" +
-		"      - check: \"5\"\n      - check: \"6\"\n      - check: \"7\"\n      - check: \"8\"\n" +
-		"---\nok\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
-	if err != nil {
-		t.Fatalf("fresh failed: %v", err)
-	}
-	assertGateStatus(t, output, "validate", "STALE")
-	if !strings.Contains(output, "untrackable entries (no dependency chunks):") {
-		t.Fatalf("expected the untrackable entry reported, got:\n%s", output)
-	}
-	if strings.Contains(output, "cache is fresh") {
-		t.Fatalf("a STALE gate must not report the fresh refusal, got:\n%s", output)
-	}
-	if strings.Contains(output, "plan:") {
-		t.Fatalf("a read-only report must not print planner lines, got:\n%s", output)
-	}
-}
-
+// TestFreshMutuallyExclusive rejects --unit together with --rule.
 func TestFreshMutuallyExclusive(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	var stdout bytes.Buffer
@@ -915,7 +687,7 @@ func TestFreshStableScope(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
 		t.Fatal(err)
 	}
 
@@ -951,10 +723,9 @@ func TestFreshStableScope(t *testing.T) {
 	}
 }
 
-// TestFreshStableScope_OKWithNote verifies the drift report shows OK with an
-// informational note when the code surface changed outside the declared
-// dependency chunks.
-func TestFreshStableScope_OKWithNote(t *testing.T) {
+// TestFreshStableScope_LocalizesDrift verifies a recorded content change is
+// reported as drift localized to the changed lines.
+func TestFreshStableScope_LocalizesDrift(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
@@ -967,15 +738,6 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 	aPath := filepath.Join(srcDir, "a.go")
 	os.WriteFile(aPath, []byte(content), 0644)
-
-	fc, err := contenthash.ChunkFile(aPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(fc.Chunks) < 3 {
-		t.Fatalf("test setup expected multiple chunks, got %d", len(fc.Chunks))
-	}
-	mid := fc.Chunks[len(fc.Chunks)/2]
 
 	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
@@ -990,30 +752,29 @@ func TestFreshStableScope_OKWithNote(t *testing.T) {
 		"    affects:\n" +
 		"      files:\n" +
 		"        - src/a.go\n"
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, map[string][]string{"src/a.go": {mid.CID}}); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
 		t.Fatal(err)
 	}
 
-	// Change a region outside the declared dependency chunk.
-	newline := strings.Index(content, "\n")
-	os.WriteFile(aPath, []byte("modified first line\n"+content[newline+1:]), 0644)
+	// Any recorded content change is drift, localized to the changed lines.
+	os.WriteFile(aPath, []byte("modified first line\n"+content[strings.Index(content, "\n")+1:]), 0644)
 
 	out, err := freshRun(t, repoRoot, "--scope", "stable")
 	if err != nil {
 		t.Fatalf("fresh --scope stable: %v", err)
 	}
-	if !strings.Contains(out, "settled") || !strings.Contains(out, "OK") {
-		t.Fatalf("expected settled OK, got:\n%s", out)
+	if !strings.Contains(out, "settled") || !strings.Contains(out, "CHANGED") {
+		t.Fatalf("expected settled CHANGED, got:\n%s", out)
 	}
 	out, err = freshRun(t, repoRoot, "--unit", "settled")
 	if err != nil {
 		t.Fatalf("fresh --unit settled: %v", err)
 	}
-	if !strings.Contains(out, "settled") || !strings.Contains(out, "drift") || !strings.Contains(out, "OK") {
-		t.Fatalf("expected settled drift OK, got:\n%s", out)
+	if !strings.Contains(out, "drift") || !strings.Contains(out, "Drift: possible") {
+		t.Fatalf("expected settled drift reported, got:\n%s", out)
 	}
-	if !strings.Contains(out, "content changed outside declared dependencies") {
-		t.Fatalf("expected drift note, got:\n%s", out)
+	if !strings.Contains(out, "lines") {
+		t.Fatalf("expected a localized line span, got:\n%s", out)
 	}
 }
 
@@ -1045,7 +806,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1101,7 +862,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n"), 0644)
-	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec, nil); err != nil {
+	if err := baseline.WriteUnitBaseline(repoRoot, "settled", spec); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(srcDir, "a.go"), []byte("package main\n// changed\n"), 0644)
@@ -1218,9 +979,9 @@ func TestFreshStableDetailStaleEvidence(t *testing.T) {
 	writeUnitCache(t, repoRoot, "settled", "validate", "target: stable\n",
 		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
 
-	// The stable spec changes after the confirmation run -> the declared
-	// dependency chunk is gone -> validate: STALE with derivable stale
-	// evidence.
+	// The stable spec changes after the confirmation run -> its recorded
+	// whole-file hash no longer matches -> validate: STALE with a derivable
+	// change report.
 	appendToFile(t, specPath, "# appended\n")
 
 	out, err := freshRun(t, repoRoot, "--unit", "settled")
@@ -1233,8 +994,8 @@ func TestFreshStableDetailStaleEvidence(t *testing.T) {
 	if !strings.Contains(out, "-> suggestion: revalidate@settled (delta recovery)") {
 		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
 	}
-	if !strings.Contains(out, "STALE EVIDENCE (validate):") {
-		t.Fatalf("expected the stale evidence section, got:\n%s", out)
+	if !strings.Contains(out, "CHANGE REPORT (validate):") {
+		t.Fatalf("expected the change report section, got:\n%s", out)
 	}
 }
 
@@ -1372,13 +1133,12 @@ func TestFreshStableRules(t *testing.T) {
 	}
 }
 
-// TestFreshUnitDetailShowsNote verifies the informational note about content
-// changed outside the declared dependency chunks reaches the fresh report —
-// the promote-gate check prints it, and the fresh report must too (the note
-// is the agent's signal that semantic coupling may exist).
-func TestFreshUnitDetailShowsNote(t *testing.T) {
+// TestFreshUnitDetailChangeStales verifies a recorded file's content change
+// stales the gate and the fresh change report localizes the edit to its line
+// span.
+func TestFreshUnitDetailChangeStales(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
-	specPath := writeUnitSpec(t, repoRoot, "user_auth")
+	writeUnitSpec(t, repoRoot, "user_auth")
 
 	srcDir := filepath.Join(repoRoot, "src")
 	os.MkdirAll(srcDir, 0755)
@@ -1389,31 +1149,14 @@ func TestFreshUnitDetailShowsNote(t *testing.T) {
 	}
 	os.WriteFile(sharedPath, []byte(b.String()), 0644)
 
-	// Dependency evidence: whole-file for the spec, lines 1-10 only for the
-	// shared file.
-	fcSpec, _ := contenthash.ChunkFile(specPath)
-	var specDeps []string
-	for _, c := range fcSpec.Chunks {
-		specDeps = append(specDeps, c.CID)
-	}
-	fcShared, _ := contenthash.ChunkFile(sharedPath)
-	sharedDeps := contenthash.CIDsForRanges(fcShared, [][2]int{{1, 10}})
-	if len(sharedDeps) == 0 {
-		t.Fatal("expected dependency chunks for lines 1-10")
-	}
+	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_user_auth.md")
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "", []cacheFileSpec{
+		{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)},
+		{path: "src/shared.go", hash: computeHash(sharedPath)},
+	})
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/user_auth")
-	os.MkdirAll(cacheDir, 0755)
-	var sb strings.Builder
-	sb.WriteString("---\ncommand: validate\nunit: user_auth\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n")
-	fmt.Fprintf(&sb, "  - path: docs/specs/units/candidate/unit_user_auth.md\n    hash: sha256:%s\n", computeHash(specPath))
-	sb.WriteString(depsBlock(specDeps))
-	fmt.Fprintf(&sb, "  - path: src/shared.go\n    hash: sha256:%s\n", computeHash(sharedPath))
-	sb.WriteString(depsBlock(sharedDeps))
-	sb.WriteString("---\nok\n")
-	os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(sb.String()), 0644)
-
-	// A change far outside the declared dependency range (line 200).
+	// Any content change in a recorded file stales the gate; the recorded
+	// chunk evidence localizes the change to its line span.
 	data, _ := os.ReadFile(sharedPath)
 	os.WriteFile(sharedPath, []byte(strings.Replace(string(data), "line 200:", "line 200 CHANGED:", 1)), 0644)
 
@@ -1421,23 +1164,13 @@ func TestFreshUnitDetailShowsNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh failed: %v", err)
 	}
-	assertGateStatus(t, output, "validate", "FRESH")
-	if !strings.Contains(output, "content changed outside the declared dependency chunks") {
-		t.Fatalf("expected the informational note in the fresh report, got:\n%s", output)
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "CHANGE REPORT (validate):") {
+		t.Fatalf("expected the change report in the fresh report, got:\n%s", output)
 	}
-}
-
-// depsBlock renders a deps block for a cache file entry.
-func depsBlock(deps []string) string {
-	if len(deps) == 0 {
-		return ""
+	if !strings.Contains(output, "src/shared.go: changed") || !strings.Contains(output, "lines") {
+		t.Fatalf("expected the localized change reported, got:\n%s", output)
 	}
-	var b strings.Builder
-	b.WriteString("    deps:\n")
-	for _, d := range deps {
-		fmt.Fprintf(&b, "      - %s\n", d)
-	}
-	return b.String()
 }
 
 func TestFreshOmitsConsumedRule(t *testing.T) {

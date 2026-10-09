@@ -339,6 +339,18 @@ func grSubmitOK(t *testing.T, repoRoot, runID, sessionID, report string) string 
 	return out
 }
 
+// grReviewAccept submits an accepting delta review for an open review run.
+func grReviewAccept(t *testing.T, repoRoot, runID string) {
+	t.Helper()
+	grSubmitOK(t, repoRoot, runID, "review", "Review result: accept — test review\n")
+}
+
+// grReviewRecheck submits a delta review that names the given re-run keys.
+func grReviewRecheck(t *testing.T, repoRoot, runID string, keys ...string) {
+	t.Helper()
+	grSubmitOK(t, repoRoot, runID, "review", "Review result: recheck — test review\nRecheck: "+strings.Join(keys, ", ")+"\n")
+}
+
 // grSubmitKeys submits one session report for an explicit coverage key batch.
 func grSubmitKeys(t *testing.T, repoRoot, runID string, keys []string, report string) string {
 	t.Helper()
@@ -440,10 +452,10 @@ func grValidateReport(checks []string, scopes map[string][]string) string {
 }
 
 // grDependenciesReport builds a dependency-group validate report. Check 9
-// (file associations) joined the group; when the caller provides no scope
-// line for it, check 7's declaration is reused — the session contract only
-// requires one scope line per executed check, and these tests exercise the
-// gate mechanics.
+// (file associations) joined the group; when the caller provides no legacy
+// scope line for it, check 7's line is reused — scope lines are inert
+// fixtures now (reports carry no dependency declarations) and these tests
+// exercise the gate mechanics.
 func grDependenciesReport(scopes map[string][]string) string {
 	if _, ok := scopes["9"]; !ok {
 		if lines, ok := scopes["7"]; ok {
@@ -991,9 +1003,8 @@ func TestGatePlanVerifyAcceptsLiteralMetacharacterSurface(t *testing.T) {
 	}
 }
 
-// TestGatePlanVerifySurfaceExpansionIncludesCodeFiles verifies the positive
-// path: a directory surface plus affects.files expands to real code files in
-// the session read refs.
+// TestGatePlanRejectsDuplicateAcceptanceItemIDsBeforePersistingRun rejects a
+// plan with duplicate acceptance-item ids before any run state is written.
 func TestGatePlanRejectsDuplicateAcceptanceItemIDsBeforePersistingRun(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.login"})
@@ -1145,7 +1156,7 @@ func TestGateFinalizeCollectsStaleProtocolOrphans(t *testing.T) {
 	}
 }
 
-func TestGateRunComputesHashAndDeps(t *testing.T) {
+func TestGateRunRecordsWholeFileEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 
@@ -1177,66 +1188,13 @@ func TestGateRunComputesHashAndDeps(t *testing.T) {
 	if !strings.Contains(cache, "hash: "+contenthash.FileHashText(text)) {
 		t.Fatalf("expected computed hash in cache, got:\n%s", cache)
 	}
-	for _, c := range contenthash.ChunkText(text).Chunks {
-		if !strings.Contains(cache, "- "+c.CID) {
-			t.Fatalf("expected chunk CID %s in deps, got:\n%s", c.CID, cache)
+	if !strings.Contains(cache, "chunker: "+contenthash.ChunkerVersion) {
+		t.Fatalf("expected the chunker version in cache, got:\n%s", cache)
+	}
+	for _, c := range contenthash.ChunkRecords(text) {
+		if !strings.Contains(cache, "cid: "+c.CID) {
+			t.Fatalf("expected chunk CID %s in the recorded chunk sequence, got:\n%s", c.CID, cache)
 		}
-	}
-}
-
-func TestGateRunSectionAndRangeDeclarations(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := grWriteSpec(t, repoRoot, "auth")
-	text, err := contenthash.FileText(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	descRegion, ok := contenthash.LocateSectionRegion(text, "Description")
-	if !ok {
-		t.Fatal("expected Description section")
-	}
-	descDep := "region:section:Description:" + contenthash.RegionCID(descRegion.Text)
-
-	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	main := "docs/specs/units/candidate/unit_auth.md"
-	// The structural session merges a section declaration and a range
-	// declaration for check 1; check 5 declares the acceptance-item region.
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": {main + ": Description", main + ": 1-20"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
-		"2": {main + ": Description"},
-		"4": {main + ": Description"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": acceptance_items"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
-		"7": {main + ": Description"},
-		"8": {main + ": Description"},
-	}))
-	grSubmitClarity(t, repoRoot, runID, main)
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
-	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
-
-	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, descDep) {
-		t.Fatalf("expected the section region dep %s, got:\n%s", descDep, cache)
-	}
-	if !strings.Contains(cache, "region:acceptance_items:") {
-		t.Fatalf("expected the acceptance-items region dep, got:\n%s", cache)
-	}
-	if !strings.Contains(cache, "- sha256:") {
-		t.Fatalf("expected chunk CIDs from the range declaration, got:\n%s", cache)
-	}
-	res, err := validationcache.CheckValidate(repoRoot, "auth")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Fresh {
-		t.Fatalf("expected FRESH, got: %s", res.Reason)
 	}
 }
 
@@ -1449,10 +1407,7 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 		"  engineering_patterns: sound — reviewed engineering patterns\n" +
 		"  gate_findings: none\n" +
 		"\n" +
-		"Suppressed by spec (0):\n" +
-		"Dependency scope:\n" +
-		"design:auth:src/auth.go: " + main + ": Description\n" +
-		"design:auth:src/auth.go: src/auth.go: all\n"
+		"Suppressed by spec (0):\n"
 	grSubmitKeys(t, repoRoot, runID, keys, paired)
 
 	run, err := gaterun.Load(repoRoot, runID)
@@ -1471,14 +1426,21 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	synthesized := false
-	for _, scope := range public.Scopes {
-		if scope.Key == "code:src/auth.go" && scope.Path == "src/auth.go" && scope.Declaration == "all" {
-			synthesized = true
+	if public.Verdicts["code:src/auth.go"] != "facts" {
+		t.Fatalf("expected the published public record, got %+v", public.Verdicts)
+	}
+	record, err := judgments.Load(repoRoot, binding.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := false
+	for _, dep := range record.Dependencies {
+		if dep.Path == "src/auth.go" && dep.Hash != "" {
+			pinned = true
 		}
 	}
-	if !synthesized {
-		t.Fatalf("expected the tool-recorded whole-file scope for the public code check, got %+v", public.Scopes)
+	if !pinned {
+		t.Fatalf("expected the tool-recorded whole-file evidence for the public code check, got %+v", record.Dependencies)
 	}
 
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
@@ -1648,11 +1610,6 @@ func TestResolveCrossFindingsRaisesSeverityOnMerge(t *testing.T) {
 	}
 }
 
-// TestDeltaFailRecordMarksCarriedKeysCarried pins the failure-record status
-// contract: a judgment carried over from the pass baseline is recorded
-// `carried` even when its retained advisory finding gives it the effective
-// status `fail` — it did not run in this attempt, and the repair plan must
-// carry it (not re-execute it) after the findings are resolved.
 // TestGateVerifyMismatchFindingIsSelfContained pins the merged verify-item
 // contract: a MISMATCH session composes one run-scoped finding whose detail
 // carries the shared finding block (problem, evidence, impact, fix, root cause,
@@ -1701,15 +1658,6 @@ func TestGateVerifyMismatchFindingIsSelfContained(t *testing.T) {
 	}
 }
 
-// TestCrossMissionCarriesCompactJudgmentsWithoutReports pins the cross-mission
-// input contract: every dependency arrives as a compact judgment record
-// (verdicts, findings with their stored details, digests), and the verbatim
-// accepted reports are never embedded — the reports stay in run state and the
-// reviewer reads the target files for evidence.
-// TestCrossMissionSizeIndependentOfReportProse pins the scaling property of
-// the compact mission: a report padded with thousands of characters of
-// justification prose must not change the cross mission's size — the mission
-// carries judgments, not report text.
 // TestVerifyItemBindsOnlyItsOwnResultInDelta pins the result-binding contract:
 // a verify item session consumes no other session's result, so its consumed
 // digests stay empty (only the final synthesis binds every accepted result
@@ -1737,8 +1685,21 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 
 	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	deltaRun := mustLoadRun(t, repoRoot, deltaID)
-	if strings.Join(deltaRun.CarriedKeys, ",") != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout" {
-		t.Fatalf("expected auth.logout and the quality key carried over, got %v", deltaRun.CarriedKeys)
+	if !grContainsString(coverageKeysOf(deltaRun), "review") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.login") {
+		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
+	}
+	// The reviewer re-runs only auth.login; the rest is carried. The design
+	// and architecture judgments pinned the acceptance item set, so the item
+	// edit forced them to re-run mechanically.
+	grReviewRecheck(t, repoRoot, deltaID, "auth.login")
+	deltaRun = mustLoadRun(t, repoRoot, deltaID)
+	for _, want := range []string{"code:src/auth.go", "item:auth:auth.logout"} {
+		if !grContainsString(deltaRun.CarriedKeys, want) {
+			t.Fatalf("expected %s carried over, got %v", want, deltaRun.CarriedKeys)
+		}
+	}
+	if grContainsString(deltaRun.CarriedKeys, "item:auth:auth.login") {
+		t.Fatalf("rechecked item must leave the carry set: %v", deltaRun.CarriedKeys)
 	}
 	grSubmitOK(t, repoRoot, deltaID, "auth.login", grVerifyMismatchReport("auth.login", main, "src/auth.go", "P1"))
 
@@ -1748,118 +1709,6 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	}
 	if len(state.ConsumedResultDigests) != 0 {
 		t.Fatalf("expected a verify item to bind no other result, got %v", state.ConsumedResultDigests)
-	}
-}
-
-// TestDeltaFinalizePreservesCarriedFileLevelDeps verifies that a path the
-// delta run both re-declares and carries keeps the carried entry's file-level
-// deps union — including the declare-heavy remainder no check owns, which the
-// promote gate judges freshness on.
-func TestDeltaFinalizePreservesCarriedFileLevelDeps(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
-	main := "docs/specs/units/candidate/unit_auth.md"
-	data, err := os.ReadFile(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	extended := string(data) + "\n## Scope\n\nScope prose.\n\n## Notes\n\nUndeclared extra prose.\n"
-	if err := os.WriteFile(specPath, []byte(extended), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Check 1 reads Description; checks 2-8 and cross read Scope. Editing
-	// Description later stales only check 1, so the re-run structural group
-	// and the carried checks share the main spec path.
-	var decls []validationcache.CheckDeclaration
-	decls = append(decls, validationcache.CheckDeclaration{Check: "1", Sections: []string{"Description"}})
-	// Check 10 (clarity) declares the Description section (the fixture's
-	// Scope/Notes sections are also valid evidence, but Description keeps the
-	// stale set deterministic).
-	decls = append(decls, validationcache.CheckDeclaration{Check: gaterun.ClarityCheck, Sections: []string{"Description"}})
-	for _, key := range []string{"2", "3", "4", "5", "6", "7", "8", "9", gaterun.CrossKey} {
-		decls = append(decls, validationcache.CheckDeclaration{Check: key, Sections: []string{"Scope"}})
-	}
-	entry, err := validationcache.BuildEntryFromChecks(repoRoot, main, decls)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The Notes region is no check's dependency: append its CID as the
-	// declare-heavy remainder of the file-level deps union.
-	notesEntry, err := validationcache.BuildEntryFromChecks(repoRoot, main,
-		[]validationcache.CheckDeclaration{{Check: "notes", Sections: []string{"Notes"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var extraDep string
-	for _, dep := range notesEntry.Deps {
-		if !containsString(entry.Deps, dep) {
-			extraDep = dep
-			break
-		}
-	}
-	if extraDep == "" {
-		t.Fatal("fixture assumption broken: no undeclared dependency in the Notes region")
-	}
-	entry.Deps = append(entry.Deps, extraDep)
-
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", gaterun.ClarityCheck, gaterun.CrossKey} {
-		statuses[key] = "pass"
-	}
-	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
-		Command:   "validate",
-		Unit:      "auth",
-		Mode:      "full",
-		Basis:     "full",
-		Result:    "pass",
-		Target:    "candidate",
-		Timestamp: "2026-01-01T00:00:00Z",
-		Judgments: string(judgments),
-		Entries:   []validationcache.FileEntry{entry},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Edit Description only: check 1 goes stale; the Scope region (carried
-	// checks 2-8) and the Notes remainder stay fresh.
-	current, err := os.ReadFile(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	edited := strings.Replace(string(current), "Prose.", "Prose. Edited.", 1)
-	if edited == string(current) {
-		t.Fatal("fixture assumption broken: Description edit did not apply")
-	}
-	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	deltaID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	deltaRun := mustLoadRun(t, repoRoot, deltaID)
-	if got := strings.Join(coverageKeysOf(deltaRun), ","); got != "structural,clarity" {
-		t.Fatalf("expected the structural and clarity groups to re-run, got %s", got)
-	}
-	if got := strings.Join(deltaRun.CarriedKeys, ","); got != "2,4,5,7,8,9" {
-		t.Fatalf("expected the Scope checks carried over, got %v", deltaRun.CarriedKeys)
-	}
-
-	grSubmitOK(t, repoRoot, deltaID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": {main + ": Description"},
-		"3": {main + ": Description"},
-		"6": {main + ": Description"},
-	}))
-	grSubmitClarity(t, repoRoot, deltaID, main)
-	grSubmitOK(t, repoRoot, deltaID, "cross", grCrossReport(main, "Description"))
-	grFinalizeOK(t, repoRoot, deltaID)
-
-	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, extraDep) {
-		t.Fatalf("expected the carried file-level dep %s to survive the delta merge:\n%s", extraDep, cache)
 	}
 }
 
@@ -2026,21 +1875,13 @@ func TestGateSubmitValidation(t *testing.T) {
 	if _, err := grSubmit(t, repoRoot, runID, "structural", "check-1: "+main+": Description\n"); err == nil || !strings.Contains(err.Error(), "no verdict line") {
 		t.Fatalf("expected a missing-verdict rejection, got %v", err)
 	}
-	// Missing scope line.
-	if _, err := grSubmit(t, repoRoot, runID, "structural", "1. Structural integrity: PASS — ok\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n"); err == nil || !strings.Contains(err.Error(), "no Dependency scope line") {
-		t.Fatalf("expected a missing-scope rejection, got %v", err)
+	// A FAIL verdict with no P0/P1 finding is inconsistent.
+	failWithoutFinding := "1. Structural integrity: FAIL — broken\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n"
+	if _, err := grSubmit(t, repoRoot, runID, "structural", failWithoutFinding); err == nil || !strings.Contains(err.Error(), "P0/P1 finding") {
+		t.Fatalf("expected a FAIL-without-finding rejection, got %v", err)
 	}
-	// Declaration outside the snapshot.
-	grWriteFile(t, repoRoot, "src/helper.go", "package helper\n")
-	report := "1. Structural integrity: PASS — ok\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n\ncheck-1: src/helper.go: all\ncheck-3: " + main + ": Description\ncheck-6: " + main + ": Description\n"
-	if _, err := grSubmit(t, repoRoot, runID, "structural", report); err == nil || !strings.Contains(err.Error(), "read refs") {
-		t.Fatalf("expected a snapshot-membership rejection, got %v", err)
-	}
-	// Unresolvable section heading.
-	report = "1. Structural integrity: PASS — ok\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n\ncheck-1: " + main + ": No Such Section\ncheck-3: " + main + ": Description\ncheck-6: " + main + ": Description\n"
-	if _, err := grSubmit(t, repoRoot, runID, "structural", report); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected a section-lookup rejection, got %v", err)
-	}
+	// A report with no dependency declarations is valid: reports carry no
+	// scope lines — the tooling records the run's input surface.
 
 	// The rejected attempts are recorded; a valid submission is accepted and
 	// terminal.
@@ -2049,8 +1890,8 @@ func TestGateSubmitValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.Attempts) != 6 {
-		t.Fatalf("expected 6 recorded attempts (5 rejected + 1 accepted), got %d", len(state.Attempts))
+	if len(state.Attempts) != 4 {
+		t.Fatalf("expected 4 recorded attempts (3 rejected + 1 accepted), got %d", len(state.Attempts))
 	}
 	if state.Status != gaterun.SessionAccepted {
 		t.Fatalf("expected the structural session accepted, got %q", state.Status)
@@ -2063,7 +1904,7 @@ func TestGateSubmitValidation(t *testing.T) {
 		t.Fatalf("expected the accepted session to be terminal, got %v", err)
 	}
 	for i, a := range state.Attempts {
-		if i < 5 && (a.Status != "rejected" || a.RejectionReason == "") {
+		if i < 3 && (a.Status != "rejected" || a.RejectionReason == "") {
 			t.Fatalf("expected attempt %d to carry a rejection reason, got %+v", i+1, a)
 		}
 	}
@@ -2244,49 +2085,6 @@ func TestGateRunAppendixCoverage(t *testing.T) {
 	}
 }
 
-func TestGateRunRequiresMainFileCoverage(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	// The clarity group is always planned; every report here declares only
-	// an appendix, so the required-file coverage check must still fire when
-	// no session covers the main spec.
-	main := "docs/specs/units/candidate/unit_self.md"
-	grWriteFile(t, repoRoot, main, "---\nid: self\nunit_refs: none\nrule_refs: none\n---\n\n# self\n")
-	appendix := "docs/specs/units/candidate/appendix/unit_self_protocol.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: self\nstatus: active\n---\n\n# Protocol\n")
-
-	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
-	run := mustLoadRun(t, repoRoot, runID)
-	if run.CoverageByKey("clarity") == nil {
-		t.Fatalf("the clarity group must always be planned, got %v", coverageKeysOf(run))
-	}
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": {appendix + ": all"},
-		"3": {appendix + ": all"},
-		"6": {appendix + ": all"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
-		"2": {appendix + ": all"},
-		"4": {appendix + ": all"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {appendix + ": all"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
-		"7": {appendix + ": all"},
-		"8": {appendix + ": all"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "clarity", grValidateReport([]string{"10"}, map[string][]string{"10": {appendix + ": all"}}))
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(appendix, "all"))
-	if _, err := grFinalize(t, repoRoot, runID, "--result", "pass"); err == nil || !strings.Contains(err.Error(), "required file") {
-		t.Fatalf("expected the required-file coverage check to reject, got %v", err)
-	}
-	if _, serr := os.Stat(filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")); !os.IsNotExist(serr) {
-		t.Fatal("expected no cache file to be left behind")
-	}
-}
-
-// ------------------------------------------------------------
-// Snapshot divergence
-// ------------------------------------------------------------
-
 func TestEvidenceSnapshotDivergencesBindsEntryHash(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
@@ -2301,24 +2099,18 @@ func TestEvidenceSnapshotDivergencesBindsEntryHash(t *testing.T) {
 	if !ok || expected == "" {
 		t.Fatalf("planned surface has no snapshot hash: hash=%q ok=%t", expected, ok)
 	}
-	fresh := map[string]bool{"src/auth.go": true}
 	matching := []validationcache.FileEntry{{Path: "src/auth.go", Hash: "sha256:" + expected}}
-	if got := evidenceSnapshotDivergences(repoRoot, run, matching, fresh); len(got) != 0 {
+	if got := evidenceSnapshotDivergences(repoRoot, run, matching); len(got) != 0 {
 		t.Fatalf("matching evidence unexpectedly diverged: %v", got)
 	}
+	// Every entry is bound to the plan snapshot: a whole-file change between
+	// plan and finalize must reject the finalize, whoever assembled it.
 	mismatched := []validationcache.FileEntry{{Path: "src/auth.go", Hash: "sha256:different"}}
-	if got := evidenceSnapshotDivergences(repoRoot, run, mismatched, fresh); !reflect.DeepEqual(got, []string{"evidence differs from snapshot: src/auth.go"}) {
+	if got := evidenceSnapshotDivergences(repoRoot, run, mismatched); !reflect.DeepEqual(got, []string{"evidence differs from snapshot: src/auth.go"}) {
 		t.Fatalf("unexpected mismatch result: %v", got)
 	}
-	// A carried-only entry keeps its baseline hash: a whole-file change
-	// outside the declared deps is a documented fresh state, so the entry
-	// must be bound by snapshot presence, not by hash equality.
-	carriedOnly := []validationcache.FileEntry{{Path: "src/auth.go", Hash: "sha256:baseline-hash"}}
-	if got := evidenceSnapshotDivergences(repoRoot, run, carriedOnly, map[string]bool{}); len(got) != 0 {
-		t.Fatalf("carried-only evidence must not be hash-bound to the snapshot: %v", got)
-	}
 	missing := []validationcache.FileEntry{{Path: "src/not-planned.go", Hash: expected}}
-	if got := evidenceSnapshotDivergences(repoRoot, run, missing, fresh); !reflect.DeepEqual(got, []string{"evidence path absent from snapshot: src/not-planned.go"}) {
+	if got := evidenceSnapshotDivergences(repoRoot, run, missing); !reflect.DeepEqual(got, []string{"evidence path absent from snapshot: src/not-planned.go"}) {
 		t.Fatalf("unexpected missing-path result: %v", got)
 	}
 }
@@ -2475,21 +2267,30 @@ func TestGateRunDeltaFlow(t *testing.T) {
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
-	if got := coverageKeysOf(run); strings.Join(got, ",") != "structural,design,dependencies,clarity" {
-		t.Fatalf("expected the affected groups, got %v", got)
+	if got := coverageKeysOf(run); strings.Join(got, ",") != "review" {
+		t.Fatalf("expected the review coverage only, got %v", got)
 	}
-	if strings.Join(run.CarriedKeys, ",") != "5" {
-		t.Fatalf("expected check 5 carried over, got %v", run.CarriedKeys)
+	if len(run.CarriedKeys) != 10 || !containsString(run.CarriedKeys, "5") {
+		t.Fatalf("expected every standing check as a carry candidate, got %v", run.CarriedKeys)
 	}
-	deltaMission := missionJSON(t, repoRoot, deltaRun, "structural")
-	if deltaMission.Mode != "delta" || strings.Join(deltaMission.Sessions[0].CheckKeys, ",") != "1,3,6" {
-		t.Fatalf("delta mission repeats a carried check: %+v", deltaMission)
+	if run.ChangeSetFP == "" {
+		t.Fatal("expected the change-set fingerprint on the run")
+	}
+	reviewMission := missionJSON(t, repoRoot, deltaRun, "review")
+	if reviewMission.Mode != "delta" || strings.Join(reviewMission.Sessions[0].CheckKeys, ",") != "review" {
+		t.Fatalf("expected a delta review mission, got %+v", reviewMission)
+	}
+	if len(reviewMission.Sessions[0].ChangeSet) == 0 || len(reviewMission.Sessions[0].Standing) == 0 {
+		t.Fatalf("review mission must carry the change set and standing conclusions: %+v", reviewMission.Sessions[0])
 	}
 
-	// Only the planned sessions may be submitted.
+	// Carried sessions cannot be submitted: they are not part of the plan.
 	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
 		t.Fatalf("expected the carried session to be absent from the plan, got %v", err)
 	}
+
+	// The reviewer names one check per affected group; each group re-runs.
+	grReviewRecheck(t, repoRoot, deltaRun, "1", "2", "7", "10")
 	grSubmitOK(t, repoRoot, deltaRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Testability / Acceptance Criteria"},
@@ -2504,16 +2305,14 @@ func TestGateRunDeltaFlow(t *testing.T) {
 		"8": {main + ": Description"},
 	}))
 	grSubmitClarity(t, repoRoot, deltaRun, main)
-	deltaCross := missionJSON(t, repoRoot, deltaRun, "cross")
-	if len(deltaCross.Sessions[0].CarriedResults) == 0 || len(deltaCross.Sessions[0].Dependencies) != 4 {
-		t.Fatalf("delta cross mission lost carried or dependency results: %+v", deltaCross.Sessions[0])
-	}
-	grSubmitOK(t, repoRoot, deltaRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
 	if !strings.Contains(cache, "basis: delta") {
 		t.Fatalf("expected basis: delta, got:\n%s", cache)
+	}
+	if !strings.Contains(cache, "reviewed_change_set:") || !strings.Contains(cache, "review_result: recheck") {
+		t.Fatalf("expected the review record in the cache, got:\n%s", cache)
 	}
 	if !strings.Contains(cache, `check: "5"`) {
 		t.Fatalf("expected the carried check 5 evidence, got:\n%s", cache)
@@ -2526,7 +2325,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 		t.Fatalf("expected the delta cache to be fresh, got: %s", res.Reason)
 	}
 
-	// A delta plan with nothing stale is refused.
+	// A delta plan with nothing changed is refused.
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
 		t.Fatalf("expected the freshness refusal, got %v", err)
 	}
@@ -2597,18 +2396,25 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "dependencies" {
-		t.Fatalf("expected the dependencies group to re-run, got %s", got)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+		t.Fatalf("expected the review coverage only, got %s", got)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "1,10,2,3,4,5,6" {
-		t.Fatalf("expected the structural/design/acceptance checks carried over, got %s", got)
+	// The peer edit concerns check 9; the reviewer re-runs its group.
+	grReviewRecheck(t, repoRoot, deltaRun, "9")
+	updated := mustLoadRun(t, repoRoot, deltaRun)
+	if grContainsString(updated.CarriedKeys, "9") {
+		t.Fatalf("check 9 must leave the carry candidates, got %s", updated.CarriedKeys)
+	}
+	for _, key := range []string{"1", "2", "5"} {
+		if !grContainsString(updated.CarriedKeys, key) {
+			t.Fatalf("check %s must stay carried, got %s", key, updated.CarriedKeys)
+		}
 	}
 	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
 		"9": peerDeps,
 	}))
-	grSubmitClarity(t, repoRoot, deltaRun, main)
 	grSubmitOK(t, repoRoot, deltaRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
@@ -2649,9 +2455,11 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 
 		deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "delta")
 		run := mustLoadRun(t, repoRoot, deltaRun)
-		if got := strings.Join(coverageKeysOf(run), ","); got != "4" {
-			t.Fatalf("expected only consumer check 4 to re-run, got %s", got)
+		if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
+			t.Fatalf("expected the review coverage only, got %s", got)
 		}
+		grReviewRecheck(t, repoRoot, deltaRun, "4")
+		run = mustLoadRun(t, repoRoot, deltaRun)
 		if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,5,6" {
 			t.Fatalf("unexpected carried checks: %s", got)
 		}
@@ -2747,8 +2555,13 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 	}
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	// The reviewer re-runs the design group; its check 2 will fail.
+	grReviewRecheck(t, repoRoot, deltaRun, "2")
 	run := mustLoadRun(t, repoRoot, deltaRun)
 	for _, ck := range run.Coverage {
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			continue
+		}
 		checks := run.ReportKeys(ck)
 		scopes := map[string][]string{}
 		for _, key := range checks {
@@ -2990,24 +2803,15 @@ func TestGateRunContentEditStales(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res.Fresh {
-		t.Fatal("expected the cache to go stale after editing a declared section")
+		t.Fatal("expected the cache to go stale after editing a recorded file")
 	}
-	scope, err := validationcache.DeriveStaleScope(repoRoot, "unit", "auth", "validate")
+	report, err := validationcache.DeriveChangeReport(repoRoot, "unit", "auth", "validate")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scope.Affected) == 0 || !containsStr(scope.Affected, "1") {
-		t.Fatalf("expected check 1 among the affected checks, got %v", scope.Affected)
+	if report.Empty() {
+		t.Fatal("expected the recorded content change in the change report")
 	}
-}
-
-func containsStr(values []string, want string) bool {
-	for _, v := range values {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }
 
 // ------------------------------------------------------------
@@ -3025,77 +2829,6 @@ func TestGatePlanStableRequiresStableOnly(t *testing.T) {
 // ------------------------------------------------------------
 // Path-form validation
 // ------------------------------------------------------------
-
-func TestGateSubmitRejectsPhysicalNameResolvedPaths(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	grWriteSpec(t, repoRoot, "auth")
-	grWriteSpec(t, repoRoot, "self")
-	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/g_rule_repo.md", "---\nid: g_rule_repo\nscope: global\n---\n\n# Rule\n")
-
-	cases := []struct {
-		name    string
-		gate    string
-		kind    string
-		target  string
-		session string
-		report  string
-		wantErr string
-	}{
-		{
-			name: "cross-unit main spec in unit cache", gate: "validate", kind: "unit", target: "self",
-			session: "dependencies",
-			report:  grDependenciesReport(map[string][]string{"7": {"docs/specs/units/candidate/unit_auth.md: Description"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
-			wantErr: "unit:auth",
-		},
-		{
-			name: "rule file in unit cache", gate: "validate", kind: "unit", target: "self",
-			session: "dependencies",
-			report:  grDependenciesReport(map[string][]string{"7": {"docs/specs/rules/candidate/g_rule_repo.md: all"}, "8": {"docs/specs/units/candidate/unit_self.md: Description"}}),
-			wantErr: "rule:g_rule_repo",
-		},
-		{
-			name: "unit spec in rule cache", gate: "validate", kind: "rule", target: "g_rule_repo",
-			session: "checks",
-			report:  "1. Structural integrity: PASS — ok\n2. Design soundness: PASS — ok\n3. Scope integrity: PASS — ok\n4. Evidence-driven vs design-driven consistency: PASS — ok\n5. Acceptance coverage & correctness: PASS — ok\n6. Affects-source validity: PASS — ok\n7. Cross-unit consistency: PASS — ok\n8. Constraint alignment: PASS — ok\n\ncheck-1: docs/specs/units/candidate/unit_auth.md: all\ncheck-2: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-3: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-4: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-5: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-6: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-7: docs/specs/rules/candidate/g_rule_repo.md: Constraint\ncheck-8: docs/specs/rules/candidate/g_rule_repo.md: Constraint\n",
-			wantErr: "unit:auth",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			runID := grPlan(t, repoRoot, "--gate", tc.gate, "--"+tc.kind, tc.target, "--target", "candidate")
-			_, err := grSubmit(t, repoRoot, runID, tc.session, tc.report)
-			if err == nil {
-				t.Fatal("expected the submission to be rejected")
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("expected error mentioning %q, got: %v", tc.wantErr, err)
-			}
-		})
-	}
-}
-
-func TestGateRunExtraInputRequiredForOutsideReads(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	grWriteSpec(t, repoRoot, "auth")
-	main := "docs/specs/units/candidate/unit_auth.md"
-	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
-	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
-
-	report := grVerifyItemBody("auth.core", "ALIGNED", "src/auth.go:1") + "auth.core: " + main + ": Testability / Acceptance Criteria\nauth.core: tests/auth_test.go: all\n"
-
-	// A test file outside the derived code surface is rejected unless the
-	// plan listed it in the input manifest.
-	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	if _, err := grSubmit(t, repoRoot, runID, "auth.core", report); err == nil || !strings.Contains(err.Error(), "read refs") {
-		t.Fatalf("expected the outside read to be rejected, got %v", err)
-	}
-
-	runID = grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "tests"))
-	grSubmitOK(t, repoRoot, runID, "auth.core", report)
-	grSubmitClarity(t, repoRoot, runID, main)
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
-	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
-}
 
 func TestGateRunOverlappingLogicalInputIsAvailableToEverySession(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
@@ -3138,10 +2871,31 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	if !strings.Contains(cache, "chunker: ") || !strings.Contains(cache, "chunks:") {
+		t.Fatalf("expected the whole-file chunk evidence in the verify cache, got:\n%s", cache)
+	}
 	original := grReadJudgmentBaseline(t, repoRoot, "unit", "auth", "verify")
-	for _, want := range []string{"region:acceptance_item:auth.login:", "region:acceptance_item:auth.logout:"} {
-		if !strings.Contains(cache, want) {
-			t.Fatalf("expected %q in the verify cache, got:\n%s", want, cache)
+	// Each item judgment pins its own item region (located by id), so
+	// reordering items never invalidates the recorded conclusion.
+	for _, item := range []string{"auth.login", "auth.logout"} {
+		binding, ok := original.Records["item:auth:"+item]
+		if !ok {
+			t.Fatalf("no judgment record for item %s", item)
+		}
+		record, err := judgments.Load(repoRoot, binding.Reference)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, dep := range record.Dependencies {
+			for _, d := range dep.Deps {
+				if strings.HasPrefix(d, "region:acceptance_item:"+item+":") {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("item %s judgment does not pin its item region: %+v", item, record.Dependencies)
 		}
 	}
 
@@ -3174,8 +2928,10 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Fresh {
-		t.Fatalf("verify cache must remain fresh after item reorder: %s", res.Reason)
+	// Whole-file cache freshness flags the reorder as a content change: the
+	// delta review judges what it means (the item records above survive it).
+	if res.Fresh {
+		t.Fatalf("expected the reorder to be detected as a whole-file content change")
 	}
 
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
@@ -3190,14 +2946,23 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
-	if got := coverageKeysOf(run); strings.Join(got, ",") != "item:auth:auth.login" {
-		t.Fatalf("expected only auth.login re-run, got %v", got)
+	// The item edit changes the item's own region (auth.login re-runs) and the
+	// acceptance item set the design and architecture judgments pin (they
+	// re-run too); the other item's region is untouched.
+	if !grContainsString(coverageKeysOf(run), "review") || !grContainsString(coverageKeysOf(run), "item:auth:auth.login") {
+		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(run))
 	}
-	if strings.Join(run.CarriedKeys, ",") != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout" {
-		t.Fatalf("expected auth.logout and the quality key carried over, got %v", run.CarriedKeys)
+	if !grContainsString(run.CarriedKeys, "item:auth:auth.logout") {
+		t.Fatalf("expected auth.logout carried over, got %v", run.CarriedKeys)
+	}
+	grReviewRecheck(t, repoRoot, deltaRun, "auth.login")
+	run = mustLoadRun(t, repoRoot, deltaRun)
+	if grContainsString(run.CarriedKeys, "item:auth:auth.login") {
+		t.Fatalf("rechecked item must leave the carry set: %v", run.CarriedKeys)
 	}
 
 	grSubmitOK(t, repoRoot, deltaRun, "auth.login", grVerifyItemRegionReport("auth.login", main, "src/auth.go"))
+	grAutoSubmitQuality(t, repoRoot, deltaRun)
 	grSubmitOK(t, repoRoot, deltaRun, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
@@ -3262,11 +3027,6 @@ func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
-	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
-	if !strings.Contains(cache, "region:acceptance_item:auth.core:") {
-		t.Fatalf("expected the item-region dep on the logical reference, got:\n%s", cache)
-	}
-
 	// Promote the dependency unit (the candidate file disappears; the stable
 	// file holds identical content) — the item region must re-locate against
 	// the current layer and stay fresh.
@@ -3285,60 +3045,6 @@ func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
 	}
 }
 
-func TestParseDecl(t *testing.T) {
-	cases := []struct {
-		decl    string
-		want    declParts
-		wantErr bool
-	}{
-		{decl: "", want: declParts{WholeFile: true}},
-		{decl: "all", want: declParts{WholeFile: true}},
-		{decl: "120-180,300-320", want: declParts{Ranges: []string{"120-180,300-320"}}},
-		{decl: "acceptance_items", want: declParts{Accepts: true}},
-		{decl: "acceptance_item:auth.login", want: declParts{Items: []string{"auth.login"}}},
-		{decl: "acceptance_item:auth.login, auth.logout", want: declParts{Items: []string{"auth.login", "auth.logout"}}},
-		{decl: "Testability / Acceptance Criteria", want: declParts{Sections: []string{"Testability / Acceptance Criteria"}}},
-		{decl: "acceptance_item:", wantErr: true},
-		{decl: "acceptance_item:auth.login,,auth.logout", wantErr: true},
-	}
-	for _, tc := range cases {
-		got, err := parseDecl(tc.decl)
-		if tc.wantErr {
-			if err == nil {
-				t.Fatalf("parseDecl(%q): expected an error", tc.decl)
-			}
-			continue
-		}
-		if err != nil {
-			t.Fatalf("parseDecl(%q): %v", tc.decl, err)
-		}
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Fatalf("parseDecl(%q) = %+v, want %+v", tc.decl, got, tc.want)
-		}
-	}
-
-	m := &declParts{}
-	mergeDecl(m, declParts{Items: []string{"a"}})
-	mergeDecl(m, declParts{Accepts: true})
-	mergeDecl(m, declParts{Items: []string{"b"}})
-	if !m.Accepts || strings.Join(m.Items, ",") != "a,b" {
-		t.Fatalf("union merge failed: %+v", m)
-	}
-	mergeDecl(m, declParts{WholeFile: true})
-	if !m.WholeFile || m.Accepts || len(m.Items) != 0 {
-		t.Fatalf("whole-file must cover every other form: %+v", m)
-	}
-	mergeDecl(m, declParts{Sections: []string{"Description"}})
-	if !m.WholeFile || len(m.Sections) != 0 {
-		t.Fatalf("a later declaration must not clear whole-file: %+v", m)
-	}
-}
-
-// TestCrossNewFindingCoexistsWithCarriedFinding verifies the run-scoped
-// finding id namespace: a carried finding from an earlier run and a new
-// finding created by the current cross synthesis can coexist — the new id is
-// {current_run}/..., the carried id is {earlier_run}/..., so the submission
-// cannot collide with itself.
 func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.alpha", "auth.beta"})
@@ -3377,7 +3083,13 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	grWriteFile(t, repoRoot, main, edited)
 	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "cross_reference_integrity")
 	deltaRun := mustLoadRun(t, repoRoot, deltaID)
-	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || strings.Join(coverageKeysOf(deltaRun), ",") != "item:auth:auth.beta" {
+	if !grContainsString(coverageKeysOf(deltaRun), "review") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
+		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
+	}
+	// The reviewer re-runs auth.beta; alpha and its finding are carried.
+	grReviewRecheck(t, repoRoot, deltaID, "auth.beta")
+	deltaRun = mustLoadRun(t, repoRoot, deltaID)
+	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
 		t.Fatalf("expected only auth.beta to re-execute and auth.alpha to carry: coverage %v, carried %v", coverageKeysOf(deltaRun), deltaRun.CarriedKeys)
 	}
 	grSubmitOK(t, repoRoot, deltaID, "auth.beta", grVerifyItemReport("auth.beta", main, "src/beta.go"))
@@ -3425,15 +3137,21 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	grWriteFile(t, repoRoot, main, edited)
 	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	deltaRun := mustLoadRun(t, repoRoot, deltaID)
-	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || strings.Join(coverageKeysOf(deltaRun), ",") != "item:auth:auth.beta" {
+	if !grContainsString(coverageKeysOf(deltaRun), "review") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
+		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
+	}
+	// The reviewer re-runs only auth.beta; alpha is carried with its snapshot.
+	grReviewRecheck(t, repoRoot, deltaID, "auth.beta")
+	deltaRun = mustLoadRun(t, repoRoot, deltaID)
+	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
 		t.Fatalf("expected only auth.beta to re-execute and auth.alpha to carry: coverage %v, carried %v", coverageKeysOf(deltaRun), deltaRun.CarriedKeys)
 	}
-	if len(deltaRun.CarriedEvidence) == 0 {
-		t.Fatal("expected the plan to snapshot the carried evidence")
+	if len(deltaRun.CarriedLenses) == 0 {
+		t.Fatal("expected the plan to snapshot the carried check markers")
 	}
 
 	// Remove the baseline cache before submitting the delta reports: the
-	// finalize must merge the plan-time snapshot, not re-read the baseline.
+	// finalize must use the plan-time snapshot, not re-read the baseline.
 	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
 	if err := os.Remove(cachePath); err != nil {
 		t.Fatal(err)
@@ -3453,7 +3171,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 
 // TestValidateSessionDeclaresAffectsEvidence verifies that a spec-derived
 // affects.files evidence file is part of the local validate sessions' read
-// refs: a check may read it and declare it in its Dependency scope.
+// refs: a check may read it.
 func TestValidateSessionDeclaresAffectsEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
@@ -3666,11 +3384,12 @@ func TestParseGateFindingsGrammar(t *testing.T) {
 	}
 }
 
-// TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps guards the
-// carried-entry snapshot binding: a file whose content changed outside its
-// declared dependency chunks keeps its baseline evidence (a documented fresh
-// state) and must not block a delta finalize.
-func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) {
+// TestGateDeltaFinalizesWithCarriedItemRegion guards the item-region pin: an
+// acceptance-item record's own object is its item region, so a change to a
+// code file the judgment read does not invalidate the record — the item key
+// stays a review candidate and must not block a delta finalize when the
+// reviewer re-runs it.
+func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.one", "auth.two"})
 	main := "docs/specs/units/candidate/unit_auth.md"
@@ -3731,18 +3450,67 @@ func TestGateDeltaFinalizesWithCarriedEvidenceOutsideDeclaredDeps(t *testing.T) 
 
 	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, "src/big.go", "src/two.go"))
 	run := mustLoadRun(t, repoRoot, deltaID)
-	if grContainsString(run.CarriedKeys, "auth.one") {
-		t.Fatal("changed code must invalidate the entire file judgment")
+	if !grContainsString(coverageKeysOf(run), "review") || !grContainsString(coverageKeysOf(run), "item:auth:auth.two") {
+		t.Fatalf("expected the review and the region-invalidated item in coverage, got %v", coverageKeysOf(run))
 	}
+	if grContainsString(coverageKeysOf(run), "item:auth:auth.one") {
+		t.Fatalf("auth.one's own object is unchanged — it must await the review, got %v", coverageKeysOf(run))
+	}
+	if !grContainsString(run.CarriedKeys, "item:auth:auth.one") {
+		t.Fatalf("expected auth.one among the review candidates, got %v", run.CarriedKeys)
+	}
+	// The reviewer re-runs both items and the architecture judgment: auth.one's
+	// evidence file changed (whole-file freshness), auth.two's spec region
+	// changed, and the architecture judgment covers the changed file.
+	grReviewRecheck(t, repoRoot, deltaID, "auth.one", "auth.two", "architecture:auth")
 	grSubmitOK(t, repoRoot, deltaID, "auth.one", oneReport)
 	grSubmitOK(t, repoRoot, deltaID, "auth.two", grVerifyItemReport("auth.two", main, "src/two.go"))
 	grSubmitClarity(t, repoRoot, deltaID, main)
+	grAutoSubmitQuality(t, repoRoot, deltaID)
 	grSubmitOK(t, repoRoot, deltaID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, deltaID)
 
 	cacheAfter := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
 	if got := grEntryHash(t, cacheAfter, "src/big.go"); got == baselineHash {
 		t.Fatalf("expected rechecked code to receive a new hash, got %s", got)
+	}
+}
+
+// TestGateDeltaNewEvidenceIsDisclosedAndNotCarried pins the new-evidence rule
+// of framework/validation_cache.md §Write Rules: a physical manifest entry
+// absent from the baseline cache's recorded evidence makes the plan cover the
+// full verify scope — nothing is carried from that baseline — and the plan
+// notice names the new paths.
+func TestGateDeltaNewEvidenceIsDisclosedAndNotCarried(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Core() {}\n")
+	main := "docs/specs/units/candidate/unit_auth.md"
+
+	validateID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, validateID, main)
+	grFinalizeOK(t, repoRoot, validateID)
+
+	verifyID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, verifyID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitQuality(t, repoRoot, verifyID)
+	grFinalizeOK(t, repoRoot, verifyID)
+
+	// The delta plan discovers evidence the baseline never recorded: the plan
+	// must disclose it and carry no judgment over.
+	grWriteFile(t, repoRoot, "context/notes.md", "extra context\n")
+	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta",
+		"--inputs-file", grInputsManifest(t, "context/notes.md"))
+	run := mustLoadRun(t, repoRoot, deltaID)
+	if !grContainsString(coverageKeysOf(run), "review") {
+		t.Fatalf("expected the review session in the delta plan, got %v", coverageKeysOf(run))
+	}
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("new verify evidence must not be carried over, got %v", run.CarriedKeys)
+	}
+	notices := strings.Join(run.Notices, "\n")
+	if !strings.Contains(notices, "new verify evidence not in the baseline: context/notes.md") {
+		t.Fatalf("plan notices must name the new evidence, got:\n%s", notices)
 	}
 }
 
@@ -3869,27 +3637,30 @@ func TestGateRepairDegradesOnConflictingStatusMap(t *testing.T) {
 
 	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
-	entryIdx := strings.Index(cache, "- path: src/auth.go")
+	entryIdx := strings.Index(cache, "- path: docs/specs/units/candidate/unit_auth.md")
 	if entryIdx < 0 {
-		t.Fatalf("cache has no src/auth.go entry:\n%s", cache)
+		t.Fatalf("cache has no main-spec entry:\n%s", cache)
 	}
 	checkIdx := strings.Index(cache[entryIdx:], `check: "item:auth:auth.two"`)
 	if checkIdx < 0 {
-		t.Fatalf("cache has no auth.two check in the src/auth.go entry:\n%s", cache)
+		t.Fatalf("cache has no auth.two check in the main-spec entry:\n%s", cache)
 	}
 	statusRel := strings.Index(cache[entryIdx+checkIdx:], "status: pass")
 	if statusRel < 0 {
-		t.Fatalf("cache has no pass status for auth.two in the src/auth.go entry:\n%s", cache)
+		t.Fatalf("cache has no pass status for auth.two in the main-spec entry:\n%s", cache)
 	}
-	statusAbs := entryIdx + checkIdx + statusRel
-	mutated := cache[:statusAbs] + "status: fail" + cache[statusAbs+len("status: pass"):]
+	// Duplicate the check marker with a conflicting status: the status map
+	// then contradicts itself and cannot say which judgments failed.
+	insertAt := entryIdx + checkIdx + statusRel + len("status: pass")
+	dup := "\n      - check: \"item:auth:auth.two\"\n        status: fail"
+	mutated := cache[:insertAt] + dup + cache[insertAt:]
 	if err := os.WriteFile(cachePath, []byte(mutated), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
 	run := mustLoadRun(t, repoRoot, repairID)
-	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "auth.two=conflicting") {
+	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "item:auth:auth.two=conflicting") {
 		t.Fatalf("expected a conflicting status map to degrade the plan, got notices %v", run.Notices)
 	}
 	want := "item:auth:auth.one,item:auth:auth.two,code:src/auth.go,design:auth:src/auth.go,architecture:auth"
@@ -3935,6 +3706,12 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 	}
 	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	deltaRun := mustLoadRun(t, repoRoot, deltaID)
+	if !grContainsString(coverageKeysOf(deltaRun), "review") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.two") {
+		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
+	}
+	// The reviewer re-runs auth.two; auth.one keeps its evidence.
+	grReviewRecheck(t, repoRoot, deltaID, "auth.two")
+	deltaRun = mustLoadRun(t, repoRoot, deltaID)
 	if !grContainsString(deltaRun.CarriedKeys, "auth.one") {
 		t.Fatalf("expected auth.one to be carried over, got %v", deltaRun.CarriedKeys)
 	}
@@ -3994,8 +3771,10 @@ func TestCleanDeltaKeepsCarriedJudgmentStatus(t *testing.T) {
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
 	if !grContainsString(run.CarriedKeys, "5") {
-		t.Fatalf("expected check 5 carried over, got %v", run.CarriedKeys)
+		t.Fatalf("expected check 5 as a carry candidate, got %v", run.CarriedKeys)
 	}
+	// The reviewer re-runs every group except acceptance.
+	grReviewRecheck(t, repoRoot, deltaRun, "1", "2", "7", "10")
 	// No finding is produced, so no final synthesis is required.
 	grSubmitPlannedValidateSessions(t, repoRoot, deltaRun, main)
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
@@ -4277,30 +4056,4 @@ func grBuildSessionSpec(root string, run *gaterun.Run, keys []string) (*gaterun.
 		mapped[i] = grSessionKeys(run, key)[0]
 	}
 	return gaterun.BuildSessionSpec(root, run, mapped)
-}
-
-// TestDependencyScopeSubsectionResolvesToEnclosingSection pins the #64
-// end-to-end recovery: a reviewer that declares the ### subsection it
-// actually read is accepted, and the recorded dependency names the enclosing
-// ## section region.
-func TestDependencyScopeSubsectionResolvesToEnclosingSection(t *testing.T) {
-	root := createCLITestRepo(t)
-	grEnableMissionLayout(t, root)
-	main := grWriteSpec(t, root, "auth")
-	grWriteFile(t, root, "src/auth.go", "package auth\n")
-	data, err := os.ReadFile(main)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grWriteFile(t, root, "docs/specs/units/candidate/unit_auth.md", strings.Replace(string(data), "## Testability / Acceptance Criteria", "## Testability / Acceptance Criteria\n\n### Acceptance detail\n\nDetail prose.", 1))
-	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	key := "item:auth:auth.core"
-	report := grVerifyItemBody(key, "ALIGNED", "src/auth.go:1") + key + ": " + main + ": Acceptance detail\n" + key + ": src/auth.go: all\n"
-	grSubmitOK(t, root, runID, "auth.core", report)
-	grAutoSubmitQuality(t, root, runID)
-	grFinalizeOK(t, root, runID)
-	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/verify_result.md")
-	if !strings.Contains(cache, "region:section:Testability / Acceptance Criteria:") {
-		t.Fatalf("cache must record the enclosing section dep:\n%s", cache)
-	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 func synthesisPromote(t *testing.T, root, unit string) {
@@ -27,7 +28,11 @@ func synthesisItemRecord(t *testing.T, root, unit string) *judgments.Record {
 	}
 	return r
 }
-func TestItemRequiredCodeEvidenceCannotBeOmittedFromDependencies(t *testing.T) {
+
+// TestItemEvidenceIsRecordedInTheInputSurface pins the record contract: an
+// item judgment pins its own spec item region, while the code evidence it
+// used is recorded as part of the run's input surface (the cache entry set).
+func TestItemEvidenceIsRecordedInTheInputSurface(t *testing.T) {
 	root, main, _ := sharedFixture(t)
 	grWriteFile(t, root, "agreement.js", "export const tokenRequired = true;\n")
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "agreement.js"))
@@ -38,15 +43,30 @@ func TestItemRequiredCodeEvidenceCannotBeOmittedFromDependencies(t *testing.T) {
 	}
 	sharedFinish(t, root, id)
 	record := synthesisItemRecord(t, root, "auth")
+	regionPinned := false
+	for _, dep := range record.Dependencies {
+		for _, d := range dep.Deps {
+			if strings.HasPrefix(d, "region:acceptance_item:auth.core:") {
+				regionPinned = true
+			}
+		}
+	}
+	if !regionPinned {
+		t.Fatalf("item judgment does not pin its own spec item region: %+v", record.Dependencies)
+	}
+	baseline, err := validationcache.ReadGateBaseline(root, "unit", "auth", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{"contracts.js", "agreement.js"} {
 		found := false
-		for _, dep := range record.Dependencies {
-			if dep.Path == path && dep.Hash != "" {
+		for _, entry := range baseline.Entries {
+			if entry.Path == path {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatalf("required code input %s has no whole-file dependency", path)
+			t.Fatalf("code input %s is not recorded in the input surface", path)
 		}
 	}
 }
