@@ -52,6 +52,9 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	case ModeDelta:
 		switch {
 		case !baseline.Exists:
+			if baseline.UnusableReason != "" {
+				return nil, nil, nil, nil, fmt.Errorf("the existing cache is not in the current format and cannot be used as a delta baseline: %s", baseline.UnusableReason)
+			}
 			if run.Target == TargetStable {
 				return nil, nil, nil, nil, noUsableBaselineError(run)
 			}
@@ -114,9 +117,9 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 			newEvidence = append(newEvidence, p)
 		}
 	}
-	legacy := report.Legacy()
-	if len(legacy) > 0 {
-		return nil, nil, nil, nil, fmt.Errorf("the change cannot be localized with the baseline evidence (%s) — run the full command instead", strings.Join(legacy, ", "))
+	inconsistent := report.Inconsistent()
+	if len(inconsistent) > 0 {
+		return nil, nil, nil, nil, fmt.Errorf("the baseline cache records evidence that contradicts itself for %s — the change cannot be localized; run the full command instead", strings.Join(inconsistent, ", "))
 	}
 	fingerprint, err := report.Fingerprint()
 	if err != nil {

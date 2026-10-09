@@ -66,6 +66,37 @@ func TestSurfacesCommandReportsOverlap(t *testing.T) {
 	}
 }
 
+func TestSurfacesToleratesUnusableVerifyCache(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	pkgDir := filepath.Join(repoRoot, "pkg")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "a.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSurfacesUnitSpec(t, repoRoot, "alpha", "pkg/a.go")
+
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/alpha")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An old-format verify cache (no chunk evidence): the unusable baseline
+	// must degrade to "no judgments", not fail the whole command.
+	legacy := "---\ncommand: verify\nunit: alpha\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_alpha.md\n    hash: sha256:00\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runSurfaces([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("surfaces must not be blocked by an unusable verify cache: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "File judgments:") {
+		t.Fatalf("expected the surfaces report, got:\n%s", stdout.String())
+	}
+}
+
 func TestValidateCandidateFailsOnSharedSurfaceFile(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	pkgDir := filepath.Join(repoRoot, "pkg")

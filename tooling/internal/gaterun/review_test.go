@@ -106,8 +106,61 @@ func TestDeltaPlanLegacyEvidenceRefuses(t *testing.T) {
 	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
 	appendToAuthSpec(t, repoRoot, "\nchanged\n")
 
+	// A baseline without the required chunk evidence is not current-format: it
+	// is treated as no baseline and delta planning directs the full command.
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "not in the current format") {
+		t.Fatalf("expected the not-current-format refusal, got %v", err)
+	}
+}
+
+// TestDeltaPlanContradictoryEvidenceRefuses pins that a readable cache whose
+// recorded evidence contradicts itself (its whole-file hash disagrees with its
+// own, matching chunk sequence) cannot serve as a delta baseline: the change
+// cannot be localized, so delta planning refuses and directs the full command.
+func TestDeltaPlanContradictoryEvidenceRefuses(t *testing.T) {
+	repoRoot := newRepo(t)
+	entry := validateReviewBaseline(t, repoRoot)
+	entry.Hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
+
 	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "cannot be localized") {
-		t.Fatalf("expected the legacy-localization refusal, got %v", err)
+		t.Fatalf("expected the contradictory-evidence refusal, got %v", err)
+	}
+}
+
+// TestFullPlanToleratesLegacyCache pins that a full run is not blocked by the
+// old-format cache it is meant to rebuild: a baseline without the required
+// chunk evidence is not current-format and degrades to no carried conclusions
+// and no change review, while the full coverage set runs. Delta still refuses
+// it, because only the full command rebuilds the cache.
+func TestFullPlanToleratesLegacyCache(t *testing.T) {
+	repoRoot := newRepo(t)
+	entry := validateReviewBaseline(t, repoRoot)
+	entry.Chunks = nil
+	entry.Chunker = ""
+	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatalf("a full run must not be blocked by the old-format cache it rebuilds: %v", err)
+	}
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("an unusable baseline carries nothing, got %v", run.CarriedKeys)
+	}
+	for _, ck := range run.Coverage {
+		if ck.Key == DeltaReviewKey {
+			t.Fatalf("an unusable baseline adds no change review, got %v", coverageKeysOf(run))
+		}
+	}
+	if len(run.Coverage) == 0 {
+		t.Fatal("expected the full coverage set")
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "unusable") {
+		t.Fatalf("expected a notice that the existing cache is unusable, got %v", run.Notices)
+	}
+
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil {
+		t.Fatal("expected delta planning to still refuse the old-format cache")
 	}
 }
 

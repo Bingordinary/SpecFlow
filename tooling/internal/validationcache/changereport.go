@@ -13,14 +13,14 @@ import (
 // cache snapshot.
 type ChangeReportEntry struct {
 	Path    string                    `json:"path"`
-	Kind    string                    `json:"kind"` // changed | removed | legacy
+	Kind    string                    `json:"kind"` // changed | removed | added | inconsistent
 	Changes []contenthash.ChangeEntry `json:"changes,omitempty"`
 }
 
 // ChangeReport is the mechanically detected change set of one gate cache's
-// recorded input surface: what changed, disappeared, or can no longer be
-// localized since the cache was written. It is the sole input to the delta
-// reviewer's judgment; it decides nothing itself.
+// recorded input surface: what changed, disappeared, or was recorded with
+// evidence that contradicts itself since the cache was written. It is the sole
+// input to the delta reviewer's judgment; it decides nothing itself.
 type ChangeReport struct {
 	Entries []ChangeReportEntry `json:"entries"`
 }
@@ -28,13 +28,16 @@ type ChangeReport struct {
 // Empty reports whether nothing in the recorded surface changed.
 func (r *ChangeReport) Empty() bool { return r == nil || len(r.Entries) == 0 }
 
-// Legacy lists recorded files whose entries carry no comparable chunk
-// evidence: the report can tell that they changed but not where, so a delta
-// review cannot localize them — a complete run is required.
-func (r *ChangeReport) Legacy() []string {
+// Inconsistent lists recorded files whose entries contradict themselves: the
+// whole-file hash says the content changed, yet the entry's own chunk sequence
+// still matches the current content exactly, so the change cannot be
+// localized. The entry's recorded evidence cannot be trusted as a change
+// baseline, so a delta/repair run must refuse it and a full run must not carry
+// the standing conclusions mechanically.
+func (r *ChangeReport) Inconsistent() []string {
 	var out []string
 	for _, e := range r.Entries {
-		if e.Kind == "legacy" {
+		if e.Kind == "inconsistent" {
 			out = append(out, e.Path)
 		}
 	}
@@ -57,10 +60,13 @@ func (r *ChangeReport) Fingerprint() (string, error) {
 
 // DeriveChangeReport compares one gate cache's recorded file evidence against
 // current content. A file whose whole-file hash still matches is unchanged.
-// A changed file with comparable chunk evidence is diffed (ordered,
-// bidirectional); changed content without comparable evidence is reported as
-// legacy — the change is known but not localizable, so the run must complete.
-// A recorded path that no longer resolves or exists is reported removed.
+// Chunk evidence is required in every entry (the cache format), so a changed
+// entry always has comparable evidence and is diffed (ordered, bidirectional).
+// An entry whose hash says the content changed while its own chunk sequence
+// still matches the current content has recorded evidence that contradicts
+// itself: the change cannot be localized, so it is reported inconsistent and
+// the caller falls back to the full command. A recorded path that no longer
+// resolves or exists is reported removed.
 func DeriveChangeReport(repoRoot, targetKind, targetName, command string) (*ChangeReport, error) {
 	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
 	if err != nil {
@@ -89,16 +95,14 @@ func DeriveChangeReport(repoRoot, targetKind, targetName, command string) (*Chan
 		if entry.Hash != "" && normalizeHash(entry.Hash) == normalizeHash(contenthash.FileHashText(text)) {
 			continue
 		}
-		if entry.Chunker != contenthash.ChunkerVersion || len(entry.Chunks) == 0 {
-			report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "legacy"})
-			continue
-		}
 		changes := contenthash.DiffChunks(entry.Chunks, text)
 		if len(changes) == 0 {
-			// A hash mismatch with an identical chunk sequence means the
-			// recorded evidence is inconsistent — fail closed to legacy
-			// rather than claim the file is localized.
-			report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "legacy"})
+			// The hash says the content changed, yet the entry's own chunk
+			// sequence matches the current content exactly. A content-defined
+			// chunker is a deterministic function of content, so this can only
+			// mean the recorded evidence contradicts itself: the change is
+			// known but not localizable. Never claim it is localized.
+			report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "inconsistent"})
 			continue
 		}
 		report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "changed", Changes: changes})

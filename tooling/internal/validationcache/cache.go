@@ -299,7 +299,7 @@ type ExpectedCheck struct {
 // derivation failed): an existing cache must still prove both lenses ran.
 //
 // The expected set is derived lazily through expected, and only after the
-// cache is classified: a missing, legacy, or stale base cache returns before
+// cache is classified: a missing, unusable, or stale base cache returns before
 // derivation, so a read-only freshness report pays no evidence-discovery work
 // for those outcomes. A nil provider skips key checks entirely. A derivation
 // failure fails closed as STALE with the provider's error as the reason.
@@ -325,7 +325,10 @@ func CheckVerifyMerged(repoRoot, unitName, target string, expected func() ([]Exp
 	}
 	cache, err := readCache(cachePath)
 	if err != nil {
-		return CheckResult{}, fmt.Errorf("cannot read verify cache: %w", err)
+		// An existing but unusable verify cache (a removed format, a partial
+		// write, corruption) is not a usable gate result: fail it closed as
+		// STALE with the parse reason instead of failing the whole command.
+		return CheckResult{Fresh: false, Category: CategoryStale, Reason: fmt.Sprintf("verify cache is not in the current format: %v — run `verify@%s` again.", err, unitName)}, nil
 	}
 	got := map[string]string{}
 	for _, entry := range cache.Files {
@@ -893,7 +896,9 @@ func InvalidateGateCache(repoRoot, targetKind, targetName, command, target strin
 	}
 	cache, err := parseCache(data)
 	if err != nil {
-		return nil, fmt.Errorf("read gate cache for targeted invalidation: %w", err)
+		// An unusable cache is not a complete result that could satisfy the
+		// gate — treat it like a missing cache; a future full run rebuilds it.
+		return &TargetedInvalidation{Action: InvalidationNoCache, Path: relPath(repoRoot, cachePath)}, nil
 	}
 	if cache.Command != command || cache.Unit != targetName {
 		return nil, fmt.Errorf("cache identity is %s@%s, expected %s@%s", cache.Command, cache.Unit, command, targetName)
@@ -1436,9 +1441,6 @@ func parseCache(data []byte) (*cacheFile, error) {
 				cache.Files[len(cache.Files)-1] = *currentEntry
 				continue
 			}
-			if trimmed == "deps:" {
-				return nil, fmt.Errorf("cache uses the legacy dependency-declaration format — run the full command to rebuild it")
-			}
 			if trimmed == "checks:" {
 				inChecksBlock = true
 				currentCheck = nil
@@ -1450,12 +1452,12 @@ func parseCache(data []byte) (*cacheFile, error) {
 				cache.Files[len(cache.Files)-1] = *currentEntry
 				continue
 			}
-			// If we hit a non-empty line that doesn't start with - or is a continuation,
-			// we might have left the files block
-			if currentEntry != nil {
-				inFilesBlock = false
-				inChecksBlock = false
-			}
+			// An unrecognized line inside the files block is ignored in
+			// place. The `files` block is the last top-level block, so a
+			// removed or future field (e.g. the old `deps:` lines) must be
+			// skipped without ending the block — otherwise every entry that
+			// follows it would be silently dropped.
+			continue
 		}
 
 		if !inFilesBlock {
@@ -1528,6 +1530,22 @@ func parseCache(data []byte) (*cacheFile, error) {
 			if i > 0 && cache.InvalidatedChecks[i-1] >= key {
 				return nil, fmt.Errorf("cache file `invalidated_checks` must be sorted and duplicate-free")
 			}
+		}
+	}
+
+	// A cache is usable only when it carries the evidence the current format
+	// is built on: every `files` entry records the chunk sequence
+	// (`chunker` + `chunks`) computed at write time. This is a required part
+	// of the format, not optional decoration: without it the entry cannot
+	// participate in the current freshness and change-review contract. A
+	// cache missing it — the removed `deps:`-declaration format, a partial
+	// write, corruption — is rejected as not current-format. Callers that
+	// read an existing cache treat this as "no usable cache" and fall back to
+	// the full command; callers that validate a freshly rendered candidate
+	// fail hard.
+	for _, e := range cache.Files {
+		if e.Chunker != contenthash.ChunkerVersion || len(e.Chunks) == 0 {
+			return nil, fmt.Errorf("cache entry %q carries no comparable chunk evidence — the cache is not in the current format; run the full command to rebuild it", e.Path)
 		}
 	}
 
@@ -1933,8 +1951,14 @@ func resolveEntryPath(repoRoot, path string) string {
 // gate-plan to derive delta/repair session sets and by gate-finalize to merge
 // carried-over evidence. A missing cache is Exists=false.
 type GateBaseline struct {
-	Command           string
-	Exists            bool
+	Command string
+	Exists  bool
+	// UnusableReason explains why an existing cache file could not be read as
+	// a baseline — a removed format, a partial write, corruption. It is set
+	// while Exists stays false: callers treat it exactly like a missing cache
+	// and fall back to the full command. It is empty when the file is simply
+	// absent.
+	UnusableReason    string
 	Mode              string
 	Basis             string
 	Result            string
@@ -1956,8 +1980,10 @@ type BaselineCheck struct {
 }
 
 // ReadGateBaseline reads the gate's cache file and returns its baseline view.
-// A missing cache returns Exists=false with no error; a malformed cache is an
-// error (the caller fails closed).
+// A missing cache returns Exists=false with no error. An existing but unusable
+// cache — a removed format, a partial write, corruption — also returns
+// Exists=false, with UnusableReason set: callers treat it exactly like a
+// missing baseline and fall back to the full command.
 func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBaseline, error) {
 	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
 	if err != nil {
@@ -1968,7 +1994,13 @@ func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBa
 	}
 	cache, err := readCache(cachePath)
 	if err != nil {
-		return nil, fmt.Errorf("read gate baseline %s: %w", cachePath, err)
+		// An existing but unusable cache — a removed format, a partial write,
+		// corruption — is not a usable baseline: degrade to "no baseline" and
+		// let the caller fall back to the full command, instead of failing
+		// the whole command. Unknown fields on a readable cache are ignored
+		// by the parser; only missing or malformed required content reaches
+		// this branch.
+		return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s is not in the current format: %v", relPath(repoRoot, cachePath), err)}, nil
 	}
 	baseline := &GateBaseline{Command: command,
 		Exists:            true,

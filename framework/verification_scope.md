@@ -344,7 +344,7 @@ Delta runs (`revalidate@{target}` / `reverify@{unit}`) and repair runs (`--mode 
 - New physical input-manifest entries the baseline never recorded join the change set as added files (verify runs).
 - Any content change stales the cache: there is no sub-file freshness rule. The change set's fingerprint binds the review record to the exact content the reviewer judged.
 
-A baseline entry without comparable chunk evidence (a pre-review cache) cannot localize its change: `gate-plan` refuses the delta/repair and directs a full run. A delta with no change and no forced work is fresh — the plan reports "cache is fresh — no changes to review" and stops.
+A cache without the required chunk evidence is not current-format and is treated as no baseline: `gate-plan` refuses the delta/repair and directs a full run. A delta with no change and no forced work is fresh — the plan reports "cache is fresh — no changes to review" and stops.
 
 ### The change review
 

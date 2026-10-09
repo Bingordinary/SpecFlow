@@ -228,7 +228,7 @@ func writeUnitConfirmationCache(t *testing.T, repoRoot, name, command, extraFron
 	}
 	sb.WriteString("files:\n")
 	for _, f := range files {
-		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:abc\n", f)
+		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:abc\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n", f)
 	}
 	sb.WriteString("---\nok\n")
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {

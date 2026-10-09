@@ -391,8 +391,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 }
 
 // writeChangeReportSections prints the mechanically detected change set for
-// every STALE gate — what changed and where, or that the cached evidence
-// cannot localize the change (legacy). The report is cache-side and
+// every STALE gate — what changed and where. The report is cache-side and
 // read-only; the delta reviewer consumes the same change set when a re* run
 // is triggered. Gates that are not STALE print nothing.
 func writeChangeReportSections(stdout io.Writer, absRoot, targetKind, targetName string, statuses map[string]gateStatus) {
@@ -411,8 +410,8 @@ func writeChangeReportSections(stdout io.Writer, absRoot, targetKind, targetName
 }
 
 // writeChangeReportDetail renders one gate's change report: localized change
-// entries per file, removed files, and files whose cached evidence cannot
-// localize the change (a complete run is required for those).
+// entries per file, removed files, and files whose recorded evidence
+// contradicts itself (a complete run is required for those).
 func writeChangeReportDetail(stdout io.Writer, report *validationcache.ChangeReport) {
 	if report.Empty() {
 		fmt.Fprintln(stdout, "  no changes detected in the recorded input surface")
@@ -427,8 +426,8 @@ func writeChangeReportDetail(stdout io.Writer, report *validationcache.ChangeRep
 			}
 		case "removed":
 			fmt.Fprintf(stdout, "  %s: removed\n", entry.Path)
-		case "legacy":
-			fmt.Fprintf(stdout, "  %s: changed — cached evidence cannot localize it; run the full gate\n", entry.Path)
+		case "inconsistent":
+			fmt.Fprintf(stdout, "  %s: changed — the recorded evidence contradicts itself (hash and chunk sequence disagree); run the full gate\n", entry.Path)
 		}
 	}
 }

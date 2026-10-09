@@ -112,12 +112,12 @@ Each `files` entry records content evidence:
   references (see §Logical References); the run's own target files and code
   files keep physical paths.
 - **`hash`** — the whole-file content hash at run time. Freshness is whole-file: any content change stales the cache, and there is no sub-file freshness rule.
-- **`chunker` / `chunks`** — the ordered content-defined chunk sequence with line positions. It is the baseline side of the change diff (`gate-plan --mode delta/repair`): ordered, bidirectional alignment detects edits, insertions, deletions, moves, and reordered blocks, and localizes them for the change reviewer. It never decides skip scope.
+- **`chunker` / `chunks`** — the ordered content-defined chunk sequence with line positions. It is a **required** part of every entry and the baseline side of the change diff (`gate-plan --mode delta/repair`): ordered, bidirectional alignment detects edits, insertions, deletions, moves, and reordered blocks, and localizes them for the change reviewer. It never decides skip scope.
 - **`checks`** — the per-check markers attached to the entry: one marker per
   judgment key that ran (its lens tag on merged verify caches) and, on failure
   records, its outcome `status` (see §Check markers).
 
-`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; a `files` entry whose `hash` is absent or does not match current content is stale. A cache file that still carries the removed declaration fields (`deps:` lines) is rejected as a legacy cache: `fresh` and `promote` fail it closed with "legacy dependency-declaration format — run the full command".
+`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; a `files` entry whose `hash` is absent or does not match current content is stale. The current chunk evidence (`chunker` + `chunks`) is a required part of every `files` entry: a cache missing it — the removed `deps:`-declaration format, a partial write, or corruption — is not a current-format cache. `fresh` and `promote` fail it closed as stale, and every reader treats it as no usable cache (no baseline, no judgments) and falls back to the full command. Fields the current format does not define (for example a leftover `deps:` line) are ignored, not treated as the end of the `files` block.
 
 `files` paths are resolved against the repository root. Dependency matching
 (staleness checks and baseline recording) uses the canonical repo-relative
@@ -189,11 +189,12 @@ carry `invalidated_checks`.
   every expected alignment and quality key of the current coverage set (see
   §Merged verify cache). A cache carrying no markers is invalid for both
   `fresh` and `promote` ("verify cache carries no per-check evidence").
-- **No compatibility shim:** a cache entry without comparable chunk evidence
-  (a pre-chunk-evidence cache) cannot localize its change: `gate-plan` refuses
-  the delta/repair and directs a full run; `fresh` reports the change as
-  unlocalizable. A cache file carrying `deps:` lines is rejected outright as a
-  legacy cache.
+- **No compatibility shim:** the current chunk evidence (`chunker` + `chunks`)
+  is required in every `files` entry. A cache without it (the removed
+  `deps:`-declaration format, or any pre-chunk-evidence cache) is not a
+  current-format cache: `gate-plan` refuses the delta/repair and directs a full
+  run, `fresh` reports it as unusable, and readers treat it as no baseline.
+  Unknown fields the format does not define are ignored.
 - Carried keys are recorded with a marker snapshotted at plan time (their lens
   and, on failure records, the `carried` status), so the published cache
   carries the same lens coverage the merged verify gate requires.
@@ -353,8 +354,8 @@ name re-runs or escalate when in doubt, and the recorded review is its audit
 trail — but a missed semantic connection is a miss of the same class as any
 check. The mechanical floor limits the exposure: invalidated verify records,
 failed/invalidated judgments, and new keys re-run regardless of the review.
-A pre-review cache (no comparable chunk evidence) cannot localize its change
-at all and requires a full run.
+A cache without the required chunk evidence is not current-format at all and
+requires a full run.
 
 **Known limit (execution shape):** the cache records the run's judgment and
 content evidence only; it carries no execution-shape field. Session identity,

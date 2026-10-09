@@ -67,6 +67,11 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 		return nil, nil, err
 	}
 	if !baseline.Exists {
+		// An existing but unusable baseline carries nothing; this full run
+		// rebuilds it. Report why so the skipped carry is not silent.
+		if baseline.UnusableReason != "" {
+			return nil, []string{"existing gate cache is unusable — no carried conclusions: " + baseline.UnusableReason}, nil
+		}
 		return nil, nil, nil
 	}
 	state, err := validatedJudgmentState(baseline)
@@ -118,14 +123,15 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 			report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: p, Kind: "added"})
 		}
 	}
-	if len(report.Legacy()) > 0 {
-		// The change is known but not localizable: the standing conclusions
-		// re-run instead of being reviewed unanchored.
+	if len(report.Inconsistent()) > 0 {
+		// The cache records evidence that contradicts itself, so the change is
+		// known but not localizable: the standing conclusions re-run instead
+		// of being carried or reviewed unanchored.
 		for _, key := range candidates {
 			run.Relationships = appendUnique(run.Relationships, relationshipName(key))
 		}
 		run.Relationships = dedupeSorted(run.Relationships)
-		notices = append(notices, "the standing relationship conclusions cannot be localized against the baseline evidence — they re-run: "+strings.Join(candidates, ", "))
+		notices = append(notices, "the baseline cache records contradictory evidence — the standing relationship conclusions re-run: "+strings.Join(candidates, ", "))
 		return nil, notices, nil
 	}
 	fingerprint, err := report.Fingerprint()
