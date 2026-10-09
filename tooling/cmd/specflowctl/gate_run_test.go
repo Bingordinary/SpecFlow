@@ -2331,12 +2331,12 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	}
 }
 
-// TestGateRunSurfaceOwnershipPeerStaleness: check 9 declares every peer
-// unit's frontmatter and acceptance-item regions, so another unit's surface
-// declaration change stales the cache and the delta re-runs check 9 instead
-// of carrying it — even though the peer is not in the target's unit_refs
-// (see framework/validation_cache.md §Logical References).
-func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
+// TestGateRunPeerEditDoesNotStaleValidateCache pins the one-way dependency
+// direction (issue #68): a unit validate reads only its declared unit_refs and
+// rule_refs, never unrelated peers — Check 9 is the mechanical
+// `specflowctl surfaces` audit. A peer's surface-declaration edit must not
+// stale the target's validate cache or force a delta re-run.
+func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
 	specPath := grWriteSpec(t, repoRoot, "auth")
@@ -2344,7 +2344,6 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 	main := specPath
 	desc := main + ": Description"
 	accept := main + ": Testability / Acceptance Criteria"
-	peerDeps := []string{"unit:beta: frontmatter", "unit:beta: acceptance_items"}
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
@@ -2362,7 +2361,7 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
-		"9": peerDeps,
+		"9": {accept},
 	}))
 	grSubmitClarity(t, repoRoot, fullRun, main)
 	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
@@ -2376,8 +2375,8 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 		t.Fatalf("expected the fresh cache, got: %s", res.Reason)
 	}
 
-	// A peer's acceptance-item edit (the surface-declaration carrier) stales
-	// check 9 even though beta is not in auth's unit_refs.
+	// An unrelated peer's edit must leave auth's validate cache fresh: beta is
+	// not in auth's unit_refs, so it is not part of auth's input surface.
 	data, err := os.ReadFile(peerPath)
 	if err != nil {
 		t.Fatal(err)
@@ -2390,40 +2389,13 @@ func TestGateRunSurfaceOwnershipPeerStaleness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Fresh {
-		t.Fatalf("expected the peer edit to stale the cache, got fresh with reason: %s", res.Reason)
-	}
-
-	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	run := mustLoadRun(t, repoRoot, deltaRun)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-		t.Fatalf("expected the review coverage only, got %s", got)
-	}
-	// The peer edit concerns check 9; the reviewer re-runs its group.
-	grReviewRecheck(t, repoRoot, deltaRun, "9")
-	updated := mustLoadRun(t, repoRoot, deltaRun)
-	if grContainsString(updated.CarriedKeys, "9") {
-		t.Fatalf("check 9 must leave the carry candidates, got %s", updated.CarriedKeys)
-	}
-	for _, key := range []string{"1", "2", "5"} {
-		if !grContainsString(updated.CarriedKeys, key) {
-			t.Fatalf("check %s must stay carried, got %s", key, updated.CarriedKeys)
-		}
-	}
-	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grDependenciesReport(map[string][]string{
-		"7": {desc},
-		"8": {desc},
-		"9": peerDeps,
-	}))
-	grSubmitOK(t, repoRoot, deltaRun, "cross", grCrossReport(main, "Description"))
-	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
-
-	res, err = validationcache.CheckValidate(repoRoot, "auth")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !res.Fresh {
-		t.Fatalf("expected the delta cache to recover freshness, got: %s", res.Reason)
+		t.Fatalf("peer edit must not stale the validate cache, got stale: %s", res.Reason)
+	}
+
+	// Nothing in auth's own surface changed, so a delta plan is refused.
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
+		t.Fatalf("expected the freshness refusal after an unrelated peer edit, got %v", err)
 	}
 }
 

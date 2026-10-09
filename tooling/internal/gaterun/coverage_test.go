@@ -116,6 +116,61 @@ func TestUnitValidateCoverageReadRefs(t *testing.T) {
 	}
 }
 
+// TestUnitValidateExcludesUnrelatedPeers pins the one-way dependency direction:
+// a unit validate reads its declared unit_refs providers and rule_refs, never
+// unrelated peers. Adding an unrelated unit in either layer must not change the
+// target's input surface or its session read refs (issue #68).
+func TestUnitValidateExcludesUnrelatedPeers(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/dep", "")
+	writeRule(t, repoRoot, "candidate", "b_rule_http")
+	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_http", "src/auth", "")
+
+	plan := func() *Run {
+		t.Helper()
+		run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+
+	before := plan()
+	writeUnit(t, repoRoot, "candidate", "peer_candidate", "none", "none", "src/peer_candidate", "")
+	writeUnit(t, repoRoot, "stable", "peer_stable", "none", "none", "src/peer_stable", "")
+	after := plan()
+
+	for _, ref := range []string{"unit:peer_candidate", "unit:peer_stable"} {
+		if _, ok := refByRef(after, ref); ok {
+			t.Fatalf("unit validate read surface carries unrelated peer %s: %+v", ref, after.Refs)
+		}
+	}
+	if len(before.Refs) != len(after.Refs) {
+		t.Fatalf("adding unrelated peers changed the read surface: before=%+v after=%+v", before.Refs, after.Refs)
+	}
+	for i := range before.Refs {
+		if before.Refs[i] != after.Refs[i] {
+			t.Fatalf("adding unrelated peers changed read surface entry %d: before=%+v after=%+v", i, before.Refs, after.Refs)
+		}
+	}
+	for _, key := range []string{"structural", "dependencies"} {
+		spec, err := BuildSessionSpec(repoRoot, after, []string{key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range []string{"unit:dep", "rule:b_rule_http"} {
+			if !stringInSlice(spec.ReadRefs, ref) {
+				t.Fatalf("%s session read refs = %v, want %s", key, spec.ReadRefs, ref)
+			}
+		}
+		for _, ref := range spec.ReadRefs {
+			if strings.HasPrefix(ref, "unit:peer_") {
+				t.Fatalf("%s session received unrelated peer ref %s: %v", key, ref, spec.ReadRefs)
+			}
+		}
+	}
+}
+
 func TestUnitValidateStructuralSessionCarriesUnresolvedReference(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "missing", "none", "src/auth", "")

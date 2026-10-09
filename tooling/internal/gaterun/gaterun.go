@@ -1321,9 +1321,12 @@ func (d *Derivation) derive(gate, targetKind, targetName, target string) ([]Ref,
 
 // deriveUnitValidate resolves a validate unit run's inputs: the unit's own
 // spec files in the target layer, the unit_refs dependency units (current
-// layer) with their protocol appendices, the bound and global rules, the
-// spec's affects.files entries, and every peer unit main spec (Check 9's
-// surface-ownership audit reads all of them).
+// layer) with their protocol appendices, the bound and global rules, and the
+// spec's affects.files entries. Cross-unit edges are one-way: a unit reads the
+// providers it declares, never unrelated peers — Check 7 reads only the
+// declared dependencies' carriers, and Check 9 is the mechanical
+// `specflowctl surfaces` audit, which reads the repository directly and needs
+// no peer spec read refs.
 func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
@@ -1339,9 +1342,7 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
-	depUnits := map[string]bool{}
 	for _, dep := range parseRefList(content, "unit_refs", unitName) {
-		depUnits[dep] = true
 		refs = append(refs, logicalUnitRef(repoRoot, dep, SourceDerived))
 		appendixRefs, err := logicalUnitAppendixRefs(repoRoot, dep)
 		if err != nil {
@@ -1350,16 +1351,6 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 		for _, appendixRef := range appendixRefs {
 			refs = append(refs, appendixRef)
 		}
-	}
-	unitNames, err := allUnitNames(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	for _, peer := range unitNames {
-		if peer == unitName || depUnits[peer] {
-			continue
-		}
-		refs = append(refs, logicalUnitRef(repoRoot, peer, SourceDerived))
 	}
 	globalIDs, err := globalRuleIDs(repoRoot)
 	if err != nil {

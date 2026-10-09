@@ -868,12 +868,14 @@ func sortedKeySet(keys map[string]bool) []string {
 
 // unitValidateGroupReadRefs derives the exact group-local read surface for one
 // unit validate coverage group. Check 1 (structural) must resolve unit_refs
-// and rule_refs to verify that they exist, while Checks 7-9 (dependencies)
-// read those logical objects for cross-unit, constraint, and
-// surface-ownership judgments. The design, acceptance, and clarity groups stay
-// limited to the unit's own truth and shared evidence inputs; they do not
-// receive unrelated logical objects, code evidence, or extra read refs beyond
-// the agent-declared shared inputs.
+// and rule_refs to verify that they exist, while Checks 7-8 (dependencies)
+// read those logical objects for cross-unit and constraint judgments. The
+// logical refs here are the declared unit_refs and rule_refs only — a unit
+// validate never carries unrelated peers (Check 9 is the mechanical
+// `specflowctl surfaces` audit and needs no peer spec read ref). The design,
+// acceptance, and clarity groups stay limited to the unit's own truth and
+// shared evidence inputs; they do not receive unrelated logical objects, code
+// evidence, or extra read refs beyond the agent-declared shared inputs.
 func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []string {
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(run)...)

@@ -16,7 +16,6 @@ func TestGatePlanRejectsDirectoryDiscoveryErrors(t *testing.T) {
 		name, directory, expectedRef, targetKind string
 	}{
 		{"global rules", "docs/specs/rules/stable", "rule:g_rule_required", "unit"},
-		{"stable peers", "docs/specs/units/stable", "unit:peer", "unit"},
 		{"candidate units for rule", "docs/specs/units/candidate", "unit:demo", "rule"},
 		{"stable units for rule", "docs/specs/units/stable", "unit:peer", "rule"},
 	} {
