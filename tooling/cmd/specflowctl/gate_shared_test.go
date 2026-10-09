@@ -339,7 +339,7 @@ func TestSharedObservationDecisionsRemainIndependent(t *testing.T) {
 		t.Fatal("peer finding overwrote auth exclusion")
 	}
 }
-func TestSharedNewCallerRequiresFreshCoverageAndPrivateDelta(t *testing.T) {
+func TestSharedPrivateDeltaAndUndeclaredCaller(t *testing.T) {
 	root, authSpec, _ := sharedFixture(t)
 	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	sharedFinish(t, root, auth)
@@ -367,16 +367,18 @@ func TestSharedNewCallerRequiresFreshCoverageAndPrivateDelta(t *testing.T) {
 	}
 	grWriteFile(t, root, "order.js", "import {response} from './contracts.js';\nresponse();\n")
 	fresh, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
-	if err != nil || fresh.Fresh {
-		t.Fatal("new caller escaped scope validation")
+	if err != nil || !fresh.Fresh {
+		t.Fatalf("undeclared new caller must not stale verify on its own: %+v %v", fresh, err)
 	}
-	delta = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	// The coordinator supplies a discovered consumer explicitly; only then does
+	// it join the run's input surface and get judged.
+	delta = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, "order.js"))
 	run, err = gaterun.Load(root, delta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.CoverageByKey("code:contracts.js") == nil || run.CoverageByKey("design:auth:contracts.js") == nil {
-		t.Fatal("new evidence did not invalidate public/design coverage")
+	if !stringInList(run.ExtraInputs, "order.js") {
+		t.Fatalf("supplied consumer did not join the run's input surface: %+v", run.ExtraInputs)
 	}
 }
 

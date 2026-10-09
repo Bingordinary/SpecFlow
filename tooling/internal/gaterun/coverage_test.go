@@ -1274,10 +1274,11 @@ func TestExtendRejectsClosedRun(t *testing.T) {
 	}
 }
 
-// TestItemReadRefsIncludeOneHopEvidence pins the discovery extension: an item
-// session may read the same one-hop public evidence the quality sessions
-// derive for the unit's files, so a related file does not force a replan.
-func TestItemReadRefsIncludeOneHopEvidence(t *testing.T) {
+// TestItemReadRefsAreDeclaredSurfaceOnly pins that an item session reads the
+// spec-declared surface, not a name-token closure: an undeclared file that
+// merely mentions a declared file is not part of the read surface. Related
+// context is supplied explicitly (`--inputs-file` / `gate-extend`).
+func TestItemReadRefsAreDeclaredSurfaceOnly(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "src/main.go", "package main\n\nfunc main() {}\n")
 	writeFile(t, repoRoot, "lib/lib.go", "package lib\n\n// calls main.go helpers\n")
@@ -1305,8 +1306,11 @@ func TestItemReadRefsIncludeOneHopEvidence(t *testing.T) {
 		t.Fatal("missing item coverage key")
 	}
 	reads := coverageReadRefs(repoRoot, run, *item)
-	if !stringInSlice(reads, "lib/lib.go") {
-		t.Fatalf("item read refs lack the one-hop evidence: %v", reads)
+	if stringInSlice(reads, "lib/lib.go") {
+		t.Fatalf("undeclared name-token match leaked into the item read refs: %v", reads)
+	}
+	if !stringInSlice(reads, "src/main.go") {
+		t.Fatalf("declared surface missing from the item read refs: %v", reads)
 	}
 }
 

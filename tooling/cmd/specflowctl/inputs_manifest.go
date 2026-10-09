@@ -15,7 +15,7 @@ import (
 // one extra read input per line — a file path, a directory, or a logical
 // reference. Blank lines are skipped; entries are used verbatim. The manifest
 // is scratch input, not evidence: a repository-content manifest could be swept
-// into the snapshot or the evidence corpus, so it is rejected before the file
+// into the snapshot, so it is rejected before the file
 // is read (see framework/verification_scope.md §Input roles).
 func loadInputsManifest(repoRoot, manifestPath string) ([]string, error) {
 	if strings.TrimSpace(manifestPath) == "" {

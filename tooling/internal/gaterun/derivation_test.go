@@ -22,9 +22,9 @@ func TestDerivationSharesAuditAndExpansions(t *testing.T) {
 		}
 	}
 	// The distinct expanded directories are the declared code surface (src)
-	// and the evidence corpus root ("."): two units each declaring src must
-	// not multiply either.
-	if got := d.expander.Expansions(); got != 2 {
-		t.Fatalf("two units declaring D=1 directory must expand D+corpus times, got %d", got)
+	// only: two units each declaring src must not multiply the expansion, and
+	// there is no repository-wide evidence-corpus expansion.
+	if got := d.expander.Expansions(); got != 1 {
+		t.Fatalf("two units declaring D=1 directory must expand D times, got %d", got)
 	}
 }

@@ -46,7 +46,7 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 2. Pre-review Setup
 
-Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
+Public checks read the file evidence surface fixed by the mission: the reviewed file, its cited `affects.evidence_files`, the declared dependency spec objects and applicable public rules, plus the related files the coordinator supplied through the input manifest. Related evidence is never auto-linked by filename or stem. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
 
 Design and architecture checks read their selected unit spec, applicable rules and code. Extract accepted trade-offs, architectural decisions, design constraints, known debt and non-goals from that unit's published design context.
 
@@ -592,6 +592,8 @@ An item may cite read-only evidence files — typically tests or code owned by a
 **Scope boundary for non-implementation files:**
 - Test files are not scope violations: the declared implementation files (`implementation_surface`/`affects.files`) declare implementation scope; a relevant test file absent from them is context evidence, never an under-declared-scope finding.
 - Dependency files (read for context but not part of the implementation) are likewise context evidence, never scope findings.
+
+An under-declared file is a declaration defect, not a read-ref gap: report it as a scope finding whose fix updates the candidate spec's declaration, then re-plan verify. `gate-extend` does not substitute — it broadens what a session may read, not what the spec declares (framework/shared_judgments.md §Required tasks). Related evidence the reviewer needs to read but that is not implementation participation goes through the input manifest or `gate-extend` instead.
 
 **PASS:** All declared implementation files are accurate and complete
 

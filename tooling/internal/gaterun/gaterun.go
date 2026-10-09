@@ -317,7 +317,6 @@ type SessionState struct {
 // the coverage set that must be judged, and the run mode. It carries no
 // sessions: the agent creates them under their chosen key batches.
 type Run struct {
-	PublicEvidence map[string][]string          `json:"public_evidence,omitempty"`
 	RunID          string                       `json:"run_id"`
 	SchemaVersion  int                          `json:"schema_version,omitempty"`
 	Protocol       string                       `json:"protocol,omitempty"`
@@ -526,22 +525,6 @@ func Extend(repoRoot, runID string, extraInputs []string, now time.Time) (*Run, 
 		}
 		if len(added) == 0 {
 			return fmt.Errorf("no new inputs — every declared path is already part of run %s", runID)
-		}
-		// The public code read surface is materialized at plan time: every
-		// quality file's evidence — its extra inputs included — is folded
-		// into PublicEvidence and then into each code key's read refs. A
-		// supplement must refresh both, or a re-missioned public check would
-		// still not see the added evidence — the exact gap gate-extend
-		// exists to close.
-		if run.Gate == GateVerify {
-			if err := d.addReviewInputs(run); err != nil {
-				return err
-			}
-			for i := range run.Coverage {
-				if run.Coverage[i].Kind == SessionKindCode {
-					run.Coverage[i].ReadRefs = run.PublicEvidence[run.Coverage[i].File]
-				}
-			}
 		}
 		if err := validateSnapshotPaths(repoRoot, run.Refs, run.Surfaces); err != nil {
 			return err
@@ -796,7 +779,7 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	run.RunID = runID
 	run.CreatedAt = now.UTC().Format(timestampLayout)
 	if gate == GateVerify && targetKind == TargetKindUnit {
-		run.Notices = append(run.Notices, "evidence discovery: item sessions read the spec-derived surface plus the unit's one-hop public evidence (callers, callees, dependencies, tests); if a reviewer reports a missing file, add it to this open run with `specflowctl gate-extend --run "+run.RunID+" --paths <path>` — extending keeps every accepted session, while a new gate-plan would replace the run")
+		run.Notices = append(run.Notices, "evidence discovery: item sessions read the spec-declared surface (implementation_surface, affects.files, cited affects.evidence_files, rules); the coordinator supplies related tests, callers, callees and dependencies through `--inputs-file`, and a reviewer that needs another file reports a missing read ref so the run can be extended with `specflowctl gate-extend --run "+run.RunID+" --paths <path>` — extending keeps every accepted session, while a new gate-plan would replace the run")
 		if notice := stubScanNotice(repoRoot, run); notice != "" {
 			run.Notices = append(run.Notices, notice)
 		}

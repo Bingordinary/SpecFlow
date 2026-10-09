@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
@@ -112,288 +111,25 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 	return out, nil
 }
 
-// codeEvidenceExts is the extension filter for public evidence discovery:
-// only these source files participate, plus each run's quality files.
-const codeEvidenceExts = "|.go|.js|.jsx|.ts|.tsx|.py|.rs|.java|.c|.cc|.cpp|.h|.cs|.rb|.php|.swift|.kt|.sh|.ps1|.json|"
-
-// dataEvidenceExts names the corpus extensions that participate as data files.
-// A data file references another file only through an explicit path form; a
-// bare word that happens to match a file name (a dependency name, a key) is
-// not a reference. Corpus files outside codeEvidenceExts (target files with
-// other extensions) are data as well.
-const dataEvidenceExts = "|.json|"
-
-// frameworkArtifacts are the paths SpecFlow installs into a consumer project
-// (see tooling/internal/install/install.go). They are framework runtime, not
-// project code, and never participate in evidence. Exact paths match one
-// file; a trailing slash matches a directory tree. The installer's .gitignore
-// entries cannot be assumed to exist, so the corpus excludes them explicitly.
-var frameworkArtifacts = []string{
-	".claude-plugin/plugin.json",
-	".opencode/plugins/specflow.js",
-	".agents/plugins/specflow/",
-	".codex/hooks.json",
-	"hooks/hooks.json",
-}
-
-func isFrameworkArtifact(path string) bool {
-	for _, artifact := range frameworkArtifacts {
-		if strings.HasSuffix(artifact, "/") {
-			if strings.HasPrefix(path, artifact) {
-				return true
-			}
-			continue
-		}
-		if path == artifact {
-			return true
-		}
-	}
-	return false
-}
-
-// evidenceEntry is one corpus file's matching data: its content for path-form
-// references, its identifier stream for name references, and the identity a
-// reference from another file must take.
-type evidenceEntry struct {
-	text   string   // NUL-filtered content
-	stream string   // "\x00ident\x00ident\x00" lowercased identifier stream
-	base   string   // basename (the path-form identity)
-	seq    []string // basename stem tokens; nil when the name is too short
-	data   bool     // data file: bare identifier mentions never link it
-}
-
-// evidenceCorpus is the run-wide repository source snapshot behind public
-// evidence: one directory expansion and one read per file, shared by every
-// quality file's derivation instead of repeating both per file.
-type evidenceCorpus struct {
-	entries map[string]evidenceEntry
-	rules   []string // active global rule ids
-}
-
-// loadEvidenceCorpus expands the repository once and reads every candidate
-// source file once. targets (the run's quality files) join the corpus
-// regardless of extension, mirroring the per-file inclusion rule. Governance
-// trees and framework deployment artifacts never participate.
-func (d *Derivation) loadEvidenceCorpus(targets []string) (*evidenceCorpus, error) {
-	files, err := d.expander.Expand(".")
-	if err != nil {
-		return nil, err
-	}
-	isTarget := make(map[string]bool, len(targets))
-	for _, t := range targets {
-		isTarget[t] = true
-	}
-	c := &evidenceCorpus{entries: map[string]evidenceEntry{}}
-	for _, f := range files {
-		if strings.HasPrefix(f.Path, "docs/specs/") || strings.HasPrefix(f.Path, "specflow/") || strings.HasPrefix(f.Path, "meta/") {
-			continue
-		}
-		if isFrameworkArtifact(f.Path) {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(f.Path))
-		isCode := strings.Contains(codeEvidenceExts, "|"+ext+"|")
-		if !isTarget[f.Path] && !isCode {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(d.root, filepath.FromSlash(f.Path)))
-		if err != nil {
-			return nil, err
-		}
-		if strings.IndexByte(string(data), 0) >= 0 {
-			continue
-		}
-		text := string(data)
-		base := filepath.Base(f.Path)
-		c.entries[f.Path] = evidenceEntry{
-			text:   text,
-			stream: tokenStream(text),
-			base:   base,
-			seq:    identityTokens(base),
-			data:   !isCode || strings.Contains(dataEvidenceExts, "|"+ext+"|"),
-		}
-	}
-	rules, err := globalRuleIDs(d.root)
-	if err != nil {
-		return nil, err
-	}
-	c.rules = rules
-	return c, nil
-}
-
-// evidence derives file's public evidence set from the shared snapshot: the
-// file itself, the files that reference it, and the files it references —
-// one hop in each direction, never a transitive closure. A reference is an
-// explicit path form, or — between two code files — the file's name tokens as
-// a contiguous identifier sequence. Extra inputs are part of the fixed scope.
-func (c *evidenceCorpus) evidence(file string, extra []string) []string {
-	seen := map[string]bool{file: true}
-	if target, ok := c.entries[file]; ok {
-		for p, entry := range c.entries {
-			if p == file {
-				continue
-			}
-			if references(entry, target) || references(target, entry) {
-				seen[p] = true
-			}
-		}
-	}
-	for _, id := range c.rules {
-		seen["rule:"+id] = true
-	}
-	for _, p := range extra {
-		if !strings.HasPrefix(p, "docs/specs/units/") && !strings.HasPrefix(p, "unit:") {
-			seen[p] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// references reports whether from's content cites to: an explicit path form
-// of to's basename, or — only when neither entry is data — to's identity
-// tokens as a contiguous identifier sequence.
-func references(from, to evidenceEntry) bool {
-	if containsPathForm(from.text, to.base) {
-		return true
-	}
-	if from.data || to.data || len(to.seq) == 0 {
-		return false
-	}
-	return containsTokenSeq(from.stream, to.seq)
-}
-
-// containsPathForm reports whether text contains base at an identifier
-// boundary: "./logger.go" and "src/logger.go" match, "mylogger.go" does not.
-func containsPathForm(text, base string) bool {
-	if base == "" {
-		return false
-	}
-	for offset := 0; offset <= len(text)-len(base); {
-		index := strings.Index(text[offset:], base)
-		if index < 0 {
-			return false
-		}
-		index += offset
-		end := index + len(base)
-		if (index == 0 || !isIdentByte(text[index-1])) && (end == len(text) || !isIdentByte(text[end])) {
-			return true
-		}
-		offset = index + 1
-	}
-	return false
-}
-
-// isIdentByte reports whether b can occur inside an identifier or a file name
-// stem; it bounds path-form matches.
-func isIdentByte(b byte) bool {
-	return b == '_' || '0' <= b && b <= '9' || 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z'
-}
-
-// containsTokenSeq reports whether a lowercased identifier stream contains
-// seq as a contiguous token run.
-func containsTokenSeq(stream string, seq []string) bool {
-	var needle strings.Builder
-	for _, token := range seq {
-		needle.WriteByte(0)
-		needle.WriteString(token)
-	}
-	needle.WriteByte(0)
-	return strings.Contains(stream, needle.String())
-}
-
-// identityTokens returns the identity a reference must match for a file
-// basename: its stem split into lowercased identifier tokens. A stem whose
-// tokens join to two characters or fewer has no identity — matching it would
-// match everything.
-func identityTokens(base string) []string {
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	tokens := tokenize(stem)
-	if len(strings.Join(tokens, "")) <= 2 {
-		return nil
-	}
-	return tokens
-}
-
-// tokenize splits a name into lowercased identifier tokens (see tokenStream).
-func tokenize(name string) []string {
-	stream := tokenStream(name)
-	if stream == "" {
-		return nil
-	}
-	return strings.Split(strings.Trim(stream, "\x00"), "\x00")
-}
-
-// tokenStream serializes text as "\x00token\x00token\x00..." with lowercased
-// identifier tokens, so contiguous token sequences can be matched with a
-// substring search. Tokens split on non-alphanumeric characters and on
-// identifier word boundaries: lower-to-upper case changes, acronym-to-word
-// changes, and letter-to-digit changes.
-func tokenStream(text string) string {
-	runes := []rune(text)
-	var out strings.Builder
-	var token []rune
-	flush := func() {
-		if len(token) == 0 {
-			return
-		}
-		out.WriteByte(0)
-		for _, r := range token {
-			out.WriteRune(unicode.ToLower(r))
-		}
-		token = token[:0]
-	}
-	for i, r := range runes {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			flush()
-			continue
-		}
-		if len(token) > 0 {
-			prev := token[len(token)-1]
-			boundary := unicode.IsLower(prev) && unicode.IsUpper(r) ||
-				unicode.IsUpper(prev) && unicode.IsUpper(r) && i+1 < len(runes) && unicode.IsLower(runes[i+1]) ||
-				unicode.IsLetter(prev) != unicode.IsLetter(r)
-			if boundary {
-				flush()
-			}
-		}
-		token = append(token, r)
-	}
-	flush()
-	if out.Len() > 0 {
-		out.WriteByte(0)
-	}
-	return out.String()
-}
-
+// addReviewInputs records a verify run's rule inputs: the main spec's declared
+// rule_refs and the active global rules. The run's evidence surface is
+// otherwise the spec-declared code surface, resolved by derive; no
+// repository-wide name-token closure participates (a code file's evidence is
+// the file itself plus cited evidence_files, not every repository file that
+// shares a name stem — see framework/shared_judgments.md §Required tasks).
 func (d *Derivation) addReviewInputs(run *Run) error {
 	root := d.root
-	run.PublicEvidence = map[string][]string{}
 	content, err := readSpecContent(root, mainSpecRef(run))
 	if err != nil {
 		return err
 	}
-	for _, id := range parseRefList(content, "rule_refs", "") {
-		addSnapshotRef(root, run, "rule:"+id)
-	}
-	// One corpus snapshot serves every quality file: the repository is
-	// expanded and its source corpus read once per run, not once per file.
-	files := qualityFiles(run)
-	corpus, err := d.loadEvidenceCorpus(files)
+	global, err := globalRuleIDs(root)
 	if err != nil {
 		return err
 	}
-	extra := extraInputPaths(run)
-	for _, file := range files {
-		inputs := corpus.evidence(file, extra)
-		run.PublicEvidence[file] = inputs
-		for _, p := range inputs {
-			addSnapshotRef(root, run, p)
-		}
+	ruleIDs := append(parseRefList(content, "rule_refs", ""), global...)
+	for _, id := range dedupeSorted(ruleIDs) {
+		addSnapshotRef(root, run, "rule:"+id)
 	}
 	return nil
 }

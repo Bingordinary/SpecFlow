@@ -8,7 +8,7 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 2. Pre-review Setup
 
-Public checks read the complete file evidence surface fixed by the mission, including related callers, callees, dependencies, tests and applicable public rules. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
+Public checks read the file evidence surface fixed by the mission: the reviewed file, its cited `affects.evidence_files`, the declared dependency spec objects and applicable public rules, plus the related files the coordinator supplied through the input manifest. Related evidence is never auto-linked by filename or stem. Do not read unfinished peer designs. A missing evidence path is reported (`Verification could not complete — missing read ref: <repo-relative path>`), not judged around; the coordinator adds it to the open run with `specflowctl gate-extend`.
 
 Design and architecture checks read their selected unit spec, applicable rules and code. Extract accepted trade-offs, architectural decisions, design constraints, known debt and non-goals from that unit's published design context.
 

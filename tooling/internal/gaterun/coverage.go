@@ -288,7 +288,7 @@ func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindItem, run.TargetName, item), Kind: SessionKindItem, Lens: LensAlignment, Unit: run.TargetName, Item: item})
 	}
 	for _, file := range qualityFiles(run) {
-		reads := run.PublicEvidence[file]
+		reads := codeReadRefs(run, file)
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindCode, "", file), Kind: SessionKindCode, Lens: LensQuality, File: file, ReadRefs: reads}, CoverageKey{Key: reviewKey(SessionKindDesign, run.TargetName, file), Kind: SessionKindDesign, Lens: LensQuality, File: file, Unit: run.TargetName})
 	}
 	coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindArchitecture, run.TargetName, ""), Kind: SessionKindArchitecture, Lens: LensQuality, Unit: run.TargetName})
@@ -695,7 +695,10 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 // coverageReadRefs derives the read surface of one coverage key. A validate
 // group's surface is the existing group read refs; a verify item reads the own
 // spec plus the whole declared code surface; a file reads the own spec plus
-// that file; all add the agent-declared extra inputs.
+// that file; all add the agent-declared extra inputs. The surface is the
+// spec-declared evidence and the explicitly supplied inputs only — no
+// repository-wide name-token closure participates (framework/shared_judgments.md
+// §Required tasks).
 func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 	switch ck.Kind {
 	case SessionKindChecks:
@@ -707,40 +710,19 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
 		read = appendUnique(read, affectsEvidencePaths(run)...)
-		// Tool-driven one-hop evidence discovery for item keys: the item
-		// judgment may use the same public evidence surface the quality
-		// sessions derive for this unit's files — callers, callees,
-		// dependencies and tests — so a related file no longer forces a
-		// replan (framework/verification_scope.md §Verify evidence
-		// discovery before planning).
-		for _, evidence := range run.PublicEvidence {
-			read = appendUnique(read, evidence...)
-		}
-		for _, ref := range run.Refs {
-			if strings.HasPrefix(ref.Ref, "rule:") {
-				read = appendUnique(read, ref.Ref)
-			}
-		}
+		read = appendUnique(read, ruleRefNames(run)...)
 		return appendUnique(read, extraInputPaths(run)...)
 	case SessionKindCode:
-		return ck.ReadRefs
+		return appendUnique(append([]string(nil), ck.ReadRefs...), extraInputPaths(run)...)
 	case SessionKindArchitecture:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
-		for _, ref := range run.Refs {
-			if strings.HasPrefix(ref.Ref, "rule:") {
-				read = appendUnique(read, ref.Ref)
-			}
-		}
+		read = appendUnique(read, ruleRefNames(run)...)
 		return appendUnique(read, extraInputPaths(run)...)
 	case SessionKindDesign:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, ck.File)
-		for _, ref := range run.Refs {
-			if strings.HasPrefix(ref.Ref, "rule:") {
-				read = appendUnique(read, ref.Ref)
-			}
-		}
+		read = appendUnique(read, ruleRefNames(run)...)
 		return appendUnique(read, extraInputPaths(run)...)
 	}
 	return nil
@@ -758,7 +740,9 @@ func crossReadRefs(run *Run) []string {
 // key's read surface plus the cross-synthesis surface. Cache evidence is
 // assembled from exactly this surface — the entry set IS the input surface
 // (framework/validation_cache.md §Format), so a change anywhere in it is
-// visible to the freshness comparison and the change diff.
+// visible to the freshness comparison and the change diff. Because the read
+// surface is the declared code surface plus explicitly supplied inputs, an
+// unrelated repository file can never make a run stale (issue #73).
 func InputSurface(repoRoot string, run *Run) []string {
 	var out []string
 	for _, ck := range run.Coverage {
@@ -1040,6 +1024,28 @@ func logicalRefNames(run *Run) []string {
 		}
 	}
 	return out
+}
+
+// ruleRefNames lists the run's logical rule references. Rules are governance
+// constraints named as part of a judgment's basis, whether declared in the
+// spec (rule_refs, global rules) or listed explicitly in the input manifest.
+func ruleRefNames(run *Run) []string {
+	var out []string
+	for _, ref := range run.Refs {
+		if strings.HasPrefix(ref.Ref, "rule:") {
+			out = append(out, ref.Ref)
+		}
+	}
+	return out
+}
+
+// codeReadRefs is a public code key's read surface base: the file itself plus
+// the run's applicable rule references. It replaces the removed repository-wide
+// name-token evidence closure: a code file's evidence is the file and the
+// rules that constrain it; related tests, callers and callees are supplied
+// explicitly through the input manifest or gate-extend.
+func codeReadRefs(run *Run, file string) []string {
+	return append([]string{file}, ruleRefNames(run)...)
 }
 
 // gateTargetFlags renders the unit/rule flag combination of a run for
