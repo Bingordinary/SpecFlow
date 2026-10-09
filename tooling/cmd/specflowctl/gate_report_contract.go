@@ -182,6 +182,16 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 					lines = append(lines, addLine)
 				}
 				lines = append(lines, fmt.Sprintf("Cross-check: <passed>/%d <PASS|FAIL> — <reason>", len(items)))
+				if run.Gate == gaterun.GateValidate {
+					lines = append(lines,
+						"  # a Cross-check FAIL requires a new linked cross finding at P0/P1, and every",
+						"  # validate relationship finding must be P0/P1, so a failed item also fails the summary")
+				} else {
+					lines = append(lines,
+						"  # a Cross-check FAIL requires a new linked cross finding at P0/P1; an item FAIL",
+						"  # carrying only P2/P3 findings keeps the summary as <passed>/N PASS, and still",
+						"  # needs its own new finding at any severity")
+				}
 			} else {
 				lines = append(lines, "Cross-check: <PASS|FAIL> — <reason>")
 			}
@@ -273,7 +283,11 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].Allowed = []string{"PASS", "FAIL"}
 		}
 		if len(crossItemsFor(run)) > 0 {
-			add("cross-item-finding", "one link from each failed Cross item to a new retained cross finding; no link for a passing item", "Cross item finding: <failed_item_key> = <new_cross_finding_id>")
+			desc := "one link from each failed Cross item to a new retained cross finding, at any severity; no link for a passing item"
+			if run.Gate == gaterun.GateValidate {
+				desc = "one link from each failed Cross item to a new retained cross finding at P0/P1; no link for a passing item"
+			}
+			add("cross-item-finding", desc, "Cross item finding: <failed_item_key> = <new_cross_finding_id>")
 			c.Requirements[len(c.Requirements)-1].When = "if_cross_item_fail"
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1

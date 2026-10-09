@@ -3875,6 +3875,20 @@ func TestVerifyCrossContractKeepsNonblockingFourOfFivePass(t *testing.T) {
 	if !strings.Contains(mission.Sessions[0].ReportContract.Template, "Cross item finding: <failed_item_key> = <new_cross_finding_id>") {
 		t.Fatalf("mission omitted failed-item finding links: %s", mission.Sessions[0].ReportContract.Template)
 	}
+	// The contract must state the summary/item coupling the validator enforces:
+	// a failed item with only P2/P3 findings keeps the summary <passed>/N PASS.
+	if !strings.Contains(mission.Sessions[0].ReportContract.Template, "carrying only P2/P3 findings keeps the summary as <passed>/N PASS") {
+		t.Fatalf("mission omitted the non-blocking Cross-check encoding: %s", mission.Sessions[0].ReportContract.Template)
+	}
+	crossFinding := ""
+	for _, rule := range mission.Sessions[0].ReportContract.Requirements {
+		if rule.ID == "cross-item-finding" {
+			crossFinding = rule.Description
+		}
+	}
+	if !strings.Contains(crossFinding, "at any severity") {
+		t.Fatalf("cross-item-finding requirement must state at any severity, got %q", crossFinding)
+	}
 	if _, err := grSubmitRaw(t, root, runID, "cross", grVerifyCrossReport(runID, main, 4, "P2", "PASS")); err != nil {
 		t.Fatal(err)
 	}
@@ -4028,6 +4042,23 @@ func TestValidateCrossContractUsesThreeFixedItems(t *testing.T) {
 	}
 	if !strings.Contains(contract.Template, "Cross-check: <passed>/3") {
 		t.Fatalf("validate summary has wrong denominator: %s", contract.Template)
+	}
+	// validate grades findings P0/P1 only; the contract must not offer non-blocking
+	// relationship findings or an "at any severity" instruction.
+	if strings.Contains(contract.Template, "P2/P3") {
+		t.Fatalf("validate template must not offer non-blocking relationship findings: %s", contract.Template)
+	}
+	if !strings.Contains(contract.Template, "validate relationship finding must be P0/P1") {
+		t.Fatalf("validate template must state the P0/P1 constraint: %s", contract.Template)
+	}
+	crossFinding := ""
+	for _, rule := range contract.Requirements {
+		if rule.ID == "cross-item-finding" {
+			crossFinding = rule.Description
+		}
+	}
+	if !strings.Contains(crossFinding, "at P0/P1") || strings.Contains(crossFinding, "at any severity") {
+		t.Fatalf("validate cross-item-finding requirement must state P0/P1 only, got %q", crossFinding)
 	}
 	var report strings.Builder
 	for _, item := range validateCrossItems {

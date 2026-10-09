@@ -230,7 +230,14 @@ Finding disposition: {input_finding_id} = merged -> {retained_finding_id} — {r
 Quality conclusion: {quality_key} = acceptable | needs_attention | unacceptable — {basis}
 [P0|P1|P2|P3] {location} — {new synthesis finding}
 Finding affects: {synthesis_finding_id} = {logical_key}[, {logical_key}...]
-# Validate/verify only, exactly once for every failed assigned relationship:
+# Validate/verify only, one Cross item result per assigned relationship:
+Cross item: {relationship_name} = PASS | FAIL — {reason}
+# The summary is the blocking verdict, not an item count: its token is FAIL
+# exactly when a linked new cross finding is P0/P1. For verify, a failed item
+# carrying only P2/P3 findings therefore keeps the summary as {passed}/{N} PASS.
+Cross-check: {passed}/{N} PASS | FAIL — {reason}
+# Validate/verify only, exactly once for every failed assigned relationship;
+# a verify finding may be any severity, a validate finding must be P0/P1:
 Cross item finding: {failed_item_key} = {new_retained_synthesis_finding_id}
 # Verify findings may be deferred to another unit by recorded ownership:
 Finding ownership: {retained_finding_id} = owned_by {unit} — evidence: {read_ref}; reason: {one line}
@@ -313,7 +320,7 @@ Checks for consistency between the affected source parts (spec sections, produce
 | Error code conflict | Do affected source parts agree on error codes and the conditions they represent? |
 | Cross-reference integrity | Do affected references resolve to the claimed definitions or behaviors? |
 
-**Output:** the assigned per-relationship results, a finding link for each failed result, finding dispositions, and any new synthesis findings (the effective logical statuses are tool-derived from them). The summary `Cross-check:` line is derived from the five results.
+**Output:** the assigned per-relationship results, a finding link for each failed result, finding dispositions, and any new synthesis findings (the effective logical statuses are tool-derived from them). A failed relationship always reports its Cross item as `FAIL` and links one new retained finding through `Cross item finding:`, at any severity. The `Cross-check:` summary is the blocking verdict, not a copy of the item results: it is `FAIL` only when a linked new cross finding is P0/P1, so a failed relationship carrying only P2/P3 findings renders the summary as `<passed>/N PASS` while its item shows `FAIL`.
 
 Fixed report keys, in table order: `contract_consistency`, `data_definition_drift`, `state_machine_coherence`, `error_code_conflict`, `cross_reference_integrity`.
 
