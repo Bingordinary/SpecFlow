@@ -391,7 +391,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		Constraints: constraints,
 		Glossary:    glossary,
 		FailurePath: failureLineFor(run.Gate),
-		Submission:  fmt.Sprintf("specflowctl gate-submit --run %s --session %s --keys %s --report REPORT_PATH", run.RunID, spec.SessionID, strings.Join(gaterun.CoverageKeysForSpec(run, spec), ",")),
+		Submission:  fmt.Sprintf("specflowctl gate-submit --run %s --session %s --keys %s --report REPORT_PATH", run.RunID, spec.SessionID, strings.Join(spec.Keys, ",")),
 	}, nil
 }
 

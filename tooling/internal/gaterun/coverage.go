@@ -347,36 +347,6 @@ func ExpectedVerifyCoverage(repoRoot, unitName, target string) ([]CoverageKey, e
 	return d.computeCoverage(run)
 }
 
-// CoverageKeysForSpec maps a materialized session spec back to the coverage
-// keys it covers: the reserved final key for the cross synthesis, else the
-// coverage keys whose report keys the spec owns.
-func CoverageKeysForSpec(run *Run, spec *SessionSpec) []string {
-	if spec.Kind == SessionKindCross {
-		return []string{CrossKey}
-	}
-	owned := map[string]bool{}
-	for _, key := range spec.CheckKeys {
-		owned[key] = true
-	}
-	var out []string
-	for _, ck := range run.Coverage {
-		if ck.Kind != spec.Kind {
-			continue
-		}
-		all := true
-		for _, key := range coverageReportKeys(run, ck) {
-			if !owned[key] {
-				all = false
-				break
-			}
-		}
-		if all {
-			out = append(out, ck.Key)
-		}
-	}
-	return out
-}
-
 // buildCoveragePlan computes the coverage set for the run mode, the carried
 // check keys (delta/repair only), the target's required files, and plan
 // notices (scope derivation and conservative degradations).
@@ -564,6 +534,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		}
 		return &SessionSpec{
 			SessionID:     CrossKey,
+			Keys:          []string{CrossKey},
 			Kind:          SessionKindCross,
 			CheckKeys:     []string{CrossKey},
 			ReadRefs:      crossReadRefs(run),
@@ -577,6 +548,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		}
 		return &SessionSpec{
 			SessionID: DeltaReviewKey,
+			Keys:      []string{DeltaReviewKey},
 			Kind:      SessionKindDeltaReview,
 			CheckKeys: []string{DeltaReviewKey},
 			ReadRefs:  reviewReadRefs(repoRoot, run),
@@ -625,7 +597,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		}
 		kind = SessionKindDesign
 	}
-	spec := &SessionSpec{SessionID: SessionID(keys), Kind: kind}
+	spec := &SessionSpec{SessionID: SessionID(keys), Keys: keys, Kind: kind}
 	for _, ck := range run.Coverage {
 		if !wanted[ck.Key] {
 			continue

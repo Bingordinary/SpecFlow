@@ -1378,20 +1378,10 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 // Co-batched code+design sessions
 // ------------------------------------------------------------
 
-// TestGateRunCoBatchedCodeAndDesign submits one paired report carrying a
-// file's public facts block and its unit design block; the public record
-// publishes at acceptance and finalize binds the design record to it.
-func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	grWriteSpec(t, repoRoot, "auth")
-	main := "docs/specs/units/candidate/unit_auth.md"
-	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
-
-	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-
-	keys := []string{"code:src/auth.go", "design:auth:src/auth.go"}
-	paired := "File: code:src/auth.go\n" +
+// grCoBatchedPairedReport is one paired co-batched report: a file's public
+// facts block and its unit design block in one session.
+func grCoBatchedPairedReport() string {
+	return "File: code:src/auth.go\n" +
 		"conclusion: FACTS\n" +
 		"facts: no potential problems in fixture\n" +
 		"\n" +
@@ -1408,7 +1398,40 @@ func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
 		"  gate_findings: none\n" +
 		"\n" +
 		"Suppressed by spec (0):\n"
-	grSubmitKeys(t, repoRoot, runID, keys, paired)
+}
+
+// grSubmitPrinted submits one session report using the exact session id and
+// --keys list a mission printed, mirroring the coordinator's command.
+func grSubmitPrinted(t *testing.T, repoRoot, runID, sessionID, keys, report string) error {
+	t.Helper()
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grPreparePublic(t, repoRoot, run, splitKeys(keys))
+	report = grAdaptReport(run, report)
+	path := filepath.Join(t.TempDir(), "report.md")
+	if err := os.WriteFile(path, []byte(report), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	return runGateSubmit([]string{"--repo-root", repoRoot, "--run", runID, "--session", sessionID, "--keys", keys, "--report", path}, &stdout, &stderr)
+}
+
+// TestGateRunCoBatchedCodeAndDesign submits one paired report carrying a
+// file's public facts block and its unit design block; the public record
+// publishes at acceptance and finalize binds the design record to it.
+func TestGateRunCoBatchedCodeAndDesign(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	keys := []string{"code:src/auth.go", "design:auth:src/auth.go"}
+	grSubmitKeys(t, repoRoot, runID, keys, grCoBatchedPairedReport())
 
 	run, err := gaterun.Load(repoRoot, runID)
 	if err != nil {

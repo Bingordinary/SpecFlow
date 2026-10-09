@@ -140,7 +140,19 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 				"  Severity: <P0|P1|P2|P3>",
 				"  Confidence: <high|medium|low>")
 		case gaterun.SessionKindCode:
-			lines = append(lines, "File: "+key, "conclusion: FACTS", "facts: <code facts and potential problems; no unit design rationale>")
+			lines = append(lines,
+				"File: "+key,
+				"conclusion: FACTS",
+				"facts: <code facts and potential problems; no unit design rationale>",
+				"  # a public potential finding is a finding block written inside this code block,",
+				"  # after facts: and before the next File: line; its id is the finding's report-order id:",
+				"  # [P2] <location> — <potential problem> (actionable)",
+				"  #   problem: <one-sentence statement naming the concrete subject>",
+				"  #   evidence: <quoted source content — file:line>",
+				"  #   impact: <consequence if unaddressed>",
+				"  #   fix: <concrete repair action>   # or decision:/options: for needs_decision",
+				"  #   fact_anchor: <required for a P3 observation>",
+				"")
 		case gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
 			prefix := "File: "
 			if kind == gaterun.SessionKindArchitecture {
@@ -154,7 +166,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			} else {
 				lines = append(lines, "spec_requirements: <active check of the unit requirements> — <basis>", "Observation disposition: <public observation id> = <retained|suppressed> — <unit-specific evidence and reason>")
 			}
-			lines = append(lines, "gate_findings: <none or blocking findings>")
+			lines = append(lines,
+				"gate_findings: none | [P0|P1] {finding};",
+				"  # gate_findings accepts only `none` or one or more [P0|P1] {finding} entries separated by `;`.",
+				"  # A retained P2/P3 observation is recorded by its own finding block plus its Observation disposition, never here.")
 			if kind == gaterun.SessionKindArchitecture {
 				lines = append(lines, "Suppressed by spec (0):")
 			}
@@ -226,8 +241,12 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			add("quality-"+field, "exactly one assessment and non-empty basis per file block", "")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		}
-		add("quality-gate-findings", "exactly one gate_findings line per file block", "")
+		add("quality-gate-findings", "exactly one gate_findings line per file block: `none` or one or more `[P0|P1] {finding}` entries separated by `;` — a retained P2/P3 observation is never listed here", "")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
+		add("quality-finding-id-order", "finding ids are {run}/{session}/F{n} assigned in report order across the whole report (the k-th finding block in report order is F{k}), not restarted per file; a design Observation disposition copies the id of the code block that reported it", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_findings"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		add("quality-p3-anchor", "every P3 finding has a fact_anchor line", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_p3_finding"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
@@ -235,6 +254,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 	}
 	if len(codeKeys) > 0 {
 		add("public-facts", "one non-empty facts assessment per assigned file; the tooling records each check's own public evidence surface (its coverage key's read refs) as its dependency", "")
+		add("public-finding-placement", "a public potential finding is a finding block written inside its own File: code:<file> block, after facts: and before the next File: line; observations never appear in a design block", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_findings"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	}
 	if session.Kind == gaterun.SessionKindArchitecture {
 		for _, field := range qualityDimensions {

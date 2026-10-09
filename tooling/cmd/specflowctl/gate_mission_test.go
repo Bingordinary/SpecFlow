@@ -301,6 +301,71 @@ func TestGateMissionCoBatchedContractFollowsEachKind(t *testing.T) {
 	if !strings.Contains(template, "File: design:auth:src/auth.go\nconclusion: <acceptable|needs_attention|unacceptable>") {
 		t.Fatalf("co-batched template must carry the design block's conclusion form, got:\n%s", template)
 	}
+	// The report contract must state the two rules the validator enforces and
+	// the short template form omitted: where a public finding block goes, and
+	// the exact gate_findings grammar.
+	if !strings.Contains(template, "a public potential finding is a finding block written inside this code block") {
+		t.Fatalf("co-batched template must place public finding blocks inside the code block, got:\n%s", template)
+	}
+	if !strings.Contains(template, "gate_findings: none | [P0|P1] {finding};") {
+		t.Fatalf("co-batched template must state the gate_findings grammar, got:\n%s", template)
+	}
+	requirementIDs := map[string]bool{}
+	for _, rule := range mission.Sessions[0].ReportContract.Requirements {
+		requirementIDs[rule.ID] = true
+	}
+	for _, id := range []string{"public-finding-placement", "quality-finding-id-order"} {
+		if !requirementIDs[id] {
+			t.Fatalf("co-batched report contract is missing requirement %q", id)
+		}
+	}
+
+	// The printed submission command must be self-consistent: its --keys list
+	// is exactly the batch its session id is derived from, so following the
+	// printed command submits successfully.
+	batch := []string{"code:src/auth.go", "design:auth:src/auth.go"}
+	wantSession := gaterun.SessionID(batch)
+	if mission.Sessions[0].SessionID != wantSession {
+		t.Fatalf("session id = %q, want %q", mission.Sessions[0].SessionID, wantSession)
+	}
+	wantSubmission := "specflowctl gate-submit --run " + runID + " --session " + wantSession + " --keys code:src/auth.go,design:auth:src/auth.go --report REPORT_PATH"
+	if mission.Submission != wantSubmission {
+		t.Fatalf("submission command = %q, want %q", mission.Submission, wantSubmission)
+	}
+}
+
+// TestGateMissionCoBatchedPrintedSubmissionSubmits follows the mission's
+// printed submission command verbatim (its session id and --keys list) and
+// confirms gate-submit accepts it — the exact path that failed before the fix,
+// when the printed --keys dropped the code key and no longer derived the
+// printed session id.
+func TestGateMissionCoBatchedPrintedSubmissionSubmits(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	var out, errOut bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "code:src/auth.go,design:auth:src/auth.go", "--format", "json"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	var mission gateMission
+	if err := json.Unmarshal(out.Bytes(), &mission); err != nil {
+		t.Fatal(err)
+	}
+	// Read the --keys value out of the printed command, exactly as the
+	// coordinator would.
+	prefix := "specflowctl gate-submit --run " + runID + " --session " + mission.Sessions[0].SessionID + " --keys "
+	printedKeys := strings.TrimSuffix(strings.TrimPrefix(mission.Submission, prefix), " --report REPORT_PATH")
+	if printedKeys != "code:src/auth.go,design:auth:src/auth.go" {
+		t.Fatalf("printed --keys = %q, want the full assigned batch", printedKeys)
+	}
+	if err := grSubmitPrinted(t, root, runID, mission.Sessions[0].SessionID, printedKeys, grCoBatchedPairedReport()); err != nil {
+		t.Fatalf("following the printed submission command failed: %v", err)
+	}
 }
 
 // TestGateMissionReportLineFormsMatchValidator pins the prompt's "Required

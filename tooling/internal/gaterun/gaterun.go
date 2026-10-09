@@ -173,7 +173,11 @@ type CoverageKey struct {
 // the session's mutable state (status, attempts, accepted report) lives in its
 // own state file under the run directory.
 type SessionSpec struct {
-	SessionID     string   `json:"session_id"`
+	SessionID string `json:"session_id"`
+	// Keys is the assigned coverage-key batch this session was materialized
+	// for. It is the single source of truth for the session identity: both
+	// SessionID and any printed submission command derive from it.
+	Keys          []string `json:"keys,omitempty"`
 	Kind          string   `json:"kind"`
 	CheckKeys     []string `json:"check_keys"`
 	DependsOn     []string `json:"depends_on,omitempty"`
