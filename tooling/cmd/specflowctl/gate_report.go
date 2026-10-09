@@ -18,13 +18,18 @@ type parsedReport struct {
 	CrossItems              map[string]string // fixed cross item -> PASS | FAIL
 	CrossItemFindings       map[string]string // failed cross item -> new cross finding id
 	Findings                []gaterun.Finding
-	EffectiveStatus         map[string]string
-	QualityConclusions      map[string]string
-	Dispositions            []gaterun.FindingDisposition
-	Ownerships              []gaterun.FindingOwnership
-	Analysis                map[string]string
-	FileGateFindings        map[string]string // file key -> gate_findings content
-	Review                  *gaterun.ReviewRecord
+	// FindingNumber is the highest report-order finding number the parser
+	// assigned across every block (code observations and design findings
+	// share one counter). The design retain path continues from it so a
+	// retained observation never reuses another finding's id.
+	FindingNumber      int
+	EffectiveStatus    map[string]string
+	QualityConclusions map[string]string
+	Dispositions       []gaterun.FindingDisposition
+	Ownerships         []gaterun.FindingOwnership
+	Analysis           map[string]string
+	FileGateFindings   map[string]string // file key -> gate_findings content
+	Review             *gaterun.ReviewRecord
 }
 
 // verifyMismatchTypes is the fixed MISMATCH type vocabulary of the verify

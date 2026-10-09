@@ -617,10 +617,18 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 			if ck == nil || ck.Kind != gaterun.SessionKindDesign {
 				continue
 			}
-			if stringInList(spec.CheckKeys, gaterun.DesignPublicKey(*ck)) {
+			publicKey := gaterun.DesignPublicKey(*ck)
+			if stringInList(spec.CheckKeys, publicKey) {
 				// Co-batched: this report's own code block supplied the
-				// facts — pairing is a batch property, not an observation
-				// count.
+				// facts. Re-attribute its observations to this design key so
+				// a retained observation becomes this unit's own finding
+				// rather than the code key's.
+				for id, f := range observations {
+					if f.SourceKey == publicKey {
+						f.SourceKey = key
+						observations[id] = f
+					}
+				}
 				continue
 			}
 			result, err := gaterun.PublicResultForDesignKey(root, run, *ck)
@@ -640,7 +648,12 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 			}
 			seen[d.FindingID] = true
 			if d.Action == "retained" {
-				f.ID = fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, len(parsed.Findings)+1)
+				// A retained observation is a new finding for this unit.
+				// Continue the report-order counter so its id never reuses
+				// the code block's observation numbers or this session's own
+				// finding numbers.
+				parsed.FindingNumber++
+				f.ID = fmt.Sprintf("%s/%s/F%d", run.RunID, spec.SessionID, parsed.FindingNumber)
 				f.Detail += "\nPublic observation: " + d.FindingID + "\nUnit design reason: " + d.Reason
 				parsed.Findings = append(parsed.Findings, f)
 			}

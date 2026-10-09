@@ -114,6 +114,9 @@ func parseQualitySessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, repo
 			out.ObservationDispositions = append(out.ObservationDispositions, gaterun.FindingDisposition{FindingID: match[1], Action: match[2], Reason: match[3]})
 		}
 	}
+	// Record the shared report-order counter so the design retain path can
+	// continue it (code observations and design findings share one numbering).
+	out.FindingNumber = findingNo
 
 	return out, nil
 }
