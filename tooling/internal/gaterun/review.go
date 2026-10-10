@@ -365,6 +365,18 @@ func normalizeGateKey(run *Run, key string, currentSet map[string]bool) (string,
 	return "", false
 }
 
+// recheckVocabulary renders the keys a review may name, in the same spelling
+// and order the mission prints under "Standing conclusions" (a unit validate
+// key is the bare check number). It makes a rejected `Recheck:` line
+// self-correcting: the reviewer sees the accepted spellings instead of having
+// to read tooling source.
+func recheckVocabulary(run *Run) string {
+	if len(run.BaselineKeys) == 0 {
+		return "(this run has no standing conclusions to name)"
+	}
+	return strings.Join(run.BaselineKeys, ", ")
+}
+
 // normalizeRecheckKeys rewrites a review's named re-run keys to canonical
 // spellings and validates each against the run. A verify key may be named by
 // its short item id or code-file path, so the recorded review and the derived
@@ -395,15 +407,15 @@ func normalizeRecheckKeys(run *Run, d *Derivation, keys []string) ([]string, err
 				return nil, fmt.Errorf("recheck key %q is not a known relationship", raw)
 			}
 			if !stringInSlice(run.BaselineKeys, key) {
-				return nil, fmt.Errorf("recheck relationship %q is not a baseline conclusion", raw)
+				return nil, fmt.Errorf("recheck relationship %q is not a baseline conclusion; name one of the standing conclusions: %s", raw, recheckVocabulary(run))
 			}
 		} else {
 			norm, ok := normalizeGateKey(run, key, currentSet)
 			if !ok {
-				return nil, fmt.Errorf("recheck key %q is not in the current coverage surface", raw)
+				return nil, fmt.Errorf("recheck key %q is not in the current coverage surface; name one of the standing conclusions: %s", raw, recheckVocabulary(run))
 			}
 			if !stringInSlice(run.BaselineKeys, norm) {
-				return nil, fmt.Errorf("recheck key %q is not a baseline conclusion", raw)
+				return nil, fmt.Errorf("recheck key %q is not a baseline conclusion; name one of the standing conclusions: %s", raw, recheckVocabulary(run))
 			}
 			canonical = norm
 		}

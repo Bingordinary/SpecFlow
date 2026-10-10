@@ -101,7 +101,12 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			When:        "always", MinCount: 1, MaxCount: 1,
 			Allowed: []string{"accept", "recheck", "escalate-full"},
 		})
-		c.Template = "Review result: <accept|recheck|escalate-full> — <reason>\nRecheck: <key>[, <key>...]   # required when the result is recheck\n"
+		c.Requirements = append(c.Requirements, reportRequirement{
+			ID:          "recheck-keys",
+			Description: "each Recheck key is written exactly as the mission prints it under \"Standing conclusions\" (a relationship key is `relationship:<name>`); the coverage-group id and the report's `check-{n}` label are not accepted",
+			When:        "if_recheck", MinCount: 0, MaxCount: -1,
+		})
+		c.Template = "Review result: <accept|recheck|escalate-full> — <reason>\nRecheck: <key>[, <key>...]   # required when the result is recheck; each key exactly as printed under \"Standing conclusions\"\n"
 		return c
 	}
 	var lines []string
@@ -298,6 +303,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		c.Requirements[len(c.Requirements)-1].Allowed = crossDispositions
+		add("cross-finding-affects", "each new cross finding names the non-cross logical keys it makes fail, written as the logical keys the dependency judgments show (validate@unit check numbers; verify full coverage keys — item:<unit>:<item>, code:<file>, design:<unit>:<file>, architecture:<unit>; or a relationship:<name> key); the finding id is the run-scoped {run_id}/{session_id}/F{n}", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_findings"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		if run.Gate == gaterun.GateVerify {
 			add("cross-quality-conclusions", "one author-declared final quality conclusion with reason per design and architecture key, including carried judgments; unacceptable iff finalized gate-driving P0/P1 findings exist; do not infer quality from pass/fail", "Quality conclusion: <design_or_architecture_key> = <acceptable|needs_attention|unacceptable> — <reason>")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "unit_quality_keys"
@@ -322,8 +331,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		if session.Kind == gaterun.SessionKindChecks {
+			add("finding-id-order", "finding ids are {run_id}/{session_id}/F{n} assigned in report order across the whole report (the k-th finding block is F{k}); the run id and session id are printed in the mission's Run: and Session: lines", "")
+			c.Requirements[len(c.Requirements)-1].When = "if_findings"
+			c.Requirements[len(c.Requirements)-1].MinCount = 0
+			c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		}
 		if session.Kind == gaterun.SessionKindChecks && len(session.CheckKeys) > 1 {
-			add("finding-affects", "each finding declares exactly the assigned report check keys it affects; every FAIL key has its own P0/P1 finding", "Finding affects: <finding_id> = <check_key>[,<check_key>...]")
+			add("finding-affects", "each finding declares exactly the assigned report check keys it affects, written as the mission prints them in its Checks: line; every FAIL key has its own P0/P1 finding", "Finding affects: <finding_id> = <check_key>[,<check_key>...]")
 			c.Requirements[len(c.Requirements)-1].When = "if_findings"
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -259,6 +260,22 @@ func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Se
 	return nil
 }
 
+// expectedLogicalKeys lists a cross run's non-cross logical keys in sorted
+// order. A rejected cross finding names them so the reviewer sees the accepted
+// spellings — the run's report keys (validate check numbers; verify coverage
+// keys such as item:<unit>:<item> or code:<file>) and relationship:<name> keys
+// — instead of having to guess or read tooling source.
+func expectedLogicalKeys(status map[string]bool) []string {
+	keys := make([]string, 0, len(status))
+	for key := range status {
+		if key != gaterun.CrossKey {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
 	expectedStatus := map[string]bool{gaterun.CrossKey: true}
 	for _, name := range run.Relationships {
@@ -342,7 +359,7 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 	for _, finding := range retained {
 		for key := range findingKeySet(finding) {
 			if !expectedStatus[key] || key == gaterun.CrossKey {
-				return fmt.Errorf("retained finding %q affects invalid logical key %q", finding.ID, key)
+				return fmt.Errorf("retained finding %q affects invalid logical key %q; name one of the run's logical keys: %s", finding.ID, key, strings.Join(expectedLogicalKeys(expectedStatus), ", "))
 			}
 			if gateDriving(finding, run.TargetName) {
 				wantStatus[key] = "fail"

@@ -223,6 +223,10 @@ func TestGateRelationshipReportRejectsUnassignedOrUnboundWork(t *testing.T) {
 		{pass + "Cross item: design_constraints = PASS — unassigned\n", "unknown Cross item"},
 		{strings.ReplaceAll(fail, "Finding affects: "+runID+"/cross/F1 = relationship:coverage_scope", "Finding affects: "+runID+"/cross/F1 = 2"), "finding must affect"},
 		{pass + "[P2] local — repeats a local audit (actionable)\nFinding affects: " + runID + "/cross/F1 = 2\n", "must explain a failed assigned relationship"},
+		// A cross finding that names a report-label spelling (`check-9`) instead
+		// of the bare logical key is rejected with the accepted spellings named,
+		// so the reviewer can correct it without reading tooling source.
+		{strings.ReplaceAll(fail, "Finding affects: "+runID+"/cross/F1 = relationship:coverage_scope", "Finding affects: "+runID+"/cross/F1 = relationship:coverage_scope, check-9"), "name one of the run's logical keys"},
 	} {
 		if _, err := grSubmitRaw(t, root, runID, "cross", tc.report); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("expected %q rejection, got %v", tc.want, err)

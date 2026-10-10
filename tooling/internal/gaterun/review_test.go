@@ -229,8 +229,38 @@ func TestApplyReviewRejectsUnknownKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ApplyReviewLocked(repoRoot, run, ReviewRecord{Result: "recheck", Recheck: []string{"999"}, Reason: "?", Session: DeltaReviewKey}); err == nil {
+	err = ApplyReviewLocked(repoRoot, run, ReviewRecord{Result: "recheck", Recheck: []string{"999"}, Reason: "?", Session: DeltaReviewKey})
+	if err == nil {
 		t.Fatal("expected an unknown recheck key to fail closed")
+	}
+	// The rejection is self-correcting: it names the accepted spellings (the
+	// standing conclusions), so the reviewer does not have to read tooling
+	// source to find them.
+	if !strings.Contains(err.Error(), "standing conclusions") || !strings.Contains(err.Error(), "1") {
+		t.Fatalf("recheck rejection must name the accepted standing conclusions, got %v", err)
+	}
+}
+
+// TestApplyReviewRejectsGroupAndReportSpellings pins the single accepted
+// recheck vocabulary: the coverage-group id and the report's `check-{n}` label
+// are both rejected, and each rejection names the standing conclusions.
+func TestApplyReviewRejectsGroupAndReportSpellings(t *testing.T) {
+	repoRoot := newRepo(t)
+	validateReviewBaseline(t, repoRoot)
+	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"dependencies", "check-8"} {
+		err := ApplyReviewLocked(repoRoot, run, ReviewRecord{Result: "recheck", Recheck: []string{key}, Reason: "?", Session: DeltaReviewKey})
+		if err == nil {
+			t.Fatalf("recheck key %q must fail closed", key)
+		}
+		if !strings.Contains(err.Error(), "standing conclusions") {
+			t.Fatalf("rejection for %q must name the accepted spellings, got %v", key, err)
+		}
 	}
 }
 

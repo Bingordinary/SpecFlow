@@ -413,7 +413,11 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		}
 	}
 	if len(p.Standing) > 0 {
-		fmt.Fprintln(w, "Standing conclusions (accepted):")
+		if p.Kind == gaterun.SessionKindDeltaReview {
+			fmt.Fprintln(w, "Standing conclusions (accepted) — these keys are the accepted `Recheck:` values, written exactly as shown:")
+		} else {
+			fmt.Fprintln(w, "Standing conclusions (accepted):")
+		}
 		for _, line := range p.Standing {
 			fmt.Fprintf(w, "  - %s\n", line)
 		}

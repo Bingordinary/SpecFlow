@@ -2308,6 +2308,28 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	if len(reviewMission.Sessions[0].ChangeSet) == 0 || len(reviewMission.Sessions[0].Standing) == 0 {
 		t.Fatalf("review mission must carry the change set and standing conclusions: %+v", reviewMission.Sessions[0])
 	}
+	// The review contract declares the accepted Recheck vocabulary and the
+	// mission prints it beside the standing conclusions, so the reviewer never
+	// has to guess the spelling.
+	if !strings.Contains(reviewMission.Sessions[0].ReportContract.Template, `each key exactly as printed under "Standing conclusions"`) {
+		t.Fatalf("review report template must declare the Recheck vocabulary: %s", reviewMission.Sessions[0].ReportContract.Template)
+	}
+	vocabReq := false
+	for _, rule := range reviewMission.Sessions[0].ReportContract.Requirements {
+		if rule.ID == "recheck-keys" {
+			vocabReq = true
+		}
+	}
+	if !vocabReq {
+		t.Fatal("review report contract must carry a recheck-keys requirement")
+	}
+	var reviewPrompt, reviewErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", deltaRun, "--keys", "review", "--format", "prompt"}, &reviewPrompt, &reviewErr); err != nil {
+		t.Fatalf("review prompt: %v (%s)", err, reviewErr.String())
+	}
+	if !strings.Contains(reviewPrompt.String(), "these keys are the accepted `Recheck:` values") {
+		t.Fatalf("review prompt must mark the standing conclusions as the Recheck keys:\n%s", reviewPrompt.String())
+	}
 
 	// Carried sessions cannot be submitted: they are not part of the plan.
 	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
