@@ -1711,9 +1711,11 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	if !grContainsString(coverageKeysOf(deltaRun), "review") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.login") {
 		t.Fatalf("expected the review and the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
 	}
-	// The reviewer re-runs only auth.login; the rest is carried. The design
-	// and architecture judgments pinned the acceptance item set, so the item
-	// edit forced them to re-run mechanically.
+	// The reviewer re-runs only auth.login; the rest is carried. The
+	// architecture judgment pinned the whole spec — the acceptance item set
+	// included — so the item edit forced it to re-run mechanically, while the
+	// per-file design judgment (which pins every spec section except the
+	// acceptance-item section) stays carried.
 	grReviewRecheck(t, repoRoot, deltaID, "auth.login")
 	deltaRun = mustLoadRun(t, repoRoot, deltaID)
 	for _, want := range []string{"code:src/auth.go", "item:auth:auth.logout"} {

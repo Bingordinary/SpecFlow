@@ -23,12 +23,18 @@ const DeltaReviewKey = "review"
 
 // ReviewRecord is the recorded outcome of one delta review. ChangeSet binds
 // the review to the exact mechanically detected change set it judged.
+// Candidates is the carry-candidate set the review adjudicated: a candidate
+// the reviewer left out of Recheck was not re-run by the review, so the
+// difference Candidates-minus-Recheck is what the review declined to re-run,
+// kept for audit. A declined design judgment may still re-run mechanically to
+// stay consistent with a re-run public record.
 type ReviewRecord struct {
-	Result    string   `json:"result"` // accept | recheck | escalate-full
-	Recheck   []string `json:"recheck,omitempty"`
-	Reason    string   `json:"reason"`
-	Session   string   `json:"session"`
-	ChangeSet string   `json:"change_set,omitempty"`
+	Result     string   `json:"result"` // accept | recheck | escalate-full
+	Recheck    []string `json:"recheck,omitempty"`
+	Reason     string   `json:"reason"`
+	Session    string   `json:"session"`
+	ChangeSet  string   `json:"change_set,omitempty"`
+	Candidates []string `json:"candidates,omitempty"`
 }
 
 // HasReviewCoverage reports whether the run carries a review session.
@@ -359,6 +365,57 @@ func normalizeGateKey(run *Run, key string, currentSet map[string]bool) (string,
 	return "", false
 }
 
+// normalizeRecheckKeys rewrites a review's named re-run keys to canonical
+// spellings and validates each against the run. A verify key may be named by
+// its short item id or code-file path, so the recorded review and the derived
+// declined set must be normalized to one spelling before either is stored or
+// compared. A relationship keeps its `relationship:<name>` key. An unknown
+// key, a key outside the current coverage surface, or a non-baseline key fails
+// closed. The result is de-duplicated in first-seen order.
+func normalizeRecheckKeys(run *Run, d *Derivation, keys []string) ([]string, error) {
+	current, err := d.currentGateKeys(run)
+	if err != nil {
+		return nil, err
+	}
+	currentSet := map[string]bool{}
+	for _, key := range current {
+		currentSet[key] = true
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			return nil, fmt.Errorf("recheck key list carries an empty key")
+		}
+		canonical := key
+		if IsRelationshipKey(key) {
+			name := relationshipName(key)
+			if !stringInSlice(RelationshipNames(run.Gate), name) {
+				return nil, fmt.Errorf("recheck key %q is not a known relationship", raw)
+			}
+			if !stringInSlice(run.BaselineKeys, key) {
+				return nil, fmt.Errorf("recheck relationship %q is not a baseline conclusion", raw)
+			}
+		} else {
+			norm, ok := normalizeGateKey(run, key, currentSet)
+			if !ok {
+				return nil, fmt.Errorf("recheck key %q is not in the current coverage surface", raw)
+			}
+			if !stringInSlice(run.BaselineKeys, norm) {
+				return nil, fmt.Errorf("recheck key %q is not a baseline conclusion", raw)
+			}
+			canonical = norm
+		}
+		if seen[canonical] {
+			continue
+		}
+		seen[canonical] = true
+		out = append(out, canonical)
+	}
+	return out, nil
+}
+
 // ApplyReviewLocked applies one review outcome to an open run and persists
 // the run. The caller must hold the repository mutation lock (gate-submit
 // runs inside one). The application is idempotent for the same review
@@ -367,15 +424,43 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 	if !run.HasReviewCoverage() {
 		return fmt.Errorf("run %s has no review session", run.RunID)
 	}
+	if run.ChangeSetFP == "" {
+		return fmt.Errorf("run %s carries no change-set fingerprint — plan a new run", run.RunID)
+	}
+
+	d, err := NewDerivation(repoRoot)
+	if err != nil {
+		return err
+	}
+	full, err := d.computeCoverage(run)
+	if err != nil {
+		return err
+	}
+
+	// Normalize the named re-run keys to canonical coverage keys before
+	// anything consumes them: the recorded review (review_recheck) and the
+	// derived declined set (review_declined) must agree on one spelling, and
+	// the stable canonical form keeps the idempotency check below valid across
+	// a retried submit.
+	if record.Result == "recheck" {
+		normalized, err := normalizeRecheckKeys(run, d, record.Recheck)
+		if err != nil {
+			return err
+		}
+		record.Recheck = normalized
+	}
+
 	if run.Review != nil {
 		if run.Review.Session == record.Session && run.Review.Result == record.Result && strings.Join(run.Review.Recheck, ",") == strings.Join(record.Recheck, ",") {
 			return nil
 		}
 		return fmt.Errorf("run %s already carries a review — an accepted review cannot be replaced; plan a new run", run.RunID)
 	}
-	if run.ChangeSetFP == "" {
-		return fmt.Errorf("run %s carries no change-set fingerprint — plan a new run", run.RunID)
-	}
+
+	// The carry-candidate set offered to the review: a candidate the reviewer
+	// left out of Recheck is not re-run, so Candidates-minus-Recheck is what
+	// the review declined to re-run (kept for audit).
+	record.Candidates = append([]string{}, run.CarriedKeys...)
 
 	removed := map[string]bool{}
 	switch record.Result {
@@ -384,48 +469,16 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 		if len(record.Recheck) == 0 {
 			return fmt.Errorf("a recheck review must name at least one key")
 		}
-		d, err := NewDerivation(repoRoot)
-		if err != nil {
-			return err
-		}
-		full, err := d.computeCoverage(run)
-		if err != nil {
-			return err
-		}
-		current, err := d.currentGateKeys(run)
-		if err != nil {
-			return err
-		}
-		currentSet := map[string]bool{}
-		for _, key := range current {
-			currentSet[key] = true
-		}
+		// record.Recheck is canonical and validated by normalizeRecheckKeys;
+		// this branch only applies the side effects.
 		local := map[string]bool{}
-		for _, raw := range record.Recheck {
-			key := strings.TrimSpace(raw)
-			if key == "" {
-				return fmt.Errorf("recheck key list carries an empty key")
-			}
+		for _, key := range record.Recheck {
 			if IsRelationshipKey(key) {
-				name := relationshipName(key)
-				if !stringInSlice(RelationshipNames(run.Gate), name) {
-					return fmt.Errorf("recheck key %q is not a known relationship", raw)
-				}
-				if !stringInSlice(run.BaselineKeys, key) {
-					return fmt.Errorf("recheck relationship %q is not a baseline conclusion", raw)
-				}
-				run.Relationships = appendUnique(run.Relationships, name)
+				run.Relationships = appendUnique(run.Relationships, relationshipName(key))
 				removed[key] = true
 				continue
 			}
-			norm, ok := normalizeGateKey(run, key, currentSet)
-			if !ok {
-				return fmt.Errorf("recheck key %q is not in the current coverage surface", raw)
-			}
-			if !stringInSlice(run.BaselineKeys, norm) {
-				return fmt.Errorf("recheck key %q is not a baseline conclusion", raw)
-			}
-			local[norm] = true
+			local[key] = true
 		}
 		if len(local) > 0 {
 			selected := coverageKeysForRerun(run, local)
@@ -454,6 +507,49 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 		run.Escalated = true
 	default:
 		return fmt.Errorf("unknown review result %q", record.Result)
+	}
+	if run.Gate == GateVerify {
+		// A design judgment consumes its file's immutable public record: when
+		// the public record re-runs, the design judgment re-runs with it. The
+		// review's final re-run set may newly include a code key (a rechecked
+		// code key), so the pull is applied here on the settled set
+		// (framework/validation_cache.md §Structural Region Dependencies).
+		rerun := map[string]bool{}
+		for _, ck := range run.Coverage {
+			rerun[ck.Key] = true
+		}
+		pullSet := map[string]bool{}
+		for _, ck := range run.Coverage {
+			if ck.Kind != SessionKindCode {
+				continue
+			}
+			designKey := "design:" + run.TargetName + ":" + ck.File
+			if rerun[designKey] {
+				continue
+			}
+			rerun[designKey] = true
+			pullSet[designKey] = true
+		}
+		if len(pullSet) > 0 {
+			selected := coverageKeysForRerun(run, pullSet)
+			extra, err := filterCoverage(full, selected)
+			if err != nil {
+				return err
+			}
+			seen := map[string]bool{}
+			for _, ck := range run.Coverage {
+				seen[ck.Key] = true
+			}
+			for _, ck := range extra {
+				for _, key := range run.ReportKeys(ck) {
+					removed[key] = true
+				}
+				if seen[ck.Key] {
+					continue
+				}
+				run.Coverage = append(run.Coverage, ck)
+			}
+		}
 	}
 	if len(removed) > 0 {
 		var kept []string

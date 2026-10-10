@@ -11,7 +11,9 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -560,9 +562,13 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	}
 	switch ck.Kind {
 	case SessionKindCode:
-		// The public record covers a whole public evidence surface: every
-		// read ref is pinned whole-file.
-		for _, p := range inputs {
+		// A public record's invalidation surface is the conclusion's own
+		// object: the file itself plus the applicable rules. The run's input
+		// manifest stays readable (record.Inputs) but never defines the
+		// record's dependencies — an unrelated supplied evidence file must
+		// not invalidate every code judgment of the run
+		// (framework/shared_judgments.md §Required tasks).
+		for _, p := range ck.ReadRefs {
 			if err := addWholeFile(p); err != nil {
 				return judgments.Reference{}, err
 			}
@@ -579,14 +585,46 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		if err := addRegion(mainSpec, "region:acceptance_item:"+ck.Item+":"+contenthash.RegionCID(region.Text)); err != nil {
 			return judgments.Reference{}, err
 		}
-	case SessionKindDesign:
-		// A design judgment reviews the named file against the whole unit
-		// spec: both are its own object, so both are pinned whole-file.
-		if err := addWholeFile(mainSpec); err != nil {
+		// The item's declared code surface is its own object too: a change to
+		// the implementation the item verifies invalidates the alignment
+		// judgment instead of carrying it silently
+		// (framework/validation_cache.md §Structural Region Dependencies).
+		surface, err := itemSurfaceFiles(root, run, ck.Item)
+		if err != nil {
 			return judgments.Reference{}, err
 		}
+		for _, p := range surface {
+			if err := addWholeFile(p); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+	case SessionKindDesign:
+		// A design judgment reviews the named file (pinned whole-file) against
+		// the unit spec. The spec is its rationale, pinned by section region:
+		// every section except the acceptance-item section, whose text is
+		// owned by the per-item judgments. An acceptance-item edit therefore
+		// re-runs that item without mechanically invalidating every design
+		// judgment of the unit, while an edit to the unit's design prose still
+		// re-runs them (framework/validation_cache.md §Structural Region
+		// Dependencies). A spec that cannot be split this way falls back to
+		// the whole file, fail closed.
 		if err := addWholeFile(ck.File); err != nil {
 			return judgments.Reference{}, err
+		}
+		text, err := mainSpecText()
+		if err != nil {
+			return judgments.Reference{}, err
+		}
+		specDeps, split := contenthash.DesignSpecRegions(text)
+		if !split {
+			if err := addWholeFile(mainSpec); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+		for _, dep := range specDeps {
+			if err := addRegion(mainSpec, dep); err != nil {
+				return judgments.Reference{}, err
+			}
 		}
 	case SessionKindArchitecture:
 		// Architecture covers the whole unit: the spec and every declared
@@ -618,6 +656,48 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		}
 	}
 	return judgments.Save(root, record)
+}
+
+// itemSurfaceFiles resolves one acceptance item's declared code surface to the
+// repository files the run's snapshot expanded it to. The declared spellings
+// are the item's implementation_surface and affects.files values
+// (framework/validation_cache.md §Structural Region Dependencies); each is
+// canonicalized and matched against the run's surfaces, where a directory was
+// expanded to its files at ingestion.
+func itemSurfaceFiles(root string, run *Run, item string) ([]string, error) {
+	content, err := readSpecContent(root, mainSpecRef(run))
+	if err != nil {
+		return nil, err
+	}
+	declared := specvalidation.ItemCodeSurfaces(content)[item]
+	if len(declared) == 0 {
+		return nil, nil
+	}
+	byPath := map[string][]string{}
+	for _, s := range run.Surfaces {
+		files := make([]string, 0, len(s.Entries))
+		for _, e := range s.Entries {
+			files = append(files, e.Path)
+		}
+		byPath[s.Path] = files
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, d := range declared {
+		p, err := repopath.Canonical(root, d)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range byPath[p] {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func RecordForKey(run *Run, key string) (judgments.Binding, bool) {

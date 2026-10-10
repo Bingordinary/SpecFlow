@@ -291,3 +291,20 @@ func TestExtractAffectsEvidenceFiles(t *testing.T) {
 		t.Fatalf("expected affects.files %v, got %v", want, got)
 	}
 }
+
+func TestItemCodeSurfaces(t *testing.T) {
+	got := ItemCodeSurfaces(extractionSpec)
+	want := map[string][]string{
+		"demo.core": {"internal/demo", "internal/demo/handler.go"},
+		"demo.aux":  {"src/a.go"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestItemCodeSurfaces_NoSet(t *testing.T) {
+	if got := ItemCodeSurfaces("no acceptance set here"); len(got) != 0 {
+		t.Fatalf("expected no surfaces, got %v", got)
+	}
+}

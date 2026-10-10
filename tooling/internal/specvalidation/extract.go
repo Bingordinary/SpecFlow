@@ -294,3 +294,33 @@ func ExtractImplementationSurfaces(content string) []string {
 	}
 	return surfaces
 }
+
+// ItemCodeSurfaces returns, per acceptance-item id, the code surface that item
+// declares: its implementation_surface value followed by its affects.files
+// values, in document order, de-duplicated on the declared spelling. The
+// values are the raw declared spellings (a file or a directory), resolved
+// against the repository by the caller. Empty and <pending> values are
+// skipped. An item that declares no code surface gets no entry.
+func ItemCodeSurfaces(content string) map[string][]string {
+	out := map[string][]string{}
+	for _, item := range parseAcceptanceItems(content) {
+		var vals []string
+		seen := map[string]bool{}
+		add := func(v string) {
+			v = strings.TrimSpace(v)
+			if v == "" || v == "<pending>" || seen[v] {
+				return
+			}
+			seen[v] = true
+			vals = append(vals, v)
+		}
+		add(item.implementationSurface)
+		for _, f := range item.affectsFiles {
+			add(f)
+		}
+		if len(vals) > 0 {
+			out[item.id] = vals
+		}
+	}
+	return out
+}

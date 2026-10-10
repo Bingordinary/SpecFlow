@@ -841,3 +841,46 @@ func TestLocateEnclosingSectionRegion(t *testing.T) {
 		t.Fatal("a heading inside a fence is content, not a subsection")
 	}
 }
+
+func TestDesignSpecRegionsExcludesAcceptanceItemSection(t *testing.T) {
+	deps, ok := DesignSpecRegions(specWithItems)
+	if !ok {
+		t.Fatal("expected the acceptance-item section to be excludable")
+	}
+	if !DepsPresent(specWithItems, deps) {
+		t.Fatalf("pinned section regions must hold for the same text: %v", deps)
+	}
+	// A section heading that carries the acceptance item set must not be pinned.
+	for _, dep := range deps {
+		if strings.HasPrefix(dep, "region:section:Testability") {
+			t.Fatalf("the acceptance-item section must be excluded, got %v", deps)
+		}
+	}
+
+	// Editing an acceptance item leaves the pinned regions intact.
+	itemEdited := strings.Replace(specWithItems, "The dependency unit", "The dependency unit, edited", 1)
+	if !DepsPresent(itemEdited, deps) {
+		t.Fatalf("an acceptance-item edit must not invalidate the pinned design sections: %v", deps)
+	}
+
+	// Editing the design prose invalidates them.
+	proseEdited := strings.Replace(specWithItems, "Background prose", "Background prose, edited", 1)
+	if DepsPresent(proseEdited, deps) {
+		t.Fatalf("a design-prose edit must invalidate the pinned design sections: %v", deps)
+	}
+}
+
+func TestDesignSpecRegionsFailsClosedWithoutSplittableSpec(t *testing.T) {
+	// No `##` heading at all: the whole text is one frontmatter region.
+	if _, ok := DesignSpecRegions("# U\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n"); ok {
+		t.Fatal("a spec with no section heading must not produce section deps")
+	}
+	// The marker sits in the frontmatter region, before any `##` heading.
+	if _, ok := DesignSpecRegions("# U\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n\n## Notes\n\nProse.\n"); ok {
+		t.Fatal("a marker in the frontmatter region must fail closed")
+	}
+	// A duplicated `##` heading is not locatable, so it must not be pinned.
+	if _, ok := DesignSpecRegions("---\nid: u\n---\n\n## Notes\n\nA.\n\n## Notes\n\nB.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n"); ok {
+		t.Fatal("a duplicated section heading must fail closed")
+	}
+}

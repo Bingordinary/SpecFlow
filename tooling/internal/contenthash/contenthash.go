@@ -701,6 +701,63 @@ func SectionRegions(text string) []SectionRegion {
 	return regions
 }
 
+// DesignSpecRegions returns the section-region dependency strings a design
+// judgment pins to hold the unit spec as its rationale: every section region
+// (frontmatter plus each `##` section) except the one carrying the
+// acceptance_item_set marker, whose text is owned by the per-item judgments.
+// An acceptance-item edit therefore does not mechanically invalidate the
+// unit's design judgments, while an edit to the unit's design prose still
+// does. ok is false when exactly the item section cannot be excluded — a spec
+// with no `##` heading, or one whose marker sits in the frontmatter region —
+// so the caller falls back to pinning the whole file, fail closed
+// (framework/validation_cache.md §Structural Region Dependencies).
+func DesignSpecRegions(text string) ([]string, bool) {
+	regions := SectionRegions(text)
+	if len(regions) < 2 {
+		return nil, false
+	}
+	// A duplicated section heading is not locatable (LocateSectionRegion
+	// fails closed), so pinning it would make the record uncheckable. Fall
+	// back to the whole file instead.
+	seen := map[string]int{}
+	for _, r := range regions {
+		if r.Heading == "" {
+			continue
+		}
+		seen[r.Heading]++
+		if seen[r.Heading] > 1 {
+			return nil, false
+		}
+	}
+	exclude := -1
+	if idx, ok := AcceptanceMarkerIndex(text); ok {
+		line := idx + 1
+		for i, r := range regions {
+			if r.Heading == "" {
+				continue
+			}
+			if r.Start <= line && line <= r.End {
+				exclude = i
+				break
+			}
+		}
+	}
+	if exclude < 0 {
+		return nil, false
+	}
+	deps := make([]string, 0, len(regions)-1)
+	for i, r := range regions {
+		if i == exclude {
+			continue
+		}
+		deps = append(deps, "region:section:"+r.Heading+":"+RegionCID(r.Text))
+	}
+	if len(deps) == 0 {
+		return nil, false
+	}
+	return deps, true
+}
+
 // LocateSectionRegion locates the section region with the given heading text
 // (without the `## ` prefix). ok is false when no section has that heading
 // or when more than one section has it — duplicated headings fail closed.

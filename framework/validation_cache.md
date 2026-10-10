@@ -42,7 +42,8 @@ invalidated_checks:                # failure records only; machine-owned targete
 reviewed_change_set: sha256:fedcba...  # delta/repair caches: fingerprint of the reviewed change set (required on a pass delta cache)
 review_result: recheck               # accept | recheck
 review_session: review               # the review session id
-review_recheck: "2, 5"               # recheck only: the reviewer's named re-run keys
+review_recheck: "2, 5"               # recheck only: the named re-run keys, canonicalized to coverage keys
+review_declined: "3, item:user_auth:auth.core"  # omitempty: the carry candidates the review declined to re-run (offered candidates minus the canonical recheck keys)
 files:
   - path: docs/specs/units/candidate/unit_user_auth.md
     hash: sha256:abc123...
@@ -100,7 +101,7 @@ The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair syn
 
 **Gate run binding:** `gate_run` is the audit id of the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes). It identifies the run's fixed inputs — it is not executor identity and proves nothing about the execution shape (see §Review-record limits → Known limit (execution shape)). `fresh` and `promote` never read it, and caches written before the field existed remain valid (absent = no run recorded).
 
-**Change-review record:** a cache written by a delta or repair run carries the review that accepted its change set: `reviewed_change_set` (the change-set fingerprint), `review_result` (`accept` | `recheck`), `review_session`, and `review_recheck` (the reviewer's named re-run keys, `recheck` only). The record is the audit trail the promote boundary trusts: a pass delta cache without `reviewed_change_set` is a pre-review artifact — `fresh@` and `promote` fail it closed and require a new delta review or a full run. The record is bound to the exact content the reviewer judged; any further content change stales the cache and requires a new review.
+**Change-review record:** a cache written by a delta or repair run carries the review that accepted its change set: `reviewed_change_set` (the change-set fingerprint), `review_result` (`accept` | `recheck`), `review_session`, `review_recheck` (the named re-run keys, canonicalized to coverage keys; `recheck` only), and `review_declined` (the carry candidates the review declined to re-run — the offered candidate set minus the canonical recheck keys; the explicit scope decision, kept for audit). The record is the audit trail the promote boundary trusts: a pass delta cache without `reviewed_change_set` is a pre-review artifact — `fresh@` and `promote` fail it closed and require a new delta review or a full run. The record is bound to the exact content the reviewer judged; any further content change stales the cache and requires a new review.
 
 Each `files` entry records content evidence:
 
@@ -224,15 +225,28 @@ Logical references preserve the rule object's applicability semantics. `unit:{na
 
 Cache entries no longer carry region dependencies — cache freshness is
 whole-file. Region dependencies survive in the **immutable judgment records**
-(see §Shared verify records): an acceptance-item judgment pins its own item
+(see §Shared verify records). An acceptance-item judgment pins its own item
 region, `region:acceptance_item:<id>:<cid>`, so reordering items does not
-invalidate a recorded conclusion while editing or renaming the item does. The
+invalidate a recorded conclusion while editing or renaming the item does, and
+it pins the code surface the item declares (its `implementation_surface` plus
+its `affects.files`, expanded to repository files) whole-file, so a change to
+the implementation the item verifies re-runs the item instead of carrying the
+alignment judgment silently. The
 region is the item's `- id:` line (outside a code fence) through the line
 before the next `- id:` line, or the end of the acceptance item set, with
 trailing blank lines excluded. The id is the locator; a missing marker, a
-missing id, or a duplicated id fails closed. Every other record input — the
-reviewed file of a design judgment, the whole unit spec, the public evidence
-surface of a code judgment — is pinned whole-file.
+missing id, or a duplicated id fails closed. Every other record input is
+pinned by its own object: a public code judgment pins the reviewed file and
+the applicable rules whole-file (**not** the run's supplied evidence inputs,
+which stay readable and whose newly supplied paths still invalidate reuse); a
+design judgment pins the reviewed file whole-file and the unit main spec by
+section region — every section except the one carrying the acceptance-item
+set, so an acceptance-item edit re-runs that item without mechanically
+invalidating the unit's design judgments while a design-prose edit still
+re-runs them, and a spec that cannot be split that way falls back to the
+whole file, fail closed; an architecture judgment pins the whole unit main
+spec and every declared code-surface file whole-file. An unknown region type
+fails closed.
 
 `mode: full` means a complete run of all checks/steps — the judgment set is complete, not a subset. Only complete-coverage runs publish caches: full runs (`validate@{target}` / `verify@{unit}`) and delta/repair runs (`revalidate@{target}` / `reverify@{unit}`, see `framework/verification_scope.md` §Delta Runs). Targeted runs (`:check-{n}` / `:{keyword}`) never publish a result cache, so `mode` is always `full`; a targeted P0/P1 may only delete a pass cache or add machine-owned invalidation metadata to a failure record through `gate-invalidate`. The `basis` field distinguishes the three complete-result writers for audit: `basis: full` (or absent) means the cache came from a full run; `basis: delta` means a delta run reviewed its change set and re-executed the reviewed scope, carrying the rest over from a pass baseline; `basis: repair` means the run recovered from a **failure record** — it re-executed the failed judgments, persisted invalidated checks, invalidated verify records, and explicit `--rerun` overrides, reviewed the change set, and carried the rest over (see `framework/verification_scope.md` §Delta Runs). A pass delta cache must carry its change-review record (see §Format → Change-review record).
 
@@ -602,7 +616,7 @@ When you need to read a cache file, use this ordered strategy:
 
 Unit verify uses `framework/shared_judgments.md`. Its structured block contains `records`, mapping every necessary task key to `{id, digest, layer, source}`. Sources are executed, carried or reused. Public, design, architecture and acceptance records are immutable JSON files in `docs/specs/meta/validation/judgments/`. Other caches retain schema 3.
 
-Code dependencies use exact whole-file fingerprints, including related evidence read by public checks. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated or old-protocol record is a concrete gate gap. Old verify caches require full verify and are never converted into public judgments.
+Code dependencies use exact whole-file fingerprints on the conclusion's own object — the reviewed file plus the applicable rules — not the run's supplied evidence inputs, which stay readable and whose newly supplied paths still invalidate reuse. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated or old-protocol record is a concrete gate gap. Old verify caches require full verify and are never converted into public judgments.
 
 Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. Removal clears this unit's current cache references without deleting shared records. History cleanup runs inside gate-finalize: stale-protocol records unreachable from every current cache binding, accepted pointer, and open run — through the record-reference chain — are collected and reported; same-protocol history and unreadable records are retained.
 

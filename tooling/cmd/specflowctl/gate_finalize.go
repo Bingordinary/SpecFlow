@@ -242,6 +242,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		write.ReviewResult = run.Review.Result
 		write.ReviewSession = run.Review.Session
 		write.ReviewRecheck = append([]string(nil), run.Review.Recheck...)
+		write.ReviewDeclined = declinedReviewCandidates(run.Review)
 	}
 
 	rendered, err := validationcache.RenderCache(run.TargetName, write)
@@ -559,6 +560,23 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 		return nil, errors.New("validate synthesis contains P2/P3 findings; validate grades P0/P1 only")
 	}
 	return out, nil
+}
+
+// declinedReviewCandidates lists the carry candidates a review left out of
+// Recheck — the conclusions the review declined to re-run. The cache records
+// them so the scope decision is auditable beyond review_recheck.
+func declinedReviewCandidates(rev *gaterun.ReviewRecord) []string {
+	rechecked := map[string]bool{}
+	for _, key := range rev.Recheck {
+		rechecked[key] = true
+	}
+	var declined []string
+	for _, key := range rev.Candidates {
+		if !rechecked[key] {
+			declined = append(declined, key)
+		}
+	}
+	return declined
 }
 
 // statusForVerdict maps a session verdict token to the logical fail/pass

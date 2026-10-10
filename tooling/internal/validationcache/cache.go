@@ -84,6 +84,7 @@ type cacheFile struct {
 	ReviewResult    string   `yaml:"review_result,omitempty"`
 	ReviewSession   string   `yaml:"review_session,omitempty"`
 	ReviewRecheck   []string `yaml:"review_recheck,omitempty"`
+	ReviewDeclined  []string `yaml:"review_declined,omitempty"`
 	Files           []cacheFileEntry
 }
 
@@ -538,10 +539,13 @@ type CacheWrite struct {
 	// ReviewChangeSet/ReviewResult/ReviewSession/ReviewRecheck record the
 	// delta review that accepted this cache's change set (delta/repair runs
 	// only). They are the audit trail the promote boundary trusts.
+	// ReviewDeclined records the carry candidates the review declined to
+	// re-run (the offered candidate set minus ReviewRecheck).
 	ReviewChangeSet string
 	ReviewResult    string
 	ReviewSession   string
 	ReviewRecheck   []string
+	ReviewDeclined  []string
 	// Judgments is the machine-readable synthesis baseline JSON. It is stored
 	// in a marked comment block before the human-readable body.
 	Judgments string
@@ -735,6 +739,9 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 		fmt.Fprintf(&b, "review_session: %s\n", w.ReviewSession)
 		if len(w.ReviewRecheck) > 0 {
 			fmt.Fprintf(&b, "review_recheck: %q\n", strings.Join(w.ReviewRecheck, ", "))
+		}
+		if len(w.ReviewDeclined) > 0 {
+			fmt.Fprintf(&b, "review_declined: %q\n", strings.Join(w.ReviewDeclined, ", "))
 		}
 	}
 	if len(w.InvalidatedChecks) > 0 {
@@ -1510,6 +1517,14 @@ func parseCache(data []byte) (*cacheFile, error) {
 							continue
 						}
 						cache.ReviewRecheck = append(cache.ReviewRecheck, key)
+					}
+				case "review_declined":
+					for _, tok := range strings.Split(value, ",") {
+						key := strings.TrimSpace(tok)
+						if key == "" {
+							continue
+						}
+						cache.ReviewDeclined = append(cache.ReviewDeclined, key)
 					}
 				}
 			}
