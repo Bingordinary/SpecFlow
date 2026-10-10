@@ -10,7 +10,7 @@ This command is for the `source_repo` layout (this repository). It does not appl
 - Current branch must be `main`. If `git branch --show-current` is empty (detached HEAD) or not `main`, report it and stop.
 - Working tree must be clean (`git status --porcelain` empty). If dirty, report it and stop — do not stash automatically.
 - Git remote `origin` must exist (`git remote get-url origin` succeeds). If missing, report it and stop.
-- Go toolchain must be available (`go version` succeeds) because Stage 2 computes the fingerprint via `go run ./cmd/specflowctl tooling-fingerprint`.
+- Go toolchain must be available (`go version` succeeds) because Stage 2 computes the fingerprint via `cd tooling && go run ./cmd/specflowctl tooling-fingerprint --repo-root ..` (run from the repository root).
 
 ## Procedure
 
@@ -101,7 +101,7 @@ This script:
 
 - Re-validates that the branch is `main`, the layout is `source_repo`, the working tree is clean, and `origin` exists.
 - Performs a defensive fail-fast: it fetches `origin/main` again and aborts with a non-zero exit if the local is behind `origin/main`, directing the user to run the `spec_flow_push` flow (Stage 1). The script itself does not prompt for confirmation or run `git pull --rebase` — interaction belongs to this document's Stage 1 only.
-- Computes the tooling source fingerprint via `go run ./cmd/specflowctl tooling-fingerprint --repo-root <repo>` and, if `tooling/fingerprint.txt` differs, commits it as `chore(tooling): record tooling fingerprint <short>`.
+- Computes the tooling source fingerprint via `cd tooling && go run ./cmd/specflowctl tooling-fingerprint --repo-root <repo>` (run from the repository root, where `<repo>` is the absolute repository root) and, if `tooling/fingerprint.txt` differs, commits it as `chore(tooling): record tooling fingerprint <short>`.
 - Pushes `main` to `origin` (`git push origin main`), then ensures the release tag `specflow-tooling-<short>` exists and pushes it if not already present on the remote.
 
 Do not read the script's shell implementation beyond the fail-fast contract above. Execute it as-is.
@@ -127,6 +127,6 @@ After a successful push:
 
 - `git rev-list --count HEAD..origin/main` must be `0`.
 - `git status --porcelain` must be empty.
-- `tooling/fingerprint.txt` must contain the fingerprint printed by `go run ./cmd/specflowctl tooling-fingerprint`.
+- `tooling/fingerprint.txt` must contain the fingerprint printed by `cd tooling && go run ./cmd/specflowctl tooling-fingerprint --repo-root ..` (run from the repository root).
 
 Do not modify governance files or tooling scripts outside this flow as part of `spec_flow_push`.
