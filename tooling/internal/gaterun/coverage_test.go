@@ -324,6 +324,25 @@ func TestRepairWithoutStatusMapDegrades(t *testing.T) {
 	}
 }
 
+// TestPlanCommandRendersRunnableTargets pins the single renderer behind every
+// tooling message that sends a coordinator to a new plan: a unit plan must
+// carry --relationships (gate-plan rejects it otherwise), and a rule plan must
+// not carry it.
+func TestPlanCommandRendersRunnableTargets(t *testing.T) {
+	unit := &Run{Gate: GateValidate, TargetKind: TargetKindUnit, TargetName: "auth", Target: TargetCandidate}
+	rule := &Run{Gate: GateValidate, TargetKind: TargetKindRule, TargetName: "frontmatter", Target: TargetCandidate}
+
+	if got, want := PlanCommand(unit, ModeFull), "`specflowctl gate-plan --gate validate --unit auth --target candidate --relationships <names|none> --mode full`"; got != want {
+		t.Fatalf("unit full command = %s, want %s", got, want)
+	}
+	if got, want := PlanCommand(unit, ModeDelta), "`specflowctl gate-plan --gate validate --unit auth --target candidate --relationships <names|none> --mode delta`"; got != want {
+		t.Fatalf("unit delta command = %s, want %s", got, want)
+	}
+	if got, want := PlanCommand(rule, ModeFull), "`specflowctl gate-plan --gate validate --rule frontmatter --target candidate --mode full`"; got != want {
+		t.Fatalf("rule full command = %s, want %s", got, want)
+	}
+}
+
 // TestDeltaRequiresPassBaseline verifies that a delta plan refuses a baseline
 // that is not a pass cache and degrades a status-less failure record to the
 // full coverage set.
@@ -333,6 +352,8 @@ func TestDeltaRequiresPassBaseline(t *testing.T) {
 
 	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "no baseline cache") {
 		t.Fatalf("expected a missing-baseline error, got %v", err)
+	} else if !strings.Contains(err.Error(), "--relationships <names|none>") || !strings.Contains(err.Error(), "--mode full") {
+		t.Fatalf("the missing-baseline guidance must print a runnable full-run plan, got %v", err)
 	}
 
 	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())

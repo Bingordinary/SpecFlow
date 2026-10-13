@@ -64,7 +64,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 			if run.Target == TargetStable {
 				return nil, nil, nil, nil, noUsableBaselineError(run)
 			}
-			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: `specflowctl gate-plan --gate %s %s --target %s`", run.Gate, gateTargetFlags(run), run.Target)
+			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
 		case baseline.Mode != "full":
 			return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
 		case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:

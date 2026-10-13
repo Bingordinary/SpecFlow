@@ -1029,6 +1029,20 @@ func gateTargetFlags(run *Run) string {
 	return "--unit " + run.TargetName
 }
 
+// PlanCommand renders a copy-ready `specflowctl gate-plan` command that replaces
+// this run for the given mode. A unit plan requires `--relationships` — a full
+// unit plan requires it explicitly — and a rule plan must not carry it, so the
+// target kind decides the flag. Every tooling message that sends a coordinator
+// to a new plan renders through this, so a printed command is always runnable
+// instead of being rejected by gate-plan's own flag contract.
+func PlanCommand(run *Run, mode string) string {
+	relationships := ""
+	if run.TargetKind != TargetKindRule {
+		relationships = " --relationships <names|none>"
+	}
+	return fmt.Sprintf("`specflowctl gate-plan --gate %s %s --target %s%s --mode %s`", run.Gate, gateTargetFlags(run), run.Target, relationships, mode)
+}
+
 // CoverageProgress reports which coverage keys are covered by an accepted
 // session and which remain open. A key covered by two accepted sessions is a
 // mechanical error. The reserved final-synthesis key is excluded.

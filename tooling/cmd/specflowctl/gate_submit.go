@@ -61,6 +61,15 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run accepts submissions; plan a new run", run.RunID, run.Status)
 	}
+	// An escalated run is abandon-only. The change review handed it off to a
+	// full run, so no report may land on it: accepting one would record a
+	// judgment — and, for a verify code key, publish public evidence and a
+	// shared-task pointer — inside a run that can never finalize. The guard runs
+	// before the key and terminal-session checks, so every submission is refused
+	// with the same fail-closed message the mission and finalize guards use.
+	if run.Escalated {
+		return escalatedRunError(run)
+	}
 	spec, err := gaterun.BuildSessionSpec(absRoot, run, keys)
 	if err != nil {
 		return err
@@ -595,9 +604,9 @@ func writeGateSubmitUsage(w io.Writer) {
 	fmt.Fprintln(w, "  specflowctl gate-submit --run RUN_ID --session SESSION_ID --keys K1,K2 --report PATH [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Records one reviewer session's report after mechanical validation: the run is")
-	fmt.Fprintln(w, "open, the assigned keys belong to the run's coverage set and are not already")
-	fmt.Fprintln(w, "covered by an accepted session, the session id matches the keys, its")
-	fmt.Fprintln(w, "dependencies are resolved, and the report is structurally complete — every")
+	fmt.Fprintln(w, "open and not escalated, the assigned keys belong to the run's coverage set and")
+	fmt.Fprintln(w, "are not already covered by an accepted session, the session id matches the keys,")
+	fmt.Fprintln(w, "its dependencies are resolved, and the report is structurally complete — every")
 	fmt.Fprintln(w, "assigned check key has exactly one verdict line with an allowed token and")
 	fmt.Fprintln(w, "evidence basis, and gate-specific required fields are present. Reports carry")
 	fmt.Fprintln(w, "no dependency declarations: the tooling records the run's whole input surface")
