@@ -651,3 +651,98 @@ func TestSweepRefusesEscapingStateDirs(t *testing.T) {
 		})
 	}
 }
+
+// writeInterruptedRunState reproduces the on-disk state an interrupted
+// gate-plan left behind before the plan was published atomically: a verify run
+// whose public coverage keys carry no task and no bound record. It is
+// hand-written because the atomic plan can no longer produce that shape
+// (issue #80).
+func writeInterruptedRunState(t *testing.T, root, runID string, coverage []CoverageKey) {
+	t.Helper()
+	payload := mustJSON(t, map[string]any{
+		"run_id": runID, "schema_version": 2, "protocol": "fixture-protocol",
+		"gate": GateVerify, "target_kind": TargetKindUnit, "target_name": "auth",
+		"target": TargetCandidate, "status": StatusOpen, "mode": ModeFull,
+		"records": map[string]judgments.Binding{}, "coverage": coverage,
+	})
+	p := filepath.Join(root, "meta", "gate_runs", runID, "run.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, payload, 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSweepReclaimsInterruptedPlan is the #80 regression: an interrupted plan
+// persists a verify run whose public coverage key has no shared task. The
+// strict loader rejects it — so no listing exposes it as resumable — and the
+// sweep reclaims it instead of leaving it to block the operator forever.
+func TestSweepReclaimsInterruptedPlan(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	const runID = "20260101-000000-c0ffee"
+	writeInterruptedRunState(t, repoRoot, runID, []CoverageKey{
+		{Key: "code:src/auth.go", Kind: SessionKindCode, Lens: LensQuality, Unit: "auth"},
+	})
+
+	if _, err := Load(repoRoot, runID); err == nil || !strings.Contains(err.Error(), "not fully planned") {
+		t.Fatalf("an interrupted plan must be rejected as unplanned, got %v", err)
+	}
+	runs, err := ListRuns(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range runs {
+		if run.RunID == runID {
+			t.Fatalf("an interrupted plan must not be listed as resumable: %+v", run)
+		}
+	}
+
+	planned, err := PlanSweep(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Runs) != 1 || planned.Runs[0].ID != runID {
+		t.Fatalf("expected the interrupted plan to be the only reclaimable run, got %+v", planned.Runs)
+	}
+
+	result, err := SweepOrphanedState(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Runs) != 1 || result.Runs[0].ID != runID {
+		t.Fatalf("sweep removed %+v, want the interrupted plan", result.Runs)
+	}
+	if _, err := os.Stat(runDirPath(t, repoRoot, runID)); !os.IsNotExist(err) {
+		t.Fatal("interrupted plan survived the sweep")
+	}
+}
+
+// TestPlanPublishesEveryPublicKeyWithItsTask pins the completeness the atomic
+// publication guarantees: a planned verify run's public coverage keys always
+// carry a shared task or a bound record, so a run is never visible before its
+// shared tasks exist (issue #80).
+func TestPlanPublishesEveryPublicKeyWithItsTask(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	run := planOrFail(t, repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull)
+	for _, ck := range run.Coverage {
+		if ck.Source == "" {
+			t.Fatalf("coverage key %q was published without an execution source", ck.Key)
+		}
+		if ck.Kind != SessionKindCode || ck.Task != "" {
+			continue
+		}
+		if _, bound := run.Records[ck.Key]; !bound {
+			t.Fatalf("public key %q was published without a task or a bound record", ck.Key)
+		}
+	}
+	// The published state loads: the completeness is real, not only in memory.
+	if _, err := Load(repoRoot, run.RunID); err != nil {
+		t.Fatalf("a planned run must load: %v", err)
+	}
+}

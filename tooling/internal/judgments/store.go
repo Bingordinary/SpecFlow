@@ -363,11 +363,7 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 			return fmt.Errorf("judgment %s input %s: %w", ref.ID, path, err)
 		}
 		if d.Hash != "" {
-			h, err := specpaths.FileHash(filepath.Join(root, filepath.FromSlash(canonical)))
-			if err != nil {
-				return err
-			}
-			if h != d.Hash {
+			if specpaths.HashText(data) != d.Hash {
 				return fmt.Errorf("judgment %s whole-file input changed: %s", ref.ID, path)
 			}
 		}

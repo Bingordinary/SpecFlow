@@ -185,47 +185,125 @@ func saveTask(root string, task *sharedTask) error {
 }
 
 func prepareSharedChecks(root string, run *Run) error {
-	refs, err := judgments.List(root)
-	if err != nil {
+	// The code-record index is needed only for a code coverage key that is
+	// still unprepared, so it is built on first use. A run whose keys are all
+	// settled (a review that adds no code key) or whose coverage carries no
+	// code key reads no judgment record at all (issue #79).
+	type codeRecord struct {
+		ref    judgments.Reference
+		record *judgments.Record
+	}
+	bySubject := map[string][]codeRecord{}
+	indexed := false
+	index := func() error {
+		if indexed {
+			return nil
+		}
+		// Index the code records by subject once. The reuse search and the
+		// invalidated-record fingerprint both read the same per-subject view;
+		// reloading the whole store for every coverage key made planning
+		// quadratic in the store size (issue #79). Records are indexed in List
+		// order so the reuse search walks a subject group backwards exactly as
+		// it walked the full reference list, and the fingerprint walks it
+		// forwards.
+		refs, err := judgments.List(root)
+		if err != nil {
+			return err
+		}
+		for _, ref := range refs {
+			record, loadErr := judgments.Load(root, ref)
+			if loadErr != nil || record.Kind != judgments.Code {
+				continue
+			}
+			bySubject[record.Subject] = append(bySubject[record.Subject], codeRecord{ref: ref, record: record})
+		}
+		indexed = true
+		return nil
+	}
+	layer := run.Target
+	// A plan holds the repository lock and mutates no judgment record, so one
+	// record's check result is stable for the whole plan; memoizing it by id
+	// keeps the reuse search and the fingerprint from re-reading and
+	// re-hashing the same dependencies.
+	checkMemo := map[string]error{}
+	check := func(ref judgments.Reference) error {
+		if err, ok := checkMemo[ref.ID]; ok {
+			return err
+		}
+		err := judgments.Check(root, ref, layer, run.Protocol)
+		checkMemo[ref.ID] = err
 		return err
+	}
+	// An explicit re-run must execute even when a valid public record already
+	// covers the file. A `--rerun` key or a conclusion the change review named
+	// is forced: reuse would silently satisfy it with the old conclusion and
+	// leave the recorded re-run unfulfilled, and the accepted shared task would
+	// re-materialize it as an accepted session (issue #80 review path). Forced
+	// public keys skip the reuse search and take their own task.
+	currentSet := make(map[string]bool, len(run.Coverage))
+	for i := range run.Coverage {
+		currentSet[run.Coverage[i].Key] = true
+	}
+	forced := map[string]bool{}
+	for _, raw := range run.RerunKeys {
+		if key, ok := normalizeGateKey(run, raw, currentSet); ok {
+			forced[key] = true
+		}
+	}
+	if run.Review != nil {
+		for _, key := range run.Review.Recheck {
+			forced[key] = true
+		}
 	}
 	for i := range run.Coverage {
 		ck := &run.Coverage[i]
+		if ck.Source != "" {
+			// Already prepared: gate-plan stamps every key it publishes, and a
+			// later review that reopens a coverage key reuses this stamping for
+			// that new key only — an existing key's source and task are settled.
+			continue
+		}
 		ck.Source = "executed"
 		if ck.Kind != SessionKindCode {
 			continue
 		}
+		if err := index(); err != nil {
+			return err
+		}
 		inputs := coverageReadRefs(root, run, *ck)
-		layer := run.Target
 		normalized, err := normalizeOwnInputs(root, inputs, ck.Unit, layer)
 		if err != nil {
 			return err
 		}
-		for j := len(refs) - 1; j >= 0; j-- {
-			record, err := judgments.Load(root, refs[j])
-			if err != nil {
-				continue
+		group := bySubject[ck.File]
+		isForced := forced[ck.Key]
+		if !isForced {
+			for j := len(group) - 1; j >= 0; j-- {
+				record := group[j].record
+				if record.Unit != ck.Unit || !judgments.CoversInputs(record.Inputs, normalized) {
+					continue
+				}
+				if check(group[j].ref) != nil {
+					continue
+				}
+				run.Records[ck.Key] = judgments.Binding{Reference: group[j].ref, Layer: layer, Source: "reused"}
+				ck.Source = "reused"
+				break
 			}
-			if record.Kind != judgments.Code || record.Subject != ck.File || record.Unit != ck.Unit || !judgments.CoversInputs(record.Inputs, normalized) {
-				continue
-			}
-			if judgments.Check(root, refs[j], layer, run.Protocol) != nil {
-				continue
-			}
-			run.Records[ck.Key] = judgments.Binding{Reference: refs[j], Layer: layer, Source: "reused"}
-			ck.Source = "reused"
-			break
 		}
-		if ck.Kind != SessionKindCode || ck.Source == "reused" {
+		if ck.Source == "reused" {
 			continue
 		}
 		fingerprint := []string{run.Protocol, ck.Key}
-		for _, ref := range refs {
-			record, err := judgments.Load(root, ref)
-			if err == nil && record.Kind == judgments.Code && record.Subject == ck.File {
-				if err := judgments.Check(root, ref, run.Target, run.Protocol); err != nil && strings.Contains(err.Error(), "explicitly invalidated") {
-					fingerprint = append(fingerprint, ref.ID)
-				}
+		if isForced {
+			// A forced key never adopts an existing accepted shared task: a
+			// distinct, run-private task guarantees the key still has to be
+			// executed and publishes a fresh public record.
+			fingerprint = append(fingerprint, "forced:"+run.RunID)
+		}
+		for _, entry := range group {
+			if err := check(entry.ref); err != nil && strings.Contains(err.Error(), "explicitly invalidated") {
+				fingerprint = append(fingerprint, entry.ref.ID)
 			}
 		}
 		for _, input := range inputs {
@@ -243,7 +321,7 @@ func prepareSharedChecks(root string, run *Run) error {
 			if err != nil {
 				return err
 			}
-			if task.Record == nil || judgments.Check(root, *task.Record, layer, run.Protocol) == nil {
+			if task.Record == nil || check(*task.Record) == nil {
 				break
 			}
 			// Keep the accepted task and its history intact. An unusable result

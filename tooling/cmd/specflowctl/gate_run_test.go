@@ -1737,6 +1737,97 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	}
 }
 
+// TestReviewRecheckOfCodeKeyForcesExecution is the #80 review-path regression:
+// a review that names a carried public `code:<file>` key must re-run it, even
+// though the file is unchanged and a valid public record exists. Reuse would
+// silently satisfy the key with the old conclusion while the cache records
+// `review_recheck`, and the accepted shared task would re-materialize it as an
+// accepted session. The named key therefore executes with its own task.
+func TestReviewRecheckOfCodeKeyForcesExecution(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login"})
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
+
+	fullID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, fullID, "auth.login", grVerifyItemRegionReport("auth.login", main, "src/auth.go"))
+	grSubmitOK(t, repoRoot, fullID, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
+	grFinalizeOK(t, repoRoot, fullID)
+
+	// Change only the item region: the code file is untouched, so its public
+	// key starts as a carry candidate.
+	data, _ := os.ReadFile(specPath)
+	edited := strings.Replace(string(data), "Given a caller, When the behavior runs, Then it is accepted.", "Given a caller, When the behavior runs, Then it is accepted, revised.", 1)
+	if edited == string(data) {
+		t.Fatal("item edit did not apply — fixture assumption broken")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	deltaRun := mustLoadRun(t, repoRoot, deltaID)
+	if !grContainsString(deltaRun.CarriedKeys, "code:src/auth.go") {
+		t.Fatalf("expected the untouched code key carried, got %v", deltaRun.CarriedKeys)
+	}
+
+	grReviewRecheck(t, repoRoot, deltaID, "code:src/auth.go")
+	assertCodeKeyForcedToExecute(t, repoRoot, deltaID, "code:src/auth.go")
+}
+
+// TestRerunOfCodeKeyForcesExecution is the #80 `--rerun` regression: an
+// unchanged public `code:<file>` key named with `--rerun` must execute, not be
+// silently reused.
+func TestRerunOfCodeKeyForcesExecution(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login"})
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
+
+	fullID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, fullID, "auth.login", grVerifyItemRegionReport("auth.login", main, "src/auth.go"))
+	grSubmitOK(t, repoRoot, fullID, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
+	grFinalizeOK(t, repoRoot, fullID)
+
+	data, _ := os.ReadFile(specPath)
+	edited := strings.Replace(string(data), "Given a caller, When the behavior runs, Then it is accepted.", "Given a caller, When the behavior runs, Then it is accepted, revised.", 1)
+	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	deltaID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "code:src/auth.go")
+	assertCodeKeyForcedToExecute(t, repoRoot, deltaID, "code:src/auth.go")
+}
+
+// assertCodeKeyForcedToExecute pins the single forced-key semantics: the public
+// key is marked executed with its own task, is not satisfied by a reused
+// record, and stays uncovered until its own report is accepted.
+func assertCodeKeyForcedToExecute(t *testing.T, repoRoot, runID, key string) {
+	t.Helper()
+	run := mustLoadRun(t, repoRoot, runID)
+	ck := run.CoverageByKey(key)
+	if ck == nil {
+		t.Fatalf("%s missing from coverage: %v", key, coverageKeysOf(run))
+	}
+	if ck.Source != "executed" || ck.Task == "" {
+		t.Fatalf("%s must execute with its own task, got source=%q task=%q", key, ck.Source, ck.Task)
+	}
+	if _, bound := run.Records[key]; bound {
+		t.Fatalf("%s must not be satisfied by a reused record: %+v", key, run.Records[key])
+	}
+	states, err := gaterun.LoadSessionStates(repoRoot, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered, _, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := covered[key]; ok {
+		t.Fatalf("%s must still require execution, not be already covered", key)
+	}
+}
+
 func TestGateFinalizeRejectsCrossDigestMismatch(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")

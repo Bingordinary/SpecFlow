@@ -788,16 +788,19 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 			run.Notices = append(run.Notices, notice)
 		}
 	}
-	if err := writeRun(repoRoot, run); err != nil {
-		return nil, err
-	}
+	// The plan is published in one write, after every in-memory derivation —
+	// including a verify run's shared public tasks — has completed. A visible
+	// run state whose code coverage keys carry no task is a plan no submission
+	// can ever complete, so it must never be representable on disk: an
+	// interruption here leaves no run state at all, and any shared task files
+	// already written are reclaimed by the sweep (issue #80).
 	if gate == GateVerify {
 		if err := prepareSharedChecks(repoRoot, run); err != nil {
 			return nil, err
 		}
-		if err := writeRun(repoRoot, run); err != nil {
-			return nil, err
-		}
+	}
+	if err := writeRun(repoRoot, run); err != nil {
+		return nil, err
 	}
 	// Every new plan is a cleanup point: runs of targets that no longer exist
 	// and shared task files no surviving run references are discarded. The
@@ -934,6 +937,9 @@ func Load(repoRoot, runID string) (*Run, error) {
 		return nil, err
 	}
 	if err := validateCoverage(run, run.Coverage); err != nil {
+		return nil, fmt.Errorf("gate run %s has an invalid coverage set: %w", runID, err)
+	}
+	if err := validatePlannedVerify(run); err != nil {
 		return nil, fmt.Errorf("gate run %s has an invalid coverage set: %w", runID, err)
 	}
 	if run.Gate == GateVerify && run.SchemaVersion != 2 {

@@ -28,7 +28,14 @@ func FileHash(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return HashText(data), nil
+}
+
+// HashText computes the same hash FileHash produces for the same bytes, so a
+// caller that has already read a file's content hashes it without a second
+// read of the same path.
+func HashText(data []byte) string {
 	normalized := NormalizeText(string(data))
 	sum := sha256.Sum256([]byte(normalized))
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }

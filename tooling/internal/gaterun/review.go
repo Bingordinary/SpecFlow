@@ -602,6 +602,16 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 	}
 	record.ChangeSet = run.ChangeSetFP
 	run.Review = &record
+	// The review may add coverage keys after plan time: a rechecked carried
+	// key and the design keys its public record pulls. Stamp every new key with
+	// its execution source and shared task exactly as gate-plan does, so a
+	// public key the review reopens is never published without its task
+	// (issue #80). Keys already stamped at plan time are left untouched.
+	if run.Gate == GateVerify {
+		if err := prepareSharedChecks(repoRoot, run); err != nil {
+			return err
+		}
+	}
 	return Persist(repoRoot, run)
 }
 

@@ -476,6 +476,30 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 	return nil
 }
 
+// validatePlannedVerify enforces the resumption shape of a persisted verify
+// run: every public coverage key must be backed by its execution machinery —
+// a shared task (source "executed"/"waiting") or a bound public record (source
+// "reused"). A public key with neither was published before its shared task
+// existed — an interrupted plan no submission can complete (issue #80). The
+// strict loader rejects it as unresumable, so the orphan sweep reclaims it
+// instead of listing it as a run that can resume. The check runs only on load;
+// plan-time validation precedes the stamping.
+func validatePlannedVerify(run *Run) error {
+	if run.Gate != GateVerify {
+		return nil
+	}
+	for _, ck := range run.Coverage {
+		if ck.Kind != SessionKindCode || ck.Task != "" {
+			continue
+		}
+		if _, bound := run.Records[ck.Key]; bound {
+			continue
+		}
+		return fmt.Errorf("public coverage key %q has no shared task — the run was not fully planned; replan the run", ck.Key)
+	}
+	return nil
+}
+
 // targetLayerSpecRef resolves a target's own main file — a unit main spec or a
 // rule file — in the given layer (candidate or stable). Appendices are
 // separate files; callers that need the whole own-spec surface add them.
