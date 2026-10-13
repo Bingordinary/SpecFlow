@@ -80,7 +80,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
 	}
 	if run.Escalated {
-		return fmt.Errorf("the change review escalated this run to a full run — run the full command instead: `specflowctl gate-plan --gate %s %s --target %s --mode full`", run.Gate, gateRunTargetFlags(run), run.Target)
+		return escalatedRunError(run)
 	}
 
 	states, err := gaterun.LoadSessionStates(absRoot, run)
@@ -721,8 +721,8 @@ func normalizeEvidenceHash(hash string) string {
 
 func rejectSnapshotDivergence(absRoot string, run *gaterun.Run, divergences []string) error {
 	_ = gaterun.Delete(absRoot, run)
-	return fmt.Errorf("gate-finalize rejected: input(s) changed since gate-plan —\n  %s\nRun state discarded; plan a new run and execute again: `specflowctl gate-plan --gate %s %s --target %s --mode %s`",
-		strings.Join(divergences, "\n  "), run.Gate, gateRunTargetFlags(run), run.Target, run.Mode)
+	return fmt.Errorf("gate-finalize rejected: input(s) changed since gate-plan —\n  %s\nRun state discarded; plan a new run and execute again: %s",
+		strings.Join(divergences, "\n  "), gaterun.PlanCommand(run, run.Mode))
 }
 
 // assembleEntries builds the cache files list from the run's input surface.
@@ -945,15 +945,6 @@ func containsString(values []string, v string) bool {
 		}
 	}
 	return false
-}
-
-// gateRunTargetFlags renders the unit/rule flag combination of a run for
-// guidance text.
-func gateRunTargetFlags(run *gaterun.Run) string {
-	if run.TargetKind == "rule" {
-		return "--rule " + run.TargetName
-	}
-	return "--unit " + run.TargetName
 }
 
 func relToRepo(absRoot, path string) string {

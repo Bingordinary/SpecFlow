@@ -45,6 +45,9 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run can materialize a mission; plan a new run", run.RunID, run.Status)
 	}
+	if run.Escalated {
+		return escalatedRunError(run)
+	}
 	keys := []string{gaterun.CrossKey}
 	if !*finalPtr {
 		keys = splitKeys(*keysPtr)
@@ -59,6 +62,12 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 		}
 		if current.Status != gaterun.StatusOpen {
 			return fmt.Errorf("gate run %s is %s", runID, current.Status)
+		}
+		// Recheck escalation under the lock: a review submission that returned
+		// escalate-full abandons the run, so no mission may be materialized or
+		// claimed for it even when the review landed after the pre-lock check.
+		if current.Escalated {
+			return escalatedRunError(current)
 		}
 		if _, err := gaterun.BuildSessionSpec(absRoot, current, keys); err != nil {
 			return err

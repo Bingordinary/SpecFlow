@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -108,8 +110,72 @@ func TestE2EDeltaReviewEscalates(t *testing.T) {
 		t.Fatal(err)
 	}
 	deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	grSubmitOK(t, root, deltaID, "review", "Review result: escalate-full — rewrite-scale change\n")
-	if _, err := grFinalize(t, root, deltaID); err == nil || !strings.Contains(err.Error(), "escalated") {
-		t.Fatalf("expected finalize to refuse the escalated run, got %v", err)
+	submitOut := grSubmitOK(t, root, deltaID, "review", "Review result: escalate-full — rewrite-scale change\n")
+	if !strings.Contains(submitOut, "abandon") || !strings.Contains(submitOut, "--mode full") {
+		t.Fatalf("escalate-full submit must point at the full run, got:\n%s", submitOut)
+	}
+	if finOut, finErr := grFinalize(t, root, deltaID); finErr == nil || !strings.Contains(finErr.Error(), "escalated") {
+		t.Fatalf("expected finalize to refuse the escalated run, got %v\n%s", finErr, finOut)
+	} else if !strings.Contains(finErr.Error(), "--relationships") {
+		// The refusal clue must be a runnable command: a full unit run requires
+		// --relationships, so the shared message has to carry the flag. Without the
+		// flag gate-plan rejects the plan, which would strand the coordinator on the
+		// single recovery step the message exists to name.
+		t.Fatalf("the finalize refusal must print a runnable full-run plan, got %v", finErr)
+	}
+	var noRel, noRelErr bytes.Buffer
+	if err := runGatePlan([]string{"--repo-root", root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "full"}, &noRel, &noRelErr); err == nil || !strings.Contains(err.Error(), "--relationships") {
+		t.Fatalf("premise: a full unit plan without --relationships must be rejected, got %v", err)
+	}
+
+	// Status reports the escalated state and the abandon action, not synthesize:
+	// the recovery point must never route a coordinator into a synthesis the
+	// finalize refuses.
+	var statusJSON, statusErr bytes.Buffer
+	if err := runGateStatus([]string{"--repo-root", root, "--run", deltaID, "--format", "json"}, &statusJSON, &statusErr); err != nil {
+		t.Fatalf("gate-status JSON failed: %v (%s)", err, statusErr.String())
+	}
+	var view gateRunView
+	if err := json.Unmarshal(statusJSON.Bytes(), &view); err != nil {
+		t.Fatalf("parse gate-status JSON: %v\n%s", err, statusJSON.String())
+	}
+	if view.NextAction != "abandon" || !view.Escalated {
+		t.Fatalf("escalated run must report next_action abandon and escalated true, got next_action=%q escalated=%v", view.NextAction, view.Escalated)
+	}
+
+	var statusText, statusTextErr bytes.Buffer
+	if err := runGateStatus([]string{"--repo-root", root, "--run", deltaID}, &statusText, &statusTextErr); err != nil {
+		t.Fatalf("gate-status text failed: %v", err)
+	}
+	if !strings.Contains(statusText.String(), "Next:") || !strings.Contains(statusText.String(), "--mode full") || !strings.Contains(statusText.String(), "--relationships") {
+		t.Fatalf("expected the text next action to name a runnable full-run plan, got:\n%s", statusText.String())
+	}
+
+	// Mission generation is fail-closed on the abandoned run: no new reviewer
+	// work is materialized, including the final synthesis.
+	var missionOut, missionErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", deltaID, "--final"}, &missionOut, &missionErr); err == nil || !strings.Contains(err.Error(), "escalated") || !strings.Contains(err.Error(), "--relationships") {
+		t.Fatalf("expected gate-mission --final to refuse the escalated run with a runnable plan, got %v", err)
+	}
+
+	// Submission is fail-closed on the abandoned run too: a report a reviewer
+	// produced before the escalation cannot land on it and record a judgment —
+	// for a verify code key PublishPublic would also publish public evidence and
+	// a shared-task pointer inside a run that can never finalize. The guard runs
+	// before the key and terminal-session checks, so even a re-submission of the
+	// accepted review key is refused with the escalated plan, not "already
+	// accepted".
+	if subOut, subErr := grSubmit(t, root, deltaID, "review", "Review result: accept — late report\n"); subErr == nil || !strings.Contains(subErr.Error(), "escalated") || !strings.Contains(subErr.Error(), "--relationships") {
+		t.Fatalf("expected gate-submit to refuse the escalated run with a runnable plan, got %v\n%s", subErr, subOut)
+	}
+
+	// The recovery path completes: the named full run plans, and planning it
+	// replaces the abandoned delta run.
+	fullID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "full")
+	if fullID == deltaID {
+		t.Fatalf("the full run must replace the abandoned delta run, got the same id %s", fullID)
+	}
+	if _, err := gaterun.Load(root, deltaID); err == nil {
+		t.Fatalf("the abandoned delta run %s must be replaced by the full plan", deltaID)
 	}
 }
