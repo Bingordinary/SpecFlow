@@ -317,6 +317,44 @@ func TestCheckUnitBaseline_LocalizesChange(t *testing.T) {
 	}
 }
 
+// TestWriteUnitBaseline_EmptyFileZeroChunks pins that a repository-content
+// file whose content chunks to nothing (a 0-byte placeholder such as
+// .gitkeep) is still recorded with the chunker and an empty chunk list, and
+// that the empty→content transition is localized as an addition rather than
+// falling back to the whole-file hash.
+func TestWriteUnitBaseline_EmptyFileZeroChunks(t *testing.T) {
+	repoRoot := setupRepo(t)
+	writeBaselineTestFile(t, repoRoot, "internal/demo/.gitkeep", "")
+	writeUnitBaseline(t, repoRoot)
+
+	basePath := filepath.Join(repoRoot, "docs/specs/meta/baseline/unit/demo.yaml")
+	data, err := os.ReadFile(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := strings.Index(string(data), "internal/demo/.gitkeep")
+	if idx < 0 {
+		t.Fatalf("empty repository-content file not recorded in the baseline:\n%s", data)
+	}
+	entry := string(data)[idx:]
+	if end := strings.Index(entry, "      - path: "); end >= 0 {
+		entry = entry[:end]
+	}
+	if !strings.Contains(entry, "chunker:") || !strings.Contains(entry, "chunks:") {
+		t.Fatalf("expected recorded chunk evidence on the empty-file entry:\n%s", entry)
+	}
+
+	if result := CheckUnitBaseline(repoRoot, "demo"); result.Status != StatusOK {
+		t.Fatalf("expected OK for the unchanged empty file, got %s: %s", result.Status, result.Details)
+	}
+
+	writeBaselineTestFile(t, repoRoot, "internal/demo/.gitkeep", "content now\n")
+	result := CheckUnitBaseline(repoRoot, "demo")
+	if result.Status != StatusChanged || !strings.Contains(result.Details, "lines") {
+		t.Fatalf("expected the empty→content transition to be localized, got %s: %s", result.Status, result.Details)
+	}
+}
+
 // TestCheckUnitBaseline_LegacyEntryHashFallback pins the graceful display
 // fallback for baselines written before chunk evidence existed: the drift is
 // detected by whole-file hash and reported without localization.

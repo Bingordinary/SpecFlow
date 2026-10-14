@@ -113,12 +113,12 @@ Each `files` entry records content evidence:
   references (see §Logical References); the run's own target files and code
   files keep physical paths.
 - **`hash`** — the whole-file content hash at run time. Freshness is whole-file: any content change stales the cache, and there is no sub-file freshness rule.
-- **`chunker` / `chunks`** — the ordered content-defined chunk sequence with line positions. It is a **required** part of every entry and the baseline side of the change diff (`gate-plan --mode delta/repair`): ordered, bidirectional alignment detects edits, insertions, deletions, moves, and reordered blocks, and localizes them for the change reviewer. It never decides skip scope.
+- **`chunker` / `chunks`** — the ordered content-defined chunk sequence with line positions, and the baseline side of the change diff (`gate-plan --mode delta/repair`): ordered, bidirectional alignment detects edits, insertions, deletions, moves, and reordered blocks, and localizes them for the change reviewer. It never decides skip scope. The recorded block is a **required** part of every entry; the list itself may be empty, because the chunker produces no chunk for content that normalizes to nothing (an empty or newline-only file, e.g. a tracked `.gitkeep`).
 - **`checks`** — the per-check markers attached to the entry: one marker per
   judgment key that ran (its lens tag on merged verify caches) and, on failure
   records, its outcome `status` (see §Check markers).
 
-`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; a `files` entry whose `hash` is absent or does not match current content is stale. The current chunk evidence (`chunker` + `chunks`) is a required part of every `files` entry: a cache missing it — the removed `deps:`-declaration format, a partial write, or corruption — is not a current-format cache. `fresh` and `promote` fail it closed as stale, and every reader treats it as no usable cache (no baseline, no judgments) and falls back to the full command. Fields the current format does not define (for example a leftover `deps:` line) are ignored, not treated as the end of the `files` block.
+`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; a `files` entry whose `hash` is absent or does not match current content is stale. The current chunk evidence (`chunker` + `chunks`) is a required part of every `files` entry — the requirement is the recorded evidence block, not a non-empty list: content that normalizes to nothing (an empty or newline-only file) records `chunker` with an empty `chunks` list. A cache missing the block — the removed `deps:`-declaration format, a partial write, or corruption — is not a current-format cache. `fresh` and `promote` fail it closed as stale, and every reader treats it as no usable cache (no baseline, no judgments) and falls back to the full command. Fields the current format does not define (for example a leftover `deps:` line) are ignored, not treated as the end of the `files` block.
 
 `files` paths are resolved against the repository root. Dependency matching
 (staleness checks and baseline recording) uses the canonical repo-relative
@@ -191,11 +191,13 @@ carry `invalidated_checks`.
   §Merged verify cache). A cache carrying no markers is invalid for both
   `fresh` and `promote` ("verify cache carries no per-check evidence").
 - **No compatibility shim:** the current chunk evidence (`chunker` + `chunks`)
-  is required in every `files` entry. A cache without it (the removed
-  `deps:`-declaration format, or any pre-chunk-evidence cache) is not a
-  current-format cache: `gate-plan` refuses the delta/repair and directs a full
-  run, `fresh` reports it as unusable, and readers treat it as no baseline.
-  Unknown fields the format does not define are ignored.
+  is recorded in every `files` entry; an empty `chunks` list is valid for
+  content that chunks to nothing (an empty or newline-only file). A cache
+  without the recorded block (the removed `deps:`-declaration format, or any
+  pre-chunk-evidence cache) is not a current-format cache: `gate-plan` refuses
+  the delta/repair and directs a full run, `fresh` reports it as unusable, and
+  readers treat it as no baseline. Unknown fields the format does not define
+  are ignored.
 - Carried keys are recorded with a marker snapshotted at plan time (their lens
   and, on failure records, the `carried` status), so the published cache
   carries the same lens coverage the merged verify gate requires.
@@ -354,6 +356,13 @@ chunker is a deterministic function of content (identical ordered sequences
 imply identical content). Comparing sets instead of sequences would miss
 moves; checking only "baseline chunks still present" would miss pure
 additions; neither shortcut is used.
+
+The chunker is content-driven, so content that normalizes to nothing — an
+empty file, or a file containing only the trailing newline — yields **no
+chunk**. An entry for such a file records the `chunker` with an empty `chunks`
+list: the recorded block is the evidence, and the empty list truthfully says
+the content has no chunk. This is what lets a surface that contains a 0-byte
+placeholder (a tracked `.gitkeep`) be verified and finalized like any other.
 
 The normalization is the same one used by `specflowctl review` input
 fingerprints. It guarantees cross-platform consistency regardless of git's

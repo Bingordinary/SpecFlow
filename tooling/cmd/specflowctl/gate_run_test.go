@@ -1198,6 +1198,48 @@ func TestGateRunRecordsWholeFileEvidence(t *testing.T) {
 	}
 }
 
+// TestGateFinalizeEmptyFileSurface pins that a run whose input surface
+// contains an empty repository-content file — a 0-byte .gitkeep admitted by
+// directory expansion, a documented manifest form — is completable. The
+// chunker produces no chunk for content that normalizes to nothing, so the
+// entry records the chunker with an empty chunk list, which is current-format
+// evidence. Before the fix, gate-finalize rejected its own rendered cache
+// ("no comparable chunk evidence") after every session had been accepted,
+// leaving no recovery but a full re-plan (issue #81).
+func TestGateFinalizeEmptyFileSurface(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")
+	grWriteFile(t, repoRoot, "eval/runtime/.gitkeep", "")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate",
+		"--inputs-file", grInputsManifest(t, "eval/runtime"))
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", "docs/specs/units/candidate/unit_auth.md", "src/auth.go"))
+	grSubmitClarity(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport("docs/specs/units/candidate/unit_auth.md", "Description"))
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected verify cache fresh, got: %s", res.Reason)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	idx := strings.Index(cache, "- path: eval/runtime/.gitkeep")
+	if idx < 0 {
+		t.Fatalf("expected the empty file in the recorded input surface, got:\n%s", cache)
+	}
+	entry := cache[idx:]
+	if end := strings.Index(entry, "\n  - path: "); end >= 0 {
+		entry = entry[:end]
+	}
+	if !strings.Contains(entry, "chunker: "+contenthash.ChunkerVersion) || !strings.Contains(entry, "chunks:") {
+		t.Fatalf("expected recorded chunk evidence on the empty-file entry, got:\n%s", entry)
+	}
+}
+
 func TestGateRunLogicalReference(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth") // dependency unit

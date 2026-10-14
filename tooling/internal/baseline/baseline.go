@@ -223,7 +223,7 @@ func renderBaseline(kind, name string, surfaces []surface) []byte {
 		for _, e := range s.Entries {
 			fmt.Fprintf(&buf, "      - path: %q\n", e.Path)
 			fmt.Fprintf(&buf, "        hash: %q\n", e.Hash)
-			if e.Chunker != "" && len(e.Chunks) > 0 {
+			if e.Chunker != "" {
 				fmt.Fprintf(&buf, "        chunker: %q\n", e.Chunker)
 				buf.WriteString("        chunks:\n")
 				for _, c := range e.Chunks {
@@ -421,17 +421,20 @@ func dedupeStrings(in []string) []string {
 	return out
 }
 
-// entryDrift compares one baseline entry against current content. With a
-// recorded chunk sequence the comparison is the same ordered bidirectional
-// chunk diff the gates use, and the detail names the changed line spans. A
-// legacy baseline entry without chunks falls back to whole-file hash equality.
+// entryDrift compares one baseline entry against current content. When the
+// entry records chunk evidence (a chunker) the comparison is the same ordered
+// bidirectional chunk diff the gates use, and the detail names the changed
+// line spans. A recorded sequence may be empty — content that chunks to
+// nothing (an empty or newline-only file) — and is still diffed, so the
+// empty→content transition is localized. Only a legacy baseline entry with no
+// recorded chunker falls back to whole-file hash equality.
 func entryDrift(repoRoot, rel string, be entry) (string, bool) {
 	full := filepath.Join(repoRoot, filepath.FromSlash(rel))
 	text, err := contenthash.FileText(full)
 	if err != nil {
 		return be.Path + " (unreadable)", true
 	}
-	if len(be.Chunks) > 0 {
+	if be.Chunker != "" {
 		changes := contenthash.DiffChunks(be.Chunks, text)
 		if len(changes) == 0 {
 			return "", false

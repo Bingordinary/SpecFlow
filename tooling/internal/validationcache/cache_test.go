@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -1888,7 +1889,11 @@ func TestCheckRejectsHashOnlyCache(t *testing.T) {
 }
 
 // TestCheckEmptyFileFreshWithNormalizedHash: an empty file's cache records
-// the hash of its normalized content ("\n") and stays fresh while unchanged.
+// the hash of its normalized content ("\n") plus the chunk evidence the
+// chunker produces for that content — the chunker version with an empty chunk
+// list, because the normalized content chunks to nothing — and stays fresh
+// while unchanged. The entry is built through the tooling path, so the test
+// pins the form gate-finalize actually writes.
 func TestCheckEmptyFileFreshWithNormalizedHash(t *testing.T) {
 	repoRoot := t.TempDir()
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -1897,17 +1902,34 @@ func TestCheckEmptyFileFreshWithNormalizedHash(t *testing.T) {
 	specPath := filepath.Join(candidateDir, "unit_test.md")
 	writeCacheFixtureFile(t, specPath, []byte(""), 0644)
 
-	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
-	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + mustHash(t, specPath) + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\n"
-	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
+	entry, err := BuildEvidenceEntry(repoRoot, "docs/specs/units/candidate/unit_test.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry == nil {
+		t.Fatal("expected an evidence entry for the empty spec")
+	}
+	if entry.Chunker != contenthash.ChunkerVersion || len(entry.Chunks) != 0 {
+		t.Fatalf("expected zero-chunk evidence for empty content, got chunker=%q chunks=%d", entry.Chunker, len(entry.Chunks))
+	}
+	if _, err := WriteCache(repoRoot, "unit", "test", CacheWrite{
+		Command:   "validate",
+		Unit:      "test",
+		Mode:      "full",
+		Result:    "pass",
+		Target:    "candidate",
+		Timestamp: "2026-06-30T10:00:00Z",
+		Entries:   []FileEntry{*entry},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := CheckValidate(repoRoot, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.Fresh {
-		t.Fatalf("expected an empty-file cache with the normalized hash to be fresh, got: %s", result.Reason)
+		t.Fatalf("expected an empty-file cache with zero-chunk evidence to be fresh, got: %s", result.Reason)
 	}
 }
 

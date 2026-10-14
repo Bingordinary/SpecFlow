@@ -98,6 +98,13 @@ type cacheFileEntry struct {
 	Checks  []checkEntry              `yaml:"checks,omitempty"`
 	Chunker string                    `yaml:"chunker,omitempty"`
 	Chunks  []contenthash.ChunkRecord `yaml:"chunks,omitempty"`
+	// chunkEvidenceSeen records whether the entry's `chunks:` evidence block
+	// was present in the cache text. The current format requires every entry
+	// to record its chunk evidence; a recorded block whose chunk list is empty
+	// is valid evidence (the entry's content chunks to nothing — an empty or
+	// newline-only file), while a missing block is not. This is parser state
+	// about the cache text, never a serialized field.
+	chunkEvidenceSeen bool `yaml:"-"`
 }
 
 // checkEntry is one check marker inside a files entry: the check key, its lens
@@ -761,7 +768,7 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 		if e.Hash != "" {
 			fmt.Fprintf(&b, "    hash: sha256:%s\n", normalizeHash(e.Hash))
 		}
-		if e.Chunker != "" && len(e.Chunks) > 0 {
+		if e.Chunker != "" {
 			fmt.Fprintf(&b, "    chunker: %s\n", e.Chunker)
 			b.WriteString("    chunks:\n")
 			for _, c := range e.Chunks {
@@ -1415,6 +1422,10 @@ func parseCache(data []byte) (*cacheFile, error) {
 			if trimmed == "chunks:" {
 				inChunksBlock = true
 				inChecksBlock = false
+				if currentEntry != nil {
+					currentEntry.chunkEvidenceSeen = true
+					cache.Files[len(cache.Files)-1] = *currentEntry
+				}
 				continue
 			}
 			if strings.HasPrefix(trimmed, "chunker:") && currentEntry != nil {
@@ -1552,14 +1563,17 @@ func parseCache(data []byte) (*cacheFile, error) {
 	// is built on: every `files` entry records the chunk sequence
 	// (`chunker` + `chunks`) computed at write time. This is a required part
 	// of the format, not optional decoration: without it the entry cannot
-	// participate in the current freshness and change-review contract. A
-	// cache missing it — the removed `deps:`-declaration format, a partial
-	// write, corruption — is rejected as not current-format. Callers that
-	// read an existing cache treat this as "no usable cache" and fall back to
-	// the full command; callers that validate a freshly rendered candidate
-	// fail hard.
+	// participate in the current freshness and change-review contract. The
+	// chunker intentionally produces no chunk for content that normalizes to
+	// nothing (an empty or newline-only file), so a recorded block whose list
+	// is empty is valid evidence — the requirement is the recorded block, not
+	// a non-empty list. A cache missing the block — the removed
+	// `deps:`-declaration format, a partial write, corruption — is rejected as
+	// not current-format. Callers that read an existing cache treat this as
+	// "no usable cache" and fall back to the full command; callers that
+	// validate a freshly rendered candidate fail hard.
 	for _, e := range cache.Files {
-		if e.Chunker != contenthash.ChunkerVersion || len(e.Chunks) == 0 {
+		if e.Chunker != contenthash.ChunkerVersion || !e.chunkEvidenceSeen {
 			return nil, fmt.Errorf("cache entry %q carries no comparable chunk evidence — the cache is not in the current format; run the full command to rebuild it", e.Path)
 		}
 	}
