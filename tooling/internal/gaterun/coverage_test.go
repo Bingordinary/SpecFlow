@@ -767,6 +767,68 @@ func TestDeltaRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
 	}
 }
 
+// TestVerifyRepairRemovedFailedKeyDegrades is the repair-key-invariant
+// regression for a failure record's failed key whose object left the coverage
+// surface. The key can neither re-run nor carry, so the plan must cover the
+// full scope and report the degradation instead of aborting the plan.
+func TestVerifyRepairRemovedFailedKeyDegrades(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+	writeFile(t, repoRoot, "src/extra.go", "package main\n\nfunc Extra() {}\n")
+
+	// The failure record marks the extra file's judgments failed.
+	writeGateBaseline(t, repoRoot, GateVerify, "fail", "full", true, nil, map[string]string{"src/extra.go": "fail"})
+
+	// The object leaves the surface before the repair attempt.
+	if err := os.Remove(filepath.Join(repoRoot, "src/extra.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatalf("a failed key no longer in the surface must degrade, not abort the plan: %v", err)
+	}
+	if got := strings.Join(coverageKeysOf(run), ","); got != "item:auth:auth.core,code:src/main.go,design:auth:src/main.go,architecture:auth" {
+		t.Fatalf("expected the full current coverage set, got %s", got)
+	}
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("a degraded plan carries nothing over, got %v", run.CarriedKeys)
+	}
+	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "is not in the current coverage surface — the plan covers the full scope") {
+		t.Fatalf("missing the unmappable-failed-key degradation notice: %v", run.Notices)
+	}
+}
+
+// TestValidateRepairRemovedFailedCheckDegrades is the validate twin of
+// TestVerifyRepairRemovedFailedKeyDegrades: a failed check key that is no
+// longer a current coverage group must degrade to the full scope, not abort.
+func TestValidateRepairRemovedFailedCheckDegrades(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	var decls []validationcache.CheckEntry
+	statuses := map[string]string{}
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
+		decls = append(decls, validationcache.CheckEntry{Check: key, Status: "pass"})
+		statuses[key] = "pass"
+	}
+	decls = append(decls, validationcache.CheckEntry{Check: "removed-check", Status: "fail"})
+	statuses["removed-check"] = "fail"
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
+	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatalf("a failed check no longer in the surface must degrade, not abort the plan: %v", err)
+	}
+	if len(run.Coverage) != 5 || len(run.CarriedKeys) != 0 {
+		t.Fatalf("expected the full coverage set with nothing carried, got %v / carried %v", coverageKeysOf(run), run.CarriedKeys)
+	}
+	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, `re-run judgment "removed-check" is not in the current coverage surface — the plan covers the full scope`) {
+		t.Fatalf("missing the unmappable-failed-check degradation notice: %v", run.Notices)
+	}
+}
+
 func TestInvalidateTargetedMarksMatchingOpenRunOnly(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")

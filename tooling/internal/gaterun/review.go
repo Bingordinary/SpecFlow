@@ -216,6 +216,15 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 				continue
 			}
 			if status == "fail" {
+				// A failed judgment whose object left the surface cannot
+				// re-run and cannot be carried: the record can no longer say
+				// which judgments are missing, so nothing is carried over and
+				// the plan is the full coverage set (fail closed). This is
+				// the same degradation the persisted-invalidation branch
+				// below applies to an unmappable key.
+				if !currentSet[key] {
+					return full, nil, required, []string{fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", key)}, nil
+				}
 				forced[key] = true
 			}
 		}
