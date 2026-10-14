@@ -25,19 +25,13 @@ type OpenOptions struct {
 	Parent      string
 }
 
-// OpenResult is the outcome of operation open: the frozen state plus any
-// open-time notices (informational only — nothing fails on pre-existing
-// working-tree changes).
-type OpenResult struct {
-	Operation *Operation
-	Notices   []string
-}
-
 // Open declares and freezes one operation scope and writes its state file.
 // The spec-derived part of the scope is resolved from the target's
 // current-layer spec; the caller-declared part comes from --allow. Both are
-// frozen here — only operation update can change the scope afterwards.
-func Open(repoRoot string, opts OpenOptions, now time.Time) (*OpenResult, error) {
+// frozen here — only operation update can change the scope afterwards. The
+// open-time working-tree snapshot recorded alongside them is the comparison
+// point every later check measures against.
+func Open(repoRoot string, opts OpenOptions, now time.Time) (*Operation, error) {
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve repo root: %w", err)
@@ -125,19 +119,16 @@ func Open(repoRoot string, opts OpenOptions, now time.Time) (*OpenResult, error)
 		UpdatedAt:         ts,
 	}
 
-	result := &OpenResult{Operation: op}
-	report, err := evaluate(absRoot, op)
+	snapshot, err := workingTreeSnapshot(absRoot)
 	if err != nil {
 		return nil, err
 	}
-	if n := len(report.OutOfScope) + len(report.StaticViolations); n > 0 {
-		result.Notices = append(result.Notices, fmt.Sprintf("%d path(s) already changed are outside the declared scope or violate the static write zones; `operation check` will fail until they are reverted.", n))
-	}
+	op.Snapshot = snapshot
 
 	if err := Save(absRoot, op); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return op, nil
 }
 
 func uniqueOperationID(repoRoot string, now time.Time) (string, error) {

@@ -102,6 +102,15 @@ func TestOperationCLIEndToEnd(t *testing.T) {
 	if !strings.Contains(stdout, "Result: PASS") {
 		t.Fatalf("expected PASS, got:\n%s", stdout)
 	}
+	// The report must name the comparison point (the open-time snapshot) and
+	// the starting commit as provenance, never label the commit as the base of
+	// the change set.
+	if !strings.Contains(stdout, "Snapshot:") || !strings.Contains(stdout, "Starting commit:") {
+		t.Fatalf("expected the report to name the snapshot and the starting commit, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Baseline:") {
+		t.Fatalf("the report must not present the starting commit as the comparison point, got:\n%s", stdout)
+	}
 
 	// Out-of-scope change: check fails closed and close refuses.
 	opWriteFile(t, repoRoot, "core/runtime/x.go", "package runtime\n")
@@ -134,6 +143,55 @@ func TestOperationCLIEndToEnd(t *testing.T) {
 	stdout, _, err = opRun("status", "--id", opID, "--repo-root", repoRoot)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected the closed operation state to be removed, got %v\n%s", err, stdout)
+	}
+}
+
+func TestOperationCLISharedWorkingTree(t *testing.T) {
+	repoRoot, specRel := opTestGitRepo(t)
+
+	// A shared working tree that already carries unrelated in-flight work when
+	// the operation opens: one modified tracked file and one untracked file,
+	// both outside the declared scope.
+	opWriteFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// unrelated in-flight work\n")
+	opWriteFile(t, repoRoot, "core/scratch/untracked.go", "package scratch\n")
+
+	stdout, stderr, err := opRun("open", "--unit", "demo", "--repo-root", repoRoot)
+	if err != nil {
+		t.Fatalf("open failed: %v\nstderr=%s", err, stderr)
+	}
+	if strings.Contains(stdout, "Notice:") {
+		t.Fatalf("pre-existing changes are not the operation's changes and need no warning:\n%s", stdout)
+	}
+	opID := opParseID(t, stdout)
+
+	stdout, stderr, err = opRun("check", "--id", opID, "--repo-root", repoRoot)
+	if err != nil {
+		t.Fatalf("check on a tree with pre-existing dirt failed: %v\nstderr=%s\nstdout=%s", err, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "Changed paths: 0") || !strings.Contains(stdout, "Result: PASS") {
+		t.Fatalf("expected an empty change set and PASS, got:\n%s", stdout)
+	}
+
+	// The operation's own work: the required spec, and an out-of-scope edit.
+	opWriteFile(t, repoRoot, specRel, "# demo\n\nUpdated design.\n")
+	opWriteFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// the operation changed this\n")
+	stdout, _, err = opRun("check", "--id", opID, "--repo-root", repoRoot)
+	if err == nil {
+		t.Fatalf("expected check failure for the out-of-scope edit:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Result: FAIL") || !strings.Contains(stdout, "core/runtime/x.go") {
+		t.Fatalf("expected FAIL listing the out-of-scope path, got:\n%s", stdout)
+	}
+
+	// Reverting only the operation's own out-of-scope edit leaves the
+	// pre-existing dirt in place, and the close still passes.
+	opWriteFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// unrelated in-flight work\n")
+	stdout, stderr, err = opRun("close", "--id", opID, "--repo-root", repoRoot)
+	if err != nil {
+		t.Fatalf("close failed: %v\nstderr=%s\nstdout=%s", err, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "Operation closed (passed):") {
+		t.Fatalf("expected close confirmation, got:\n%s", stdout)
 	}
 }
 

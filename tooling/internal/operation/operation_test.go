@@ -121,13 +121,13 @@ func headSHA(t *testing.T, repoRoot string) string {
 	return strings.TrimSpace(runGitTest(t, repoRoot, "rev-parse", "HEAD"))
 }
 
-func mustOpen(t *testing.T, repoRoot string, opts OpenOptions) *OpenResult {
+func mustOpen(t *testing.T, repoRoot string, opts OpenOptions) *Operation {
 	t.Helper()
-	result, err := Open(repoRoot, opts, testNow())
+	op, err := Open(repoRoot, opts, testNow())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	return result
+	return op
 }
 
 func allowedEntry(t *testing.T, op *Operation, path string) AllowedPath {
@@ -148,6 +148,17 @@ func containsAllowedPath(entries []AllowedPath, path string) bool {
 		}
 	}
 	return false
+}
+
+func snapshotEntry(t *testing.T, op *Operation, path string) SnapshotEntry {
+	t.Helper()
+	for _, entry := range op.Snapshot {
+		if entry.Path == path {
+			return entry
+		}
+	}
+	t.Fatalf("snapshot path %q not found in %d entries", path, len(op.Snapshot))
+	return SnapshotEntry{}
 }
 
 func mustCheck(t *testing.T, repoRoot, opID string) *Report {
@@ -179,11 +190,10 @@ func TestOpenDerivesUnitScope(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md", "---\nunit: demo_extra\n---\n# Peer flows\n")
 	commitAll(t, repoRoot, "fixture")
 
-	result := mustOpen(t, repoRoot, OpenOptions{
+	op := mustOpen(t, repoRoot, OpenOptions{
 		Unit:        "demo",
 		RequireSpec: []string{specPath},
 	})
-	op := result.Operation
 
 	if op.Target.Kind != TargetKindUnit || op.Target.Name != "demo" {
 		t.Fatalf("target = %+v, want unit demo", op.Target)
@@ -227,7 +237,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingScope(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_demo.md", spec)
 	commitAll(t, repoRoot, "fixture")
 
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	allowedEntry(t, op, "internal/demo")
 	allowedEntry(t, op, "docs/design.md")
 	for _, unexpected := range []string{"fake", "fake/file.go"} {
@@ -243,7 +253,7 @@ func TestOpenStableOnlyTargetScopesCandidateForkPaths(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nunit: demo\nstatus: active\n---\n# Flows\n")
 	commitAll(t, repoRoot, "fixture")
 
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	allowedEntry(t, op, "docs/specs/units/candidate/unit_demo.md")
 	allowedEntry(t, op, "docs/specs/units/candidate/appendix/unit_demo_flows.md")
 	allowedEntry(t, op, "internal/demo")
@@ -269,11 +279,11 @@ func TestOpenRuleTarget(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_x.md", "---\nrule_id: b_rule_x\n---\n")
 	commitAll(t, repoRoot, "fixture")
 
-	result := mustOpen(t, repoRoot, OpenOptions{Rule: "b_rule_x"})
-	if result.Operation.Target.Kind != TargetKindRule {
-		t.Fatalf("target kind = %q, want rule", result.Operation.Target.Kind)
+	op := mustOpen(t, repoRoot, OpenOptions{Rule: "b_rule_x"})
+	if op.Target.Kind != TargetKindRule {
+		t.Fatalf("target kind = %q, want rule", op.Target.Kind)
 	}
-	if entry := allowedEntry(t, result.Operation, "docs/specs/rules/candidate/b_rule_x.md"); entry.Source != SourceSpecFile {
+	if entry := allowedEntry(t, op, "docs/specs/rules/candidate/b_rule_x.md"); entry.Source != SourceSpecFile {
 		t.Fatalf("rule source = %q, want %q", entry.Source, SourceSpecFile)
 	}
 }
@@ -422,11 +432,11 @@ func TestOpenAcceptsDeclaredPathThroughInternalSymlink(t *testing.T) {
 	}
 	commitAll(t, repoRoot, "fixture")
 
-	result, err := Open(repoRoot, OpenOptions{Allow: []string{"alias/new.txt"}}, testNow())
+	op, err := Open(repoRoot, OpenOptions{Allow: []string{"alias/new.txt"}}, testNow())
 	if err != nil {
 		t.Fatalf("expected internal symlink scope to be accepted: %v", err)
 	}
-	if entry := allowedEntry(t, result.Operation, "alias/new.txt"); entry.Source != SourceDeclared {
+	if entry := allowedEntry(t, op, "alias/new.txt"); entry.Source != SourceDeclared {
 		t.Fatalf("internal symlink scope source = %q, want %q", entry.Source, SourceDeclared)
 	}
 }
@@ -494,7 +504,7 @@ func TestLoadRejectsAllowedPathReplacedByExternalSymlink(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeFile(t, repoRoot, "scope/keep.txt", "keep\n")
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Allow: []string{"scope"}}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Allow: []string{"scope"}})
 
 	if err := os.RemoveAll(filepath.Join(repoRoot, "scope")); err != nil {
 		t.Fatal(err)
@@ -512,7 +522,7 @@ func TestLoadRejectsSpecDerivedPathReplacedByExternalSymlink(t *testing.T) {
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	writeFile(t, repoRoot, "internal/demo/keep.go", "package demo\n")
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	if err := os.RemoveAll(filepath.Join(repoRoot, "internal/demo")); err != nil {
 		t.Fatal(err)
@@ -542,9 +552,9 @@ func TestOpenRecordsParent(t *testing.T) {
 	commitAll(t, repoRoot, "fixture")
 
 	parent := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
-	child := mustOpen(t, repoRoot, OpenOptions{Unit: "demo", Allow: []string{"scripts/eval"}, Parent: parent.Operation.OperationID})
-	if child.Operation.ParentOperation != parent.Operation.OperationID {
-		t.Fatalf("parent = %q, want %q", child.Operation.ParentOperation, parent.Operation.OperationID)
+	child := mustOpen(t, repoRoot, OpenOptions{Unit: "demo", Allow: []string{"scripts/eval"}, Parent: parent.OperationID})
+	if child.ParentOperation != parent.OperationID {
+		t.Fatalf("parent = %q, want %q", child.ParentOperation, parent.OperationID)
 	}
 }
 
@@ -557,7 +567,7 @@ func TestOpenAcceptsSweptParent(t *testing.T) {
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
 
-	parent := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	parent := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	if _, err := Close(repoRoot, parent.OperationID, false, testNow()); err != nil {
 		t.Fatal(err)
 	}
@@ -570,20 +580,114 @@ func TestOpenAcceptsSweptParent(t *testing.T) {
 	}
 
 	child := mustOpen(t, repoRoot, OpenOptions{Unit: "demo", Parent: parent.OperationID})
-	if child.Operation.ParentOperation != parent.OperationID {
-		t.Fatalf("parent = %q, want %q", child.Operation.ParentOperation, parent.OperationID)
+	if child.ParentOperation != parent.OperationID {
+		t.Fatalf("parent = %q, want %q", child.ParentOperation, parent.OperationID)
 	}
 }
 
-func TestOpenNoticesPreExistingOutOfScopeChanges(t *testing.T) {
+// TestOpenRecordsWorkingTreeSnapshot pins the comparison point persisted at
+// open: the repository-content files of the working tree, excluding the
+// tooling's own state and derived caches.
+func TestOpenRecordsWorkingTreeSnapshot(t *testing.T) {
+	repoRoot := newGitRepo(t)
+	specPath := writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
+	writeFile(t, repoRoot, "core/untracked.go", "package core\n")
+	commitAll(t, repoRoot, "fixture")
+
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
+	if len(op.Snapshot) == 0 {
+		t.Fatal("open must record the working-tree snapshot")
+	}
+	paths := make([]string, len(op.Snapshot))
+	for i, entry := range op.Snapshot {
+		paths[i] = entry.Path
+		if !contentHashPattern.MatchString(entry.Hash) {
+			t.Fatalf("snapshot hash %q is not a SHA-256 content hash", entry.Hash)
+		}
+		if excluded(entry.Path) {
+			t.Fatalf("snapshot must exclude the tooling's own state, got %q", entry.Path)
+		}
+	}
+	if !sort.StringsAreSorted(paths) {
+		t.Fatalf("snapshot must be sorted by path: %v", paths)
+	}
+	if hash := snapshotEntry(t, op, specPath).Hash; hash == "" {
+		t.Fatal("the target spec must be part of the snapshot")
+	}
+	snapshotEntry(t, op, "core/untracked.go")
+
+	// The snapshot is part of the persisted state, not just the returned
+	// value: a check after a fresh load measures against the same point.
+	reloaded, err := Load(repoRoot, op.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Snapshot) != len(op.Snapshot) {
+		t.Fatalf("reloaded snapshot = %d entries, want %d", len(reloaded.Snapshot), len(op.Snapshot))
+	}
+}
+
+// TestOpenExcludesPreExistingChangesFromTheChangeSet covers the reported
+// defect: dirt that was already in the working tree when the operation opened
+// belongs to no operation, so it can neither fail the check nor warrant a
+// warning at open.
+func TestOpenExcludesPreExistingChangesFromTheChangeSet(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
-	commitAll(t, repoRoot, "fixture")
 	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n")
+	writeFile(t, repoRoot, "internal/demo/keep.go", "package demo\n")
+	commitAll(t, repoRoot, "fixture")
 
-	result := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
-	if len(result.Notices) == 0 {
-		t.Fatalf("expected an open-time notice for the pre-existing out-of-scope change")
+	// Unrelated in-flight work: one modified tracked file outside the scope,
+	// one untracked file outside the scope, and one modified tracked file
+	// inside it.
+	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// unrelated in-flight work\n")
+	writeFile(t, repoRoot, "core/scratch/untracked.go", "package scratch\n")
+	writeFile(t, repoRoot, "internal/demo/keep.go", "package demo\n\n// in-flight work\n")
+
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
+	report := mustCheck(t, repoRoot, op.OperationID)
+	if report.Result != "PASS" || len(report.Changed) != 0 {
+		t.Fatalf("pre-existing changes must not enter the change set, got result %s / changed %v", report.Result, report.Changed)
+	}
+}
+
+// TestCheckReportsOnlyChangesMadeAfterOpen pins the other half of the
+// contract: everything the tree gains, loses, or edits after the snapshot is
+// recorded is the operation's change set, including a further edit of a path
+// that was already dirty at open.
+func TestCheckReportsOnlyChangesMadeAfterOpen(t *testing.T) {
+	repoRoot := newGitRepo(t)
+	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
+	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n")
+	writeFile(t, repoRoot, "core/notes.md", "notes\n")
+	commitAll(t, repoRoot, "fixture")
+	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// pre-existing\n")
+	writeFile(t, repoRoot, "core/scratch/untracked.go", "package scratch\n")
+
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
+	if report := mustCheck(t, repoRoot, op.OperationID); report.Result != "PASS" {
+		t.Fatalf("pre-existing dirt must not fail the check: %+v", report)
+	}
+
+	writeFile(t, repoRoot, "internal/demo/new.go", "package demo\n")
+	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n\n// changed again\n")
+	writeFile(t, repoRoot, "core/scratch/untracked.go", "package scratch\n\n// changed\n")
+	if err := os.Remove(filepath.Join(repoRoot, "core/notes.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	report := mustCheck(t, repoRoot, op.OperationID)
+	if report.Result != "FAIL" {
+		t.Fatalf("result = %s, want FAIL", report.Result)
+	}
+	wantChanged := "core/notes.md,core/runtime/x.go,core/scratch/untracked.go,internal/demo/new.go"
+	if got := strings.Join(report.Changed, ","); got != wantChanged {
+		t.Fatalf("changed = %v, want %s", report.Changed, wantChanged)
+	}
+	wantOutOfScope := "core/notes.md,core/runtime/x.go,core/scratch/untracked.go"
+	if got := strings.Join(report.OutOfScope, ","); got != wantOutOfScope {
+		t.Fatalf("out of scope = %v, want %s", report.OutOfScope, wantOutOfScope)
 	}
 }
 
@@ -595,7 +699,7 @@ func TestCheckContainmentAndPrefixBoundary(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "internal/demo/new.go", "package demo\n")
 	writeFile(t, repoRoot, "internal/demo_old/legacy.go", "package legacy\n")
@@ -635,7 +739,7 @@ func TestCheckStaticPolicyViolations(t *testing.T) {
 		"docs/specs/units/stable/unit_other.md":   "stable\n",
 		"docs/specs/units/candidate/unit_demo.md": "spec\n",
 	})
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "framework/concepts.md", "# changed\n")
 	writeFile(t, repoRoot, "docs/specs/units/stable/unit_other.md", "changed\n")
@@ -661,7 +765,7 @@ func TestCheckFailsClosedOnSymlinkResolvedStaticPolicyViolation(t *testing.T) {
 		"docs/specs/units/stable/unit_real.md": "stable\n",
 	})
 	linkPath := "docs/specs/units/candidate/unit_link.md"
-	op := mustOpen(t, repoRoot, OpenOptions{Allow: []string{linkPath}}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Allow: []string{linkPath}})
 	if err := os.MkdirAll(filepath.Dir(filepath.Join(repoRoot, linkPath)), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -683,7 +787,7 @@ func TestInstalledProjectFrameworkIsDeniedAtDeclarationAndCheck(t *testing.T) {
 		t.Fatalf("installed framework declaration must be rejected, got %v", err)
 	}
 
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	writeFile(t, repoRoot, "specflow/framework/concepts.md", "# changed\n")
 	report := mustCheck(t, repoRoot, op.OperationID)
 	if report.Result != "FAIL" || !contains(report.StaticViolations, "specflow/framework/concepts.md") {
@@ -698,7 +802,7 @@ func TestCheckRequiredSpecPaths(t *testing.T) {
 	op := mustOpen(t, repoRoot, OpenOptions{
 		Unit:        "demo",
 		RequireSpec: []string{specPath},
-	}).Operation
+	})
 
 	report := mustCheck(t, repoRoot, op.OperationID)
 	if report.Result != "FAIL" || !contains(report.MissingRequired, specPath) {
@@ -726,7 +830,7 @@ func TestCheckExcludesLocalStateAndDerivedCaches(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "docs/specs/meta/validation/unit/demo/validate_result.md", "cache\n")
 
@@ -747,7 +851,7 @@ func TestCheckSeesCommittedChangesAndRenames(t *testing.T) {
 		"internal/demo/old.go":                    "package demo\n",
 		"core/a.go":                               "package core\n",
 	})
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "internal/demo/new.go", "package demo\n")
 	commitAll(t, repoRoot, "in-scope progress")
@@ -766,18 +870,23 @@ func TestCheckSeesCommittedChangesAndRenames(t *testing.T) {
 	}
 }
 
-func TestCheckMissingBaselineFailsClosed(t *testing.T) {
+// TestCheckDoesNotResolveTheBaselineCommit pins the snapshot contract at the
+// provenance boundary: the recorded commit is what the operation opened at,
+// not what a check measures against, so a commit that no longer resolves does
+// not trap an operation whose tree is still fully evaluable.
+func TestCheckDoesNotResolveTheBaselineCommit(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	op.Baseline.SHA = strings.Repeat("f", 40)
 	if err := Save(repoRoot, op); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Check(repoRoot, op.OperationID); err == nil {
-		t.Fatalf("expected a fail-closed error for the missing baseline commit")
+	report := mustCheck(t, repoRoot, op.OperationID)
+	if report.Result != "PASS" {
+		t.Fatalf("result = %s, want PASS (the change set is snapshot-relative)", report.Result)
 	}
 }
 
@@ -796,7 +905,7 @@ func TestLoadRejectsInvalidAndMismatchedOperationIDs(t *testing.T) {
 
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	path, err := statePath(repoRoot, op.OperationID)
 	if err != nil {
 		t.Fatal(err)
@@ -826,7 +935,7 @@ func TestLoadRejectsSemanticallyMalformedState(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	stateFile, err := statePath(repoRoot, op.OperationID)
 	if err != nil {
 		t.Fatal(err)
@@ -868,6 +977,23 @@ func TestLoadRejectsSemanticallyMalformedState(t *testing.T) {
 		{name: "ordinary required spec path", mutate: func(state map[string]any) {
 			state["required_spec_paths"] = []any{"src/a.go"}
 		}},
+		{name: "malformed snapshot hash", mutate: func(state map[string]any) {
+			state["snapshot"].([]any)[0].(map[string]any)["hash"] = "sha256:nope"
+		}},
+		{name: "non-canonical snapshot path", mutate: func(state map[string]any) {
+			state["snapshot"].([]any)[0].(map[string]any)["path"] = "src/../src/a.go"
+		}},
+		{name: "duplicate snapshot path", mutate: func(state map[string]any) {
+			entries := state["snapshot"].([]any)
+			entries[1] = entries[0]
+		}},
+		{name: "unsorted snapshot", mutate: func(state map[string]any) {
+			entries := state["snapshot"].([]any)
+			if len(entries) < 2 {
+				t.Fatal("fixture snapshot is too small to reorder")
+			}
+			entries[0], entries[1] = entries[1], entries[0]
+		}},
 		{name: "open state with close fields", mutate: func(state map[string]any) {
 			state["closed_at"] = "2026-09-16T12:00:00Z"
 			state["close_outcome"] = "passed"
@@ -905,7 +1031,7 @@ func TestSaveRejectsInvalidState(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	op.AllowedPaths[0].Source = "nonsense"
 	if err := Save(repoRoot, op); err == nil || !strings.Contains(err.Error(), "invalid source") {
 		t.Fatalf("expected Save to reject invalid state, got %v", err)
@@ -916,7 +1042,7 @@ func TestCheckRejectsMalformedOperationState(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	stateFile, err := statePath(repoRoot, op.OperationID)
 	if err != nil {
 		t.Fatal(err)
@@ -947,7 +1073,7 @@ func TestUpdateWidensDeclaredScopeAndRequiredSpecsAndRecordsEvent(t *testing.T) 
 		Unit:        "demo",
 		Allow:       []string{"scripts/eval"},
 		RequireSpec: []string{specPath},
-	}).Operation
+	})
 	additionalSpec := "docs/specs/rules/candidate/b_rule_extra.md"
 
 	updated, err := Update(repoRoot, op.OperationID, UpdateOptions{
@@ -1028,7 +1154,7 @@ func TestLoadRejectsNonMonotonicUpdateHistory(t *testing.T) {
 		Unit:        "demo",
 		Allow:       []string{"scripts/one"},
 		RequireSpec: []string{specPath},
-	}).Operation
+	})
 
 	firstTime := testNow().Add(time.Minute)
 	updated, err := Update(repoRoot, op.OperationID, UpdateOptions{
@@ -1073,7 +1199,7 @@ func TestUpdateRejectsOrdinaryCodeAsRequiredSpec(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	_, err := Update(repoRoot, op.OperationID, UpdateOptions{
 		RequireSpec:    []string{"internal/demo/service.go"},
@@ -1088,7 +1214,7 @@ func TestCloseFailClosedThenPass(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n")
 	report, err := Close(repoRoot, op.OperationID, false, testNow())
@@ -1132,7 +1258,7 @@ func TestCloseAbandonEndsViolatingOperation(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	writeFile(t, repoRoot, "core/runtime/x.go", "package runtime\n")
 	report, err := Close(repoRoot, op.OperationID, true, testNow())
@@ -1152,7 +1278,7 @@ func TestCheckOnClosedOperationIsGone(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	if _, err := Close(repoRoot, op.OperationID, false, testNow()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1175,7 +1301,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	worktree := filepath.Join(t.TempDir(), "wt")
 	runGitTest(t, repoRoot, "worktree", "add", "--detach", worktree, "HEAD")
 
-	op := mustOpen(t, worktree, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, worktree, OpenOptions{Unit: "demo"})
 	writeFile(t, worktree, "core/runtime/x.go", "package runtime\n")
 
 	report := mustCheck(t, worktree, op.OperationID)
@@ -1188,7 +1314,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	if _, err := Check(repoRoot, op.OperationID); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("main tree must not see the worktree's operation state, got %v", err)
 	}
-	mainOp := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	mainOp := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	mainReport := mustCheck(t, repoRoot, mainOp.OperationID)
 	if mainReport.Result != "PASS" {
 		t.Fatalf("main tree check = %+v, want PASS (worktree changes are not visible)", mainReport)
@@ -1204,8 +1330,8 @@ func TestListAndOpenOperations(t *testing.T) {
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
 
-	first := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
-	second := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	first := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
+	second := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	if _, err := Close(repoRoot, second.OperationID, false, testNow()); err != nil {
 		t.Fatal(err)
 	}
@@ -1233,7 +1359,7 @@ func TestMutationsSerializeOnRepositoryLock(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeUnitSpec(t, repoRoot, "demo", "internal/demo", nil)
 	commitAll(t, repoRoot, "fixture")
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	cases := []struct {
 		name string
@@ -1305,7 +1431,7 @@ func TestSweepClosedRemovesClosedStatesOnly(t *testing.T) {
 	// outcomes the way those leftovers look on disk.
 	passed := writeClosedState(t, repoRoot, "demo", CloseOutcomePassed)
 	abandoned := writeClosedState(t, repoRoot, "demo", CloseOutcomeAbandoned)
-	open := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	open := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 
 	// Unprovable state is never deleted: a malformed state file and a
 	// "closed" file missing its closed-only fields both stay.
@@ -1314,7 +1440,7 @@ func TestSweepClosedRemovesClosedStatesOnly(t *testing.T) {
 	if err := os.WriteFile(malformed, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	notActuallyClosed := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	notActuallyClosed := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	notActuallyClosed.Status = StatusClosed
 	data, err := json.MarshalIndent(notActuallyClosed, "", "  ")
 	if err != nil {
@@ -1372,7 +1498,7 @@ func TestSweepClosedRemovesClosedStatesOnly(t *testing.T) {
 // a leftover from an older tooling version takes — and returns its id.
 func writeClosedState(t *testing.T, repoRoot, unit, outcome string) string {
 	t.Helper()
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: unit}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: unit})
 	op.Status = StatusClosed
 	op.CloseOutcome = outcome
 	op.ClosedAt = op.UpdatedAt
@@ -1404,7 +1530,7 @@ func TestOpenExcludesEvidenceFilesFromScope(t *testing.T) {
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_demo.md", spec)
 	commitAll(t, repoRoot, "fixture")
 
-	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"}).Operation
+	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	if containsAllowedPath(op.AllowedPaths, "peer/peer_test.go") {
 		t.Fatalf("evidence file entered operation write scope: %+v", op.AllowedPaths)
 	}

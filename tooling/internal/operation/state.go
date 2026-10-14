@@ -54,7 +54,10 @@ const (
 	timestampLayout = "2006-01-02T15:04:05Z"
 )
 
-var commitSHAPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+var (
+	commitSHAPattern   = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+	contentHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 // Target identifies the declared operation target.
 type Target struct {
@@ -62,11 +65,21 @@ type Target struct {
 	Name string `json:"name,omitempty"`
 }
 
-// Baseline is the recorded comparison point of the operation.
+// Baseline is the commit the operation was opened at. It is recorded
+// provenance: the change set is computed against Snapshot, never against this
+// commit.
 type Baseline struct {
 	Ref        string `json:"ref"`
 	SHA        string `json:"sha"`
 	RecordedAt string `json:"recorded_at"`
+}
+
+// SnapshotEntry is one file of the operation's comparison point: a canonical
+// repository-relative path and the hash of that path's content when the
+// operation opened.
+type SnapshotEntry struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"`
 }
 
 // AllowedPath is one frozen scope entry: a path scope (the path itself or
@@ -85,18 +98,19 @@ type UpdateEvent struct {
 
 // Operation is the persisted state of one declared operation scope.
 type Operation struct {
-	OperationID       string        `json:"operation_id"`
-	Status            string        `json:"status"`
-	Target            Target        `json:"target"`
-	Baseline          Baseline      `json:"baseline"`
-	AllowedPaths      []AllowedPath `json:"allowed_paths"`
-	RequiredSpecPaths []string      `json:"required_spec_paths"`
-	ParentOperation   string        `json:"parent_operation,omitempty"`
-	OpenedAt          string        `json:"opened_at"`
-	UpdatedAt         string        `json:"updated_at"`
-	ClosedAt          string        `json:"closed_at,omitempty"`
-	CloseOutcome      string        `json:"close_outcome,omitempty"`
-	Updates           []UpdateEvent `json:"updates,omitempty"`
+	OperationID       string          `json:"operation_id"`
+	Status            string          `json:"status"`
+	Target            Target          `json:"target"`
+	Baseline          Baseline        `json:"baseline"`
+	Snapshot          []SnapshotEntry `json:"snapshot"`
+	AllowedPaths      []AllowedPath   `json:"allowed_paths"`
+	RequiredSpecPaths []string        `json:"required_spec_paths"`
+	ParentOperation   string          `json:"parent_operation,omitempty"`
+	OpenedAt          string          `json:"opened_at"`
+	UpdatedAt         string          `json:"updated_at"`
+	ClosedAt          string          `json:"closed_at,omitempty"`
+	CloseOutcome      string          `json:"close_outcome,omitempty"`
+	Updates           []UpdateEvent   `json:"updates,omitempty"`
 }
 
 // StateRelPath returns the repo-relative path of an operation's state file.
@@ -218,6 +232,9 @@ func validateOperationState(repoRoot string, op *Operation) error {
 	if updatedAt.Before(openedAt) {
 		return fmt.Errorf("updated_at must not be before opened_at")
 	}
+	if err := validateSnapshot(op.Snapshot); err != nil {
+		return err
+	}
 
 	switch op.Status {
 	case StatusOpen:
@@ -318,6 +335,32 @@ func validateOperationState(repoRoot string, op *Operation) error {
 		if !sameStrings(last.DeclaredAllowedPaths, declaredPaths(op.AllowedPaths)) || !sameStrings(last.RequiredSpecPaths, op.RequiredSpecPaths) {
 			return fmt.Errorf("latest update event does not match the frozen declared scope")
 		}
+	}
+	return nil
+}
+
+// validateSnapshot validates the recorded comparison point of an operation:
+// canonical repository-relative paths carrying a SHA-256 content hash, unique
+// and sorted. An empty snapshot is a valid, if degenerate, comparison point
+// (an empty tree); it can only make the change set larger.
+func validateSnapshot(snapshot []SnapshotEntry) error {
+	seen := make(map[string]bool, len(snapshot))
+	previous := ""
+	for i, entry := range snapshot {
+		if !isCanonicalScopePath(entry.Path) {
+			return fmt.Errorf("snapshot[%d]: path %q is not a canonical repository-relative path", i, entry.Path)
+		}
+		if !contentHashPattern.MatchString(entry.Hash) {
+			return fmt.Errorf("snapshot[%d]: hash %q is not a SHA-256 content hash", i, entry.Hash)
+		}
+		if seen[entry.Path] {
+			return fmt.Errorf("snapshot contains duplicate path %q", entry.Path)
+		}
+		if previous != "" && entry.Path < previous {
+			return fmt.Errorf("snapshot must be sorted by path")
+		}
+		seen[entry.Path] = true
+		previous = entry.Path
 	}
 	return nil
 }

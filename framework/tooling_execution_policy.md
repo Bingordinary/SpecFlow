@@ -97,7 +97,7 @@ The allowed action families are:
     - write no project files and create no durable process artifact
 13. operation scope state
     - create, read, update, and close a declared operation-scope carrier when the adopting owner (`framework/operations/operation_scope.md`) defines the exact path, fields, statuses, and transition rules
-    - compare the frozen allowed scope and the required spec paths against the mechanically computed change set (baseline diff plus untracked files) and report containment, static-policy violations, and missing required paths
+    - compare the frozen allowed scope and the required spec paths against the mechanically computed change set (the difference between the open-time working-tree snapshot and the current working tree) and report containment, static-policy violations, and missing required paths
     - write only the declared operation state file; never modify project truth
 Writeback rule:
 

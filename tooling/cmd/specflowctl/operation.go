@@ -43,7 +43,7 @@ func runOperationOpen(args []string, stdout, stderr io.Writer) error {
 	repoRoot := fs.String("repo-root", ".", "repository root")
 	unit := fs.String("unit", "", "target unit name")
 	rule := fs.String("rule", "", "target rule id")
-	baseline := fs.String("baseline", "", "git baseline ref (default HEAD)")
+	baseline := fs.String("baseline", "", "git ref the operation starts from, recorded as provenance (default HEAD)")
 	parent := fs.String("parent", "", "parent operation id")
 	var allow repeatedString
 	var requireSpec repeatedString
@@ -53,7 +53,7 @@ func runOperationOpen(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	result, err := operation.Open(mustAbs(*repoRoot), operation.OpenOptions{
+	op, err := operation.Open(mustAbs(*repoRoot), operation.OpenOptions{
 		Unit:        *unit,
 		Rule:        *rule,
 		Allow:       allow,
@@ -65,11 +65,8 @@ func runOperationOpen(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	fmt.Fprintf(stdout, "Operation opened: %s\n", result.Operation.OperationID)
-	writeOperationSummary(stdout, result.Operation)
-	for _, notice := range result.Notices {
-		fmt.Fprintf(stdout, "Notice: %s\n", notice)
-	}
+	fmt.Fprintf(stdout, "Operation opened: %s\n", op.OperationID)
+	writeOperationSummary(stdout, op)
 	return nil
 }
 
@@ -217,7 +214,7 @@ func runOperationStatus(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Open operations (%d):\n", len(open))
 	for _, op := range open {
-		fmt.Fprintf(stdout, "- %s | %s | baseline %s | opened %s\n",
+		fmt.Fprintf(stdout, "- %s | %s | starting %s | opened %s\n",
 			op.OperationID, operationTargetLabel(op.Target), shortenSHA(op.Baseline.SHA), op.OpenedAt)
 	}
 	return nil
@@ -226,7 +223,8 @@ func runOperationStatus(args []string, stdout, stderr io.Writer) error {
 func writeOperationSummary(stdout io.Writer, op *operation.Operation) {
 	fmt.Fprintf(stdout, "Status: %s\n", op.Status)
 	fmt.Fprintf(stdout, "Target: %s\n", operationTargetLabel(op.Target))
-	fmt.Fprintf(stdout, "Baseline: %s (%s)\n", shortenSHA(op.Baseline.SHA), op.Baseline.Ref)
+	fmt.Fprintf(stdout, "Starting commit: %s (%s)\n", shortenSHA(op.Baseline.SHA), op.Baseline.Ref)
+	fmt.Fprintf(stdout, "Snapshot: %d file(s) at open\n", len(op.Snapshot))
 	fmt.Fprintf(stdout, "Allowed scope (%d):\n", len(op.AllowedPaths))
 	if len(op.AllowedPaths) == 0 {
 		fmt.Fprintln(stdout, "- none")
@@ -245,7 +243,8 @@ func writeOperationReport(stdout io.Writer, report *operation.Report) {
 	fmt.Fprintf(stdout, "Operation: %s\n", op.OperationID)
 	fmt.Fprintf(stdout, "Status: %s\n", op.Status)
 	fmt.Fprintf(stdout, "Target: %s\n", operationTargetLabel(op.Target))
-	fmt.Fprintf(stdout, "Baseline: %s (%s)\n", shortenSHA(op.Baseline.SHA), op.Baseline.Ref)
+	fmt.Fprintf(stdout, "Starting commit: %s (%s)\n", shortenSHA(op.Baseline.SHA), op.Baseline.Ref)
+	fmt.Fprintf(stdout, "Snapshot: %d file(s) at open\n", len(op.Snapshot))
 	fmt.Fprintf(stdout, "Changed paths: %d\n", len(report.Changed))
 	writeList(stdout, "Out of scope", report.OutOfScope)
 	writeList(stdout, "Static policy violations", report.StaticViolations)
@@ -291,7 +290,7 @@ func writeOperationUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --rule ID         Target rule (scope derived from its current-layer rule file)")
 	fmt.Fprintln(w, "  --allow PATH      Explicitly declared allowed path (repeatable)")
 	fmt.Fprintln(w, "  --require-spec PATH  Spec path that must appear in the change set (repeatable)")
-	fmt.Fprintln(w, "  --baseline REF    Git baseline ref recorded at open (default HEAD)")
+	fmt.Fprintln(w, "  --baseline REF    Git ref the operation starts from, recorded as provenance (default HEAD)")
 	fmt.Fprintln(w, "  --parent OP_ID    Parent operation id (lineage of a re-authorized operation)")
 	fmt.Fprintln(w, "  --repo-root PATH  Repository root path (default: .)")
 }

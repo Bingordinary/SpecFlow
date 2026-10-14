@@ -20,8 +20,9 @@ type Report struct {
 }
 
 // Check evaluates one operation scope against the current working tree.
-// It is read-only and fails closed: a missing operation, a missing baseline
-// commit, or a git error is an error, not a pass.
+// It is read-only and fails closed: a missing operation, a tree that is not
+// the git worktree top level, an unreadable working-tree file, or a git error
+// is an error, not a pass.
 func Check(repoRoot, operationID string) (*Report, error) {
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -39,7 +40,7 @@ func Check(repoRoot, operationID string) (*Report, error) {
 
 // evaluate computes the report for an in-memory operation state.
 func evaluate(repoRoot string, op *Operation) (*Report, error) {
-	changed, err := changedPaths(repoRoot, op.Baseline.SHA)
+	changed, err := changedSinceSnapshot(repoRoot, op.Snapshot)
 	if err != nil {
 		return nil, err
 	}
