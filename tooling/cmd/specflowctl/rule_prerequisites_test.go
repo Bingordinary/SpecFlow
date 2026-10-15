@@ -39,7 +39,7 @@ func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs 
 		validateEntries = append(validateEntries, *entry)
 	}
 	if _, err := validationcache.WriteCache(root, "unit", name, validationcache.CacheWrite{
-		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Entries: validateEntries,
+		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: validateEntries,
 	}); err != nil {
 		t.Fatal(err)
 	}

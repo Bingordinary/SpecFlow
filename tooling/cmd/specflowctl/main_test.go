@@ -207,6 +207,7 @@ unit: test_unit
 mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
+standard: %s
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -214,7 +215,7 @@ files:
     hash: sha256:%s
 %s---
 Validate passed.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -493,6 +494,7 @@ unit: test_unit
 mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
+standard: %s
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -500,7 +502,7 @@ files:
     hash: sha256:%s
 %s---
 Validate passed.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -586,6 +588,7 @@ unit: test_unit
 mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
+standard: %s
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -593,7 +596,7 @@ files:
     hash: sha256:%s
 %s---
 Validate passed.
-`, specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +824,7 @@ acceptance_item_set:
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 	specHash := computeHash(specPath)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", specHash, cacheDeps(t, specPath))
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nstandard: %s\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}

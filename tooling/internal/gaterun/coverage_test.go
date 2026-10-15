@@ -14,6 +14,13 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
+// baselineStandard is the judging standard a fixture validate baseline
+// records: the value gate-finalize writes for the same repository.
+func baselineStandard(t *testing.T, repoRoot string) string {
+	t.Helper()
+	return judgments.MustProtocol(repoRoot, "validate", "unit")
+}
+
 // writeValidateBaseline writes a validate cache for unit auth with the given
 // result/blocking and per-check behaviour.
 func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationcache.FileEntry, result string, blocking bool, basis string) {
@@ -40,6 +47,7 @@ func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationca
 		Result:    result,
 		Target:    "candidate",
 		Blocking:  blocking,
+		Standard:  baselineStandard(t, repoRoot),
 		Timestamp: "2026-01-01T00:00:00Z",
 		Judgments: string(judgments),
 		Entries:   entries,
@@ -424,7 +432,7 @@ func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, bl
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
+	w := validationcache.CacheWrite{
 		Command:   command,
 		Unit:      "auth",
 		Mode:      "full",
@@ -435,7 +443,11 @@ func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, bl
 		Timestamp: "2026-01-01T00:00:00Z",
 		Judgments: string(judgments),
 		Entries:   entries,
-	}); err != nil {
+	}
+	if command == GateValidate {
+		w.Standard = baselineStandard(t, repoRoot)
+	}
+	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", w); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -692,6 +704,51 @@ func TestDeltaRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
 		if strings.Contains(notice, "degradation") || strings.Contains(notice, "full scope") {
 			t.Fatalf("a complete status map must not degrade, got %v", run.Notices)
 		}
+	}
+}
+
+// TestValidateDeltaWithMovedStandardRerunsEverything pins the validate standard
+// binding at plan time: a baseline judged under a different checklist cannot be
+// carried, whatever the change review would have accepted.
+func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+
+	var decls []validationcache.CheckEntry
+	statuses := map[string]string{}
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
+		decls = append(decls, validationcache.CheckEntry{Check: key, Status: "pass"})
+		statuses[key] = "pass"
+	}
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
+	writeGateBaseline(t, repoRoot, "validate", "pass", "full", false, []validationcache.FileEntry{entry}, statuses)
+
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := strings.Replace(string(data), "standard: "+baselineStandard(t, repoRoot), "standard: sha256:previous-validate-checklist", 1)
+	if moved == string(data) {
+		t.Fatal("the fixture baseline records no standard to move")
+	}
+	if err := os.WriteFile(cachePath, []byte(moved), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(coverageKeysOf(run), ","); got != "structural,design,acceptance,dependencies,clarity" {
+		t.Fatalf("expected the full coverage set, got %s", got)
+	}
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("a moved standard must carry nothing, got %v", run.CarriedKeys)
+	}
+	notices := strings.Join(run.Notices, " ")
+	if !strings.Contains(notices, "validate standard changed") || !strings.Contains(notices, "full scope") {
+		t.Fatalf("expected the moved-standard notice, got %v", run.Notices)
 	}
 }
 

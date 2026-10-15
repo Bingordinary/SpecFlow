@@ -98,6 +98,15 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
 		}
 	}
+	if run.Gate == GateValidate {
+		// A validate conclusion binds the judging standard it was made under
+		// on its cache. A conclusion judged under a different checklist cannot
+		// be carried, whatever its own evidence says, so nothing carries over
+		// and the plan is the full coverage set.
+		if reason, moved := validateStandardMoved(run, baseline); moved {
+			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
+		}
+	}
 	report, err := validationcache.DeriveChangeReport(d.root, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -150,6 +159,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		forced[key] = true
 	}
 	var recordNotices []string
+	protocolMoved := false
 	if run.Gate == GateVerify {
 		// A verify judgment record whose own evidence surface no longer holds
 		// (changed code, a new caller, a damaged or missing record) cannot be
@@ -177,6 +187,12 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 				return nil, nil, nil, nil, err
 			}
 			record, rerr := judgments.Load(d.root, binding.Reference)
+			if rerr == nil && record.Protocol != run.Protocol {
+				// The deployed review standard moved. A conclusion recorded
+				// under the previous standard cannot be carried, whatever its
+				// own evidence says.
+				protocolMoved = true
+			}
 			if rerr != nil || judgments.Check(d.root, binding.Reference, binding.Layer, run.Protocol) != nil || !judgments.CoversInputs(record.Inputs, inputs) {
 				if !forced[ck.Key] {
 					forced[ck.Key] = true
@@ -314,9 +330,12 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	coverage = append(coverage, rest...)
 
 	var notices []string
+	if protocolMoved {
+		notices = append(notices, "the review standard changed — judgments recorded under the previous standard re-run and cannot be carried")
+	}
 	if needReview {
 		notices = append(notices, fmt.Sprintf("change review: %d changed file(s) — the reviewer accepts, names re-run keys, or escalates", len(report.Entries)))
-	} else {
+	} else if !protocolMoved {
 		notices = append(notices, "no content change — the failed judgments re-run and the remaining evidence carries mechanically")
 	}
 	notices = append(notices, recordNotices...)
@@ -622,6 +641,20 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 		}
 	}
 	return Persist(repoRoot, run)
+}
+
+// validateStandardMoved reports whether a validate baseline was judged under a
+// standard other than the one this run deploys. A cache that records no
+// standard cannot prove it was judged by the current one, so it counts as
+// moved.
+func validateStandardMoved(run *Run, baseline *validationcache.GateBaseline) (string, bool) {
+	if baseline.Standard == run.Protocol {
+		return "", false
+	}
+	if strings.TrimSpace(baseline.Standard) == "" {
+		return "the baseline validate cache records no judging standard", true
+	}
+	return "the validate standard changed since the baseline cache was written", true
 }
 
 // repairStatusMapDefect reports whether a failure record's per-check status

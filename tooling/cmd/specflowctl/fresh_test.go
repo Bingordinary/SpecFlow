@@ -12,7 +12,16 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 )
+
+// fixtureStandard is the judging standard a fixture validate cache records: the
+// value gate-finalize writes for the same repository. A fixture repo that
+// deploys no framework layout falls back to the version digest.
+func fixtureStandard(t *testing.T, repoRoot, targetKind string) string {
+	t.Helper()
+	return judgments.MustProtocol(repoRoot, "validate", targetKind)
+}
 
 // freshDerivation builds a derivation for single-target gate checks in tests.
 // A summary loop shares one derivation across units; a test that checks one
@@ -95,6 +104,9 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	sb.WriteString("mode: full\n")
 	sb.WriteString("result: pass\n")
 	sb.WriteString("timestamp: \"2026-06-30T10:00:00Z\"\n")
+	if command == "validate" {
+		sb.WriteString("standard: " + fixtureStandard(t, repoRoot, "unit") + "\n")
+	}
 	if extraFrontmatter != "" {
 		sb.WriteString(extraFrontmatter)
 	}
@@ -145,6 +157,7 @@ func writeRuleCache(t *testing.T, repoRoot, id string, files []cacheFileSpec) {
 	sb.WriteString("mode: full\n")
 	sb.WriteString("result: pass\n")
 	sb.WriteString("timestamp: \"2026-06-30T10:00:00Z\"\n")
+	sb.WriteString("standard: " + fixtureStandard(t, repoRoot, "rule") + "\n")
 	sb.WriteString("files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, "  - path: %s\n    hash: sha256:%s\n", f.path, f.hash)
@@ -918,7 +931,7 @@ func TestFreshStableScope_RuleValidate(t *testing.T) {
 
 	ruleCacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_demo")
 	os.MkdirAll(ruleCacheDir, 0755)
-	cache := "---\ncommand: validate\nunit: g_rule_demo\nmode: full\nresult: pass\ntarget: stable\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_demo.md\n    hash: sha256:" + ruleHash + "\n" + cacheDepsAt(t, repoRoot, "docs/specs/rules/stable/g_rule_demo.md") + "---\nok\n"
+	cache := "---\ncommand: validate\nunit: g_rule_demo\nmode: full\nresult: pass\ntarget: stable\nstandard: " + fixtureStandard(t, repoRoot, "rule") + "\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_demo.md\n    hash: sha256:" + ruleHash + "\n" + cacheDepsAt(t, repoRoot, "docs/specs/rules/stable/g_rule_demo.md") + "---\nok\n"
 	os.WriteFile(filepath.Join(ruleCacheDir, "validate_result.md"), []byte(cache), 0644)
 
 	out, err := freshRun(t, repoRoot, "--scope", "stable")

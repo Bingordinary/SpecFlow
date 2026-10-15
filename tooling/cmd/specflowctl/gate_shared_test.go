@@ -388,7 +388,7 @@ func sharedValidateFixture(t *testing.T, root, unit string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", unit, validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Entries: []validationcache.FileEntry{*entry}}); err != nil {
+	if _, err := validationcache.WriteCache(root, "unit", unit, validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: []validationcache.FileEntry{*entry}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -425,7 +425,7 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	public := orderCache.Records["code:contracts.js"]
-	if err := judgments.Check(root, public.Reference, "candidate", judgments.Protocol(root)); err != nil {
+	if err := judgments.Check(root, public.Reference, "candidate", judgments.MustProtocol(root, "verify", "unit")); err != nil {
 		t.Fatal("removal deleted a shared record", err)
 	}
 	if _, err := judgments.Load(root, before.Records["item:auth:auth.core"].Reference); err != nil {
@@ -674,7 +674,7 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	if err := runGateInvalidate([]string{"--repo-root", root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--check", "auth.core"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := judgments.Check(root, stable, "stable", judgments.Protocol(root)); err != nil {
+	if err := judgments.Check(root, stable, "stable", judgments.MustProtocol(root, "verify", "unit")); err != nil {
 		t.Fatalf("different stable context was invalidated: %v", err)
 	}
 	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {

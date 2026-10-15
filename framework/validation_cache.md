@@ -37,6 +37,7 @@ p2_count: 1
 p3_count: 0
 timestamp: "2026-06-30T10:00:00Z"
 gate_run: 20260916-120000-3f9a1c   # audit: the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes); never gated
+standard: 9f1c...     # validate caches only: the judging standard this conclusion was made under (see §Standard binding); verify caches bind it per judgment record instead
 invalidated_checks:                # failure records only; machine-owned targeted P0/P1 invalidations, omitted when empty
   - item:user_auth:auth.login
 reviewed_change_set: sha256:fedcba...  # delta/repair caches: fingerprint of the reviewed change set (required on a pass delta cache)
@@ -124,6 +125,34 @@ Each `files` entry records content evidence:
 (staleness checks and baseline recording) uses the canonical repo-relative
 path, so `./` prefixes, absolute paths, and platform separators in the
 recorded path are equivalent.
+
+### Standard binding
+
+A recorded conclusion is reusable only while the judging standard it was made
+under is unchanged: the framework documents the gate's reviewer reads, with the
+sections that describe how a run is planned, executed, recorded or terminated
+removed (`framework/spec_flow_review.md` §2.17). Each gate binds that standard
+where its own reuse happens:
+
+- **verify** binds it per judgment record. Every record stores the protocol
+  fingerprint it was made under, and a record whose fingerprint is not the
+  deployed one is unusable — for its cache and for every other consumer of the
+  shared record (see §Shared verify records).
+- **validate** has no judgment record to bind, so the cache itself records the
+  standard in its frontmatter `standard` field. `gate-finalize` writes the
+  standard the run was planned under; `fresh` and `promote` recompute the
+  deployed validate standard and fail the cache closed as stale when it differs.
+  A validate cache without the field was written before the binding existed and
+  cannot prove which checklist judged it, so it is stale and the full command
+  must run again.
+
+The unit and rule validate standards are distinct: unit `validate` reads
+`unit_validate_checklist.md`, rule `validate` reads `rule_validate_checklist.md`,
+and both read `verification_scope.md`, `severity_policy.md`, and
+`spec_writing_guide.md`. Changing one
+checklist therefore invalidates only the caches judged by it. A delta/repair run
+cannot carry any conclusion across a standard change: the planner covers the
+full scope instead (`framework/verification_scope.md` §Delta Runs).
 
 #### Check markers (`checks`)
 

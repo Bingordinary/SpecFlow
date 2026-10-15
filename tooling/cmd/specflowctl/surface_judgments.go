@@ -20,6 +20,11 @@ type surfaceJudgment struct {
 }
 
 func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([]surfaceJudgment, error) {
+	// The surface view reports verify judgment records, which are unit-gated.
+	protocol, err := judgments.Protocol(root, gaterun.GateVerify, gaterun.TargetKindUnit)
+	if err != nil {
+		return nil, err
+	}
 	files := map[string]*surfaceJudgment{}
 	for _, u := range report.Units {
 		baseline, err := validationcache.ReadGateBaseline(root, "unit", u.Unit, "verify")
@@ -39,7 +44,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			view.Associations = append(view.Associations, f)
 			name := u.Unit + "@" + u.Layer
 			view.Designs[name] = nil
-			if ref, ok := state.Records["design:"+u.Unit+":"+f.Path]; ok && ref.Layer == u.Layer && judgments.Check(root, ref.Reference, ref.Layer, judgments.Protocol(root)) == nil {
+			if ref, ok := state.Records["design:"+u.Unit+":"+f.Path]; ok && ref.Layer == u.Layer && judgments.Check(root, ref.Reference, ref.Layer, protocol) == nil {
 				copyRef := ref
 				view.Designs[name] = &copyRef
 			}
@@ -54,7 +59,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 		if err != nil {
 			continue
 		}
-		if r.Kind == judgments.Code && judgments.Check(root, ref, "stable", judgments.Protocol(root)) == nil {
+		if r.Kind == judgments.Code && judgments.Check(root, ref, "stable", protocol) == nil {
 			if view := files[r.Subject]; view != nil {
 				view.Public = append(view.Public, ref)
 			}
@@ -63,7 +68,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			if view := files[r.Subject]; view != nil {
 				for _, association := range view.Associations {
 					name := association.Unit + "@" + association.Layer
-					if r.Unit == association.Unit && view.Designs[name] == nil && judgments.Check(root, ref, association.Layer, judgments.Protocol(root)) == nil {
+					if r.Unit == association.Unit && view.Designs[name] == nil && judgments.Check(root, ref, association.Layer, protocol) == nil {
 						binding := judgments.Binding{Reference: ref, Layer: association.Layer, Source: "reused"}
 						view.Designs[name] = &binding
 					}

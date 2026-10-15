@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
@@ -213,6 +214,14 @@ func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 	}
 }
 
+// fixtureStandard is the judging standard a fixture validate cache records:
+// the value gate-finalize writes for the same repository. Fixture repositories
+// deploy no framework layout, so the fallback digest is the standard.
+func fixtureStandard(t *testing.T, repoRoot string) string {
+	t.Helper()
+	return judgments.MustProtocol(repoRoot, "validate", "rule")
+}
+
 func writeRuleValidateCache(t *testing.T, repoRoot, ruleID string) {
 	t.Helper()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule", ruleID)
@@ -236,7 +245,7 @@ func writeRuleValidateCache(t *testing.T, repoRoot, ruleID string) {
 	for _, c := range records {
 		fmt.Fprintf(&chunks, "      - cid: \"%s\"\n        start: %d\n        end: %d\n", c.CID, c.StartLine, c.EndLine)
 	}
-	cache := "---\ncommand: validate\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n" + chunks.String() + "---\n"
+	cache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nrule: " + ruleID + "\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-07-31T10:00:00Z\"\nfiles:\n  - path: docs/specs/rules/candidate/" + ruleID + ".md\n    hash: sha256:" + ruleHash + "\n" + chunks.String() + "---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(cache), 0644); err != nil {
 		t.Fatal(err)
 	}

@@ -841,9 +841,13 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 	if err != nil {
 		return nil, err
 	}
+	protocol, err := judgments.Protocol(repoRoot, gate, targetKind)
+	if err != nil {
+		return nil, err
+	}
 	run := &Run{
 		SchemaVersion: 2,
-		Protocol:      judgments.Protocol(repoRoot),
+		Protocol:      protocol,
 		Records:       map[string]judgments.Binding{},
 		Gate:          gate,
 		TargetKind:    targetKind,

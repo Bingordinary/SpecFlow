@@ -11,9 +11,6 @@ It answers four questions:
 3. how severity relates to blocking status
 4. what a report must explain when it assigns a severity
 
-This is a rule governance contract.
-Executors must not invent a different severity meaning per command.
-
 ---
 
 ## 2. Scope
@@ -37,6 +34,9 @@ It does not define:
 ---
 
 ## 3. Core Principle
+
+This is a rule governance contract.
+Executors must not invent a different severity meaning per command.
 
 Severity answers only one question:
 
@@ -133,6 +133,8 @@ When a governed flow assigns a severity to a real problem, the report should exp
 
 Commands or flows may add more required fields, but must not weaken this baseline.
 
+## Finding Block Delivery
+
 Gate findings (`validate` / `verify`) carry this baseline through the unified finding block (atom source `framework/_atoms/misc/report_skeleton.md`, delivered into each command checklist): `problem:` states what happened, `evidence:` carries the background and the proof, `impact:` states the impact, `fix:` or `decision:` states the recommended fix or the decision the user must make, and the report header states blocking explicitly. Minimality is governed by the flow's own fix execution rules (e.g. `framework/unit_verify_checklist.md` §Fix execution rules).
 
 ---
@@ -144,7 +146,7 @@ This policy works together with:
 1. `framework/spec_flow_review.md`
 2. `framework/spec_flow_design_review.md`
 
-Priority rules:
+## Priority Rules
 
 1. the active review or command file decides whether grading is required
 2. this file defines the shared meaning of `P0 / P1 / P2 / P3`
@@ -178,6 +180,12 @@ It is distinct from existence validation (cross-check). Existence validation dec
 
 This check applies to every flow whose severity grading is part of a finding contract, where the grading takes effect on a gate outcome, cache content, or the flow's final output. Each such flow defines where the check executes inside its own procedure file and references this section; that definition is the only adoption mechanism. Report-priority grading outside a finding contract (e.g. the `spec_flow_issues` triage severity) is not in scope.
 
+Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, and evidence rules.
+
+Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
+
+#### Current Execution Positions
+
 Flows that currently define an execution position:
 
 1. `spec_flow_review` — full-scope procedure step 10 (`framework/spec_flow_review.md`)
@@ -188,9 +196,7 @@ Flows that currently define an execution position:
 6. `validate` (rule) — P0 adjudications (P1 is the contract-decided default and is not re-graded) (`framework/rule_validate_checklist.md`)
 7. scoped review — conclusion stage (`framework/governance/review_scope.md`)
 
-The list is a record of current wiring, not the coverage definition. Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, and evidence rules.
-
-Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
+The list is a record of current wiring, not the coverage definition.
 
 ### 9.3 Severity Boundaries
 
@@ -210,10 +216,13 @@ Each severity implies an impact claim. The check verifies the claim against read
 
 ### 9.5 Execution Rules
 
+1. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
+2. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
+
+#### Execution position and ordering
+
 1. **Execution position.** In a coverage gate run (`validate`, `verify`) the check is the independent final synthesis, which runs for assigned relationships or findings. Severity verification applies to retained, merged, or newly discovered relationship findings; a run with neither relationships nor findings skips the final session. Rule validate has no final synthesis: its single checks session assigns each finding's severity directly and no later step re-grades it. In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. Advisory findings that never enter the final synthesis — validate's Check 1 hygiene WARNING — are graded by the session executor that produced the check line (see `framework/unit_validate_checklist.md` §Present Findings).
-2. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
-3. The check runs after existence validation (the final synthesis, when it runs) and before the cache write or final output, so a raised severity determines blocking status and cache content.
-4. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
+2. The check runs after existence validation (the final synthesis, when it runs) and before the cache write or final output, so a raised severity determines blocking status and cache content.
 
 ---
 
@@ -228,7 +237,11 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. A unit-specific exclusion never removes a public observation. The alignment lens treats the spec as authority.
+
+### Session composition and batch inputs
+
+Public execution batches do not enlarge the design session's inputs. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit.
 
 ### 2. Pre-review Setup
 
@@ -238,11 +251,14 @@ Design and architecture checks read their selected unit spec, applicable rules a
 
 ### 3. Review Process
 
+1. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
+2. Assess the six Dimension 8 fields in the unit's architecture task once.
+3. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
+
+### Session inputs and record reuse
+
 1. Reuse accepted public observations only when coverage, code content and protocol are valid; otherwise execute the public check.
 2. Consume the public records for the design session's assigned files only, whether executed, reused or carried. For each observation in those records, the design reviewer reports `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>`. In a co-batched session the design reviewer disposes the observations collected in the same report's code blocks instead of consuming a published record: write the code blocks first, then reference each observation by its tool-assigned id — finding ids are `<run>/<session>/F<k>` in report order across the whole report, not restarted per file.
-3. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
-4. Assess the six Dimension 8 fields in the unit's architecture task once.
-5. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
 
 ### 4. Review Dimensions
 
@@ -329,7 +345,11 @@ Test code is judged by the `quality` lens. The `alignment` lens considers tests 
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
 | **P3** | Objective, local style, clarity, or hygiene discrepancy | Reproducible from repository facts; does not affect correctness or materially harm maintainability | Unused import, minor established-convention deviation, stale comment with a direct code mismatch | Don't block |
 
-P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
+P0/P1 findings block promote.
+
+#### Promote gate and cache requirement
+
+The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
 
 #### P3 Reportability Gate
 

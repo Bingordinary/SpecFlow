@@ -18,13 +18,16 @@ Targeted checking exists only through explicit user choice: `:check-{n}` and `:{
 
 ## Principles
 
+**No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
+
+### Command Mode Principles
+
 1. **Full by default, complete always** — every command without a `:` suffix runs the complete check; delta runs (`re*`) also produce a complete check by reviewing the change set, re-running the reviewed scope, and carrying the rest over. No git-awareness, no subset selection.
 2. **Targeted only on explicit user choice** — `:check-{n}` (validate) and `:{keyword}` (both commands) scope the run to a user-declared focus.
 3. **Targeted results never satisfy promote** — targeted runs never publish a complete result cache. A targeted P0/P1 records invalidation through `gate-invalidate`: it invalidates contradicted immutable verify evidence and transitions the gate cache and matching open runs. Only a complete-coverage run's cache passes the promote gate.
 4. **Delta only on explicit user choice** — `revalidate@{target}` / `reverify@{unit}` review the change set, re-run the reviewed scope, and write a cache with `basis: delta`. The change set and standing conclusions are reported to the user explicitly (see §Delta Runs).
 5. **Delta restores both layers** — the incremental re-run restores promote eligibility for candidates and a stale confirmation state for stable-only targets (whose confirmation cache exists with `result: pass`); a failure record (BLOCKED cache) is restored by the failure-recovery delta run (`basis: repair`). A delta run against a stable-only target without a usable baseline reports "No usable confirmation baseline. Run the full `{command}@{target}` (confirmation check) first, or `specflowctl fork {--unit|--rule} {name}` to start a new round." (see §Delta Runs → Layer applicability).
 6. **Keyword means "what the user wants to look at"** — each command resolves the keyword inside its own target domain (see Keyword Resolution).
-7. **No fixed item definition** — the framework does not define what an "item" is. The agent reads the spec structure dynamically.
 
 ## Syntax
 
@@ -113,9 +116,17 @@ A keyword for verify may also match a file name; the agent maps it to the spec c
 
 ## Shared Judgment Protocol
 
-`framework/shared_judgments.md` defines public reuse, unit design judgments and schema 4 verify records. Public observations cannot be suppressed by a private rationale. Accepted public tasks are reused or awaited rather than independently allocated to several runs.
+Public observations cannot be suppressed by a private rationale.
+
+### Public Reuse and Allocation
+
+`framework/shared_judgments.md` defines public reuse, unit design judgments and schema 4 verify records. Accepted public tasks are reused or awaited rather than independently allocated to several runs.
 
 ## Coverage Model
+
+A file that cannot be located must be reported as an incomplete verification, not treated as absent evidence for a PASS.
+
+### Coverage Run Mechanics
 
 A gate run fixes an immutable input snapshot and computes a **coverage set**: the judgment keys that must each receive exactly one verdict. The coverage key is the unit of judgment and of mechanical coverage checking. The planner fixes the set; the agent partitions it into reviewer **sessions** — the planner no longer assigns keys to a fixed plan.
 
@@ -128,7 +139,7 @@ A gate run fixes an immutable input snapshot and computes a **coverage set**: th
 
 **Verify evidence discovery before planning.** For full, delta, and repair verify runs, the coordinator first uses `specflowctl next --unit <name>` to locate the selected spec and declared implementation paths. It then searches repository-content files for related tests, direct callers and callees, and context dependencies for every acceptance item, including items that a delta/repair run might carry. This pass collects repo-relative file paths only; it makes no alignment or severity judgment. List every discovered file in the `gate-plan` input manifest (`--inputs-file`, one entry per line), including files already in the declared code surface; the latter are already readable, but the explicit entries let delta/repair compare the discovered evidence with the baseline. The run's read surface is exactly the spec-declared code surface (`implementation_surface` expanded to its files, `affects.files`, cited `affects.evidence_files`), the declared dependency spec objects and rules, and the manifest entries — there is no repository-wide name- or stem-based discovery, so every related file must be supplied here. The independent reviewers make the judgments after the plan fixes the file hashes. A newly discovered file absent from a delta/repair baseline's recorded evidence makes the plan cover the full verify scope, so no old judgment is carried against evidence it never considered.
 
-If a reviewer discovers that a required file was missed, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that text as a session report. It locates the missing file and extends the open run in place: `specflowctl gate-extend --run <id> --paths <path>` adds the file to the run snapshot and to the sessions' available read refs under the repository lock. Coverage keys and accepted sessions stay fixed — the supplement broadens what sessions may read, not what their plan required them to read — so every accepted verdict remains valid and only the uncovered key re-missions with the extended refs. A file that cannot be located must be reported as an incomplete verification, not treated as absent evidence for a PASS. Replacing the run (`gate-plan`) remains the path for changes to the required surface (spec edits, new items, discovery-surface changes); a replacement run discards the open run's accepted sessions.
+If a reviewer discovers that a required file was missed, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that text as a session report. It locates the missing file and extends the open run in place: `specflowctl gate-extend --run <id> --paths <path>` adds the file to the run snapshot and to the sessions' available read refs under the repository lock. Coverage keys and accepted sessions stay fixed — the supplement broadens what sessions may read, not what their plan required them to read — so every accepted verdict remains valid and only the uncovered key re-missions with the extended refs. Replacing the run (`gate-plan`) remains the path for changes to the required surface (spec edits, new items, discovery-surface changes); a replacement run discards the open run's accepted sessions.
 
 ### Session record
 
@@ -166,10 +177,13 @@ Stable-only targets use the same rules with `target: stable`. Rule targets have 
 
 ### Input roles
 
+- spec-derived `affects.evidence_files` entries are read-only verification evidence for the citing item: they join the run snapshot and the item session's read refs, but they never expand into `quality` coverage keys or operation write scope; the item judgment verifies only that the cited file carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check);
+
+### Input Surface Mechanics
+
 The derived target surface and the input manifest have different roles:
 
 - spec-derived `implementation_surface` / `affects.files` entries define the verify `alignment` evidence and, expanded to their files, the verify `quality` coverage keys;
-- spec-derived `affects.evidence_files` entries are read-only verification evidence for the citing item: they join the run snapshot and the item session's read refs, but they never expand into `quality` coverage keys or operation write scope; the item judgment verifies only that the cited file carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check);
 - the input manifest (`--inputs-file`) adds evidence entries that every session may read and declare, but it never creates a coverage key;
 - file, directory, and logical-reference forms of a manifest entry have the same semantics; directories expand into their repository-content evidence files only. Every physical path, including spec-derived paths, must resolve inside the project root; absolute external paths, lexical `..` escapes, and in-project symlinks that resolve outside the project are rejected before run state is written.
 
@@ -183,12 +197,19 @@ This separation is part of the interface. Reports carry no path declarations: a 
 
 ### Session report contract
 
+- every assigned check key appears exactly once with a verdict token from the gate's allowed set (validate: `PASS | WARNING | FAIL`; verify `alignment`: `ALIGNED | MISMATCH | CANNOT_DETERMINE`; verify `quality`: public `FACTS`, a design conclusion with `spec_requirements`, or an architecture conclusion with six assessments); every validate/verify verdict carries a non-empty reason, and a `quality` `unacceptable` conclusion carries a non-empty reason — the non-blocking design conclusions take their basis from `spec_requirements`; architecture conclusions take it from the six Dimension 8 assessments;
+
+Public facts preserve potential observations; design actively checks spec requirements and disposes observations; architecture assesses the six Dimension 8 fields once.
+
+Every validate FAIL key must have its own P0/P1 finding, and a PASS or WARNING key must not have one.
+
+#### Report Field and Parse Contract
+
 Each session report is the key-batch-scoped fragment of the gate's report. `gate-submit` parses it once into the session result:
 
-- every assigned check key appears exactly once with a verdict token from the gate's allowed set (validate: `PASS | WARNING | FAIL`; verify `alignment`: `ALIGNED | MISMATCH | CANNOT_DETERMINE`; verify `quality`: public `FACTS`, a design conclusion with `spec_requirements`, or an architecture conclusion with six assessments); every validate/verify verdict carries a non-empty reason, and a `quality` `unacceptable` conclusion carries a non-empty reason — the non-blocking design conclusions take their basis from `spec_requirements`; architecture conclusions take it from the six Dimension 8 assessments;
-- gate-specific session structure is complete: unit validate Check 5 reports its fixed sub-check lines (`5a`, `5b`, `5e`, `5h`), and the other validate groups (including Check 10's clarity group) report their checks in the standard checks format; a verify `alignment` session reports, per item, an `evidence` line, a `deterministic` line, `Part A`, and — for a MISMATCH — the inline finding fields; quality sessions follow `framework/shared_judgments.md`: one public or design block per file, or one architecture block per unit. Public facts preserve potential observations; design actively checks spec requirements and disposes observations; architecture assesses the six Dimension 8 fields once. Design and architecture conclusions, `gate_findings` and their P0/P1 findings must agree;
+- gate-specific session structure is complete: unit validate Check 5 reports its fixed sub-check lines (`5a`, `5b`, `5e`, `5h`), and the other validate groups (including Check 10's clarity group) report their checks in the standard checks format; a verify `alignment` session reports, per item, an `evidence` line, a `deterministic` line, `Part A`, and — for a MISMATCH — the inline finding fields; quality sessions follow `framework/shared_judgments.md`: one public or design block per file, or one architecture block per unit. Design and architecture conclusions, `gate_findings` and their P0/P1 findings must agree;
 - findings receive stable run-scoped ids `{run_id}/{session_id}/F{n}` in report order (the run id is printed in the mission's `Run:` line);
-- each finding is bound only to its actual report keys: alignment findings belong to their item, quality findings to their `File:` block, and a validate session judging multiple report keys declares `Finding affects: {finding_id} = {check_key}[, {check_key}...]` for each finding, where `{check_key}` is a conclusion key written as the mission prints it in the session's `Checks:` line (for `validate@unit`, the check number). A single-check validate finding belongs to that check. Every validate FAIL key must have its own P0/P1 finding, and a PASS or WARNING key must not have one. Sharing a session never adds other failed keys to a finding;
+- each finding is bound only to its actual report keys: alignment findings belong to their item, quality findings to their `File:` block, and a validate session judging multiple report keys declares `Finding affects: {finding_id} = {check_key}[, {check_key}...]` for each finding, where `{check_key}` is a conclusion key written as the mission prints it in the session's `Checks:` line (for `validate@unit`, the check number). A single-check validate finding belongs to that check. Sharing a session never adds other failed keys to a finding;
 - findings authored in a session report carry the shared finding block from the unified report skeleton (`problem:` / `evidence:` / `impact:` / `fix:` or `decision:` — with gate-specific extra lines; `quality` P3 findings use their `fact_anchor:` line as the evidence form). The block's detail lines are contiguous indented lines directly under the finding's entry line; `gate-submit` stores them verbatim and `gate-finalize` re-renders them when a finding is carried into a delta/repair run;
 - a verify `alignment` MISMATCH finding identifies its item and carries the finding block (`Problem:`, `Evidence:` with at least one spec-side and one code-side sub-line (each present side quoted verbatim; when a side is absent, its sub-line states the absence and the searched scope), `Impact:`, and exactly one of `Fix:` / `Decision:` matching the suggested direction, with at least one `Options:` entry for `Decision:`), plus root cause, suggested direction, severity, and confidence.
 
@@ -198,15 +219,33 @@ The main agent presents the unified report generated from the accepted artifacts
 
 ### Final synthesis
 
-A unit run executes one final session when it has assigned relationships to check or findings to dispose. Local PASS results do not remove assigned relationship work. A run with neither condition finalizes directly; rules have no final synthesis. Generate it with `specflowctl gate-mission --run <id> --final --format prompt` and submit it with `specflowctl gate-submit --run <id> --session cross --keys cross --report PATH`.
-
-**Relationship scope at planning.** Before every unit full, delta, or repair plan, the coordinator compares the current change with the last applicable reviewed state and declares the relationships it touches through required `--relationships name[,name...]`, or `--relationships none`. This is a semantic judgment, not a count of changed files or local findings. Select the names from the relationship tables below. For a new target or an unusable baseline, assess the relationships present in the complete current design; do not declare `none` simply because no local defect is known. A declaration selects checks; it supplies no verdict. The tooling fixes the selection in run state and rejects names outside the gate's relationship vocabulary.
-
-**Incremental relationship work.** Each relationship reports its Cross item result; the tooling derives `Effective status: relationship:<name>` from the retained findings. Cache judgment schema 4 for unit verify, and schema 3 for unchanged cache roles, records the checked names and statuses. A full run carries unchanged passing relationship judgments from a usable baseline mechanically only when nothing changed; otherwise the standing conclusions go through a change review (accept or name rechecks), and failed ones always re-run. Delta/repair force failed (repair), invalidated, and explicitly selected relationships into the recheck scope; the change reviewer may name more, and `none` cannot exclude required work. A run may have no local coverage keys and still require a relationship-only final session. New or changed relationships absent from the baseline must be selected by the coordinator; the change review does not discover undeclared semantic connections.
+This is a semantic judgment, not a count of changed files or local findings. For a new target or an unusable baseline, assess the relationships present in the complete current design; do not declare `none` simply because no local defect is known. A declaration selects checks; it supplies no verdict.
 
 **Execution scope.** Check only the assigned relationships between the current source parts and the accepted or carried judgments. Cite the relevant sides in the reason/evidence. Do not repeat local alignment, quality, or validate checks. When the relationship list is empty, the final session only disposes existing findings. A new relationship finding must link to a failed assigned relationship and affect its `relationship:<name>` key, plus any local keys actually implicated. A new canonical merge finding may consolidate existing findings without introducing a new local audit.
 
-The final synthesis does not repeat every local check. It checks relationships between the sessions' conclusions and the shared source material. Its result must:
+The final synthesis does not repeat every local check. It checks relationships between the sessions' conclusions and the shared source material.
+
+For verify, also publish exactly one final quality conclusion for every `design:<unit>:<file>` and `architecture:<unit>` key, including carried keys. This assessment consumes the accepted reports and the final finding dispositions; it does not repeat the local review. `unacceptable` is required exactly when a gate-driving canonical P0/P1 finding affects that key. Otherwise the reviewer chooses `acceptable` or `needs_attention` with a reason. P2/P3 findings and a logical `fail` do not imply `unacceptable`, and a logical `pass` does not erase `needs_attention`.
+
+A carried judgment's recorded decision is never rewritten by the synthesis; the reviewer judges whether changed evidence warrants a re-run.
+
+A failed assigned relationship without a new retained finding also rejects it; validate findings must be P0/P1, while verify may retain non-blocking P2/P3 relationship findings.
+
+Bracketed findings in the final synthesis are new synthesis findings; each carries the shared finding block on the indented lines directly under its entry line and must name at least one affected non-cross logical key, written as the mission prints it in the dependency judgments (for `validate@unit` the check number; for verify the full coverage key — `item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>`, or `architecture:<unit>`; or a `relationship:<name>` key). A `merged` disposition identifies a duplicate, not a removal: following its target repeatedly must reach a finding that is retained in the final result. A failed relationship finding that restates a root cause already stated by an input finding is the same defect: the synthesis must dispose the input finding as `merged -> {new relationship finding}` with evidence that both state the same root cause. Retaining the relationship finding alongside the input finding it restates is a synthesis defect, not a second finding.
+
+Each retained finding's severity is the severity assigned by the session that raised it. On retain or merge the final synthesis may raise a finding's canonical severity conservatively when the read evidence proves a larger impact — it never lowers it (see `framework/severity_policy.md` §9). A suppressed or non-terminal merged finding has no canonical severity.
+
+A gate-driving finding is one owned by this run's unit or unassigned; a deferred finding (owned by another unit) is retained for audit and routed, but does not mark its keys and does not block this run.
+
+#### Final Synthesis Mechanics
+
+A unit run executes one final session when it has assigned relationships to check or findings to dispose. Local PASS results do not remove assigned relationship work. A run with neither condition finalizes directly; rules have no final synthesis. Generate it with `specflowctl gate-mission --run <id> --final --format prompt` and submit it with `specflowctl gate-submit --run <id> --session cross --keys cross --report PATH`.
+
+**Relationship scope at planning.** Before every unit full, delta, or repair plan, the coordinator compares the current change with the last applicable reviewed state and declares the relationships it touches through required `--relationships name[,name...]`, or `--relationships none`. Select the names from the relationship tables below. The tooling fixes the selection in run state and rejects names outside the gate's relationship vocabulary.
+
+**Incremental relationship work.** Each relationship reports its Cross item result; the tooling derives `Effective status: relationship:<name>` from the retained findings. Cache judgment schema 4 for unit verify, and schema 3 for unchanged cache roles, records the checked names and statuses. A full run carries unchanged passing relationship judgments from a usable baseline mechanically only when nothing changed; otherwise the standing conclusions go through a change review (accept or name rechecks), and failed ones always re-run. Delta/repair force failed (repair), invalidated, and explicitly selected relationships into the recheck scope; the change reviewer may name more, and `none` cannot exclude required work. A run may have no local coverage keys and still require a relationship-only final session. New or changed relationships absent from the baseline must be selected by the coordinator; the change review does not discover undeclared semantic connections.
+
+Its result must:
 
 1. bind the digest of every consumed current result and carried judgment;
 2. dispose every input finding as retained, suppressed, or merged, with evidence for suppression/merge; every merge chain must terminate at one retained input or new finding, which is counted once with the merged findings' logical keys;
@@ -214,11 +253,11 @@ The final synthesis does not repeat every local check. It checks relationships b
 4. publish any new synthesis finding with severity, evidence, and affected check keys, and — for validate/verify — link every failed assigned relationship to a new retained finding;
 5. cover the complete logical result set, including carried judgments in delta/repair runs.
 
-For verify, also publish exactly one final quality conclusion for every `design:<unit>:<file>` and `architecture:<unit>` key, including carried keys. This assessment consumes the accepted reports and the final finding dispositions; it does not repeat the local review. `unacceptable` is required exactly when a gate-driving canonical P0/P1 finding affects that key. Otherwise the reviewer chooses `acceptable` or `needs_attention` with a reason. P2/P3 findings and a logical `fail` do not imply `unacceptable`, and a logical `pass` does not erase `needs_attention`. A run without final synthesis preserves each accepted quality conclusion verbatim.
+A run without final synthesis preserves each accepted quality conclusion verbatim.
 
-**Decision evidence is part of the recorded input surface.** The evidence a final synthesis reads (finding dispositions, ownership citations, relationship comparisons) is ordinary input-surface content: its files are cache entries like any other, so a change to it stales the cache and appears in the change report the delta review consumes. `cross` remains a summary status with no independent cache check entry. A carried judgment's recorded decision is never rewritten by the synthesis; the reviewer judges whether changed evidence warrants a re-run.
+**Decision evidence is part of the recorded input surface.** The evidence a final synthesis reads (finding dispositions, ownership citations, relationship comparisons) is ordinary input-surface content: its files are cache entries like any other, so a change to it stales the cache and appears in the change report the delta review consumes. `cross` remains a summary status with no independent cache check entry.
 
-An omitted input result or finding rejects the final synthesis. A failed assigned relationship without a new retained finding also rejects it; validate findings must be P0/P1, while verify may retain non-blocking P2/P3 relationship findings. The coordinator cannot replace or override an accepted final synthesis.
+An omitted input result or finding rejects the final synthesis. The coordinator cannot replace or override an accepted final synthesis.
 
 **Final synthesis lines:** in addition to its verdict, the final synthesis report carries:
 
@@ -245,22 +284,30 @@ Cross item finding: {failed_item_key} = {new_retained_synthesis_finding_id}
 Finding ownership: {retained_finding_id} = owned_by {unit} — evidence: {read_ref}; reason: {one line}
 ```
 
-There is exactly one disposition per input finding; the tooling derives exactly one effective status per logical check/item/file/relationship plus `cross` from the terminal retained set. Bracketed findings in the final synthesis are new synthesis findings; each carries the shared finding block on the indented lines directly under its entry line and must name at least one affected non-cross logical key, written as the mission prints it in the dependency judgments (for `validate@unit` the check number; for verify the full coverage key — `item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>`, or `architecture:<unit>`; or a `relationship:<name>` key). Retained local findings are referenced by disposition instead of copied. A `merged` disposition identifies a duplicate, not a removal: following its target repeatedly must reach a finding that is retained in the final result. A target that is suppressed, missing, self-referential, or part of a merge cycle rejects the synthesis. The terminal retained finding is counted once, and its final affected-key set is the union of its own keys and the source keys of every finding merged into it. A failed relationship finding that restates a root cause already stated by an input finding is the same defect: the synthesis must dispose the input finding as `merged -> {new relationship finding}` with evidence that both state the same root cause. Retaining the relationship finding alongside the input finding it restates is a synthesis defect, not a second finding.
+There is exactly one disposition per input finding; the tooling derives exactly one effective status per logical check/item/file/relationship plus `cross` from the terminal retained set. Retained local findings are referenced by disposition instead of copied. A target that is suppressed, missing, self-referential, or part of a merge cycle rejects the synthesis. The terminal retained finding is counted once, and its final affected-key set is the union of its own keys and the source keys of every finding merged into it.
 
-Each retained finding's severity is the severity assigned by the session that raised it. On retain or merge the final synthesis may raise a finding's canonical severity conservatively when the read evidence proves a larger impact — it never lowers it (see `framework/severity_policy.md` §9). A suppressed or non-terminal merged finding has no canonical severity. Finding ids are already visible in dependency results; a finding created by the report being authored uses the deterministic run-scoped id `{run_id}/{session_id}/F{n}` from its finding order (for example `20260916-101112-abc123/cross/F1`). Run-scoped ids are unique by construction across runs.
+Finding ids are already visible in dependency results; a finding created by the report being authored uses the deterministic run-scoped id `{run_id}/{session_id}/F{n}` from its finding order (for example `20260916-101112-abc123/cross/F1`). Run-scoped ids are unique by construction across runs.
 
-For every non-cross logical key, the effective status is tool-derived closure over the **gate-driving** retained-finding set: it is `fail` if and only if at least one gate-driving retained P0, P1, P2, or P3 finding affects the key, and is `pass` otherwise. A gate-driving finding is one owned by this run's unit or unassigned; a deferred finding (owned by another unit) is retained for audit and routed, but does not mark its keys and does not block this run. The derived `cross` status exactly mirrors the synthesis verdict. `gate-submit` computes this map from the accepted synthesis's terminal retained set (the report carries no status lines to transcribe), stores it with the accepted session result, and binds the dependency digests automatically from run state. `gate-finalize` reapplies the accepted ownership records and canonical severities to the resolved terminal finding set and derives counts, blocking, result, and the carried judgment baseline only from the gate-driving canonical findings.
+For every non-cross logical key, the effective status is tool-derived closure over the **gate-driving** retained-finding set: it is `fail` if and only if at least one gate-driving retained P0, P1, P2, or P3 finding affects the key, and is `pass` otherwise. The derived `cross` status exactly mirrors the synthesis verdict. `gate-submit` computes this map from the accepted synthesis's terminal retained set (the report carries no status lines to transcribe), stores it with the accepted session result, and binds the dependency digests automatically from run state. `gate-finalize` reapplies the accepted ownership records and canonical severities to the resolved terminal finding set and derives counts, blocking, result, and the carried judgment baseline only from the gate-driving canonical findings.
 
 ### Deferred findings
 
-A unit's verify `quality` surface is the code its spec declares, and one physical file can carry the behavior of several units. A `quality` finding can therefore describe behavior whose **recorded ownership** belongs to another unit — the reviewed unit's own spec records a dependency-direction or boundary declaration (e.g. "child-run semantics are defined by the agent unit"), or another unit's spec records the behavior (reachable as ownership evidence when the coordinator listed it in the `gate-plan` input manifest). Such a finding must not block a unit that cannot legitimately repair it, and it must not be dropped. The ownership dimension resolves this routing:
+A `quality` finding can therefore describe behavior whose **recorded ownership** belongs to another unit — the reviewed unit's own spec records a dependency-direction or boundary declaration (e.g. "child-run semantics are defined by the agent unit"), or another unit's spec records the behavior (reachable as ownership evidence when the coordinator listed it in the `gate-plan` input manifest). Such a finding must not block a unit that cannot legitimately repair it, and it must not be dropped.
 
-- **Ownership records are evidence-backed.** A deferrable finding is a `quality` finding — every logical key it affects belongs to the quality lens, including carried judgments and merged source keys. Nothing else is deferrable: an item finding, a merge containing one, or a finding mixing quality and non-quality keys stays unassigned and drives this unit's gate. The final synthesis writes one `Finding ownership: {finding_id} = owned_by {unit}` record per deferred finding. The record names a terminal retained finding, cites a read ref inside the final synthesis's `read_refs`, and states its basis in its reason: the recorded ownership for a quality finding. The tool validates the record's mechanics; whether the cited document really records that ownership is the executor's judgment. A finding without a record is unassigned and drives this unit's gate — deferral without recorded evidence is not available, so a real problem cannot be routed away by assumption.
-- **Deferral routes, it does not delete.** A deferred finding stays in the report (`framework/unit_verify_checklist.md` §Output Format → Deferred findings) and in the cache's `GATE_JUDGMENTS` block as `deferred_findings`, but is excluded from the severity counts, from the blocking decision, and from the per-key effective-status closure. The reviewed unit's cache can pass while the finding is pending elsewhere.
-- **The deferral is handed to the owner's next verify.** `gate-finalize` writes each deferred finding to the repository's deferred-findings ledger (`framework/validation_cache.md` §Format → Deferred-findings ledger), keyed by owner unit. The owner's next verify plan (`gate-plan --gate verify --unit {owner}`) loads the owner's pending entries into the run, rebinding source-unit `design:<unit>:<file>` and `architecture:<unit>` keys to the owner, while preserving the finding id, source unit and source run. Public code and relationship keys keep their existing identities. Pending findings appear in the plan output and in the `gate-mission` context (the final synthesis always, the matching `quality` sessions as well). The owner's final synthesis must dispose every pending deferral exactly like an input finding — `retained` makes it the owner's own finding (and it blocks the owner if P0/P1), `suppressed` with a reason drops it, `merged` folds it into a retained finding, and a new ownership record re-routes a quality deferral to a third unit. The entry is consumed when the owner's run finalizes. A pending deferral whose key is not a logical key of the owner's run — a file outside the owner's verify surface, or an item absent from the owner's current spec — cannot be retained or re-routed: the synthesis must suppress it with an evidence-backed reason, and the state signals a spec-surface inconsistency — the owner's spec should declare the behavior and its current implementation location.
-- **Deferred findings are not carried.** A unit's judgment baseline carries only its gate-driving findings; deferred findings live in the ledger, not in the carry chain. A later delta/repair run of the reviewed unit neither re-disposes nor re-defers them. When a later verify of the reviewed unit re-reviews the deferred file, its fresh judgment supersedes its own older deferrals for that file, and re-deferral writes a new ledger entry.
+A deferrable finding is a `quality` finding — every logical key it affects belongs to the quality lens, including carried judgments and merged source keys. Nothing else is deferrable: an item finding, a merge containing one, or a finding mixing quality and non-quality keys stays unassigned and drives this unit's gate. The tool validates the record's mechanics; whether the cited document really records that ownership is the executor's judgment. A finding without a record is unassigned and drives this unit's gate — deferral without recorded evidence is not available, so a real problem cannot be routed away by assumption.
+
+The owner's final synthesis must dispose every pending deferral exactly like an input finding — `retained` makes it the owner's own finding (and it blocks the owner if P0/P1), `suppressed` with a reason drops it, `merged` folds it into a retained finding, and a new ownership record re-routes a quality deferral to a third unit. A pending deferral whose key is not a logical key of the owner's run — a file outside the owner's verify surface, or an item absent from the owner's current spec — cannot be retained or re-routed: the synthesis must suppress it with an evidence-backed reason, and the state signals a spec-surface inconsistency — the owner's spec should declare the behavior and its current implementation location.
 
 Deferral never overrides spec-first: code with no recorded design remains a finding, and without recorded ownership evidence it stays unassigned and blocks. The dimension changes only the route — a unit's own debt stays with the unit; another unit's recorded debt goes to that unit's round.
+
+#### Deferral Routing Mechanics
+
+A unit's verify `quality` surface is the code its spec declares, and one physical file can carry the behavior of several units. The ownership dimension resolves this routing:
+
+- **Ownership records are evidence-backed.** The final synthesis writes one `Finding ownership: {finding_id} = owned_by {unit}` record per deferred finding. The record names a terminal retained finding, cites a read ref inside the final synthesis's `read_refs`, and states its basis in its reason: the recorded ownership for a quality finding.
+- **Deferral routes, it does not delete.** A deferred finding stays in the report (`framework/unit_verify_checklist.md` §Output Format → Deferred findings) and in the cache's `GATE_JUDGMENTS` block as `deferred_findings`, but is excluded from the severity counts, from the blocking decision, and from the per-key effective-status closure. The reviewed unit's cache can pass while the finding is pending elsewhere.
+- **The deferral is handed to the owner's next verify.** `gate-finalize` writes each deferred finding to the repository's deferred-findings ledger (`framework/validation_cache.md` §Format → Deferred-findings ledger), keyed by owner unit. The owner's next verify plan (`gate-plan --gate verify --unit {owner}`) loads the owner's pending entries into the run, rebinding source-unit `design:<unit>:<file>` and `architecture:<unit>` keys to the owner, while preserving the finding id, source unit and source run. Public code and relationship keys keep their existing identities. Pending findings appear in the plan output and in the `gate-mission` context (the final synthesis always, the matching `quality` sessions as well). The entry is consumed when the owner's run finalizes.
+- **Deferred findings are not carried.** A unit's judgment baseline carries only its gate-driving findings; deferred findings live in the ledger, not in the carry chain. A later delta/repair run of the reviewed unit neither re-disposes nor re-defers them. When a later verify of the reviewed unit re-reviews the deferred file, its fresh judgment supersedes its own older deferrals for that file, and re-deferral writes a new ledger entry.
 
 Promote does not read the ledger: a pending deferral is verify-routing state, not a gate condition. It becomes a gate condition for the owner when the owner's next verify loads and disposes it; until then it stays visible in the plan output, the `gate-mission` context, and `fresh`.
 
@@ -308,7 +355,11 @@ Targeted checks remain in the main agent session: they do not have a coverage ru
 
 ### Relationship vocabulary
 
-The final synthesis checks relationships between the sessions' conclusions and the shared source material. Each assigned relationship is stated exactly once; each failed result links to a new retained finding. The tables below define the available names, not a mandatory full checklist. The final session checks only the names selected by the plan, then disposes existing findings.
+The final synthesis checks relationships between the sessions' conclusions and the shared source material. Each assigned relationship is stated exactly once; each failed result links to a new retained finding. The tables below define the available names, not a mandatory full checklist.
+
+#### Plan-Selected Names and Disposal
+
+The final session checks only the names selected by the plan, then disposes existing findings.
 
 #### Verify synthesis items
 
@@ -324,6 +375,8 @@ Checks for consistency between the affected source parts (spec sections, produce
 
 **Output:** the assigned per-relationship results, a finding link for each failed result, finding dispositions, and any new synthesis findings (the effective logical statuses are tool-derived from them). A failed relationship always reports its Cross item as `FAIL` and links one new retained finding through `Cross item finding:`, at any severity. The `Cross-check:` summary is the blocking verdict, not a copy of the item results: it is `FAIL` only when a linked new cross finding is P0/P1, so a failed relationship carrying only P2/P3 findings renders the summary as `<passed>/N PASS` while its item shows `FAIL`.
 
+##### Verify Synthesis Report Keys
+
 Fixed report keys, in table order: `contract_consistency`, `data_definition_drift`, `state_machine_coherence`, `error_code_conflict`, `cross_reference_integrity`.
 
 #### Validate synthesis items
@@ -337,6 +390,8 @@ After the local validate sessions resolve:
 | Cross-unit cohesion | Do individual unit decisions (Check 7) align with the combined design intent? |
 
 **Output:** the assigned per-relationship results, a finding link for each failed result, plus the same complete disposition and relationship-result contract (the effective-status map is tool-derived). A local failure may be suppressed only when the final synthesis demonstrates that it is a false positive against the complete source set; the suppression remains visible in the audit body but is excluded from retained finding counts.
+
+##### Validate Synthesis Report Keys
 
 Fixed report keys, in table order: `design_constraints`, `coverage_scope`, `cross_unit_cohesion`.
 
@@ -357,13 +412,17 @@ A cache without the required chunk evidence is not current-format and is treated
 
 ### The change review
 
+The reviewer focuses on the change set but reads any input-surface file it needs: a change can affect a conclusion anchored elsewhere. When in doubt it names keys or escalates — accepting is the consequential call.
+
+#### Review Session and Outcome Vocabulary
+
 `gate-plan` adds one **review session** (`review`, kind `delta_review`) to the run. It is an ordinary independent read-only session; its mission carries the mechanically detected change set and the standing conclusions (key + status) and asks for one of three outcomes:
 
 - `Review result: accept` — no standing conclusion is affected; every remaining conclusion stays carried.
 - `Review result: recheck` with `Recheck: <key>[, <key>...]` — the named conclusions re-run (their coverage keys join the run; a `validate@unit` conclusion key maps to its coverage group). Each `<key>` is a conclusion key spelled as the mission prints it under "Standing conclusions" — for `validate@unit` the check number (`8`), for verify the full coverage key (`item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>`, or `architecture:<unit>`) — or a `relationship:<name>` key for an assigned relationship. For verify, the short item id or code-file path is also accepted and normalized to its full coverage key. The coverage-group id (`dependencies`) and the report's `check-{n}` label are not conclusion keys and are rejected. Named keys must be current baseline conclusions.
 - `Review result: escalate-full` — the change is too broad or the reviewer cannot judge reliably; the run is not finalizable and a full run follows. The tooling reflects that outcome: `gate-status` reports next action `abandon`, and `gate-mission`, `gate-submit`, and `gate-finalize` all refuse the run.
 
-The reviewer focuses on the change set but reads any input-surface file it needs: a change can affect a conclusion anchored elsewhere. When in doubt it names keys or escalates — accepting is the consequential call. The review produces no check verdicts; the re-run sessions it names are ordinary sessions under the standard checklist, executed with the change set as context, so a re-run verdict is gate-grade.
+The review produces no check verdicts; the re-run sessions it names are ordinary sessions under the standard checklist, executed with the change set as context, so a re-run verdict is gate-grade.
 
 ### Mechanical floor
 
@@ -374,6 +433,8 @@ Two things re-run regardless of the review, because their recorded evidence itse
 
 Current keys the baseline never declared — a new acceptance item or a new code file — have no evidence to carry and always run. `--rerun` adds explicit overrides.
 
+3. **A moved judging standard.** A conclusion is reusable only under the standard it was judged by (`framework/spec_flow_review.md` §2.17), so a baseline whose recorded standard the deployed documents no longer reproduce carries nothing: a verify plan re-runs every key whose judgment record carries the previous protocol, and a validate plan covers the full scope (`framework/validation_cache.md` §Format → Standard binding).
+
 ### Execution
 
 - Execute only the planned coverage keys. Carried conclusions are not re-executed: `gate-plan` copies their structured judgments, renderable finding details, and evidence snapshot from the baseline into the immutable run. A baseline without the current judgment schema requires a full run.
@@ -383,7 +444,7 @@ Current keys the baseline never declared — a new acceptance item or a new code
 
 ### Failure recovery
 
-A repair run (`--mode repair`) over a **failure record** restores the pass cache after the findings are resolved: failed judgments, persisted invalidations, and invalidated verify records re-run unconditionally; the change set is reviewed like a delta when the fix changed content, and the remaining pass/carried judgments keep their recorded evidence. With no content change the review is skipped — the failed judgments re-run against unchanged evidence and the rest carries mechanically. The recovery is identical regardless of the record's `basis` (`delta`, `repair`, or `full`). A MISSING record is not a baseline: run the full command.
+A repair run (`--mode repair`) over a **failure record** restores the pass cache after the findings are resolved: failed judgments, persisted invalidations, and invalidated verify records re-run unconditionally; the change set is reviewed like a delta when the fix changed content, and the remaining pass/carried judgments keep their recorded evidence. With no content change the review is skipped — the failed judgments re-run against unchanged evidence and the rest carries mechanically, unless the deployed judging standard moved, in which case nothing carries: a verify run re-runs every key whose judgment record was made under the previous standard, and a validate run's plan covers the full scope (see §Delta Runs). The recovery is identical regardless of the record's `basis` (`delta`, `repair`, or `full`). A MISSING record is not a baseline: run the full command.
 
 The failure record's `basis` records its writer: `delta` for a delta-FAIL record, `repair` for a repair-FAIL record (a recovery run that fails again keeps the record as the failure-recovery baseline), `full` for a full-run record. The recovery's pass cache is marked `basis: repair` for audit separation. Promote trusts a `basis: repair` cache exactly like `full`/`delta` — the evidence rules are identical (see §Trust statement).
 

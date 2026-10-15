@@ -4,7 +4,11 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. A unit-specific exclusion never removes a public observation. The alignment lens treats the spec as authority.
+
+### Session composition and batch inputs
+
+Public execution batches do not enlarge the design session's inputs. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit.
 
 ### 2. Pre-review Setup
 
@@ -14,11 +18,14 @@ Design and architecture checks read their selected unit spec, applicable rules a
 
 ### 3. Review Process
 
+1. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
+2. Assess the six Dimension 8 fields in the unit's architecture task once.
+3. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
+
+### Session inputs and record reuse
+
 1. Reuse accepted public observations only when coverage, code content and protocol are valid; otherwise execute the public check.
 2. Consume the public records for the design session's assigned files only, whether executed, reused or carried. For each observation in those records, the design reviewer reports `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>`. In a co-batched session the design reviewer disposes the observations collected in the same report's code blocks instead of consuming a published record: write the code blocks first, then reference each observation by its tool-assigned id — finding ids are `<run>/<session>/F<k>` in report order across the whole report, not restarted per file.
-3. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
-4. Assess the six Dimension 8 fields in the unit's architecture task once.
-5. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
 
 ### 4. Review Dimensions
 
@@ -105,7 +112,11 @@ Test code is judged by the `quality` lens. The `alignment` lens considers tests 
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
 | **P3** | Objective, local style, clarity, or hygiene discrepancy | Reproducible from repository facts; does not affect correctness or materially harm maintainability | Unused import, minor established-convention deviation, stale comment with a direct code mismatch | Don't block |
 
-P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
+P0/P1 findings block promote.
+
+#### Promote gate and cache requirement
+
+The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
 
 #### P3 Reportability Gate
 

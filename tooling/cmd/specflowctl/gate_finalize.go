@@ -237,6 +237,12 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		Body:      body.String(),
 		Entries:   entries,
 	}
+	// A validate conclusion has no judgment record to bind its judging
+	// standard, so the cache itself records it. Verify caches bind it per
+	// record instead (see framework/validation_cache.md §Format).
+	if run.Gate == gaterun.GateValidate {
+		write.Standard = run.Protocol
+	}
 	if run.Review != nil {
 		write.ReviewChangeSet = run.Review.ChangeSet
 		write.ReviewResult = run.Review.Result

@@ -192,7 +192,7 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 		}
 		entries = append(entries, *entry)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", "auth", validationcache.CacheWrite{Command: "validate", Unit: "auth", Mode: "full", Result: "pass", Target: "candidate", Entries: entries}); err != nil {
+	if _, err := validationcache.WriteCache(root, "unit", "auth", validationcache.CacheWrite{Command: "validate", Unit: "auth", Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: entries}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer

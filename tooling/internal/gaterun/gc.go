@@ -27,7 +27,10 @@ type CollectedJudgments struct {
 // collected. The caller must hold the repository mutation lock
 // (gate-finalize's transaction).
 func CollectJudgments(root string) (CollectedJudgments, error) {
-	protocol := judgments.Protocol(root)
+	protocol, err := judgments.Protocol(root, GateVerify, TargetKindUnit)
+	if err != nil {
+		return CollectedJudgments{}, err
+	}
 	live := map[string]bool{}
 	var queue []string
 	seed := func(ref judgments.Reference) {

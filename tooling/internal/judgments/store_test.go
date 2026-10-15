@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -21,7 +22,7 @@ func fixture(t *testing.T) (string, Record) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return root, Record{Version: RecordVersion, Kind: Code, Subject: "contracts.js", Coverage: []string{"code:contracts.js"}, Inputs: []string{"contracts.js"}, Dependencies: []Dependency{{Path: "contracts.js", Hash: hash}}, Protocol: Protocol(root), Verdict: "FACTS", Result: json.RawMessage(`{"observations":[]}`), Report: "facts", ReportDigest: Digest([]byte("facts")), SourceRun: "20260101-000000-abcdef"}
+	return root, Record{Version: RecordVersion, Kind: Code, Subject: "contracts.js", Coverage: []string{"code:contracts.js"}, Inputs: []string{"contracts.js"}, Dependencies: []Dependency{{Path: "contracts.js", Hash: hash}}, Protocol: MustProtocol(root, "verify", "unit"), Verdict: "FACTS", Result: json.RawMessage(`{"observations":[]}`), Report: "facts", ReportDigest: Digest([]byte("facts")), SourceRun: "20260101-000000-abcdef"}
 }
 func TestConcurrentImmutablePublication(t *testing.T) {
 	root, r := fixture(t)
@@ -77,13 +78,13 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", Protocol(root)); err != nil {
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err != nil {
 		t.Fatal(err)
 	}
 	if err := Invalidate(root, public.ID, "contradicted by new evidence"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", Protocol(root)); err == nil {
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("dependent PASS remains usable")
 	}
 	root, r = fixture(t)
@@ -97,7 +98,7 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 	}
 	f.WriteString("export const order = true;\n")
 	f.Close()
-	if err := Check(root, ref, "candidate", Protocol(root)); err == nil {
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("appended content escaped whole-file identity")
 	}
 }
@@ -136,21 +137,42 @@ func TestInstalledProtocolContentInvalidatesRecords(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(protocolFile), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(protocolFile, []byte("protocol before"), 0644); err != nil {
+	document := func(judging, mechanism string) string {
+		var b strings.Builder
+		b.WriteString("# Shared Verify Judgments\n\n## Judgment and conclusion rules\n\n")
+		b.WriteString(judging)
+		b.WriteString("\n\n")
+		for _, name := range mechanismSections["shared_judgments.md"] {
+			b.WriteString("## " + name + "\n\n" + mechanism + "\n\n")
+		}
+		return b.String()
+	}
+	if err := os.WriteFile(protocolFile, []byte(document("A judgment stands.", "Fixture.")), 0644); err != nil {
 		t.Fatal(err)
 	}
-	r.Protocol = Protocol(root)
+	r.Protocol = MustProtocol(root, "verify", "unit")
 	ref, err := Save(root, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", Protocol(root)); err != nil {
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(protocolFile, []byte("protocol after"), 0644); err != nil {
+	// A mechanism section describes how a run is planned, recorded or
+	// terminated, not what counts as a pass, a problem, or how severe it is:
+	// changing it must not invalidate a recorded conclusion.
+	if err := os.WriteFile(protocolFile, []byte(document("A judgment stands.", "Rewritten fixture.")), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", Protocol(root)); err == nil {
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err != nil {
+		t.Fatalf("mechanism change invalidated a recorded judgment: %v", err)
+	}
+	// The judging text is the standard the record was made under: changing it
+	// invalidates the record.
+	if err := os.WriteFile(protocolFile, []byte(document("A judgment changed.", "Rewritten fixture.")), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("changed installed protocol reused an old judgment")
 	}
 }
@@ -185,7 +207,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, prior, "stable", Protocol(root)); err == nil {
+	if err := Check(root, prior, "stable", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("unchanged MISMATCH verdict hid changed blocking severity")
 	}
 	r.SourceRun = "20240101-000000-abcdef"
@@ -194,7 +216,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, current, "stable", Protocol(root)); err != nil {
+	if err := Check(root, current, "stable", MustProtocol(root, "verify", "unit")); err != nil {
 		t.Fatalf("equivalent accepted decision invalidated a consumer: %v", err)
 	}
 	path, err := recordPath(root, equivalent.ID)
@@ -204,7 +226,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, current, "stable", Protocol(root)); err == nil {
+	if err := Check(root, current, "stable", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("missing current decision resurrected an earlier record")
 	}
 }
@@ -258,7 +280,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 			t.Fatalf("%s lost its own current decision: %+v %v %v", layer, got, accepted, err)
 		}
 	}
-	if err := Check(root, previous, "stable", Protocol(root)); err == nil {
+	if err := Check(root, previous, "stable", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("different candidate context resurrected the old stable ALIGNED record")
 	}
 	path, err := recordPath(root, stable.ID)
@@ -268,7 +290,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, previous, "stable", Protocol(root)); err == nil {
+	if err := Check(root, previous, "stable", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("missing stable decision was hidden by the valid candidate decision")
 	}
 }
@@ -305,7 +327,7 @@ func TestBoundStableContextCannotBypassItsCurrentDecision(t *testing.T) {
 	if _, err := Save(root, r); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, previous, "stable", Protocol(root)); err == nil {
+	if err := Check(root, previous, "stable", MustProtocol(root, "verify", "unit")); err == nil {
 		t.Fatal("historical context bypassed the current stable decision")
 	}
 }

@@ -15,7 +15,7 @@ type recordState struct {
 	LogicalStatus map[string]string            `json:"logical_status"`
 }
 
-func verifyRecords(root string, cache *cacheFile) error {
+func verifyRecords(root, targetKind string, cache *cacheFile) error {
 	var state recordState
 	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != 4 {
 		return fmt.Errorf("verify cache uses an old or damaged review protocol; run a full verify")
@@ -23,8 +23,12 @@ func verifyRecords(root string, cache *cacheFile) error {
 	if len(state.Records) == 0 {
 		return fmt.Errorf("verify cache has no judgment references")
 	}
+	protocol, err := judgments.Protocol(root, "verify", targetKind)
+	if err != nil {
+		return err
+	}
 	for key, binding := range state.Records {
-		if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err != nil {
+		if err := judgments.Check(root, binding.Reference, binding.Layer, protocol); err != nil {
 			return fmt.Errorf("%s: %w", key, err)
 		}
 		r, err := judgments.Load(root, binding.Reference)
@@ -69,13 +73,33 @@ func verifyRecords(root string, cache *cacheFile) error {
 			if !ok {
 				return fmt.Errorf("missing judgment record for %s", check.Check)
 			}
-			if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.Protocol(root)); err != nil {
+			if err := judgments.Check(root, binding.Reference, binding.Layer, protocol); err != nil {
 				return fmt.Errorf("%s: %w", check.Check, err)
 			}
 			if _, err := judgments.Load(root, binding.Reference); err != nil {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// verifyStandard checks that a validate cache was judged under the validate
+// standard the checklist currently deploys. Verify conclusions bind their
+// standard per judgment record; a validate conclusion has no record to bind,
+// so the cache itself records the standard it was judged under. A cache
+// without that record, or written under a different checklist, cannot be
+// reused: the standard it was judged by is not the current one.
+func verifyStandard(root, targetKind string, cache *cacheFile) error {
+	if strings.TrimSpace(cache.Standard) == "" {
+		return fmt.Errorf("the cache records no judging standard (pre-binding format) — old caches are invalid")
+	}
+	current, err := judgments.Protocol(root, "validate", targetKind)
+	if err != nil {
+		return err
+	}
+	if cache.Standard != current {
+		return fmt.Errorf("the validate standard changed since this cache was judged")
 	}
 	return nil
 }

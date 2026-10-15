@@ -74,6 +74,12 @@ type cacheFile struct {
 	// it, and it proves nothing about who executed the run. Absent on caches
 	// written before gate runs existed.
 	GateRun string `yaml:"gate_run,omitempty"`
+	// Standard is the judging standard the cache's conclusions were made under
+	// (see framework/validation_cache.md §Format → Standard binding). It is
+	// written on validate caches only; a caches without it cannot prove which
+	// standard judged it, so freshness treats it as invalid. Verify caches
+	// bind their standard per judgment record instead and leave this empty.
+	Standard string `yaml:"standard,omitempty"`
 	// InvalidatedChecks records targeted P0/P1 contradictions discovered
 	// after this failure record was written. It is machine-owned recovery
 	// state, separate from the historical per-check status map.
@@ -539,6 +545,11 @@ type CacheWrite struct {
 	// (printed by gate-plan, verified by gate-finalize). Rendering is
 	// audit-only — see cacheFile.GateRun.
 	GateRun string
+	// Standard is the judging standard the cache's conclusions were made
+	// under. Gate-finalize sets it on a validate write; freshness compares it
+	// before the cache is reusable. Verify writes leave it empty: a verify
+	// conclusion binds its standard per judgment record instead.
+	Standard string
 	// InvalidatedChecks is used only when rendering an existing failure
 	// record's machine-owned targeted invalidation state. Gate-finalize leaves
 	// it empty, which clears every invalidation the completed plan re-ran.
@@ -739,6 +750,9 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 	fmt.Fprintf(&b, "timestamp: %q\n", w.Timestamp)
 	if w.GateRun != "" {
 		fmt.Fprintf(&b, "gate_run: %s\n", w.GateRun)
+	}
+	if w.Standard != "" {
+		fmt.Fprintf(&b, "standard: %s\n", w.Standard)
 	}
 	if w.ReviewChangeSet != "" {
 		fmt.Fprintf(&b, "reviewed_change_set: %s\n", w.ReviewChangeSet)
@@ -1159,7 +1173,12 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
 	if command == "verify" {
-		if err := verifyRecords(repoRoot, cache); err != nil {
+		if err := verifyRecords(repoRoot, targetKind, cache); err != nil {
+			return CheckResult{Fresh: false, Category: CategoryStale, Reason: err.Error()}, nil
+		}
+	}
+	if command == "validate" {
+		if err := verifyStandard(repoRoot, targetKind, cache); err != nil {
 			return CheckResult{Fresh: false, Category: CategoryStale, Reason: err.Error()}, nil
 		}
 	}
@@ -1515,6 +1534,8 @@ func parseCache(data []byte) (*cacheFile, error) {
 					cache.Timestamp = value
 				case "gate_run":
 					cache.GateRun = value
+				case "standard":
+					cache.Standard = value
 				case "reviewed_change_set":
 					cache.ReviewChangeSet = value
 				case "review_result":
@@ -1767,6 +1788,7 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 		P0Count: cache.P0Count, P1Count: cache.P1Count,
 		P2Count: cache.P2Count, P3Count: cache.P3Count,
 		Timestamp: cache.Timestamp, GateRun: cache.GateRun,
+		Standard:          cache.Standard,
 		InvalidatedChecks: cache.InvalidatedChecks,
 	}
 	// The candidate input surface may record the rule file under both its
@@ -1987,12 +2009,17 @@ type GateBaseline struct {
 	// while Exists stays false: callers treat it exactly like a missing cache
 	// and fall back to the full command. It is empty when the file is simply
 	// absent.
-	UnusableReason    string
-	Mode              string
-	Basis             string
-	Result            string
-	Target            string
-	Blocking          bool
+	UnusableReason string
+	Mode           string
+	Basis          string
+	Result         string
+	Target         string
+	Blocking       bool
+	// Standard is the judging standard the baseline's conclusions were made
+	// under (validate caches only — verify caches bind it per judgment
+	// record). A delta/repair plan compares it with the current standard
+	// before carrying anything over.
+	Standard          string
 	InvalidatedChecks []string        // persisted targeted P0/P1 contradictions
 	HasChecks         bool            // the cache carries per-check declarations
 	Checks            []BaselineCheck // declared checks (declaration order, first occurrence)
@@ -2038,6 +2065,7 @@ func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBa
 		Result:            cache.Result,
 		Target:            cache.Target,
 		Blocking:          cache.Blocking,
+		Standard:          cache.Standard,
 		InvalidatedChecks: append([]string(nil), cache.InvalidatedChecks...),
 	}
 	data, err := os.ReadFile(cachePath)

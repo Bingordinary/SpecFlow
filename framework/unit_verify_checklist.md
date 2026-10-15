@@ -7,18 +7,11 @@
 - **`alignment`** — the spec-vs-code check: acceptance items, structural alignment, scope, retirement, surplus, stubs, and divergence analysis (Steps 1–7 below). The spec is **authority**: a divergence is always a finding and is never suppressed.
 - **`quality`** — the spec-aware code-quality check: structure/boundaries, naming/abstraction, duplication, coupling, error & safety, hygiene, unplanned debt, architectural quality, and test quality. The spec is **rationale**: a code-quality finding is suppressed when the spec records the design decision behind it.
 
+### Run Orientation and Session Plumbing
+
 The trigger route in `framework/concepts.md` loads this file at verify time, not proactively. The judge of every key is an independent read-only subagent; the main agent partitions the run's coverage set into lens-pure sessions, generates each session's mission with `gate-mission`, and records each report with `gate-submit` (see `framework/verification_scope.md` §Coverage model).
 
 ## Lenses and boundary ownership
-
-A session's keys come from **one lens only** — a session never mixes lenses. The two lenses share one P0–P3 severity scale and are merged into the one `verify_result.md` cache, which carries an `alignment` section and a `quality` section.
-
-Coverage keys:
-
-| Lens | Coverage keys |
-|---|---|
-| `alignment` | `item:<unit>:<item>` |
-| `quality` | `code:<file>`, `design:<unit>:<file>`, and one `architecture:<unit>` |
 
 **Boundary ownership** — which lens owns which judgment:
 
@@ -31,6 +24,17 @@ Coverage keys:
 | **Spec-sanctioned suppression** | `quality` **only** | A recorded spec rationale suppresses a `quality` finding. The `alignment` lens never suppresses a divergence. |
 | Structural alignment, scope, retirement, acceptance, divergence analysis (Steps 1–7) | `alignment` | — |
 
+### Coverage Keys and Session Partitioning
+
+A session's keys come from **one lens only** — a session never mixes lenses. The two lenses share one P0–P3 severity scale and are merged into the one `verify_result.md` cache, which carries an `alignment` section and a `quality` section.
+
+Coverage keys:
+
+| Lens | Coverage keys |
+|---|---|
+| `alignment` | `item:<unit>:<item>` |
+| `quality` | `code:<file>`, `design:<unit>:<file>`, and one `architecture:<unit>` |
+
 ## The quality lens
 
 The `quality` lens's standard — core principle, pre-review setup, review process, the eight dimensions, the P3 reportability gate, and the finding output format — is defined in full below and is delivered into this file by the atom `spec_review_standard`.
@@ -42,7 +46,11 @@ The `quality` lens separates reusable public code facts from unit-specific desig
 
 ### 1. Core Principle
 
-`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. Public execution batches do not enlarge the design session's inputs. A unit-specific exclusion never removes a public observation. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit. The alignment lens treats the spec as authority.
+`code:<file>` records facts and potential problems without a unit-private rationale. `design:<unit>:<file>` treats that unit's spec as rationale: actively check its requirements and retain or exclude every public observation from its assigned file's immutable record with evidence. A unit-specific exclusion never removes a public observation. The alignment lens treats the spec as authority.
+
+### Session composition and batch inputs
+
+Public execution batches do not enlarge the design session's inputs. A co-batched session holds a file's `code:<file>` key and its unit's `design:<unit>:<file>` key together: the same reviewer collects the facts and then judges the unit design against them in one pass — the facts stay rationale-free and publish as the file's public record, so other units can still reuse them. `architecture:<unit>` assesses Dimension 8 once for the entire unit.
 
 ### 2. Pre-review Setup
 
@@ -52,11 +60,14 @@ Design and architecture checks read their selected unit spec, applicable rules a
 
 ### 3. Review Process
 
+1. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
+2. Assess the six Dimension 8 fields in the unit's architecture task once.
+3. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
+
+### Session inputs and record reuse
+
 1. Reuse accepted public observations only when coverage, code content and protocol are valid; otherwise execute the public check.
 2. Consume the public records for the design session's assigned files only, whether executed, reused or carried. For each observation in those records, the design reviewer reports `Observation disposition: <id> = retained|suppressed — <unit-specific evidence and reason>`. In a co-batched session the design reviewer disposes the observations collected in the same report's code blocks instead of consuming a published record: write the code blocks first, then reference each observation by its tool-assigned id — finding ids are `<run>/<session>/F<k>` in report order across the whole report, not restarted per file.
-3. Actively check the unit's spec requirements, including violations not present in the public record. Report new findings independently.
-4. Assess the six Dimension 8 fields in the unit's architecture task once.
-5. Public potential problems are observations rather than gate-driving findings. Unit design findings drive this unit's gate. The standard severity and finding format below applies to their presentation.
 
 ### 4. Review Dimensions
 
@@ -143,7 +154,11 @@ Test code is judged by the `quality` lens. The `alignment` lens considers tests 
 | **P2** | Real but not severe | Affects readability and maintainability, not correctness | Mysterious Name, Feature Envy, localized Primitive Obsession, small Data Clumps | Don't block |
 | **P3** | Objective, local style, clarity, or hygiene discrepancy | Reproducible from repository facts; does not affect correctness or materially harm maintainability | Unused import, minor established-convention deviation, stale comment with a direct code mismatch | Don't block |
 
-P0/P1 findings block promote. The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
+P0/P1 findings block promote.
+
+#### Promote gate and cache requirement
+
+The promote gate additionally requires a cache written by a full run — targeted re-checks do not write a cache, so they never satisfy the gate. The `quality` lens and the `alignment` lens share the same P0–P3 scale; their graded findings are merged into the one `verify_result.md` cache.
 
 #### P3 Reportability Gate
 
@@ -198,14 +213,16 @@ The `alignment` lens is the remainder of this file (Steps 1–7 and the analysis
 
 ## Prerequisite — Read all unit files
 
+The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
+
+### Read Procedure
+
 Before executing any verify step, the agent must read the complete unit spec:
 
 1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
 2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
 3. For each appendix, read its frontmatter. Skip exempt content and confirm ownership by the appendix `unit` field.
 4. Read the content of every non-exempt appendix file.
-
-The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
 
 ## Mode Selection
 
@@ -246,16 +263,25 @@ After completing all analysis steps, the agent must report coverage confidence (
 
 ## Execution Rules
 
-- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. The main agent launches one read-only sub-agent per session (each session covers an agent-chosen, lens-pure batch of coverage keys) — each sub-agent follows the same permissions (read-only, no delegation chain).
 - Each verifiable claim in the spec reports **ALIGNED** / **MISMATCH** / **CANNOT_DETERMINE** with code references.
 - Evidence is always code-level (file:line, struct/function signatures, grep results) — never runtime output.
 - A symbol name, comment, test function name, or interface existence alone is not evidence of behavior — read the code that implements the behavior (e.g. an enum value is confirmed by its definition and JSON tag, not by its identifier).
 - For CANNOT_DETERMINE claims (e.g., pass_condition requires runtime verification): record the gap and continue.
 
+### Subagent Launch and Permissions
+
+- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. The main agent launches one read-only sub-agent per session (each session covers an agent-chosen, lens-pure batch of coverage keys) — each sub-agent follows the same permissions (read-only, no delegation chain).
+
 ## Output Format
 
 ==ATOM_BEGIN:report_skeleton==
 ## Unified Report Skeleton
+
+### Finding severity ownership
+
+Each finding's `[{severity}]` is assigned by the session that raises the finding. When the final synthesis (`framework/verification_scope.md` §Final synthesis) retains or merges findings, it may raise a retained finding's canonical severity conservatively — never lower it; counts and blocking derive from the canonical severities (see `framework/severity_policy.md`).
+
+### Report skeleton and field definitions
 
 All quality-gate reports (validate and verify) share the same report skeleton below. The header lines (`Result`, `Blocking promote`, `Key counts`), the Findings block fields, and the `Next step` line are identical across gates; only the body content and the gate-specific extra lines inside each finding block are gate-specific and defined in each checklist file. The Findings section follows the header because on FAIL it is the decision surface — the body is its audit and evidence.
 
@@ -306,9 +332,8 @@ Next step: {concrete next command with reason, or "None"}
   - `{gate-specific detail lines}` — gate-specific extras follow the shared fields: alignment `root_cause:`, `direction:`, and `confidence:`; quality `spec_context:` and its mechanically required `fact_anchor:` for P3 findings. validate and rule validate add none.
   - Findings are grouped into the batch group and decision group defined in this file's batch classification section when this file defines one; flat when this file defines no batch classification or grouping is inactive. Batch-group entries carry the same fields; terse one-line values are fine.
   - Findings whose recorded ownership routes them to another unit are presented in a `Deferred to {unit}:` section after the Findings section, with the same block fields plus an `ownership:` line. They are retained and routed but do not count toward `Key counts`, `Blocking promote`, or the gate result (see `framework/unit_verify_checklist.md` §Output Format → Deferred findings).
-  - Each finding's `[{severity}]` is assigned by the session that raises the finding. When the final synthesis (`framework/verification_scope.md` §Final synthesis) retains or merges findings, it may raise a retained finding's canonical severity conservatively — never lower it; counts and blocking derive from the canonical severities (see `framework/severity_policy.md`).
 - `Evidence recording:` — reports carry no dependency declarations. `gate-finalize` records the run's whole input surface: one cache entry per input-surface file with its whole-file `hash` and ordered chunk sequence, plus a per-check marker (`check` + lens, and the failure status on failure records) for every executed judgment. Spec objects resolved by name are recorded as logical references so a layer move does not stale the cache (see `framework/validation_cache.md` §Format → Entries). Delta/repair runs record the re-run keys' markers alongside the carried keys' snapshotted markers; targeted runs write no cache.
-- `Change review:` — delta/repair runs only (mode `delta`). The recorded review outcome: the change-set summary (changed files and, per file, the localized change kinds and line spans), the `Review result:` (accept | recheck | escalate-full), and when the reviewer named re-runs, the re-run keys in the run's own structure (e.g. validate: "check-2 (design group): re-run — Description section changed") followed by a line declaring the carried conclusions ("all other conclusions: carried over — recorded content unchanged"). The change set is derived mechanically at plan time (ordered bidirectional chunk diff); the reviewer accepts, names re-run keys, or escalates (see `framework/verification_scope.md` §Delta Runs). The mechanical floor re-runs invalidated verify records, failed/invalidated judgments (repair), current keys the baseline never declared, and explicit `--rerun` overrides regardless of the review. A failure record whose per-check status map is absent, invalid, or inconsistent with its judgment baseline, or a failed or invalidated key that cannot map to the current surface, is covered by a full-scope plan — nothing is carried over. The review result and the planned scope are reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
+- `Change review:` — delta/repair runs only (mode `delta`). The recorded review outcome: the change-set summary (changed files and, per file, the localized change kinds and line spans), the `Review result:` (accept | recheck | escalate-full), and when the reviewer named re-runs, the re-run keys in the run's own structure (e.g. validate: "check-2 (design group): re-run — Description section changed") followed by a line declaring the carried conclusions ("all other conclusions: carried over — recorded content unchanged"). The change set is derived mechanically at plan time (ordered bidirectional chunk diff); the reviewer accepts, names re-run keys, or escalates (see `framework/verification_scope.md` §Delta Runs). The mechanical floor re-runs invalidated verify records, failed/invalidated judgments (repair), current keys the baseline never declared, a moved judging standard, and explicit `--rerun` overrides regardless of the review. A failure record whose per-check status map is absent, invalid, or inconsistent with its judgment baseline, or a failed or invalidated key that cannot map to the current surface, is covered by a full-scope plan — nothing is carried over. The review result and the planned scope are reported by `gate-plan` before execution begins (the user must see what will be re-run and what will be carried over) and again in the final report.
 - `Next step:` — the concrete command to run next with its reason; `None` when nothing further is needed. A finding's fix lifecycle has three states with fixed wording: `finding_open` → "Resolve the findings, then re-run the target-appropriate re-check command (`validate@{target}:check-{n}`; unit targets also `verify@{target}:{keyword}`) to confirm"; `fixed_pending_recheck` → "Fixes applied; re-run the target-appropriate re-check command to confirm." — only after the approved fix was actually written; `verified` → "Re-check passed." — only after a re-check confirmed the fix. A gate report is always produced before any fix is applied (nothing is implemented before the user approves the findings), so an actionable finding's report-time `Next step` is always the `finding_open` wording. Other guidance: both gates green → "if the design is finalized, run `promote@{target}`"; needs_decision → "awaiting your decision on {item}"; nothing further → `None`.
 
 **Targeted runs:** end the report with the gate's targeted note ("This was a targeted check — no complete cache was written. Run `{gate}@{target}` for a complete ...") after the `Next step` line. If the result contains P0/P1, run `gate-invalidate` before reporting completion.
@@ -325,6 +350,10 @@ A quality-gate run is complete only when its result is persisted and visible to 
 ==ATOM_END:report_skeleton==
 
 ### Body format (verify)
+
+The `[P0|P1|P2|P3]` on MISMATCH lines is the severity assigned by the session that raises the finding and carried in the MISMATCH block's own `Severity:` line. Deterministic Step 1 table rows keep their contract-decided grade; the final synthesis may only raise a retained finding's canonical severity conservatively — never lower it (see `framework/severity_policy.md` §9).
+
+#### Lens Body Skeletons
 
 `alignment` lens body:
 
@@ -358,8 +387,6 @@ gate_findings: none | [P0|P1] {finding};
 Suppressed by spec (N):
   - {suppressed finding} — suppressed by {spec context}
 ```
-
-The `[P0|P1|P2|P3]` on MISMATCH lines is the severity assigned by the session that raises the finding and carried in the MISMATCH block's own `Severity:` line. Deterministic Step 1 table rows keep their contract-decided grade; the final synthesis may only raise a retained finding's canonical severity conservatively — never lower it (see `framework/severity_policy.md` §9).
 
 The `Target:` line from earlier formats is now the `{layer}` field in the unified skeleton header (`candidate` | `stable`).
 
@@ -485,22 +512,6 @@ For each acceptance item in the target spec (appendix content is read as the ite
      - pass_condition: "error message is user-friendly"
      - Reason: requires human judgment, no deterministic grep available
 
-Per-item report format:
-
-```
-{item.id}: ALIGNED
-  - evidence: grep -n "201" src/api/user.go → line 42
-  - deterministic: true
-
-{item.id}: MISMATCH
-  - Spec pass_condition: "returns 201"
-  - Implementation: handler at src/api/user.go:42 returns 200
-
-{item.id}: CANNOT_DETERMINE
-  - pass_condition: "handles 1000 concurrent requests"
-  - Reason: requires load testing, not statically verifiable
-```
-
 **PASS (ALIGNED):** All items have structurally consistent implementations
 
 **FAIL (MISMATCH):** One or more items have structural inconsistencies — defer classification to Step 7
@@ -516,6 +527,24 @@ Ownership note: the `alignment` lens records whether tests exist for an item (co
 This sub-check identifies significantly implied but missing test scenarios; the alignment reviewer reports them per acceptance item.
 
 **Language-agnostic approach:** The agent reads test files and self-identifies the testing framework (mock libraries, assertion libraries, test runner conventions) rather than relying on a hardcoded language list. When a test framework or assertion style is unfamiliar, the agent reports CANNOT_DETERMINE rather than guessing.
+
+### Per-Item Report Format and Test Discovery
+
+Per-item report format:
+
+```
+{item.id}: ALIGNED
+  - evidence: grep -n "201" src/api/user.go → line 42
+  - deterministic: true
+
+{item.id}: MISMATCH
+  - Spec pass_condition: "returns 201"
+  - Implementation: handler at src/api/user.go:42 returns 200
+
+{item.id}: CANNOT_DETERMINE
+  - pass_condition: "handles 1000 concurrent requests"
+  - Reason: requires load testing, not statically verifiable
+```
 
 For a coverage run, the coordinator locates relevant test and code-context file paths before `gate-plan`, without assessing their behavior, and lists every discovered file in the input manifest (`--inputs-file`). Include files already in the declared implementation surface so delta/repair can detect evidence missing from the baseline. This discovery covers every acceptance item in full, delta, and repair modes. The independent alignment reviewer reads and declares the relevant tests from its session `read_refs`; a required test or context file missing from those refs is an incomplete session, not evidence that no test exists. The coordinator recovers it by extending the open run with `specflowctl gate-extend` — accepted keys keep their verdicts — not by replanning.
 
@@ -538,18 +567,20 @@ Part A is **not** an exhaustive coverage audit. It flags obvious omissions. A si
 
 The coverage-completeness concern is recorded under the item in the verify output as an annotation. It does not change the item-level verdict (ALIGNED / MISMATCH / CANNOT_DETERMINE).
 
+**Edge case:** If acceptance item has no tests at all, the sub-check flags the missing scenarios.
+
+**Evidence-carry check (items citing `affects.evidence_files`):**
+
+An item may cite read-only evidence files — typically tests or code owned by another unit — in `affects.evidence_files`. For each cited file, the item judgment verifies that the file actually carries the behavior or assertion the item claims: locate the referenced behavior in the cited file and confirm it matches the item's `description` or `pass_condition` at the claimed location. A citation that does not resolve to the claimed behavior is a MISMATCH of this item (root cause and direction per Step 7). The cited file's own quality is never judged here — it is another unit's implementation surface, reviewed by its owner's gates — and an evidence file never enters this unit's quality coverage keys. The unit's own test files keep their quality-lens grading.
+
+#### Annotation Output Format
+
 ```
 {item.id}: ALIGNED
   - evidence: grep -n "201" src/api/user.go → line 42
   - deterministic: true
   Part A: No concerns
 ```
-
-**Edge case:** If acceptance item has no tests at all, the sub-check flags the missing scenarios.
-
-**Evidence-carry check (items citing `affects.evidence_files`):**
-
-An item may cite read-only evidence files — typically tests or code owned by another unit — in `affects.evidence_files`. For each cited file, the item judgment verifies that the file actually carries the behavior or assertion the item claims: locate the referenced behavior in the cited file and confirm it matches the item's `description` or `pass_condition` at the claimed location. A citation that does not resolve to the claimed behavior is a MISMATCH of this item (root cause and direction per Step 7). The cited file's own quality is never judged here — it is another unit's implementation surface, reviewed by its owner's gates — and an evidence file never enters this unit's quality coverage keys. The unit's own test files keep their quality-lens grading.
 
 ---
 
@@ -593,13 +624,17 @@ An item may cite read-only evidence files — typically tests or code owned by a
 - Test files are not scope violations: the declared implementation files (`implementation_surface`/`affects.files`) declare implementation scope; a relevant test file absent from them is context evidence, never an under-declared-scope finding.
 - Dependency files (read for context but not part of the implementation) are likewise context evidence, never scope findings.
 
-An under-declared file is a declaration defect, not a read-ref gap: report it as a scope finding whose fix updates the candidate spec's declaration, then re-plan verify. `gate-extend` does not substitute — it broadens what a session may read, not what the spec declares (framework/shared_judgments.md §Required tasks). Related evidence the reviewer needs to read but that is not implementation participation goes through the input manifest or `gate-extend` instead.
+An under-declared file is a declaration defect, not a read-ref gap: report it as a scope finding whose fix updates the candidate spec's declaration, then re-plan verify.
 
 **PASS:** All declared implementation files are accurate and complete
 
 **FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found — defer classification to Step 7
 
 **Check method:** declared implementation files (`implementation_surface` × `affects.files`) × actual implementation — triple cross-reference (files, rules, dependencies)
+
+### Gate-Extend and Input Manifest
+
+`gate-extend` does not substitute — it broadens what a session may read, not what the spec declares (framework/shared_judgments.md §Required tasks). Related evidence the reviewer needs to read but that is not implementation participation goes through the input manifest or `gate-extend` instead.
 
 ---
 
@@ -756,7 +791,7 @@ Do not classify the resolution direction — defer to Step 7.
 
 ## Step 6 — Stub & Placeholder Scan
 
-**Purpose:** Ensure no incomplete implementation hides behind a structurally complete surface. The scan is deterministic and **tool-performed**: `gate-plan` scans the declared code surface with the fixed stub patterns and records candidate hits in the run's plan notice; item missions carry the hit list in their session context. The reviewer classifies the tool's candidates — it does not grep by hand. Debt markers (TODO/FIXME/XXX/HACK) are NOT scanned here — they are owned by the `quality` lens (Dimension 7).
+**Purpose:** Ensure no incomplete implementation hides behind a structurally complete surface. Debt markers (TODO/FIXME/XXX/HACK) are NOT scanned here — they are owned by the `quality` lens (Dimension 7).
 
 **Execution steps:**
 
@@ -764,11 +799,23 @@ Do not classify the resolution direction — defer to Step 7.
    - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled (do not classify yet — defer to Step 7)
    - Value is not `<pending>` but resolves to no file → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
 
-2. **Adjudicate the tool's candidates:** the plan notice lists every candidate hit as `{file}:{line}: {text}` over the declared code surface (patterns: `return null`, `return []`, `placeholder`, `not…implement`, `return Response.json({})`, `w.WriteHeader(204)`). Classify each hit:
+2. **Adjudicate the tool's candidates:** Classify each hit:
    - **RELEVANT** — a real stub or placeholder in implementation code → MISMATCH (do not classify yet — defer to Step 7)
    - **IRRELEVANT** — an idiomatic construct, e.g. Go `return nil`, error sentinels, test fixtures
 
 3. **Residue:** a stub pattern you encounter while reading a file that the scan did not list (the scan covers the declared surface only) is reported the same way: record the per-file result and classify it.
+
+**PASS:** No RELEVANT stubs or placeholders found
+
+**FAIL (MISMATCH):** One or more files contain a RELEVANT stub — defer classification to Step 7
+
+**Check method:** Tool-performed deterministic scan (plan-time) + reviewer adjudication of the candidates
+
+### Plan-Time Scan and Report Format
+
+The scan is deterministic and **tool-performed**: `gate-plan` scans the declared code surface with the fixed stub patterns and records candidate hits in the run's plan notice; item missions carry the hit list in their session context. The reviewer classifies the tool's candidates — it does not grep by hand.
+
+The plan notice lists every candidate hit as `{file}:{line}: {text}` over the declared code surface (patterns: `return null`, `return []`, `placeholder`, `not…implement`, `return Response.json({})`, `w.WriteHeader(204)`).
 
 Per-file result format:
 
@@ -784,12 +831,6 @@ grep -n "return null\|return \[\]\|\bplaceholder\b\|not.*implement" <file>
 grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
 ```
 
-**PASS:** No RELEVANT stubs or placeholders found
-
-**FAIL (MISMATCH):** One or more files contain a RELEVANT stub — defer classification to Step 7
-
-**Check method:** Tool-performed deterministic scan (plan-time) + reviewer adjudication of the candidates
-
 ---
 
 ## Step 7 — First-principles divergence analysis
@@ -800,15 +841,13 @@ grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
 
 For each MISMATCH detected in Steps 1-6, the assigned **read-only item reviewer** completes Step 7 in the same session. Analyze each item independently, including when several items share a batch. The initial report includes the verdict, root cause, suggested direction, severity, confidence, evidence and affected keys; acceptance completes both alignment and divergence analysis.
 
+#### Full and Delta Coverage Sets
+
 > **Full mode note:** In full mode the coverage set contains `item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>` and `architecture:<unit>`. The agent batches uncovered tasks into sessions with the same kind and lens (see `framework/verification_scope.md` §Coverage model). A session that covers item(s) reports the alignment verdicts; each `MISMATCH` also names its affected keys and includes the completed Step 7 analysis.
 
 > **Delta mode note:** A delta/repair run fixes the re-run coverage set (the stale keys plus the current keys the baseline never declared). Carried items bring their prior structured judgment into the run. The final synthesis consumes the new resolved judgments and the carried judgments together.
 
 ### Item reviewer protocol
-
-Before reviewing uncovered `item` keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies Steps 1-7, exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
-
-The item reviewer locates and analyzes the mismatch while executing Steps 1-7. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. It reads whatever context it needs from its session read refs; reports carry no declarations. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it adds the path to the open run with `specflowctl gate-extend --run {run_id} --paths <path>` — every accepted session keeps its verdict, and the uncovered key re-missions with the extended read refs. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
 
 For surplus mismatches, the first-principles analysis additionally evaluates:
 - Is this a genuine design decision that belongs in the spec? → **spec_gap**
@@ -884,6 +923,26 @@ If version control is available, query `git log` for file timestamps. If no test
 
 The signal layer is supplementary — it does not override first-principles reasoning. Its primary use is to provide confidence context when the content-level analysis alone cannot reach high confidence.
 
+```
+Severity: {P0 | P1 | P2 | P3}
+  - Derive from the declaration's table row in Step 1 (severity if missing).
+  - For surplus findings: determine by the construct's semantic role —
+    public API = P0/P1, internal implementation detail = P2.
+  - For scope findings (Step 3): annotative role → default P2.
+  - For acceptance findings (Step 2): map the pass_condition's semantic role
+    to the Step 1 severity table — contractual assertions (status codes,
+    response fields, error codes) take the table row's severity for the
+    declaration type they express; descriptive assertions default to P2.
+  - For stub findings (Step 6): a RELEVANT stub or placeholder in production
+    code defaults to P1; a stub in test-only or tooling code defaults to P2.
+```
+
+#### Mission Submission and Report Contract
+
+Before reviewing uncovered `item` keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies Steps 1-7, exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
+
+The item reviewer locates and analyzes the mismatch while executing Steps 1-7. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. It reads whatever context it needs from its session read refs; reports carry no declarations. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it adds the path to the open run with `specflowctl gate-extend --run {run_id} --paths <path>` — every accepted session keeps its verdict, and the uncovered key re-missions with the extended read refs. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
+
 **Output format:**
 
 ```
@@ -907,17 +966,6 @@ Files involved: {spec and/or code file paths the suggested fix would touch}
   - List every file the fix would modify; the main agent uses this for batch classification scope evaluation
   {item.id}: {file}: {declaration}   # declaration = `acceptance_item:{item.id}` for the item's own spec block, a section-region heading, 1-based closed line ranges, or "all"
   - These declarations travel verbatim into the verify cache: the item's own spec block is declared as `acceptance_item:{item.id}` (the item region — located by id, so editing or reordering other items never stales this judgment), section-region headings name regions of the unit's own main spec (recorded per item in the cache's `checks` mapping), line ranges and `all` declare code-file scope; `gate-submit` validates the declarations against that session's `read_refs`, and `gate-finalize` computes the CIDs and writes the cache. The declared regions must cover every region this judgment depended on, including called functions and referenced structures
-Severity: {P0 | P1 | P2 | P3}
-  - Derive from the declaration's table row in Step 1 (severity if missing).
-  - For surplus findings: determine by the construct's semantic role —
-    public API = P0/P1, internal implementation detail = P2.
-  - For scope findings (Step 3): annotative role → default P2.
-  - For acceptance findings (Step 2): map the pass_condition's semantic role
-    to the Step 1 severity table — contractual assertions (status codes,
-    response fields, error codes) take the table row's severity for the
-    declaration type they express; descriptive assertions default to P2.
-  - For stub findings (Step 6): a RELEVANT stub or placeholder in production
-    code defaults to P1; a stub in test-only or tooling code defaults to P2.
 Confidence: {high | medium | low}
 Rationale: {2-3 sentence first-principles reasoning chain}
 Signal layer: {condensed metadata summary, if collected}
@@ -977,19 +1025,24 @@ Re-verification failure → item moves to the decision group. This runs before e
 
 ### Final synthesis (only when relationships are assigned or findings exist)
 
+The independent final-synthesis executor may raise each retained finding's canonical severity conservatively per `framework/severity_policy.md` §9 before its synthesis result is accepted:
+- Each finding's severity is assigned by the session that raised it; the final synthesis never lowers it
+- On retain or merge it may raise a finding's canonical severity when the read evidence proves the impact is larger than the graded severity: read at least one target file beyond the surface it was graded on that its impact claim depends on (a caller in a dependency unit, the callee implementation, or the appendix governing the affected behavior), and verify the §9.3 boundary holds against the read evidence
+- Evidence rules (§9.4): raising requires positive evidence read from the target; no evidence → keep the session-assigned severity
+- Deterministic severity mappings (e.g. Step 1 declaration table rows) keep their contract-decided grade
+- The canonical severities drive the derived counts and blocking; they are not restated as a report section
+
+A failed relationship finding that restates a root cause already stated by an input finding must merge the input finding into it (`merged -> {new_id}`); the group is counted once. A failed relationship always reports item `FAIL` with a new retained finding, at any severity, while the `Cross-check:` summary is `FAIL` only when that new finding is P0/P1 — a failed item carrying only P2/P3 findings keeps the summary `<passed>/N PASS`.
+
+#### Final Synthesis Mission and Tool Contract
+
 When the plan assigns relationships or the primary pass produced findings, one independent read-only final session runs last (generated with `specflowctl gate-mission --run {run_id} --final --format prompt`, recorded with `specflowctl gate-submit --run {run_id} --session cross --keys cross --report PATH`; a run with neither assigned relationships nor findings finalizes directly). The final session checks only the assigned relationships and disposes existing findings; it does not repeat local checks. Its selected names and per-relationship dependency declarations are defined in `framework/verification_scope.md` §Final synthesis. Local PASS results do not remove this work. It consumes the primary sessions' structured findings and the complete source context:
 
 1. Collect all accepted alignment/quality results and every carried judgment.
-2. The independent final-synthesis executor may raise each retained finding's canonical severity conservatively per `framework/severity_policy.md` §9 before its synthesis result is accepted:
-   - Each finding's severity is assigned by the session that raised it; the final synthesis never lowers it
-   - On retain or merge it may raise a finding's canonical severity when the read evidence proves the impact is larger than the graded severity: read at least one target file beyond the surface it was graded on that its impact claim depends on (a caller in a dependency unit, the callee implementation, or the appendix governing the affected behavior), and verify the §9.3 boundary holds against the read evidence
-   - Evidence rules (§9.4): raising requires positive evidence read from the target; no evidence → keep the session-assigned severity
-   - Deterministic severity mappings (e.g. Step 1 declaration table rows) keep their contract-decided grade
-   - The canonical severities drive the derived counts and blocking; they are not restated as a report section
-3. `gate-submit` verifies that the final synthesis disposes every input finding exactly once, supplies the relationship results and one reasoned `Quality conclusion` for every design and architecture key (including carried keys), and binds every consumed result digest. The tooling derives the effective status map from the terminal retained set — the report carries no status lines. A failed relationship finding that restates a root cause already stated by an input finding must merge the input finding into it (`merged -> {new_id}`); the group is counted once. A failed relationship always reports item `FAIL` with a new retained finding, at any severity, while the `Cross-check:` summary is `FAIL` only when that new finding is P0/P1 — a failed item carrying only P2/P3 findings keeps the summary `<passed>/N PASS`.
-4. The main agent classifies the retained findings per §Batch classification (skip when the activation threshold is not met); this presentation classification cannot change severity, retention, or the gate result
-5. Present the tool-derived consolidated findings summary (§Summary format)
-6. Wait for the user's decision per HARD RULE 3a:
+2. `gate-submit` verifies that the final synthesis disposes every input finding exactly once, supplies the relationship results and one reasoned `Quality conclusion` for every design and architecture key (including carried keys), and binds every consumed result digest. The tooling derives the effective status map from the terminal retained set — the report carries no status lines.
+3. The main agent classifies the retained findings per §Batch classification (skip when the activation threshold is not met); this presentation classification cannot change severity, retention, or the gate result
+4. Present the tool-derived consolidated findings summary (§Summary format)
+5. Wait for the user's decision per HARD RULE 3a:
    - **Batch group:** one decision on the whole group per §Batch classification.
    - **Decision group:** present each finding with its suggested direction and wait for the user's decision. Do not offer a structured resolution menu.
 
