@@ -99,7 +99,7 @@ Or `rule_exceptions: none`. Rules:
 
 Everything else in the unit (body prose, evidence appendices, background, motivation, design discussion) is not a formal behavior carrier.
 
-**Contract statement definition:** A contract statement is a statement declaring the unit's externally-observable behavior — behavior a caller or dependent unit must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a caller must respect). Internal implementation detail (internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, configuration layout) is not a contract statement even when it states concrete values — it is design expression, and a dependent unit does not read it through carriers. The **external-visibility boundary** is this definition's core judgment: a statement declaring externally-observable behavior is a contract statement; internal implementation detail is design expression. `validate` Check 5h enforces this boundary on prose, and Check 5a applies the same boundary to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
+**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a caller or dependent unit must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a caller must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because a dependent unit does not read it through carriers. `validate` Check 5h enforces this boundary on prose, and Check 5a applies it to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
 
 Contract statements must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5e), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers; the run records the dependency file's whole content as evidence, so any edit to it is visible to the change review.
 
@@ -215,7 +215,7 @@ acceptance_item_set:
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
 | `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
-| `verification_method` | yes | How to verify (e.g. "Go test for demo behavior") |
+| `verification_method` | yes | The verification method in one sentence (e.g. "Go test for demo behavior"). No step-by-step test plan and no test-double names — see §15.3 |
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |
 | `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
@@ -359,7 +359,7 @@ They do not replace the unit main Spec.
 
 Appendix ownership is derived from the appendix path and appendix frontmatter, not from a main-Spec index.
 
-**Contract content requires acceptance coverage:** API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are part of the unit's formal behavior (see §4) and must have a corresponding acceptance item in the main spec — scoped to externally-observable content per §4's external-visibility boundary: internal field names, internal field layouts, internal timing — including retry/backoff values, internal data structures and their operations, internal function behavior, and configuration layout are design expression and create no coverage obligation. `validate` Check 5a fails appendix contract content without such coverage — the acceptance item set is the complete formal behavior carrier, and the cross-unit check reads dependency units through it. Ordinary design appendices and evidence appendices carry no contract-coverage requirement beyond the standard behavior-domain coverage checks.
+**Contract content requires acceptance coverage:** API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are part of the unit's formal behavior (see §4) and must have a corresponding acceptance item in the main spec — scoped to externally-observable content per §15.2's external-visibility boundary: internal implementation detail declared in an appendix is design expression and creates no coverage obligation. `validate` Check 5a fails appendix contract content without such coverage — the acceptance item set is the complete formal behavior carrier, and the cross-unit check reads dependency units through it. Ordinary design appendices and evidence appendices carry no contract-coverage requirement beyond the standard behavior-domain coverage checks.
 
 Each unit appendix must:
 
@@ -444,7 +444,7 @@ A Spec is a design document for human readers first, and an execution contract s
 3. **Implementation guidance layer** — entry points, step-by-step read/write behavior, boundary exposure, and result shape, with all decisions closed (serves the engineer).
 4. **Acceptance contract layer** — the acceptance item set, kept minimal: verifiable behavior contracts only (see §7 Acceptance Criteria).
 
-**Example document shape** for a unit main Spec:
+**Document shape (normative order — enforced by §13.9 and validate Check 1):** for a unit main Spec:
 
 ```text
 Background & value     → what problem this unit solves and where it sits in the system
@@ -460,7 +460,7 @@ Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-p
 
 ### Spec-First Planning and Execution Lifecycle
 
-A Spec is not a post-hoc implementation journal; it is the upstream design driver that leads development.
+A Spec is not a post-hoc implementation journal (§15.1 Current truth only); it is the upstream design driver that leads development.
 
 1. **Planning Phase (Proposed Changes Mandate):** When an agent or engineer plans a feature, refactoring, or bug fix, any affected unit's candidate spec must be explicitly declared as a first-class change item before code files. If no candidate spec exists yet, running `specflowctl fork --unit <name>` (or creating the candidate spec) is a declared prerequisite. If the modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria, an explicit one-sentence Spec Impact Assessment must state that fact. Silence on spec impact is prohibited.
 2. **Execution Phase (Spec-First Order):** When implementing the approved plan, the candidate spec must be updated first (establishing new constraints, updated state flow, and acceptance criteria), and only then may implementation code and tests be written or modified to satisfy the spec.
@@ -523,8 +523,9 @@ The unit's own main spec must be section-splittable: the content is split by `##
 6. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
 7. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and protocol appendices are contract files and need no section structure.
 8. **Reserved heading name:** `frontmatter` is a reserved spelling — it names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be located by section structure (validate Check 8 fails the reserved name). Choose a different heading text.
+9. **Fixed section order:** value/background and design-narrative sections come first, and the acceptance item set is the **last** content of the file — no heading of any level (`#` through `######`, not only `##`) and no narrative follows the item set (see §9 Document shape). The acceptance section contains only the acceptance item set: a `###`-deep heading that only groups items is allowed, narrative content inside the acceptance section is not — narrative belongs in an earlier section, and set-level content inside the item set is attributed to the last item's region (see §7). Governance and alignment sections (for example rule alignment) are content sections and precede the acceptance item set.
 
-A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, or stray pre-heading content) fails validate Check 1/8; the fix direction is restructuring the spec per this section.
+A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, stray pre-heading content, or a section order that violates item 9) fails validate Check 1/8; the fix direction is restructuring the spec per this section.
 
 ## 14. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
 
@@ -534,9 +535,9 @@ A specification requires determinism to be verifiable, but over-specification de
 
 Whether a concrete value or assertion is an acceptable **Contract Anchor** or an unacceptable **Over-Specification** is determined by who owns the underlying truth:
 
-1. **Ownership Law**: A unit may declare concrete constants, invariants, and boundaries **only** for the behaviors and data structures that it directly owns.
-   - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), domain boundaries (`maxThinkAttempts = 3`), and exported serialization keys (`session_id`).
-   - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables.
+1. **Ownership Law**: A unit may declare concrete constants, invariants, and boundaries **only** for the behaviors and data structures that it directly owns, and **only when they are externally observable** (§15.2) — a value a caller or dependent unit reads or is bounded by.
+   - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), caller-facing limits (`maxLoops = 20` on a run request, `tokenExpiry = 3600s` on an issued token), and exported serialization keys (`session_id`).
+   - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables. An owner declaring an internal value no external consumer can observe — an internal buffer size, an internal retry count, an internal loop cap — is over-specification under §15.2, not a contract anchor.
 
 2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** (acceptance item sets or protocol appendices) exported by collaborating units.
    - *Allowed*: Referencing exported contract constants (e.g. `contracts.SpanAttr*`), standard protocol events (`DELEGATE_TASK_REQUESTED`), or describing behaviorally what must be exchanged.
@@ -569,7 +570,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 | **Concurrency & State** | "Concurrent calls to `Increment()` are atomic and thread-safe" | "Must synchronize using `sync.RWMutex` guarding `map[string]int`" |
 | **Async Operations** | "Waits for `TaskCompleted` event or times out after 10s with `TIMEOUT`" | "Sleeps 500ms then reads database row" |
 | **Acceptance Scenarios** | "Given an authenticated admin user" | "Given `mockRunner` configured with `test_tool_v1`" |
-| **Domain Limits** | `maxRetryAttempts = 3`, `tokenExpiry = 3600s` | Hardcoding developer local machine config file path `/Users/alice/.config` |
+| **Domain Limits** | Caller-facing limits: `tokenExpiry = 3600s`, `rateLimit = 100 req/min`, `maxLoops = 20` on a request | Internal limits no consumer can observe (internal buffer sizes, internal retry counts) per §15.2, and hardcoding developer local machine config file path `/Users/alice/.config` |
 
 ### 14.4 File Associations and Shared Agreements
 
@@ -580,3 +581,55 @@ Units describe independent responsibilities. Behavior, data meaning and shared a
 Declare paths relevant to the acceptance item. Whether each declaration actually participates in the item's behavior is a spec-vs-code judgment owned by verify Step 3 (`framework/unit_verify_checklist.md`); validate Check 6 judges the declaration's own validity — resolution, ownership, path existence, mutual consistency — and reads no code. Check 7 owns shared-agreement single-source consistency; Check 9 reports the mechanical file-association audit. Unit responsibility boundaries remain the responsibility of the design and scope checks. File overlap alone is not a finding.
 
 `specflowctl surfaces` derives current and stable file associations and displays each associated unit's separate design result alongside reusable public code judgments. See `framework/shared_judgments.md` for verification and immutable record storage.
+
+## 15. Spec Content Boundary
+
+This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1, Check 2 Step 5, Check 5a, Check 5e, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
+
+**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** The judgment test for "externally observable" is: can a caller or dependent unit of this unit observe it, or be affected by it? If not, the content belongs to the implementation — the code and its tests — not to the Spec, even when this unit owns it.
+
+### 15.1 Current truth only
+
+The Spec states the current design. It must not carry change history or process traces:
+
+- changelog or revision sections (for example `Version Notes`, `Changelog`)
+- review-round narration (gate-fix rounds, revalidate/reverify round summaries)
+- removed-behavior narration ("X is removed", "there is no longer a Y", "previously Z")
+- migration or replacement history
+
+Change history belongs to version control. When a behavior is retired, its narration is retired with it (§9 Cleanup obligation); the replacement's rationale — including the rejected alternative — is current design expression and stays.
+
+### 15.2 Externally observable only
+
+The Spec states externally observable behavior: content a caller or dependent unit reads to use this unit safely.
+
+**Prohibited — internal implementation detail**, whether of this unit or of another unit:
+
+- internal type and struct definitions, internal field names and layouts
+- internal function or method names, internal call sequences and step orders
+- internal data structures and their operations
+- internal buffer sizes, queue capacities, and thresholds no external consumer can observe
+- internal retry/backoff values and internal timing
+- internal rendering order, prompt block layout, internal section ordering
+- internal module, package, or file layout; code file paths in narrative
+- language-level primitives (`sync.RWMutex`, `map[string]any`, channel primitives)
+
+**Allowed — externally observable:**
+
+- entry points, inputs, and outputs
+- public data formats crossing the boundary (field/type/enum names a consumer reads)
+- error codes and status codes
+- protocol names and formats
+- timing and consistency guarantees a caller must respect (sync vs async, ordering, timeouts)
+- observable limits and configuration a caller sets or is bounded by
+
+§14.1's Ownership Law governs who may declare a contract anchor across units; it does not exempt a unit from this boundary for its own internals.
+
+### 15.3 Not stated elsewhere
+
+- **No test execution recipes and no test doubles.** `verification_method` states the method in one sentence (for example "Go test for demo behavior"). Step-by-step test plans, expected call sequences against stubs, and test-double names belong in the test code, not the Spec (see §14.2 Anti-Pattern C).
+- **Each statement is stated once.** The design narrative states how the unit works and why; the acceptance item set states what must hold for the implementation to be accepted. Mechanism narration inside an acceptance item duplicates the design narrative and is removed — the item keeps the verifiable condition.
+
+### 15.4 Section order
+
+Value/background and design-narrative sections come first; the acceptance item set is the last content of the file. The structural rule is §13.9.

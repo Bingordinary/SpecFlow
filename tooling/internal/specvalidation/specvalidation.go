@@ -12,6 +12,10 @@
 //  9. Surface associations (declarations resolve; file sharing is allowed)
 //  10. Prose path hygiene (source paths in narrative text — WARNING, advisory)
 //  11. Environment agnosticism (dev-machine paths, local addresses, credentials)
+//  12. Reserved content headings (changelog/revision sections — guide §15.1)
+//  13. Process traces (change-history narration — WARNING, guide §15.1)
+//  14. Test doubles (test-double names in the spec — WARNING, guide §15.3)
+//  15. verification_method shape (one-sentence method — guide §15.3)
 package specvalidation
 
 import (
@@ -55,7 +59,7 @@ type Result struct {
 	Checks []CheckResult
 }
 
-// ValidateCandidate runs all 11 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 15 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -70,6 +74,10 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkSurfaceAssociations(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkProseHygiene(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkEnvironmentAgnosticism(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkReservedContentHeadings(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkProcessTraces(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkTestDoubles(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkVerificationMethodShape(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {
