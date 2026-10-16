@@ -79,7 +79,7 @@ func FormatResult(r *RuleResult) string {
 	if !r.Passed {
 		buf.WriteString("\nFix the issues above and re-run validate.\n")
 	} else {
-		buf.WriteString("\nGo-level checks passed. Agent should complete Check 7 (Rule Body Quality) before writing cache.\n")
+		buf.WriteString("\nGo-level checks passed. Agent should complete Check 6 (Rule Body Quality) before writing cache.\n")
 	}
 	return buf.String()
 }

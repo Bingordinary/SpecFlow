@@ -52,12 +52,12 @@ func TestInitCreatesValidRunState(t *testing.T) {
 	if !containsString(routingSlice.InputFiles, "framework/operations/version.md") {
 		t.Fatalf("expected version policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
-	if !strings.Contains(routingSlice.ReviewQuestion, "next, validate, verify, review, and promote") {
-		t.Fatalf("expected the command policy slice to cover all five workflow commands, got %q", routingSlice.ReviewQuestion)
+	if !strings.Contains(routingSlice.ReviewQuestion, "next, validate, verify, and promote") {
+		t.Fatalf("expected the command policy slice to cover all four workflow commands, got %q", routingSlice.ReviewQuestion)
 	}
 	commandConvergenceSlice := findSlice(t, state, "command_to_process_convergence")
-	if !strings.Contains(commandConvergenceSlice.ReviewQuestion, "next, validate, verify, review, promote") {
-		t.Fatalf("expected the command convergence slice to cover all five workflow commands, got %q", commandConvergenceSlice.ReviewQuestion)
+	if !strings.Contains(commandConvergenceSlice.ReviewQuestion, "next, validate, verify, promote") {
+		t.Fatalf("expected the command convergence slice to cover all four workflow commands, got %q", commandConvergenceSlice.ReviewQuestion)
 	}
 
 	truthSlice := findSlice(t, state, "truth_and_implementation_gates")

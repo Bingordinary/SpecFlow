@@ -269,10 +269,10 @@ The snapshot is recorded by the tooling version that opened the operation. A sta
     - check whether a file path may be written under current governance constraints
     - `validate write --path <path>` checks whether a path is in an allowed write zone under current governance constraints. The path may be absolute or relative to the current working directory; in-repository paths are matched against the governed write zones enumerated under §Governed write zones above
   26. `validate candidate --unit UNIT`
-    - validate candidate spec structure (checks: frontmatter, acceptance items, anchor integrity, references, appendices, body layer-path check, dependency cycle check, region locatability)
+    - validate candidate spec structure (15 checks: frontmatter; acceptance items; anchor integrity; references; appendices; body layer-path check; dependency cycle check; region locatability; surface associations; prose path hygiene; environment agnosticism; reserved content headings; process traces; test doubles; `verification_method` shape)
   27. `validate rule --id RULE_ID`
     - validate candidate rule structure (checks: frontmatter, ID/scope consistency, promotion_owner_unit warning, prohibited fields)
-    - File Path Consistency (Check 3) and Rule Body Quality (Check 8) are agent-only, not covered by this command
+    - File Path Consistency (Check 3) and Rule Body Quality (Check 6) are agent-only, not covered by this command
   28. `operation open`
     - declare a bounded change scope and freeze it (see §Operation scope): `operation open (--unit NAME | --rule ID)? [--allow PATH]... [--require-spec PATH]... [--baseline REF] [--parent OP_ID]`
     - resolves the spec-derived scope (target spec files, `implementation_surface`, `affects.files`) plus the caller-declared `--allow` entries, rejects entries inside denied write zones or the exclusions, records the starting commit and the working-tree snapshot that later checks measure against, writes `meta/operations/<operation_id>.json`, and prints the operation id and the frozen scope

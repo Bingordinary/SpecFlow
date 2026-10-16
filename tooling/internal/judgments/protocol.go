@@ -22,11 +22,11 @@ type standardKey struct{ gate, targetKind string }
 //
 // spec_writing_guide.md belongs to every set because every gate that judges a
 // spec judges it by that guide: unit validate Check 10 applies its §9 Reader
-// Contract, Check 2 its §9 decision closure, Check 5 its §4 external-visibility
-// boundary and §Acceptance Item Granularity, Check 7 its §14 Truth Ownership;
-// rule validate Checks 2-3 apply its §6 and §10; verify Step 2 and Step 7 apply
-// its §4 and §14. Omitting it would let a guide edit reuse a conclusion the
-// current standard no longer supports (framework/spec_flow_review.md §2.17).
+// Contract, Check 2 its §9 decision closure, Check 5 its §15.2 external-visibility
+// boundary and §Acceptance Item Granularity, Check 7 its §14 Truth Ownership and
+// §15.2 cross-unit; rule validate Checks 2-3 apply its §6 and §10; verify Step 2
+// and Step 7 apply its §4 and §14. Omitting it would let a guide edit reuse a
+// conclusion the current standard no longer supports (framework/spec_flow_review.md §2.17).
 //
 // framework/validation_cache.md is deliberately absent from every standard:
 // no mission assembles a prompt from it. That omission is the only one, and it

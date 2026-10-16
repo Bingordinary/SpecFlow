@@ -56,7 +56,7 @@ Caches satisfy gates only when a complete-coverage run passed. Targeted runs nev
 
 **State transition lookup table for a normal unit (use only after a quality-check or completion signal):**
 
-This table maps the boolean cache dimensions to the disclosure text and suggested action. On a completion signal, apply the publication prerequisites first: a rule blocker overrides the table's promote suggestion, while a global advisory does not. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. When `candidate_exists` is Y and `validate_fresh` is N, `verify_fresh` is N/A because verify is not actionable until validate passes.
+This table maps the boolean cache dimensions to the disclosure text and suggested action. On a completion signal, apply the publication prerequisites first: a rule blocker overrides the table's promote suggestion, while a global advisory does not. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. Otherwise the rows below are authoritative: `validate_fresh` and `verify_fresh` are recorded independently, so a passed verify is still disclosed even when the validate cache is expired.
 
 The merged verify cache (both lenses) is required for promote: when `verify_result.md` is missing, stale, does not cover both lenses, or is `blocking: true`, the agent must disclose the gap before promote and advise running `verify@{unit}`.
 
@@ -67,7 +67,7 @@ A fresh cache always means a complete-coverage run passed. Targeted runs never p
 | candidate_exists | validate_fresh | verify_fresh | Disclose | Then offer |
 |---|---|---|---|---|
 | N | N/A | N/A | "No candidate spec exists" | "You can start writing a candidate spec to record your design." |
-| Y | N | N/A | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
+| Y | N | N | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
 | Y | Y | N | "Candidate exists, validate has passed all checks, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
 | Y | N | Y | "Candidate exists, verify has passed all items, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
 | Y | Y | Y | "Candidate has passed validate (all checks) and verify (all items and declared code files)." | "If the merged verify cache is missing, stale, does not cover both lenses, or has P0/P1 findings, advise running `verify@{unit}` before promote. Otherwise: 'If the design is finalized, you can promote it to stable.'" |

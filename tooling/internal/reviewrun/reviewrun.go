@@ -745,7 +745,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "concept_and_command_policy",
 			SliceType:      "local",
-			ReviewQuestion: "Do the session bootstrap, command reference, suggestion rules, and operation-scope rules define correct next, validate, verify, review, and promote behavior.",
+			ReviewQuestion: "Do the session bootstrap, command reference, suggestion rules, and operation-scope rules define correct next, validate, verify, and promote behavior.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("concepts.md"),
@@ -834,7 +834,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "command_to_process_convergence",
 			SliceType:      "cross_convergence",
-			ReviewQuestion: "Do the five commands (next, validate, verify, review, promote) converge with process closure rules.",
+			ReviewQuestion: "Do the four commands (next, validate, verify, promote) converge with process closure rules.",
 			DependsOn:      []string{"concept_and_command_policy", "review_entry_policy"},
 			InputFiles:     reviewDependencyFiles("concept_and_command_policy", "review_entry_policy"),
 		},

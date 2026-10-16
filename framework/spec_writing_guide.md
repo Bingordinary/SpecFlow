@@ -584,7 +584,7 @@ Declare paths relevant to the acceptance item. Whether each declaration actually
 
 ## 15. Spec Content Boundary
 
-This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1, Check 2 Step 5, Check 5a, Check 5e, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
+This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1 — the §15.1 mechanical pre-pass, Check 2 Step 5, Check 5a, Check 5e, Check 5h, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
 
 **The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** The judgment test for "externally observable" is: can a caller or dependent unit of this unit observe it, or be affected by it? If not, the content belongs to the implementation — the code and its tests — not to the Spec, even when this unit owns it.
 
