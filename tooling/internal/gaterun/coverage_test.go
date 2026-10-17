@@ -466,7 +466,7 @@ func TestVerifyCoverageUnionsLenses(t *testing.T) {
 	for _, ck := range run.Coverage {
 		got[ck.Key] = ck.Lens
 	}
-	want := map[string]string{"item:auth:auth.core": LensAlignment, "item:auth:auth.aux": LensAlignment, "code:src/main.go": LensQuality, "design:auth:src/main.go": LensQuality, "architecture:auth": LensQuality}
+	want := map[string]string{"item:auth:auth.core": LensAlignment, "item:auth:auth.aux": LensAlignment, "unit:auth": LensAlignment, "code:src/main.go": LensQuality, "design:auth:src/main.go": LensQuality, "architecture:auth": LensQuality}
 	if len(got) != len(want) {
 		t.Fatalf("coverage = %v, want %v", got, want)
 	}
@@ -845,7 +845,7 @@ func TestVerifyRepairRemovedFailedKeyDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a failed key no longer in the surface must degrade, not abort the plan: %v", err)
 	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "item:auth:auth.core,code:src/main.go,design:auth:src/main.go,architecture:auth" {
+	if got := strings.Join(coverageKeysOf(run), ","); got != "item:auth:auth.core,unit:auth,code:src/main.go,design:auth:src/main.go,architecture:auth" {
 		t.Fatalf("expected the full current coverage set, got %s", got)
 	}
 	if len(run.CarriedKeys) != 0 {

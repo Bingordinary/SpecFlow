@@ -23,7 +23,8 @@ Reverse surplus checks read complete associated files, then compare only structu
 | `code:<file>` | quality | Collect code facts and potential problems independently of unit-private design |
 | `design:<unit>:<file>` | quality | Actively check that unit's design requirements and decide each public observation |
 | `architecture:<unit>` | quality | Assess all six Dimension 8 fields once for the entire unit |
-| `item:<unit>:<item>` | alignment | Verify the current unit's acceptance requirement |
+| `item:<unit>:<item>` | alignment | Verify the current unit's acceptance requirement (Steps 2, 3, 4, 6, 7) |
+| `unit:<unit>` | alignment | Scan the whole unit once: Step 1 structural alignment and Step 5 implementation integrity and surplus detection; one session per run |
 
 A public file's evidence surface is what the run declares and supplies: the reviewed file itself, its cited `affects.evidence_files`, the declared dependency spec objects and applicable rules, plus the related files the coordinator supplied through the input manifest. There is no repository-wide name- or stem-based discovery: a reviewer never links a file to another because their names share a stem or a token.
 

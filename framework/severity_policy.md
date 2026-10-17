@@ -182,7 +182,7 @@ This check applies to every flow whose severity grading is part of a finding con
 
 Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, and evidence rules.
 
-Deterministic severity mappings (e.g. the `verify` Step 1 declaration table) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
+Deterministic severity mappings (e.g. the `verify` Step 1 declaration table, run by the unit-level scan session) are contract-decided and are not re-graded by this check. Judgment-based severities in flows covered by the first paragraph (subagent or reviewer grading) are always in scope.
 
 #### Current Execution Positions
 

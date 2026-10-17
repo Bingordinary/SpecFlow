@@ -49,7 +49,7 @@ func TestGateRelationshipRunsWithoutLocalFindings(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
 	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	run := mustLoadRun(t, root, runID)
 	view, err := gateRunSnapshot(root, run)
 	if err != nil || view.NextAction != "synthesize" {
@@ -241,7 +241,7 @@ func TestGateVerifyRelationshipOnlyRepairPreservesBothLenses(t *testing.T) {
 	evidence := map[string]string{"data_definition_drift": main}
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "data_definition_drift")
 	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	if _, err := grSubmitRaw(t, root, runID, "cross", relationshipReport(t, root, runID, evidence, "data_definition_drift")); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestGateFullFailureWithCarriedRelationshipKeepsRepairSmall(t *testing.T) {
 	grWriteFile(t, root, code, "package auth\n")
 	first := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
 	grSubmitOK(t, root, first, "auth.core", grVerifyItemReport("auth.core", main, code))
-	grAutoSubmitQuality(t, root, first)
+	grAutoSubmitRemaining(t, root, first)
 	if _, err := grSubmitRaw(t, root, first, "cross", relationshipReport(t, root, first, map[string]string{"contract_consistency": main}, "")); err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestCrossSynthesisStatusesAreToolDerived(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
 	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	report := fmt.Sprintf(
 		"Cross item: contract_consistency = FAIL — producer and consumer disagree\n"+
 			"Cross item finding: contract_consistency = %s/cross/F1\n"+
@@ -347,7 +347,7 @@ func TestRelationshipRestatingLocalFindingMergesToCountOnce(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
 	grSubmitOK(t, root, runID, "auth.core", grVerifyMismatchReport("auth.core", main, "src/auth.go", "P1"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	localID := grRunFindingID(runID, "auth.core", 1)
 	report := fmt.Sprintf(
 		"Cross item: contract_consistency = FAIL — the local mismatch restates the producer/consumer disagreement\n"+

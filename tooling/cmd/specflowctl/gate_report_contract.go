@@ -13,7 +13,24 @@ var unitAcceptanceSubchecks = []string{"5a", "5b", "5e", "5h"}
 var verifyItemFields = []string{"evidence", "deterministic", "Part A"}
 var qualityDimensions = []string{"module_boundaries", "responsibility_organization", "dependency_clarity", "abstraction_level", "extension_landing_points", "engineering_patterns"}
 var analysisFields = []string{"Problem", "Impact", "Root cause", "Suggested direction", "Severity", "Confidence"}
-var mismatchTypes = []string{"structural", "acceptance", "scope", "stub", "surplus"}
+
+// itemMismatchTypes is the MISMATCH vocabulary of the item sessions: Step 2
+// acceptance alignment, Step 3 scope accuracy, Step 4 retirement verification
+// (a structural residue) and Step 6 stub adjudication. Surplus detection is
+// Step 5, owned by the unit-level scan (unitMismatchTypes), so `surplus` is
+// not an item type.
+var itemMismatchTypes = []string{"structural", "acceptance", "scope", "stub"}
+
+// unitScanClasses are the structural-declaration classes Step 1 compares against
+// the implementation. The unit-level session reports one line per class so a
+// class that was never examined is visible as a missing line instead of
+// disappearing into prose.
+var unitScanClasses = []string{"api_endpoints", "function_signatures", "data_structures", "enums_constants", "error_types", "error_messages", "state_machines", "configuration_keys"}
+
+// unitMismatchTypes is the MISMATCH vocabulary of the unit-level scan: Step 1
+// structures and Step 5 Part A surplus. Scope accuracy stays with the item
+// sessions (Step 3), so an acceptance/scope/stub mismatch is rejected here.
+var unitMismatchTypes = []string{"structural", "surplus"}
 var analysisRootCauses = []string{"incomplete", "stale", "shadow_spec", "divergence", "accident", "blocked"}
 var analysisDirections = []string{"spec_gap", "code_gap", "needs_design", "blocked"}
 var analysisConfidences = []string{"high", "medium", "low"}
@@ -52,7 +69,7 @@ func verdictContractFor(kind, key string) reportVerdict {
 		v.Line = key + ". <check name>"
 		v.Allowed = []string{"PASS", "WARNING", "FAIL"}
 		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
-	case gaterun.SessionKindItem:
+	case gaterun.SessionKindItem, gaterun.SessionKindUnit:
 		v.Allowed = []string{"ALIGNED", "MISMATCH", "CANNOT_DETERMINE"}
 		v.ReasonRequiredFor = append([]string{}, v.Allowed...)
 	case gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
@@ -127,13 +144,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		switch kind {
 		case gaterun.SessionKindChecks:
 			lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
-		case gaterun.SessionKindItem:
+		case gaterun.SessionKindUnit:
 			lines = append(lines,
-				fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key),
-				"  evidence: <file:line or quoted fact>",
-				"  deterministic: <true|false>",
-				"  Part A: <concerns or No concerns>",
-				"  # for a MISMATCH, append the finding fields inside the same item block:",
+				fmt.Sprintf("%s: <ALIGNED|MISMATCH ("+strings.Join(unitMismatchTypes, "|")+")|CANNOT_DETERMINE> — <reason>", key),
+				"  # for a MISMATCH, append one finding block per retained mismatch (each Step 1 declaration-class or Step 5 surplus mismatch), in report order:",
 				"  Problem: <one line>",
 				"  Evidence:",
 				"    - spec: <quoted fact or absence>",
@@ -143,7 +157,26 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 				"  Root cause: <incomplete|stale|shadow_spec|divergence|accident|blocked>",
 				"  Suggested direction: <spec_gap|code_gap|needs_design|blocked>",
 				"  Severity: <P0|P1|P2|P3>",
-				"  Confidence: <high|medium|low>")
+				"  Confidence: <high|medium|low>",
+				"  # repeat the whole finding block (Problem: onward) once per retained mismatch; each block carries its own root cause, direction, and severity")
+		case gaterun.SessionKindItem:
+			lines = append(lines,
+				fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key),
+				"  evidence: <file:line or quoted fact>",
+				"  deterministic: <true|false>",
+				"  Part A: <concerns or No concerns>",
+				"  # for a MISMATCH, append one finding block per retained mismatch, in report order:",
+				"  Problem: <one line>",
+				"  Evidence:",
+				"    - spec: <quoted fact or absence>",
+				"    - code: <quoted fact or absence>",
+				"  Impact: <one line>",
+				"  Fix: <repair>",
+				"  Root cause: <incomplete|stale|shadow_spec|divergence|accident|blocked>",
+				"  Suggested direction: <spec_gap|code_gap|needs_design|blocked>",
+				"  Severity: <P0|P1|P2|P3>",
+				"  Confidence: <high|medium|low>",
+				"  # repeat the whole finding block (Problem: onward) once per retained mismatch; each block carries its own root cause, direction, and severity")
 		case gaterun.SessionKindCode:
 			lines = append(lines,
 				"File: "+key,
@@ -217,10 +250,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		}
 	}
 	if gaterun.IsItemKind(session.Kind) {
-		add("mismatch-type", "MISMATCH requires one of: "+strings.Join(mismatchTypes, ", "), "")
+		add("mismatch-type", "MISMATCH requires one of: "+strings.Join(itemMismatchTypes, ", ")+"; when several are retained the verdict-line type names the primary one and each finding block carries its own root cause and severity", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
-		c.Requirements[len(c.Requirements)-1].Allowed = mismatchTypes
+		c.Requirements[len(c.Requirements)-1].Allowed = itemMismatchTypes
 		for _, field := range verifyItemFields {
 			example := field + ": <value>"
 			if field == "deterministic" {
@@ -237,17 +270,67 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			if len(allowed) > 0 {
 				example = "  " + field + ": <" + strings.Join(allowed, "|") + ">"
 			}
-			add("item-"+field, "for a MISMATCH, exactly one non-empty "+field+" line in the item block", example)
+			add("item-"+field, "for a MISMATCH, one non-empty "+field+" line per retained mismatch finding block", example)
 			c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
+			c.Requirements[len(c.Requirements)-1].MaxCount = -1
+			c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
 			c.Requirements[len(c.Requirements)-1].Allowed = allowed
 		}
-		add("item-evidence", "for a MISMATCH, the item block's Evidence contains spec and code sub-lines", "  Evidence:\n    - spec: <quoted fact or absence and searched scope>\n    - code: <quoted fact or absence and searched scope>")
+		add("item-finding-blocks", "for a MISMATCH, one finding block per retained mismatch, each introduced by a `Problem:` line, in report order — a single item may retain several independent mismatches", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
-		add("item-resolution", "for a MISMATCH with spec_gap or code_gap use Fix; with needs_design or blocked use Decision and at least one indented Options entry", "<Fix: repair OR Decision: choice followed by Options: and an indented option>")
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+		add("item-evidence", "for a MISMATCH, each retained mismatch finding block's Evidence contains spec and code sub-lines", "  Evidence:\n    - spec: <quoted fact or absence and searched scope>\n    - code: <quoted fact or absence and searched scope>")
 		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+		add("item-resolution", "for each MISMATCH finding block with spec_gap or code_gap use Fix; with needs_design or blocked use Decision and at least one indented Options entry", "<Fix: repair OR Decision: choice followed by Options: and an indented option>")
+		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+	}
+	if session.Kind == gaterun.SessionKindUnit {
+		add("mismatch-type", "MISMATCH requires one of: "+strings.Join(unitMismatchTypes, ", ")+"; when several are retained the verdict-line type names the primary one and each finding block carries its own root cause and severity", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].Allowed = unitMismatchTypes
+		for _, class := range unitScanClasses {
+			add("unit-scan-"+class, "exactly one `declarations."+class+": checked=<n> — <result>` line; n is how many declarations of this class were located and compared — a class you did not examine is reported as checked=0 with the reason, so a skipped class is visible", "declarations."+class+": checked=<n> — <result>")
+		}
+		add("unit-scan-surplus", "exactly one `surplus: found=<n> — <result>` line; n is the number of surplus candidates that survived the design-decision filter", "surplus: found=<n> — <result>")
+		add("unit-scan-non-runnable", "exactly one `non_runnable: count=<n> — <result>` line; n is the number of acceptance items marked `runnable: no`, and the result states whether each carries a substantive not_runnable_reason with external evidence and whether the remaining runnable set gives meaningful coverage (Step 5 Part 2)", "non_runnable: count=<n> — <result>")
+		for _, field := range analysisFields {
+			allowed := analysisAllowed(field)
+			example := "  " + field + ": <value>"
+			if len(allowed) > 0 {
+				example = "  " + field + ": <" + strings.Join(allowed, "|") + ">"
+			}
+			add("unit-"+field, "for a MISMATCH, one non-empty "+field+" line per retained mismatch finding block", example)
+			c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+			c.Requirements[len(c.Requirements)-1].MinCount = 0
+			c.Requirements[len(c.Requirements)-1].MaxCount = -1
+			c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+			c.Requirements[len(c.Requirements)-1].Allowed = allowed
+		}
+		add("unit-finding-blocks", "for a MISMATCH, one finding block per retained mismatch, each introduced by a `Problem:` line, in report order — one Step 1 declaration class or Step 5 surplus construct can each yield several independent mismatches", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+		add("unit-evidence", "for a MISMATCH, each retained mismatch finding block's Evidence contains spec and code sub-lines", "  Evidence:\n    - spec: <quoted fact or absence and searched scope>\n    - code: <quoted fact or absence and searched scope>")
+		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
+		add("unit-resolution", "for each MISMATCH finding block with spec_gap or code_gap use Fix; with needs_design or blocked use Decision and at least one indented Options entry", "<Fix: repair OR Decision: choice followed by Options: and an indented option>")
+		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
 	}
 	if session.Kind == gaterun.SessionKindDesign {
 		add("quality-file-block", "exactly one File: <assigned path> block per file; verdicts, assessments, and findings belong to that file", "")
@@ -303,7 +386,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		c.Requirements[len(c.Requirements)-1].Allowed = crossDispositions
-		add("cross-finding-affects", "each new cross finding names the non-cross logical keys it makes fail, written as the logical keys the dependency judgments show (validate@unit check numbers; verify full coverage keys — item:<unit>:<item>, code:<file>, design:<unit>:<file>, architecture:<unit>; or a relationship:<name> key); the finding id is the run-scoped {run_id}/{session_id}/F{n}", "")
+		add("cross-finding-affects", "each new cross finding names the non-cross logical keys it makes fail, written as the logical keys the dependency judgments show (validate@unit check numbers; verify full coverage keys — item:<unit>:<item>, unit:<unit>, code:<file>, design:<unit>:<file>, architecture:<unit>; or a relationship:<name> key); the finding id is the run-scoped {run_id}/{session_id}/F{n}", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
@@ -319,7 +402,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		}
 	}
-	if !gaterun.IsItemKind(session.Kind) {
+	if !gaterun.IsAlignmentKind(session.Kind) {
 		finding := "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>"
 		if session.Kind == gaterun.SessionKindCross {
 			finding = "[P1] <location> — <new cross finding>\nFinding affects: <new_finding_id> = <check_key>"

@@ -20,7 +20,7 @@ func TestDeltaItemEditDoesNotForceUnrelatedDesignKeys(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemRegionReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, runID)
+	grAutoSubmitRemaining(t, repoRoot, runID)
 	grSubmitOK(t, repoRoot, runID, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
@@ -59,7 +59,7 @@ func TestDeltaItemEditDoesNotForceUnrelatedDesignKeys(t *testing.T) {
 	// (the scope decision is explicit beyond review_recheck).
 	grReviewAccept(t, repoRoot, deltaRun)
 	grSubmitOK(t, repoRoot, deltaRun, "auth.core", grVerifyItemRegionReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, deltaRun)
+	grAutoSubmitRemaining(t, repoRoot, deltaRun)
 	grSubmitOK(t, repoRoot, deltaRun, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
@@ -88,7 +88,7 @@ func TestDeltaChangedEvidenceFileDoesNotForceEveryCodeKey(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", inputs)
 	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemRegionReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, runID)
+	grAutoSubmitRemaining(t, repoRoot, runID)
 	grSubmitOK(t, repoRoot, runID, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
@@ -121,7 +121,7 @@ func TestDeltaImplementationChangeForcesOwningItem(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemRegionReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, runID)
+	grAutoSubmitRemaining(t, repoRoot, runID)
 	grSubmitOK(t, repoRoot, runID, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 

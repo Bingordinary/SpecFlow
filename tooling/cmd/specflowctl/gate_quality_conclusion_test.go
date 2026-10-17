@@ -124,7 +124,7 @@ func TestFinalAttentionWithoutFindingKeepsSynthesisEvidence(t *testing.T) {
 	grWriteFile(t, root, proof, "Responsibility names need attention.\n")
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "contracts.js"))
-	grAutoSubmitQuality(t, root, id)
+	grAutoSubmitRemaining(t, root, id)
 	report := relationshipReport(t, root, id, map[string]string{"contract_consistency": proof}, "")
 	report = strings.Replace(report, "Quality conclusion: architecture:auth = acceptable", "Quality conclusion: architecture:auth = needs_attention", 1)
 	report += "cross: " + proof + ": all\n"

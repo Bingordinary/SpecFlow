@@ -204,7 +204,7 @@ func grSubmit(t *testing.T, repoRoot, runID, sessionID, report string) (string, 
 	run, loadErr := gaterun.Load(repoRoot, runID)
 	if loadErr == nil {
 		if sessionID == "cross" {
-			grAutoSubmitQuality(t, repoRoot, runID)
+			grAutoSubmitRemaining(t, repoRoot, runID)
 			report = grWithCrossItems(run, report)
 			report = grWithRelationshipEvidence(run, report)
 			report = grCompleteCrossReport(t, repoRoot, run, grAdaptReport(run, report))
@@ -213,12 +213,11 @@ func grSubmit(t *testing.T, repoRoot, runID, sessionID, report string) (string, 
 	return grSubmitRaw(t, repoRoot, runID, sessionID, report)
 }
 
-// grAutoSubmitQuality covers every uncovered quality-lens coverage key of a
-// verify run with a minimal acceptable file report. The merged verify gate's
-// coverage set is the union of the alignment items and the declared code files;
-// most fixtures exercise the alignment lens, so the quality lens is filled in
-// mechanically here. It is a no-op for non-verify runs.
-func grAutoSubmitQuality(t *testing.T, repoRoot, runID string) {
+// grAutoSubmitRemaining covers the coverage keys a fixture does not judge
+// itself: every uncovered quality-lens key and the unit-level alignment scan.
+// Acceptance-item keys stay explicit — a test asserting an item's verdict owns
+// its report.
+func grAutoSubmitRemaining(t *testing.T, repoRoot, runID string) {
 	t.Helper()
 	run, err := gaterun.Load(repoRoot, runID)
 	if err != nil {
@@ -228,7 +227,7 @@ func grAutoSubmitQuality(t *testing.T, repoRoot, runID string) {
 		return
 	}
 	for _, ck := range run.Coverage {
-		if ck.Lens != gaterun.LensQuality {
+		if ck.Lens != gaterun.LensQuality && ck.Kind != gaterun.SessionKindUnit {
 			continue
 		}
 		states, err := gaterun.LoadSessionStates(repoRoot, run)
@@ -243,10 +242,13 @@ func grAutoSubmitQuality(t *testing.T, repoRoot, runID string) {
 			continue
 		}
 		report := grDefaultQualityReport(run, ck)
+		if ck.Kind == gaterun.SessionKindUnit {
+			report = grVerifyUnitScanReport(ck.Key)
+		}
 		path := grWriteFile(t, t.TempDir(), "quality-report.md", report)
 		var stdout, stderr bytes.Buffer
 		if err := runGateSubmit([]string{"--repo-root", repoRoot, "--run", runID, "--session", gaterun.SessionID([]string{ck.Key}), "--keys", ck.Key, "--report", path}, &stdout, &stderr); err != nil {
-			t.Fatalf("auto quality %s: %v", ck.Key, err)
+			t.Fatalf("auto submit %s: %v", ck.Key, err)
 		}
 	}
 }
@@ -387,7 +389,7 @@ func grFinalize(t *testing.T, repoRoot, runID string, args ...string) (string, e
 	if _, err := gaterun.Load(repoRoot, runID); err != nil {
 		return "", err
 	}
-	grAutoSubmitQuality(t, repoRoot, runID)
+	grAutoSubmitRemaining(t, repoRoot, runID)
 	var stdout, stderr bytes.Buffer
 	var supported []string
 	for i := 0; i < len(args); i++ {
@@ -1604,7 +1606,7 @@ func TestGateCrossFailureForcesDerivedFailure(t *testing.T) {
 	if got := strings.Join(coverageKeysOf(repair), ","); got != "item:auth:auth.login" {
 		t.Fatalf("expected the cross finding's affected key to drive repair scope, got %s", got)
 	}
-	if got := strings.Join(repair.CarriedKeys, ","); got != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout,relationship:contract_consistency,relationship:cross_reference_integrity,relationship:data_definition_drift,relationship:error_code_conflict" {
+	if got := strings.Join(repair.CarriedKeys, ","); got != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout,relationship:contract_consistency,relationship:cross_reference_integrity,relationship:data_definition_drift,relationship:error_code_conflict,unit:auth" {
 		t.Fatalf("expected unaffected auth.logout and the quality key to be carried, got %s", got)
 	}
 }
@@ -2757,7 +2759,7 @@ func TestGateRunRepairFlow(t *testing.T) {
 	if got := coverageKeysOf(run); strings.Join(got, ",") != "item:auth:auth.login" {
 		t.Fatalf("expected the failed item, got %v", got)
 	}
-	if strings.Join(run.CarriedKeys, ",") != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout" {
+	if strings.Join(run.CarriedKeys, ",") != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout,unit:auth" {
 		t.Fatalf("expected auth.logout and the quality key carried over, got %v", run.CarriedKeys)
 	}
 	repairMission := missionJSON(t, repoRoot, repairRun, "auth.login")
@@ -3114,7 +3116,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	}
 
 	grSubmitOK(t, repoRoot, deltaRun, "auth.login", grVerifyItemRegionReport("auth.login", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, deltaRun)
+	grAutoSubmitRemaining(t, repoRoot, deltaRun)
 	grSubmitOK(t, repoRoot, deltaRun, "cross", fmt.Sprintf("Cross-check: 3/3 PASS — consistent\n\ncross: %s: acceptance_items\n", main))
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
@@ -3619,7 +3621,7 @@ func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 	grSubmitOK(t, repoRoot, deltaID, "auth.one", oneReport)
 	grSubmitOK(t, repoRoot, deltaID, "auth.two", grVerifyItemReport("auth.two", main, "src/two.go"))
 	grSubmitClarity(t, repoRoot, deltaID, main)
-	grAutoSubmitQuality(t, repoRoot, deltaID)
+	grAutoSubmitRemaining(t, repoRoot, deltaID)
 	grSubmitOK(t, repoRoot, deltaID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, deltaID)
 
@@ -3646,7 +3648,7 @@ func TestGateDeltaNewEvidenceIsDisclosedAndNotCarried(t *testing.T) {
 
 	verifyID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, verifyID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, repoRoot, verifyID)
+	grAutoSubmitRemaining(t, repoRoot, verifyID)
 	grFinalizeOK(t, repoRoot, verifyID)
 
 	// The delta plan discovers evidence the baseline never recorded: the plan
@@ -3816,7 +3818,7 @@ func TestGateRepairDegradesOnConflictingStatusMap(t *testing.T) {
 	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "item:auth:auth.two=conflicting") {
 		t.Fatalf("expected a conflicting status map to degrade the plan, got notices %v", run.Notices)
 	}
-	want := "item:auth:auth.one,item:auth:auth.two,code:src/auth.go,design:auth:src/auth.go,architecture:auth"
+	want := "item:auth:auth.one,item:auth:auth.two,unit:auth,code:src/auth.go,design:auth:src/auth.go,architecture:auth"
 	if got := strings.Join(coverageKeysOf(run), ","); got != want {
 		t.Fatalf("expected the degraded full coverage set %q, got %q", want, got)
 	}
@@ -3890,7 +3892,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "auth.one=carried") {
 		t.Fatalf("expected a carried status in a full record to degrade the plan, got notices %v", run.Notices)
 	}
-	want := "item:auth:auth.one,item:auth:auth.two,code:src/one.go,design:auth:src/one.go,code:src/two.go,design:auth:src/two.go,architecture:auth"
+	want := "item:auth:auth.one,item:auth:auth.two,unit:auth,code:src/one.go,design:auth:src/one.go,code:src/two.go,design:auth:src/two.go,architecture:auth"
 	if got := strings.Join(coverageKeysOf(run), ","); got != want {
 		t.Fatalf("expected the degraded full coverage set %q, got %q", want, got)
 	}
@@ -3947,7 +3949,7 @@ func grReadyVerifyCross(t *testing.T) (string, string, string) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", strings.Join(verifyCrossItems, ","))
 	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	return root, runID, main
 }
 

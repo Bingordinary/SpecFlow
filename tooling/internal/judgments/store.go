@@ -26,6 +26,7 @@ const Code = "code"
 const Design = "design"
 const Architecture = "architecture"
 const Item = "item"
+const Unit = "unit"
 
 type Reference struct {
 	ID     string `json:"id"`
@@ -84,7 +85,7 @@ func Save(root string, r Record) (Reference, error) {
 		return Reference{}, fmt.Errorf("incomplete judgment record")
 	}
 	switch r.Kind {
-	case Code, Design, Architecture, Item:
+	case Code, Design, Architecture, Item, Unit:
 	default:
 		return Reference{}, fmt.Errorf("unknown judgment kind %q", r.Kind)
 	}

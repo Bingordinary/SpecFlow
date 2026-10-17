@@ -385,7 +385,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		}
 	}
 	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only git queries only", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
-	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.SessionKindItem || spec.Kind == gaterun.SessionKindCode) {
+	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.SessionKindItem || spec.Kind == gaterun.SessionKindUnit || spec.Kind == gaterun.SessionKindCode) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
 	schema := 3
@@ -616,6 +616,8 @@ func missionTextFor(kind string) string {
 	switch kind {
 	case gaterun.SessionKindItem:
 		return "Judge each acceptance item against the implementation: report its alignment verdict and evidence, and for a mismatch author the finding with its root cause, severity, and repair direction."
+	case gaterun.SessionKindUnit:
+		return "Scan the whole unit once: report the structural-declaration scan (Step 1) and Step 5 (implementation integrity and code design-surface surplus) with their declaration-class lines, and author a finding for every mismatch you retain. Do not repeat per-item judgments."
 	case gaterun.SessionKindCode:
 		return "Inspect whole-file public code facts without unit-private rationale."
 	case gaterun.SessionKindArchitecture:
@@ -633,7 +635,9 @@ func missionTextFor(kind string) string {
 func protocolScopeFor(kind string, keys []string) string {
 	switch kind {
 	case gaterun.SessionKindItem:
-		return "Steps 1-7 for acceptance item(s) " + strings.Join(keys, ", ")
+		return "Steps 2, 3, 4, 6, 7 for acceptance item(s) " + strings.Join(keys, ", ")
+	case gaterun.SessionKindUnit:
+		return "Steps 1 and 5 over the whole unit"
 	case gaterun.SessionKindDesign:
 		return "quality assessment of " + strings.Join(keys, ", ")
 	case gaterun.SessionKindCross:

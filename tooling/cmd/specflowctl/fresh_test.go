@@ -378,7 +378,7 @@ func TestFreshUnitVerifySurfacesStaleEvidence(t *testing.T) {
 		alignmentReport := grVerifyItemBody("auth.core", "ALIGNED", "src/auth.go:1") +
 			fmt.Sprintf("auth.core: %s: acceptance_item:auth.core\n", specPath)
 		grSubmitOK(t, repoRoot, runID, "auth.core", alignmentReport)
-		grAutoSubmitQuality(t, repoRoot, runID)
+		grAutoSubmitRemaining(t, repoRoot, runID)
 		grFinalizeOK(t, repoRoot, runID)
 		return repoRoot, specPath, codePath
 	}

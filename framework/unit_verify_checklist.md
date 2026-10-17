@@ -2,10 +2,17 @@
 
 ## Overview
 
-`verify` is one gate with **two lenses** that run in separate sessions:
+`verify` is one gate with **two lenses**:
 
-- **`alignment`** — the spec-vs-code check: acceptance items, structural alignment, scope, retirement, surplus, stubs, and divergence analysis (Steps 1–7 below). The spec is **authority**: a divergence is always a finding and is never suppressed.
+- **`alignment`** — the spec-vs-code check: acceptance items, structural alignment, scope, retirement, surplus, stubs, and divergence analysis (Steps 1–7 below, split across the item sessions and the one unit-level scan session). The spec is **authority**: a divergence is always a finding and is never suppressed.
 - **`quality`** — the spec-aware code-quality check: structure/boundaries, naming/abstraction, duplication, coupling, error & safety, hygiene, unplanned debt, architectural quality, and test quality. The spec is **rationale**: a code-quality finding is suppressed when the spec records the design decision behind it.
+
+The **`alignment` lens runs in two session kinds**:
+
+- **item sessions** (`item:<unit>:<item>`) execute **Steps 2, 3, 4, 6 and 7** for their assigned acceptance items;
+- **one unit-level scan session per run** (`unit:<unit>`) executes **Step 1 (structural alignment)** and **Step 5 (implementation integrity and code design-surface surplus)** over the whole unit.
+
+The unit-wide work is not repeated per item: one scan covers the unit, and the item sessions judge their own items. `framework/verification_scope.md` §Coverage Model owns the key model and the session split.
 
 ### Run Orientation and Session Plumbing
 
@@ -22,7 +29,8 @@ The trigger route in `framework/concepts.md` loads this file at verify time, not
 | **Stubs** | by nature | A stub that violates a *declared* behavior is an `alignment` finding (implemented-but-absent). A stub that is merely poor code (unreachable, placeholder without a declared behavior) is a `quality` finding. |
 | **Debt markers** (TODO/FIXME/XXX/HACK comment markers) | `quality` | Dimension 7 owns unplanned-debt markers: a comment marker is a work trace, not a behavioral mismatch. A marker contained in the spec's `known_debt` is suppressed; an undeclared marker is a non-blocking P2/P3 observation. Stubs and placeholders (missing implementation where behavior is declared) remain `alignment` Step 6 findings. |
 | **Spec-sanctioned suppression** | `quality` **only** | A recorded spec rationale suppresses a `quality` finding. The `alignment` lens never suppresses a divergence. |
-| Structural alignment, scope, retirement, acceptance, divergence analysis (Steps 1–7) | `alignment` | — |
+| Step 1 structural alignment and Step 5 implementation integrity and surplus detection over the whole unit | `alignment` — **unit-level scan session** | One scan per run covers the unit and pins its conclusions as the single `unit:<unit>` judgment; item sessions do not re-derive them. Step 5 includes its non-runnable assessment (Part 2), so that check has a session owner too. The scan's report must carry one line per declaration class, so a class it never examined is visible instead of silently missing. |
+| Step 2 acceptance alignment, Step 3 scope accuracy, Step 4 retirement verification, Step 6 stub adjudication, Step 7 divergence analysis | `alignment` — **item session** | Judged per assigned acceptance item. Step 3 stays with the item even though Step 1 also compares spec structures to code: scope is a per-item declaration check ("does this item's declared surface carry its behavior?"), while Step 1 is a unit-wide structure check |
 
 ### Coverage Keys and Session Partitioning
 
@@ -32,7 +40,7 @@ Coverage keys:
 
 | Lens | Coverage keys |
 |---|---|
-| `alignment` | `item:<unit>:<item>` |
+| `alignment` | `item:<unit>:<item>`, plus one `unit:<unit>` per run (the unit-level scan) |
 | `quality` | `code:<file>`, `design:<unit>:<file>`, and one `architecture:<unit>` |
 
 ## The quality lens
@@ -211,6 +219,8 @@ Each finding contains:
 
 The `alignment` lens is the remainder of this file (Steps 1–7 and the analysis collection). It treats the spec as authority and never suppresses a divergence.
 
+The steps are split by session: **Step 1** and **Step 5** run in the unit-level scan session (`unit:<unit>`), and **Steps 2, 3, 4, 6, 7** run in the item sessions (`item:<unit>:<item>`). Each step below states its session.
+
 ## Prerequisite — Read all unit files
 
 The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
@@ -228,7 +238,7 @@ Before executing any verify step, the agent must read the complete unit spec:
 
 | Trigger | Mode | What to execute |
 |---------|------|-----------------|
-| `verify@{unit}` | full | Verify all spec content and the declared code surface: the `alignment` lens (Steps 1–7 per acceptance item) and the `quality` lens (public code and unit design per file, plus one unit architecture task). Sessions share the same kind and lens. |
+| `verify@{unit}` | full | Verify all spec content and the declared code surface: the `alignment` lens (item sessions run Steps 2, 3, 4, 6, 7 per acceptance item; one unit-level scan session runs Steps 1 and 5 over the whole unit) and the `quality` lens (public code and unit design per file, plus one unit architecture task). Sessions share the same kind and lens. |
 | `verify@{unit}:{keyword}` | targeted | Match keyword to spec content by title, feature name, API path, or structure → verify that content. Does not write a cache. |
 
 **Keyword domain:** verify keywords resolve to spec content — section titles, feature names, API paths, acceptance item ids, appendix files. A keyword matching no spec content is a no-match — ask the user for clarification.
@@ -316,7 +326,7 @@ Next step: {concrete next command with reason, or "None"}
 
 **Field definitions:**
 
-- `{gate}@{target}` — the gate and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`. Gates: `validate`, `verify`. Targets: unit or rule name. The `verify` gate carries two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality) — and its sessions report under one of them.
+- `{gate}@{target}` — the gate and target that produced this report, e.g. `validate@user_auth`, `verify@user_auth`. Gates: `validate`, `verify`. Targets: unit or rule name. The `verify` gate carries two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality) — and its sessions report under one of them. The `alignment` lens runs in item sessions (`item:<unit>:<item>`, Steps 2, 3, 4, 6, 7) and in one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5).
 - `{mode}` — `full` for full runs; `targeted (user requested: {keyword})` for targeted runs; `delta` for reviewed re-runs (`revalidate@{target}` / `reverify@{unit}`). The delta review session has its own contract (`Review result:` + optional `Recheck:` line) and is not rendered with this skeleton.
 - `{layer}` — the spec layer checked: `candidate` | `stable`.
 - `Result` — `PASS | FAIL` for both gates. For coverage runs this value is generated by `gate-finalize` from the accepted sessions (or from the single rule-validate session); the coordinator never supplies it. The gate is decided by severity: FAIL means gate-driving retained P0/P1 findings exist. validate grades findings P0/P1 only, so any validate FAIL is a P0/P1 finding; verify FAIL means gate-driving retained P0/P1 mismatches/findings exist. A finding deferred to another unit is retained and routed but is not gate-driving — it never causes FAIL.
@@ -355,13 +365,12 @@ The `[P0|P1|P2|P3]` on MISMATCH lines is the severity assigned by the session th
 
 #### Lens Body Skeletons
 
-`alignment` lens body:
+`alignment` lens — **item session** body (`item:<unit>:<item>`, Steps 2, 3, 4, 6, 7):
 
 ```
 Items:
   - {item.id}: ALIGNED | MISMATCH (type) [P0|P1|P2|P3] | CANNOT_DETERMINE — code references
 Scope: PASS | FAIL — findings
-Integrity: PASS | FAIL — findings
 Coverage:
   - items_with_deterministic_evidence: N/M
   - items_reading_only: N
@@ -370,6 +379,26 @@ First-principles divergence analysis: (only if any MISMATCH)
     User verdict: ...
     Next step: ...
 ```
+
+`alignment` lens — **unit-level scan** body (`unit:<unit>`, Steps 1 and 5). The verdict line is the scan's overall conclusion; the declaration lines are mandatory and are mechanically validated, so a class the scan never examined is a rejected report rather than a silent gap. Each retained mismatch carries its own finding block in the same session, in report order — one block per Step 1 declaration-class or Step 5 surplus mismatch, so the scan is not limited to a single finding — with a MISMATCH type restricted to `structural | surplus` (an item session types its own mismatches `structural | acceptance | scope | stub` — Step 4 retirement is structural, Step 5 surplus stays with this scan):
+
+```
+unit:{unit}: ALIGNED | MISMATCH (structural|surplus) | CANNOT_DETERMINE — reason
+  # on a MISMATCH, indented directly under the verdict line: one finding block per
+  # retained mismatch (Problem: ... Confidence:), in report order
+declarations.api_endpoints: checked=<n> — result
+declarations.function_signatures: checked=<n> — result
+declarations.data_structures: checked=<n> — result
+declarations.enums_constants: checked=<n> — result
+declarations.error_types: checked=<n> — result
+declarations.error_messages: checked=<n> — result
+declarations.state_machines: checked=<n> — result
+declarations.configuration_keys: checked=<n> — result
+surplus: found=<n> — result
+non_runnable: count=<n> — result
+```
+
+`checked=<n>` is how many declarations of that class were located and compared, so `checked=0` states a class that carries nothing (or that the session did not examine — say which, with the reason). `surplus: found=<n>` is the number of surplus candidates that survived Step 5's design-decision filter (Part A). `non_runnable: count=<n>` is the number of acceptance items marked `runnable: no`, and its result states whether each carries a substantive `not_runnable_reason` with external evidence and whether the remaining runnable set gives meaningful coverage (Step 5 Part 2); the line is mandatory, so neither the declaration scan nor either half of Step 5 can be silently skipped. On a MISMATCH, follow the verdict line with one finding block (`Problem:` onward, the format in §Step 7 and §Output Format) per retained mismatch, in report order — a scan that retains several step-classes' or surplus mismatches writes several blocks.
 
 `quality` lens bodies follow `framework/shared_judgments.md`: public facts and unit design are file tasks; architecture is one unit task. Architecture body:
 
@@ -393,6 +422,8 @@ The `Target:` line from earlier formats is now the `{layer}` field in the unifie
 ---
 
 ## Step 1 — Structural alignment
+
+**Session:** the unit-level scan session (`unit:<unit>`), together with Step 5. Item sessions do not re-derive it.
 
 **Purpose:** Cross-reference every static structure declared in the spec body and appendices against the actual implementation code. This catches missing interfaces, wrong signatures, and inconsistent data definitions that acceptance items alone might miss.
 
@@ -465,6 +496,8 @@ IF a complete declaration exists in code BUT has no correspondence
 ---
 
 ## Step 2 — Acceptance alignment
+
+**Session:** item sessions (`item:<unit>:<item>`).
 
 **Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. For appendix content, cross-reference technical claims (API contracts, data type definitions, configuration keys) against code — appendix contract content always has a corresponding acceptance item (validate Check 5a enforces this, see `framework/spec_writing_guide.md` §4), so the item set is the complete contract surface.
 
@@ -586,6 +619,8 @@ An item may cite read-only evidence files — typically tests or code owned by a
 
 ## Step 3 — Scope accuracy
 
+**Session:** item sessions. Scope is a per-item declaration check and stays with the item even though Step 1 compares spec structures to code.
+
 **Purpose:** Cross-reference each acceptance item's declared implementation files — `implementation_surface` (a file, or a directory expanded to its repository-content files) and `affects.files` — against the actual implementation. This catches undeclared scope and missing declarations.
 
 **Execution steps:**
@@ -640,6 +675,8 @@ An under-declared file is a declaration defect, not a read-ref gap: report it as
 
 ## Step 4 — Retirement verification
 
+**Session:** item sessions.
+
 **Purpose:** For replacement candidates, verify old code is fully removed with no remaining references.
 
 **Execution steps:**
@@ -665,6 +702,8 @@ An under-declared file is a declaration defect, not a read-ref gap: report it as
 ---
 
 ## Step 5 — Implementation integrity & surplus detection
+
+**Session:** the unit-level scan session (`unit:<unit>`), together with Step 1.
 
 **Purpose:** Discover code designs within this unit's responsibility that are not declared in its spec (code surplus) and assess non-runnable items. Do not classify surplus findings yet — defer to Step 7. The reverse-check responsibility boundary from Step 1 also applies here.
 
@@ -777,6 +816,8 @@ Do not classify the resolution direction — defer to Step 7.
     - If not → flag as concern
 ```
 
+The assessment's result is reported on the session's mandatory `non_runnable: count=<n> — result` line (§Lens Body Skeletons — unit-level scan body): the count is the runnable: no items, and the result condenses the reasoning concerns above (missing or self-attested `not_runnable_reason`, insufficient runnable coverage). The line is required even when `count=0`, so Step 5 Part 2 always has a visible session result.
+
 **PASS:** No surplus design found; non-runnable items have documented reasons
 
 **FAIL (MISMATCH):** Surplus design found — defer classification to Step 7
@@ -790,6 +831,8 @@ Do not classify the resolution direction — defer to Step 7.
 ---
 
 ## Step 6 — Stub & Placeholder Scan
+
+**Session:** item sessions (the plan-time candidate list is attached to their missions).
 
 **Purpose:** Ensure no incomplete implementation hides behind a structurally complete surface. Debt markers (TODO/FIXME/XXX/HACK) are NOT scanned here — they are owned by the `quality` lens (Dimension 7).
 
@@ -835,15 +878,17 @@ grep -n "return Response.json({})\|w.WriteHeader(204)" <file>
 
 ## Step 7 — First-principles divergence analysis
 
-**Purpose:** When Steps 1-6 detect mismatches, determine the root cause and correct direction using first-principles reasoning — not presence-based heuristics. The independent item reviewer completes this analysis before submitting its alignment report.
+**Session:** the session that raises the MISMATCH — an item session for its Steps 2, 3, 4 and 6 mismatches, and the unit-level scan session for its Steps 1 and 5 mismatches. The reviewer completes Step 7 in the same session.
+
+**Purpose:** When Steps 1-6 detect mismatches, determine the root cause and correct direction using first-principles reasoning — not presence-based heuristics. The independent reviewer completes this analysis before submitting its alignment report.
 
 ### How it works
 
-For each MISMATCH detected in Steps 1-6, the assigned **read-only item reviewer** completes Step 7 in the same session. Analyze each item independently, including when several items share a batch. The initial report includes the verdict, root cause, suggested direction, severity, confidence, evidence and affected keys; acceptance completes both alignment and divergence analysis.
+For each MISMATCH detected in Steps 1-6, the assigned **read-only reviewer** completes Step 7 in the same session. Analyze each mismatch independently, including when several items share a batch. The initial report includes the verdict, root cause, suggested direction, severity, confidence, evidence and affected keys; acceptance completes both alignment and divergence analysis.
 
 #### Full and Delta Coverage Sets
 
-> **Full mode note:** In full mode the coverage set contains `item:<unit>:<item>`, `code:<file>`, `design:<unit>:<file>` and `architecture:<unit>`. The agent batches uncovered tasks into sessions with the same kind and lens (see `framework/verification_scope.md` §Coverage model). A session that covers item(s) reports the alignment verdicts; each `MISMATCH` also names its affected keys and includes the completed Step 7 analysis.
+> **Full mode note:** In full mode the coverage set contains `item:<unit>:<item>`, `unit:<unit>` (the unit-level scan), `code:<file>`, `design:<unit>:<file>` and `architecture:<unit>`. The agent batches uncovered tasks into sessions with the same kind and lens (see `framework/verification_scope.md` §Coverage model). A session that covers item(s) reports the alignment verdicts; each `MISMATCH` also names its affected keys and includes the completed Step 7 analysis.
 
 > **Delta mode note:** A delta/repair run fixes the re-run coverage set (the stale keys plus the current keys the baseline never declared). Carried items bring their prior structured judgment into the run. The final synthesis consumes the new resolved judgments and the carried judgments together.
 
@@ -939,9 +984,9 @@ Severity: {P0 | P1 | P2 | P3}
 
 #### Mission Submission and Report Contract
 
-Before reviewing uncovered `item` keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies Steps 1-7, exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
+Before reviewing uncovered keys in the `alignment` lens, the main agent generates `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` and sends its output verbatim to the assigned independent read-only reviewer. The mission supplies the session's steps (Steps 2, 3, 4, 6, 7 for an item session; Steps 1 and 5 for the unit-level scan), exact session input paths, the report contract and submission command. The reviewer performs alignment and any required divergence analysis before one `gate-submit`. Accepted keys are terminal: do not generate a second analysis mission for them. The final synthesis consumes their accepted reports; the coordinator does not assemble another analysis prompt or copy a mismatch table.
 
-The item reviewer locates and analyzes the mismatch while executing Steps 1-7. It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. It reads whatever context it needs from its session read refs; reports carry no declarations. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it adds the path to the open run with `specflowctl gate-extend --run {run_id} --paths <path>` — every accepted session keeps its verdict, and the uncovered key re-missions with the extended read refs. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
+The item reviewer locates and analyzes the mismatch while executing its own steps (Steps 2, 3, 4, 6, 7). It reads the mismatch point's enclosing function or structure, direct callers and callees, relevant tests, the item's spec section, sibling items, and shared definitions (error codes, types, enums, data models, rationale) within its session read refs. It reads whatever context it needs from its session read refs; reports carry no declarations. If a required file is not in `read_refs`, it returns `Verification could not complete — missing read ref: <repo-relative path>` without a verdict. The coordinator does not submit that report; it adds the path to the open run with `specflowctl gate-extend --run {run_id} --paths <path>` — every accepted session keeps its verdict, and the uncovered key re-missions with the extended read refs. The reviewer includes the root cause and repair direction in the initial item report. It must not modify files, run state-changing commands, or launch sub-agents.
 
 **Output format:**
 
@@ -971,9 +1016,9 @@ Rationale: {2-3 sentence first-principles reasoning chain}
 Signal layer: {condensed metadata summary, if collected}
 ```
 
-The `Problem:` / `Evidence:` / `Impact:` / `Fix:` (or `Decision:`) fields are the finding block: the tool renders them as the finding's detail lines in the unified report skeleton (§Output Format), followed by the `root_cause:` / `direction:` / `confidence:` extra lines. `Problem:` answers the comparison step; `Evidence:` quotes each present side verbatim, and when one side is absent — a surplus construct has no spec declaration, a missing implementation has no code — its sub-line states the absence and the searched scope; exactly one of `Fix:` and `Decision:` is required and must match the suggested direction (spec_gap / code_gap → `Fix:`; needs_design / blocked → `Decision:` with at least one `Options:` entry).
+The `Problem:` / `Evidence:` / `Impact:` / `Fix:` (or `Decision:`) fields are the finding block: the tool renders them as the finding's detail lines in the unified report skeleton (§Output Format), followed by the `root_cause:` / `direction:` / `confidence:` extra lines. A MISMATCH verdict carries one finding block per retained mismatch, in report order: an item session may retain several independent mismatches, and the unit-level scan one per Step 1 declaration-class or Step 5 surplus mismatch. `Problem:` answers the comparison step; `Evidence:` quotes each present side verbatim, and when one side is absent — a surplus construct has no spec declaration, a missing implementation has no code — its sub-line states the absence and the searched scope; exactly one of `Fix:` and `Decision:` is required and must match the suggested direction (spec_gap / code_gap → `Fix:`; needs_design / blocked → `Decision:` with at least one `Options:` entry).
 
-**Failure path:** an item reviewer that cannot complete Steps 1-7 reports:
+**Failure path:** an item reviewer that cannot complete Steps 2, 3, 4, 6, 7 reports:
 "Verification could not complete — {reason}" without a verdict. Do not submit
 an incomplete report; resolve the missing input (extend the open run with
 `specflowctl gate-extend`, or re-plan when the required surface itself
@@ -1085,7 +1130,7 @@ Findings:
       direction: {needs_design | blocked} (confidence: {level})
     - ...
 ────────────────────────────────────────────
-{body — Items / Scope / Integrity / Coverage / divergence analysis}
+{body — Items / Scope / Coverage / divergence analysis}
 ────────────────────────────────────────────
 Next step: {per direction table — spec_gap → "update the candidate spec, then re-run `verify@{unit}:{keyword}`"; code_gap → "implement the code change, then re-run `verify@{unit}:{keyword}`"; needs_design → "redesign the candidate, then re-run validate and verify"; blocked → "awaiting your decision on {item}"}
 ────────────────────────────────────────────
@@ -1180,7 +1225,7 @@ The stable verify cache is read-only state: it grants no promote eligibility (st
 
 ## Step 8 — Write verify cache (tooling finalize)
 
-After all 7 steps complete, determine cache action based on the highest severity MISMATCH (the finding-level verdict). The suggested direction (spec_gap / code_gap / needs_design / blocked) does not change the gate — blocking is determined by severity only. The cache `result` field uses the gate vocabulary: `pass` means no P0/P1 blocking findings; `fail` is the failure-record state, written by a delta re-run's FAIL and by a candidate full-run FAIL (`mode: full`, `basis: full` — see below and §Delta re-run).
+After the run's sessions complete, determine cache action based on the highest severity MISMATCH (the finding-level verdict). The suggested direction (spec_gap / code_gap / needs_design / blocked) does not change the gate — blocking is determined by severity only. The cache `result` field uses the gate vocabulary: `pass` means no P0/P1 blocking findings; `fail` is the failure-record state, written by a delta re-run's FAIL and by a candidate full-run FAIL (`mode: full`, `basis: full` — see below and §Delta re-run).
 
 ==ATOM_BEGIN:cache_evidence_path_forms==
 **Recording cache evidence — tool-generated:** gate cache entries are never agent-declared. `gate-finalize` records one entry per file of the run's input surface (the union of every coverage key's read refs and the cross-synthesis surface), each carrying the whole-file `hash` and the ordered content-defined chunk sequence of the current bytes, plus a per-check marker (check key + lens; failure status on failure records). Reports carry no `Dependency scope` lines; there is nothing for a reviewer to declare and nothing to validate against `read_refs`.

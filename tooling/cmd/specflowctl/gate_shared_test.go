@@ -55,6 +55,9 @@ func sharedFinish(t *testing.T, root, id string) {
 			continue
 		}
 		report := grDefaultQualityReport(run, ck)
+		if ck.Kind == gaterun.SessionKindUnit {
+			report = grVerifyUnitScanReport(ck.Key)
+		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, run.RequiredFiles[0], "contracts.js")
 		}
@@ -316,7 +319,7 @@ func TestSharedObservationDecisionsRemainIndependent(t *testing.T) {
 		t.Fatal("retained observation lost")
 	}
 	grSubmitOK(t, root, order, "order.core", grVerifyItemReport("order.core", orderSpec, "contracts.js"))
-	grAutoSubmitQuality(t, root, order)
+	grAutoSubmitRemaining(t, root, order)
 	grSubmitOK(t, root, order, "cross", grCrossReport(orderSpec, "Description"))
 	grFinalizeOK(t, root, order)
 	orderBaseline := grReadJudgmentBaseline(t, root, "unit", "order", "verify")
@@ -688,6 +691,9 @@ func TestArchitectureDeferralCanBeRetainedByOwner(t *testing.T) {
 	run := mustLoadRun(t, root, id)
 	for _, ck := range run.Coverage {
 		report := grDefaultQualityReport(run, ck)
+		if ck.Kind == gaterun.SessionKindUnit {
+			report = grVerifyUnitScanReport(ck.Key)
+		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, main, "contracts.js")
 		}
@@ -733,6 +739,9 @@ func TestArchitectureDeferralCanBeRetainedByOwner(t *testing.T) {
 			continue
 		}
 		report := grDefaultQualityReport(owner, ck)
+		if ck.Kind == gaterun.SessionKindUnit {
+			report = grVerifyUnitScanReport(ck.Key)
+		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, owner.RequiredFiles[0], "contracts.js")
 		}

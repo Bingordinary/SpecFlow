@@ -79,7 +79,7 @@ func TestDivergenceAnalysisCompletesBeforeItemAcceptance(t *testing.T) {
 	if err := runGateMission(args, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Steps 1-7") {
+	if !strings.Contains(out.String(), "Steps 2, 3, 4, 6, 7") {
 		t.Fatal("initial item mission omits divergence analysis")
 	}
 	grSubmitOK(t, root, id, "auth.core", grVerifyMismatchReport("auth.core", main, "contracts.js", "P1"))

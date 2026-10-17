@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,9 @@ func currentVerifyFixture(t *testing.T, root, unit, target, extra string) {
 			continue
 		}
 		report := grDefaultQualityReport(run, ck)
+		if ck.Kind == gaterun.SessionKindUnit {
+			report = grVerifyUnitScanReport(ck.Key)
+		}
 		if gaterun.IsItemKind(ck.Kind) {
 			code := ""
 			for _, surface := range run.Surfaces {
@@ -76,4 +80,18 @@ func currentVerifyFixture(t *testing.T, root, unit, target, extra string) {
 	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// grVerifyUnitScanReport renders a minimal accepted unit-level scan report: the
+// alignment verdict plus the fixed declaration-class lines and the surplus line
+// the report contract requires.
+func grVerifyUnitScanReport(key string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: ALIGNED — fixture scan\n", key)
+	for _, class := range unitScanClasses {
+		fmt.Fprintf(&b, "declarations.%s: checked=0 — fixture scan\n", class)
+	}
+	b.WriteString("surplus: found=0 — fixture scan\n")
+	b.WriteString("non_runnable: count=0 — fixture scan\n")
+	return b.String()
 }

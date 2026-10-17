@@ -28,7 +28,7 @@ func TestE2EReviewLifecycle(t *testing.T) {
 
 	verifyID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, root, verifyID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
-	grAutoSubmitQuality(t, root, verifyID)
+	grAutoSubmitRemaining(t, root, verifyID)
 	grFinalizeOK(t, root, verifyID)
 
 	if out, err := freshRun(t, root, "--unit", "auth"); err != nil || !strings.Contains(out, "READY FOR PROMOTE: yes") {
@@ -72,7 +72,7 @@ func TestE2EReviewLifecycle(t *testing.T) {
 			grSubmitOK(t, root, deltaVerify, ck.Key, grVerifyItemReport(ck.Item, main, "src/auth.go"))
 		}
 	}
-	grAutoSubmitQuality(t, root, deltaVerify)
+	grAutoSubmitRemaining(t, root, deltaVerify)
 	grFinalizeOK(t, root, deltaVerify)
 
 	// Both reviewed delta caches satisfy the promote boundary.

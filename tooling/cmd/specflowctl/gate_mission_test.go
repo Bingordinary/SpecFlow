@@ -236,7 +236,7 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	verifyRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	item := missionJSON(t, root, verifyRun, "auth.core")
-	if item.Sessions[0].ProtocolScope != "Steps 1-7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part A:") || strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
+	if item.Sessions[0].ProtocolScope != "Steps 2, 3, 4, 6, 7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part A:") || strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
 		t.Fatalf("wrong verify item mission: %+v", item.Sessions[0])
 	}
 	if !strings.Contains(strings.Join(item.Constraints, "\n"), "missing read ref: <repo-relative path>") {

@@ -173,7 +173,7 @@ func TestGateJSONWaitsForFindingSynthesis(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, root, runID, "auth.core", grVerifyMismatchReport("auth.core", main, "src/auth.go", "P1"))
-	grAutoSubmitQuality(t, root, runID)
+	grAutoSubmitRemaining(t, root, runID)
 	view, err := gateRunSnapshot(root, mustLoadRun(t, root, runID))
 	if err != nil || view.NextAction != "synthesize" {
 		t.Fatalf("findings without synthesis must not recommend finalize: action=%q err=%v", view.NextAction, err)

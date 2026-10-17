@@ -98,7 +98,7 @@ The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair syn
 - **Read by `gate-plan`** of the owner's verify run (either layer): the owner's pending entries become the run's immutable deferred-finding inputs, the plan output and `gate-mission` context display them, and the final synthesis must dispose each one. `fresh` reports the pending count.
 - **Fail closed:** a malformed, duplicated, or unsupported-schema ledger rejects the plan; a corrupted routing state never silently drops a pending finding.
 
-**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta or repair re-run (`revalidate@{target}` / `reverify@{unit}`) for both gates, the candidate validate/verify full FAIL, and the confirmation-cache FAIL for stable-only targets (see §Write Rules and §Failure handling by gate role). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**. A later targeted P0/P1 does not rewrite that historical status map: `specflowctl gate-invalidate` records the contradicted key in the machine-owned `invalidated_checks` list. For verify it also invalidates the corresponding immutable evidence under the same lock; consuming caches become stale and must recheck, while historical records and status maps remain intact. Acceptance-item ids are stored as `item:<unit>:<item>` keys. After the findings are resolved, the repair plan re-checks the failed checks, persisted invalidated checks, newly affected checks, current keys the baseline never declared, and any explicit `--rerun` override, then carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (candidate validate/verify full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
+**Failure record:** a run that finds P0/P1 writes a **failure record** instead of deleting the cache — a delta or repair re-run (`revalidate@{target}` / `reverify@{unit}`) for both gates, the candidate validate/verify full FAIL, and the confirmation-cache FAIL for stable-only targets (see §Write Rules and §Failure handling by gate role). It carries `result: fail`, `blocking: true`, the severity counts, a findings body, and the same `files`/`checks` evidence as a pass cache plus a `status` per check. It is a valid cache file: fresh and promote report it as `BLOCKED` and promote rejects it — but unlike a deleted cache it remains the **failure-recovery baseline**. A later targeted P0/P1 does not rewrite that historical status map: `specflowctl gate-invalidate` records the contradicted key in the machine-owned `invalidated_checks` list. For verify it also invalidates the corresponding immutable evidence under the same lock; consuming caches become stale and must recheck, while historical records and status maps remain intact. Acceptance-item ids are stored as `item:<unit>:<item>` keys and the unit-level scan as `unit:<unit>`. After the findings are resolved, the repair plan re-checks the failed checks, persisted invalidated checks, newly affected checks, current keys the baseline never declared, and any explicit `--rerun` override, then carries the rest over (see `framework/verification_scope.md` §Delta Runs → Failure recovery). A failure record written by a full run (candidate validate/verify full FAIL, stable-only confirmation FAIL) declares `status` on every judgment — `pass`/`fail`, no `carried` (the full run re-executed all of them).
 
 **Gate run binding:** `gate_run` is the audit id of the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes). It identifies the run's fixed inputs — it is not executor identity and proves nothing about the execution shape (see §Review-record limits → Known limit (execution shape)). `fresh` and `promote` never read it, and caches written before the field existed remain valid (absent = no run recorded).
 
@@ -160,7 +160,7 @@ Every executed judgment key gets exactly one marker, attached to the file that
 owns it:
 
 - validate: the check numbers `"1"`–`"10"` (rule: `"1"`–`"6"`) on the target's own main file.
-- verify `alignment`: `item:<unit>:<item>` on the unit's own main spec.
+- verify `alignment`: `item:<unit>:<item>` and `unit:<unit>` (the unit-level scan) on the unit's own main spec.
 - verify `quality`: `code:<file>` on the code file itself; `design:<unit>:<file>` and `architecture:<unit>` on the unit's own main spec.
 - relationship conclusions: `relationship:<name>` on the unit's own main spec.
 - `cross` is the summary verdict and creates no independent marker.
@@ -210,8 +210,9 @@ carry `invalidated_checks`.
   `specflowctl validate` Check 8 — region locatability — is a support check and
   takes no marker, while mechanical Check 9 — surface associations — is the
   audit mechanism behind agent Check 9's mechanical association report); verify
-  `alignment` uses `item:<unit>:<item>`; the `quality` lens uses `code:<file>`,
-  `design:<unit>:<file>` and `architecture:<unit>`; rule validate uses
+  `alignment` uses `item:<unit>:<item>` and `unit:<unit>` (the unit-level scan);
+  the `quality` lens uses `code:<file>`, `design:<unit>:<file>` and
+  `architecture:<unit>`; rule validate uses
   `"1"`–`"6"`. Markers exist for the failure-record status map, for the merged
   verify lens coverage, and for the delta carry snapshot — they carry no
   dependency claim.
@@ -292,7 +293,7 @@ The per-item ALIGNED / MISMATCH / CANNOT_DETERMINE verdicts of the `alignment` l
 
 ### Merged verify cache (alignment + quality)
 
-The one `verify_result.md` carries both lenses. Its `files` entries tag every check marker with its lens (`alignment` for item and relationship keys, `quality` for public code, design and architecture keys), so the cache records an `alignment` section and a `quality` section:
+The one `verify_result.md` carries both lenses. Its `files` entries tag every check marker with its lens (`alignment` for item, `unit:<unit>` and relationship keys, `quality` for public code, design and architecture keys), so the cache records an `alignment` section and a `quality` section:
 
 ```yaml
 ---
@@ -328,6 +329,8 @@ files:
     checks:
       - check: "item:user_auth:AUTH-AC-001"
         lens: alignment
+      - check: "unit:user_auth"
+        lens: alignment
       - check: "design:user_auth:src/auth/login.go"
         lens: quality
       - check: "architecture:user_auth"
@@ -335,7 +338,7 @@ files:
       - check: "relationship:contract_consistency"
 ---
 <!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":4,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
+{"schema_version":4,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","unit:user_auth":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"unit:user_auth":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
 GATE_JUDGMENTS_END -->
 ## Findings
 
@@ -569,7 +572,7 @@ A rule publication blocker does not stale or invalidate a passing cache. After p
 1. **Mode check** — `mode` must be `full`. Fail closed: a missing or invalid mode value cannot prove a complete-coverage run. Targeted runs never write caches, so any cache with a non-`full` mode is invalid. The `basis` field is audit metadata and never gates — full, delta, and repair caches pass the same mode and content checks. A **pass delta cache** must additionally carry its change-review record (`reviewed_change_set`); a delta cache without one is a pre-review artifact and fails closed.
 2. **Content check** — every listed file's whole-file `hash` must match the file's current content; a changed or missing file makes the cache stale. There is no sub-file freshness rule: any recorded content change stales the cache and requires a delta review (or a full run).
 3. **Verify result check** — `verify_result.md` with `result: pass` passes (P2/P3 pending items are carried by the severity counts). A failure record (`result: fail`) is rejected as `BLOCKED` (see below). Any other result value is rejected.
-4. **Merged verify lens check (required)** — `verify_result.md` must record a check for every expected coverage key of **both** lenses. The expected keys are the unit's current acceptance item ids (tagged `alignment`) and its declared code files (tagged `quality`); a cache that covers only one lens is rejected with guidance to re-run `verify@{unit}`.
+4. **Merged verify lens check (required)** — `verify_result.md` must record a check for every expected coverage key of **both** lenses. The alignment expected keys are the unit's current acceptance item ids plus the always-present `unit:<unit>` unit-level scan; the quality expected keys are its declared code files, their unit design keys, and the unit architecture key. A cache that covers only one lens is rejected with guidance to re-run `verify@{unit}`.
 5. **Appendix cache check** — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any non-exempt appendix on disk is missing from the cache's file list, the appendix was not validated and promote is rejected with guidance to run `validate@{unit}`.
 6. **Main file check** — the validate and verify cache file lists must include the main candidate spec file (`docs/specs/units/candidate/unit_{name}.md`), and the rule validate cache must include the candidate rule file (`docs/specs/rules/candidate/{rule_id}.md`). A cache whose file list omits the main file cannot prove that file was read during the run, so promote is rejected with guidance to re-run the corresponding check.
 
@@ -582,7 +585,7 @@ The merged verify cache at `docs/specs/meta/validation/unit/{name}/verify_result
 1. **Existence check** — if the file does not exist, promote is rejected: "Verify not completed. Run `verify@{unit}` first."
 2. **Mode check** — `mode` must be `full`. If not, promote is rejected: "verify cache mode is %q, expected 'full' — run `verify@{unit}` before promoting."
 3. **Content check** — every listed file's whole-file `hash` must match current content; a changed or missing file makes the cache stale and promote is rejected: "Verify cache is stale. Run `verify@{unit}` again." (A pass delta cache must also carry its change-review record.)
-4. **Lens coverage check** — the cache must record a check for every expected key of both lenses (the current acceptance item ids tagged `alignment` and the declared code files tagged `quality`). A cache covering only one lens is rejected: "verify cache does not cover both lenses — missing key(s): ... Run `verify@{unit}` again."
+4. **Lens coverage check** — the cache must record a check for every expected key of both lenses (the acceptance item ids plus the always-present `unit:<unit>` unit-level scan, tagged `alignment`, and the declared code files, their unit design keys, and the unit architecture key, tagged `quality`). A cache covering only one lens is rejected: "verify cache does not cover both lenses — missing key(s): ... Run `verify@{unit}` again."
 5. **Blocking check** — if `blocking: true`, promote is rejected: "Verify found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting."
 6. **Blocking declaration check** — `blocking` is a required field on every verify cache. A cache without it fails closed (the gate cannot determine blocking status): promote is rejected: "verify cache missing required field `blocking` — cannot determine blocking status".
 7. **Result value check** — `result` must be `pass` or `fail`. Any other value is rejected.

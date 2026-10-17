@@ -32,12 +32,13 @@ type parsedReport struct {
 	Review             *gaterun.ReviewRecord
 }
 
-// verifyMismatchTypes is the fixed MISMATCH type vocabulary of the verify
-// detection verdict (`MISMATCH (type)`; see framework/verification_scope.md
-// §Sub-agent Prompt Assembly).
-var verifyMismatchTypes = func() map[string]bool {
-	out := make(map[string]bool, len(mismatchTypes))
-	for _, value := range mismatchTypes {
+// itemMismatchTypeSet is the fixed MISMATCH type vocabulary of an item
+// session's detection verdict (`MISMATCH (type)`; see
+// framework/verification_scope.md §Sub-agent Prompt Assembly). Surplus belongs
+// to the unit-level scan, not to an item.
+var itemMismatchTypeSet = func() map[string]bool {
+	out := make(map[string]bool, len(itemMismatchTypes))
+	for _, value := range itemMismatchTypes {
 		out[value] = true
 	}
 	return out
@@ -118,6 +119,14 @@ func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report stri
 			return nil, err
 		}
 		verdictLines = lines
+	} else if spec.Kind == gaterun.SessionKindUnit {
+		// The unit-level scan session reports Step 1 (structural alignment) and
+		// Step 5 (implementation integrity and surplus) once for the whole unit.
+		lines, err := parseVerifyUnitReport(run, spec, report, out)
+		if err != nil {
+			return nil, err
+		}
+		verdictLines = lines
 	} else {
 		for _, key := range spec.CheckKeys {
 			token, line, lineIdx, err := extractVerdict(spec, key, report)
@@ -134,7 +143,7 @@ func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report stri
 			return nil, err
 		}
 	}
-	if !gaterun.IsItemKind(spec.Kind) {
+	if !gaterun.IsAlignmentKind(spec.Kind) {
 		// Finding ids are run-scoped — {run_id}/{session_id}/F{n} — so they
 		// are unique by construction across runs: a finding authored by this
 		// report can never collide with a carried finding from an earlier
@@ -450,14 +459,115 @@ func parseVerifyItemReport(run *gaterun.Run, spec *gaterun.SessionSpec, report s
 			return nil, fmt.Errorf("check %q: %w", item, err)
 		}
 		if token == "MISMATCH" {
-			finding, err := parseItemMismatch(run, spec, item, block, len(out.Findings)+1)
-			if err != nil {
+			if err := parseAlignmentFindings(run, spec, item, block, out); err != nil {
 				return nil, err
 			}
-			out.Findings = append(out.Findings, *finding)
 		}
 	}
 	return verdictLines, nil
+}
+
+// parseVerifyUnitReport parses the unit-level scan session: one alignment
+// verdict over the whole unit, the fixed declaration-class lines that make a
+// skipped class visible, and the inline finding fields of a MISMATCH.
+func parseVerifyUnitReport(run *gaterun.Run, spec *gaterun.SessionSpec, report string, out *parsedReport) (map[int]bool, error) {
+	if len(spec.CheckKeys) != 1 {
+		return nil, fmt.Errorf("a unit-level scan session judges exactly one key, got %d", len(spec.CheckKeys))
+	}
+	key := spec.CheckKeys[0]
+	token, line, lineIdx, err := extractVerdict(spec, key, report)
+	if err != nil {
+		return nil, err
+	}
+	if needsReason(spec, token) && !hasReason(line, token) {
+		return nil, fmt.Errorf("check %q verdict %s carries no reason", key, token)
+	}
+	out.Verdicts[key] = token
+	if err := validateUnitScanLines(report); err != nil {
+		return nil, err
+	}
+	if token == "MISMATCH" {
+		lines := strings.Split(report, "\n")
+		block := itemContinuationBlock(lines, lineIdx)
+		if err := parseAlignmentFindings(run, spec, key, block, out); err != nil {
+			return nil, err
+		}
+	}
+	return map[int]bool{lineIdx: true}, nil
+}
+
+// validateUnitScanLines enforces the unit-level scan's anti-skip contract: one
+// `declarations.<class>: checked=<n> — <result>` line for every declaration
+// class Step 1 compares, plus one `surplus: found=<n> — <result>` line for
+// Step 5 Part A and one `non_runnable: count=<n> — <result>` line for Step 5
+// Part 2. A class the reviewer never examined has no line and is rejected,
+// instead of disappearing silently now that one session replaces the unit-wide
+// work every item session used to repeat; Step 5 Part 2 is a whole-step output
+// too, so its result is a mandatory line rather than silent prose.
+func validateUnitScanLines(report string) error {
+	for _, class := range unitScanClasses {
+		re := regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*declarations\.` + regexp.QuoteMeta(class) + `:[ \t]*checked=[ \t]*\d+[ \t]*[—–-][ \t]*(\S[^\n]*)$`)
+		if n := len(re.FindAllStringSubmatch(report, -1)); n != 1 {
+			return fmt.Errorf("the unit-level scan report must declare exactly one `declarations.%s: checked=<n> — <result>` line", class)
+		}
+	}
+	re := regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*surplus:[ \t]*found=[ \t]*\d+[ \t]*[—–-][ \t]*(\S[^\n]*)$`)
+	if n := len(re.FindAllStringSubmatch(report, -1)); n != 1 {
+		return fmt.Errorf("the unit-level scan report must declare exactly one `surplus: found=<n> — <result>` line")
+	}
+	re = regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*non_runnable:[ \t]*count=[ \t]*\d+[ \t]*[—–-][ \t]*(\S[^\n]*)$`)
+	if n := len(re.FindAllStringSubmatch(report, -1)); n != 1 {
+		return fmt.Errorf("the unit-level scan report must declare exactly one `non_runnable: count=<n> — <result>` line")
+	}
+	return nil
+}
+
+// mismatchFindingBlocks splits an alignment verdict's continuation block into
+// its finding blocks. Each retained mismatch is one finding block introduced by
+// a `Problem:` line, so a single MISMATCH verdict carries one block per retained
+// mismatch instead of being limited to one. The lines before the first
+// `Problem:` (an item session's evidence/deterministic/Part A verdict fields)
+// belong to no finding.
+func mismatchFindingBlocks(block []string) [][]string {
+	openRe := regexp.MustCompile(`(?mi)^[ \t]*Problem:`)
+	var out [][]string
+	var current []string
+	for _, line := range block {
+		if openRe.MatchString(line) {
+			if len(current) > 0 {
+				out = append(out, current)
+			}
+			current = []string{line}
+			continue
+		}
+		if len(current) > 0 {
+			current = append(current, line)
+		}
+	}
+	if len(current) > 0 {
+		out = append(out, current)
+	}
+	return out
+}
+
+// parseAlignmentFindings parses every finding block of one alignment verdict.
+// A MISMATCH declares one block per retained mismatch (Step 1 declaration
+// classes and Step 5 surplus constructs can each yield several independent
+// mismatches), each introduced by a `Problem:` line; findings are numbered by
+// the run-scoped report order {run}/{session}/F{n}.
+func parseAlignmentFindings(run *gaterun.Run, spec *gaterun.SessionSpec, key string, block []string, out *parsedReport) error {
+	blocks := mismatchFindingBlocks(block)
+	if len(blocks) == 0 {
+		return fmt.Errorf("check %q MISMATCH must declare at least one finding block introduced by a `Problem:` line", key)
+	}
+	for _, findingBlock := range blocks {
+		finding, err := parseItemMismatch(run, spec, key, findingBlock, len(out.Findings)+1)
+		if err != nil {
+			return err
+		}
+		out.Findings = append(out.Findings, *finding)
+	}
+	return nil
 }
 
 // parseItemMismatch parses and validates the inline finding fields of one
@@ -737,7 +847,7 @@ func extractVerdict(spec *gaterun.SessionSpec, key, report string) (string, stri
 	switch spec.Kind {
 	case gaterun.SessionKindChecks:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `\.[^\n]*?:\s*(` + allowed + `)\b`
-	case gaterun.SessionKindItem:
+	case gaterun.SessionKindItem, gaterun.SessionKindUnit:
 		pat = `(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b(?:\s*\(([^)\n]*)\))?`
 	case gaterun.SessionKindDesign, gaterun.SessionKindCode, gaterun.SessionKindArchitecture:
 		pat = `(?m)^[ \t]*-?[ \t]*conclusion:\s*((?i:` + allowed + `))\b`
@@ -767,8 +877,20 @@ func extractVerdict(spec *gaterun.SessionSpec, key, report string) (string, stri
 		if len(match) > 2 {
 			verdictType = strings.TrimSpace(match[2])
 		}
-		if !verifyMismatchTypes[verdictType] {
-			return "", "", 0, fmt.Errorf("check %q MISMATCH verdict requires a type suffix from `structural | acceptance | scope | stub | surplus`, got %q", key, verdictType)
+		if !itemMismatchTypeSet[verdictType] {
+			return "", "", 0, fmt.Errorf("check %q MISMATCH verdict requires a type suffix from `structural | acceptance | scope | stub`, got %q", key, verdictType)
+		}
+	}
+	if spec.Kind == gaterun.SessionKindUnit && token == "MISMATCH" {
+		// The unit-level scan's MISMATCH types are structural (Step 1) and
+		// surplus (Step 5 Part A): scope, acceptance and stub judgments belong
+		// to the item sessions.
+		verdictType := ""
+		if len(match) > 2 {
+			verdictType = strings.TrimSpace(match[2])
+		}
+		if !stringInList(unitMismatchTypes, verdictType) {
+			return "", "", 0, fmt.Errorf("unit-level scan %q MISMATCH verdict requires a type suffix from `structural | surplus`, got %q", key, verdictType)
 		}
 	}
 	if gaterun.IsQualityKind(spec.Kind) {

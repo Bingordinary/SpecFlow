@@ -252,8 +252,9 @@ func RequiredCoverage(repoRoot string, run *Run) ([]CoverageKey, error) {
 // computeCoverage is the complete coverage set for a full run: the judgment
 // keys that must each receive exactly one verdict. validate (unit) covers the
 // validate check groups; validate (rule) covers the rule check keys; verify
-// covers the merged union of the acceptance item ids under the alignment lens
-// and the declared code files under the quality lens.
+// covers the merged union of the acceptance item ids plus the always-present
+// unit-level scan under the alignment lens and the declared code files under
+// the quality lens.
 // RequiredCoverage includes both executed and carried checks of this run.
 func (d *Derivation) computeCoverage(run *Run) ([]CoverageKey, error) {
 	switch classifyRun(run) {
@@ -276,8 +277,8 @@ func (d *Derivation) computeCoverage(run *Run) ([]CoverageKey, error) {
 }
 
 // verifyCoverage derives the merged verify gate's coverage keys: the
-// acceptance item ids under the alignment lens, then the declared code files
-// under the quality lens.
+// acceptance item ids and the always-present unit-level scan under the
+// alignment lens, then the declared code files under the quality lens.
 func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 	items, err := verifyItems(d.root, run)
 	if err != nil {
@@ -287,6 +288,9 @@ func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 	for _, item := range items {
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindItem, run.TargetName, item), Kind: SessionKindItem, Lens: LensAlignment, Unit: run.TargetName, Item: item})
 	}
+	// The unit-level scan (Steps 1 and 5) is one judgment over the whole unit;
+	// it replaces the unit-wide work every item session used to repeat.
+	coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindUnit, run.TargetName, ""), Kind: SessionKindUnit, Lens: LensAlignment, Unit: run.TargetName})
 	for _, file := range qualityFiles(run) {
 		reads := codeReadRefs(run, file)
 		coverage = append(coverage, CoverageKey{Key: reviewKey(SessionKindCode, "", file), Kind: SessionKindCode, Lens: LensQuality, File: file, ReadRefs: reads}, CoverageKey{Key: reviewKey(SessionKindDesign, run.TargetName, file), Kind: SessionKindDesign, Lens: LensQuality, File: file, Unit: run.TargetName})
@@ -332,9 +336,11 @@ func (r *Run) LensForReportKey(key string) string {
 }
 
 // ExpectedVerifyCoverage computes the merged verify coverage set — the
-// alignment acceptance-item keys and the quality declared-code-file keys — for
-// the current target without persisting a run. promote uses it to require the
-// published verify cache to cover both lenses.
+// alignment keys (the acceptance-item keys plus the always-present unit-level
+// scan key) and the quality keys (declared code files, their unit design keys
+// and the unit architecture key) — for the current target without persisting a
+// run. promote uses it to require the published verify cache to cover both
+// lenses.
 func ExpectedVerifyCoverage(repoRoot, unitName, target string) ([]CoverageKey, error) {
 	d, err := NewDerivation(repoRoot)
 	if err != nil {
@@ -442,7 +448,7 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 		}
 		seen[key] = true
 		switch ck.Kind {
-		case SessionKindChecks, SessionKindItem, SessionKindDesign, SessionKindCode, SessionKindArchitecture:
+		case SessionKindChecks, SessionKindItem, SessionKindUnit, SessionKindDesign, SessionKindCode, SessionKindArchitecture:
 		case SessionKindDeltaReview:
 			if key != DeltaReviewKey {
 				return fmt.Errorf("delta review coverage key %q must be %q", key, DeltaReviewKey)
@@ -456,8 +462,8 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 				return fmt.Errorf("coverage key %q has no lens — a verify key must be tagged alignment or quality", key)
 			}
 		case LensAlignment:
-			if ck.Kind != SessionKindItem {
-				return fmt.Errorf("alignment coverage key %q has kind %q, expected %q", key, ck.Kind, SessionKindItem)
+			if !IsAlignmentKind(ck.Kind) {
+				return fmt.Errorf("alignment coverage key %q has kind %q, expected %q or %q", key, ck.Kind, SessionKindItem, SessionKindUnit)
 			}
 		case LensQuality:
 			if ck.Kind != SessionKindDesign && ck.Kind != SessionKindCode && ck.Kind != SessionKindArchitecture {
@@ -678,12 +684,15 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		spec.Context = append(spec.Context, "Assess all six Dimension 8 architecture fields once for the whole unit.")
 	}
 	if IsItemKind(kind) {
-		spec.Context = append(spec.Context, "For Steps 1 and 5, attribute code structures and designs to the responsibility of the unit owning each key before judging surplus. Shared-file association is not exclusive ownership. Independent behavior outside that responsibility is not surplus; helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location.")
+		spec.Context = append(spec.Context, "Steps 1 (structural alignment) and 5 (implementation integrity and code design-surface surplus) are executed by the run's unit-level scan session; do not re-derive them here. This session owns Steps 2, 3, 4, 6, 7 for its items: Step 2 acceptance alignment, Step 3 scope accuracy — for each assigned item verify that its declared implementation_surface / affects.files carry the implementation its pass_condition describes and are relevant to it (shared implementation is permitted, and a file that only supplies an input to behavior implemented elsewhere is not under-declaration; a declaration defect is a MISMATCH (scope) finding) — Step 4 retirement verification for replacement candidates, Step 6 stub adjudication, and Step 7 first-principles divergence analysis for every MISMATCH this session retains. If evidence is missing from read_refs, report the missing input rather than judging from incomplete context.")
 		for _, notice := range run.Notices {
 			if strings.HasPrefix(notice, "stub scan:") {
 				spec.Context = append(spec.Context, notice)
 			}
 		}
+	}
+	if kind == SessionKindUnit {
+		spec.Context = append(spec.Context, "Unit-level alignment scan: execute Step 1 (structural alignment) and Step 5 (implementation integrity and code design-surface surplus) over the whole unit — Step 5 covers both the code design-surface surplus analysis (Part A) and the non-runnable assessment (count the acceptance items marked `runnable: no`, check each carries a substantive `not_runnable_reason` with external evidence, and judge whether the remaining runnable set gives meaningful coverage) — Step 2 acceptance alignment, Step 3 scope accuracy and Step 6 are owned by the item sessions, while this session completes Step 7 first-principles divergence analysis for every structural or surplus MISMATCH it retains. Attribute code structures and designs to the responsibility of this unit before judging surplus: shared-file association is not exclusive ownership, independent behavior outside that responsibility is not surplus, and helpers or shared mechanisms implementing or constraining this unit's requirements remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location. Report one `declarations.<class>:` line per declaration class, one `surplus:` line for the code design-surface scan, and one `non_runnable:` line for the non-runnable assessment, as the report contract requires, so neither an unexamined declaration class nor the Step 5 Part 2 result is silent.")
 	}
 	return spec, nil
 }
@@ -702,7 +711,11 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 			return appendUnique(allRefNames(run), extraInputPaths(run)...)
 		}
 		return unitValidateGroupReadRefs(repoRoot, run, ck.Key)
-	case SessionKindItem:
+	case SessionKindItem, SessionKindUnit:
+		// An acceptance-item session and the unit-level scan read the own spec
+		// plus the whole declared code surface; the item session judges its
+		// items (Steps 2, 3, 4, 6, 7) and the unit session scans the unit
+		// (Steps 1 and 5).
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
 		read = appendUnique(read, affectsEvidencePaths(run)...)
@@ -795,7 +808,8 @@ func coverageKeysForRerun(run *Run, effective map[string]bool) []string {
 
 // currentGateKeys lists the current non-cross judgment keys for the run's
 // gate and target: the fixed check numbers (validate and rule targets),
-// acceptance item ids, or quality code files (verify).
+// the acceptance item ids plus the always-present unit-level scan, or quality
+// code files (verify).
 func (d *Derivation) currentGateKeys(run *Run) ([]string, error) {
 	switch classifyRun(run) {
 	case classRuleValidate:

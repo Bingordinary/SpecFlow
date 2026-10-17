@@ -1098,7 +1098,7 @@ func finalizedKeyResult(ck gaterun.CoverageKey, original *gaterun.SessionResult,
 	result := *original
 	status := outcome.EffectiveStatus[ck.Key]
 	verdict := original.Verdicts[ck.Key]
-	if gaterun.IsItemKind(ck.Kind) {
+	if gaterun.IsAlignmentKind(ck.Kind) {
 		// Passing an advisory gate does not prove an indeterminate requirement:
 		// keep the original alignment verdict.
 		if status == "pass" && verdict != "CANNOT_DETERMINE" {

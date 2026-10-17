@@ -191,7 +191,7 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	grWriteFile(t, root, proof, "The full contract resolves the local mismatch.\n")
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	grSubmitOK(t, root, id, "auth.core", grVerifyMismatchReport("auth.core", main, "contracts.js", "P2"))
-	grAutoSubmitQuality(t, root, id)
+	grAutoSubmitRemaining(t, root, id)
 	grSubmitOK(t, root, id, "cross", relationshipReport(t, root, id, map[string]string{"contract_consistency": proof}, ""))
 	grFinalizeOK(t, root, id)
 	finding := grReadJudgmentBaseline(t, root, "unit", "auth", "verify").Findings[0].ID

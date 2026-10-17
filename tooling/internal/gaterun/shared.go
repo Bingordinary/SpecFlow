@@ -24,6 +24,9 @@ func reviewKey(kind, unit, subject string) string {
 	if kind == SessionKindArchitecture {
 		return "architecture:" + unit
 	}
+	if kind == SessionKindUnit {
+		return "unit:" + unit
+	}
 	return kind + ":" + unit + ":" + subject
 }
 
@@ -534,6 +537,10 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		kind = judgments.Item
 		subject = ck.Item
 	}
+	if kind == SessionKindUnit {
+		kind = judgments.Unit
+		subject = ck.Unit
+	}
 	inputs := coverageReadRefs(root, run, ck)
 	var owned []string
 	if unit != "" {
@@ -704,9 +711,9 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 				return judgments.Reference{}, err
 			}
 		}
-	case SessionKindArchitecture:
-		// Architecture covers the whole unit: the spec and every declared
-		// code-surface file are pinned whole-file.
+	case SessionKindArchitecture, SessionKindUnit:
+		// Architecture and the unit-level alignment scan cover the whole unit:
+		// the spec and every declared code-surface file are pinned whole-file.
 		if err := addWholeFile(mainSpec); err != nil {
 			return judgments.Reference{}, err
 		}
@@ -819,6 +826,13 @@ func IsQualityKind(kind string) bool {
 }
 func IsItemKind(kind string) bool { return kind == SessionKindItem }
 
+// IsAlignmentKind reports whether a session kind judges under the alignment
+// lens: acceptance items (Steps 2, 3, 4, 6, 7) and the unit-level scan
+// (Steps 1 and 5). Both carry an alignment verdict line.
+func IsAlignmentKind(kind string) bool {
+	return kind == SessionKindItem || kind == SessionKindUnit
+}
+
 func ExpectedCheckFor(root string, run *Run, ck CoverageKey) validationcache.ExpectedCheck {
 	layer := run.Target
 	kind := ck.Kind
@@ -829,6 +843,10 @@ func ExpectedCheckFor(root string, run *Run, ck CoverageKey) validationcache.Exp
 	if kind == SessionKindItem {
 		subject = ck.Item
 		kind = judgments.Item
+	}
+	if kind == SessionKindUnit {
+		subject = ck.Unit
+		kind = judgments.Unit
 	}
 	return validationcache.ExpectedCheck{Key: ck.Key, Lens: ck.Lens, Kind: kind, Unit: ck.Unit, Layer: layer, Subject: subject, Inputs: coverageReadRefs(root, run, ck)}
 }

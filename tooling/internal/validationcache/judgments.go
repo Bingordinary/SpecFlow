@@ -121,7 +121,7 @@ func rewriteJudgmentBindings(content, unit, from, to string) string {
 	}
 	changed := false
 	for key, ref := range refs {
-		if strings.HasPrefix(key, "item:"+unit+":") || strings.HasPrefix(key, "design:"+unit+":") || key == "architecture:"+unit {
+		if strings.HasPrefix(key, "item:"+unit+":") || strings.HasPrefix(key, "design:"+unit+":") || key == "architecture:"+unit || key == "unit:"+unit {
 			if ref.Layer == from {
 				ref.Layer = to
 				refs[key] = ref

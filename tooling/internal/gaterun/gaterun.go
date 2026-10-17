@@ -84,6 +84,7 @@ const (
 	// reviewed file, or the final cross synthesis.
 	SessionKindChecks       = "checks"
 	SessionKindItem         = "item"
+	SessionKindUnit         = "unit"
 	SessionKindDesign       = "design"
 	SessionKindCode         = "code"
 	SessionKindArchitecture = "architecture"
@@ -783,7 +784,7 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	run.RunID = runID
 	run.CreatedAt = now.UTC().Format(timestampLayout)
 	if gate == GateVerify && targetKind == TargetKindUnit {
-		run.Notices = append(run.Notices, "evidence discovery: item sessions read the spec-declared surface (implementation_surface, affects.files, cited affects.evidence_files, rules); the coordinator supplies related tests, callers, callees and dependencies through `--inputs-file`, and a reviewer that needs another file reports a missing read ref so the run can be extended with `specflowctl gate-extend --run "+run.RunID+" --paths <path>` — extending keeps every accepted session, while a new gate-plan would replace the run")
+		run.Notices = append(run.Notices, "evidence discovery: the alignment sessions (item sessions and the unit-level scan) read the spec-declared surface (implementation_surface, affects.files, cited affects.evidence_files, rules); the coordinator supplies related tests, callers, callees and dependencies through `--inputs-file`, and a reviewer that needs another file reports a missing read ref so the run can be extended with `specflowctl gate-extend --run "+run.RunID+" --paths <path>` — extending keeps every accepted session, while a new gate-plan would replace the run")
 		if notice := stubScanNotice(repoRoot, run); notice != "" {
 			run.Notices = append(run.Notices, notice)
 		}
