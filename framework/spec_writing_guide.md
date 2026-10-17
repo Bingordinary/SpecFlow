@@ -99,7 +99,7 @@ Or `rule_exceptions: none`. Rules:
 
 Everything else in the unit (body prose, evidence appendices, background, motivation, design discussion) is not a formal behavior carrier.
 
-**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a caller or dependent unit must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a caller must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because a dependent unit does not read it through carriers. `validate` Check 5h enforces this boundary on prose, and Check 5a applies it to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
+**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through carriers. `validate` Check 5h enforces this boundary on prose, and Check 5a applies it to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
 
 Contract statements must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5e), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers; the run records the dependency file's whole content as evidence, so any edit to it is visible to the change review.
 
@@ -456,6 +456,8 @@ Acceptance items       → minimal verifiable behavior contracts (see §7)
 
 Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
 
+**Ordering statements and the content boundary.** The required ordered-step account does not conflict with §15.2's exclusion of internal rendering order, prompt block layout, and internal section ordering: §15.2 decides whether an ordering statement may be stated, this contract decides whether the stated content is clear. See §15.2 "Ordering and layout against §9" for where the boundary falls.
+
 **Enforcement (validate Check 10).** This contract is enforced at validate time by the clarity check: one independent session reads the unit's complete spec — the main spec and every non-exempt appendix — and reports what is unclear, underspecified, or internally contradictory. It judges directly whether the human-readable part states the design clearly enough for its readers to understand it without guessing, and whether any statement conflicts with another; there is no reconstruction step and no second session. An internal contradiction, an unclosed implementation-affecting decision, or a passage a reader cannot understand is a P0/P1 finding. A declarative unit (§14.4's type/contract units) satisfies the check by stating its shape clearly — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The check is defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition, not an upper bound on readability.
 
 ### Spec-First Planning and Execution Lifecycle
@@ -535,9 +537,9 @@ A specification requires determinism to be verifiable, but over-specification de
 
 Whether a concrete value or assertion is an acceptable **Contract Anchor** or an unacceptable **Over-Specification** is determined by who owns the underlying truth:
 
-1. **Ownership Law**: A unit may declare concrete constants, invariants, and boundaries **only** for the behaviors and data structures that it directly owns, and **only when they are externally observable** (§15.2) — a value a caller or dependent unit reads or is bounded by.
+1. **Ownership Law**: A unit may declare concrete constants, invariants, and boundaries **only** for the behaviors and data structures that it directly owns, and **only when they are externally observable** (§15.2) — a value a declared consumer reads or is bounded by.
    - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), caller-facing limits (`maxLoops = 20` on a run request, `tokenExpiry = 3600s` on an issued token), and exported serialization keys (`session_id`).
-   - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables. An owner declaring an internal value no external consumer can observe — an internal buffer size, an internal retry count, an internal loop cap — is over-specification under §15.2, not a contract anchor.
+   - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables. An owner declaring an internal value — an internal buffer size, an internal retry count, an internal loop cap — is over-specification under §15.2, not a contract anchor.
 
 2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** (acceptance item sets or protocol appendices) exported by collaborating units.
    - *Allowed*: Referencing exported contract constants (e.g. `contracts.SpanAttr*`), standard protocol events (`DELEGATE_TASK_REQUESTED`), or describing behaviorally what must be exchanged.
@@ -570,7 +572,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 | **Concurrency & State** | "Concurrent calls to `Increment()` are atomic and thread-safe" | "Must synchronize using `sync.RWMutex` guarding `map[string]int`" |
 | **Async Operations** | "Waits for `TaskCompleted` event or times out after 10s with `TIMEOUT`" | "Sleeps 500ms then reads database row" |
 | **Acceptance Scenarios** | "Given an authenticated admin user" | "Given `mockRunner` configured with `test_tool_v1`" |
-| **Domain Limits** | Caller-facing limits: `tokenExpiry = 3600s`, `rateLimit = 100 req/min`, `maxLoops = 20` on a request | Internal limits no consumer can observe (internal buffer sizes, internal retry counts) per §15.2, and hardcoding developer local machine config file path `/Users/alice/.config` |
+| **Domain Limits** | Caller-facing limits: `tokenExpiry = 3600s`, `rateLimit = 100 req/min`, `maxLoops = 20` on a request | Internal limits (internal buffer sizes, internal retry counts) per §15.2, and hardcoding developer local machine config file path `/Users/alice/.config` |
 
 ### 14.4 File Associations and Shared Agreements
 
@@ -586,7 +588,7 @@ Declare paths relevant to the acceptance item. Whether each declaration actually
 
 This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1 — the §15.1 mechanical pre-pass, Check 2 Step 5, Check 5a, Check 5e, Check 5h, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
 
-**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** The judgment test for "externally observable" is: can a caller or dependent unit of this unit observe it, or be affected by it? If not, the content belongs to the implementation — the code and its tests — not to the Spec, even when this unit owns it.
+**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** "Externally observable" is judged from the **declaration surface**, never from implementation files: content is externally observable when a **declared consumer** reads it, is bounded by it, or is affected by it. The declaration surface of a unit is its own formal behavior carriers (§4 — the acceptance item set and protocol appendices) together with the carriers of every unit it lists in `unit_refs`; the declaration surface of a rule is the units that consume it through `rule_refs`. A caller, dependent unit, or other consumer that no declaration names is not a declared consumer and cannot make content observable — the judgment is a claim about what the Spec declares, not about runtime behavior, and the runtime observation that would settle it (the implementation files) is outside the judgment surface. Content that no declared consumer reads, is bounded by, or is affected by is not established as observable by the Spec; §15.2 defines its disposition — prohibited outright when the content's own statement places it on the internal side, and an undeclared boundary requiring a decision otherwise.
 
 ### 15.1 Current truth only
 
@@ -601,14 +603,14 @@ Change history belongs to version control. When a behavior is retired, its narra
 
 ### 15.2 Externally observable only
 
-The Spec states externally observable behavior: content a caller or dependent unit reads to use this unit safely.
+The Spec states externally observable behavior: content a declared consumer reads to use this unit safely. The judgment is made from the declaration surface defined in §15, never from implementation files, so one document yields one verdict rather than one verdict per reading of the sentence.
 
 **Prohibited — internal implementation detail**, whether of this unit or of another unit:
 
 - internal type and struct definitions, internal field names and layouts
 - internal function or method names, internal call sequences and step orders
 - internal data structures and their operations
-- internal buffer sizes, queue capacities, and thresholds no external consumer can observe
+- internal buffer sizes, queue capacities, and thresholds
 - internal retry/backoff values and internal timing
 - internal rendering order, prompt block layout, internal section ordering
 - internal module, package, or file layout; code file paths in narrative
@@ -617,13 +619,20 @@ The Spec states externally observable behavior: content a caller or dependent un
 **Allowed — externally observable:**
 
 - entry points, inputs, and outputs
-- public data formats crossing the boundary (field/type/enum names a consumer reads)
+- public data formats crossing the boundary (field/type/enum names a declared consumer reads)
 - error codes and status codes
 - protocol names and formats
-- timing and consistency guarantees a caller must respect (sync vs async, ordering, timeouts)
-- observable limits and configuration a caller sets or is bounded by
+- timing and consistency guarantees a declared consumer must respect (sync vs async, ordering, timeouts)
+- observable limits and configuration a declared consumer sets or is bounded by
+
+**Default dispositions.** The declaration surface decides each case, so no reviewer is asked for a negative existence claim:
+1. A declared consumer reads, is bounded by, or is affected by the content → externally observable; it belongs in the Spec.
+2. The statement itself places the content on the internal side — it matches a prohibited category above, or uses internal wording such as "internal", "engine-internal", "not exposed", "not open to the host" → prohibited on that wording alone, and no proof that no consumer can observe the value is required.
+3. The content states a concrete implementation value, name, layout, ordering, or mapping that fits no prohibited category, is tied to no declared consumer, and is declared on neither side → the boundary is **undeclared**. It is neither passed by default nor failed by inference: it is reported as a `needs_decision` — is this a contract whose consumer the Spec must declare, or an internal detail to retire? Design narrative that describes behavior without asserting such a concrete fact is design expression under §9 and raises no boundary question.
 
 §14.1's Ownership Law governs who may declare a contract anchor across units; it does not exempt a unit from this boundary for its own internals.
+
+**Ordering and layout against §9.** §9's Reader Contract requires the narrative to state how ordered steps connect, while the prohibited list above excludes internal rendering order, prompt block layout, and internal section ordering. The roles separate the two rules: §15.2 governs *what content may be stated*; §9 governs *whether the stated content is clear*. An ordering statement is permitted when it is the observable sequencing guarantee a declared consumer must respect — the ordering entry in the allowed list above — and prohibited when it specifies the internal layout, rendering, or section order through which this unit realizes that sequence. Where a unit's ordered output crosses to a declared consumer that is not a unit (a model reading the prompt, a host reading an event stream), the sequencing guarantee is contract content and is stated behaviorally; the internal block layout that produces it is not.
 
 ### 15.3 Not stated elsewhere
 

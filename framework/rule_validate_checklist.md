@@ -194,13 +194,13 @@ If either is found → FAIL.
 
 5. **Layer-prefix path check:** scan the rule body for layer-prefixed spec paths (`docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, `docs/specs/units/candidate/`, `docs/specs/units/stable/`, or the relative forms `candidate/`, `stable/`). Reference other rules and specs by `rule_id` or concept name instead — rule files do not encode layer, so the reference stays valid before and after promote. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active round. If found → FAIL with quoted path and line reference.
 
-6. **Content boundary:** apply `framework/spec_writing_guide.md` §15 to the rule body. Rules carry shared constraints, so the observability test is consumer-side: a rule states what its consuming units must observe or respect — not how an implementation satisfies it. The rule body must stay within §15's three clauses (§15.1 current truth only, §15.2 externally observable only, §15.3 not stated elsewhere) → FAIL on a violation (actionable: restate as the constraint the consumer must respect, or delete the history — version control owns it). §15 is the single authoritative definition; this step cites it and does not restate it.
+6. **Content boundary:** apply `framework/spec_writing_guide.md` §15 to the rule body. Rules carry shared constraints, so the observability test is consumer-side: a rule states what its consuming units must observe or respect — not how an implementation satisfies it. The rule body must stay within §15's three clauses (§15.1 current truth only, §15.2 externally observable only, §15.3 not stated elsewhere) → FAIL on a violation (actionable: restate as the constraint the consumer must respect, or delete the history — version control owns it). Rule-body content whose §15.2 boundary is undeclared (disposition 3) → FAIL (needs_decision per §15.2). §15 is the single authoritative definition; this step cites it and does not restate it.
 
 **PASS:** Rule body is clear, internally consistent, verifiable, and within the §15 content boundary.
 
 **WARNING:** Constraint is too vague to verify mechanically (step 3 only). WARNING does not affect the overall validate result — a validate with no FAIL checks passes, cache is written, and the WARNING is recorded in the result body.
 
-**FAIL:** Contradictory exceptions, self-contradicting statements, constraint nullified by exceptions, layer-prefixed spec paths in the body, or a §15 content-boundary violation (step 6).
+**FAIL:** Contradictory exceptions, self-contradicting statements, constraint nullified by exceptions, layer-prefixed spec paths in the body, a §15 content-boundary violation (step 6), or a §15.2 boundary left undeclared (step 6, needs_decision).
 
 **Check method:** Content reasoning — the agent reads and evaluates rule prose.
 
