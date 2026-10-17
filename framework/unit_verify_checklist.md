@@ -280,7 +280,7 @@ After completing all analysis steps, the agent must report coverage confidence (
 
 ### Subagent Launch and Permissions
 
-- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, and query read-only repository history (e.g., `git log` for file timestamps). Must NOT modify files or execute commands that change state. The main agent launches one read-only sub-agent per session (each session covers an agent-chosen, lens-pure batch of coverage keys) — each sub-agent follows the same permissions (read-only, no delegation chain).
+- **Subagent permissions:** may inspect file content, search text by pattern, locate files by name pattern, query read-only repository history (e.g., `git log` for file timestamps), and run the read-only framework inspection subcommands its checks instruct it to run (`specflowctl deps`, `specflowctl surfaces`, `specflowctl validate candidate`). It must NOT modify files, run state-changing commands, or delegate to other agents. The main agent launches one read-only sub-agent per session (each session covers an agent-chosen, lens-pure batch of coverage keys) — each sub-agent follows the same permissions (read-only, no delegation chain).
 
 ## Output Format
 

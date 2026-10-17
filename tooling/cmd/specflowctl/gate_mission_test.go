@@ -271,6 +271,37 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	}
 }
 
+// TestGateMissionGrantsReadOnlyFrameworkInspection pins the reviewer
+// permission boundary in the generated mission: the read-only framework
+// inspection subcommands the validate checks instruct (deps, surfaces,
+// validate candidate) are granted, while the prohibition side still forbids
+// file modification, state-changing commands, and sub-agent launch.
+func TestGateMissionGrantsReadOnlyFrameworkInspection(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	grant := "specflowctl deps, specflowctl surfaces, specflowctl validate candidate"
+	prohibition := "do not modify files, run state-changing commands, or launch sub-agents"
+
+	validateRun := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	validateMission := missionJSON(t, root, validateRun, "dependencies")
+	validateConstraints := strings.Join(validateMission.Constraints, "\n")
+	if !strings.Contains(validateConstraints, grant) {
+		t.Fatalf("validate mission does not grant the read-only framework inspection subcommands: %v", validateMission.Constraints)
+	}
+	if !strings.Contains(validateConstraints, prohibition) {
+		t.Fatalf("validate mission lost the prohibition constraint: %v", validateMission.Constraints)
+	}
+
+	verifyRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	codeMission := missionJSON(t, root, verifyRun, "code:src/auth.go")
+	if !strings.Contains(strings.Join(codeMission.Constraints, "\n"), grant) {
+		t.Fatalf("verify code mission does not grant the read-only framework inspection subcommands: %v", codeMission.Constraints)
+	}
+}
+
 // TestGateMissionCoBatchedContractFollowsEachKind pins the co-batched
 // code+design session's report contract: each block follows its own coverage
 // kind — the code block carries the facts form with no scope lines, and the

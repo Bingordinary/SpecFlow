@@ -18,7 +18,7 @@ A candidate full-run FAIL writes a failure record (`result: fail` + `blocking: t
 
 ## Execution Rules
 
-- **Subagent permissions:** rule validate executes in an independent read-only sub-agent session using the generated `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` mission. The sub-agent may read rule files, search text patterns, check file existence; it must NOT modify files, execute commands (beyond read-only tools), or delegate to other agents. Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
+- **Subagent permissions:** rule validate executes in an independent read-only sub-agent session using the generated `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` mission. The sub-agent may read rule files, search text patterns, check file existence, query read-only repository history, and run the read-only framework inspection subcommands its checks instruct it to run (`specflowctl deps`, `specflowctl surfaces`, `specflowctl validate candidate`). It must NOT modify files, run state-changing commands, or delegate to other agents. Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
 - On FAIL: identify which checks failed and the contradictory information
 - Resolution types (each finding is labeled with one):
   - **actionable** — A concrete repair can be made inside the current candidate rule file without user judgment.
