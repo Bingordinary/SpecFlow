@@ -201,8 +201,17 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
 	switch gateNextAction(run, states, uncovered) {
 	case "execute":
-		keys := strings.Join(uncovered, ",")
-		return fmt.Sprintf("batch these uncovered keys into sessions: `specflowctl gate-mission --run %s --keys %s --format prompt`, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", run.RunID, keys, run.RunID)
+		// One command per runnable session: a session never mixes report
+		// kinds or lenses, and a verify design key co-batches its file's
+		// public key. A single joined command over the whole uncovered set
+		// would print a batch the tool rejects — a delta run's delta_review
+		// key next to its check keys, or a verify run's item, unit, and
+		// quality keys. The hint must name only commands that run.
+		commands := []string{}
+		for _, batch := range gaterun.PartitionBatches(run, uncovered) {
+			commands = append(commands, fmt.Sprintf("`specflowctl gate-mission --run %s --keys %s --format prompt`", run.RunID, strings.Join(batch, ",")))
+		}
+		return fmt.Sprintf("batch these uncovered keys into sessions: %s, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", strings.Join(commands, "; "), run.RunID)
 	case "synthesize":
 		return fmt.Sprintf("relationships to check or findings to dispose — generate the final synthesis: `specflowctl gate-mission --run %s --final --format prompt`, then submit it: `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
 	case "abandon":

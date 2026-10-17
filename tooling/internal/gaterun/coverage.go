@@ -549,6 +549,67 @@ func SessionID(keys []string) string {
 	return "batch-" + hex.EncodeToString(sum[:])[:12]
 }
 
+// qualityPairClass is the session class of a verify quality file's co-batched
+// `code:<file>` and `design:<unit>:<file>` keys. It is a partition sentinel,
+// not a coverage kind.
+const qualityPairClass = "quality-file"
+
+// sessionBatchKey is the equivalence a reviewer session batch is built on: one
+// class and one lens. For every key but the verify quality public/design pair
+// the class is the report kind, so a batch holds the run's keys of one kind and
+// one lens. For a verify quality `code:<file>` key and its unit's
+// `design:<unit>:<file>` key the class is the reviewed file, so the pair
+// co-batches — the framework's one-pass public+design composition. This keeps
+// every batch ready to materialize: when both keys of a file are uncovered they
+// share the co-batch (the design judgment disposes the facts the same session
+// collects and needs no separate public record), and when only the design key
+// is uncovered its public record is already accepted or carried.
+type sessionBatchKey struct {
+	class string
+	lens  string
+	file  string
+}
+
+// sessionBatchKeyOf maps a coverage key to its reviewer session batch key.
+func sessionBatchKeyOf(ck *CoverageKey) sessionBatchKey {
+	if ck.Lens == LensQuality && (ck.Kind == SessionKindCode || ck.Kind == SessionKindDesign) {
+		return sessionBatchKey{class: qualityPairClass, lens: ck.Lens, file: ck.File}
+	}
+	return sessionBatchKey{class: ck.Kind, lens: ck.Lens}
+}
+
+// PartitionBatches partitions coverage keys into reviewer session batches: one
+// batch per session class and lens, in the run's coverage order. Every returned
+// batch is accepted by BuildSessionSpec and can be materialized immediately —
+// the class applies both the "one kind, one lens" rule submission enforces and
+// the verify quality co-batch the design judgment needs — so a hint built from
+// these batches never prints a command the tool rejects for mixing kinds or
+// lenses or for an unsatisfied dependency. Keys not in the run's coverage set
+// are ignored.
+func PartitionBatches(run *Run, keys []string) [][]string {
+	wanted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		wanted[key] = true
+	}
+	var batches [][]string
+	index := map[sessionBatchKey]int{}
+	for i := range run.Coverage {
+		ck := &run.Coverage[i]
+		if !wanted[ck.Key] {
+			continue
+		}
+		class := sessionBatchKeyOf(ck)
+		j, ok := index[class]
+		if !ok {
+			batches = append(batches, nil)
+			j = len(batches) - 1
+			index[class] = j
+		}
+		batches[j] = append(batches[j], ck.Key)
+	}
+	return batches
+}
+
 // BuildSessionSpec materializes the read-only reviewer session spec for an
 // agent-chosen key batch. Every key must belong to the run's coverage set (or
 // be the reserved final-synthesis key `cross`) and all keys must share one

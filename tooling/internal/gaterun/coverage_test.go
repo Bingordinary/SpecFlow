@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -1161,6 +1162,52 @@ func TestCoverageProgressClosure(t *testing.T) {
 	states = append(states, &SessionState{SessionID: "batch-x", Keys: []string{"structural"}, Status: SessionAccepted})
 	if _, _, err := CoverageProgress(run, states); err == nil {
 		t.Fatal("a key covered by two accepted sessions must be an error")
+	}
+}
+
+// TestPartitionBatchesGroupsRunnableSessions pins issue #85's root fix: a hint
+// that batches uncovered keys must emit sessions the tool accepts and can
+// materialize. A delta run's delta_review key stays alone; a verify run's
+// alignment and quality keys never share a batch; and a file's quality
+// `code:<file>` key co-batches its unit's `design:<unit>:<file>` key — the
+// one-pass public+design composition whose design judgment is ready without a
+// separately accepted public record.
+func TestPartitionBatchesGroupsRunnableSessions(t *testing.T) {
+	delta := &Run{
+		RunID: "20261016-130829-d75442",
+		Coverage: []CoverageKey{
+			{Key: DeltaReviewKey, Kind: SessionKindDeltaReview},
+			{Key: "design", Kind: SessionKindChecks},
+			{Key: "clarity", Kind: SessionKindChecks},
+		},
+	}
+	if got, want := PartitionBatches(delta, []string{"review", "design", "clarity"}), [][]string{{DeltaReviewKey}, {"design", "clarity"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("delta batches = %v, want %v", got, want)
+	}
+
+	verify := &Run{
+		RunID: "20261016-130829-d75443",
+		Coverage: []CoverageKey{
+			{Key: "item:auth:auth.core", Kind: SessionKindItem, Lens: LensAlignment},
+			{Key: "unit:auth", Kind: SessionKindUnit, Lens: LensAlignment},
+			{Key: "code:src/auth.go", Kind: SessionKindCode, Lens: LensQuality, File: "src/auth.go"},
+			{Key: "design:auth:src/auth.go", Kind: SessionKindDesign, Lens: LensQuality, File: "src/auth.go"},
+		},
+	}
+	all := []string{"item:auth:auth.core", "unit:auth", "code:src/auth.go", "design:auth:src/auth.go"}
+	want := [][]string{{"item:auth:auth.core"}, {"unit:auth"}, {"code:src/auth.go", "design:auth:src/auth.go"}}
+	if got := PartitionBatches(verify, all); !reflect.DeepEqual(got, want) {
+		t.Fatalf("verify batches = %v, want the file's code+design co-batched %v", got, want)
+	}
+	// An uncovered design key whose code key is not in the set (already
+	// accepted or carried) stays alone — its public record is ready — and a key
+	// outside the coverage set is ignored rather than rendered into a batch the
+	// tool would reject.
+	if got, want := PartitionBatches(verify, []string{"design:auth:src/auth.go", "unit:auth", "ghost"}), [][]string{{"unit:auth"}, {"design:auth:src/auth.go"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("subset batches = %v, want %v", got, want)
+	}
+	if got, want := PartitionBatches(verify, []string{"code:src/auth.go", "design:auth:src/auth.go"}), [][]string{{"code:src/auth.go", "design:auth:src/auth.go"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("pair batches = %v, want the code+design pair co-batched %v", got, want)
 	}
 }
 
