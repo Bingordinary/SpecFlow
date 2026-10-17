@@ -120,6 +120,10 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 
 	readyCount := 0
 	total := 0
+	// Rule-level notes are aggregated across units: a bound rule blocks every
+	// unit that binds it, so the summary states each rule fact once instead of
+	// repeating it under every affected unit.
+	blockingRules := map[string]promote.RulePrerequisite{}
 	globalAdvisories := map[string]promote.RulePrerequisite{}
 
 	if len(unitNames) > 0 {
@@ -142,7 +146,9 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 				readyCount++
 			}
 			fmt.Fprintf(stdout, "  %s\n", line)
-			writeRulePrerequisiteItems(stdout, rulePrerequisites.Blockers)
+			for _, blocker := range rulePrerequisites.Blockers {
+				blockingRules[blocker.RuleID] = blocker
+			}
 			for _, advisory := range rulePrerequisites.Advisories {
 				globalAdvisories[advisory.RuleID] = advisory
 			}
@@ -163,16 +169,15 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 		fmt.Fprintln(stdout)
 	}
 
-	advisoryIDs := make([]string, 0, len(globalAdvisories))
-	for id := range globalAdvisories {
-		advisoryIDs = append(advisoryIDs, id)
+	// The summary states rule-level facts. A global candidate rule that one
+	// unit references explicitly is a blocker for that unit but would be only
+	// an advisory for the units that do not reference it, so a rule that blocks
+	// any unit is classified as a blocker and never repeated as an advisory.
+	for ruleID := range blockingRules {
+		delete(globalAdvisories, ruleID)
 	}
-	sort.Strings(advisoryIDs)
-	var advisories []promote.RulePrerequisite
-	for _, id := range advisoryIDs {
-		advisories = append(advisories, globalAdvisories[id])
-	}
-	writeGlobalRuleAdvisories(stdout, advisories)
+	writeBlockingRules(stdout, sortedPrerequisites(blockingRules))
+	writeGlobalRuleAdvisories(stdout, sortedPrerequisites(globalAdvisories))
 	fmt.Fprintf(stdout, "READY FOR PROMOTE: %d of %d\n", readyCount, total)
 	return nil
 }

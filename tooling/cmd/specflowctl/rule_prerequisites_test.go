@@ -167,6 +167,52 @@ func TestRulePublicationSummaryDeduplicatesGlobalAdvisories(t *testing.T) {
 	}
 }
 
+func TestRulePublicationSummaryDeduplicatesBlockers(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteFile(t, root, specpaths.RuleStableFileRef("b_rule_http"), publicationRuleText("b_rule_http", "bound", "Use HTTPS."))
+	grWriteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_http"), publicationRuleText("b_rule_http", "bound", "Reject HTTP."))
+	for _, name := range []string{"one", "two"} {
+		writePublicationUnit(t, root, name, "b_rule_http", []string{"rule:b_rule_http"})
+	}
+	output, err := freshRun(t, root, "--scope", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One shared bound rule blocks both units: the rule fact is stated once.
+	if strings.Count(output, "BLOCKING RULES (publication prerequisites):") != 1 ||
+		strings.Count(output, "b_rule_http: candidate content differs from stable") != 1 {
+		t.Fatalf("summary must display a bound-rule blocker once:\n%s", output)
+	}
+	// Each affected unit still carries its own verdict.
+	if strings.Count(output, "rules: BLOCKED") != 2 {
+		t.Fatalf("each affected unit must keep its BLOCKED verdict:\n%s", output)
+	}
+	if !strings.Contains(output, "READY FOR PROMOTE: 0 of 3") {
+		t.Fatalf("two blocked units and the unvalidated rule are not ready:\n%s", output)
+	}
+}
+
+func TestRulePublicationSummaryBlockedGlobalRuleIsNotAlsoAdvisory(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_x"), publicationRuleText("g_rule_x", "global", "New global."))
+	// One unit references the candidate-only global rule explicitly, so the rule
+	// blocks it; the other unit does not, so the same rule would surface there
+	// as a mere advisory.
+	grWriteSpecItems(t, root, "alpha", "none", "g_rule_x", []string{"alpha.core"})
+	grWriteSpecItems(t, root, "beta", "none", "none", []string{"beta.core"})
+	output, err := freshRun(t, root, "--scope", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(output, "BLOCKING RULES (publication prerequisites):") != 1 ||
+		strings.Count(output, "g_rule_x: rule_refs target exists only in candidate layer") != 1 {
+		t.Fatalf("a rule blocking any unit must be stated once as a blocker:\n%s", output)
+	}
+	if strings.Contains(output, "PENDING GLOBAL RULES (advisory):") {
+		t.Fatalf("a rule already reported as a blocker must not repeat as an advisory:\n%s", output)
+	}
+}
+
 func TestRulePublicationPrecedesMissingCachesAndReportsAllBlockers(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteSpecItems(t, root, "consumer", "none", "[b_rule_z, b_rule_a, b_rule_z]", []string{"consumer.core"})
