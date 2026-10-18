@@ -4244,6 +4244,85 @@ func grBuildSessionSpec(root string, run *gaterun.Run, keys []string) (*gaterun.
 	return gaterun.BuildSessionSpec(root, run, mapped)
 }
 
+// TestGateSubmitJoinsQualityUnitsAcrossFiles pins the joining rule: the tooling
+// computes one quality unit per reviewed file, but the coordinator joins the
+// units of one lens into a session, so one verify quality session may hold the
+// code and design keys of several files. Joining whole units — not just their
+// code keys — is what the docs promise; only splitting a session's key set
+// needs the over-capacity reason, because joining never widens the read
+// surface.
+func TestGateSubmitJoinsQualityUnitsAcrossFiles(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
+	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
+	grWriteFile(t, repoRoot, "src/b.go", "package auth\n")
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	run := mustLoadRun(t, repoRoot, runID)
+
+	// The computed unit per reviewed file pairs its code key with its design key.
+	var units [][]string
+	for _, unit := range gaterun.PartitionBatches(run, coverageKeysOf(run)) {
+		isPair := len(unit) == 2 && strings.HasPrefix(unit[0], "code:") && strings.HasPrefix(unit[1], "design:")
+		if isPair {
+			units = append(units, unit)
+		}
+	}
+	if len(units) != 2 {
+		t.Fatalf("expected one quality unit per reviewed file, got %v", units)
+	}
+
+	// Join both units into one session: every file's public block plus its
+	// design block travel in the same report.
+	var joined []string
+	report := ""
+	for _, unit := range units {
+		var code, design string
+		for _, key := range unit {
+			joined = append(joined, key)
+			if strings.HasPrefix(key, "code:") {
+				code = key
+			} else {
+				design = key
+			}
+		}
+		report += "File: " + code + "\n" +
+			"conclusion: FACTS\n" +
+			"facts: no potential problems in fixture\n" +
+			"\n" +
+			"File: " + design + "\n" +
+			"spec_requirements: fixture design evidence\n" +
+			"Architecture assessment:\n" +
+			"  conclusion: acceptable\n" +
+			"  module_boundaries: sound — reviewed module boundary\n" +
+			"  responsibility_organization: sound — reviewed responsibility placement\n" +
+			"  dependency_clarity: sound — reviewed dependency direction\n" +
+			"  abstraction_level: sound — reviewed abstraction level\n" +
+			"  extension_landing_points: sound — reviewed extension seams\n" +
+			"  engineering_patterns: sound — reviewed engineering patterns\n" +
+			"  gate_findings: none\n" +
+			"\n" +
+			"Suppressed by spec (0):\n\n"
+	}
+	keys := strings.Join(joined, ",")
+	if err := grSubmitPrinted(t, repoRoot, runID, gaterun.SessionID(joined), keys, report); err != nil {
+		t.Fatalf("a joined multi-file quality session must be accepted, got %v", err)
+	}
+
+	states, err := gaterun.LoadSessionStates(repoRoot, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered, _, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range joined {
+		if _, ok := covered[key]; !ok {
+			t.Fatalf("expected the joined session to cover %q", key)
+		}
+	}
+}
+
 // TestGateSubmitOverCapacitySplitsBatch: a session that declares it cannot
 // carry its assigned batch is recorded as over_capacity, not as a defective
 // report. Its keys stay uncovered, re-submitting the same assignment is
@@ -4304,7 +4383,7 @@ func TestGateSubmitOverCapacitySplitsBatch(t *testing.T) {
 		t.Fatal(herr)
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "split these keys into smaller batches") || !strings.Contains(out, items[0]) {
+	if !strings.Contains(out, "split these keys into smaller sessions of the same lens") || !strings.Contains(out, items[0]) {
 		t.Fatalf("expected a split hint naming the refused keys, got:\n%s", out)
 	}
 	if !strings.Contains(out, "1 over capacity") {

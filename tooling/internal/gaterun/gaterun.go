@@ -194,7 +194,7 @@ type SessionSpec struct {
 }
 
 // Splittable reports whether the assigned key batch can be reduced into
-// smaller batches of the same kind and lens. A single-key batch is already
+// smaller sessions of the same lens. A single-key batch is already
 // atomic — the unit-level scan, a lone item, the delta review key, or the
 // final cross synthesis — so the over-capacity recovery has no smaller batch
 // to produce and does not apply to it (see framework/verification_scope.md

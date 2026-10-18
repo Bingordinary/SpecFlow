@@ -578,14 +578,18 @@ func sessionBatchKeyOf(ck *CoverageKey) sessionBatchKey {
 	return sessionBatchKey{class: ck.Kind, lens: ck.Lens}
 }
 
-// PartitionBatches partitions coverage keys into reviewer session batches: one
-// batch per session class and lens, in the run's coverage order. Every returned
-// batch is accepted by BuildSessionSpec and can be materialized immediately —
-// the class applies both the "one kind, one lens" rule submission enforces and
-// the verify quality co-batch the design judgment needs — so a hint built from
-// these batches never prints a command the tool rejects for mixing kinds or
-// lenses or for an unsatisfied dependency. Keys not in the run's coverage set
-// are ignored.
+// PartitionBatches partitions coverage keys into the run's reviewer units: one
+// unit per session class and lens, in the run's coverage order. A unit is the
+// smallest batch the tool guarantees to materialize: every returned unit is
+// accepted by BuildSessionSpec — the class applies both the "one lens" rule
+// submission enforces and the verify quality co-batch the design judgment needs
+// — so a hint built from these units never prints a command the tool rejects
+// for mixing lenses or for an unsatisfied dependency. A unit is a unit of
+// joining, not a mandate: the coordinator joins the units of one lens and kind
+// into a session (a verify quality session may hold the code and design keys of
+// several files), because joining never widens the read surface, while only
+// splitting a session's key set — which needs an over-capacity declaration —
+// costs a repeated read. Keys not in the run's coverage set are ignored.
 func PartitionBatches(run *Run, keys []string) [][]string {
 	wanted := make(map[string]bool, len(keys))
 	for _, key := range keys {
@@ -610,10 +614,12 @@ func PartitionBatches(run *Run, keys []string) [][]string {
 	return batches
 }
 
-// BuildSessionSpec materializes the read-only reviewer session spec for an
-// computed key batch. Every key must belong to the run's coverage set (or
+// BuildSessionSpec materializes the read-only reviewer session spec for a
+// joined key set. Every key must belong to the run's coverage set (or
 // be the reserved final-synthesis key `cross`) and all keys must share one
-// report kind and one lens (a session never mixes shapes).
+// lens, with one kind exception: a verify quality session may co-batch the
+// code and design keys of its reviewed files. Any other kind mix stays
+// rejected.
 func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, error) {
 	keys = dedupeSorted(keys)
 	if len(keys) == 0 {

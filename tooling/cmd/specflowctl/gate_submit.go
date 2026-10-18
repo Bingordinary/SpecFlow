@@ -108,7 +108,7 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 		return fmt.Errorf("session %q is not_required (terminal) — it accepts no submissions; plan a new run if the result must change", sessionID)
 	}
 	if state.Status == gaterun.SessionOverCapacity {
-		return fmt.Errorf("session %q is over_capacity (terminal) — its assigned batch must be split into smaller batches of the same kind and lens, not re-submitted: %s", sessionID, strings.Join(keys, ","))
+		return fmt.Errorf("session %q is over_capacity (terminal) — its assigned batch must be split into smaller sessions of the same lens, not re-submitted: %s", sessionID, strings.Join(keys, ","))
 	}
 	for _, dep := range spec.DependsOn {
 		depState, derr := gaterun.LoadSessionState(absRoot, run, dep)
@@ -177,7 +177,7 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 		if saveErr := gaterun.SaveSessionState(absRoot, run, state); saveErr != nil {
 			return saveErr
 		}
-		return fmt.Errorf("gate-submit: session %q declared it is over capacity (%s) — split these keys into smaller batches of the same kind and lens and mission each; this assignment is terminal: %s", sessionID, detail, strings.Join(keys, ","))
+		return fmt.Errorf("gate-submit: session %q declared it is over capacity (%s) — split these keys into smaller sessions of the same lens and mission each; this assignment is terminal: %s", sessionID, detail, strings.Join(keys, ","))
 	}
 	parsed, perr := parseSessionReport(run, spec, report)
 	if perr != nil {

@@ -94,10 +94,11 @@ func gateRunSnapshot(root string, run *gaterun.Run) (gateRunView, error) {
 	}
 	view.UncoveredKeys = uncovered
 	view.NextAction = gateNextAction(run, states, uncovered)
-	// The computed default reviewer batches are part of the execute next step:
-	// the coordinator reads them here rather than deriving its own partition,
-	// and the split-required keys name the batches a session refused. A
-	// non-execute action has no batches to run, so both stay empty.
+	// The computed reviewer units are part of the execute next step: the
+	// coordinator reads them here and joins the ones that share a lens and kind
+	// into a session (joining never widens the read surface), and the
+	// split-required keys name the sessions that refused their batch. A
+	// non-execute action has no units to run, so both stay empty.
 	if view.NextAction == "execute" {
 		view.ReviewerBatches, view.SplitRequiredKeys = nextStepBatches(run, states, uncovered)
 	}

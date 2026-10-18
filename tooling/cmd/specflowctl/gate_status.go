@@ -203,13 +203,13 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
 	switch gateNextAction(run, states, uncovered) {
 	case "execute":
-		// One command per computed reviewer batch: a batch never mixes report
-		// kinds or lenses, and a verify design key co-batches its file's public
-		// key. Keys whose assigned batch a session declared over capacity are
-		// not re-batched — printing that same default batch again would
-		// re-create the assignment the session refused — so they are named for a
-		// split instead, and the remaining keys keep their computed batch. The
-		// hint names only commands that run.
+		// One command per computed reviewer unit: a unit shares one lens, with
+		// the verify quality code+design co-batch as the kind exception. Keys
+		// whose assigned unit a session declared over capacity are not
+		// re-missioned — printing that same unit again would re-create the
+		// assignment the session refused — so they are named for a split
+		// instead, and the remaining keys keep their computed unit. The hint
+		// names only commands that run.
 		batches, splitKeys := nextStepBatches(run, states, uncovered)
 		hint := ""
 		if len(batches) > 0 {
@@ -217,10 +217,10 @@ func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []
 			for _, batch := range batches {
 				commands = append(commands, fmt.Sprintf("`specflowctl gate-mission --run %s --keys %s --format prompt`", run.RunID, strings.Join(batch, ",")))
 			}
-			hint = fmt.Sprintf("batch these uncovered keys into sessions: %s, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", strings.Join(commands, "; "), run.RunID)
+			hint = fmt.Sprintf("batch these uncovered keys into sessions: %s (the commands of one lens and kind may be joined into a single session — joining never widens the read surface), then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", strings.Join(commands, "; "), run.RunID)
 		}
 		if len(splitKeys) > 0 {
-			split := fmt.Sprintf("split these keys into smaller batches of the same kind and lens and mission each — a session declared its assigned batch over capacity: %s", strings.Join(splitKeys, ", "))
+			split := fmt.Sprintf("split these keys into smaller sessions of the same lens and mission each — a session declared its assigned batch over capacity: %s", strings.Join(splitKeys, ", "))
 			if hint != "" {
 				return hint + " · " + split
 			}
@@ -238,13 +238,14 @@ func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []
 }
 
 // nextStepBatches divides the uncovered coverage keys into the run's computed
-// default reviewer batches and separates the keys whose assigned batch a
-// session already declared over capacity. Those refused keys must be split
-// into smaller batches of the same kind and lens rather than re-missioned as
-// their default batch. The text next-step hint and the JSON status both expose
-// this one computation, so neither format names a batch the tool rejects for
-// mixing report kinds or lenses. The returned slices are never nil, so an empty
-// result serializes as `[]`.
+// reviewer units and separates the keys whose assigned unit a session already
+// declared over capacity. The units are joined, not obeyed — the coordinator
+// joins the units of one lens and kind into a session — and the refused keys
+// must be split into smaller sessions of the same lens rather than
+// re-missioned as their unit. The text next-step hint and the JSON status both
+// expose this one computation, so neither format names a batch the tool rejects
+// for mixing report kinds or lenses. The returned slices are never nil, so an
+// empty result serializes as `[]`.
 func nextStepBatches(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) (batches [][]string, splitKeys []string) {
 	splitKeys = overCapacityKeys(run, states, uncovered)
 	if splitKeys == nil {
@@ -267,9 +268,9 @@ func nextStepBatches(run *gaterun.Run, states []*gaterun.SessionState, uncovered
 	return batches, splitKeys
 }
 
-// overCapacityKeys returns the uncovered keys whose assigned batch a session
+// overCapacityKeys returns the uncovered keys whose assigned unit a session
 // already declared it cannot carry, in the run's coverage order. Those keys
-// must be split into smaller batches: re-printing their default batch would
+// must be split into smaller batches: re-printing their unit would
 // re-create the assignment the session refused.
 func overCapacityKeys(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) []string {
 	refused := map[string]bool{}
