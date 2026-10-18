@@ -467,3 +467,96 @@ func renderMissionPrompt(t *testing.T, run *gaterun.Run, session *gaterun.Sessio
 	writeGatePrompt(&buf, mission)
 	return buf.String()
 }
+
+// TestFinalSynthesisMissionExcludesPublicObservations pins the consumer-scoped
+// mission projection: per-file public observations are design input only, so
+// the final synthesis carries the findings it must dispose — with their detail
+// blocks — but not the observation transcript the findings already summarize.
+func TestFinalSynthesisMissionExcludesPublicObservations(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	run := mustLoadRun(t, root, id)
+
+	codeKey := "code:src/auth.go"
+	public := grDefaultQualityReport(run, *run.CoverageByKey(codeKey))
+	public += "[P2] src/auth.go:1 — responsibility is unclear (actionable)\n  problem: responsibility is unclear\n  evidence: package auth\n  impact: maintenance is harder\n  fix: clarify the boundary\n"
+	if err := sharedSubmit(t, root, id, codeKey, public); err != nil {
+		t.Fatalf("public code session: %v", err)
+	}
+
+	// The design mission consumes the public record and must dispose it.
+	var missionOut, missionErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", id, "--keys", "design:auth:src/auth.go", "--format", "json"}, &missionOut, &missionErr); err != nil {
+		t.Fatalf("design mission: %v (%s)", err, missionErr.String())
+	}
+	var designMission gateMission
+	if err := json.Unmarshal(missionOut.Bytes(), &designMission); err != nil {
+		t.Fatal(err)
+	}
+	design := designMission.Sessions[0]
+	if len(design.Dependencies) != 1 || len(design.Dependencies[0].Observations) != 1 {
+		t.Fatalf("design mission lost the public record it must dispose: %+v", design.Dependencies)
+	}
+	observation := design.Dependencies[0].Observations[0]
+	designReport := grDefaultQualityReport(run, *run.CoverageByKey("design:auth:src/auth.go")) +
+		"Observation disposition: " + observation.ID + " = retained — the file's responsibility belongs to the unit\n"
+	if err := sharedSubmit(t, root, id, "design:auth:src/auth.go", designReport); err != nil {
+		t.Fatalf("design session: %v", err)
+	}
+	designState, err := gaterun.LoadSessionState(root, run, "design:auth:src/auth.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(designState.Result.Findings) != 1 {
+		t.Fatalf("retained observation did not become one unit finding: %+v", designState.Result.Findings)
+	}
+	finding := designState.Result.Findings[0]
+
+	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	var crossOut, crossErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", id, "--final", "--format", "json"}, &crossOut, &crossErr); err != nil {
+		t.Fatalf("final mission: %v (%s)", err, crossErr.String())
+	}
+	var crossMission gateMission
+	if err := json.Unmarshal(crossOut.Bytes(), &crossMission); err != nil {
+		t.Fatal(err)
+	}
+	cross := crossMission.Sessions[0]
+	var carried *gaterun.Finding
+	for _, dependency := range cross.Dependencies {
+		if len(dependency.Observations) != 0 {
+			t.Fatalf("final synthesis received public observations it does not dispose: %+v", dependency.Observations)
+		}
+		for i := range dependency.Findings {
+			if dependency.Findings[i].ID == finding.ID {
+				carried = &dependency.Findings[i]
+			}
+		}
+	}
+	if carried == nil {
+		t.Fatalf("final synthesis lost the finding it must dispose: %s", finding.ID)
+	}
+	if !strings.Contains(carried.Detail, "Public observation: "+observation.ID) {
+		t.Fatalf("the finding no longer carries its observation evidence: %s", carried.Detail)
+	}
+
+	var promptOut, promptErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", id, "--final", "--format", "prompt"}, &promptOut, &promptErr); err != nil {
+		t.Fatalf("final prompt: %v (%s)", err, promptErr.String())
+	}
+	prompt := promptOut.String()
+	if strings.Contains(prompt, "  Observation ") {
+		t.Fatalf("final synthesis prompt still inlines public observations:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Dependency judgments (accepted results this session consumes):") || !strings.Contains(prompt, finding.ID) {
+		t.Fatalf("final synthesis prompt lost its judgment records:\n%s", prompt)
+	}
+
+	grSubmitOK(t, root, id, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, root, id)
+}

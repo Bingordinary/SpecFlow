@@ -174,12 +174,13 @@ func indentSessionContext(value, prefix string) string {
 }
 
 // missionDependency is one compact judgment record in a session mission: the
-// synthesis-relevant projection of an accepted session result (dependency
+// consumer-scoped projection of an accepted session result (dependency
 // results) or of a carried baseline judgment (carried results). It carries the
-// verdicts, findings with their stored details, and analysis fields a
-// result-consuming session synthesizes over — never the verbatim accepted
-// report, which stays in run state and is assembled into the published cache
-// body.
+// verdicts, findings with their stored details, and analysis fields the
+// consuming session judges over — never the verbatim accepted report, which
+// stays in run state and is assembled into the published cache body. Only the
+// design consumer also receives the public observations it must dispose; every
+// other consumer, including the final cross synthesis, receives judgments only.
 type missionDependency struct {
 	SessionID       string            `json:"session_id"`
 	Kind            string            `json:"kind,omitempty"`
@@ -331,6 +332,8 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	if spec.Kind == gaterun.SessionKindCross {
 		// The optional final synthesis consumes every accepted session's
 		// compact judgment record, plus the carried baseline judgments below.
+		// It disposes findings, not public observations: per-file facts belong
+		// to the design sessions that consume them.
 		states, serr := gaterun.LoadSessionStates(root, run)
 		if serr != nil {
 			return gateMission{}, serr
@@ -373,9 +376,9 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 				return gateMission{}, err
 			}
 			if stringInList(run.CarriedKeys, result.SessionID) {
-				session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(result.SessionID, "", &result))
+				session.CarriedResults = append(session.CarriedResults, missionPublicRecordFor(result.SessionID, "", &result))
 			} else {
-				session.Dependencies = append(session.Dependencies, missionJudgmentFor(result.SessionID, gaterun.SessionAccepted, &result))
+				session.Dependencies = append(session.Dependencies, missionPublicRecordFor(result.SessionID, gaterun.SessionAccepted, &result))
 			}
 		}
 	}
@@ -460,7 +463,7 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		}
 	}
 	if len(p.Dependencies) > 0 {
-		fmt.Fprintln(w, "Dependency judgments (accepted verdicts, findings, observations, and analysis):")
+		fmt.Fprintln(w, "Dependency judgments (accepted results this session consumes):")
 		for _, dep := range p.Dependencies {
 			writeMissionJudgment(w, dep)
 		}
@@ -511,8 +514,21 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 // judgment record a mission carries. A nil result (a not-required conditional
 // dependency) yields the identity fields only. The verbatim accepted report is
 // never part of the projection — a mission carries judgments, not the
-// reviewers' narratives; evidence is read from the session's read refs.
+// reviewers' narratives; evidence is read from the session's read refs. Public
+// observations are excluded: only the design consumer disposes them.
 func missionJudgmentFor(sessionID, status string, result *gaterun.SessionResult) missionDependency {
+	return missionJudgment(sessionID, status, result, false)
+}
+
+// missionPublicRecordFor projects the public record a design session consumes:
+// the same compact judgment record plus the observations that session must
+// dispose. Findings still carry their own details, so the cross consumer loses
+// no finding evidence when it receives judgments only.
+func missionPublicRecordFor(sessionID, status string, result *gaterun.SessionResult) missionDependency {
+	return missionJudgment(sessionID, status, result, true)
+}
+
+func missionJudgment(sessionID, status string, result *gaterun.SessionResult, observations bool) missionDependency {
 	entry := missionDependency{SessionID: sessionID, Status: status}
 	if result == nil {
 		return entry
@@ -521,7 +537,9 @@ func missionJudgmentFor(sessionID, status string, result *gaterun.SessionResult)
 	entry.Digest = result.ReportDigest
 	entry.Verdicts = result.Verdicts
 	entry.Findings = result.Findings
-	entry.Observations = result.Observations
+	if observations {
+		entry.Observations = result.Observations
+	}
 	entry.Analysis = result.Analysis
 	entry.EffectiveStatus = result.EffectiveStatus
 	return entry
