@@ -569,7 +569,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  clean      Remove disposable local state (orphaned and terminal runs, unreferenced shared tasks, plan inputs, strays, closed operations)")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
 	fmt.Fprintln(w, "  gate-extend Add supplementary evidence inputs to an open gate run in place (keeps accepted sessions)")
-	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for an agent-chosen key batch (--keys K1,K2 or --final)")
+	fmt.Fprintln(w, "  gate-mission Generate a reviewer session mission for a computed key batch (--keys K1,K2 or --final)")
 	fmt.Fprintln(w, "  gate-status Report coverage progress and uncovered keys (--format text|json)")
 	fmt.Fprintln(w, "  gate-submit Record one session report after mechanical validation (accepted or rejected)")
 	fmt.Fprintln(w, "  gate-finalize Write the gate cache from the accepted session reports, then self-check it")

@@ -61,8 +61,14 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &planned); err != nil {
 		t.Fatal(err)
 	}
-	if planned.SchemaVersion != 2 || planned.NextAction != "execute" || len(planned.UncoveredKeys) != 5 || strings.Contains(strings.Join(planned.UncoveredKeys, ","), "cross") {
+	if planned.SchemaVersion != 3 || planned.NextAction != "execute" || len(planned.UncoveredKeys) != 5 || strings.Contains(strings.Join(planned.UncoveredKeys, ","), "cross") {
 		t.Fatalf("wrong planned coverage: %+v", planned)
+	}
+	// The plan's next step is execute, so the JSON carries the tooling-computed
+	// default reviewer batches: one batch holding every still-uncovered
+	// validate check key, and no split-required keys.
+	if len(planned.ReviewerBatches) != 1 || len(planned.ReviewerBatches[0]) != 5 || len(planned.SplitRequiredKeys) != 0 || !strings.Contains(out.String(), `"reviewer_batches"`) {
+		t.Fatalf("plan JSON must expose the computed reviewer batches: %+v", planned)
 	}
 	if len(planned.Coverage) != 5 || planned.Coverage[0].CoveredBy != "" {
 		t.Fatalf("wrong planned coverage detail: %+v", planned.Coverage)

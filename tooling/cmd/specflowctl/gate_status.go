@@ -101,15 +101,15 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 			listed++
 			continue
 		}
-		accepted, pending, rejected := sessionCounts(states)
+		accepted, pending, rejected, overCapacity := sessionCounts(states)
 		_, uncovered, err := gaterun.CoverageProgress(run, states)
 		if err != nil {
 			fmt.Fprintf(stdout, "stale run state: %s — %v\n", run.RunID, err)
 			listed++
 			continue
 		}
-		fmt.Fprintf(stdout, "%s · %s@%s · %s · mode %s · coverage %d/%d covered · %d session(s) (%d accepted, %d pending, %d rejected) · created %s\n",
-			run.RunID, run.Gate, run.TargetName, run.Target, run.Mode, len(run.Coverage)-len(uncovered), len(run.Coverage), len(states), accepted, pending, rejected, run.CreatedAt)
+		fmt.Fprintf(stdout, "%s · %s@%s · %s · mode %s · coverage %d/%d covered · %d session(s) (%d accepted, %d pending, %d rejected, %d over capacity) · created %s\n",
+			run.RunID, run.Gate, run.TargetName, run.Target, run.Mode, len(run.Coverage)-len(uncovered), len(run.Coverage), len(states), accepted, pending, rejected, overCapacity, run.CreatedAt)
 		listed++
 	}
 	if listed == 0 {
@@ -133,15 +133,17 @@ func staleRunView(run *gaterun.Run, err error) gateRunView {
 		nextAction = "abandon"
 	}
 	return gateRunView{
-		SchemaVersion: 2, RunID: run.RunID, Gate: run.Gate,
+		SchemaVersion: 3, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target,
 		Mode: run.Mode, Status: run.Status, Escalated: run.Escalated,
 		Coverage: []gateCoverageView{}, Sessions: []gateSessionView{}, UncoveredKeys: []string{},
-		NextAction:       nextAction,
-		CarriedKeys:      []string{},
-		Relationships:    []string{},
-		DeferredFindings: []gaterun.DeferredFinding{},
-		Notices:          []string{"stale run state: " + err.Error()},
+		NextAction:        nextAction,
+		ReviewerBatches:   [][]string{},
+		SplitRequiredKeys: []string{},
+		CarriedKeys:       []string{},
+		Relationships:     []string{},
+		DeferredFindings:  []gaterun.DeferredFinding{},
+		Notices:           []string{"stale run state: " + err.Error()},
 	}
 }
 
@@ -155,7 +157,7 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 	if err != nil {
 		return err
 	}
-	accepted, pending, rejected := sessionCounts(states)
+	accepted, pending, rejected, overCapacity := sessionCounts(states)
 	fmt.Fprintf(stdout, "Run: %s · %s@%s · %s\n", run.RunID, run.Gate, run.TargetName, run.Target)
 	fmt.Fprintf(stdout, "Mode: %s · status: %s · created: %s\n", run.Mode, run.Status, run.CreatedAt)
 	fmt.Fprintf(stdout, "Input snapshot: %d ref(s), %d surface path(s), %d file(s)\n", len(run.Refs), len(run.Surfaces), run.EntryCount())
@@ -170,7 +172,7 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 	for _, ck := range run.Coverage {
 		fmt.Fprintln(stdout, fmtCoverageRow(run, ck, covered[ck.Key]))
 	}
-	fmt.Fprintf(stdout, "Sessions (%d accepted, %d pending, %d rejected):\n", accepted, pending, rejected)
+	fmt.Fprintf(stdout, "Sessions (%d accepted, %d pending, %d rejected, %d over capacity):\n", accepted, pending, rejected, overCapacity)
 	for _, state := range states {
 		line := fmt.Sprintf("  %s | %s — keys: %s", state.Status, state.SessionID, strings.Join(state.Keys, ", "))
 		if n := len(state.Attempts); n > 0 {
@@ -201,17 +203,30 @@ func writeRunStatus(stdout io.Writer, absRoot string, run *gaterun.Run) error {
 func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
 	switch gateNextAction(run, states, uncovered) {
 	case "execute":
-		// One command per runnable session: a session never mixes report
-		// kinds or lenses, and a verify design key co-batches its file's
-		// public key. A single joined command over the whole uncovered set
-		// would print a batch the tool rejects — a delta run's delta_review
-		// key next to its check keys, or a verify run's item, unit, and
-		// quality keys. The hint must name only commands that run.
-		commands := []string{}
-		for _, batch := range gaterun.PartitionBatches(run, uncovered) {
-			commands = append(commands, fmt.Sprintf("`specflowctl gate-mission --run %s --keys %s --format prompt`", run.RunID, strings.Join(batch, ",")))
+		// One command per computed reviewer batch: a batch never mixes report
+		// kinds or lenses, and a verify design key co-batches its file's public
+		// key. Keys whose assigned batch a session declared over capacity are
+		// not re-batched — printing that same default batch again would
+		// re-create the assignment the session refused — so they are named for a
+		// split instead, and the remaining keys keep their computed batch. The
+		// hint names only commands that run.
+		batches, splitKeys := nextStepBatches(run, states, uncovered)
+		hint := ""
+		if len(batches) > 0 {
+			commands := make([]string, 0, len(batches))
+			for _, batch := range batches {
+				commands = append(commands, fmt.Sprintf("`specflowctl gate-mission --run %s --keys %s --format prompt`", run.RunID, strings.Join(batch, ",")))
+			}
+			hint = fmt.Sprintf("batch these uncovered keys into sessions: %s, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", strings.Join(commands, "; "), run.RunID)
 		}
-		return fmt.Sprintf("batch these uncovered keys into sessions: %s, then submit each report: `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`", strings.Join(commands, "; "), run.RunID)
+		if len(splitKeys) > 0 {
+			split := fmt.Sprintf("split these keys into smaller batches of the same kind and lens and mission each — a session declared its assigned batch over capacity: %s", strings.Join(splitKeys, ", "))
+			if hint != "" {
+				return hint + " · " + split
+			}
+			return split
+		}
+		return hint
 	case "synthesize":
 		return fmt.Sprintf("relationships to check or findings to dispose — generate the final synthesis: `specflowctl gate-mission --run %s --final --format prompt`, then submit it: `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
 	case "abandon":
@@ -220,6 +235,62 @@ func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []
 		return "none — this run is audit-only"
 	}
 	return fmt.Sprintf("all coverage keys are covered — `specflowctl gate-finalize --run %s`", run.RunID)
+}
+
+// nextStepBatches divides the uncovered coverage keys into the run's computed
+// default reviewer batches and separates the keys whose assigned batch a
+// session already declared over capacity. Those refused keys must be split
+// into smaller batches of the same kind and lens rather than re-missioned as
+// their default batch. The text next-step hint and the JSON status both expose
+// this one computation, so neither format names a batch the tool rejects for
+// mixing report kinds or lenses. The returned slices are never nil, so an empty
+// result serializes as `[]`.
+func nextStepBatches(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) (batches [][]string, splitKeys []string) {
+	splitKeys = overCapacityKeys(run, states, uncovered)
+	if splitKeys == nil {
+		splitKeys = []string{}
+	}
+	refused := make(map[string]bool, len(splitKeys))
+	for _, key := range splitKeys {
+		refused[key] = true
+	}
+	remaining := make([]string, 0, len(uncovered))
+	for _, key := range uncovered {
+		if !refused[key] {
+			remaining = append(remaining, key)
+		}
+	}
+	batches = gaterun.PartitionBatches(run, remaining)
+	if batches == nil {
+		batches = [][]string{}
+	}
+	return batches, splitKeys
+}
+
+// overCapacityKeys returns the uncovered keys whose assigned batch a session
+// already declared it cannot carry, in the run's coverage order. Those keys
+// must be split into smaller batches: re-printing their default batch would
+// re-create the assignment the session refused.
+func overCapacityKeys(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) []string {
+	refused := map[string]bool{}
+	for _, state := range states {
+		if state.Status != gaterun.SessionOverCapacity {
+			continue
+		}
+		for _, key := range state.Keys {
+			refused[key] = true
+		}
+	}
+	if len(refused) == 0 {
+		return nil
+	}
+	var out []string
+	for _, key := range uncovered {
+		if refused[key] {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 // escalatedRunError is the single fail-closed message for a command that must

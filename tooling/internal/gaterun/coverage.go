@@ -611,7 +611,7 @@ func PartitionBatches(run *Run, keys []string) [][]string {
 }
 
 // BuildSessionSpec materializes the read-only reviewer session spec for an
-// agent-chosen key batch. Every key must belong to the run's coverage set (or
+// computed key batch. Every key must belong to the run's coverage set (or
 // be the reserved final-synthesis key `cross`) and all keys must share one
 // report kind and one lens (a session never mixes shapes).
 func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, error) {

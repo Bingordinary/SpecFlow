@@ -73,12 +73,16 @@ const (
 	StatusInvalidated = "invalidated"
 
 	// Session statuses. A session is pending (no submission yet), accepted
-	// (its report validated and recorded — terminal), or rejected (its last
-	// submission failed validation; it can be re-submitted).
-	SessionPending     = "pending"
-	SessionAccepted    = "accepted"
-	SessionRejected    = "rejected"
-	SessionNotRequired = "not_required"
+	// (its report validated and recorded — terminal), rejected (its last
+	// submission failed validation; it can be re-submitted), over_capacity
+	// (the session declared it cannot carry its assigned batch — terminal: its
+	// keys stay uncovered and the coordinator splits that batch), or
+	// not_required (terminal; it accepts no submissions).
+	SessionPending      = "pending"
+	SessionAccepted     = "accepted"
+	SessionRejected     = "rejected"
+	SessionOverCapacity = "over_capacity"
+	SessionNotRequired  = "not_required"
 
 	// Report kinds: a group of validate checks, one or more verify items, a
 	// reviewed file, or the final cross synthesis.
@@ -169,7 +173,7 @@ type CoverageKey struct {
 }
 
 // SessionSpec is one materialized reviewer session spec: the immutable read
-// surface and report contract for an agent-chosen key batch. It is rebuilt
+// surface and report contract for a computed key batch. It is rebuilt
 // deterministically from the run's coverage set at mission and submit time;
 // the session's mutable state (status, attempts, accepted report) lives in its
 // own state file under the run directory.
@@ -187,6 +191,16 @@ type SessionSpec struct {
 	// Context carries report-kind-specific plan-time facts a mission must
 	// state verbatim.
 	Context []string `json:"context,omitempty"`
+}
+
+// Splittable reports whether the assigned key batch can be reduced into
+// smaller batches of the same kind and lens. A single-key batch is already
+// atomic — the unit-level scan, a lone item, the delta review key, or the
+// final cross synthesis — so the over-capacity recovery has no smaller batch
+// to produce and does not apply to it (see framework/verification_scope.md
+// §Session capacity).
+func (s *SessionSpec) Splittable() bool {
+	return len(s.Keys) > 1
 }
 
 // Finding is one mechanically identified finding. Local finding ids are
@@ -305,12 +319,12 @@ type Attempt struct {
 }
 
 // SessionState is the persisted mutable state of one reviewer session: the
-// agent-assigned coverage keys and, once accepted, the verbatim report and its
+// computed coverage key batch and, once accepted, the verbatim report and its
 // parsed result. A missing state file means pending.
 type SessionState struct {
 	SessionID             string            `json:"session_id"`
 	Keys                  []string          `json:"keys"`
-	Status                string            `json:"status"` // pending | accepted | rejected | not_required
+	Status                string            `json:"status"` // pending | accepted | rejected | over_capacity | not_required
 	Attempts              []Attempt         `json:"attempts,omitempty"`
 	Report                string            `json:"report,omitempty"`
 	SemanticDigest        string            `json:"semantic_digest,omitempty"` // the accepted report, verbatim
@@ -320,7 +334,7 @@ type SessionState struct {
 
 // Run is the persisted plan of one gate run: the immutable input snapshot,
 // the coverage set that must be judged, and the run mode. It carries no
-// sessions: the agent creates them under their chosen key batches.
+// sessions: sessions are created under the tooling's computed key batches.
 type Run struct {
 	RunID          string                       `json:"run_id"`
 	SchemaVersion  int                          `json:"schema_version,omitempty"`

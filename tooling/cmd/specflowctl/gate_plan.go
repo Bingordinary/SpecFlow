@@ -18,9 +18,10 @@ import (
 // surface), adds the entries listed in the agent-declared input manifest
 // (--inputs-file), computes the coverage set
 // for the run mode, prints it, and persists the run state under meta/gate_runs/
-// with no sessions. The agent partitions the coverage set into reviewer
-// sessions, generates each mission with gate-mission, and records each report
-// with gate-submit; gate-finalize writes the cache only when every coverage key
+// with no sessions. The tooling derives the run's default reviewer batches
+// from the uncovered coverage set; the coordinator missions them as printed,
+// generates each mission with gate-mission, and records each report with
+// gate-submit; gate-finalize writes the cache only when every coverage key
 // is covered and the inputs are unchanged. See framework/verification_scope.md
 // §Coverage Model and framework/validation_cache.md §Write Rules → Tooled
 // writes for the contract.
@@ -144,7 +145,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "Notice: %s\n", notice)
 	}
 	fmt.Fprintf(stdout, "Run state: %s\n", gaterun.StateRelPath(run.RunID))
-	fmt.Fprintf(stdout, "Next: choose the local key batches, generate each session mission with `specflowctl gate-mission --run %s --keys <k1,k2,...> --format prompt`, send it to an independent reviewer, submit its report with `specflowctl gate-submit --run %s --session <id> --keys <k1,k2,...> --report PATH`. Follow gate-status: selected relationships or existing findings require `gate-mission --run %s --final` before finalization.\n", run.RunID, run.RunID, run.RunID)
+	fmt.Fprintf(stdout, "Next: take the tooling's computed key batches from `specflowctl gate-status --run %s`, generate each session mission with `specflowctl gate-mission --run %s --keys <k1,k2,...> --format prompt`, send it to an independent reviewer, submit its report with `specflowctl gate-submit --run %s --session <id> --keys <k1,k2,...> --report PATH`. Follow gate-status: selected relationships or existing findings require `gate-mission --run %s --final` before finalization.\n", run.RunID, run.RunID, run.RunID, run.RunID)
 	return nil
 }
 

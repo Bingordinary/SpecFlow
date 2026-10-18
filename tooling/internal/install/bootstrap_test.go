@@ -266,7 +266,7 @@ func TestBootstrapGateProceduresRemainInRoutedPackages(t *testing.T) {
 			content := readPackage(checklist)
 			for _, required := range []string{
 				"specflowctl gate-plan --gate",
-				"same kind and lens",
+				"one per report kind and lens",
 				"reusing accepted public tasks and waiting for assigned tasks",
 				"gate-mission --run <run_id> --keys",
 				"one independent reviewer",

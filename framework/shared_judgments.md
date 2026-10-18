@@ -32,7 +32,7 @@ A public report must not suppress observations using private spec rationale. Rev
 
 ### Task batching and record inputs
 
-Batches must have the same kind and lens, with one exception: a verify quality session may co-batch a file's `code:<file>` key with its unit's `design:<unit>:<file>` key — one reviewer collects the public facts and judges the unit design in a single pass, and the report carries the file's public block plus the design block. Any other kind mix, and any lens mix, stays rejected.
+Batches are computed, not chosen: the tooling partitions the uncovered coverage set into one default batch per report kind and lens — for the verify quality lens, one per reviewed file — and the coordinator missions them as printed — a batch is split only when a session declares it exceeds that session's capacity (`framework/verification_scope.md` §Session capacity). Batches must have the same kind and lens, with one exception: a verify quality session may co-batch a file's `code:<file>` key with its unit's `design:<unit>:<file>` key — one reviewer collects the public facts and judges the unit design in a single pass, and the report carries the file's public block plus the design block. Any other kind mix, and any lens mix, stays rejected.
 
 The coordinator finds related evidence (callers, callees, dependencies, tests) by repository search and supplies it explicitly. If a reviewer finds a missing evidence path, do not submit an incomplete verdict: add it to the open run with `specflowctl gate-extend` — accepted sessions keep their verdicts because the supplement broadens available read refs, not the required surface. Newly required evidence invalidates reuse even if existing content dependencies remain unchanged.
 

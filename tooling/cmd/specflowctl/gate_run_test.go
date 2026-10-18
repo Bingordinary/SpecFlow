@@ -2807,7 +2807,7 @@ func TestGateStatusReportsProgress(t *testing.T) {
 	if err := runGateStatus([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), runID) || !strings.Contains(stdout.String(), "coverage 1/5 covered") || !strings.Contains(stdout.String(), "1 session(s) (1 accepted, 0 pending, 0 rejected)") {
+	if !strings.Contains(stdout.String(), runID) || !strings.Contains(stdout.String(), "coverage 1/5 covered") || !strings.Contains(stdout.String(), "1 session(s) (1 accepted, 0 pending, 0 rejected, 0 over capacity)") {
 		t.Fatalf("unexpected status listing:\n%s", stdout.String())
 	}
 
@@ -4242,4 +4242,153 @@ func grBuildSessionSpec(root string, run *gaterun.Run, keys []string) (*gaterun.
 		mapped[i] = grSessionKeys(run, key)[0]
 	}
 	return gaterun.BuildSessionSpec(root, run, mapped)
+}
+
+// TestGateSubmitOverCapacitySplitsBatch: a session that declares it cannot
+// carry its assigned batch is recorded as over_capacity, not as a defective
+// report. Its keys stay uncovered, re-submitting the same assignment is
+// refused, and gate-status names those keys for a split instead of re-printing
+// the batch the session already refused.
+func TestGateSubmitOverCapacitySplitsBatch(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core", "auth.second"})
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	run := mustLoadRun(t, repoRoot, runID)
+
+	var items []string
+	for _, ck := range run.Coverage {
+		if ck.Lens == gaterun.LensAlignment && ck.Kind == gaterun.SessionKindItem {
+			items = append(items, ck.Key)
+		}
+	}
+	if len(items) < 2 {
+		t.Fatalf("expected at least two alignment item keys, got %v", items)
+	}
+	keys := strings.Join(items, ",")
+	sessionID := gaterun.SessionID(items)
+
+	err := grSubmitPrinted(t, repoRoot, runID, sessionID, keys, "Session over capacity: the batch exceeds what one session can carry\n")
+	if err == nil || !strings.Contains(err.Error(), "over capacity") {
+		t.Fatalf("expected the over-capacity declaration to be recorded, got err=%v", err)
+	}
+
+	state, lerr := gaterun.LoadSessionState(repoRoot, run, sessionID)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if state.Status != gaterun.SessionOverCapacity {
+		t.Fatalf("expected the session recorded as over_capacity, got %q", state.Status)
+	}
+
+	states, serr := gaterun.LoadSessionStates(repoRoot, run)
+	if serr != nil {
+		t.Fatal(serr)
+	}
+	covered, uncovered, cerr := gaterun.CoverageProgress(run, states)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	for _, item := range items {
+		if _, ok := covered[item]; ok {
+			t.Fatalf("expected %q to stay uncovered, it was reported as covered", item)
+		}
+	}
+
+	if rerr := grSubmitPrinted(t, repoRoot, runID, sessionID, keys, "anything"); rerr == nil || !strings.Contains(rerr.Error(), "over_capacity") {
+		t.Fatalf("expected a re-submission of the refused batch to be refused, got err=%v", rerr)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if herr := runGateStatus([]string{"--repo-root", repoRoot, "--run", runID}, &stdout, &stderr); herr != nil {
+		t.Fatal(herr)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "split these keys into smaller batches") || !strings.Contains(out, items[0]) {
+		t.Fatalf("expected a split hint naming the refused keys, got:\n%s", out)
+	}
+	if !strings.Contains(out, "1 over capacity") {
+		t.Fatalf("expected the over-capacity count in the session summary, got:\n%s", out)
+	}
+	if len(uncovered) == 0 {
+		t.Fatal("expected uncovered keys after an over-capacity declaration")
+	}
+
+	// The JSON status exposes the same computed next step as the text hint:
+	// the refused keys land in split_required_keys and never re-appear in a
+	// reviewer batch.
+	var statusJSON bytes.Buffer
+	if jerr := runGateStatus([]string{"--repo-root", repoRoot, "--run", runID, "--format", "json"}, &statusJSON, &stderr); jerr != nil {
+		t.Fatal(jerr)
+	}
+	var view gateRunView
+	if jerr := json.Unmarshal(statusJSON.Bytes(), &view); jerr != nil {
+		t.Fatal(jerr)
+	}
+	if view.NextAction != "execute" || !containsString(view.SplitRequiredKeys, items[0]) {
+		t.Fatalf("expected JSON split_required_keys to name the refused keys, got %+v", view)
+	}
+	for _, batch := range view.ReviewerBatches {
+		for _, key := range batch {
+			if containsString(items, key) {
+				t.Fatalf("JSON reviewer_batches must not re-mission the refused keys, got %v", view.ReviewerBatches)
+			}
+		}
+	}
+}
+
+// TestGateSubmitOverCapacityRequiresSplittableBatch: the over-capacity
+// declaration is the recovery signal for a batch that can be reduced. A
+// single-key batch — the unit-level scan, a lone item, the delta review key,
+// or the final cross synthesis — is atomic and has no smaller batch, so the
+// mission does not offer the declaration and gate-submit rejects its text as a
+// defective report instead of recording an unrecoverable terminal session.
+func TestGateSubmitOverCapacityRequiresSplittableBatch(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+	grEnableMissionLayout(t, repoRoot)
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	run := mustLoadRun(t, repoRoot, runID)
+
+	const unitKey = "unit:auth"
+	if run.CoverageByKey(unitKey) == nil {
+		t.Fatalf("expected the unit-level scan key %q in coverage", unitKey)
+	}
+	spec, err := gaterun.BuildSessionSpec(repoRoot, run, []string{unitKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Splittable() {
+		t.Fatalf("a single-key batch must not be splittable: %v", spec.Keys)
+	}
+
+	// The mission for an atomic batch does not offer the over-capacity escape.
+	var missionOut, missionErr bytes.Buffer
+	if merr := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", unitKey, "--format", "json"}, &missionOut, &missionErr); merr != nil {
+		t.Fatalf("gate-mission failed: %v (%s)", merr, missionErr.String())
+	}
+	var mission gateMission
+	if uerr := json.Unmarshal(missionOut.Bytes(), &mission); uerr != nil {
+		t.Fatal(uerr)
+	}
+	for _, constraint := range mission.Constraints {
+		if strings.Contains(constraint, "Session over capacity") {
+			t.Fatalf("an atomic batch mission must not offer the over-capacity declaration: %v", mission.Constraints)
+		}
+	}
+
+	// Submitting that declaration for the atomic batch is rejected, not
+	// recorded as a terminal over_capacity session.
+	serr := grSubmitPrinted(t, repoRoot, runID, unitKey, unitKey, "Session over capacity: too big\n")
+	if serr == nil || !strings.Contains(serr.Error(), "cannot be split") {
+		t.Fatalf("expected the atomic over-capacity declaration to be rejected, got err=%v", serr)
+	}
+	state, lerr := gaterun.LoadSessionState(repoRoot, run, unitKey)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if state.Status != gaterun.SessionRejected {
+		t.Fatalf("expected a rejected session, got %q", state.Status)
+	}
 }

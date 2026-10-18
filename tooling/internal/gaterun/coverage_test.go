@@ -1108,7 +1108,7 @@ func TestDeltaRepairQuotedStatusStillReruns(t *testing.T) {
 	}
 }
 
-// TestSessionIDAndBatching pins the agent-chosen batching identity: a
+// TestSessionIDAndBatching pins the computed batching identity: a
 // single-key session keeps the key as its id and a batch gets a stable derived
 // id, and the read surface is the union of the batch's keys.
 func TestSessionIDAndBatching(t *testing.T) {

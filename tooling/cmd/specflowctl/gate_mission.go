@@ -14,7 +14,7 @@ import (
 )
 
 // runGateMission materializes the read-only reviewer mission for an
-// agent-chosen coverage key batch. Public missions claim their fixed batch under the repository lock;
+// computed coverage key batch. Public missions claim their fixed batch under the repository lock;
 // mission generation never persists an accepted session. With --final it builds the optional final cross synthesis instead.
 func runGateMission(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-mission", flag.ContinueOnError)
@@ -385,6 +385,13 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		}
 	}
 	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only commands only (git queries and the framework inspection subcommands the checks instruct: specflowctl deps, specflowctl surfaces, specflowctl validate candidate)", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
+	// The over-capacity declaration is the recovery signal for a batch that can
+	// be split. A single-key batch is atomic, so the mission does not offer the
+	// escape and the session must carry its report (see
+	// framework/verification_scope.md §Session capacity).
+	if spec.Splittable() {
+		constraints = append(constraints, "if this assigned batch exceeds what one session can carry, submit the single line `Session over capacity: <what exceeded>` instead of a partial report — the batch is then split into smaller batches, so never judge only part of it and never guess")
+	}
 	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.SessionKindItem || spec.Kind == gaterun.SessionKindUnit || spec.Kind == gaterun.SessionKindCode) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}

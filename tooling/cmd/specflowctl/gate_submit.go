@@ -18,7 +18,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
-// runGateSubmit records one reviewer session's report for an agent-assigned
+// runGateSubmit records one reviewer session's report for a computed
 // coverage key batch. Declarations are checked against the session's read
 // refs; the final cross synthesis binds the accepted dependency result digests
 // it consumes.
@@ -107,6 +107,9 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if state.Status == gaterun.SessionNotRequired {
 		return fmt.Errorf("session %q is not_required (terminal) — it accepts no submissions; plan a new run if the result must change", sessionID)
 	}
+	if state.Status == gaterun.SessionOverCapacity {
+		return fmt.Errorf("session %q is over_capacity (terminal) — its assigned batch must be split into smaller batches of the same kind and lens, not re-submitted: %s", sessionID, strings.Join(keys, ","))
+	}
 	for _, dep := range spec.DependsOn {
 		depState, derr := gaterun.LoadSessionState(absRoot, run, dep)
 		if derr != nil {
@@ -145,6 +148,36 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 
 	if strings.TrimSpace(report) == "" {
 		return reject("empty report")
+	}
+	// A session that cannot carry its assigned batch returns the declared
+	// over-capacity line instead of a report. That is information about the
+	// batch, not a defective report: record it as a terminal over_capacity
+	// session — its keys stay uncovered — so the coordinator splits the batch,
+	// rather than a rejection the reviewer is asked to "fix" and re-submit.
+	// The declaration is the recovery signal for a batch that can be split, so
+	// it applies only to a multi-key batch; a single-key batch is atomic and
+	// has no smaller batch, so its over-capacity text is a defective report.
+	if detail, ok := overCapacityDeclaration(report); ok {
+		if !spec.Splittable() {
+			return reject("the assigned batch has a single key and cannot be split — the `Session over capacity:` declaration applies only to a multi-key batch; carry this report")
+		}
+		state.SessionID = sessionID
+		state.Keys = append([]string(nil), keys...)
+		state.Status = gaterun.SessionOverCapacity
+		if detail == "" {
+			detail = "the session declared it cannot carry its assigned batch"
+		}
+		state.Attempts = append(state.Attempts, gaterun.Attempt{
+			Attempt:         attempt,
+			SubmittedAt:     now,
+			Status:          gaterun.SessionOverCapacity,
+			RejectionReason: detail,
+			ResultDigest:    digest,
+		})
+		if saveErr := gaterun.SaveSessionState(absRoot, run, state); saveErr != nil {
+			return saveErr
+		}
+		return fmt.Errorf("gate-submit: session %q declared it is over capacity (%s) — split these keys into smaller batches of the same kind and lens and mission each; this assignment is terminal: %s", sessionID, detail, strings.Join(keys, ","))
 	}
 	parsed, perr := parseSessionReport(run, spec, report)
 	if perr != nil {
@@ -192,11 +225,29 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if cerr != nil {
 		return cerr
 	}
-	accepted, pending, rejected := sessionCounts(states)
+	accepted, pending, rejected, overCapacity := sessionCounts(states)
 	fmt.Fprintf(stdout, "Session accepted: %s (keys %s, attempt %d, digest %s)\n", sessionID, strings.Join(keys, ", "), attempt, digest)
-	fmt.Fprintf(stdout, "Coverage: %d/%d covered · sessions: %d accepted, %d pending, %d rejected\n", len(run.Coverage)-len(uncovered), len(run.Coverage), accepted, pending, rejected)
+	fmt.Fprintf(stdout, "Coverage: %d/%d covered · sessions: %d accepted, %d pending, %d rejected, %d over capacity\n", len(run.Coverage)-len(uncovered), len(run.Coverage), accepted, pending, rejected, overCapacity)
 	fmt.Fprintf(stdout, "Next: %s\n", gateNextStep(run, states, uncovered))
 	return nil
+}
+
+// overCapacityDeclaration reports whether a submitted text is the declared
+// over-capacity line rather than a reviewer report, and returns its detail.
+// The declared line is `Session over capacity: <what it could not carry>`
+// (framework/verification_scope.md §Session capacity) and stands alone as the
+// session's submission.
+func overCapacityDeclaration(report string) (string, bool) {
+	const prefix = "Session over capacity:"
+	trimmed := strings.TrimSpace(report)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return "", false
+	}
+	detail := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	if first, _, _ := strings.Cut(detail, "\n"); strings.TrimSpace(first) != "" {
+		return strings.TrimSpace(first), true
+	}
+	return "", true
 }
 
 // normalizeDeclaredPaths rewrites every parsed declaration path — ownership
