@@ -82,3 +82,52 @@ func TestExtractVerdictItemIDMetacharacters(t *testing.T) {
 		t.Fatalf("expected ALIGNED, got %q", token)
 	}
 }
+
+// TestHasReasonAcceptsCJK guards issue #89: a reason written entirely in CJK
+// (with punctuation) is a real reason. The test must not depend on an ASCII
+// token being present, or Chinese-language projects get spurious
+// "carries no reason" rejections.
+func TestHasReasonAcceptsCJK(t *testing.T) {
+	line := "5. Acceptance coverage & correctness: PASS — 见下列四项子检查，正文/附录行为域与验收项双向对应成立，改动点均有承载，无子检查失败。"
+	if !hasReason(line, "PASS") {
+		t.Fatalf("an all-CJK reason must count as a reason: %q", line)
+	}
+}
+
+// TestHasReasonRejectsPunctuationOnly pins the other half of the rule: a
+// verdict followed by nothing but punctuation still carries no reason.
+func TestHasReasonRejectsPunctuationOnly(t *testing.T) {
+	for _, line := range []string{
+		"5. Acceptance coverage: PASS — 。，！",
+		"5. Acceptance coverage: PASS — ---",
+		"5. Acceptance coverage: PASS — ",
+	} {
+		if hasReason(line, "PASS") {
+			t.Fatalf("a verdict followed by punctuation only must not count as a reason: %q", line)
+		}
+	}
+}
+
+// TestValidateUnitAcceptanceBodyAcceptsCJKReasons covers the Check 5 sub-check
+// call site of hasReason (#89): all-CJK sub-check reasons must validate.
+func TestValidateUnitAcceptanceBodyAcceptsCJKReasons(t *testing.T) {
+	report := "5a. coverage: PASS — 正文与验收项双向对应成立\n" +
+		"5b. correctness: PASS — 改动点均有承载，无遗漏\n" +
+		"5e. appendix: PASS — 附录行为域与正文一致\n" +
+		"5h. disposition: PASS — 无子检查失败\n"
+	if err := validateUnitAcceptanceBody(report); err != nil {
+		t.Fatalf("all-CJK sub-check reasons must validate: %v", err)
+	}
+}
+
+// TestValidateUnitAcceptanceBodyRejectsPunctuationOnlyReason keeps the
+// pure-punctuation rejection intact after the #89 widening.
+func TestValidateUnitAcceptanceBodyRejectsPunctuationOnlyReason(t *testing.T) {
+	report := "5a. coverage: PASS — 。，\n" +
+		"5b. correctness: PASS — 改动点均有承载\n" +
+		"5e. appendix: PASS — 附录行为域与正文一致\n" +
+		"5h. disposition: PASS — 无子检查失败\n"
+	if err := validateUnitAcceptanceBody(report); err == nil {
+		t.Fatal("a punctuation-only sub-check reason must be rejected")
+	}
+}

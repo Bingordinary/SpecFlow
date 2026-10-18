@@ -50,7 +50,7 @@ var (
 	factAnchorRe        = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*fact_anchor:\s*\S`)
 	gateFindingsRe      = regexp.MustCompile(`(?mi)^[ \t]*gate_findings:\s*(\S[^\n]*)$`)
 	gateFindingsEntryRe = regexp.MustCompile(`^\[(?:P0|P1)\][ \t]+\S`)
-	alnumRe             = regexp.MustCompile(`[A-Za-z0-9]`)
+	reasonCharRe        = regexp.MustCompile(`[\p{L}\p{N}]`)
 	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(` + strings.Join(crossDispositions, "|") + `)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
 	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
@@ -921,7 +921,7 @@ func needsReason(spec *gaterun.SessionSpec, token string) bool {
 }
 
 // hasReason reports whether text follows a verdict token: at least one
-// alphanumeric character beyond a parenthesized type suffix and punctuation.
+// Unicode letter or digit beyond a parenthesized type suffix and punctuation.
 func hasReason(line, token string) bool {
 	idx := strings.Index(line, token)
 	if idx < 0 {
@@ -934,5 +934,5 @@ func hasReason(line, token string) bool {
 		}
 	}
 	rest = strings.Trim(rest, " \t—–-:()[]`,;")
-	return alnumRe.MatchString(rest)
+	return reasonCharRe.MatchString(rest)
 }
