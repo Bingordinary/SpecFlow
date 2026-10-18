@@ -36,17 +36,34 @@ func ValidateTargetName(kind, name string) error {
 	return nil
 }
 
+// SpecRootDir is the root of the spec tree: unit specs, rule specs, and the
+// meta records that describe them. It is the single owner of the tree's
+// location — IsSpecDocumentPath judges paths against it and the unit/rule
+// path constants below are composed from it, so the location has one spelling.
+const SpecRootDir = "docs/specs"
+
 const (
-	ModulesRootDir       = "docs/specs/units"
+	ModulesRootDir       = SpecRootDir + "/units"
 	CandidateDir         = ModulesRootDir + "/candidate"
 	StableDir            = ModulesRootDir + "/stable"
 	CandidateAppendixDir = CandidateDir + "/appendix"
 	StableAppendixDir    = StableDir + "/appendix"
 
-	RuleModulesRootDir = "docs/specs/rules"
+	RuleModulesRootDir = SpecRootDir + "/rules"
 	RuleCandidateDir   = RuleModulesRootDir + "/candidate"
 	RuleStableDir      = RuleModulesRootDir + "/stable"
 )
+
+// IsSpecDocumentPath reports whether a canonical repository-relative path lies
+// inside the spec tree. Every path under the tree is a spec document — a unit
+// or rule spec, an appendix, or a meta record — and a spec document is a
+// reference object, never an implementation code file: a unit's implementation
+// surface and affects.files take code paths, and spec documents are referenced
+// through unit_refs, affects.dependencies, affects.evidence_files, or
+// affects.appendices (framework/spec_writing_guide.md §7, §12).
+func IsSpecDocumentPath(canonical string) bool {
+	return canonical == SpecRootDir || strings.HasPrefix(canonical, SpecRootDir+"/")
+}
 
 // CandidateUnitSpecFileRef returns the candidate-layer path of a unit main
 // spec. The layer is fully encoded by the path; spec files no longer declare

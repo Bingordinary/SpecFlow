@@ -1465,16 +1465,29 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 // affects.files. A missing affects.files path is recorded with no entries — a
 // later appearance is a divergence. A declared implementation_surface gets no
 // such tolerance: the fail-closed check below rejects an unresolvable value,
-// so the no-entries divergence semantics apply to affects.files only.
+// so the no-entries divergence semantics apply to affects.files only. Both
+// fields declare implementation code, so both reject a spec-document value
+// before anything expands; the affects.files role check leaves the existence
+// tolerance above untouched.
 func (d *Derivation) codeSurfaces(specContent string) ([]Surface, error) {
 	repoRoot := d.root
 	// Fail closed before expanding anything: a non-<pending>
 	// implementation_surface that yields no file — an unresolvable path, or a
 	// directory with no repository-content files — would expand to zero
 	// entries, producing a plan (and later a pass cache) with no code evidence
-	// at all. The same check runs in mechanical validate Check 3.
+	// at all. A value inside the spec tree is rejected on the same footing: a
+	// spec document is a reference object, not a code surface. The same check
+	// runs in mechanical validate Check 3.
 	if problems := specvalidation.CheckImplementationSurfaces(repoRoot, specContent); len(problems) > 0 {
-		return nil, fmt.Errorf("declared implementation_surface cannot resolve to a code file — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
+		return nil, fmt.Errorf("declared implementation_surface is not a usable code surface — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
+	}
+	// affects.files declares implementation code too, so a spec document is not
+	// a usable value there either — otherwise the document enters the quality
+	// lens as a code surface and promote rewrites the very path its cache
+	// recorded. Only the field-role rule applies here: a missing affects.files
+	// path stays tolerated as a divergence (see the note on codeSurfaces).
+	if problems := specvalidation.CheckAffectsFilesSpecDocuments(repoRoot, specContent); len(problems) > 0 {
+		return nil, fmt.Errorf("declared affects.files is not a usable code surface — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
 	}
 	var paths []string
 	paths = append(paths, specvalidation.ExtractImplementationSurfaces(specContent)...)

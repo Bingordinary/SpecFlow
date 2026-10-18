@@ -99,7 +99,8 @@ func checkAcceptanceItems(repoRoot, unitName string) CheckResult {
 
 // ------------------------------------------------------------
 // Check 3: Anchor integrity (affects.files paths exist and
-// implementation_surface values resolve to real code)
+// implementation_surface values resolve to real code; both reject
+// a spec-document value)
 // ------------------------------------------------------------
 func checkAnchors(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)
@@ -124,15 +125,17 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 	// file, or a directory's repository-content files (the files Git tracks
 	// plus untracked files that are not ignored). A non-pending value that
 	// yields none would silently derive an empty code surface, so it fails
-	// here (same check gate-plan applies before planning a verify run).
+	// here. A value inside the spec tree fails on the same footing: a spec
+	// document is a reference object, not a code surface. Same check gate-plan
+	// applies before planning a verify run.
 	for _, surfaceProblem := range CheckImplementationSurfaces(repoRoot, content) {
 		problems = append(problems, surfaceProblem.String())
 	}
-	// affects.files is a repository-boundary declaration like the other two
-	// code-path fields: canonical resolution rejects a lexical `..` escape or
-	// an in-project symlink that resolves outside the project, and the
-	// resolved path must exist. The check judges the declaration only and
-	// never reads code.
+	// affects.files is a repository-boundary and field-role declaration like
+	// implementation_surface: canonical resolution rejects a lexical `..`
+	// escape or an in-project symlink that resolves outside the project, the
+	// resolved path must exist, and a spec document is not a usable code
+	// surface. The check judges the declaration only and never reads code.
 	for _, affectsProblem := range CheckAffectsFiles(repoRoot, content) {
 		problems = append(problems, affectsProblem.String())
 	}

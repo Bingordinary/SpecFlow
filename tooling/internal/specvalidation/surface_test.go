@@ -361,6 +361,114 @@ func TestCheckAffectsFiles_OutsideRepositoryFails(t *testing.T) {
 	mustSurfaceReason(t, problems, "item_1", "cannot be resolved")
 }
 
+// TestCheckImplementationSurfaces_SpecDocumentFails pins the issue-#88
+// invariant: implementation_surface declares an implementation code surface, so
+// a spec document is rejected even though it resolves — the unit's own main
+// spec, its own appendix, any rule spec, and a spec directory alike.
+func TestCheckImplementationSurfaces_SpecDocumentFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_agent.md", "# agent\n")
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_agent_flows.md", "# flows\n")
+	writeSurfaceFile(t, repoRoot, "docs/specs/rules/stable/g_rule_scope.md", "# rule\n")
+
+	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec(
+		"docs/specs/units/stable/unit_agent.md",
+		"docs/specs/units/candidate/appendix/unit_agent_flows.md",
+		"docs/specs/rules/stable/g_rule_scope.md",
+		"docs/specs/units/stable",
+	))
+	if len(problems) != 4 {
+		t.Fatalf("expected every spec-document surface to fail, got %v", problems)
+	}
+	for _, item := range []string{"item_1", "item_2", "item_3", "item_4"} {
+		mustSurfaceReason(t, problems, item, "names a spec document")
+	}
+}
+
+// TestCheckAffectsFiles_SpecDocumentFails verifies affects.files enforces the
+// same field-role invariant as implementation_surface: both declare
+// implementation code, so a spec document is rejected on either field.
+func TestCheckAffectsFiles_SpecDocumentFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_agent.md", "# agent\n")
+
+	problems := CheckAffectsFiles(repoRoot, affectsFilesSpec("docs/specs/units/stable/unit_agent.md"))
+	if len(problems) != 1 {
+		t.Fatalf("expected one problem, got %v", problems)
+	}
+	if problems[0].Field != "affects.files" {
+		t.Fatalf("problem field = %q, want affects.files (%v)", problems[0].Field, problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "names a spec document")
+}
+
+// TestCheckAffectsFilesSpecDocuments_RoleOnly pins the check verify planning
+// uses: it rejects a spec-document affects.files value, but unlike
+// CheckAffectsFiles it never applies the existence rule — a not-yet-existing
+// path stays tolerated as a divergence (issue #88).
+func TestCheckAffectsFilesSpecDocuments_RoleOnly(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_agent.md", "# agent\n")
+
+	problems := CheckAffectsFilesSpecDocuments(repoRoot, affectsFilesSpec(
+		"docs/specs/units/stable/unit_agent.md",
+		"internal/not/created/yet.go",
+	))
+	if len(problems) != 1 {
+		t.Fatalf("expected only the spec-document value to fail, got %v", problems)
+	}
+	if problems[0].Field != "affects.files" {
+		t.Fatalf("problem field = %q, want affects.files (%v)", problems[0].Field, problems)
+	}
+	mustSurfaceReason(t, problems, "item_1", "names a spec document")
+}
+
+// TestCheckEvidenceFiles_SpecDocumentPasses pins the boundary the issue-#88
+// rule must not cross: evidence_files is not an implementation surface, so a
+// spec document cited as read-only evidence stays legal.
+func TestCheckEvidenceFiles_SpecDocumentPasses(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_peer.md", "# peer\n")
+
+	problems := CheckEvidenceFiles(repoRoot, evidenceFilesSpec("docs/specs/units/stable/unit_peer.md"))
+	if len(problems) != 0 {
+		t.Fatalf("expected a spec-document evidence file to pass, got %v", problems)
+	}
+}
+
+// TestCheckAnchors_SpecDocumentImplementationSurfaceFails verifies mechanical
+// validate Check 3 rejects the declaration end to end, so a validate run fails
+// before any session is planned (gate-plan applies the same shared check).
+func TestCheckAnchors_SpecDocumentImplementationSurfaceFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_agent.md", "# agent\n")
+	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("docs/specs/units/stable/unit_agent.md"))
+
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "item_1") || !strings.Contains(result.Details, "names a spec document") {
+		t.Fatalf("expected item id and reason in details, got %s", result.Details)
+	}
+}
+
+// TestCheckAnchors_OwnAppendixReferencePasses pins the legal self-reference the
+// issue-#88 rule must not touch: affects.appendices naming the unit's own
+// appendix is a spec-object reference, not an implementation surface.
+func TestCheckAnchors_OwnAppendixReferencePasses(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_flows.md", "# flows\n")
+	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("internal/demo/a.go")+
+		"    affects:\n      appendices:\n        - unit_test_unit_flows\n")
+
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for an own-appendix reference, got %s: %s", result.Status, result.Details)
+	}
+}
+
 // TestCheckAnchors_OutsideRepositoryAffectsFileFails verifies mechanical
 // validate Check 3 rejects the escaping declaration end to end, so a validate
 // run fails before any session is planned.

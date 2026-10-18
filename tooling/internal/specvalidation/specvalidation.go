@@ -3,7 +3,7 @@
 //
 //  1. Frontmatter completeness
 //  2. Acceptance items format (required fields, Gherkin-style descriptions for testable items, .feature syntax rejected)
-//  3. Anchor integrity (affects.files and affects.evidence_files paths exist; implementation_surface values resolve to real code)
+//  3. Anchor integrity (affects.files and affects.evidence_files paths exist; implementation_surface values resolve to real code; implementation_surface and affects.files reject a spec-document value)
 //  4. Reference integrity (unit_refs/rule_refs files exist)
 //  5. Appendix files exist
 //  6. Body layer-path check (candidate-layer spec paths)

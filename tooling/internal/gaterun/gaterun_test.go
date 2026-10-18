@@ -217,6 +217,53 @@ func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	}
 }
 
+// TestPlanVerifyRejectsSpecDocumentImplementationSurface verifies the planning
+// precondition applies to a spec-document surface too: the value resolves to a
+// real file, but that file is a spec document — a reference object, not a code
+// surface — so the plan is rejected before any run state is written (#88).
+func TestPlanVerifyRejectsSpecDocumentImplementationSurface(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "docs/specs/units/stable/unit_auth.md", "")
+	writeFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "# auth\n")
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "names a spec document") {
+		t.Fatalf("expected the item-granular spec-document rejection, got %v", err)
+	}
+	runs, listErr := ListRuns(repoRoot)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
+	}
+}
+
+// TestPlanVerifyRejectsSpecDocumentAffectsFiles verifies the field-role
+// invariant is enforced on affects.files at planning too: like
+// implementation_surface, the field declares implementation code, so a spec
+// document is rejected before any run state is written and never becomes a
+// code (quality) surface (#88).
+func TestPlanVerifyRejectsSpecDocumentAffectsFiles(t *testing.T) {
+	repoRoot := newRepo(t)
+	extra := "    affects:\n      files:\n        - docs/specs/units/stable/unit_auth.md\n"
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/demo/a.go", extra)
+	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "# auth\n")
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "auth.core") || !strings.Contains(err.Error(), "names a spec document") {
+		t.Fatalf("expected the item-granular spec-document rejection, got %v", err)
+	}
+	runs, listErr := ListRuns(repoRoot)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
+	}
+}
+
 // TestPlanVerifyReadsItemRelativeIndentSurface verifies a consistently nested
 // item block contributes its declared surface to the plan: the parser follows
 // the item's own indent instead of assuming the canonical column.

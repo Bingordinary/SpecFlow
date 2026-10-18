@@ -63,3 +63,31 @@ func TestResolveRuleFileUsesApplicabilityLayer(t *testing.T) {
 		t.Fatalf("bound rule resolved to %q, want candidate %q", got, boundCandidate)
 	}
 }
+
+func TestIsSpecDocumentPath(t *testing.T) {
+	specPaths := []string{
+		SpecRootDir,
+		"docs/specs/units/stable/unit_agent.md",
+		"docs/specs/units/candidate/appendix/unit_agent_flows.md",
+		"docs/specs/rules/stable/g_rule_scope.md",
+		"docs/specs/meta/validation/unit/agent/verify_result.md",
+	}
+	for _, p := range specPaths {
+		if !IsSpecDocumentPath(p) {
+			t.Fatalf("expected %q to be a spec document path", p)
+		}
+	}
+
+	codePaths := []string{
+		"",
+		"internal/demo/a.go",
+		"docs/design.md",
+		"docs/specs_extra/x.md",
+		"framework/spec_writing_guide.md",
+	}
+	for _, p := range codePaths {
+		if IsSpecDocumentPath(p) {
+			t.Fatalf("expected %q not to be a spec document path", p)
+		}
+	}
+}

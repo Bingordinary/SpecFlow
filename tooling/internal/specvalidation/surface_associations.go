@@ -187,7 +187,7 @@ func (c *surfaceCollector) addDeclaration(repoRoot, field, value string) {
 		return
 	}
 	canonical, err := repopath.Canonical(repoRoot, value)
-	if err != nil || strings.HasPrefix(canonical, "docs/specs/") {
+	if err != nil || specpaths.IsSpecDocumentPath(canonical) {
 		return
 	}
 	abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))

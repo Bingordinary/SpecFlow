@@ -8,11 +8,32 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repofiles"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
 // SurfacePending is the exact implementation_surface placeholder for
 // design-first rounds: the item's implementation path is not yet known.
 const SurfacePending = "<pending>"
+
+// specDocumentReason is the shared reject reason for implementation_surface
+// and affects.files values that name a spec document. Both fields declare
+// implementation code surfaces, and a spec document is a reference object, not
+// code: it is referenced through unit_refs, affects.dependencies,
+// affects.evidence_files, or affects.appendices instead
+// (framework/spec_writing_guide.md §7, §12).
+const specDocumentReason = "names a spec document — this field takes an implementation code surface; a spec document is a reference object, not code (framework/spec_writing_guide.md §7)"
+
+// specDocumentProblem returns the field-role problem for a code-surface field
+// value whose canonical path lies inside the spec tree, and false when it does
+// not (including when the value is not a canonical path at all — resolution is
+// the caller's judgment). Both code-surface fields share the rule, so validate
+// Check 3 and verify planning report it with the same reason.
+func specDocumentProblem(itemID, field, value, canonical string) (SurfaceProblem, bool) {
+	if !specpaths.IsSpecDocumentPath(canonical) {
+		return SurfaceProblem{}, false
+	}
+	return SurfaceProblem{ItemID: itemID, Field: field, Value: value, Reason: specDocumentReason}, true
+}
 
 // SurfaceProblem is one acceptance item declaration that cannot resolve: the
 // item id, the declaring field, the declared value (empty when the field has
@@ -51,14 +72,16 @@ func FormatSurfaceProblems(problems []SurfaceProblem) string {
 // other item must declare a single repository-relative path that resolves, as
 // written, to at least one real file (a directory expands to the files Git
 // tracks or leaves untracked and unignored, so a directory holding only
-// ignored files is not a usable surface). Resolution is the only judgment:
-// the value is matched literally, so an existing path is accepted whatever
-// characters it contains, and a value that does not resolve — a semicolon
-// list or wildcard pattern is not a path — is reported with the item id and
-// the mechanical reason. An empty result means every declared surface is
-// usable. Mechanical validate Check 3 and gate-plan share this check, so a
-// declared surface that cannot expand to a code file never silently produces
-// an empty file set.
+// ignored files is not a usable surface). Resolution is the only judgment on
+// the value's shape: the value is matched literally, so an existing path is
+// accepted whatever characters it contains, and a value that does not resolve
+// — a semicolon list or wildcard pattern is not a path — is reported with the
+// item id and the mechanical reason. The value's kind is judged: a path inside
+// the spec tree names a spec document, and a spec document is a reference
+// object, never an implementation code surface (framework/spec_writing_guide.md
+// §7). An empty result means every declared surface is usable. Mechanical
+// validate Check 3 and gate-plan share this check, so a declared surface that
+// cannot expand to a code file never silently produces an empty file set.
 func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem {
 	var problems []SurfaceProblem
 	for _, item := range parseAcceptanceItems(specContent) {
@@ -73,8 +96,13 @@ func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem 
 			})
 			continue
 		}
-		if reason := surfaceValueProblem(repoRoot, value); reason != "" {
+		canonical, reason := surfaceValueProblem(repoRoot, value)
+		if reason != "" {
 			problems = append(problems, SurfaceProblem{ItemID: item.id, Value: value, Reason: reason})
+			continue
+		}
+		if problem, ok := specDocumentProblem(item.id, "", value, canonical); ok {
+			problems = append(problems, problem)
 		}
 	}
 	return problems
@@ -128,9 +156,10 @@ func CheckEvidenceFiles(repoRoot, specContent string) []SurfaceProblem {
 // files). Resolution applies the same boundary implementation_surface and
 // affects.evidence_files already enforce: a lexical `..` escape or an
 // in-project symlink that resolves outside the project is rejected rather than
-// resolved literally. The check is the spec-quality half of the field — it
-// judges the declaration alone and never reads code. Mechanical validate
-// Check 3 owns it.
+// resolved literally. Like implementation_surface, the field declares
+// implementation code, so a spec document is rejected (see specDocumentReason).
+// The check is the spec-quality half of the field — it judges the declaration
+// alone and never reads code. Mechanical validate Check 3 owns it.
 func CheckAffectsFiles(repoRoot, specContent string) []SurfaceProblem {
 	var problems []SurfaceProblem
 	for _, item := range parseAcceptanceItems(specContent) {
@@ -141,6 +170,10 @@ func CheckAffectsFiles(repoRoot, specContent string) []SurfaceProblem {
 				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.files", Value: value, Reason: fmt.Sprintf("cannot be resolved: %v", err)})
 				continue
 			}
+			if problem, ok := specDocumentProblem(item.id, "affects.files", value, canonical); ok {
+				problems = append(problems, problem)
+				continue
+			}
 			if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(canonical))); err != nil {
 				problems = append(problems, SurfaceProblem{ItemID: item.id, Field: "affects.files", Value: value, Reason: "path does not exist — affects.files must name an existing repository-relative file or directory (framework/spec_writing_guide.md §7)"})
 			}
@@ -149,33 +182,58 @@ func CheckAffectsFiles(repoRoot, specContent string) []SurfaceProblem {
 	return problems
 }
 
-// surfaceValueProblem returns "" when value is a single repository-contained
-// path that resolves to at least one real file, or the mechanical reason it
-// does not. The value is matched literally and is never classified by shape:
-// a list or pattern is rejected because it is not a resolvable path, not
-// because of its characters.
-func surfaceValueProblem(repoRoot, value string) string {
+// CheckAffectsFilesSpecDocuments reports every affects.files value that names a
+// spec document. Like implementation_surface, the field declares implementation
+// code, so a spec document is not a usable value on either field
+// (framework/spec_writing_guide.md §7, §12). The function applies the field-role
+// rule alone: resolution, existence, and directory expansion stay with
+// CheckAffectsFiles, so verify planning rejects the role violation while keeping
+// its affects.files divergence tolerance — a not-yet-existing path is still
+// tolerated, a spec document never is.
+func CheckAffectsFilesSpecDocuments(repoRoot, specContent string) []SurfaceProblem {
+	var problems []SurfaceProblem
+	for _, item := range parseAcceptanceItems(specContent) {
+		for _, raw := range item.affectsFiles {
+			value := strings.TrimSpace(raw)
+			canonical, err := repopath.Canonical(repoRoot, value)
+			if err != nil {
+				continue
+			}
+			if problem, ok := specDocumentProblem(item.id, "affects.files", value, canonical); ok {
+				problems = append(problems, problem)
+			}
+		}
+	}
+	return problems
+}
+
+// surfaceValueProblem returns the canonical path and "" when value is a single
+// repository-contained path that resolves to at least one real file, or an
+// empty canonical path and the mechanical reason it does not. The value is
+// matched literally and is never classified by shape: a list or pattern is
+// rejected because it is not a resolvable path, not because of its characters.
+func surfaceValueProblem(repoRoot, value string) (string, string) {
 	canonical, err := repopath.Canonical(repoRoot, value)
 	if err != nil {
-		return fmt.Sprintf("cannot be resolved: %v", err)
+		return "", fmt.Sprintf("cannot be resolved: %v", err)
 	}
 	abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))
 	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "path does not exist — implementation_surface must be a single repository-relative file or directory (framework/spec_writing_guide.md §7)"
+			return "", "path does not exist — implementation_surface must be a single repository-relative file or directory (framework/spec_writing_guide.md §7)"
 		}
-		return fmt.Sprintf("cannot be inspected: %v", err)
+		return "", fmt.Sprintf("cannot be inspected: %v", err)
 	}
 	if !info.IsDir() {
-		return ""
+		return canonical, ""
 	}
 	files, err := repofiles.ExpandDir(repoRoot, canonical)
 	if err != nil {
-		return fmt.Sprintf("cannot be expanded: %v", err)
+		return "", fmt.Sprintf("cannot be expanded: %v", err)
 	}
 	if len(files) == 0 {
-		return "directory contains no files — a directory surface expands to the files Git tracks or leaves untracked and unignored"
+		return "", "directory contains no files — a directory surface expands to the files Git tracks or leaves untracked and unignored"
 	}
-	return ""
+	return canonical, ""
 }
