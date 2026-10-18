@@ -109,7 +109,7 @@ Each command must have clearly defined boundaries. The review must verify:
    c. Removal: the agent chooses explicit objects; `framework/removal_workflow.md` owns two-layer integrity checks and transactional cleanup without gates.
    d. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
-   The unit body-path pre-check scans candidate prose for candidate-layer paths that would break after archive. Structured field paths (`implementation_surface`, `affects.files`, `affects.appendices`, `affects.dependencies`) are deterministic `actionable`; narrative references require user judgment and remain `needs_decision` until resolved.
+   The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.dependencies`, `affects.evidence_files`, and `affects.appendices` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
 
 Each command must have:
 1. a defined input (what parameters it accepts)

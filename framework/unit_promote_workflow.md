@@ -70,17 +70,17 @@ Summary: ...
 3. Search the full file content for all occurrences of:
    - `docs/specs/units/candidate/` (absolute form)
    - `candidate/` relative form with spec naming (e.g. `candidate/appendix/unit_{name}_...md`, `candidate/unit_{name}.md`)
-4. For each occurrence, classify into:
-   - **Structured field path** — Appears in `implementation_surface`, `affects.files`, `affects.appendices`, or `affects.dependencies` values. These are deterministic spec-to-spec references that must point to stable after promote. Per `framework/spec_writing_guide.md` §Acceptance Item Fields, `implementation_surface` is an "Implementation code surface path" — if it references a spec document path, use the stable layer path instead. A candidate-layer spec path in a structured field is invalid.
+4. For each occurrence, classify it **by location** — the location decides whether human judgment is needed at all, and `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path:
+   - **Structured field path** — the occurrence sits inside a structured field value (a declaration field, frontmatter or item), as opposed to the narrative reference below — prose, an acceptance item `description`, or another free-text field. A declaration can never carry the ordinary-language meaning a narrative reference might, so its reparation is deterministic → `actionable`. `affects.dependencies`, `affects.evidence_files`, and `affects.appendices` may reference a spec document, so a candidate-layer spec path there must become the stable layer path (§12); every other structured field takes implementation code paths or bare names (§3, §5, §7), so a spec-document path there is malformed in any layer, and `specflowctl validate` already rejects it (Check 3 for the two code-surface fields, Check 4 for the frontmatter reference fields, the mechanical Body layer-path check for a candidate-layer path anywhere).
    - **Narrative reference** — Appears in prose, acceptance item `description`, or other free-text fields. May be semantically meaningful (e.g. "in the candidate phase...") — needs human judgment. Note: `validate` rejects such references at validate time (the mechanical Body layer-path check); if one reaches this step, the spec likely predates the rule or bypassed validate.
 5. Report findings:
    - List each matched line with line number and surrounding context
    - Tag each match as `[structured]` or `[narrative]`
-   - For structured matches, suggest the correct stable replacement path
+   - For structured matches, suggest the field's legal value — the stable layer path for `affects.dependencies`, `affects.evidence_files`, and `affects.appendices`, or the field's non-path form for the rest
 
 **PASS:** No candidate-layer path references found in the file content.
 
-**FAIL (actionable):** One or more structured field paths found. Report exact line numbers and matched paths. Inform the user and recommend editing the candidate spec to replace `candidate/` with `stable/` before re-running promote. The agent must NOT modify files during the promote workflow.
+**FAIL (actionable):** One or more structured field paths found. Report exact line numbers and matched paths. Inform the user and recommend editing the candidate spec to the field's legal value — replace `candidate/` with `stable/` for `affects.dependencies`, `affects.evidence_files`, and `affects.appendices`, or use the field's non-path form for the rest — before re-running promote. The agent must NOT modify files during the promote workflow.
 
 **FAIL (needs_decision):** Narrative references found. These require user judgment — report each occurrence and ask the user whether each should be updated. Do not proceed to Step 3 until resolved.
 
