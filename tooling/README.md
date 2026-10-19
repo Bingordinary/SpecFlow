@@ -302,10 +302,11 @@ The snapshot is recorded by the tooling version that opened the operation. A sta
 | `plan_inputs/` | Scratch `--inputs-file` manifests | Consumed once by `gate-plan`; the sweep clears the directory at every sweep point |
 | `operations/<id>.json` | Frozen operation scope | Removed by `operation close` (passed or abandoned); a surviving closed state is swept by `clean` |
 | `governance_review/` | Review run-state (full-scope and design reviews) | Owned by the review flows: `review run-init` deletes a closed state or an open state older than seven days before starting a new run |
+| `.update-baseline` | Pre-update `specflow/` commit used by `spec_flow_update` | Removed by the update procedure's Step 6 after its Steps 4 and 5 complete; kept across sessions when an update stops for user input |
 | Anything else | Undeclared entry (misplaced working file, editor artifact) | Removed as a stray at every sweep point; hidden entries and the lock files (`.gate_runs.lock`, `.operations.lock`) are preserved |
 | Undecodable or unprovable state | State that does not load as a complete, valid state | Never deleted — unprovable state is never acted on |
 
-Sweep points: after `gate-plan`, after a successful `promote` or `remove`, and on demand through `specflowctl clean` (`--dry-run` previews). Do not store personal files under `meta/`: it is disposable by contract — use `.tmp/` or a path outside the repository.
+Sweep points: after `gate-plan`, after a successful `promote` or `remove`, and on demand through `specflowctl clean` (`--dry-run` previews). Do not store personal files under `meta/`: it is disposable by contract — use `.tmp/` or a path outside the repository. `meta/.update-baseline` is the update flow's hidden carry: it is preserved by the sweep and removed only when the update completes.
 
 ## Review Run-State Commands
 

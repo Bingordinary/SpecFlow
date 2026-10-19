@@ -4,22 +4,45 @@ When the user says `spec_flow_update`, follow this procedure. It pulls the lates
 
 Requests that do not explicitly invoke `spec_flow_update` carry no migration write authority — route them through normal editing instead.
 
-> If the platform adapter that injects the bootstrap is not loading — for example after a runtime breaking change — the agent cannot see the `spec_flow_update` trigger. The out-of-band recovery entry is the repository-root `UPDATE.md`: it runs the Step 1 pull directly, then hands back to this procedure from Step 2.
+> If the platform adapter that injects the bootstrap is not loading — for example after a runtime breaking change — the agent cannot see the `spec_flow_update` trigger. The out-of-band recovery entry is the repository-root `UPDATE.md`: it records the same `meta/.update-baseline` and runs the Step 1 pull directly, then hands back to this procedure from Step 2.
 
 ## Procedure
 
 ### Step 0: Record pre-update state
 
-Before pulling, record the current specflow commit hash so you can diff what changed.
+Run this from the project root. Before pulling, establish the pre-update commit hash so you can diff what changed. Save it under the project's ignored local-state tree (`meta/`) or reuse the saved value: Step 1 can send the user into a new agent session, and that session must still see the pre-pull hash.
+
+If `specflow/` does not exist at the project root, the framework is not installed. Report this to the user and stop.
 
 ```bash
 SPECFLOW_DIR="$(pwd)/specflow"
-OLD_HASH=$(git -C "$SPECFLOW_DIR" rev-parse HEAD)
+BASELINE_FILE="$(pwd)/meta/.update-baseline"
+
+if [ ! -d "$SPECFLOW_DIR" ]; then
+  echo "Error: specflow/ does not exist at the project root." >&2
+  exit 1
+fi
+
+if [ -f "$BASELINE_FILE" ]; then
+  OLD_HASH=$(tr -d '[:space:]' < "$BASELINE_FILE") || exit 1
+else
+  OLD_HASH=$(git -C "$SPECFLOW_DIR" rev-parse HEAD) || exit 1
+  mkdir -p "$(dirname "$BASELINE_FILE")" || exit 1
+  printf '%s\n' "$OLD_HASH" > "$BASELINE_FILE" || exit 1
+fi
+
+if [ -z "$OLD_HASH" ]; then
+  echo "Error: update baseline is empty." >&2
+  exit 1
+fi
+
+if ! git -C "$SPECFLOW_DIR" cat-file -e "$OLD_HASH^{commit}" 2>/dev/null; then
+  echo "Error: update baseline '$OLD_HASH' is not a valid commit in specflow/." >&2
+  exit 1
+fi
 ```
 
-Save this hash; you will use it in Step 2.
-
-If `specflow/` does not exist at the project root, the framework is not installed. Report this to the user and stop.
+Use this hash in Step 2. Never overwrite an existing `meta/.update-baseline`: it belongs to an update that has not completed yet. If the file is empty or the recorded commit is invalid, stop and report the problem; do not fall back to the current HEAD.
 
 ### Step 1: Run pull_with_release.sh
 
@@ -46,14 +69,27 @@ Do not read the script's shell implementation. Execute it as-is.
 
 If the command succeeds (exit code 0), proceed to Step 2.
 
-If the command fails (non-zero exit or script not found), report the error output. Tell the user to run the script manually from the project root, then start a new agent session so the updated hooks are injected (no process restart is required). Do not proceed.
+If the command fails (non-zero exit or script not found), report the error output. The pre-update hash is already saved in `meta/.update-baseline`, so the recovery does not depend on this session. Tell the user to run the script manually from the project root, then start a new agent session so the updated hooks are injected (no process restart is required). Do not proceed. In the new session, Step 0 reads the saved hash and Step 2 compares it with the pulled HEAD.
 
-### Step 2: Detect framework structural changes (inside specflow/ repository)
+### Step 2: Detect framework structural changes (run from the project root)
 
-Run this inside the `specflow/` directory (the framework source repository), NOT the project root:
+Read the pre-update hash from the persisted baseline; do not re-record the current HEAD:
 
 ```bash
-git -C "$SPECFLOW_DIR" diff $OLD_HASH..HEAD -- framework/ templates/
+SPECFLOW_DIR="$(pwd)/specflow"
+OLD_HASH=$(tr -d '[:space:]' < "$(pwd)/meta/.update-baseline") || exit 1
+if [ -z "$OLD_HASH" ]; then
+  echo "Error: meta/.update-baseline is empty." >&2
+  exit 1
+fi
+```
+
+An empty or missing baseline is an error, not a no-change result: stop and report instead of falling back to the current HEAD.
+
+Run this from the project root; the `-C` flag targets the `specflow/` repository (the framework source repository), NOT the project repository:
+
+```bash
+git -C "$SPECFLOW_DIR" diff "$OLD_HASH"..HEAD -- framework/ templates/
 ```
 
 Read the diff output carefully. Extract every structural rule change that affects spec file format. Examples of what to look for:
@@ -118,6 +154,16 @@ After format verification, classify downstream impact on existing units:
 2. If such boundary changes exist, run impact sync per `framework/governance/impact_sync.md` to perform consumer discovery and fallback reason classification for affected units.
 3. Report the impact sync output contract: `affected_candidate_units`, `affected_stable_units`, and `freshness_review_required`.
 4. If `freshness_review_required` is `true`, execute the caller-owned Freshness Review procedure from `framework/governance/impact_sync.md` before any fallback cleanup: run `specflowctl fresh` on each affected unit, classify each as cleanup-allowed or cleanup-blocked by gate status, and report the per-unit classification. Do not execute fallback cleanup on a unit whose gates are STALE, MISSING, or BLOCKED — present the blocking gate to the user instead.
-5. If no such boundary changes exist, report that no affected units require classification and finish. Do not infer consumers from implementation directories alone.
+5. If no such boundary changes exist, report that no affected units require classification, then continue to Step 6. Do not infer consumers from implementation directories alone.
 
 Do not invent business truth during impact classification — if a fallback decision requires business judgment, present it to the user and ask for input.
+
+### Step 6: Clear the update baseline
+
+After Step 4 and Step 5 both complete, run this from the project root to delete the baseline:
+
+```bash
+rm -f meta/.update-baseline
+```
+
+Delete it only when the update has finished. If migration or impact classification stopped for user input, keep the file so the next session resumes from the same pre-update hash.
