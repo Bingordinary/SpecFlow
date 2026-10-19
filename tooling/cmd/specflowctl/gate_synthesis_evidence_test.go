@@ -198,10 +198,9 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 
 	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, proof))
 	key := "item:auth:auth.core"
-	if run := mustLoadRun(t, root, delta); strings.Join(coverageKeysOf(run), ",") != "review" || !stringInList(run.CarriedKeys, key) {
+	if run := mustLoadRun(t, root, delta); len(coverageKeysOf(run)) != 0 || !stringInList(run.CarriedKeys, key) {
 		t.Fatalf("relationship-only run must carry the item: %+v", run)
 	}
-	grReviewAccept(t, root, delta)
 	report := relationshipReport(t, root, delta, map[string]string{"contract_consistency": proof}, "")
 	report = strings.ReplaceAll(report, "Finding disposition: "+finding+" = retained", "Finding disposition: "+finding+" = suppressed — the complete decision proves alignment")
 	report = strings.ReplaceAll(report, "Effective status: "+key+" = fail", "Effective status: "+key+" = pass")
@@ -229,5 +228,98 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	changeReport, rerr := validationcache.DeriveChangeReport(root, "unit", "auth", "verify")
 	if rerr != nil || changeReport.Empty() {
 		t.Fatalf("changed synthesis evidence did not appear in the change report: %+v %v", changeReport, rerr)
+	}
+}
+
+// TestVerifySynthesisPinsLogicalEvidenceRef pins the rule that a logical
+// reference the final synthesis cites is part of its recorded evidence: a
+// change to the resolved dependency spec stales the verify cache, exactly as
+// the physical spelling does (framework/verification_scope.md §Input roles).
+func TestVerifySynthesisPinsLogicalEvidenceRef(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpec(t, root, "dep")
+	depSpec := "docs/specs/units/candidate/unit_dep.md"
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, "unit:dep"))
+	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitRemaining(t, root, id)
+	grSubmitOK(t, root, id, "cross", relationshipReport(t, root, id, map[string]string{"contract_consistency": "unit:dep"}, ""))
+	grFinalizeOK(t, root, id)
+
+	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	pinned := false
+	for _, pin := range state.SynthesisEvidence {
+		if pin.Path == "unit:dep" && pin.Hash != "" {
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Fatalf("the cited logical reference must be pinned, got %+v", state.SynthesisEvidence)
+	}
+	if check, err := validationcache.CheckVerify(root, "auth"); err != nil || !check.Fresh {
+		t.Fatalf("unchanged evidence must leave the cache fresh: %+v %v", check, err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(depSpec)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grWriteFile(t, root, depSpec, strings.Replace(string(data), "Prose.", "Prose revised.", 1))
+	if check, err := validationcache.CheckVerify(root, "auth"); err != nil || check.Fresh {
+		t.Fatalf("a changed pinned logical reference must stale the cache: %+v %v", check, err)
+	}
+	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none")
+	run := mustLoadRun(t, root, delta)
+	if !grNoticeContains(run.Notices, "synthesis evidence changed: unit:dep") {
+		t.Fatalf("the plan must disclose the changed logical evidence, got %v", run.Notices)
+	}
+	if !grContainsString(run.Relationships, "contract_consistency") {
+		t.Fatalf("the dead synthesis must re-check the standing relationship, got %v", run.Relationships)
+	}
+}
+
+// TestVerifySynthesisPinSurvivesLayerMove pins the ingestion normalization a
+// physical manifest spelling of a unit spec gets: it is carried as the
+// logical reference, so promoting the cited unit — the spec moves from
+// candidate/ to stable/ — leaves the synthesis pin resolvable and the
+// consumer cache fresh instead of reporting a false STALE against a retired
+// path.
+func TestVerifySynthesisPinSurvivesLayerMove(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpec(t, root, "dep")
+	depSpec := "docs/specs/units/candidate/unit_dep.md"
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency", "--inputs-file", grInputsManifest(t, depSpec))
+	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitRemaining(t, root, id)
+	grSubmitOK(t, root, id, "cross", relationshipReport(t, root, id, map[string]string{"contract_consistency": "unit:dep"}, ""))
+	grFinalizeOK(t, root, id)
+
+	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	pinned := false
+	for _, pin := range state.SynthesisEvidence {
+		if pin.Path == "unit:dep" && pin.Hash != "" {
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Fatalf("a physical spec spelling must be pinned as its logical reference, got %+v", state.SynthesisEvidence)
+	}
+
+	// Promote the cited unit: its spec moves from candidate/ to stable/ with
+	// unchanged content. The logical pin resolves the current layer, so the
+	// consumer cache must stay fresh.
+	if err := os.MkdirAll(filepath.Join(root, "docs/specs/units/stable"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(root, filepath.FromSlash(depSpec)), filepath.Join(root, "docs/specs/units/stable/unit_dep.md")); err != nil {
+		t.Fatal(err)
+	}
+	if check, err := validationcache.CheckVerify(root, "auth"); err != nil || !check.Fresh {
+		t.Fatalf("a layer move of the cited spec must not stale the cache: %+v %v", check, err)
 	}
 }

@@ -119,6 +119,54 @@ func ResolveUnitAppendix(repoRoot, appendix string) string {
 	return ""
 }
 
+// LogicalUnitRefForPath maps a unit spec file's physical path to the logical
+// reference that carries it: docs/specs/units/<layer>/unit_<name>.md is
+// carried as unit:<name>, and docs/specs/units/<layer>/appendix/<file>.md as
+// unit:<owner>:appendix:<file base>, with the owner read from the appendix
+// frontmatter (a filename prefix alone is ambiguous when units share a
+// prefix). It returns ok=false for any other path, an invalid target name, or
+// an appendix whose declared ownership is missing or inconsistent, so callers
+// keep a spelling they cannot map instead of guessing a reference.
+func LogicalUnitRefForPath(root, p string) (string, bool) {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	for _, layerDir := range []string{CandidateDir, StableDir} {
+		rest, ok := strings.CutPrefix(p, layerDir+"/")
+		if !ok {
+			continue
+		}
+		if name, ok := strings.CutPrefix(rest, "unit_"); ok && strings.HasSuffix(name, ".md") && !strings.Contains(name, "/") {
+			name = strings.TrimSuffix(name, ".md")
+			if ValidateTargetName("unit", name) != nil {
+				return "", false
+			}
+			return "unit:" + name, true
+		}
+		base, ok := strings.CutPrefix(rest, "appendix/")
+		if !ok || strings.Contains(base, "/") || !strings.HasSuffix(base, ".md") {
+			return "", false
+		}
+		base = strings.TrimSuffix(base, ".md")
+		if base == "" {
+			return "", false
+		}
+		path := layerDir + "/appendix/" + base + ".md"
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			return "", false
+		}
+		fields, _, err := ParseFrontmatterFields(string(data))
+		if err != nil {
+			return "", false
+		}
+		owner, err := appendixOwner(path, fields)
+		if err != nil {
+			return "", false
+		}
+		return "unit:" + owner + ":appendix:" + base, true
+	}
+	return "", false
+}
+
 // ResolveRuleFile resolves a rule logical reference according to its
 // applicability. Global rules (g_rule_*) are active only from the stable
 // layer; bound rules keep current-layer semantics (candidate first, stable

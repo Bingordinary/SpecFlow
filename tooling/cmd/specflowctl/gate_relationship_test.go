@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -283,14 +285,109 @@ func TestGateFullFailureWithCarriedRelationshipKeepsRepairSmall(t *testing.T) {
 	grFinalizeOK(t, root, second)
 	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none")
 	run := mustLoadRun(t, root, repair)
-	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design:auth:"+code || len(run.Relationships) != 0 {
+	// Only the failed design key re-runs locally; the synthesis must run again
+	// over the new local result, so the baseline relationship is re-checked
+	// rather than carried as a verdict over superseded input.
+	if len(run.Coverage) != 1 || run.Coverage[0].Key != "design:auth:"+code || !grContainsString(run.Relationships, "contract_consistency") {
 		t.Fatalf("carried relationship in a full failure widened repair scope: %+v", run)
 	}
 	grSubmitOK(t, root, repair, code, grQualityReport(code, main))
+	grSubmitOK(t, root, repair, "cross", relationshipReport(t, root, repair, map[string]string{"contract_consistency": code}, ""))
 	grFinalizeOK(t, root, repair)
 	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")
 	if err != nil || !check.Fresh {
 		t.Fatalf("local-only repair lost the carried relationship or lens evidence: %+v %v", check, err)
+	}
+}
+
+// TestGateVerifyDeltaNewRelationshipKeepsStandingCarried pins the verify delta
+// carry rule: when the coordinator selects a relationship the baseline never
+// checked while no local conclusion re-runs, the baseline's standing
+// relationship conclusions stay carried instead of disappearing from the
+// published cache (framework/verification_scope.md §Incremental relationship
+// work).
+func TestGateVerifyDeltaNewRelationshipKeepsStandingCarried(t *testing.T) {
+	root := createCLITestRepo(t)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	full := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	grSubmitOK(t, root, full, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitRemaining(t, root, full)
+	grSubmitOK(t, root, full, "cross", relationshipReport(t, root, full, map[string]string{"contract_consistency": main}, ""))
+	grFinalizeOK(t, root, full)
+
+	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "state_machine_coherence")
+	run := mustLoadRun(t, root, delta)
+	if !grContainsString(run.Relationships, "state_machine_coherence") {
+		t.Fatalf("the newly selected relationship must be checked: %v", run.Relationships)
+	}
+	if !grContainsString(run.CarriedKeys, "relationship:contract_consistency") {
+		t.Fatalf("an unselected standing relationship must carry, got %v", run.CarriedKeys)
+	}
+	if !grContainsString(run.AllRelationships(), "contract_consistency") {
+		t.Fatalf("the carried relationship must stay in the relationship scope: %v", run.AllRelationships())
+	}
+
+	grSubmitOK(t, root, delta, "cross", relationshipReport(t, root, delta, map[string]string{"state_machine_coherence": main}, ""))
+	grFinalizeOK(t, root, delta)
+	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	if got := strings.Join(state.Relationships, ","); got != "contract_consistency,state_machine_coherence" {
+		t.Fatalf("the delta dropped a standing relationship: %s", got)
+	}
+}
+
+// TestGateRepairDegradedFullScopeKeepsRelationshipScope verifies that a repair
+// plan that degrades to the full local scope (an unreadable per-check status
+// map) still re-runs the baseline's standing relationship conclusions. A full
+// local re-run recomputes the synthesis, so dropping the relationship scope
+// would silently publish a pass cache without the unit's cross-check truth.
+func TestGateRepairDegradedFullScopeKeepsRelationshipScope(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpec(t, root, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	code := "src/auth.go"
+	grWriteFile(t, root, code, "package auth\n")
+
+	full := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	grSubmitOK(t, root, full, "auth.core", grVerifyMismatchReport("auth.core", main, code, "P0"))
+	grAutoSubmitRemaining(t, root, full)
+	if _, err := grSubmitRaw(t, root, full, "cross", relationshipReport(t, root, full, map[string]string{"contract_consistency": main}, "")); err != nil {
+		t.Fatal(err)
+	}
+	grFinalizeOK(t, root, full)
+
+	cachePath := filepath.Join(root, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	entryIdx := strings.Index(cache, "- path: "+main)
+	if entryIdx < 0 {
+		t.Fatalf("cache has no main-spec entry:\n%s", cache)
+	}
+	checkIdx := strings.Index(cache[entryIdx:], `check: "item:auth:auth.core"`)
+	if checkIdx < 0 {
+		t.Fatalf("cache has no auth.core check in the main-spec entry:\n%s", cache)
+	}
+	statusRel := strings.Index(cache[entryIdx+checkIdx:], "status: fail")
+	if statusRel < 0 {
+		t.Fatalf("cache has no fail status for auth.core:\n%s", cache)
+	}
+	insertAt := entryIdx + checkIdx + statusRel + len("status: fail")
+	dup := "\n      - check: \"item:auth:auth.core\"\n        status: pass"
+	mutated := cache[:insertAt] + dup + cache[insertAt:]
+	if err := os.WriteFile(cachePath, []byte(mutated), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none")
+	run := mustLoadRun(t, root, repair)
+	if !grNoticeContains(run.Notices, "invalid per-check status map") {
+		t.Fatalf("expected the status map to degrade the plan, got %v", run.Notices)
+	}
+	if !grContainsString(run.Relationships, "contract_consistency") {
+		t.Fatalf("a degraded full-scope repair must re-run the baseline relationship scope, got %v", run.Relationships)
+	}
+	if grContainsString(run.CarriedKeys, "relationship:contract_consistency") {
+		t.Fatalf("a re-run relationship must not be carried, got %v", run.CarriedKeys)
 	}
 }
 

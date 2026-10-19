@@ -41,7 +41,7 @@ func TestExtraInputPathsNormalizeRuleDirectoryExpansion(t *testing.T) {
 		},
 		Refs: []Ref{{Ref: "rule:g_rule_a", Source: SourceInput}},
 	}
-	got := extraInputPaths(run)
+	got := extraInputPaths("", run)
 	want := []string{"rule:b_rule_x", "rule:g_rule_a", "src/auth.go"}
 	if len(got) != len(want) {
 		t.Fatalf("extraInputPaths = %v, want %v", got, want)

@@ -375,7 +375,7 @@ func TestSharedPrivateDeltaAndUndeclaredCaller(t *testing.T) {
 	}
 	// The coordinator supplies a discovered consumer explicitly; only then does
 	// it join the run's input surface and get judged.
-	delta = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, "order.js"))
+	delta = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "design:auth:contracts.js", "--inputs-file", grInputsManifest(t, "order.js"))
 	run, err = gaterun.Load(root, delta)
 	if err != nil {
 		t.Fatal(err)

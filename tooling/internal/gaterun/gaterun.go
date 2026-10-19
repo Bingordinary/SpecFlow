@@ -278,6 +278,13 @@ type SessionResult struct {
 	ObservationDispositions []FindingDisposition `json:"observation_dispositions,omitempty"`
 }
 
+// EvidencePin is the whole-file content pin of one evidence file a
+// conclusion read but does not own.
+type EvidencePin struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"`
+}
+
 // JudgmentBaseline is the cache-embedded semantic state used to materialize
 // carried judgments for a delta/repair run.
 type JudgmentBaseline struct {
@@ -287,6 +294,11 @@ type JudgmentBaseline struct {
 	Findings        []Finding                    `json:"findings"`
 	SynthesisDigest string                       `json:"synthesis_digest"`
 	Relationships   []string                     `json:"relationships"`
+	// SynthesisEvidence pins the evidence the final synthesis read but that no
+	// individual conclusion owns: the run's supplied evidence inputs. A change
+	// to any of them re-runs the synthesis — and with it the unit's
+	// relationship conclusions — instead of carrying them silently.
+	SynthesisEvidence []EvidencePin `json:"synthesis_evidence,omitempty"`
 	// DeferredFindings records the run's findings whose ownership points at
 	// another unit. They are audit state, not carry state: routing lives in the
 	// deferred-findings ledger, and a later run of this unit must not re-dispose
@@ -592,6 +604,13 @@ func (d *Derivation) appendRunInputs(run *Run, inputs []string) ([]string, error
 				// normalized here — at the one point where inputs enter the
 				// snapshot — instead of being rejected (or made
 				// undeclarable) by each consumer.
+				canonical = ref
+			} else if ref, ok := specpaths.LogicalUnitRefForPath(repoRoot, canonical); ok {
+				// A unit spec or appendix is carried by its logical
+				// reference for the same reason: the recorded evidence must
+				// survive the file's layer move (a promote), or the run's
+				// own recorded pins would dangle against a path the move
+				// retired.
 				canonical = ref
 			}
 		}

@@ -165,7 +165,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			// recorded conclusion.
 			document: "unit_verify_checklist.md",
 			mechanism: []string{
-				"- `Change review:` — delta/repair runs only",
+				"- `Change review:` — **validate** delta/repair runs only",
 				"{gate}@{target} · {mode} · {layer}",
 			},
 			judging: []string{
@@ -184,7 +184,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			// recorded conclusion.
 			document: "verification_scope.md",
 			mechanism: []string{
-				"**Delta and repair scope come from the review and the mechanical floor.**",
+				"**Delta and repair scope is derived.**",
 			},
 			judging: []string{
 				"## Coverage Model",
@@ -192,7 +192,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 				"### Relationship vocabulary",
 				"#### Verify synthesis items",
 				"### Deferred findings",
-				"### The change review",
+				"### The change review (validate)",
 				"## Principles",
 			},
 		},

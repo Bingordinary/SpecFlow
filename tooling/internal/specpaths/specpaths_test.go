@@ -64,6 +64,55 @@ func TestResolveRuleFileUsesApplicabilityLayer(t *testing.T) {
 	}
 }
 
+// LogicalUnitRefForPath is the inverse of the unit/appendix resolvers: a
+// physical spec path must map to the one logical spelling the run's evidence
+// carries, so a layer move cannot dangle it.
+func TestLogicalUnitRefForPath(t *testing.T) {
+	repoRoot := t.TempDir()
+	write := func(t *testing.T, ref, content string) {
+		t.Helper()
+		path := filepath.Join(repoRoot, filepath.FromSlash(ref))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, "docs/specs/units/candidate/unit_dep.md", "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n")
+	write(t, "docs/specs/units/stable/unit_dep.md", "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n")
+	write(t, "docs/specs/units/candidate/appendix/unit_dep_protocol.md", "---\nunit: dep\nstatus: active\n---\n\nProse.\n")
+	write(t, "docs/specs/units/candidate/appendix/unit_dep_bad.md", "---\nunit: other\n---\n\nProse.\n")
+
+	ok := []struct{ path, want string }{
+		{"docs/specs/units/candidate/unit_dep.md", "unit:dep"},
+		{"docs/specs/units/stable/unit_dep.md", "unit:dep"},
+		{"docs/specs/units/candidate/appendix/unit_dep_protocol.md", "unit:dep:appendix:unit_dep_protocol"},
+	}
+	for _, tc := range ok {
+		got, mapped := LogicalUnitRefForPath(repoRoot, tc.path)
+		if !mapped || got != tc.want {
+			t.Fatalf("LogicalUnitRefForPath(%q) = %q, %v; want %q, true", tc.path, got, mapped, tc.want)
+		}
+	}
+
+	notMapped := []string{
+		"",
+		"src/dep.go",
+		"docs/specs/units/other/unit_dep.md",
+		"docs/specs/units/candidate/unit_.md",
+		"docs/specs/units/candidate/unit_dep.txt",
+		"docs/specs/units/candidate/appendix/unit_dep_bad.md",
+		"docs/specs/units/candidate/appendix/missing.md",
+		"docs/specs/rules/candidate/b_rule_x.md",
+	}
+	for _, p := range notMapped {
+		if got, mapped := LogicalUnitRefForPath(repoRoot, p); mapped {
+			t.Fatalf("LogicalUnitRefForPath(%q) = %q, want no mapping", p, got)
+		}
+	}
+}
+
 func TestIsSpecDocumentPath(t *testing.T) {
 	specPaths := []string{
 		SpecRootDir,

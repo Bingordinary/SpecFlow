@@ -64,7 +64,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			name: "delta review", gate: gaterun.GateValidate, targetKind: gaterun.TargetKindUnit,
 			kind: gaterun.SessionKindDeltaReview, keys: []string{gaterun.DeltaReviewKey},
 			wantChunks: []protocolChunk{
-				{Source: "framework/verification_scope.md", Heading: "The change review"},
+				{Source: "framework/verification_scope.md", Heading: "The change review (validate)"},
 			},
 		},
 		{

@@ -162,7 +162,7 @@ var mechanismSections = map[string][]string{
 		"Validate Synthesis Report Keys",
 		"Change detection",
 		"Review Session and Outcome Vocabulary",
-		"Mechanical floor",
+		"Verify scope and the mechanical floor",
 		"Execution",
 		"Failure recovery",
 		"Trust statement",

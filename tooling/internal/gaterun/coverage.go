@@ -368,8 +368,10 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 			return nil, nil, nil, nil, err
 		}
 		if run.ChangeSetFP != "" {
-			// Standing relationship conclusions await the change review;
-			// the full coverage set runs beside it.
+			// Standing relationship conclusions await the validate change
+			// review; the full coverage set runs beside it. Verify has no
+			// change review: its standing relationships re-run directly (see
+			// planFullRunCarry).
 			full = append([]CoverageKey{{Key: DeltaReviewKey, Kind: SessionKindDeltaReview}}, full...)
 			notices = append(notices, "change review: the standing relationship conclusions await accept-or-recheck against the recorded change set")
 		}
@@ -379,7 +381,16 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		return full, carried, required, notices, nil
 	}
 	if run.Mode == ModeDelta || run.Mode == ModeRepair {
-		coverage, carried, required, notices, err := d.buildReviewPlan(run)
+		var (
+			coverage []CoverageKey
+			carried  []string
+			notices  []string
+		)
+		if run.Gate == GateVerify {
+			coverage, carried, required, notices, err = d.buildMechanicalVerifyPlan(run)
+		} else {
+			coverage, carried, required, notices, err = d.buildReviewPlan(run)
+		}
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -634,7 +645,7 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			Keys:          []string{CrossKey},
 			Kind:          SessionKindCross,
 			CheckKeys:     []string{CrossKey},
-			ReadRefs:      crossReadRefs(run),
+			ReadRefs:      crossReadRefs(repoRoot, run),
 			Relationships: append([]string(nil), run.Relationships...),
 			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
 		}, nil
@@ -775,7 +786,7 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 	switch ck.Kind {
 	case SessionKindChecks:
 		if classifyRun(run) == classRuleValidate {
-			return appendUnique(allRefNames(run), extraInputPaths(run)...)
+			return appendUnique(allRefNames(run), extraInputPaths(repoRoot, run)...)
 		}
 		return unitValidateGroupReadRefs(repoRoot, run, ck.Key)
 	case SessionKindItem, SessionKindUnit:
@@ -787,29 +798,29 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 		read = append(read, surfacePaths(run)...)
 		read = appendUnique(read, affectsEvidencePaths(run)...)
 		read = appendUnique(read, ruleRefNames(run)...)
-		return appendUnique(read, extraInputPaths(run)...)
+		return appendUnique(read, extraInputPaths(repoRoot, run)...)
 	case SessionKindCode:
-		return appendUnique(append([]string(nil), ck.ReadRefs...), extraInputPaths(run)...)
+		return appendUnique(append([]string(nil), ck.ReadRefs...), extraInputPaths(repoRoot, run)...)
 	case SessionKindArchitecture:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
 		read = appendUnique(read, ruleRefNames(run)...)
-		return appendUnique(read, extraInputPaths(run)...)
+		return appendUnique(read, extraInputPaths(repoRoot, run)...)
 	case SessionKindDesign:
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, ck.File)
 		read = appendUnique(read, ruleRefNames(run)...)
-		return appendUnique(read, extraInputPaths(run)...)
+		return appendUnique(read, extraInputPaths(repoRoot, run)...)
 	}
 	return nil
 }
 
 // crossReadRefs lists the final synthesis's read surface: every snapshot ref
 // and every code surface file.
-func crossReadRefs(run *Run) []string {
+func crossReadRefs(repoRoot string, run *Run) []string {
 	read := append([]string(nil), allRefNames(run)...)
 	read = append(read, surfacePaths(run)...)
-	return appendUnique(read, extraInputPaths(run)...)
+	return appendUnique(read, extraInputPaths(repoRoot, run)...)
 }
 
 // InputSurface lists every file a run may read: the union of every coverage
@@ -827,7 +838,7 @@ func InputSurface(repoRoot string, run *Run) []string {
 		}
 		out = appendUnique(out, coverageReadRefs(repoRoot, run, ck)...)
 	}
-	out = appendUnique(out, crossReadRefs(run)...)
+	out = appendUnique(out, crossReadRefs(repoRoot, run)...)
 	return out
 }
 
@@ -940,7 +951,7 @@ func sortedKeySet(keys map[string]bool) []string {
 // affects.evidence_files are verify inputs, never validate read refs.
 func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []string {
 	read := ownSpecPaths(repoRoot, run)
-	read = appendUnique(read, extraInputPaths(run)...)
+	read = appendUnique(read, extraInputPaths(repoRoot, run)...)
 	if groupID == "structural" || groupID == "dependencies" {
 		read = appendUnique(read, logicalRefNames(run)...)
 	}
@@ -1027,13 +1038,43 @@ func allRefNames(run *Run) []string {
 	return out
 }
 
+// SynthesisEvidencePins pins the supplied evidence the accepted final
+// synthesis actually cited. The report is the citation record: a physical
+// evidence input or a logical reference it names (rule:{id}, unit:{name},
+// unit:{name}:appendix:{file}) is part of the synthesis's own object, so a
+// change to its resolved content re-runs the synthesis instead of carrying the
+// relationship conclusions silently. The logical spelling is pinned as
+// spelled; readers resolve it with judgments.ResolveEvidencePath, so a layer
+// move with unchanged content keeps the pin valid. The caller must have
+// verified the run snapshot.
+func SynthesisEvidencePins(repoRoot string, run *Run, report string) []EvidencePin {
+	seen := map[string]bool{}
+	var pins []EvidencePin
+	for _, p := range extraInputPaths(repoRoot, run) {
+		if seen[p] {
+			continue
+		}
+		if !strings.Contains(report, p) {
+			continue
+		}
+		seen[p] = true
+		h, ok := run.SnapshotHash(repoRoot, p)
+		if !ok || h == "" {
+			continue
+		}
+		pins = append(pins, EvidencePin{Path: p, Hash: h})
+	}
+	sort.Slice(pins, func(i, j int) bool { return pins[i].Path < pins[j].Path })
+	return pins
+}
+
 // extraInputPaths lists every agent-declared evidence input. These paths are
-// readable by sessions but never define coverage keys. A rule file inside an
+// readable by sessions but never define coverage keys. A spec object inside an
 // expanded directory input is listed as its logical reference — the same
 // carried form the ingestion boundary gives a file-form spelling — so a
-// directory spelling of a rule set behaves exactly like listing the rules
-// one by one.
-func extraInputPaths(run *Run) []string {
+// directory spelling of a unit spec or rule set behaves exactly like listing
+// the objects one by one.
+func extraInputPaths(root string, run *Run) []string {
 	var out []string
 	for _, input := range run.ExtraInputs {
 		expanded := false
@@ -1042,7 +1083,7 @@ func extraInputPaths(run *Run) []string {
 				continue
 			}
 			for _, entry := range surface.Entries {
-				out = append(out, extraInputEntry(entry.Path))
+				out = append(out, extraInputEntry(root, entry.Path))
 			}
 			expanded = true
 			break
@@ -1061,7 +1102,7 @@ func extraInputPaths(run *Run) []string {
 			continue
 		}
 		for _, entry := range surface.Entries {
-			out = append(out, extraInputEntry(entry.Path))
+			out = append(out, extraInputEntry(root, entry.Path))
 		}
 	}
 	sort.Strings(out)
@@ -1069,9 +1110,15 @@ func extraInputPaths(run *Run) []string {
 }
 
 // extraInputEntry maps one expanded evidence input to its carried form: a
-// rule file's physical path becomes its logical reference.
-func extraInputEntry(p string) string {
+// spec object's physical path becomes its logical reference — a rule file to
+// rule:<id>, a unit main spec or appendix to unit:<name> /
+// unit:<name>:appendix:<file> — so a layer move does not dangle the evidence
+// the run recorded for it.
+func extraInputEntry(root, p string) string {
 	if ref, ok := LogicalRuleRefForPath(p); ok {
+		return ref
+	}
+	if ref, ok := specpaths.LogicalUnitRefForPath(root, p); ok {
 		return ref
 	}
 	return p

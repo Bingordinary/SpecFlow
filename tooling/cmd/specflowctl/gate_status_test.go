@@ -112,7 +112,7 @@ func TestGateStatusHintPrintsRunnableBatches(t *testing.T) {
 		assertHintBatches(t, root, verifyID)
 	})
 
-	t.Run("delta review key stays alone", func(t *testing.T) {
+	t.Run("verify delta has no review batch", func(t *testing.T) {
 		root := createCLITestRepo(t)
 		grEnableMissionLayout(t, root)
 		specPath := grWriteSpecItems(t, root, "auth", "none", "none", []string{"auth.core"})
@@ -137,14 +137,10 @@ func TestGateStatusHintPrintsRunnableBatches(t *testing.T) {
 
 		deltaID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 		batches := assertHintBatches(t, root, deltaID)
-		var review [][]string
 		for _, batch := range batches {
 			if grContainsString(batch, "review") {
-				review = append(review, batch)
+				t.Fatalf("a verify delta plan has no review session, got %v", batches)
 			}
-		}
-		if len(review) != 1 || len(review[0]) != 1 {
-			t.Fatalf("the delta_review key must be alone in exactly one batch, got %v", batches)
 		}
 	})
 }

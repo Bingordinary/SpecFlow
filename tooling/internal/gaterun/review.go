@@ -1,21 +1,25 @@
 package gaterun
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-// SessionKindDeltaReview is the review session kind of a delta run: an
-// independent reviewer judges which standing conclusions the mechanically
+// SessionKindDeltaReview is the review session kind of a validate delta run:
+// an independent reviewer judges which standing conclusions the mechanically
 // detected change set could affect. It produces no check verdicts — it
 // accepts the unchanged remainder, names re-run keys, or escalates to a full
 // run. The re-run sessions it names are ordinary sessions with the standard
-// checklist procedure.
+// checklist procedure. A verify delta has no review session: its re-run scope
+// is derived from the conclusion records.
 const SessionKindDeltaReview = "delta_review"
 
 // DeltaReviewKey is the coverage key of the review session.
@@ -40,8 +44,368 @@ type ReviewRecord struct {
 // HasReviewCoverage reports whether the run carries a review session.
 func (r *Run) HasReviewCoverage() bool { return r.CoverageByKey(DeltaReviewKey) != nil }
 
-// buildReviewPlan plans a delta run around the change-review model: the
-// mechanical change set (complete for the recorded input surface) plus the
+// standingRelationships returns the relationship names the baseline declares.
+// A full-scope plan re-runs every local conclusion, so the final synthesis is
+// recomputed over those results and each standing relationship must re-check
+// rather than disappear from the rewritten cache.
+func standingRelationships(state JudgmentBaseline) []string {
+	return append([]string(nil), state.Relationships...)
+}
+
+// addRelationships merges names into the run's relationship scope. The caller
+// keeps run.Relationships within the gate's vocabulary; validation runs again
+// after the plan is built.
+func addRelationships(run *Run, names ...string) {
+	for _, name := range names {
+		run.Relationships = appendUnique(run.Relationships, name)
+	}
+	run.Relationships = dedupeSorted(run.Relationships)
+}
+
+// buildMechanicalVerifyPlan plans a verify delta/repair run without a change
+// review. The re-run set is derived mechanically from the conclusion records:
+// a conclusion re-runs exactly when its own pinned evidence no longer holds,
+// its review protocol moved, it is explicitly invalidated, the evidence its key
+// currently requires is no longer inside the evidence the record read, or it
+// has no baseline record; every other standing conclusion carries. Supplied
+// evidence that only the final synthesis owns re-runs the synthesis, not every
+// local conclusion. There is no review session and no "new evidence"
+// escalation: coverage is derived, not adjudicated.
+func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []string, []string, []string, error) {
+	required := requiredFiles(run)
+	full, err := d.computeCoverage(run)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	baseline, err := validationcache.ReadGateBaseline(d.root, run.TargetKind, run.TargetName, run.Gate)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	switch run.Mode {
+	case ModeDelta:
+		switch {
+		case !baseline.Exists:
+			if baseline.UnusableReason != "" {
+				return nil, nil, nil, nil, fmt.Errorf("the existing cache is not in the current format and cannot be used as a delta baseline: %s", baseline.UnusableReason)
+			}
+			if run.Target == TargetStable {
+				return nil, nil, nil, nil, noUsableBaselineError(run)
+			}
+			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
+		case baseline.Mode != "full":
+			return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
+		case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:
+			return nil, nil, nil, nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
+		case baseline.Result == "fail":
+			return nil, nil, nil, nil, fmt.Errorf("baseline is a failure record — use `--mode repair` after resolving the findings")
+		case baseline.Result != "pass":
+			return nil, nil, nil, nil, fmt.Errorf("baseline cache result is %q, expected pass — run the full command instead", baseline.Result)
+		}
+	case ModeRepair:
+		if !baseline.Exists && run.Target == TargetStable {
+			return nil, nil, nil, nil, noUsableBaselineError(run)
+		}
+		if !baseline.Exists || baseline.Result != "fail" || !baseline.Blocking {
+			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) — none found; run the full command instead")
+		}
+	default:
+		return nil, nil, nil, nil, fmt.Errorf("verify planning requires --mode delta or --mode repair")
+	}
+	state, err := validatedJudgmentState(baseline)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	standing := standingRelationships(state)
+	if run.Mode == ModeRepair {
+		// A failure record whose per-check status map is absent, invalid, or
+		// inconsistent with its judgment baseline cannot say which judgments
+		// failed: nothing is carried, so the plan covers the full scope. The
+		// final synthesis is a conclusion over the full local result, so the
+		// baseline's standing relationships re-check rather than vanish.
+		if reason, defective := repairStatusMapDefect(baseline, state); defective {
+			addRelationships(run, standing...)
+			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
+		}
+	}
+
+	current, err := d.currentGateKeys(run)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	currentSet := map[string]bool{}
+	for _, key := range current {
+		currentSet[key] = true
+	}
+
+	var notices []string
+	forced := map[string]bool{}
+	for _, raw := range run.RerunKeys {
+		key, ok := normalizeGateKey(run, raw, currentSet)
+		if !ok {
+			return nil, nil, nil, nil, fmt.Errorf("--rerun key %q is not in the current coverage surface", raw)
+		}
+		forced[key] = true
+	}
+
+	// A conclusion re-runs exactly when its own record no longer holds. Two
+	// things decide that, and both must agree with the gate's own freshness
+	// check: the record's pinned files, structural regions and review protocol
+	// are unchanged (judgments.Check), and the evidence the key currently
+	// requires stayed inside the evidence the record read. The second half is
+	// the same rule CheckVerifyMerged enforces, so it is taken from the same
+	// authority (ExpectedChecks) through the same predicate
+	// (judgments.NewlyRequiredEvidence) — the planner can never carry a
+	// conclusion the merged freshness check then rejects.
+	expected, err := d.ExpectedChecks(run.TargetName, run.Target)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	requiredByKey := make(map[string]validationcache.ExpectedCheck, len(expected))
+	for _, want := range expected {
+		requiredByKey[want.Key] = want
+	}
+	for _, ck := range full {
+		binding, bound := state.Records[ck.Key]
+		if !bound {
+			forced[ck.Key] = true
+			notices = append(notices, "verify judgment "+ck.Key+" has no recorded evidence — it re-runs")
+			continue
+		}
+		binding.Layer = run.Target
+		if err := judgments.Check(d.root, binding.Reference, binding.Layer, run.Protocol); err != nil {
+			forced[ck.Key] = true
+			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
+			continue
+		}
+		want, ok := requiredByKey[ck.Key]
+		if !ok {
+			continue
+		}
+		record, err := judgments.Load(d.root, binding.Reference)
+		if err != nil {
+			forced[ck.Key] = true
+			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
+			continue
+		}
+		missing, newlyRequired, err := judgments.NewlyRequiredEvidence(d.root, want.Unit, want.Layer, *record, want.Inputs)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if newlyRequired {
+			forced[ck.Key] = true
+			notices = append(notices, "verify judgment "+ck.Key+" re-runs: the key now requires evidence the recorded judgment never read: "+missing)
+		}
+	}
+	// A public quality record and its design companion travel together.
+	for _, key := range sortedKeySet(forced) {
+		if strings.HasPrefix(key, "code:") {
+			forced["design:"+run.TargetName+":"+strings.TrimPrefix(key, "code:")] = true
+		}
+	}
+
+	if run.Mode == ModeRepair {
+		for key, status := range state.LogicalStatus {
+			if key == CrossKey {
+				continue
+			}
+			if IsRelationshipKey(key) {
+				if status != "fail" {
+					continue
+				}
+				name := relationshipName(key)
+				if !stringInSlice(RelationshipNames(run.Gate), name) {
+					return nil, nil, nil, nil, fmt.Errorf("baseline declares unknown relationship %q", name)
+				}
+				run.Relationships = appendUnique(run.Relationships, name)
+				continue
+			}
+			if status == "fail" {
+				if !currentSet[key] {
+					addRelationships(run, standing...)
+					notices = append(notices, fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", key))
+					return full, nil, required, notices, nil
+				}
+				forced[key] = true
+			}
+		}
+		for _, raw := range baseline.InvalidatedChecks {
+			key, ok := normalizeGateKey(run, raw, currentSet)
+			if !ok {
+				addRelationships(run, standing...)
+				notices = append(notices, fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", raw))
+				return full, nil, required, notices, nil
+			}
+			forced[key] = true
+		}
+	}
+
+	var baselineKeys, newKeys, retired []string
+	for key := range state.LogicalStatus {
+		if key == CrossKey {
+			continue
+		}
+		if IsRelationshipKey(key) {
+			if !stringInSlice(RelationshipNames(run.Gate), relationshipName(key)) {
+				return nil, nil, nil, nil, fmt.Errorf("baseline declares unknown relationship %q", relationshipName(key))
+			}
+			baselineKeys = append(baselineKeys, key)
+			continue
+		}
+		if !currentSet[key] {
+			retired = append(retired, key)
+			continue
+		}
+		baselineKeys = append(baselineKeys, key)
+	}
+	for _, key := range current {
+		if _, ok := state.LogicalStatus[key]; !ok {
+			newKeys = append(newKeys, key)
+		}
+	}
+	sort.Strings(baselineKeys)
+	sort.Strings(newKeys)
+	sort.Strings(retired)
+
+	// Report recorded evidence that changed but that no conclusion depends on.
+	// Conclusion-bound reuse cannot see a semantic dependency the record never
+	// declared, so the tooling tells the coordinator when a full run is
+	// warranted: as a plan notice, and — when the plan has no work at all — in
+	// the fresh-stop message below.
+	uncovered, uerr := validationcache.UncoveredChangedFilesForUnit(d.root, run.TargetName)
+	if uerr != nil {
+		uncovered = nil
+	}
+	if len(uncovered) > 0 {
+		notices = append(notices, fmt.Sprintf("%d recorded file(s) changed that no conclusion depends on — a full run confirms no semantic dependency was missed: %s", len(uncovered), strings.Join(uncovered, ", ")))
+	}
+
+	// A physical evidence input the baseline never recorded is background
+	// material: it creates no coverage key and re-runs no conclusion. The plan
+	// still names the new paths so the coordinator can confirm its manifest
+	// (framework/validation_cache.md §Write Rules → gate-plan). A spec-object
+	// spelling is already carried as its logical reference by the ingestion
+	// boundary, so only physical paths are compared.
+	recorded := map[string]bool{}
+	for _, entry := range baseline.Entries {
+		recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+	}
+	var newEvidence []string
+	for _, p := range extraInputPaths(d.root, run) {
+		if isLogicalRef(p) {
+			continue
+		}
+		clean := filepath.ToSlash(filepath.Clean(p))
+		if recorded[clean] {
+			continue
+		}
+		newEvidence = append(newEvidence, p)
+	}
+	if len(newEvidence) > 0 {
+		notices = append(notices, "new evidence not in the baseline: "+strings.Join(newEvidence, ", ")+" — background material; it re-runs nothing")
+	}
+
+	// A changed local conclusion re-runs the whole relationship scope: the
+	// synthesis consumes the local results, so a carried relationship would be
+	// a verdict over superseded inputs.
+	localChanged := len(forced) > 0 || len(newKeys) > 0
+	if dead := synthesisEvidenceDead(d.root, state); dead != "" {
+		if len(standing) == 0 {
+			notices = append(notices, "synthesis evidence changed ("+dead+") and the baseline declares no relationship scope — the plan covers the full scope")
+			return full, nil, required, notices, nil
+		}
+		addRelationships(run, standing...)
+		localChanged = true
+		notices = append(notices, "synthesis evidence changed: "+dead+" — the standing relationship conclusions re-run")
+	}
+	if localChanged {
+		addRelationships(run, standing...)
+	}
+
+	rerunSet := map[string]bool{}
+	for key := range forced {
+		rerunSet[key] = true
+	}
+	for _, key := range newKeys {
+		rerunSet[key] = true
+	}
+	if len(rerunSet) == 0 && len(run.Relationships) == 0 {
+		msg := "cache is fresh — no conclusion's evidence changed; there is nothing to re-run"
+		if len(uncovered) > 0 {
+			msg += fmt.Sprintf(". Note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s", len(uncovered), run.TargetName, strings.Join(uncovered, ", "))
+		}
+		return nil, nil, nil, nil, errors.New(msg)
+	}
+
+	selected := coverageKeysForRerun(run, rerunSet)
+	rest, err := filterCoverage(full, selected)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	// A re-run coverage key owns every report key it re-executes: those must
+	// leave the carry candidates.
+	rerunOwned := map[string]bool{}
+	for _, ck := range rest {
+		for _, key := range run.ReportKeys(ck) {
+			rerunOwned[key] = true
+		}
+	}
+	var carried []string
+	for _, key := range baselineKeys {
+		if forced[key] || rerunOwned[key] {
+			continue
+		}
+		// Only a relationship this run actually re-checks leaves the carry
+		// set. A standing relationship the coordinator did not select is not
+		// re-run, so dropping it here would erase a recorded cross-check
+		// conclusion without re-checking or reporting it
+		// (framework/verification_scope.md §Incremental relationship work).
+		if IsRelationshipKey(key) && stringInSlice(run.Relationships, relationshipName(key)) {
+			continue
+		}
+		carried = append(carried, key)
+	}
+
+	run.BaselineKeys = dedupeSorted(append([]string(nil), baselineKeys...))
+	if run.BaselineStatus == nil {
+		run.BaselineStatus = map[string]string{}
+	}
+	for _, key := range baselineKeys {
+		run.BaselineStatus[key] = state.LogicalStatus[key]
+	}
+
+	notices = append(notices, fmt.Sprintf("%d conclusion(s) re-run from their own evidence pins; %d carry mechanically (no change review)", len(rerunSet), len(carried)))
+	if len(newKeys) > 0 {
+		notices = append(notices, "new conclusions (not in the baseline) run unconditionally: "+strings.Join(newKeys, ", "))
+	}
+	if len(retired) > 0 {
+		notices = append(notices, "baseline conclusions no longer in the current surface: "+strings.Join(retired, ", "))
+	}
+	return rest, carried, required, notices, nil
+}
+
+// synthesisEvidenceDead returns the first final-synthesis evidence pin whose
+// content no longer matches, or "" when every pin holds. A cache written
+// before the pin existed carries none, and nothing is reported: the gap is
+// bounded to that cache and closes when the next run writes the pins.
+func synthesisEvidenceDead(root string, state JudgmentBaseline) string {
+	for _, pin := range state.SynthesisEvidence {
+		canonical, err := judgments.ResolveEvidencePath(root, pin.Path)
+		if err != nil {
+			return pin.Path
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(canonical)))
+		if err != nil {
+			return pin.Path
+		}
+		if pin.Hash == "" || specpaths.HashText(data) != pin.Hash {
+			return pin.Path
+		}
+	}
+	return ""
+}
+
+// buildReviewPlan plans a validate delta run around the change-review model:
+// the mechanical change set (complete for the recorded input surface) plus the
 // standing conclusions become one review session. No re-run scope is derived
 // mechanically: the reviewer accepts, names re-run keys, or escalates.
 func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []string, []string, error) {
@@ -88,49 +452,51 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	standing := standingRelationships(state)
 	if run.Mode == ModeRepair {
 		// A failure record whose per-check status map is absent, invalid, or
 		// does not match its judgment baseline cannot say which judgments
 		// failed: nothing may be carried over, so the plan is the full
 		// coverage set (fail closed — carrying unresolved findings is never
-		// allowed).
+		// allowed). The full local result re-runs the synthesis, so the
+		// standing relationship conclusions re-check too.
 		if reason, defective := repairStatusMapDefect(baseline, state); defective {
+			addRelationships(run, standing...)
 			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
 		}
 	}
-	if run.Gate == GateValidate {
-		// A validate conclusion binds the judging standard it was made under
-		// on its cache. A conclusion judged under a different checklist cannot
-		// be carried, whatever its own evidence says, so nothing carries over
-		// and the plan is the full coverage set.
-		if reason, moved := validateStandardMoved(run, baseline); moved {
-			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
-		}
+	// A validate conclusion binds the judging standard it was made under on
+	// its cache. A conclusion judged under a different checklist cannot be
+	// carried, whatever its own evidence says, so nothing carries over and the
+	// plan is the full coverage set.
+	if reason, moved := validateStandardMoved(run, baseline); moved {
+		addRelationships(run, standing...)
+		return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
 	}
 	report, err := validationcache.DeriveChangeReport(d.root, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	// New physical inputs the baseline never recorded are part of the change
-	// set: the reviewer sees them as added files. Logical references resolve
-	// through the freshness chain and are not duplicated here.
+	// set: the reviewer sees them as added files
+	// (framework/verification_scope.md §Delta Runs → Change detection). Logical
+	// references resolve through the freshness chain and are not duplicated
+	// here.
 	var newEvidence []string
-	if run.Gate == GateVerify {
-		recorded := map[string]bool{}
-		for _, entry := range baseline.Entries {
-			recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+	recorded := map[string]bool{}
+	for _, entry := range baseline.Entries {
+		recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+	}
+	for _, p := range extraInputPaths(d.root, run) {
+		if isLogicalRef(p) {
+			continue
 		}
-		for _, p := range extraInputPaths(run) {
-			if isLogicalRef(p) {
-				continue
-			}
-			clean := filepath.ToSlash(filepath.Clean(p))
-			if recorded[clean] {
-				continue
-			}
-			report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: p, Kind: "added"})
-			newEvidence = append(newEvidence, p)
+		clean := filepath.ToSlash(filepath.Clean(p))
+		if recorded[clean] {
+			continue
 		}
+		report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: p, Kind: "added"})
+		newEvidence = append(newEvidence, p)
 	}
 	inconsistent := report.Inconsistent()
 	if len(inconsistent) > 0 {
@@ -159,57 +525,6 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		forced[key] = true
 	}
 	var recordNotices []string
-	protocolMoved := false
-	if run.Gate == GateVerify {
-		// A verify judgment record whose own evidence surface no longer holds
-		// (changed code, a new caller, a damaged or missing record) cannot be
-		// kept: it re-runs unconditionally, and a re-run public record pulls
-		// its private design judgment with it.
-		currentCoverage, err := d.computeCoverage(run)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		for _, ck := range currentCoverage {
-			if ck.Kind == SessionKindDeltaReview {
-				continue
-			}
-			binding, bound := state.Records[ck.Key]
-			if !bound {
-				if !forced[ck.Key] {
-					forced[ck.Key] = true
-					recordNotices = append(recordNotices, "verify judgment "+ck.Key+" has no recorded evidence — it re-runs")
-				}
-				continue
-			}
-			binding.Layer = run.Target
-			inputs, err := normalizeOwnInputs(d.root, coverageReadRefs(d.root, run, ck), ck.Unit, binding.Layer)
-			if err != nil {
-				return nil, nil, nil, nil, err
-			}
-			record, rerr := judgments.Load(d.root, binding.Reference)
-			if rerr == nil && record.Protocol != run.Protocol {
-				// The deployed review standard moved. A conclusion recorded
-				// under the previous standard cannot be carried, whatever its
-				// own evidence says.
-				protocolMoved = true
-			}
-			if rerr != nil || judgments.Check(d.root, binding.Reference, binding.Layer, run.Protocol) != nil || !judgments.CoversInputs(record.Inputs, inputs) {
-				if !forced[ck.Key] {
-					forced[ck.Key] = true
-					recordNotices = append(recordNotices, "invalidated verify judgment "+ck.Key+" re-runs")
-				}
-			}
-		}
-		for _, key := range sortedKeySet(forced) {
-			if strings.HasPrefix(key, "code:") {
-				designKey := "design:" + run.TargetName + ":" + strings.TrimPrefix(key, "code:")
-				if !forced[designKey] {
-					forced[designKey] = true
-					recordNotices = append(recordNotices, "design judgment "+designKey+" re-runs with its public record")
-				}
-			}
-		}
-	}
 
 	var baselineKeys, newKeys, candidates []string
 	var retired []string
@@ -239,6 +554,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 				// the same degradation the persisted-invalidation branch
 				// below applies to an unmappable key.
 				if !currentSet[key] {
+					addRelationships(run, standing...)
 					return full, nil, required, []string{fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", key)}, nil
 				}
 				forced[key] = true
@@ -247,6 +563,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		for _, raw := range baseline.InvalidatedChecks {
 			key, ok := normalizeGateKey(run, raw, currentSet)
 			if !ok {
+				addRelationships(run, standing...)
 				return full, nil, required, []string{fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", raw)}, nil
 			}
 			forced[key] = true
@@ -330,17 +647,14 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	coverage = append(coverage, rest...)
 
 	var notices []string
-	if protocolMoved {
-		notices = append(notices, "the review standard changed — judgments recorded under the previous standard re-run and cannot be carried")
-	}
 	if needReview {
 		notices = append(notices, fmt.Sprintf("change review: %d changed file(s) — the reviewer accepts, names re-run keys, or escalates", len(report.Entries)))
-	} else if !protocolMoved {
+	} else {
 		notices = append(notices, "no content change — the failed judgments re-run and the remaining evidence carries mechanically")
 	}
 	notices = append(notices, recordNotices...)
 	if len(newEvidence) > 0 {
-		notices = append(notices, "new verify evidence not in the baseline: "+strings.Join(newEvidence, ", ")+" — it joins the change set as added files")
+		notices = append(notices, "new evidence not in the baseline: "+strings.Join(newEvidence, ", ")+" — it joins the change set as added files")
 	}
 	if len(newKeys) > 0 {
 		notices = append(notices, "new conclusions (not in the baseline) run unconditionally: "+strings.Join(newKeys, ", "))
@@ -366,7 +680,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 
 // reviewReadRefs is the review session's read surface: the run's whole input
 // surface, so the reviewer can follow a changed file to any conclusion it may
-// anchor (framework/verification_scope.md §Delta Runs → The change review).
+// anchor (framework/verification_scope.md §Delta Runs → The change review (validate)).
 // Removed paths are not part of the current surface — they survive only as
 // change-report entries, which cannot be read.
 func reviewReadRefs(repoRoot string, run *Run) []string {
@@ -548,49 +862,6 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 	default:
 		return fmt.Errorf("unknown review result %q", record.Result)
 	}
-	if run.Gate == GateVerify {
-		// A design judgment consumes its file's immutable public record: when
-		// the public record re-runs, the design judgment re-runs with it. The
-		// review's final re-run set may newly include a code key (a rechecked
-		// code key), so the pull is applied here on the settled set
-		// (framework/validation_cache.md §Structural Region Dependencies).
-		rerun := map[string]bool{}
-		for _, ck := range run.Coverage {
-			rerun[ck.Key] = true
-		}
-		pullSet := map[string]bool{}
-		for _, ck := range run.Coverage {
-			if ck.Kind != SessionKindCode {
-				continue
-			}
-			designKey := "design:" + run.TargetName + ":" + ck.File
-			if rerun[designKey] {
-				continue
-			}
-			rerun[designKey] = true
-			pullSet[designKey] = true
-		}
-		if len(pullSet) > 0 {
-			selected := coverageKeysForRerun(run, pullSet)
-			extra, err := filterCoverage(full, selected)
-			if err != nil {
-				return err
-			}
-			seen := map[string]bool{}
-			for _, ck := range run.Coverage {
-				seen[ck.Key] = true
-			}
-			for _, ck := range extra {
-				for _, key := range run.ReportKeys(ck) {
-					removed[key] = true
-				}
-				if seen[ck.Key] {
-					continue
-				}
-				run.Coverage = append(run.Coverage, ck)
-			}
-		}
-	}
 	if len(removed) > 0 {
 		var kept []string
 		for _, key := range run.CarriedKeys {
@@ -617,29 +888,8 @@ func ApplyReviewLocked(repoRoot string, run *Run, record ReviewRecord) error {
 		return err
 	}
 	run.CarriedResults = results
-	if run.Gate == GateVerify {
-		carriedSet := map[string]bool{}
-		for _, key := range run.CarriedKeys {
-			carriedSet[key] = true
-		}
-		for key, ref := range run.Records {
-			if ref.Source == "carried" && !carriedSet[key] {
-				delete(run.Records, key)
-			}
-		}
-	}
 	record.ChangeSet = run.ChangeSetFP
 	run.Review = &record
-	// The review may add coverage keys after plan time: a rechecked carried
-	// key and the design keys its public record pulls. Stamp every new key with
-	// its execution source and shared task exactly as gate-plan does, so a
-	// public key the review reopens is never published without its task
-	// (issue #80). Keys already stamped at plan time are left untouched.
-	if run.Gate == GateVerify {
-		if err := prepareSharedChecks(repoRoot, run); err != nil {
-			return err
-		}
-	}
 	return Persist(repoRoot, run)
 }
 

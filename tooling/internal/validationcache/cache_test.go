@@ -14,6 +14,302 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
+// TestCheckVerifyIgnoresInputOnlyFile pins the conclusion-bound freshness
+// rule: a file the run merely read (present in the cache's recorded input
+// surface, but not a dependency of any conclusion) no longer stales the
+// cache. Only a change to a conclusion's own pinned evidence does.
+func TestCheckVerifyIgnoresInputOnlyFile(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	depPath := filepath.Join(srcDir, "dep.go")
+	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
+	inputPath := filepath.Join(srcDir, "input_only.go")
+	writeCacheFixtureFile(t, inputPath, []byte("package src\nfunc InputOnly() {}\n"), 0644)
+
+	specHash, err := fileHash(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	depHash, err := fileHash(depPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputHash, err := fileHash(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key := "item:test:test.core"
+	record := judgments.Record{
+		Version:      judgments.RecordVersion,
+		Kind:         judgments.Item,
+		Unit:         "test",
+		Subject:      key,
+		Coverage:     []string{key},
+		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
+		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
+		Protocol:     judgments.MustProtocol(repoRoot, "verify", "unit"),
+		Verdict:      "ALIGNED",
+		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
+		Report:       "fixture",
+		ReportDigest: judgments.Digest([]byte("fixture")),
+		SourceRun:    "test",
+	}
+	record.SpecContext, err = judgments.SpecContext(repoRoot, "test", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := judgments.Save(repoRoot, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(map[string]any{
+		"schema_version": 4,
+		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
+		"logical_status": map[string]string{key: "pass"},
+	})
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n    checks:\n      - check: \"" + key + "\"\n        lens: alignment\n" +
+		"  - path: src/dep.go\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"  - path: src/input_only.go\n    hash: sha256:" + inputHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"---\nAll items aligned.\n" +
+		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("expected a fresh cache before any change, got: %s", result.Reason)
+	}
+
+	// A file the run read but no conclusion depends on changes: still fresh.
+	writeCacheFixtureFile(t, inputPath, []byte("package src\nfunc InputOnly() { /* changed */ }\n"), 0644)
+	result, err = CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("an input-only change must not stale the cache, got: %s", result.Reason)
+	}
+
+	// The conclusion's own pinned evidence changes: stale.
+	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() { /* changed */ }\n"), 0644)
+	result, err = CheckVerify(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("expected a change to a pinned dependency to stale the cache")
+	}
+	if !strings.Contains(result.Reason, "src/dep.go") {
+		t.Fatalf("expected the changed dependency named in the reason, got: %s", result.Reason)
+	}
+}
+
+// TestUncoveredChangedFilesReportsChangedUnpinnedEvidence pins the
+// conclusion-bound reuse safety note: a recorded file that changed but that no
+// conclusion's record depends on is reported so a full run can confirm no
+// semantic dependency was missed, while a change to a pinned dependency is
+// not reported (it already stales the cache).
+func TestUncoveredChangedFilesReportsChangedUnpinnedEvidence(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	depPath := filepath.Join(srcDir, "dep.go")
+	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
+	inputPath := filepath.Join(srcDir, "input_only.go")
+	writeCacheFixtureFile(t, inputPath, []byte("package src\nfunc InputOnly() {}\n"), 0644)
+
+	specHash, _ := fileHash(specPath)
+	depHash, _ := fileHash(depPath)
+	inputHash, _ := fileHash(inputPath)
+
+	key := "item:test:test.core"
+	record := judgments.Record{
+		Version:      judgments.RecordVersion,
+		Kind:         judgments.Item,
+		Unit:         "test",
+		Subject:      key,
+		Coverage:     []string{key},
+		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
+		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
+		Protocol:     judgments.MustProtocol(repoRoot, "verify", "unit"),
+		Verdict:      "ALIGNED",
+		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
+		Report:       "fixture",
+		ReportDigest: judgments.Digest([]byte("fixture")),
+		SourceRun:    "test",
+	}
+	var err error
+	record.SpecContext, err = judgments.SpecContext(repoRoot, "test", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := judgments.Save(repoRoot, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(map[string]any{
+		"schema_version": 4,
+		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
+		"logical_status": map[string]string{key: "pass"},
+	})
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n    checks:\n      - check: \"" + key + "\"\n        lens: alignment\n" +
+		"  - path: src/dep.go\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"  - path: src/input_only.go\n    hash: sha256:" + inputHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"---\nAll items aligned.\n" +
+		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	uncovered, err := UncoveredChangedFilesForUnit(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uncovered) != 0 {
+		t.Fatalf("no change yet, got %v", uncovered)
+	}
+
+	// The unpinned recorded file changes: reported.
+	writeCacheFixtureFile(t, inputPath, []byte("package src\nfunc InputOnly() { /* changed */ }\n"), 0644)
+	uncovered, err = UncoveredChangedFilesForUnit(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uncovered) != 1 || uncovered[0] != "src/input_only.go" {
+		t.Fatalf("expected the unpinned changed file reported, got %v", uncovered)
+	}
+
+	// The pinned dependency changes too: it stales the cache, so it is not an
+	// uncovered change (the gate run covers it).
+	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() { /* changed */ }\n"), 0644)
+	uncovered, err = UncoveredChangedFilesForUnit(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uncovered) != 1 || uncovered[0] != "src/input_only.go" {
+		t.Fatalf("a pinned dependency must not be reported as uncovered, got %v", uncovered)
+	}
+}
+
+// TestUncoveredChangedFilesExcludesSynthesisEvidence pins the blind-spot
+// report's boundary: the final synthesis is a conclusion too, so evidence it
+// cited is never reported as evidence no conclusion depends on. The changed pin
+// is already reported as the stale synthesis.
+func TestUncoveredChangedFilesExcludesSynthesisEvidence(t *testing.T) {
+	repoRoot := t.TempDir()
+	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	srcDir := filepath.Join(repoRoot, "src")
+	if err := os.MkdirAll(candidateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(candidateDir, "unit_test.md")
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	depPath := filepath.Join(srcDir, "dep.go")
+	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
+	evidencePath := filepath.Join(srcDir, "input_only.go")
+	writeCacheFixtureFile(t, evidencePath, []byte("package src\nfunc InputOnly() {}\n"), 0644)
+
+	specHash, _ := fileHash(specPath)
+	depHash, _ := fileHash(depPath)
+	evidenceHash, _ := fileHash(evidencePath)
+
+	key := "item:test:test.core"
+	record := judgments.Record{
+		Version:      judgments.RecordVersion,
+		Kind:         judgments.Item,
+		Unit:         "test",
+		Subject:      key,
+		Coverage:     []string{key},
+		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
+		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
+		Protocol:     judgments.MustProtocol(repoRoot, "verify", "unit"),
+		Verdict:      "ALIGNED",
+		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
+		Report:       "fixture",
+		ReportDigest: judgments.Digest([]byte("fixture")),
+		SourceRun:    "test",
+	}
+	var err error
+	record.SpecContext, err = judgments.SpecContext(repoRoot, "test", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := judgments.Save(repoRoot, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(map[string]any{
+		"schema_version": 4,
+		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
+		"logical_status": map[string]string{key: "pass"},
+		"synthesis_evidence": []map[string]string{
+			{"path": "src/input_only.go", "hash": evidenceHash},
+		},
+	})
+	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cacheContent := "---\ncommand: verify\nunit: test\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n" +
+		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n    checks:\n      - check: \"" + key + "\"\n        lens: alignment\n" +
+		"  - path: src/dep.go\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"  - path: src/input_only.go\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
+		"---\nAll items aligned.\n" +
+		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The cited synthesis evidence changes: it stales the cache, and the
+	// blind-spot report must not call it evidence no conclusion depends on.
+	writeCacheFixtureFile(t, evidencePath, []byte("package src\nfunc InputOnly() { /* changed */ }\n"), 0644)
+	uncovered, err := UncoveredChangedFilesForUnit(repoRoot, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uncovered) != 0 {
+		t.Fatalf("synthesis-pinned evidence must not be reported as uncovered, got %v", uncovered)
+	}
+	if check, err := CheckVerify(repoRoot, "test"); err != nil || check.Fresh {
+		t.Fatalf("a changed synthesis pin must stale the cache: %+v %v", check, err)
+	}
+}
+
 func TestCheckValidate(t *testing.T) {
 	repoRoot := t.TempDir()
 

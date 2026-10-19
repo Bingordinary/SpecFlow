@@ -274,7 +274,7 @@ func prepareSharedChecks(root string, run *Run) error {
 			return err
 		}
 		inputs := coverageReadRefs(root, run, *ck)
-		normalized, err := normalizeOwnInputs(root, inputs, ck.Unit, layer)
+		normalized, err := judgments.NormalizeInputs(root, ck.Unit, layer, inputs)
 		if err != nil {
 			return err
 		}
@@ -468,26 +468,6 @@ func BoundJudgmentResult(record *judgments.Record, ck CoverageKey, layer string)
 	}
 	return result, nil
 }
-func normalizeOwnInputs(root string, inputs []string, unit, layer string) ([]string, error) {
-	var owned []string
-	if unit != "" {
-		appendices, err := specpaths.UnitAppendices(root, unit, layer)
-		if err != nil {
-			return nil, err
-		}
-		for _, appendix := range appendices {
-			owned = append(owned, appendix.Path)
-		}
-	}
-	out := append([]string(nil), inputs...)
-	for i, p := range out {
-		if suffix, ok := judgments.OwnSuffix(p, unit, layer, owned); ok {
-			out[i] = "own:" + suffix
-		}
-	}
-	sort.Strings(out)
-	return out, nil
-}
 
 // PublishPublic accepts public evidence independently of unit synthesis. A
 // co-batched session publishes the public records for its code keys here; its
@@ -602,8 +582,10 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	// Record dependencies are the conclusion's own object, derived from the
 	// spec structure and the run's input surface — never from a report
 	// declaration (the declaration layer was removed with the change-review
-	// model). The delta mechanical floor re-runs a key when its own object
-	// changed; every other change is the change review's business.
+	// model). A delta re-runs a key when its own object changed, or when the
+	// key now requires evidence the record never read; everything else is a
+	// carry decision — the validate change review, or the verify scope
+	// derivation.
 	mainSpec := mainSpecRef(run)
 	mainSpecText := func() (string, error) {
 		return contenthash.FileText(filepath.Join(root, filepath.FromSlash(mainSpec)))
@@ -722,6 +704,19 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 				return judgments.Reference{}, err
 			}
 		}
+		// The unit's own appendices are part of its recorded truth. The
+		// unit-level conclusions read them, so a changed appendix re-runs them
+		// instead of carrying silently — the conclusion pins what it read, not
+		// merely what the run happened to list.
+		appendices, err := specpaths.UnitAppendices(root, unit, layer)
+		if err != nil {
+			return judgments.Reference{}, err
+		}
+		for _, appendix := range appendices {
+			if err := addWholeFile(appendix.Path); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
 	default:
 		return judgments.Reference{}, fmt.Errorf("no record inputs are defined for session kind %q", ck.Kind)
 	}
@@ -729,7 +724,7 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	if err != nil {
 		return judgments.Reference{}, err
 	}
-	normalized, err := normalizeOwnInputs(root, inputs, unit, layer)
+	normalized, err := judgments.NormalizeInputs(root, unit, layer, inputs)
 	if err != nil {
 		return judgments.Reference{}, err
 	}

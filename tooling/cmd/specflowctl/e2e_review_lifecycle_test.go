@@ -58,15 +58,13 @@ func TestE2EReviewLifecycle(t *testing.T) {
 		t.Fatalf("expected a reviewed delta cache, got:\n%s", cache)
 	}
 
-	// Delta verify: the mechanical floor forces the affected item/design/
-	// architecture records; the reviewer accepts and the forced sessions run.
+	// Delta verify: the conclusion records force the affected design and
+	// whole-unit judgments mechanically; there is no review session to accept.
 	deltaVerify := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	deltaRun := mustLoadRun(t, root, deltaVerify)
-	if !grContainsString(coverageKeysOf(deltaRun), "review") {
-		t.Fatalf("expected the review session in the delta plan, got %v", coverageKeysOf(deltaRun))
+	if grContainsString(coverageKeysOf(deltaRun), "review") {
+		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(deltaRun))
 	}
-	grReviewAccept(t, root, deltaVerify)
-	deltaRun = mustLoadRun(t, root, deltaVerify)
 	for _, ck := range deltaRun.Coverage {
 		if ck.Kind == gaterun.SessionKindItem {
 			grSubmitOK(t, root, deltaVerify, ck.Key, grVerifyItemReport(ck.Item, main, "src/auth.go"))

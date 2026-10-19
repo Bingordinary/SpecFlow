@@ -1172,10 +1172,26 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 }
 
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
+	liveConclusions := 0
 	if command == "verify" {
-		if err := verifyRecords(repoRoot, targetKind, cache); err != nil {
+		states, err := VerifyConclusionStates(repoRoot, targetKind, cache)
+		if err != nil {
 			return CheckResult{Fresh: false, Category: CategoryStale, Reason: err.Error()}, nil
 		}
+		dead := map[string]string{}
+		for _, st := range states {
+			if !st.Live {
+				dead[st.Key] = st.Reason
+			}
+		}
+		if len(dead) > 0 {
+			return CheckResult{
+				Fresh:    false,
+				Category: CategoryStale,
+				Reason:   "verify cache stale: conclusion evidence changed — " + FirstDeadReason(dead),
+			}, nil
+		}
+		liveConclusions = len(states)
 	}
 	if command == "validate" {
 		if err := verifyStandard(repoRoot, targetKind, cache); err != nil {
@@ -1210,10 +1226,13 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		}, nil
 	}
 
-	// A delta pass cache exists because an independent reviewer accepted its
-	// change set; the review record is that acceptance's audit trail. A delta
-	// cache without one is a pre-review artifact — fail closed.
-	if cache.Result == "pass" && cache.Basis == "delta" && strings.TrimSpace(cache.ReviewChangeSet) == "" {
+	// A validate delta pass cache exists because an independent reviewer
+	// accepted its change set; the review record is that acceptance's audit
+	// trail. A validate delta cache without one is a pre-review artifact —
+	// fail closed. Verify has no change review: its delta scope is derived
+	// mechanically from the conclusion records, so no review record exists to
+	// require.
+	if command != "verify" && cache.Result == "pass" && cache.Basis == "delta" && strings.TrimSpace(cache.ReviewChangeSet) == "" {
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
@@ -1254,36 +1273,46 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		}
 	}
 
-	// Re-check every listed file against its recorded whole-file hash.
-	var staleFiles []string
-	var missingFiles []string
-	for _, entry := range cache.Files {
-		state, err := fileFreshness(repoRoot, entry)
-		if err != nil {
-			missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
-			continue
+	// Conclusion-bound freshness (verify) vs input-surface freshness
+	// (validate). Verify conclusions bind their own evidence per judgment
+	// record: VerifyDeadConclusions above has already checked every
+	// conclusion's whole-file hashes, structural regions, review protocol,
+	// invalidation state and referenced records. The run's recorded input
+	// surface is audit data — a file the run merely read does not stale a
+	// conclusion. Validate has no per-record binding, so its cache's recorded
+	// files remain its freshness contract.
+	if command != "verify" {
+		// Re-check every listed file against its recorded whole-file hash.
+		var staleFiles []string
+		var missingFiles []string
+		for _, entry := range cache.Files {
+			state, err := fileFreshness(repoRoot, entry)
+			if err != nil {
+				missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
+				continue
+			}
+			switch state {
+			case fileMissing:
+				missingFiles = append(missingFiles, entry.Path)
+			case fileChanged:
+				staleFiles = append(staleFiles, entry.Path)
+			}
 		}
-		switch state {
-		case fileMissing:
-			missingFiles = append(missingFiles, entry.Path)
-		case fileChanged:
-			staleFiles = append(staleFiles, entry.Path)
-		}
-	}
 
-	if len(missingFiles) > 0 {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   fmt.Sprintf("%s cache stale: files missing: %s", command, strings.Join(missingFiles, ", ")),
-		}, nil
-	}
-	if len(staleFiles) > 0 {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s@%s` to review the change set.", command, strings.Join(staleFiles, ", "), command, cache.Unit),
-		}, nil
+		if len(missingFiles) > 0 {
+			return CheckResult{
+				Fresh:    false,
+				Category: CategoryStale,
+				Reason:   fmt.Sprintf("%s cache stale: files missing: %s", command, strings.Join(missingFiles, ", ")),
+			}, nil
+		}
+		if len(staleFiles) > 0 {
+			return CheckResult{
+				Fresh:    false,
+				Category: CategoryStale,
+				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s@%s` to review the change set.", command, strings.Join(staleFiles, ", "), command, cache.Unit),
+			}, nil
+		}
 	}
 
 	// Blocking check — fail-capable caches (validate/verify failure records
@@ -1299,10 +1328,14 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		}
 	}
 
+	reason := fmt.Sprintf("%s cache is fresh (result: %s, content of %d file(s) unchanged)", command, cache.Result, len(cache.Files))
+	if command == "verify" {
+		reason = fmt.Sprintf("verify cache is fresh (result: %s, %d conclusion(s) live)", cache.Result, liveConclusions)
+	}
 	result := CheckResult{
 		Fresh:    true,
 		Category: CategoryFresh,
-		Reason:   fmt.Sprintf("%s cache is fresh (result: %s, content of %d file(s) unchanged)", command, cache.Result, len(cache.Files)),
+		Reason:   reason,
 	}
 	return result, nil
 }

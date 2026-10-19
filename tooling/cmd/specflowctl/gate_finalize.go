@@ -206,14 +206,26 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 			return err
 		}
 	}
+	// The synthesis's supplied-evidence pins are only load-bearing when the
+	// final synthesis is a real conclusion of this run: an accepted cross
+	// session produced relationship verdicts, dispositions, findings or a
+	// final quality assessment. Without one, the supplied evidence is
+	// background reading and pinning it would make a change un-actionable.
+	// Only verify reuse is conclusion-bound; a validate cache is judged by its
+	// whole-file list, so it writes no synthesis pins.
+	var synthesisPins []gaterun.EvidencePin
+	if cross != nil && run.Gate == gaterun.GateVerify {
+		synthesisPins = gaterun.SynthesisEvidencePins(absRoot, run, cross.text)
+	}
 	judgmentData, err := json.Marshal(gaterun.JudgmentBaseline{
-		SchemaVersion:    schema,
-		Records:          run.Records,
-		Relationships:    run.AllRelationships(),
-		LogicalStatus:    outcome.EffectiveStatus,
-		Findings:         outcome.Findings,
-		SynthesisDigest:  outcome.SynthesisDigest,
-		DeferredFindings: outcome.DeferredFindings,
+		SchemaVersion:     schema,
+		Records:           run.Records,
+		Relationships:     run.AllRelationships(),
+		LogicalStatus:     outcome.EffectiveStatus,
+		Findings:          outcome.Findings,
+		SynthesisDigest:   outcome.SynthesisDigest,
+		SynthesisEvidence: synthesisPins,
+		DeferredFindings:  outcome.DeferredFindings,
 	})
 	if err != nil {
 		return fmt.Errorf("encode judgment baseline: %w", err)

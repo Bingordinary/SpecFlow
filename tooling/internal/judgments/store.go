@@ -311,6 +311,48 @@ func InputPath(d Dependency, unit, layer string) string {
 	return "docs/specs/units/" + layer + "/unit_" + unit + d.Path
 }
 
+// ResolveEvidencePath resolves one recorded evidence path — a physical
+// repository path or a logical reference (rule:{id},
+// unit:{name}, unit:{name}:appendix:{file}) — to its canonical
+// repository-relative path. It is the single resolution rule every reader of
+// recorded evidence shares, so the same evidence cannot be pinned under one
+// spelling and checked under another.
+func ResolveEvidencePath(root, path string) (string, error) {
+	switch {
+	case strings.HasPrefix(path, "rule:"):
+		resolved := specpaths.ResolveRuleFile(root, strings.TrimPrefix(path, "rule:"))
+		if rel, err := filepath.Rel(root, resolved); err == nil {
+			path = filepath.ToSlash(rel)
+		} else {
+			path = resolved
+		}
+	case strings.HasPrefix(path, "unit:"):
+		rest := strings.TrimPrefix(path, "unit:")
+		var resolved string
+		if _, appendix, ok := strings.Cut(rest, ":appendix:"); ok {
+			resolved = specpaths.ResolveUnitAppendix(root, appendix)
+		} else {
+			resolved = specpaths.ResolveUnitFile(root, rest)
+		}
+		if rel, err := filepath.Rel(root, resolved); err == nil {
+			path = filepath.ToSlash(rel)
+		} else {
+			path = resolved
+		}
+	}
+	return repopath.Canonical(root, path)
+}
+
+// ResolveInputPath resolves one recorded dependency to its canonical
+// repository-relative path: an owned spec file against the bound layer, a
+// logical unit/rule reference against its current resolution, or a physical
+// path as recorded. It is the single resolution rule the reuse check and the
+// uncovered-evidence report share, so a file cannot be pinned under one
+// spelling and reported uncovered under another.
+func ResolveInputPath(root string, d Dependency, unit, layer string) (string, error) {
+	return ResolveEvidencePath(root, InputPath(d, unit, layer))
+}
+
 func Check(root string, ref Reference, layer, protocol string) error {
 	return check(root, ref, layer, protocol, map[string]bool{})
 }
@@ -337,39 +379,21 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 		return fmt.Errorf("judgment %s review protocol changed", ref.ID)
 	}
 	for _, d := range r.Dependencies {
-		path := InputPath(d, r.Unit, layer)
-		if strings.HasPrefix(path, "rule:") {
-			path = specpaths.ResolveRuleFile(root, strings.TrimPrefix(path, "rule:"))
-			if rel, err := filepath.Rel(root, path); err == nil {
-				path = filepath.ToSlash(rel)
-			}
-		}
-		if strings.HasPrefix(path, "unit:") {
-			rest := strings.TrimPrefix(path, "unit:")
-			if _, appendix, ok := strings.Cut(rest, ":appendix:"); ok {
-				path = specpaths.ResolveUnitAppendix(root, appendix)
-			} else {
-				path = specpaths.ResolveUnitFile(root, rest)
-			}
-			if rel, err := filepath.Rel(root, path); err == nil {
-				path = filepath.ToSlash(rel)
-			}
-		}
-		canonical, err := repopath.Canonical(root, path)
+		canonical, err := ResolveInputPath(root, d, r.Unit, layer)
 		if err != nil {
 			return err
 		}
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(canonical)))
 		if err != nil {
-			return fmt.Errorf("judgment %s input %s: %w", ref.ID, path, err)
+			return fmt.Errorf("judgment %s input %s: %w", ref.ID, d.Path, err)
 		}
 		if d.Hash != "" {
 			if specpaths.HashText(data) != d.Hash {
-				return fmt.Errorf("judgment %s whole-file input changed: %s", ref.ID, path)
+				return fmt.Errorf("judgment %s whole-file input changed: %s", ref.ID, canonical)
 			}
 		}
 		if len(d.Deps) > 0 && !contenthash.DepsPresent(string(data), d.Deps) {
-			return fmt.Errorf("judgment %s dependency changed: %s", ref.ID, path)
+			return fmt.Errorf("judgment %s dependency changed: %s", ref.ID, canonical)
 		}
 	}
 	for _, dep := range r.References {
@@ -520,4 +544,72 @@ func CoversInputs(actual, required []string) bool {
 		}
 	}
 	return true
+}
+
+// inputSpelling maps one evidence path to the spelling a record's own input
+// list uses: a file this unit owns (its main spec or one of its appendices)
+// becomes own:<suffix>; every other entry keeps its path or logical spelling.
+func inputSpelling(p, unit, layer string, owned []string) string {
+	if suffix, ok := OwnSuffix(p, unit, layer, owned); ok {
+		return "own:" + suffix
+	}
+	return p
+}
+
+// normalizeOwnInputs resolves this unit's appendix paths, the ownership list
+// inputSpelling needs.
+func normalizeOwnInputs(root, unit, layer string) ([]string, error) {
+	if unit == "" {
+		return nil, nil
+	}
+	appendices, err := specpaths.UnitAppendices(root, unit, layer)
+	if err != nil {
+		return nil, err
+	}
+	owned := make([]string, 0, len(appendices))
+	for _, appendix := range appendices {
+		owned = append(owned, appendix.Path)
+	}
+	return owned, nil
+}
+
+// NormalizeInputs rewrites an evidence list into the recorded judgment-input
+// spelling. The writer and every reader share this single normalization, so the
+// same evidence is never written under one spelling and compared under another.
+func NormalizeInputs(root, unit, layer string, inputs []string) ([]string, error) {
+	owned, err := normalizeOwnInputs(root, unit, layer)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]string(nil), inputs...)
+	for i, p := range out {
+		out[i] = inputSpelling(p, unit, layer, owned)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// NewlyRequiredEvidence reports the first evidence input a recorded judgment no
+// longer covers. A conclusion is reusable only while the evidence its key
+// currently requires stays inside the evidence the record read: a key whose
+// declared surface gained a file must judge that file instead of carrying a
+// conclusion made without it. Callers use it as the one required-evidence rule
+// (the gate's merged freshness check and the delta planner), so both decide
+// reuse identically. The returned entry is the required input as the caller
+// spelled it.
+func NewlyRequiredEvidence(root, unit, layer string, record Record, required []string) (string, bool, error) {
+	owned, err := normalizeOwnInputs(root, unit, layer)
+	if err != nil {
+		return "", false, err
+	}
+	declared := map[string]bool{}
+	for _, p := range record.Inputs {
+		declared[p] = true
+	}
+	for _, p := range required {
+		if !declared[inputSpelling(p, unit, layer, owned)] {
+			return p, true, nil
+		}
+	}
+	return "", false, nil
 }

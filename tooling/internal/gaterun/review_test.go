@@ -64,7 +64,7 @@ func TestDeltaPlanCreatesReviewCoverage(t *testing.T) {
 // surface: it spans the run's whole input surface so the reviewer can follow
 // a changed file to a conclusion anchored elsewhere — not just the target's
 // own spec plus the changed files
-// (framework/verification_scope.md §Delta Runs → The change review).
+// (framework/verification_scope.md §Delta Runs → The change review (validate)).
 func TestReviewSessionReadsWholeInputSurface(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/dep", "")
@@ -279,5 +279,33 @@ func TestDeltaPlanRunsForcedAndNewKeys(t *testing.T) {
 	}
 	if stringInSlice(run.CarriedKeys, "1") || stringInSlice(run.CarriedKeys, "3") {
 		t.Fatalf("forced checks must not stay carried, got %v", run.CarriedKeys)
+	}
+}
+
+// TestValidateDeltaDisclosesNewEvidence pins the validate change-detection
+// rule: a physical manifest entry the baseline never recorded joins the change
+// set as an added file, so the reviewer sees it
+// (framework/verification_scope.md §Delta Runs → Change detection).
+func TestValidateDeltaDisclosesNewEvidence(t *testing.T) {
+	repoRoot := newRepo(t)
+	validateReviewBaseline(t, repoRoot)
+	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	writeFile(t, repoRoot, "evidence/new.md", "new evidence\n")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, []string{"evidence/new.md"}, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range run.ChangeReport.Entries {
+		if entry.Path == "evidence/new.md" && entry.Kind == "added" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the new evidence as an added change entry, got %+v", run.ChangeReport.Entries)
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "new evidence not in the baseline: evidence/new.md") {
+		t.Fatalf("expected the new-evidence notice, got %v", run.Notices)
 	}
 }

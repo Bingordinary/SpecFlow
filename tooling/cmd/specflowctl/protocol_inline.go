@@ -36,7 +36,7 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 	switch {
 	case kind == gaterun.SessionKindDeltaReview:
 		return []protocolSectionRef{
-			{"verification_scope.md", 3, "The change review"},
+			{"verification_scope.md", 3, "The change review (validate)"},
 		}, nil
 	case kind == gaterun.SessionKindCross:
 		// The final synthesis runs for every gate that can produce findings

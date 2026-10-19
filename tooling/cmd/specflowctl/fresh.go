@@ -367,6 +367,14 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
+	if vfStatus == gateFresh {
+		// Conclusion-bound reuse cannot see a semantic dependency the record
+		// never declared. Report changed files that no conclusion depends on so
+		// the user can confirm them with a full run instead of never looking.
+		if uncovered, err := validationcache.UncoveredChangedFilesForUnit(absRoot, unitName); err == nil && len(uncovered) > 0 {
+			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
+		}
+	}
 	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
@@ -458,6 +466,14 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "verify", vfStatus, vfDetail)
+	if vfStatus == gateFresh {
+		// Conclusion-bound reuse cannot see a semantic dependency the record
+		// never declared. Report changed files that no conclusion depends on so
+		// the user can confirm them with a full run instead of never looking.
+		if uncovered, err := validationcache.UncoveredChangedFilesForUnit(absRoot, unitName); err == nil && len(uncovered) > 0 {
+			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
+		}
+	}
 	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
