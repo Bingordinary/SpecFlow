@@ -94,9 +94,95 @@ func grInputsManifest(t *testing.T, values ...string) string {
 	return path
 }
 
+// grFrameworkFixtureSections lists, per fixture framework document, the
+// headings the protocol inliner resolves against it (level and full heading
+// title). grFrameworkFixtureDoc completes each document with every mechanism
+// section the protocol fingerprint declares for the real document, so a
+// fixture satisfies both consumers of the framework documents: the mission
+// inliner and judgments.Protocol.
+var grFrameworkFixtureSections = map[string][]struct {
+	level int
+	title string
+}{
+	"unit_validate_checklist.md": {
+		{2, "Prerequisite — Read all unit files"},
+		{2, "Execution Rules"},
+		{2, "Check 1 — Structural integrity"},
+		{2, "Check 2 — Design soundness"},
+		{2, "Check 3 — Scope integrity"},
+		{2, "Check 4 — Evidence-driven vs design-driven consistency"},
+		{2, "Check 5 — Acceptance coverage & correctness"},
+		{2, "Check 6 — Affects-source validity"},
+		{2, "Check 7 — Cross-unit consistency"},
+		{2, "Check 8 — Constraint alignment"},
+		{2, "Check 9 — File associations (mechanical)"},
+		{2, "Check 10 — Clarity"},
+	},
+	"rule_validate_checklist.md": {
+		{2, "Execution Rules"},
+		{2, "Target-layer applicability"},
+		{3, "Check 1 — Frontmatter Completeness"},
+		{3, "Check 2 — ID/Scope Consistency"},
+		{3, "Check 3 — File Path Consistency"},
+		{3, "Check 4 — Rule documentation field"},
+		{3, "Check 5 — Prohibited Fields"},
+		{3, "Check 6 — Rule Body Quality"},
+	},
+	"unit_verify_checklist.md": {
+		{2, "Prerequisite — Read all unit files"},
+		{2, "Quality Lens Standard"},
+		{4, "Dimension 8: Architectural Design Quality"},
+		{2, "Step 1 — Structural alignment"},
+		{2, "Step 2 — Acceptance alignment"},
+		{2, "Step 3 — Scope accuracy"},
+		{2, "Step 4 — Retirement verification"},
+		{2, "Step 5 — Implementation integrity & surplus detection"},
+		{2, "Step 6 — Stub & Placeholder Scan"},
+		{2, "Step 7 — First-principles divergence analysis"},
+	},
+	"verification_scope.md": {
+		{3, "The change review"},
+		{3, "Final synthesis"},
+	},
+	"severity_policy.md": {
+		{2, "4. Severity Levels"},
+		{2, "5. Blocking Relationship"},
+		{2, "9. Severity Consistency Check"},
+	},
+}
+
+// grFrameworkFixtureDoc renders one fixture framework document: the mapping
+// headings first, then every mechanism section the fingerprint contract
+// declares for the real document.
+func grFrameworkFixtureDoc(file string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Fixture %s\n\n", strings.TrimSuffix(file, ".md"))
+	seen := map[string]bool{}
+	for _, section := range grFrameworkFixtureSections[file] {
+		fmt.Fprintf(&b, "%s %s\n\nFixture %s.\n\n", strings.Repeat("#", section.level), section.title, section.title)
+		seen[section.title] = true
+	}
+	for _, name := range judgments.MechanismSectionNames(file) {
+		if seen[name] {
+			continue
+		}
+		fmt.Fprintf(&b, "## %s\n\nFixture %s.\n\n", name, name)
+	}
+	return b.String()
+}
+
 func grEnableMissionLayout(t *testing.T, repoRoot string) {
 	t.Helper()
-	grWriteFile(t, repoRoot, "tooling/manifest.tsv", "tooling fixture\n")
+	frameworkRoot := "framework"
+	if _, err := os.Stat(filepath.Join(repoRoot, "specflow", "tooling", "manifest.tsv")); err == nil {
+		// An installed-project fixture keeps its framework under specflow/.
+		frameworkRoot = "specflow/framework"
+	} else {
+		grWriteFile(t, repoRoot, "tooling/manifest.tsv", "tooling fixture\n")
+	}
+	for file := range grFrameworkFixtureSections {
+		grWriteFile(t, repoRoot, frameworkRoot+"/"+file, grFrameworkFixtureDoc(file))
+	}
 }
 
 // grPlan runs gate-plan and returns the run id.

@@ -250,6 +250,68 @@ func MustProtocol(root, gate, targetKind string) string {
 	return protocol
 }
 
+// ExtractSection returns the text of the section opened by the heading whose
+// level and slug match: the title text itself, or the text before the first
+// " — " separator. The section spans from its heading line to the next
+// heading of the same or a higher level; headings inside fenced code blocks
+// never open or close a section. It errors when the heading matches zero or
+// more than one section — a renamed document heading must fail loudly, not
+// silently return the wrong text.
+func ExtractSection(text string, level int, name string) (string, error) {
+	lines := strings.Split(text, "\n")
+	sections := documentSections(lines)
+	match := -1
+	for i, s := range sections {
+		if s.level != level || sectionSlug(s.text) != name {
+			continue
+		}
+		if match >= 0 {
+			return "", fmt.Errorf("section %q (heading level %d) matches more than one heading", name, level)
+		}
+		match = i
+	}
+	if match < 0 {
+		return "", fmt.Errorf("section %q (heading level %d) not found", name, level)
+	}
+	return strings.TrimRight(strings.Join(lines[sections[match].line:sections[match].end], "\n"), "\n"), nil
+}
+
+// SectionSlug reduces a heading title to its match key: the text before the
+// first " — " separator, or the full title when no em dash follows. A slug
+// comparison keeps callers stable against description edits in the documents
+// ("Check 2 — <any description>" keeps matching "Check 2").
+func SectionSlug(title string) string {
+	return sectionSlug(title)
+}
+
+// sectionSlug reduces a heading title to its match key: the text before the
+// first " — " separator, or the full title when no em dash follows. A slug
+// comparison keeps callers stable against description edits in the documents
+// ("Check 2 — <any description>" keeps matching "Check 2").
+func sectionSlug(title string) string {
+	if idx := strings.Index(title, " — "); idx >= 0 {
+		return strings.TrimSpace(title[:idx])
+	}
+	return strings.TrimSpace(title)
+}
+
+// HeadingTitle reports whether the line is a markdown heading and returns its
+// level and title text.
+func HeadingTitle(line string) (int, string, bool) {
+	return heading(line)
+}
+
+// MechanismSectionNames returns a copy of the mechanism section names declared
+// for a protocol document. Framework-document test fixtures use this to stay
+// aligned with the fingerprint contract: a fixture document must resolve every
+// mechanism section declared for the real document it stands in for.
+func MechanismSectionNames(document string) []string {
+	names := mechanismSections[document]
+	out := make([]string, len(names))
+	copy(out, names)
+	return out
+}
+
 type documentSection struct {
 	line  int
 	end   int

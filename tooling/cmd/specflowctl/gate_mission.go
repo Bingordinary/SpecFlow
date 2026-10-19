@@ -222,7 +222,7 @@ type missionSession struct {
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
 	ProtocolRef      string                    `json:"protocol_ref"`
 	ProtocolScope    string                    `json:"protocol_scope"`
-	AdditionalRefs   []string                  `json:"additional_protocol_refs"`
+	ProtocolInline   []protocolChunk           `json:"protocol_inline"`
 	ReportContract   gateReportContract        `json:"report_contract"`
 }
 
@@ -252,6 +252,11 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	}
 	protocol := ""
 	switch {
+	case spec.Kind == gaterun.SessionKindDeltaReview || spec.Kind == gaterun.SessionKindCross:
+		// These sessions do not judge by the gate checklist: their judging
+		// standard lives in verification_scope.md (the final synthesis also
+		// judges severity_policy.md, named per inlined section below).
+		protocol = "verification_scope.md"
 	case run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule:
 		protocol = "rule_validate_checklist.md"
 	case run.Gate == gaterun.GateValidate:
@@ -274,8 +279,19 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForSession(run, spec)...),
 		ProtocolRef:      specflowlayout.Relative(layout.FrameworkRoot, protocol),
 		ProtocolScope:    protocolScopeFor(spec.Kind, spec.CheckKeys),
-		AdditionalRefs:   []string{},
 		ReportContract:   reportContractFor(run, spec),
+	}
+	// The mission is self-contained: the protocol sections this session judges
+	// by are inlined from the deployed framework documents. Extraction is
+	// fail-closed — a section the documents no longer provide aborts the
+	// mission instead of degrading it back to a document pointer.
+	sections, err := protocolSectionsFor(run.Gate, run.TargetKind, spec.Kind, spec.CheckKeys)
+	if err != nil {
+		return gateMission{}, err
+	}
+	session.ProtocolInline, err = inlineProtocol(root, layout.FrameworkRoot, sections)
+	if err != nil {
+		return gateMission{}, err
 	}
 	if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule {
 		session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
@@ -303,11 +319,6 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 			return gateMission{}, fmt.Errorf("rejected session %q has no rejection reason", spec.SessionID)
 		}
 		session.LastRejection = state.Attempts[len(state.Attempts)-1].RejectionReason
-	}
-	if spec.Kind == gaterun.SessionKindCross {
-		session.AdditionalRefs = append(session.AdditionalRefs,
-			specflowlayout.Relative(layout.FrameworkRoot, "verification_scope.md")+" §Cross-check",
-			specflowlayout.Relative(layout.FrameworkRoot, "severity_policy.md"))
 	}
 	framework := layout.FrameworkRoot
 	glossary := []missionTerm{
@@ -387,7 +398,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 			session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(run.CarriedResults[i].SessionID, "", &run.CarriedResults[i]))
 		}
 	}
-	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only commands only (git queries and the framework inspection subcommands the checks instruct: specflowctl deps, specflowctl surfaces, specflowctl validate candidate)", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; protocol_ref is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
+	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only commands only (git queries and the framework inspection subcommands the checks instruct: specflowctl deps, specflowctl surfaces, specflowctl validate candidate)", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; the inlined protocol is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
 	// The over-capacity declaration is the recovery signal for a batch that can
 	// be split. A single-key batch is atomic, so the mission does not offer the
 	// escape and the session must carry its report (see
@@ -444,9 +455,11 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 	if p.Kind == gaterun.SessionKindCross {
 		fmt.Fprintf(w, "Assigned relationships: %s\n", strings.Join(p.Relationships, ", "))
 	}
-	fmt.Fprintf(w, "Protocol: %s (%s). Read this scope for semantic judgment; the task and report format are fixed here.\n", p.ProtocolRef, p.ProtocolScope)
-	for _, ref := range p.AdditionalRefs {
-		fmt.Fprintf(w, "Additional semantic reference: %s\n", ref)
+	fmt.Fprintf(w, "Protocol scope: %s. The protocol text below is this session's inlined judging standard — judge from this text; each section's source document is provenance only, do not re-read it.\n", p.ProtocolScope)
+	for _, chunk := range p.ProtocolInline {
+		fmt.Fprintf(w, "----- Inlined protocol from %s (%s) -----\n", chunk.Source, chunk.Heading)
+		fmt.Fprintln(w, chunk.Content)
+		fmt.Fprintf(w, "----- End inlined protocol from %s -----\n", chunk.Source)
 	}
 	fmt.Fprintln(w, "Read refs:")
 	for _, input := range p.ReadInputs {

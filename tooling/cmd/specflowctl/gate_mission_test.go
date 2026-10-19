@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -182,9 +183,98 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	}
 }
 
+// TestGateMissionPromptInlinesProtocol pins the self-contained mission: the
+// prompt carries the protocol sections inline and never sends the reviewer to
+// read the framework documents.
+func TestGateMissionPromptInlinesProtocol(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	var out, errOut bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "prompt"}, &out, &errOut); err != nil {
+		t.Fatalf("mission: %v (%s)", err, errOut.String())
+	}
+	prompt := out.String()
+	for _, want := range []string{
+		"inlined judging standard",
+		"----- Inlined protocol from framework/unit_validate_checklist.md",
+		"## Check 1 — Structural integrity",
+		"## Check 3 — Scope integrity",
+		"## Check 6 — Affects-source validity",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks inlined protocol %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Read this scope") {
+		t.Errorf("prompt still points the reviewer at the framework documents:\n%s", prompt)
+	}
+	var jsonOut bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "json"}, &jsonOut, &errOut); err != nil {
+		t.Fatalf("mission json: %v (%s)", err, errOut.String())
+	}
+	var mission gateMission
+	if err := json.Unmarshal(jsonOut.Bytes(), &mission); err != nil {
+		t.Fatal(err)
+	}
+	inline := mission.Sessions[0].ProtocolInline
+	if len(inline) != 5 {
+		t.Fatalf("got %d inlined sections, want 5 (prerequisite, execution rules, checks 1/3/6): %+v", len(inline), inline)
+	}
+	for _, chunk := range inline {
+		if chunk.Source != "framework/unit_validate_checklist.md" || chunk.Content == "" {
+			t.Fatalf("bad inlined section: %+v", chunk)
+		}
+	}
+}
+
+// TestGateMissionValidateFinalSynthesis pins the validate run's final
+// synthesis: a validate run whose checks produced findings must materialize
+// its final-synthesis mission from the same gate-independent section set as
+// verify (§Final synthesis plus the severity policy), never by mapping the
+// `cross` key onto a checklist check.
+func TestGateMissionValidateFinalSynthesis(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, root, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+		"1": {main + ": Description"},
+		"3": {main + ": Testability / Acceptance Criteria"},
+		"6": {main + ": Testability / Acceptance Criteria"},
+	}))
+	grSubmitOK(t, root, runID, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
+	grSubmitOK(t, root, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
+	grSubmitOK(t, root, runID, "dependencies", grDependenciesReport(map[string][]string{
+		"7": {main + ": Description"},
+		"8": {main + ": Description"},
+	}))
+	grSubmitClarity(t, root, runID, main)
+	var out, errOut bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--final"}, &out, &errOut); err != nil {
+		t.Fatalf("validate final-synthesis mission: %v (%s)", err, errOut.String())
+	}
+	prompt := out.String()
+	for _, want := range []string{
+		"----- Inlined protocol from framework/verification_scope.md (Final synthesis)",
+		"----- Inlined protocol from framework/severity_policy.md (4. Severity Levels)",
+		"----- Inlined protocol from framework/severity_policy.md (9. Severity Consistency Check)",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks inlined protocol %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Check cross") {
+		t.Errorf("prompt mapped the cross key onto a checklist check:\n%s", prompt)
+	}
+}
+
 func TestGateMissionUsesInstalledFrameworkPath(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteFile(t, root, "specflow/tooling/manifest.tsv", "fixture\n")
+	grEnableMissionLayout(t, root)
 	grWriteSpec(t, root, "auth")
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	var out, errOut bytes.Buffer
@@ -272,7 +362,7 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grSubmitOK(t, root, verifyRun, "src/auth.go", grQualityReport("src/auth.go", main))
 	cross := missionJSON(t, root, verifyRun, "cross")
 	if len(cross.Sessions[0].Dependencies) != 3 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
-		len(cross.Sessions[0].AdditionalRefs) != 2 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Finding disposition:") || strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
+		len(cross.Sessions[0].ProtocolInline) == 0 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Finding disposition:") || strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
 		t.Fatalf("wrong cross mission: %+v", cross.Sessions[0])
 	}
 }
