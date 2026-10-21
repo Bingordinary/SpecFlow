@@ -22,7 +22,25 @@ Unit truth lives in:
 | stable | `docs/specs/units/stable/unit_{unit}.md` | `docs/specs/units/stable/appendix/unit_{unit}_{name}.md` |
 | candidate | `docs/specs/units/candidate/unit_{unit}.md` | `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md` |
 
-Unit frontmatter records identity, `unit_refs`, and `rule_refs` — the layer is encoded by the file path (see `framework/spec_writing_guide.md` §3). Appendix files may carry an optional `status` field (`active` or `exempt`) — see `framework/spec_writing_guide.md` §Appendix Files.
+Unit frontmatter records identity and `rule_refs` — the layer is encoded by the file path (see `framework/spec_writing_guide.md` §3). Appendix files may carry an optional `status` field (`active` or `exempt`) — see `framework/spec_writing_guide.md` §Appendix Files.
+
+A unit main spec also declares its **promises** in the `## Promises` section. A consumer declares the provider promise on its own promise's `depends_on`. See `framework/core/promise_model.md`.
+
+==ATOM_BEGIN:promise_carrier_role==
+The `## Promises` block is the unit's sole formal behavior carrier: the place
+a consumer reads the unit's formal, externally observable contract. A promise
+states what the unit offers; an acceptance item states how the unit proves a
+promise; the design narrative states why the unit is designed that way.
+
+Consumers read provider promises; they do not read provider acceptance items,
+appendices, or code to learn the contract. A contract statement that no
+promise carries is invalid, and an appendix that introduces normative contract
+content outside a promise is a finding. An appendix is explanatory support
+truth: if it needs its own contract, dependencies, acceptance items, code
+scope, or independent verification, it is a unit, not an appendix. A promise
+has its own ID and fingerprint but is not a separate formal object family: it
+has no independent lifecycle.
+==ATOM_END:promise_carrier_role==
 
 ## Rule
 
@@ -34,7 +52,3 @@ Rules carry rule_scope in frontmatter — `rule_scope: global` or `rule_scope: b
 - `b_rule_` / `rule_scope: bound` → applies only to units that explicitly list them in `rule_refs`.
 
 Bound rule consumers are derived from current-layer unit `rule_refs`; rule files must not store consumer lists.
-
-
-
-

@@ -144,7 +144,7 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed := strings.Replace(string(original), "\n## Description\n", "\n## Description\n\nRevised design details.\n", 1)
+	changed := strings.Replace(string(original), "\n## Design Narrative\n", "\n## Design Narrative\n\nRevised design details.\n", 1)
 	if err := os.WriteFile(main, []byte(changed), 0644); err != nil {
 		t.Fatal(err)
 	}

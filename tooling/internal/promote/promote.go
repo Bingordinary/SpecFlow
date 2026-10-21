@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
@@ -205,34 +206,38 @@ func Promote(repoRoot, unitName string) *Result {
 		r.Issues = append(r.Issues, header.Details)
 		return r
 	}
-	fm := parseFrontmatter(content)
 
 	// Step 3: Check the same per-item schema used by candidate validation.
 	if schema := specvalidation.CheckAcceptanceItemSchema(content); schema.Status != specvalidation.Pass {
 		r.Issues = append(r.Issues, schema.Details)
 	}
 
-	// Step 3b: Check unit_refs don't point to unpromoted candidate-only files
-	if fm["unit_refs"] != "" && !strings.EqualFold(fm["unit_refs"], "none") {
-		refs := specpaths.ParseRefList(fm["unit_refs"])
-		for _, ref := range refs {
-			if ref == "" || ref == unitName {
-				continue
-			}
-			candidatePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", ref))
-
-			stablePath := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", ref))
-			if _, err := os.Stat(stablePath); os.IsNotExist(err) {
-				if _, err := os.Stat(candidatePath); err == nil {
-					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' exists only in candidate layer — promote it first", ref))
-				} else {
-					r.Issues = append(r.Issues, fmt.Sprintf("unit_refs target '%s' does not exist in stable or candidate", ref))
-				}
+	// Step 3a: A unit must satisfy the promise-model checks before
+	// publication. There is no second format.
+	if specvalidation.HasPromisesSection(content) {
+		for _, check := range specvalidation.CheckPromiseSpec(content, unitName) {
+			if check.Status == specvalidation.Fail {
+				r.Issues = append(r.Issues, check.Details)
 			}
 		}
+		if graph := specvalidation.CheckPromiseGraph(repoRoot, unitName); graph.Status == specvalidation.Fail {
+			r.Issues = append(r.Issues, graph.Details)
+		}
+		statePath, stateErr := validationcache.PromiseStatePath(repoRoot, unitName, "candidate")
+		if stateErr != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promise state path: %v", stateErr))
+		} else if state, readErr := validationcache.ReadPromiseStateFile(statePath); readErr != nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promise state: %v", readErr))
+		} else if state == nil {
+			r.Issues = append(r.Issues, fmt.Sprintf("Promise state is missing — run `verify@%s` to record it before promoting", unitName))
+		} else {
+			r.Issues = append(r.Issues, checkPromiseStateForPromotion(repoRoot, unitName, content, state)...)
+		}
+	} else {
+		r.Issues = append(r.Issues, "unit has no `## Promises` section: a unit spec follows the three-section promise model, so it cannot be promoted (see framework/core/promise_model.md)")
 	}
 
-	// Step 3c: Recheck rule publication before any write, including direct
+	// Step 3b: Recheck rule publication before any write, including direct
 	// callers that bypass the CLI's pre-cache check.
 	rulePrerequisites, err := CheckUnitRulePrerequisites(repoRoot, unitName)
 	if err != nil {
@@ -246,7 +251,7 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	// Step 3d: Scan body for candidate-layer path references
+	// Step 3c: Scan body for candidate-layer path references
 	_, body, _ := specpaths.ParseFrontmatterFields(content)
 	if body != "" {
 		if refs := specvalidation.FindCandidateLayerPathRefs(body); len(refs) > 0 {
@@ -302,6 +307,32 @@ func Promote(repoRoot, unitName string) *Result {
 	staged = append(staged, stagedCopy{tmp: tmpBaseline, dst: baselinePath})
 	removals = append(removals, candidateSpec)
 
+	// The promise state is part of the same publication transaction as the
+	// spec and baseline. A state write failure aborts before any accepted
+	// truth changes instead of leaving a published unit without its record.
+	if specvalidation.HasPromisesSection(content) {
+		stateStablePath, stateData, stateCandidatePath, stateOK, stateErr := validationcache.PreparePromiseStateStable(repoRoot, unitName)
+		if stateErr != nil {
+			cleanupStaged(staged)
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to prepare promise state: %v", stateErr))
+			return r
+		}
+		if !stateOK {
+			cleanupStaged(staged)
+			r.Issues = append(r.Issues, fmt.Sprintf("Promise state disappeared before publication — run `verify@%s` again", unitName))
+			return r
+		}
+		tmpState, stateStageErr := stageContent(stateData, stateStablePath, 0644)
+		if stateStageErr != nil {
+			cleanupStaged(staged)
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage promise state: %v", stateStageErr))
+			return r
+		}
+		staged = append(staged, stagedCopy{tmp: tmpState, dst: stateStablePath})
+		removals = append(removals, stateCandidatePath)
+		publicationActions = append(publicationActions, "Promoted promise state to stable")
+	}
+
 	// Stable content, its baseline, and candidate removal share one commit.
 	if err := commitStaged(staged, removals...); err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
@@ -332,9 +363,123 @@ func Promote(repoRoot, unitName string) *Result {
 			}
 		}
 	}
-
 	r.Passed = true
 	return r
+}
+
+// checkPromiseStateForPromotion verifies that the candidate promise state is
+// current and that every pinned provider promise is already published at the
+// same contract. A consumer must not be published against an unpublished
+// provider contract: that would make the stable layer depend on candidate
+// truth the provider may never promote.
+func checkPromiseStateForPromotion(repoRoot, unitName, content string, state *validationcache.PromiseStateFile) []string {
+	var issues []string
+	for _, issue := range validationcache.CheckPromiseStateIdentity(state, unitName, "candidate") {
+		issues = append(issues, issue+" — run verify@"+unitName)
+	}
+
+	promises, parseIssues := specvalidation.ParsePromises(content)
+	if len(parseIssues) > 0 {
+		return append(issues, parseIssues...)
+	}
+	own := map[string]string{}
+	for _, promise := range promises {
+		fingerprint, err := specvalidation.PromiseFingerprint(promise)
+		if err != nil {
+			return append(issues, err.Error())
+		}
+		own[promise.ID] = fingerprint
+	}
+	issues = append(issues, compareRecordedPins("own promise", state.Promises, own, unitName)...)
+
+	required := map[string]bool{}
+	for _, promise := range promises {
+		for _, dep := range promise.DependsOn {
+			required[dep] = true
+		}
+	}
+	recorded := map[string]string{}
+	for _, pin := range state.Pins {
+		recorded[pin.ID] = pin.Fingerprint
+	}
+
+	current, currentIssues := specvalidation.PromiseFingerprintsForScope(repoRoot, specvalidation.PromiseScopeAll)
+	issues = append(issues, currentIssues...)
+	stable, stableIssues := specvalidation.PromiseFingerprintsForScope(repoRoot, specvalidation.PromiseScopeStable)
+	issues = append(issues, stableIssues...)
+
+	for _, dep := range sortedStringSet(required) {
+		pinFingerprint, recordedPin := recorded[dep]
+		if !recordedPin {
+			issues = append(issues, fmt.Sprintf("promise state is missing dependency pin %q — run verify@%s", dep, unitName))
+			continue
+		}
+		currentFingerprint, resolved := current[dep]
+		if !resolved {
+			issues = append(issues, fmt.Sprintf("dependency promise %q is unresolved in the current layer — run verify@%s", dep, unitName))
+			continue
+		}
+		if pinFingerprint != currentFingerprint {
+			issues = append(issues, fmt.Sprintf("dependency pin %q is stale — run verify@%s", dep, unitName))
+			continue
+		}
+		stableFingerprint, published := stable[dep]
+		if !published {
+			issues = append(issues, fmt.Sprintf("dependency promise %q is not in the stable layer — promote provider %q first", dep, specvalidation.PromiseProvider(dep)))
+			continue
+		}
+		if stableFingerprint != pinFingerprint {
+			issues = append(issues, fmt.Sprintf("dependency promise %q has unpublished candidate changes — promote provider %q first", dep, specvalidation.PromiseProvider(dep)))
+		}
+	}
+	for dep := range recorded {
+		if !required[dep] {
+			issues = append(issues, fmt.Sprintf("promise state records dependency %q that the spec no longer declares — run verify@%s", dep, unitName))
+		}
+	}
+	return issues
+}
+
+func compareRecordedPins(label string, pins []validationcache.PromisePin, expected map[string]string, unitName string) []string {
+	var issues []string
+	recorded := map[string]string{}
+	for _, pin := range pins {
+		recorded[pin.ID] = pin.Fingerprint
+	}
+	for _, id := range sortedStringMap(expected) {
+		fingerprint, ok := recorded[id]
+		if !ok {
+			issues = append(issues, fmt.Sprintf("promise state is missing %s %q — run verify@%s", label, id, unitName))
+			continue
+		}
+		if fingerprint != expected[id] {
+			issues = append(issues, fmt.Sprintf("promise state is stale for %s %q — run verify@%s", label, id, unitName))
+		}
+	}
+	for id := range recorded {
+		if _, ok := expected[id]; !ok {
+			issues = append(issues, fmt.Sprintf("promise state records %s %q that the spec no longer declares — run verify@%s", label, id, unitName))
+		}
+	}
+	return issues
+}
+
+func sortedStringMap(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedStringSet(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // RuleResult describes the outcome of a rule promote operation.

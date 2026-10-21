@@ -59,8 +59,8 @@ const (
 // or rule spec, an appendix, or a meta record — and a spec document is a
 // reference object, never an implementation code file: a unit's implementation
 // surface and affects.files take code paths, and spec documents are referenced
-// through unit_refs, affects.dependencies, affects.evidence_files, or
-// affects.appendices (framework/spec_writing_guide.md §7, §12).
+// through affects.evidence_files or affects.appendices
+// (framework/spec_writing_guide.md §7, §12).
 func IsSpecDocumentPath(canonical string) bool {
 	return canonical == SpecRootDir || strings.HasPrefix(canonical, SpecRootDir+"/")
 }

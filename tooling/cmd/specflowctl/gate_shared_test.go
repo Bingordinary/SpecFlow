@@ -98,7 +98,7 @@ func TestSharedPublicReviewReuseAndIndependentDesign(t *testing.T) {
 }
 func TestSharedUnfinishedPeerDoesNotBlock(t *testing.T) {
 	root, _, orderSpec := sharedFixture(t)
-	grWriteFile(t, root, orderSpec, "---\nid: order\nunit_refs: none\nrule_refs: none\n---\n\n## Draft\nDesign unfinished.\n")
+	grWriteFile(t, root, orderSpec, "---\nid: order\nrule_refs: none\n---\n\n## Design Narrative\n\nDraft. Design unfinished.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n")
 	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	sharedFinish(t, root, auth)
 	records, err := judgments.List(root)
@@ -391,7 +391,7 @@ func sharedValidateFixture(t *testing.T, root, unit string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", unit, validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: []validationcache.FileEntry{*entry}}); err != nil {
+	if _, err := validationcache.WriteCache(root, "unit", unit, withPromiseFormat(t, root, unit, "candidate", validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: []validationcache.FileEntry{*entry}})); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -184,6 +184,11 @@ func prepare(root string, r Request) (*plan, error) {
 	}
 	p := &plan{result: Result{DryRun: r.DryRun}, deleted: map[string]bool{}, writes: map[string][]byte{}}
 	owners := map[string]bool{}
+	// promiseOwners is the whole-object owner set. A promise state record is a
+	// durable contract record, not a cache: it is cleared only when the unit's
+	// spec truth in that layer is removed. Removing a single appendix leaves
+	// the main spec (and its promises) in place, so its record is preserved.
+	promiseOwners := map[string]bool{}
 	found := map[string]bool{}
 	selectLayer := func(layer string) bool { return r.Layer == "all" || layer == "candidate" }
 	for _, name := range r.Units {
@@ -197,6 +202,7 @@ func prepare(root string, r Request) (*plan, error) {
 		for _, layer := range []string{"stable", "candidate"} {
 			if selectLayer(layer) {
 				owners[key+":"+layer] = true
+				promiseOwners[key+":"+layer] = true
 			}
 		}
 	}
@@ -236,6 +242,18 @@ func prepare(root string, r Request) (*plan, error) {
 		}
 		for _, entry := range entries {
 			path := dir + "/" + entry.Name()
+			if strings.HasPrefix(entry.Name(), "promise_state_") && strings.HasSuffix(entry.Name(), ".yaml") {
+				layer := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "promise_state_"), ".yaml")
+				if layer != "candidate" && layer != "stable" {
+					return nil, fmt.Errorf("%s: invalid promise-state layer", path)
+				}
+				if !promiseOwners[parts[0]+":"+parts[1]+":"+layer] {
+					continue
+				}
+				p.deleted[path] = true
+				found[parts[0]+":"+parts[1]] = true
+				continue
+			}
 			data, err := readFile(root, path)
 			if err != nil {
 				return nil, err
@@ -361,6 +379,15 @@ func referenceBlockers(root string, docs []document, deleted map[string]bool) []
 			remaining[d.path] = true
 		}
 	}
+	remainingPromises := map[string]bool{}
+	for _, d := range docs {
+		if deleted[d.path] || d.kind != "unit" {
+			continue
+		}
+		for _, id := range specvalidation.PromiseIDs(d.content) {
+			remainingPromises[id] = true
+		}
+	}
 	var blockers []string
 	for _, d := range docs {
 		if deleted[d.path] {
@@ -389,7 +416,7 @@ func referenceBlockers(root string, docs []document, deleted map[string]bool) []
 				blockers = append(blockers, fmt.Sprintf("%s: %s references %s, which does not resolve after removal", d.path, field, value))
 			}
 		}
-		for _, field := range []string{"unit_refs", "rule_refs"} {
+		for _, field := range []string{"rule_refs"} {
 			kind := strings.TrimSuffix(field, "_refs")
 			raw := strings.TrimSpace(d.fm[field])
 			if strings.HasPrefix(raw, "[") != strings.HasSuffix(raw, "]") {
@@ -400,8 +427,10 @@ func referenceBlockers(root string, docs []document, deleted map[string]bool) []
 				check(field, value, kind)
 			}
 		}
-		for _, value := range specvalidation.ExtractAffectsDependencies(d.content) {
-			check("affects.dependencies", value, "unit")
+		for _, dep := range specvalidation.PromiseDependencyIDs(d.content) {
+			if !remainingPromises[dep] {
+				blockers = append(blockers, fmt.Sprintf("%s: promise depends_on %s references a provider promise that does not resolve after removal", d.path, dep))
+			}
 		}
 		for _, value := range specvalidation.ExtractAffectsAppendices(d.content) {
 			check("affects.appendices", value, "appendix")

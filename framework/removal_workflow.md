@@ -30,7 +30,7 @@ Chat triggers:
 
 ## Reference closure and ordering
 
-The tool reads remaining stable and candidate specs and checks `unit_refs`, `rule_refs`, acceptance-item `affects.dependencies` and `affects.appendices`, `evidence_appendix_ref`, `affects.rules`, and `rule_exceptions` rule IDs. References within the deletion batch do not block it. References are resolved against the resulting files, using the existing resolver rules: unit names prefer candidate with stable fallback, bound rule IDs may resolve in either layer, global rules require stable, appendix filenames resolve in the referring file's layer, and physical spec paths require that exact file. A candidate-only deletion is allowed when stable can still legally satisfy a logical reference.
+The tool reads remaining stable and candidate specs and checks `rule_refs`, promise `depends_on`, `affects.appendices`, `evidence_appendix_ref`, `affects.rules`, and `rule_exceptions` rule IDs. References within the deletion batch do not block it. References are resolved against the resulting files, using the existing resolver rules: unit names prefer candidate with stable fallback, bound rule IDs may resolve in either layer, global rules require stable, appendix filenames resolve in the referring file's layer, and physical spec paths require that exact file. A candidate-only deletion is allowed when stable can still legally satisfy a logical reference.
 
 Deleting all copies cannot leave a reference in either layer. A candidate that already dropped a reference does not hide the stable predecessor's reference. Edit and normally publish surviving referrers before final deletion.
 
@@ -45,9 +45,9 @@ This prevents old candidate appendix content from participating in checks of the
 
 ## Tool integrity and records
 
-A whole-unit deletion includes all appendices whose `unit` frontmatter identifies that unit in the selected layers, including exempt appendices. Similar filename prefixes do not establish ownership. Ambiguous ownership, unreadable required files, unresolvable references, and paths outside the project stop execution before writes, with the file and reason reported. A target with no matching file or current record in the selected layers is an error.
+A whole-unit deletion includes all appendices whose `unit` frontmatter identifies that unit in the selected layers, including exempt appendices. Similar filename prefixes do not establish ownership. Ambiguous ownership, unreadable required files, unresolvable references (including a remaining unit's promise `depends_on` provider), and paths outside the project stop execution before writes, with the file and reason reported. A target with no matching file or current record in the selected layers is an error.
 
-Whole unit/rule deletion clears its selected-layer validation caches. Removing both layers also clears its publication baseline. An appendix deletion clears its owner's caches in the affected layers, preserving its code baseline. Removing a unit from both layers also removes pending deferred findings assigned to that unit; findings owned by other units remain even when this unit was their source.
+Whole unit/rule deletion clears its selected-layer validation caches and promise state records. Removing both layers also clears its publication baseline. An appendix deletion clears its owner's caches in the affected layers, preserving its code baseline and its promise state record — the unit's main spec truth, and therefore its promises, is unchanged. Removing a unit from both layers also removes pending deferred findings assigned to that unit; findings owned by other units remain even when this unit was their source.
 
 Deletion shares the gate-state mutation lock. Affected unfinished runs are invalidated in the same transaction as file deletion and record cleanup, so they cannot write obsolete caches afterward. The removed target's own run state is then swept together with the shared task files no surviving run references (see `framework/validation_cache.md` §Run lifecycle); committed caches and judgment records are never touched, and a removed task file is recreated on demand by the next plan.
 
@@ -55,4 +55,4 @@ The tool checks first, performs one transaction, and checks the deletion list an
 
 ## Upgrade from the former exit mechanisms
 
-Follow `framework/operations/update.md`. Move useful retention rationale into rule prose and remove the former retention metadata. Have the agent inspect legacy retired files under the decision rules above and identify explicit deletion targets. Execute only when the user's authorization covers that deletion; otherwise report the unresolved intent. New tooling has no retired-status deletion or retention-based selection branch.
+Follow `framework/operations/update.md` §Legacy exit-mechanism migration. Move useful retention rationale into rule prose and remove the former retention metadata. Have the agent inspect legacy retired files under the decision rules above and identify explicit deletion targets. Execute only when the user's authorization covers that deletion; otherwise report the unresolved intent. New tooling has no retired-status deletion or retention-based selection branch.

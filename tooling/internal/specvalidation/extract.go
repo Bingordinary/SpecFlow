@@ -14,7 +14,6 @@ type acceptanceItemFields struct {
 	affectsFiles          []string
 	affectsEvidenceFiles  []string
 	affectsAppendices     []string
-	affectsDependencies   []string
 	affectsRules          []string
 }
 
@@ -157,20 +156,9 @@ func appendAffects(item *acceptanceItemFields, key, value string) {
 		item.affectsEvidenceFiles = append(item.affectsEvidenceFiles, value)
 	case "appendices":
 		item.affectsAppendices = append(item.affectsAppendices, value)
-	case "dependencies":
-		item.affectsDependencies = append(item.affectsDependencies, value)
 	case "rules":
 		item.affectsRules = append(item.affectsRules, value)
 	}
-}
-
-// ExtractAffectsDependencies returns the formally declared unit dependencies.
-func ExtractAffectsDependencies(content string) []string {
-	var refs []string
-	for _, item := range parseAcceptanceItems(content) {
-		refs = append(refs, item.affectsDependencies...)
-	}
-	return refs
 }
 
 // ExtractAffectsRules returns acceptance-item rule references.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs, appendices, and acceptance items — and follows the normal unit path: validate → verify → promote. The only difference is the starting point: code, not design.
+Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs in the deployed promise shape, appendices, and acceptance items — and follows the normal unit path: validate → verify → promote. The only difference is the starting point: code, not design.
 
 ## Trigger
 
@@ -44,7 +44,9 @@ The user confirms the cut, adjusts it (merge, split, or rename units), or defers
 For each unit in the confirmed batch, the agent:
 
 1. Reads the code and writes the evidence appendix (`unit_{unit}_evidence.md`) under `docs/specs/units/candidate/appendix/`, organized by behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
-2. Writes the candidate main spec (`unit_{unit}.md`) with the acceptance item set. Each evidence-driven acceptance item lists the evidence appendix in its `affects.appendices` and uses a `verification_type` appropriate to the recorded behavior (`testable` / `inspectable`).
+2. Writes the candidate main spec (`unit_{unit}.md`) in the deployed three-section promise shape (`## Design Narrative` → `## Promises` → `## Acceptance Items`; see `framework/core/promise_model.md`):
+   - `## Promises`: one promise per externally-observable contract the code as written offers (API surface, exchanged data formats, error codes, protocol names, timing/consistency guarantees). Record what the code establishes; do not invent contract truth the code does not support. A promise that relies on another unit's contract declares the observed provider promise on `depends_on`.
+   - `## Acceptance Items`: one evidence-driven acceptance item per behavior domain. Each contract-verifying item names the promise it proves with `promise:`; a cleanup, migration, or one-off inspection item declares `non_promise: true` and `non_promise_reason`. Each evidence-driven item lists the evidence appendix in its `affects.appendices` and uses a `verification_type` appropriate to the recorded behavior (`testable` / `inspectable`).
 3. Sets `evidence_appendix_ref: unit_{unit}_evidence.md` in the main spec frontmatter.
 
 **Coverage standard for adoption:** main flow + boundary behaviors. Cover entry/exit points, the normal path, key error paths, and boundary conditions. Do not exhaustively document internal details — detail is added by later iterations as the unit evolves.

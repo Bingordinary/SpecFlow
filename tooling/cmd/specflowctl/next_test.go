@@ -36,16 +36,30 @@ func TestNextDiscoversCandidateSpec(t *testing.T) {
 func nextDiscoverySpec(layer string) string {
 	return fmt.Sprintf(`---
 id: demo
-unit_refs: [demo, %[1]s_peer, %[1]s_peer]
 rule_refs: [b_rule_%[1]s]
 ---
 
 # Demo
 
-## Testability / Acceptance Criteria
+## Design Narrative
+
+Prose.
+
+## Promises
+
+promises:
+  - id: demo.%[1]s
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Contract.
+    contract: {text: contract}
+    depends_on: [%[1]s_peer.api]
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: demo.%[1]s
+    promise: demo.%[1]s
     implementation_surface: src/%[1]s.go
     affects:
       files:
@@ -107,8 +121,8 @@ func TestNextSelectedSpecDiscovery(t *testing.T) {
 					t.Errorf("unexpected unselected-spec field %q in %s", field, output)
 				}
 			}
-			if strings.Count(output, "  - "+tc.selected+"_peer\n") != 1 || strings.Contains(output, "  - demo\n") {
-				t.Errorf("unit refs must exclude self and duplicates: %s", output)
+			if strings.Count(output, tc.selected+"_peer.api") != 1 || strings.Contains(output, "Related units:") {
+				t.Errorf("promise dependencies must list the peer exactly once and never as unit refs: %s", output)
 			}
 		})
 	}
@@ -254,96 +268,6 @@ func TestNextUsageWithoutUnit(t *testing.T) {
 	}
 }
 
-func TestNextRelatedUnitsBlockList(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	os.MkdirAll(candidateDir, 0755)
-	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
-id: demo
-unit_refs:
-  - payment
-  - auth
-rule_refs: none
----
-
-# Demo
-`), 0644)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	err := runNext([]string{"--unit", "demo", "--repo-root", repoRoot}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("runNext failed: %v\nstderr=%s", err, stderr.String())
-	}
-	output := stdout.String()
-
-	if !strings.Contains(output, "Related units:") {
-		t.Errorf("expected 'Related units:' in output for block-list unit_refs, got:\n%s", output)
-	}
-	if !strings.Contains(output, "- payment") || !strings.Contains(output, "- auth") {
-		t.Errorf("expected related units payment and auth in output, got:\n%s", output)
-	}
-}
-
-func TestNextRelatedUnitsInlineList(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	os.MkdirAll(candidateDir, 0755)
-	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
-id: demo
-unit_refs: [payment, auth]
-rule_refs: none
----
-
-# Demo
-`), 0644)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	err := runNext([]string{"--unit", "demo", "--repo-root", repoRoot}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("runNext failed: %v\nstderr=%s", err, stderr.String())
-	}
-	output := stdout.String()
-
-	if !strings.Contains(output, "- payment") || !strings.Contains(output, "- auth") {
-		t.Errorf("expected related units payment and auth in output, got:\n%s", output)
-	}
-}
-
-func TestNextRelatedUnitsStableFallback(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-
-	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
-	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(`---
-id: demo
-unit_refs:
-  - payment
-rule_refs: none
----
-
-# Demo
-`), 0644)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	err := runNext([]string{"--unit", "demo", "--repo-root", repoRoot}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("runNext failed: %v\nstderr=%s", err, stderr.String())
-	}
-	output := stdout.String()
-
-	if !strings.Contains(output, "Related units:") {
-		t.Errorf("expected 'Related units:' in output from stable fallback, got:\n%s", output)
-	}
-	if !strings.Contains(output, "- payment") {
-		t.Errorf("expected related unit payment from stable fallback, got:\n%s", output)
-	}
-}
-
 func TestNextEmitsAcceptanceItemFields(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
@@ -351,7 +275,6 @@ func TestNextEmitsAcceptanceItemFields(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-unit_refs: none
 rule_refs: none
 ---
 
@@ -427,7 +350,6 @@ func TestNextOmitsAcceptanceItemFieldsWhenAbsent(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	os.WriteFile(filepath.Join(candidateDir, "unit_demo.md"), []byte(`---
 id: demo
-unit_refs: none
 rule_refs: none
 ---
 
@@ -456,7 +378,6 @@ func TestNextAcceptanceItemFieldsStableFallback(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	os.WriteFile(filepath.Join(stableDir, "unit_demo.md"), []byte(`---
 id: demo
-unit_refs: none
 rule_refs: none
 ---
 

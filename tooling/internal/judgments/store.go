@@ -17,11 +17,12 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 const Directory = "docs/specs/meta/validation/judgments"
 const ProtocolVersion = "verify-7-quality-conclusions-owned-appendices"
-const RecordVersion = 3
+const RecordVersion = 4
 const Code = "code"
 const Design = "design"
 const Architecture = "architecture"
@@ -40,6 +41,16 @@ type Dependency struct {
 	Own  bool     `json:"own,omitempty"`
 	Hash string   `json:"hash,omitempty"`
 	Deps []string `json:"deps,omitempty"`
+	// Promise pins a provider contract dependency by promise fingerprint
+	// instead of whole-file content. Path names the provider spec for audit;
+	// Scope records the layer scope the pin was read in ("all" for a
+	// candidate/current-layer read, "stable" for a published read). Scope is
+	// audit metadata: liveness resolves the pin in the binding layer's scope,
+	// because promote rewrites a candidate cache's binding to stable without
+	// rewriting the immutable record.
+	Promise     string `json:"promise,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Scope       string `json:"scope,omitempty"`
 }
 
 type Record struct {
@@ -354,9 +365,51 @@ func ResolveInputPath(root string, d Dependency, unit, layer string) (string, er
 }
 
 func Check(root string, ref Reference, layer, protocol string) error {
-	return check(root, ref, layer, protocol, map[string]bool{})
+	return check(root, ref, layer, protocol, map[string]bool{}, &promiseLiveness{root: root})
 }
-func check(root string, ref Reference, layer, protocol string, seen map[string]bool) error {
+
+// promiseLiveness resolves promise pins against the binding layer's promise
+// scope. Graphs are cached per Check call so one record with several
+// dependencies expands each scope once.
+//
+// The binding layer, not the record's recorded Scope, decides the resolution:
+// promote rewrites a candidate cache's bindings to the stable layer while the
+// record itself stays immutable, so a stable confirmation must resolve provider
+// promises in the published stable layer even though the record was written by
+// the candidate run (framework/core/promise_model.md §Layer resolution).
+type promiseLiveness struct {
+	root  string
+	graph map[string]*specvalidation.PromiseGraph
+}
+
+func (p *promiseLiveness) verify(id, fingerprint, layer string) error {
+	if id == "" || fingerprint == "" {
+		return fmt.Errorf("incomplete promise pin %q", id)
+	}
+	scope := specvalidation.PromiseScopeForLayer(layer)
+	if p.graph == nil {
+		p.graph = map[string]*specvalidation.PromiseGraph{}
+	}
+	graph, ok := p.graph[scope]
+	if !ok {
+		loaded, err := specvalidation.LoadPromiseGraphScope(p.root, scope)
+		if err != nil {
+			return err
+		}
+		p.graph[scope] = loaded
+		graph = loaded
+	}
+	current, ok := graph.Fingerprint(id)
+	if !ok {
+		return fmt.Errorf("promise %s is unresolved in scope %s", id, scope)
+	}
+	if current != fingerprint {
+		return fmt.Errorf("promise %s contract changed", id)
+	}
+	return nil
+}
+
+func check(root string, ref Reference, layer, protocol string, seen map[string]bool, promises *promiseLiveness) error {
 	if seen[ref.ID] {
 		return fmt.Errorf("cyclic judgment reference %s", ref.ID)
 	}
@@ -379,6 +432,15 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 		return fmt.Errorf("judgment %s review protocol changed", ref.ID)
 	}
 	for _, d := range r.Dependencies {
+		if d.Promise != "" {
+			if d.Scope == "" {
+				return fmt.Errorf("judgment %s: incomplete promise pin %q", ref.ID, d.Promise)
+			}
+			if err := promises.verify(d.Promise, d.Fingerprint, layer); err != nil {
+				return fmt.Errorf("judgment %s: %w", ref.ID, err)
+			}
+			continue
+		}
 		canonical, err := ResolveInputPath(root, d, r.Unit, layer)
 		if err != nil {
 			return err
@@ -401,7 +463,7 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 		if dep.Layer != "" {
 			bound = dep.Layer
 		}
-		if err := check(root, dep.Reference, bound, protocol, seen); err != nil {
+		if err := check(root, dep.Reference, bound, protocol, seen, promises); err != nil {
 			return err
 		}
 	}
@@ -438,7 +500,7 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 			if current.Kind != Item || current.Unit != r.Unit || current.Subject != r.Subject || current.SpecContext != context {
 				return fmt.Errorf("accepted item reference does not match judgment %s", ref.ID)
 			}
-			if err := check(root, latest, layer, protocol, seen); err != nil {
+			if err := check(root, latest, layer, protocol, seen, promises); err != nil {
 				return fmt.Errorf("current item decision is unavailable: %w", err)
 			}
 			same, err := sameItemDecision(r, current)

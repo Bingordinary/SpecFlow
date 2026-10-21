@@ -29,7 +29,7 @@ func TestCheckVerifyIgnoresInputOnlyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644)
 	depPath := filepath.Join(srcDir, "dep.go")
 	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
 	inputPath := filepath.Join(srcDir, "input_only.go")
@@ -87,7 +87,7 @@ func TestCheckVerifyIgnoresInputOnlyFile(t *testing.T) {
 		"  - path: src/input_only.go\n    hash: sha256:" + inputHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
 		"---\nAll items aligned.\n" +
 		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -139,7 +139,7 @@ func TestUncoveredChangedFilesReportsChangedUnpinnedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644)
 	depPath := filepath.Join(srcDir, "dep.go")
 	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
 	inputPath := filepath.Join(srcDir, "input_only.go")
@@ -189,7 +189,7 @@ func TestUncoveredChangedFilesReportsChangedUnpinnedEvidence(t *testing.T) {
 		"  - path: src/input_only.go\n    hash: sha256:" + inputHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
 		"---\nAll items aligned.\n" +
 		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -238,7 +238,7 @@ func TestUncoveredChangedFilesExcludesSynthesisEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644)
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644)
 	depPath := filepath.Join(srcDir, "dep.go")
 	writeCacheFixtureFile(t, depPath, []byte("package src\nfunc Dep() {}\n"), 0644)
 	evidencePath := filepath.Join(srcDir, "input_only.go")
@@ -291,7 +291,7 @@ func TestUncoveredChangedFilesExcludesSynthesisEvidence(t *testing.T) {
 		"  - path: src/input_only.go\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
 		"---\nAll items aligned.\n" +
 		"<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "verify_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -318,7 +318,7 @@ func TestCheckValidate(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestCheckValidateStale(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func TestCheckValidateRequiresCurrentJudgingStandard(t *testing.T) {
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	entry, err := BuildEvidenceEntry(repoRoot, "docs/specs/units/candidate/unit_test.md")
@@ -436,6 +436,50 @@ func TestCheckValidateRequiresCurrentJudgingStandard(t *testing.T) {
 	}
 }
 
+// TestCheckValidateFailureRecordWithDependencyStaysBlocked pins the failure
+// record's classification: promise_pins are a pass-cache requirement, so a
+// validate failure record with a depends_on edge must remain BLOCKED instead
+// of being downgraded to STALE by the pin comparison.
+func TestCheckValidateFailureRecordWithDependencyStaysBlocked(t *testing.T) {
+	repoRoot := t.TempDir()
+	specRel := "docs/specs/units/candidate/unit_web.md"
+	specPath := filepath.Join(repoRoot, filepath.FromSlash(specRel))
+	if err := os.MkdirAll(filepath.Dir(specPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: web\nrule_refs: none\n---\n\n## Design Narrative\n\nWeb.\n\n## Promises\n\npromises:\n  - id: web.session_api\n    kind: opaque\n    opaque_reason: Closest kind is event; no payload shape is fixed.\n    summary: Session.\n    contract: {text: session}\n    depends_on: [auth.login_api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: web.session_ok\n    promise: web.session_api\n    description: Given a session, when read, then it returns.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: Go test.\n    pass_condition: Session read passes.\n    runnable: yes\n"
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildEvidenceEntry(repoRoot, specRel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteCache(repoRoot, "unit", "web", CacheWrite{
+		Command:   "validate",
+		Unit:      "web",
+		Mode:      "full",
+		Result:    "fail",
+		Blocking:  true,
+		Target:    "candidate",
+		Standard:  fixtureStandard(t, repoRoot),
+		Timestamp: "2026-06-30T10:00:00Z",
+		Entries:   []FileEntry{*entry},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckValidate(repoRoot, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatalf("failure record must not be fresh")
+	}
+	if result.Category != CategoryBlocked {
+		t.Fatalf("failure record category = %s (%s), want blocked", result.Category, result.Reason)
+	}
+}
+
 func TestCheckValidateRejectsLegacyDepsCache(t *testing.T) {
 	repoRoot := t.TempDir()
 
@@ -443,7 +487,7 @@ func TestCheckValidateRejectsLegacyDepsCache(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	specHash, err := fileHash(specPath)
@@ -564,7 +608,7 @@ func TestCheckValidateDeltaBasis(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +701,7 @@ func TestCheckVerify(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -695,7 +739,7 @@ func TestCheckValidateMissingMode(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +773,7 @@ func TestCheckVerifyInvalidMode(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -770,7 +814,7 @@ func TestCheckVerifyNonBlockingFindings(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -811,7 +855,7 @@ func TestCheckVerifyFailResultRejected(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -859,7 +903,7 @@ func TestCheckVerifyFailRecordMissingBlocking(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -904,7 +948,7 @@ func TestCheckVerifyFailRecordConflictingBlocking(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +993,7 @@ func TestCheckVerifyInvalidBlockingValue(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1077,7 +1121,7 @@ func TestCheckAppendicesInCache_AllInCachePass(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1126,7 +1170,7 @@ func TestCheckAppendicesInCache_MissingAppendixFails(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1168,7 +1212,7 @@ func TestCheckAppendicesInCache_ExemptAppendixNotInCachePass(t *testing.T) {
 	os.MkdirAll(appendixDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1205,7 +1249,7 @@ func TestCheckAppendicesInCache_ValidateCacheNotPassFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1330,7 +1374,7 @@ func writeMergedVerifyCache(t *testing.T, repoRoot string) {
 	os.MkdirAll(candidateDir, 0755)
 	os.MkdirAll(srcDir, 0755)
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	srcPath := filepath.Join(srcDir, "handler.go")
@@ -1453,7 +1497,7 @@ func TestCheckVerifyMergedStaleAlignmentKey(t *testing.T) {
 	writeMergedVerifyCache(t, repoRoot)
 
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n// changed\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n// changed\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	result, err := CheckVerifyMerged(repoRoot, "test", "candidate", fixedChecks([]ExpectedCheck{
@@ -1515,7 +1559,7 @@ func TestCheckVerifyMergedNoPerCheckEvidenceFailsClosed(t *testing.T) {
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1640,7 +1684,7 @@ func TestCheckVerifyMergedLegacyCacheSkipsDerivation(t *testing.T) {
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+	if err := writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1734,7 +1778,7 @@ func TestCheckValidateMissingMainSpecFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1767,7 +1811,7 @@ func TestCheckValidateEmptyFilesListFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1797,7 +1841,7 @@ func TestCheckVerifyMissingMainSpecFails(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1908,7 +1952,7 @@ func TestCheckVerifyStable(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1994,7 +2038,7 @@ func TestCheckValidateStable(t *testing.T) {
 	os.MkdirAll(rulesStableDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	// The rule file is an external dependency of the stable content: when it
 	// changes, the validate@stable confirmation goes stale.
@@ -2038,7 +2082,7 @@ func TestCheckValidateStable_RuleChanged(t *testing.T) {
 	os.MkdirAll(rulesStableDir, 0755)
 
 	specPath := filepath.Join(stableDir, "unit_test.md")
-	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	writeCacheFixtureFile(t, specPath, []byte("---\nid: test\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	rulePath := filepath.Join(rulesStableDir, "g_rule_http.md")
 	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
@@ -2077,7 +2121,7 @@ func TestCheckRuleValidateStable(t *testing.T) {
 	// A consumer unit is an external dependency of the stable rule: when the
 	// consumer changes, the rule's validate@stable confirmation goes stale.
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
-	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
 	consumerHash, _ := fileHash(consumerPath)
@@ -2120,7 +2164,7 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
-	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
+	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
 	consumerHash, _ := fileHash(consumerPath)
@@ -2131,7 +2175,7 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The consumer changes (e.g. its rule_refs) -> the confirmation goes stale.
-	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nunit_refs: none\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
+	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
 
 	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
 	if err != nil {
@@ -2168,7 +2212,7 @@ func TestCheckVerifyAnyRecordedChangeStales(t *testing.T) {
 	os.MkdirAll(srcDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, specPath, []byte(specContent), 0644)
 
 	sharedPath := makeSharedFile(t, srcDir)
@@ -2218,7 +2262,7 @@ func TestCheckRejectsHashOnlyCache(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	specPath := filepath.Join(candidateDir, "unit_test.md")
-	specContent := "---\nid: test\nunit_refs: none\nrule_refs: none\n---\n"
+	specContent := "---\nid: test\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, specPath, []byte(specContent), 0644)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
@@ -2301,7 +2345,7 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 
 	// Self spec
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2312,7 +2356,7 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 
 	// Dependency unit (candidate layer)
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := writeCacheFixtureFile(t, depPath, []byte(depContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2350,7 +2394,7 @@ func TestGlobalRuleLogicalRefUsesStableOnly(t *testing.T) {
 	}
 
 	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: none\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	if err := writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -2417,7 +2461,7 @@ func TestGlobalRuleLogicalRefRejectsCandidateOnly(t *testing.T) {
 	}
 
 	selfPath := filepath.Join(candidateUnitDir, "unit_self.md")
-	if err := writeCacheFixtureFile(t, selfPath, []byte("---\nid: self\nunit_refs: none\nrule_refs: none\n---\n"), 0o644); err != nil {
+	if err := writeCacheFixtureFile(t, selfPath, []byte("---\nid: self\nrule_refs: none\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	candidateRulePath := filepath.Join(candidateRuleDir, "g_rule_draft.md")
@@ -2455,11 +2499,11 @@ func TestLogicalRefSurvivesPromote(t *testing.T) {
 
 	// Self spec and dependency unit, both candidate.
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: passes.\n    runnable: yes\n"
 	writeCacheFixtureFile(t, depPath, []byte(depContent), 0644)
 	depHash, err := fileHash(depPath)
 	if err != nil {
@@ -2496,12 +2540,12 @@ func TestPhysicalRefStalesAfterPromote(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n"
+	depContent := "---\nid: dep\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2535,7 +2579,7 @@ func TestLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2567,13 +2611,13 @@ func TestAppendixLogicalRefSurvivesPromote(t *testing.T) {
 
 	// Self spec.
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	// Dependency unit main spec + protocol appendix, both candidate.
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n"
+	depContent := "---\nid: dep\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2621,7 +2665,7 @@ func TestAppendixLogicalRefStalesAfterContentChange(t *testing.T) {
 	os.MkdirAll(filepath.Join(candidateDir, "appendix"), 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2655,7 +2699,7 @@ func TestAppendixLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	os.MkdirAll(filepath.Join(candidateDir, "appendix"), 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
@@ -2684,12 +2728,12 @@ func TestWholeFileFreshnessFlagsProseEdit(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 
 	selfPath := filepath.Join(candidateDir, "unit_self.md")
-	selfContent := "---\nid: self\nunit_refs: dep\nrule_refs: none\n---\n"
+	selfContent := "---\nid: self\nrule_refs: none\n---\n"
 	writeCacheFixtureFile(t, selfPath, []byte(selfContent), 0644)
 	selfHash, _ := fileHash(selfPath)
 
 	depPath := filepath.Join(candidateDir, "unit_dep.md")
-	depContent := "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nBackground prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	depContent := "---\nid: dep\nrule_refs: none\n---\n\n## Description\n\nBackground prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: dep.core\n    description: Core behavior.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	writeCacheFixtureFile(t, depPath, []byte(depContent), 0644)
 	depHash, _ := fileHash(depPath)
 
@@ -2730,7 +2774,7 @@ func writeSpecWithSections(t *testing.T, repoRoot, name, descBody string) string
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\n" + descBody + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\n" + descBody + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := writeCacheFixtureFile(t, path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2745,7 +2789,7 @@ func writeSpecWithThreeSections(t *testing.T, repoRoot, name string) string {
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n## Scope\n\nIn scope.\n"
 	if err := writeCacheFixtureFile(t, path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -3098,7 +3142,7 @@ func TestRewriteCachesToStablePromotedCachesPassStableChecks(t *testing.T) {
 	os.MkdirAll(filepath.Dir(candSpec), 0755)
 	os.MkdirAll(filepath.Dir(candAppendix), 0755)
 	os.MkdirAll(filepath.Dir(srcPath), 0755)
-	writeCacheFixtureFile(t, candSpec, []byte("---\nid: test\nunit_refs: none\nrule_refs: none\n---\n\n# Test\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: test.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"), 0644)
+	writeCacheFixtureFile(t, candSpec, []byte("---\nid: test\nrule_refs: none\n---\n\n# Test\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: test.core\n    description: Behavior.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"), 0644)
 	writeCacheFixtureFile(t, candAppendix, []byte("---\nunit: test\n---\n\n# Appendix\n"), 0644)
 	writeCacheFixtureFile(t, srcPath, []byte("package demo\n\nfunc Demo() int { return 1 }\n"), 0644)
 
@@ -3178,7 +3222,7 @@ func writeSpecWithTwoItems(t *testing.T, repoRoot, name string) string {
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: " + name + ".aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n\n  - id: " + name + ".aux\n    description: Aux.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := writeCacheFixtureFile(t, path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -3253,6 +3297,19 @@ func fixtureStandard(t *testing.T, repoRoot string) string {
 
 func writeCacheFixtureFile(t *testing.T, p string, data []byte, mode os.FileMode) error {
 	t.Helper()
+	// Unit gate caches carry the promise-pin format marker. Fixtures stay
+	// focused on the behavior under test; a cache with no dependencies writes
+	// an empty pin set.
+	if strings.Contains(filepath.ToSlash(p), "/validation/unit/") && strings.HasSuffix(p, "_result.md") {
+		text := string(data)
+		if strings.Contains(text, "command:") && !strings.Contains(text, "pin_format:") {
+			text = strings.Replace(text, "command:", "pin_format: promise-v1\ncommand:", 1)
+			if strings.Contains(text, "command: validate") && strings.Contains(text, "result: pass") && !strings.Contains(text, "promise_pins:") {
+				text = strings.Replace(text, "files:", "promise_pins: []\nfiles:", 1)
+			}
+			data = []byte(text)
+		}
+	}
 	if filepath.Base(p) != "verify_result.md" {
 		return os.WriteFile(p, data, mode)
 	}

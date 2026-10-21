@@ -325,7 +325,7 @@ Whether the implemented code structure forms an acceptable architecture for the 
 - **Assessment object**: The code under `implementation_surface` and `affects.files` — package structure, module boundaries, how responsibilities are organized, how components depend on each other, and how the structure matches the repository's established engineering patterns (layering, naming, error-handling conventions)
 - **P0/P1 findings (gate-level, judged from code structure and spec declarations alone)**:
   - Spec-recorded architectural intent (e.g., declared layering, module boundaries) is implemented in a structure that has drifted beyond recognition → P0/P1
-  - The unit reaches past the `unit_refs` boundary and reaches into a dependency unit's internal implementation → P1
+  - The unit reaches past the promise `depends_on` boundary and reaches into a dependency unit's internal implementation → P1
   - Internal implementation organization is severely disconnected from the unit's declared responsibility (e.g., a "config loading" unit's surface contains business logic) → P1
 - **P2 findings (advisory design-quality judgments)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
 - **P3 findings**: only objective, local, low-impact inconsistencies or hygiene defects that pass the P3 reportability gate below; architectural, abstraction, and extension-shape preferences are not P3 findings

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 func fixture(t *testing.T) (string, Record) {
@@ -102,6 +103,67 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 		t.Fatal("appended content escaped whole-file identity")
 	}
 }
+func TestStableBindingResolvesPromisePinsInStableScope(t *testing.T) {
+	root := t.TempDir()
+	writeProvider := func(layer, contract string) {
+		path := filepath.Join(root, "docs/specs/units", layer, "unit_auth.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\nid: auth\n---\n\n## Promises\n\npromises:\n" +
+			"  - id: auth.login_api\n    kind: opaque\n" +
+			"    opaque_reason: request_response was closest; no status codes are established.\n" +
+			"    summary: Login.\n    contract: {text: " + contract + "}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeProvider("stable", "stable login")
+	writeProvider("candidate", "candidate login")
+
+	stableData, err := os.ReadFile(filepath.Join(root, "docs/specs/units/stable/unit_auth.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	promises, issues := specvalidation.ParsePromises(string(stableData))
+	if len(issues) > 0 || len(promises) != 1 {
+		t.Fatalf("parse stable provider: %v %v", promises, issues)
+	}
+	fingerprint, err := specvalidation.PromiseFingerprint(promises[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A candidate-run record promoted into a stable confirmation: the record
+	// keeps the candidate-era Scope, while the stable binding must resolve the
+	// published stable provider.
+	r := Record{
+		Version:      RecordVersion,
+		Kind:         Code,
+		Subject:      "contracts.js",
+		Coverage:     []string{"item:web:web.session"},
+		Inputs:       []string{"contracts.js"},
+		Dependencies: []Dependency{{Promise: "auth.login_api", Fingerprint: fingerprint, Scope: specvalidation.PromiseScopeAll}},
+		Protocol:     MustProtocol(root, "verify", "unit"),
+		Verdict:      "ALIGNED",
+		Result:       json.RawMessage(`{"effective_status":{"item:web:web.session":"pass"}}`),
+		Report:       "aligned",
+		ReportDigest: Digest([]byte("aligned")),
+		SourceRun:    "20260101-000000-abcdef",
+	}
+	ref, err := Save(root, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protocol := MustProtocol(root, "verify", "unit")
+	if err := Check(root, ref, "stable", protocol); err != nil {
+		t.Fatalf("stable binding must resolve the published stable contract: %v", err)
+	}
+	if err := Check(root, ref, "candidate", protocol); err == nil {
+		t.Fatal("candidate binding must resolve the candidate contract")
+	}
+}
+
 func TestDamageCannotBeOverwritten(t *testing.T) {
 	root, r := fixture(t)
 	ref, err := Save(root, r)

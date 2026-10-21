@@ -7,7 +7,6 @@ import (
 
 const specWithItems = `---
 id: dep
-unit_refs: none
 rule_refs: none
 ---
 
@@ -87,7 +86,6 @@ func TestAcceptanceItemsRegionProseMentionNotMarker(t *testing.T) {
 	// not start the region — the region begins at the real marker line.
 	spec := `---
 id: dep
-unit_refs: none
 rule_refs: none
 ---
 
@@ -120,7 +118,6 @@ func TestAcceptanceItemsRegionProseMentionAtLineStartNotMarker(t *testing.T) {
 	// exactly `acceptance_item_set:` and nothing else.
 	spec := `---
 id: dep
-unit_refs: none
 rule_refs: none
 ---
 
@@ -158,8 +155,8 @@ func TestSectionRegionsSplit(t *testing.T) {
 	if regions[0].Heading != "" {
 		t.Fatalf("expected frontmatter region first, got heading %q", regions[0].Heading)
 	}
-	if regions[0].Start != 1 || regions[0].End != 8 {
-		t.Fatalf("expected frontmatter region 1-8, got %d-%d", regions[0].Start, regions[0].End)
+	if regions[0].Start != 1 || regions[0].End != 7 {
+		t.Fatalf("expected frontmatter region 1-7, got %d-%d", regions[0].Start, regions[0].End)
 	}
 	if regions[1].Heading != "Description" {
 		t.Fatalf("expected Description section, got %q", regions[1].Heading)
@@ -176,8 +173,8 @@ func TestSectionRegionsSplit(t *testing.T) {
 	if regions[3].Heading != "Dependencies" {
 		t.Fatalf("expected Dependencies section, got %q", regions[3].Heading)
 	}
-	if regions[3].Start != 25 || regions[3].End != 27 {
-		t.Fatalf("expected the Dependencies region 25-27 (the artificial trailing newline is not a line), got %d-%d", regions[3].Start, regions[3].End)
+	if regions[3].Start != 24 || regions[3].End != 26 {
+		t.Fatalf("expected the Dependencies region 24-26 (the artificial trailing newline is not a line), got %d-%d", regions[3].Start, regions[3].End)
 	}
 	if strings.HasSuffix(regions[3].Text, "\n") {
 		t.Fatalf("the final region must not include the artificial trailing newline, got %q", regions[3].Text)

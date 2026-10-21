@@ -14,6 +14,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -34,6 +35,7 @@ const (
 	gateStale   gateStatus = "STALE"
 	gateMissing gateStatus = "MISSING"
 	gateBlocked gateStatus = "BLOCKED"
+	gateInvalid gateStatus = "INVALID"
 	gateOK      gateStatus = "OK"
 )
 
@@ -119,6 +121,7 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 	fmt.Fprintln(stdout)
 
 	readyCount := 0
+	doneCount := 0
 	total := 0
 	// Rule-level notes are aggregated across units: a bound rule blocks every
 	// unit that binds it, so the summary states each rule fact once instead of
@@ -134,6 +137,14 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 		if err != nil {
 			return err
 		}
+		promiseGraph, err := specvalidation.LoadPromiseGraphScope(absRoot, specvalidation.PromiseScopeForLayer("candidate"))
+		if err != nil {
+			return err
+		}
+		stablePromiseGraph, err := specvalidation.LoadPromiseGraphScope(absRoot, specvalidation.PromiseScopeStable)
+		if err != nil {
+			return err
+		}
 		fmt.Fprintf(stdout, "UNITS (%d):\n", len(unitNames))
 		for _, name := range unitNames {
 			rulePrerequisites, err := promote.CheckUnitRulePrerequisites(absRoot, name)
@@ -141,7 +152,15 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 				return err
 			}
 			total++
-			line, ready := unitSummaryLine(derivation, absRoot, name, rulePrerequisites)
+			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "candidate", promiseGraph, stablePromiseGraph)
+			promiseErrText := ""
+			if promiseErr != nil {
+				promiseErrText = promiseErr.Error()
+			}
+			if promiseReport != nil && promiseReport.Done {
+				doneCount++
+			}
+			line, ready := unitSummaryLine(derivation, absRoot, name, rulePrerequisites, promiseReport, promiseErrText)
 			if ready {
 				readyCount++
 			}
@@ -178,6 +197,7 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 	}
 	writeBlockingRules(stdout, sortedPrerequisites(blockingRules))
 	writeGlobalRuleAdvisories(stdout, sortedPrerequisites(globalAdvisories))
+	fmt.Fprintf(stdout, "DONE: %d of %d unit(s)\n", doneCount, len(unitNames))
 	fmt.Fprintf(stdout, "READY FOR PROMOTE: %d of %d\n", readyCount, total)
 	return nil
 }
@@ -202,15 +222,29 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 		return nil
 	}
 
+	doneCount := 0
 	if len(unitNames) > 0 {
 		derivation, err := gaterun.NewDerivation(absRoot)
 		if err != nil {
 			return err
 		}
+		promiseGraph, err := specvalidation.LoadPromiseGraphScope(absRoot, specvalidation.PromiseScopeForLayer("stable"))
+		if err != nil {
+			return err
+		}
 		fmt.Fprintf(stdout, "STABLE UNITS (%d):\n", len(unitNames))
 		for _, name := range unitNames {
-			fmt.Fprintf(stdout, "  %s\n", stableUnitSummaryLine(derivation, absRoot, name))
+			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "stable", promiseGraph, promiseGraph)
+			promiseErrText := ""
+			if promiseErr != nil {
+				promiseErrText = promiseErr.Error()
+			}
+			if promiseReport != nil && promiseReport.Done {
+				doneCount++
+			}
+			fmt.Fprintf(stdout, "  %s\n", stableUnitSummaryLine(derivation, absRoot, name, promiseReport, promiseErrText))
 		}
+		fmt.Fprintf(stdout, "  DONE: %d of %d\n", doneCount, len(unitNames))
 		fmt.Fprintln(stdout)
 	}
 
@@ -231,11 +265,11 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 // drift column is the mechanical baseline comparison. A fresh verify cache
 // means the code was recently confirmed to still conform even when the
 // baseline surface differs.
-func stableUnitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string) string {
+func stableUnitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, promiseReport *promiseStateReport, promiseErr string) string {
 	vaStatus, _ := checkStableUnitGate(derivation, repoRoot, unitName, "validate")
 	vfStatus, _ := checkStableUnitGate(derivation, repoRoot, unitName, "verify")
-	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  drift: %-8s",
-		unitName, vaStatus, vfStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)))
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  drift: %-8s  done: %-9s",
+		unitName, vaStatus, vfStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)), promiseDoneLabel(promiseReport, promiseErr))
 }
 
 func stableRuleSummaryLine(repoRoot, ruleID string) string {
@@ -271,7 +305,7 @@ func writeStaleImpactAfterPromote(stdout io.Writer, absRoot, promotedUnit string
 		}
 		for _, gate := range []string{"validate", "verify"} {
 			status, reason := checkStableUnitGate(derivation, absRoot, name, gate)
-			if status != gateStale && status != gateBlocked {
+			if status != gateStale && status != gateBlocked && status != gateInvalid {
 				continue
 			}
 			lines = append(lines, fmt.Sprintf("  %s: %s %s — %s", name, gate, status, reason))
@@ -300,7 +334,7 @@ func stableDriftLabel(repoRoot, name string, result baseline.CheckResult) string
 	}
 }
 
-func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, rules promote.RulePrerequisites) (string, bool) {
+func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, rules promote.RulePrerequisites, promiseReport *promiseStateReport, promiseErr string) (string, bool) {
 
 	vStatus, _ := checkUnitGate(derivation, repoRoot, unitName, "validate")
 	vfStatus, _ := checkUnitGate(derivation, repoRoot, unitName, "verify")
@@ -310,9 +344,62 @@ func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, 
 	if len(rules.Blockers) > 0 {
 		ruleStatus = "BLOCKED"
 	}
-	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(aStatus) && len(rules.Blockers) == 0
-	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  appendix: %-4s  rules: %-7s  READY: %t",
-		unitName, vStatus, vfStatus, aStatus, ruleStatus, ready), ready
+	promiseReady, _ := promiseReadiness(promiseReport, promiseErr)
+	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(aStatus) && len(rules.Blockers) == 0 && promiseReady
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  appendix: %-4s  rules: %-7s  done: %-9s  READY: %t",
+		unitName, vStatus, vfStatus, aStatus, ruleStatus, promiseDoneLabel(promiseReport, promiseErr), ready), ready
+}
+
+// promiseReadiness reports whether the unit's promise contract is ready to
+// publish and, when not, the reason. It mirrors the promote precondition: a
+// recorded state, CLOSED closure, no malformed promise model, and every
+// pinned provider promise already published in the stable layer at the same
+// fingerprint. Layer-local closure alone is not enough: a candidate may be
+// DONE while it builds on another candidate.
+func promiseReadiness(report *promiseStateReport, errText string) (bool, string) {
+	if errText != "" {
+		return false, "promise model invalid: " + errText
+	}
+	if report == nil {
+		return false, "promise state unavailable"
+	}
+	if !report.StateRecorded {
+		return false, "promise state not recorded — run verify"
+	}
+	if report.Closure != "CLOSED" {
+		return false, "promise contract closure " + report.Closure
+	}
+	if len(report.PublicationIssues) > 0 {
+		return false, "provider promise graph: " + strings.Join(report.PublicationIssues, "; ")
+	}
+	for _, entry := range report.Publication {
+		if entry.Status == validationcache.PromiseFresh {
+			continue
+		}
+		reason := string(entry.Status)
+		if entry.Reason != "" {
+			reason += " — " + entry.Reason
+		}
+		return false, fmt.Sprintf("provider promise %s is %s — promote the provider first", entry.ID, reason)
+	}
+	return true, ""
+}
+
+func promiseDoneLabel(report *promiseStateReport, errText string) string {
+	if errText != "" {
+		return "INVALID"
+	}
+	if report == nil {
+		return "n/a"
+	}
+	switch {
+	case report.Done:
+		return "YES"
+	case report.Closure == "REOPENED":
+		return "REOPENED"
+	default:
+		return "NO"
+	}
 }
 
 func ruleSummaryLine(repoRoot, ruleID string) (string, bool) {
@@ -394,9 +481,22 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		"verify":   vfStatus,
 	})
 
+	promiseReport, promiseErr := computePromiseState(absRoot, unitName, "candidate")
+	promiseErrText := ""
+	if promiseErr != nil {
+		promiseErrText = promiseErr.Error()
+		fmt.Fprintf(stdout, "\npromise INVALID — %s\n", promiseErrText)
+		fmt.Fprintln(stdout, "done    NO — promise model is invalid")
+	} else {
+		fmt.Fprintln(stdout)
+		writePromiseStateDetail(stdout, promiseReport)
+	}
+	promiseReady, promiseReason := promiseReadiness(promiseReport, promiseErrText)
 	fmt.Fprintln(stdout)
-	if nonFresh == 0 && len(rulePrerequisites.Blockers) == 0 {
+	if nonFresh == 0 && len(rulePrerequisites.Blockers) == 0 && promiseReady {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: yes\n")
+	} else if !promiseReady {
+		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — %d gate(s) need attention; %d rule prerequisite(s) blocked; %s\n", nonFresh, len(rulePrerequisites.Blockers), promiseReason)
 	} else {
 		fmt.Fprintf(stdout, "READY FOR PROMOTE: no — %d gate(s) need attention; %d rule prerequisite(s) blocked\n", nonFresh, len(rulePrerequisites.Blockers))
 	}
@@ -439,6 +539,8 @@ func writeChangeReportDetail(stdout io.Writer, report *validationcache.ChangeRep
 			}
 		case "removed":
 			fmt.Fprintf(stdout, "  %s: removed\n", entry.Path)
+		case "promise":
+			fmt.Fprintf(stdout, "  promise %s: %s (%s)\n", entry.Promise, entry.Reason, entry.Path)
 		case "inconsistent":
 			fmt.Fprintf(stdout, "  %s: changed — the recorded evidence contradicts itself (hash and chunk sequence disagree); run the full gate\n", entry.Path)
 		}
@@ -478,6 +580,15 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
+
+	promiseReport, promiseErr := computePromiseState(absRoot, unitName, "stable")
+	if promiseErr != nil {
+		fmt.Fprintf(stdout, "promise INVALID — %s\n", promiseErr)
+		fmt.Fprintln(stdout, "done    NO — promise model is invalid")
+	} else {
+		writePromiseStateDetail(stdout, promiseReport)
+	}
+	fmt.Fprintln(stdout)
 
 	result := baseline.CheckUnitBaseline(absRoot, unitName)
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "drift", result.Status, result.Details)
@@ -716,6 +827,8 @@ func classifyGate(result validationcache.CheckResult) gateStatus {
 		return gateBlocked
 	case validationcache.CategoryStale:
 		return gateStale
+	case validationcache.CategoryInvalid:
+		return gateInvalid
 	case validationcache.CategoryFresh:
 		return gateFresh
 	default:
@@ -745,6 +858,8 @@ func gateAdvice(command string, status gateStatus, targetName string) string {
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateBlocked:
 		return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
+	case gateInvalid:
+		return fmt.Sprintf("-> required: %s@%s (full run — the cache predates promise pinning; delta/repair cannot use it)", command, targetName)
 	default:
 		return ""
 	}

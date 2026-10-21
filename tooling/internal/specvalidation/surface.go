@@ -18,9 +18,8 @@ const SurfacePending = "<pending>"
 // specDocumentReason is the shared reject reason for implementation_surface
 // and affects.files values that name a spec document. Both fields declare
 // implementation code surfaces, and a spec document is a reference object, not
-// code: it is referenced through unit_refs, affects.dependencies,
-// affects.evidence_files, or affects.appendices instead
-// (framework/spec_writing_guide.md §7, §12).
+// code: it is referenced through affects.evidence_files or affects.appendices
+// instead (framework/spec_writing_guide.md §7, §12).
 const specDocumentReason = "names a spec document — this field takes an implementation code surface; a spec document is a reference object, not code (framework/spec_writing_guide.md §7)"
 
 // specDocumentProblem returns the field-role problem for a code-surface field

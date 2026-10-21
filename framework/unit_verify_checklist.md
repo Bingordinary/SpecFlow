@@ -14,6 +14,16 @@ The **`alignment` lens runs in two session kinds**:
 
 The unit-wide work is not repeated per item: one scan covers the unit, and the item sessions judge their own items. `framework/verification_scope.md` §Coverage Model owns the key model and the session split.
 
+### Promise-model units
+
+Every unit has `## Promises`; `gate-plan` runs the promise shape, schema,
+coverage, dependency, and graph checks before any run state is written. An
+invalid promise model — a unit without `## Promises` included — rejects the plan. Item sessions verify the item's
+behavior and evidence; they do not re-verify provider code. A passing verify
+finalize records `promise_state_<layer>.yaml`, which `fresh` uses for the
+`done:` column and the global `DONE` count. See
+`framework/core/promise_model.md`.
+
 ### Run Orientation and Session Plumbing
 
 The trigger route in `framework/concepts.md` loads this file at verify time, not proactively. The judge of every key is an independent read-only subagent; the tooling derives the run's reviewer units from the uncovered coverage set — one per report kind and lens (one per reviewed file for verify quality) — and the main agent joins the units of one lens and kind into a session, splitting a session's key set only when a session declares it exceeds that session's capacity, generating each session's mission with `gate-mission` and recording each report with `gate-submit` (see `framework/verification_scope.md` §Coverage model → §Session capacity).
@@ -142,7 +152,7 @@ Whether the implemented code structure forms an acceptable architecture for the 
 - **Assessment object**: The code under `implementation_surface` and `affects.files` — package structure, module boundaries, how responsibilities are organized, how components depend on each other, and how the structure matches the repository's established engineering patterns (layering, naming, error-handling conventions)
 - **P0/P1 findings (gate-level, judged from code structure and spec declarations alone)**:
   - Spec-recorded architectural intent (e.g., declared layering, module boundaries) is implemented in a structure that has drifted beyond recognition → P0/P1
-  - The unit reaches past the `unit_refs` boundary and reaches into a dependency unit's internal implementation → P1
+  - The unit reaches past the promise `depends_on` boundary and reaches into a dependency unit's internal implementation → P1
   - Internal implementation organization is severely disconnected from the unit's declared responsibility (e.g., a "config loading" unit's surface contains business logic) → P1
 - **P2 findings (advisory design-quality judgments)**: boundaries cut less naturally than the behavior domains suggest, abstraction levels slightly off, extension landing points less explicit than they could be
 - **P3 findings**: only objective, local, low-impact inconsistencies or hygiene defects that pass the P3 reportability gate below; architectural, abstraction, and extension-shape preferences are not P3 findings
@@ -223,7 +233,7 @@ The steps are split by session: **Step 1** and **Step 5** run in the unit-level 
 
 ## Prerequisite — Read all unit files
 
-The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union — appendix content (API contracts, data types, error codes, state machines) is part of the spec and must be verified against code.
+The unit's complete spec is the union of the main spec and all non-exempt appendix files. All verify steps that follow operate on this union. The `## Promises` block is the formal contract; appendix content is explanatory support truth — examples, detail, and evidence — not a second contract. Appendix claims are verified as they support a promise, and normative contract content that appears only in an appendix is a validate finding (Check 5a step 6), not a verify contract.
 
 ### Read Procedure
 
@@ -431,7 +441,7 @@ The `Target:` line from earlier formats is now the `{layer}` field in the unifie
 
 **Execution steps:**
 
-1. Read the full spec body AND all non-exempt appendix files (main flow, protocols, data contracts, error handling, state machines, API definitions from appendices)
+1. Read the full spec body AND all non-exempt appendix files (the design narrative, the `## Promises` contract block, and appendix examples/supporting detail)
 2. Extract all statically verifiable structural declarations from both main spec and appendix content:
 
 | Declaration type | What to extract | How to verify in code | Semantic role | Match semantics | Severity if missing |
@@ -499,13 +509,13 @@ IF a complete declaration exists in code BUT has no correspondence
 
 **Session:** item sessions (`item:<unit>:<item>`).
 
-**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. For appendix content, cross-reference technical claims (API contracts, data type definitions, configuration keys) against code — appendix contract content always has a corresponding acceptance item (validate Check 5a enforces this, see `framework/spec_writing_guide.md` §4), so the item set is the complete contract surface.
+**Purpose:** For each acceptance item, verify that the code structurally satisfies the pass_condition using static analysis. This is not about running tests — it is about confirming the code contains the structures, functions, and patterns needed to satisfy the condition. The `## Promises` block is the complete formal contract surface; Step 1 verifies its declarations against code. Appendix content is support truth for a promise, not a second contract: normative contract content belongs to a promise (validate Check 5a step 6 and Check 5h enforce this).
 
 **Why this is achievable:** A pass_condition like "Returns HTTP 201 with id and created_at" can be verified by checking the handler code returns 201 status and includes those fields in the response struct. The subagent cannot verify the code *works correctly*, but it can verify the code *is structured correctly*.
 
 **Execution steps:**
 
-For each acceptance item in the target spec (appendix content is read as the item's context, not as an independent scan object — validate Check 5a enforces that every appendix contract has a carrying acceptance item, so the item set is the complete contract surface and appendix claims are verified through the items that carry them):
+For each acceptance item in the target spec (appendix content is read as the item's context, not as an independent scan object — validate Check 5a requires normative appendix contract content to be carried by a promise, so the promise block is the complete contract surface and appendix claims are verified through the promise and the items that prove it):
 
 1. Read `implementation_surface`, `verification_surface`, and `affects.files` to locate the implementation
 2. Parse the `pass_condition` and extract specific verifiable assertions:
@@ -643,11 +653,7 @@ An item may cite read-only evidence files — typically tests or code owned by a
 - If the rule is not found in the implementation → flag (possible undeclared scope)
 ```
 
-3. For each acceptance item with `affects.dependencies`:
-```
-- Search for each declared dependency in the implementation
-- Is the dependency used? If not → flag
-```
+3. For the promise this acceptance item verifies (its `promise` value): for each entry in that promise's `depends_on`, search the implementation for use of the provider contract; if the declared dependency is unused, flag it. A `non_promise` item has no promise dependency and skips this step.
 
 4. Cross-reference: compare the declared implementation files (`implementation_surface` expansion plus `affects.files`) against the set of files that contain actual implementation related to this acceptance item:
 ```
@@ -926,7 +932,7 @@ The sub-agent follows this reasoning chain. Each step must be answered explicitl
    - Do they disagree on the goal itself?
    - Is one side clearly wrong (typo, dead code, outdated reference)?
    - Does one side handle edge cases the other misses?
-   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its formal behavior carriers (acceptance items or protocol appendices)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §14). File association check: does the declared implementation participate in this item's behavior? Shared files are permitted; retain the unique source for behavior and shared agreements.
+   - Truth ownership / shadow spec check: Does the mismatch involve fields, parameters, or internal structures of a collaborating unit? If so, does the collaborating unit export them in its promises (`## Promises` — the formal behavior carrier; acceptance items and appendices are not the contract)? If the spec is enumerating private/volatile internals of another unit without an exported contract anchor, the spec is a shadow specification (see `framework/spec_writing_guide.md` §14). File association check: does the declared implementation participate in this item's behavior? Shared files are permitted; retain the unique source for behavior and shared agreements.
 
 4. Root cause analysis (choose the best fit):
    - Code is incomplete — spec intent is clear, code hasn't caught up
@@ -1230,7 +1236,7 @@ After the run's sessions complete, determine cache action based on the highest s
 ==ATOM_BEGIN:cache_evidence_path_forms==
 **Recording cache evidence — tool-generated:** gate cache entries are never agent-declared. `gate-finalize` records one entry per file of the run's input surface (the union of every coverage key's read refs and the cross-synthesis surface), each carrying the whole-file `hash` and the ordered content-defined chunk sequence of the current bytes, plus a per-check marker (check key + lens; failure status on failure records). Reports carry no `Dependency scope` lines; there is nothing for a reviewer to declare and nothing to validate against `read_refs`.
 
-Spec objects that are resolved by name (a dependency unit's main spec or appendix, a rule file) are recorded as **logical references** instead of physical paths — `unit:{name}` for a unit main spec, `unit:{name}:appendix:{file}` for a unit protocol appendix (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file. The run's own target files (the unit's own main spec and appendices; for a rule target, the candidate rule file and its stable sibling) and code files keep physical paths. A logical reference resolves at freshness time to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose recorded content is unchanged (see `framework/validation_cache.md` §Logical References).
+Spec objects that are resolved by name (a dependency unit's main spec or appendix, a rule file) are recorded as **logical references** instead of physical paths — `unit:{name}` for a unit main spec, `unit:{name}:appendix:{file}` for a unit appendix (the full appendix file base name without `.md`, e.g. `unit:auth:appendix:unit_auth_account_token_claims`), `rule:{id}` for a rule file. The run's own target files (the unit's own main spec and appendices; for a rule target, the candidate rule file and its stable sibling) and code files keep physical paths. A logical reference resolves at freshness time to the current-layer file (candidate first, stable fallback), so promoting the referenced unit or rule does not stale a cache whose recorded content is unchanged (see `framework/validation_cache.md` §Logical References).
 ==ATOM_END:cache_evidence_path_forms==
 
 - **If all ALIGNED:** the coverage run writes the verify cache per `framework/validation_cache.md` format:

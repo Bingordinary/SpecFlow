@@ -97,7 +97,7 @@ If a command is missing a required output, has undefined behavior for failure ca
 
 Each command must have clearly defined boundaries. The review must verify:
 
-1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and related units. Does NOT output process directives or "next step" instructions.
+1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and the promise model (each promise and its `depends_on`). Does NOT output process directives or "next step" instructions.
 
 2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
@@ -109,7 +109,7 @@ Each command must have clearly defined boundaries. The review must verify:
    c. Removal: the agent chooses explicit objects; `framework/removal_workflow.md` owns two-layer integrity checks and transactional cleanup without gates.
    d. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
-   The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.dependencies`, `affects.evidence_files`, and `affects.appendices` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
+   The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.evidence_files` and `affects.appendices` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
 
 Each command must have:
 1. a defined input (what parameters it accepts)
@@ -393,7 +393,7 @@ A recorded conclusion — a verify judgment record or a validate cache — is re
 
 Protocol fingerprint integrity requires all of the following:
 
-1. **Document set** — each gate's standard is the framework documents whose judging text that gate's reviewer reads, and the sets are distinct. verify (unit) reads `framework/unit_verify_checklist.md`, `framework/shared_judgments.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, and `framework/spec_writing_guide.md`; unit `validate` reads `framework/unit_validate_checklist.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, and `framework/spec_writing_guide.md`; rule `validate` reads `framework/rule_validate_checklist.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, and `framework/spec_writing_guide.md`. `framework/spec_writing_guide.md` belongs to every set because every gate that judges a spec judges it by that guide — Check 10 applies its §9 Reader Contract, Check 2 its §9 decision closure, Check 5 its §15.2 external-visibility boundary and §Acceptance Item Granularity, Check 7 its §14 Truth Ownership and §15.2 cross-unit, and verify Step 2 and Step 7 apply its §4 and §14. A document appears only in the standards whose reviewer reads it, so changing one checklist invalidates only the conclusions judged by it. `framework/validation_cache.md` is deliberately outside every set: `framework/verification_scope.md` §Sub-agent Prompt Assembly states that the mission never assembles a prompt from it. When a document that carries judging text sits outside the set, the review must confirm the omission is deliberate, and must confirm it from the tooling rather than assume it. A record-producing gate whose own checklist is outside the set is such a case and must be reported, not assumed correct.
+1. **Document set** — each gate's standard is the framework documents whose judging text that gate's reviewer reads, and the sets are distinct. verify (unit) reads `framework/unit_verify_checklist.md`, `framework/shared_judgments.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, and `framework/spec_writing_guide.md`; unit `validate` reads `framework/unit_validate_checklist.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, `framework/spec_writing_guide.md`, and `framework/core/promise_model.md` (Check 5b applies its contract shapes and Check 5h its §Granularity, so it is a judging document, not background); rule `validate` reads `framework/rule_validate_checklist.md`, `framework/verification_scope.md`, `framework/severity_policy.md`, and `framework/spec_writing_guide.md`. `framework/spec_writing_guide.md` belongs to every set because every gate that judges a spec judges it by that guide — Check 10 applies its §9 Reader Contract, Check 2 its §9 decision closure, Check 5 its §15.2 external-visibility boundary and §Acceptance Item Granularity, Check 7 its §14 Truth Ownership and §15.2 cross-unit, and verify Step 2 and Step 7 apply its §4 and §14. A document appears only in the standards whose reviewer reads it, so changing one checklist invalidates only the conclusions judged by it. `framework/validation_cache.md` is deliberately outside every set: `framework/verification_scope.md` §Sub-agent Prompt Assembly states that the mission never assembles a prompt from it. When a document that carries judging text sits outside the set, the review must confirm the omission is deliberate, and must confirm it from the tooling rather than assume it. A record-producing gate whose own checklist is outside the set is such a case and must be reported, not assumed correct.
 
 2. **Declared sections resolve** — every section named in the mechanism list must exist exactly once in its document. The tooling must fail loudly when a named section does not resolve. Treating an unresolved name as a no-op silently widens the fingerprint, which is the failure direction to avoid.
 
@@ -463,7 +463,7 @@ The default scope covers governance documents and tooling source. Deployable art
 
 Default scope must explicitly cover:
 
-1. the concept and command rule set — at minimum `concepts.md`, `commands.md`, and `spec_writing_guide.md`
+1. the concept and command rule set — at minimum `concepts.md`, `commands.md`, `spec_writing_guide.md`, and `core/promise_model.md`
 2. the rule-governance rule set — at minimum `rule_validate_checklist.md` and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected bootstrap), the command packages it routes to (`commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`), rule-governance files, and review policy files
@@ -497,8 +497,10 @@ Local slices review one owner area for internal closure, side effects, contract 
    - verifies the four commands (next, validate, verify, promote) have defined input, output, and failure behavior per Section 2.4
    - verifies project-instance migration routing and guidance entry behavior
 4. `truth_and_implementation_gates`
-   - reviews `spec_writing_guide.md` and `concepts.md`
-   - verifies truth ownership and candidate entry rules
+   - reviews `spec_writing_guide.md`, `core/promise_model.md`, and `concepts.md`
+   - verifies truth ownership, the deployed three-section promise format, promise/acceptance-item separation, and candidate entry rules
+   - verifies the promise block is the formal behavior carrier across the guide and both checklists, and that promise `depends_on` participates in dependency cycles/order, promote provider-stability checks, and removal reference integrity
+   - verifies units without `## Promises` are rejected by validate, gate-plan, and promote, and that the candidate-round entry (`fork` plus `validate promise-model`) remains operable
 5. `shared_governance`
    - reviews `rule_validate_checklist.md`, `rule_promote_workflow.md`
    - verifies that rule validate/promote checks cover design quality and post-promote cleanup

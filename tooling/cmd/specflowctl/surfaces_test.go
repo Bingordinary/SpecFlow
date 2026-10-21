@@ -17,7 +17,7 @@ func writeSurfacesUnitSpec(t *testing.T, repoRoot, unitName, impl string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: " + unitName + "\nunit_refs: none\nrule_refs: none\n---\n\n" +
+	content := "---\nid: " + unitName + "\nrule_refs: none\n---\n\n" +
 		"acceptance_item_set:\n" +
 		"  - id: item_1\n" +
 		"    description: test\n" +

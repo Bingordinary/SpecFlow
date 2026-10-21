@@ -15,8 +15,6 @@ func TestUnitFrontmatterValidationAndPublication(t *testing.T) {
 	}{
 		{"missing id", "id: demo\n", "", "id"},
 		{"empty id", "id: demo\n", "id:\n", "id"},
-		{"missing unit refs", "unit_refs: none\n", "", "unit_refs"},
-		{"empty unit refs", "unit_refs: none\n", "unit_refs:\n", "unit_refs"},
 		{"missing rule refs", "rule_refs: none\n", "", "rule_refs"},
 		{"empty rule refs", "rule_refs: none\n", "rule_refs:\n", "rule_refs"},
 		{"wrong id", "id: demo\n", "id: another\n", "does not match"},

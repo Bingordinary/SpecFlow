@@ -144,6 +144,7 @@ func CollectDefaultSpecFlowDesignScope(repoRoot string) (SpecFlowScope, error) {
 		scope.FrameworkPath("agent_suggestion_rules.md"),
 		scope.FrameworkPath("operations/operation_scope.md"),
 		scope.FrameworkPath("core/object_model.md"),
+		scope.FrameworkPath("core/promise_model.md"),
 		scope.FrameworkPath("operations/update.md"),
 		scope.FrameworkPath("spec_writing_guide.md"),
 		scope.FrameworkPath("governance/impact_sync.md"),

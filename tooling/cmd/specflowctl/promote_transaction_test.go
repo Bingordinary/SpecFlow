@@ -166,7 +166,7 @@ func TestPromoteTransactionFailureAndRetry(t *testing.T) {
 					appendix := cleanupDir + "/unit_publication_extra.md"
 					grWriteFile(t, root, appendix, "---\nunit: publication\n---\nNew appendix.\n")
 					writePublicationUnit(t, root, name, "none", []string{appendix})
-					grWriteFile(t, root, stable, "old accepted main\n")
+					grWriteFile(t, root, stable, "---\nid: publication\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: publication.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: publication.core\n    promise: publication.core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n")
 					grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_publication_extra.md", "---\nunit: publication\n---\nold accepted appendix\n")
 				} else {
 					name = "b_rule_publication"

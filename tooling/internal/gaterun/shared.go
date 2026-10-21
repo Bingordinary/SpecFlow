@@ -627,6 +627,32 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		deps = append(deps, d)
 		return nil
 	}
+	// addPromisePins records the provider contracts this conclusion read as
+	// promise fingerprints, not whole files. A provider narrative, acceptance
+	// item, test, or appendix change is not a contract change and must not
+	// invalidate the consumer; only a contract change reopens it. The caller
+	// supplies the exact dependency set: the unit-level scan uses every
+	// promise edge, while an item pins only the promise it verifies.
+	addPromisePins := func(ids []string) error {
+		scope := specvalidation.PromiseScopeForLayer(run.Target)
+		current, issues := specvalidation.PromiseFingerprintsForScope(root, scope)
+		if len(issues) > 0 {
+			return fmt.Errorf("promise graph: %s", strings.Join(issues, "; "))
+		}
+		for _, id := range ids {
+			fingerprint, ok := current[id]
+			if !ok {
+				return fmt.Errorf("promise dependency %q is unresolved in %s scope", id, scope)
+			}
+			deps = append(deps, judgments.Dependency{
+				Path:        providerSpecRel(root, run.Target, specvalidation.PromiseProvider(id)),
+				Promise:     id,
+				Fingerprint: fingerprint,
+				Scope:       scope,
+			})
+		}
+		return nil
+	}
 	switch ck.Kind {
 	case SessionKindCode:
 		// A public record's invalidation surface is the conclusion's own
@@ -664,6 +690,13 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 			if err := addWholeFile(p); err != nil {
 				return judgments.Reference{}, err
 			}
+		}
+		// The promise this item verifies is its only contract dependency
+		// channel. Pin the providers that promise depends on — not every
+		// provider the unit uses — so an unrelated provider contract change
+		// does not reopen this item.
+		if err := addPromisePins(specvalidation.PromiseDependenciesForItem(text, ck.Item)); err != nil {
+			return judgments.Reference{}, err
 		}
 	case SessionKindDesign:
 		// A design judgment reviews the named file (pinned whole-file) against
@@ -714,6 +747,15 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		}
 		for _, appendix := range appendices {
 			if err := addWholeFile(appendix.Path); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+		if ck.Kind == SessionKindUnit {
+			content, err := mainSpecText()
+			if err != nil {
+				return judgments.Reference{}, err
+			}
+			if err := addPromisePins(specvalidation.PromiseDependencyIDs(content)); err != nil {
 				return judgments.Reference{}, err
 			}
 		}

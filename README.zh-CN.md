@@ -62,10 +62,13 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | **candidate** | 正在编辑的 spec（`docs/specs/units/candidate/`） |
 | **stable** | 已通过的真相（`docs/specs/units/stable/`）——从不直接编辑 |
 | **unit** | 一块独立可治理的工程责任 |
+| **promise** | unit 对外提供的稳定契约；消费方依赖 promise，而不是文件。见 `framework/core/promise_model.md` |
 | **rule** | 跨 unit 复用的正式共享约束。全局规则（`g_`）作用于整个仓库；绑定规则（`b_`）只作用于通过 `rule_refs` 引用它的 unit |
 | **promote** | 用户确认后执行的稳定层变更；执行前检查目标所需的门控 |
 
 **文件存在即状态。** candidate spec 存在 = 在编辑。不存在 = 没在改。
+
+一份 unit spec 有三个章节：**Design Narrative → Promises → Acceptance Items**。当 promise state 已记录、promise 被覆盖并完成 pin、validate/verify 证据都 fresh 时，unit 才算 done；`fresh --scope stable` 报告全局 done 状态。
 
 ## 命令 & 工作流程
 
@@ -78,6 +81,7 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | `validate@{target}` | 检查 unit 或 rule 的设计质量；只改变门控缓存，不改 spec 真相 |
 | `verify@{unit}` | 检查 unit 的实现是否符合 spec（alignment 视角），并做代码质量审查（quality 视角）；P0/P1 会阻止 promote |
 | `promote@{target}` | 确认用户意图并检查已有的适用门控结果，然后把 candidate 变成 stable |
+| `fresh@{scope}` | 只读的就绪与完成报告：门控 freshness、promise closure、全局 `DONE` 数量 |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
 | `spec_flow_version` | 检查本地 specFlow 版本并对比远程最新版本，报告项目是否最新 |
 

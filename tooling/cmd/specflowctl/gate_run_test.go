@@ -31,24 +31,40 @@ func grWriteSpec(t *testing.T, repoRoot, name string) string {
 	return grWriteSpecWithRefs(t, repoRoot, name, "none", "none")
 }
 
-// grWriteSpecWithRefs writes a candidate unit spec with the given
-// unit_refs / rule_refs.
-func grWriteSpecWithRefs(t *testing.T, repoRoot, name, unitRefs, ruleRefs string) string {
+// grWriteSpecWithRefs writes a candidate unit spec whose promise depends on
+// the given provider units, with the given rule_refs.
+func grWriteSpecWithRefs(t *testing.T, repoRoot, name, providerUnits, ruleRefs string) string {
 	t.Helper()
-	return grWriteSpecItems(t, repoRoot, name, unitRefs, ruleRefs, []string{name + ".core"})
+	return grWriteSpecItems(t, repoRoot, name, providerUnits, ruleRefs, []string{name + ".core"})
 }
 
 // grWriteSpecItems writes a candidate unit spec with the given acceptance
 // item ids (each with implementation_surface src).
-func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, items []string) string {
+func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs string, items []string) string {
 	t.Helper()
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
 	var b strings.Builder
-	fmt.Fprintf(&b, "---\nid: %s\nunit_refs: %s\nrule_refs: %s\n---\n\n# %s\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n", name, unitRefs, ruleRefs, name)
+	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}", name)
+	if len(items) == 0 {
+		promiseBlock = "promises: []"
+	}
+	if providerUnits != "" && !strings.EqualFold(providerUnits, "none") {
+		var ids []string
+		for _, unit := range strings.Split(providerUnits, ",") {
+			unit = strings.Trim(strings.TrimSpace(unit), "[]")
+			if unit != "" {
+				ids = append(ids, unit+".core")
+			}
+		}
+		if len(ids) > 0 {
+			promiseBlock += "\n    depends_on: [" + strings.Join(ids, ", ") + "]"
+		}
+	}
+	fmt.Fprintf(&b, "---\nid: %s\nrule_refs: %s\n---\n\n# %s\n\n## Design Narrative\n\nProse.\n\n## Promises\n\n%s\n\n## Acceptance Items\n\nacceptance_item_set:\n", name, ruleRefs, name, promiseBlock)
 	for _, item := range items {
-		fmt.Fprintf(&b, "  - id: %s\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item)
+		fmt.Fprintf(&b, "  - id: %s\n    promise: %s.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item, name)
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
 		t.Fatal(err)
@@ -61,8 +77,11 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, unitRefs, ruleRefs string, i
 // content).
 func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) string {
 	t.Helper()
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
-		"  - id: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n" +
+		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
 }
 
@@ -790,7 +809,7 @@ func grSubmitClarity(t *testing.T, repoRoot, runID, specPath string) {
 func grSubmitValidateSessions(t *testing.T, repoRoot, runID, specPath string, extraScopes ...string) {
 	t.Helper()
 	desc := specPath + ": Description"
-	accept := specPath + ": Testability / Acceptance Criteria"
+	accept := specPath + ": Acceptance Items"
 	front := specPath + ": frontmatter"
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": append([]string{front, desc}, extraScopes...),
@@ -819,7 +838,7 @@ func grSubmitPlannedValidateSessions(t *testing.T, repoRoot, runID, specPath str
 	t.Helper()
 	run := mustLoadRun(t, repoRoot, runID)
 	desc := specPath + ": Description"
-	accept := specPath + ": Testability / Acceptance Criteria"
+	accept := specPath + ": Acceptance Items"
 	front := specPath + ": frontmatter"
 	reports := map[string]string{
 		"structural": grValidateReport([]string{"1", "3", "6"}, map[string][]string{
@@ -854,7 +873,7 @@ func grSubmitPlannedValidateSessions(t *testing.T, repoRoot, runID, specPath str
 // grVerifyItemReport builds a verify item session report with an ALIGNED
 // verdict and spec + code scope lines.
 func grVerifyItemReport(item, specPath, codeFile string) string {
-	return fmt.Sprintf("- %s: ALIGNED — %s:1\n  evidence: %s:1 implements the declared behavior\n  deterministic: true\n  Part A: No concerns\n  Part B: skipped — no test files in this fixture\n\n%s: %s: Testability / Acceptance Criteria\n%s: %s: all\n", item, codeFile, codeFile, item, specPath, item, codeFile)
+	return fmt.Sprintf("- %s: ALIGNED — %s:1\n  evidence: %s:1 implements the declared behavior\n  deterministic: true\n  Part A: No concerns\n  Part B: skipped — no test files in this fixture\n\n%s: %s: Acceptance Items\n%s: %s: all\n", item, codeFile, codeFile, item, specPath, item, codeFile)
 }
 
 func grVerifyItemBody(item, verdict, evidence string) string {
@@ -1001,14 +1020,14 @@ func TestValidateClarityGroupIsNormalCheck(t *testing.T) {
 func TestGateMissionStructuralContextIncludesUnresolvedLogicalReference(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
-	grWriteSpecWithRefs(t, repoRoot, "auth", "missing", "none")
+	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_missing")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	structural := grRunSpec(t, repoRoot, runID, "structural")
-	if !grContainsString(structural.ReadRefs, "unit:missing") {
-		t.Fatalf("structural session must retain the unresolved Check 1 reference, got %+v", structural)
+	if !grContainsString(structural.ReadRefs, "rule:b_rule_missing") {
+		t.Fatalf("structural session must retain the unresolved Check 4 reference, got %+v", structural)
 	}
-	if design := grRunSpec(t, repoRoot, runID, "design"); grContainsString(design.ReadRefs, "unit:missing") {
+	if design := grRunSpec(t, repoRoot, runID, "design"); grContainsString(design.ReadRefs, "rule:b_rule_missing") {
 		t.Fatalf("design session must not receive the unrelated logical reference, got %+v", design)
 	}
 
@@ -1016,7 +1035,7 @@ func TestGateMissionStructuralContextIncludesUnresolvedLogicalReference(t *testi
 	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", "structural"}, &stdout, &stderr); err != nil {
 		t.Fatalf("gate-mission failed: %v (stderr=%s)", err, strings.TrimSpace(stderr.String()))
 	}
-	if !strings.Contains(stdout.String(), "  - unit:missing\n") {
+	if !strings.Contains(stdout.String(), "  - rule:b_rule_missing\n") {
 		t.Fatalf("structural execution context must expose the unresolved reference, got:\n%s", stdout.String())
 	}
 }
@@ -1337,18 +1356,18 @@ func TestGateRunLogicalReference(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_self.md"
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Testability / Acceptance Criteria"},
+		"5": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
-		"7": {"unit:auth: Testability / Acceptance Criteria"},
+		"7": {"unit:auth: Acceptance Items"},
 		"8": {main + ": Description"},
 	}))
 	grSubmitClarity(t, repoRoot, runID, main)
@@ -1391,15 +1410,15 @@ func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 	main := filepath.ToSlash(strings.TrimPrefix(mainPath, repoRoot+string(filepath.Separator)))
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Testability / Acceptance Criteria"},
+		"5": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": frontmatter"},
@@ -1488,7 +1507,7 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 	for c := 1; c <= 6; c++ {
 		scope, decl := rulePath, "Constraint"
 		if c == 4 {
-			scope, decl = "unit:auth", "Testability / Acceptance Criteria"
+			scope, decl = "unit:auth", "Acceptance Items"
 		}
 		fmt.Fprintf(&b, "check-%d: %s: %s\n", c, scope, decl)
 	}
@@ -1718,15 +1737,15 @@ func TestGateVerifyMismatchRequiresStructuredType(t *testing.T) {
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	noType := grVerifyItemBody("auth.core", "MISMATCH", "broken at src/auth.go:1") + "auth.core: " + main + ": Testability / Acceptance Criteria\n"
+	noType := grVerifyItemBody("auth.core", "MISMATCH", "broken at src/auth.go:1") + "auth.core: " + main + ": Acceptance Items\n"
 	if _, err := grSubmit(t, repoRoot, runID, "auth.core", noType); err == nil || !strings.Contains(err.Error(), "requires a type suffix") {
 		t.Fatalf("expected the missing MISMATCH type rejection, got %v", err)
 	}
-	badType := grVerifyItemBody("auth.core", "MISMATCH (banana)", "broken at src/auth.go:1") + "auth.core: " + main + ": Testability / Acceptance Criteria\n"
+	badType := grVerifyItemBody("auth.core", "MISMATCH (banana)", "broken at src/auth.go:1") + "auth.core: " + main + ": Acceptance Items\n"
 	if _, err := grSubmit(t, repoRoot, runID, "auth.core", badType); err == nil || !strings.Contains(err.Error(), "requires a type suffix") {
 		t.Fatalf("expected the unknown MISMATCH type rejection, got %v", err)
 	}
-	good := grVerifyItemBody("auth.core", "MISMATCH (structural)", "broken at src/auth.go:1") + grVerifyAnalysisFields("auth.core") + "auth.core: " + main + ": Testability / Acceptance Criteria\n"
+	good := grVerifyItemBody("auth.core", "MISMATCH (structural)", "broken at src/auth.go:1") + grVerifyAnalysisFields("auth.core") + "auth.core: " + main + ": Acceptance Items\n"
 	grSubmitOK(t, repoRoot, runID, "auth.core", good)
 }
 func TestGateFindingsRequireResolutionLabel(t *testing.T) {
@@ -1834,7 +1853,7 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	grFinalizeOK(t, repoRoot, fullID)
 
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
+	edited := strings.Replace(string(data), "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -1965,11 +1984,11 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
-	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
+	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}}))
 	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
@@ -2024,11 +2043,11 @@ func TestGateRunValidateFullFailRepairFlow(t *testing.T) {
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, fullRun, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(fullRun, "design", 1)))
-	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
+	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}}))
 	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
@@ -2111,8 +2130,8 @@ func TestGateSubmitValidation(t *testing.T) {
 	}
 	if _, err := grSubmit(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	})); err == nil || !strings.Contains(err.Error(), "already covered") {
 		t.Fatalf("expected the accepted session to be terminal, got %v", err)
 	}
@@ -2129,7 +2148,7 @@ func TestConcurrentGateSubmitKeepsFirstTerminalResult(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	report := grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Testability / Acceptance Criteria"},
+		"5": {main + ": Acceptance Items"},
 	})
 
 	reportPaths := []string{
@@ -2429,15 +2448,15 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Testability / Acceptance Criteria"},
+		"5": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Description"},
@@ -2520,7 +2539,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	}
 
 	// Carried sessions cannot be submitted: they are not part of the plan.
-	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
+	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
 		t.Fatalf("expected the carried session to be absent from the plan, got %v", err)
 	}
 
@@ -2528,8 +2547,8 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	grReviewRecheck(t, repoRoot, deltaRun, "1", "2", "7", "10")
 	grSubmitOK(t, repoRoot, deltaRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, deltaRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
 		"2": {main + ": Description"},
@@ -2567,7 +2586,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 }
 
 // TestGateRunPeerEditDoesNotStaleValidateCache pins the one-way dependency
-// direction (issue #68): a unit validate reads only its declared unit_refs and
+// direction (issue #68): a unit validate reads only its declared promise providers and
 // rule_refs, never unrelated peers — Check 9 is the mechanical
 // `specflowctl surfaces` audit. A peer's surface-declaration edit must not
 // stale the target's validate cache or force a delta re-run.
@@ -2578,7 +2597,7 @@ func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	peerPath := grWriteSpec(t, repoRoot, "beta")
 	main := specPath
 	desc := main + ": Description"
-	accept := main + ": Testability / Acceptance Criteria"
+	accept := main + ": Acceptance Items"
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
@@ -2611,7 +2630,7 @@ func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	}
 
 	// An unrelated peer's edit must leave auth's validate cache fresh: beta is
-	// not in auth's unit_refs, so it is not part of auth's input surface.
+	// not among auth's promise providers, so it is not part of auth's input surface.
 	data, err := os.ReadFile(peerPath)
 	if err != nil {
 		t.Fatal(err)
@@ -2646,7 +2665,7 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 		key := fmt.Sprint(c)
 		fullScopes[key] = []string{rulePath + ": Constraint"}
 	}
-	fullScopes["4"] = []string{"unit:auth: Testability / Acceptance Criteria"}
+	fullScopes["4"] = []string{"unit:auth: Acceptance Items"}
 	grSubmitOK(t, repoRoot, fullRun, "checks", grValidateReport([]string{"1", "2", "3", "4", "5", "6"}, fullScopes))
 	grFinalizeOK(t, repoRoot, fullRun)
 
@@ -2671,7 +2690,7 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 			t.Fatalf("unexpected carried checks: %s", got)
 		}
 		grSubmitKeys(t, repoRoot, deltaRun, []string{"4"}, grValidateReport([]string{"4"}, map[string][]string{
-			"4": {"unit:auth: Testability / Acceptance Criteria"},
+			"4": {"unit:auth: Acceptance Items"},
 		}))
 		grFinalizeOK(t, repoRoot, deltaRun)
 
@@ -2756,7 +2775,7 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(data), "## Description\n\nProse.", "## Description\n\nProse. Changed.", 1)
+	edited := strings.Replace(string(data), "## Design Narrative\n\nProse.", "## Design Narrative\n\nProse. Changed.", 1)
 	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2852,8 +2871,8 @@ func TestGateStatusReportsProgress(t *testing.T) {
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 
 	var stdout, stderr bytes.Buffer
@@ -3027,7 +3046,7 @@ func TestGateRunContentEditStales(t *testing.T) {
 func TestGatePlanStableRequiresStableOnly(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
-	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# Auth\n")
+	grWriteFile(t, repoRoot, "docs/specs/units/stable/unit_auth.md", "---\nid: auth\nrule_refs: none\n---\n\n# Auth\n")
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "stable"); err == nil || !strings.Contains(err.Error(), "stable-only") {
 		t.Fatalf("expected a stable-only error, got %v", err)
 	}
@@ -3143,7 +3162,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
+	edited := strings.Replace(string(data), "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -3217,15 +3236,15 @@ func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
-		"3": {main + ": Testability / Acceptance Criteria"},
-		"6": {main + ": Testability / Acceptance Criteria"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Testability / Acceptance Criteria"},
+		"5": {main + ": Acceptance Items"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: acceptance_item:auth.core"},
@@ -3263,8 +3282,8 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	// Baseline run: the cross synthesis creates a retained P2 finding
 	// affecting alpha (non-blocking pass cache).
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", strings.Join(verifyCrossItems, ","))
-	grSubmitOK(t, repoRoot, runID, "auth.alpha", strings.Replace(grVerifyItemReport("auth.alpha", main, "src/auth.go"), "Testability / Acceptance Criteria", "acceptance_item:auth.alpha", 1))
-	grSubmitOK(t, repoRoot, runID, "auth.beta", strings.Replace(grVerifyItemReport("auth.beta", main, "src/beta.go"), "Testability / Acceptance Criteria", "acceptance_item:auth.beta", 1))
+	grSubmitOK(t, repoRoot, runID, "auth.alpha", strings.Replace(grVerifyItemReport("auth.alpha", main, "src/auth.go"), "Acceptance Items", "acceptance_item:auth.alpha", 1))
+	grSubmitOK(t, repoRoot, runID, "auth.beta", strings.Replace(grVerifyItemReport("auth.beta", main, "src/beta.go"), "Acceptance Items", "acceptance_item:auth.beta", 1))
 	cross := "Cross-check: 4/5 PASS — combined context clarified\n\n" +
 		"[P2] cross — combined claim is imprecise (actionable)\n" +
 		"Finding affects: " + grRunFindingID(runID, "cross", 1) + " = auth.alpha\n\n" +
@@ -3284,7 +3303,7 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3328,8 +3347,8 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	grWriteFile(t, repoRoot, "src/beta.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "auth.alpha", strings.Replace(grVerifyItemReport("auth.alpha", main, "src/auth.go"), "Testability / Acceptance Criteria", "acceptance_item:auth.alpha", 1))
-	grSubmitOK(t, repoRoot, runID, "auth.beta", strings.Replace(grVerifyItemReport("auth.beta", main, "src/beta.go"), "Testability / Acceptance Criteria", "acceptance_item:auth.beta", 1))
+	grSubmitOK(t, repoRoot, runID, "auth.alpha", strings.Replace(grVerifyItemReport("auth.alpha", main, "src/auth.go"), "Acceptance Items", "acceptance_item:auth.alpha", 1))
+	grSubmitOK(t, repoRoot, runID, "auth.beta", strings.Replace(grVerifyItemReport("auth.beta", main, "src/beta.go"), "Acceptance Items", "acceptance_item:auth.beta", 1))
 	grSubmitClarity(t, repoRoot, runID, main)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, runID)
@@ -3339,7 +3358,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3386,8 +3405,11 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
-	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n" +
-		"  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
+	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n" +
+		"  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
 	grWriteFile(t, repoRoot, specPath, spec)
 	grWriteFile(t, repoRoot, "docs/notes/auth_contract.md", "# Auth contract\n")
 	grWriteFile(t, repoRoot, "docs/notes/auth_evidence.md", "# Auth evidence\n")
@@ -3450,7 +3472,7 @@ func TestGateSubmitNormalizesDeclarationPaths(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	desc := "./" + main + ": Description"
-	accept := "./" + main + ": Testability / Acceptance Criteria"
+	accept := "./" + main + ": Acceptance Items"
 	front := "./" + main + ": frontmatter"
 	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
 		"1": {front, desc, main + ": Description"},
@@ -3649,7 +3671,7 @@ func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}
@@ -3903,7 +3925,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}

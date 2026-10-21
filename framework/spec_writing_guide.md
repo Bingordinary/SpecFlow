@@ -10,6 +10,93 @@ This file defines formal Spec shape and reference rules, including the semantic 
 
 Format compliance does not by itself prove handoff completeness.
 
+> **Promise model.** The unit-spec shape, the sole-contract-carrier rule, and
+> the gate requirement are defined in `framework/core/promise_model.md`.
+
+==ATOM_BEGIN:promise_gate_requirement==
+A unit without `## Promises` is rejected by unit validate, gate-plan, and
+promote. The promise format is deployed; there is no second format.
+==ATOM_END:promise_gate_requirement==
+
+## Promise Model (deployed format)
+
+==ATOM_BEGIN:promise_unit_shape==
+A unit main spec has exactly three top-level `##` sections, in this order:
+
+1. `## Design Narrative` — why the unit is designed this way; narrative
+   subsections use `###`.
+2. `## Promises` — the unit's stable contract; structured content only.
+3. `## Acceptance Items` — the items that prove each promise; structured
+   content only.
+
+Rules: exactly one of each section; no other `##` section is allowed; no
+`###` subheading inside `## Promises` or `## Acceptance Items`; one optional
+`#` title may precede the sections; frontmatter is not a section; the
+acceptance item set is the last content of the spec.
+==ATOM_END:promise_unit_shape==
+
+The three top-level sections are `## Design Narrative`, `## Promises`, and
+`## Acceptance Items`, in that order. The examples below show the structured
+content of the last two sections.
+
+**`## Promises`**
+
+==ATOM_BEGIN:promise_example==
+```yaml
+promises:
+  - id: auth.login_api
+    kind: request_response
+    summary: Login returns a token on success and 401 on invalid credentials.
+    contract:
+      request:
+        username: {type: string, required: true}
+        password: {type: string, required: true}
+      response:
+        token: {type: string, required: true}
+      errors:
+        401: INVALID_CREDENTIALS
+      timing:
+        mode: sync
+    depends_on: [common.error_schema]
+```
+==ATOM_END:promise_example==
+
+**`## Acceptance Items`**
+
+==ATOM_BEGIN:acceptance_item_example==
+```yaml
+acceptance_item_set:
+  - id: auth.login_success
+    promise: auth.login_api
+    description: Given valid credentials, when login is called, then 200 + token is returned.
+    verification_type: testable
+    verification_surface: api
+    implementation_surface: auth/login.go
+    verification_method: integration test for login success.
+    pass_condition: The login success scenario passes.
+    runnable: yes
+    evidence_requirements: [integration_test_pass]
+    affects:
+      files: [auth/login.go]
+      evidence_files: [auth/login_test.go]
+```
+==ATOM_END:acceptance_item_example==
+
+- A promise is the stable contract. It has no code range, verification
+  method, or consumer list.
+- An acceptance item references the promise it proves and keeps the code/test
+  scope.
+- One promise carries one behavior subject — one endpoint, event, data
+  schema, or state machine (`framework/core/promise_model.md` §Granularity).
+- Contract closure compares promise fingerprints: a provider's code, test, or
+  narrative change does not reopen its consumers' contract closure. A promise
+  contract change reopens its consumers, and the validate and verify gate
+  caches follow the same rule.
+- Provider units are derived from `depends_on`; a promise depends on another
+  unit's contract, not on a promise in the same unit.
+- The full schema, kinds, fingerprint rules, and `done` state are in
+  `framework/core/promise_model.md`.
+
 ## 1. Formal Spec Paths
 
 Unit main Specs:
@@ -44,18 +131,10 @@ Each unit main Spec must include these fields:
 
 ```yaml
 id: {unit}
-unit_refs: none
 rule_refs: none
 ```
 
 The spec layer is encoded by the file path (`docs/specs/units/candidate/` vs `docs/specs/units/stable/`) — no `layer` frontmatter field is declared, and promote performs a pure copy without touching file content.
-
-`unit_refs` may also be a YAML list of unit refs:
-
-```yaml
-unit_refs:
-  - agent
-```
 
 `rule_refs` may also be a YAML list of rule refs:
 
@@ -90,25 +169,36 @@ Or `rule_exceptions: none`. Rules:
 
 ## 4. Unit Dependencies
 
-`unit_refs` means the current unit depends on the referenced unit's formal behavior.
+A dependency between units is declared on the consumer promise's `depends_on`; the provider unit is derived from the provider promise ID. A promise depends on another unit's contract, not on a promise in the same unit. Dependencies are never inferred from file sharing or prose.
 
-**Formal behavior carriers:** a unit's formal behavior is declared in exactly two places:
+==ATOM_BEGIN:promise_carrier_role==
+The `## Promises` block is the unit's sole formal behavior carrier: the place
+a consumer reads the unit's formal, externally observable contract. A promise
+states what the unit offers; an acceptance item states how the unit proves a
+promise; the design narrative states why the unit is designed that way.
 
-1. the acceptance item set (`acceptance_item_set` in the main spec's `Testability / Acceptance Criteria` section), and
-2. protocol appendices — appendix files carrying API contracts, data type definitions, error codes, or state machine transitions.
+Consumers read provider promises; they do not read provider acceptance items,
+appendices, or code to learn the contract. A contract statement that no
+promise carries is invalid, and an appendix that introduces normative contract
+content outside a promise is a finding. An appendix is explanatory support
+truth: if it needs its own contract, dependencies, acceptance items, code
+scope, or independent verification, it is a unit, not an appendix. A promise
+has its own ID and fingerprint but is not a separate formal object family: it
+has no independent lifecycle.
+==ATOM_END:promise_carrier_role==
 
-Everything else in the unit (body prose, evidence appendices, background, motivation, design discussion) is not a formal behavior carrier.
+Everything else in the unit (design narrative, body prose, appendices, background, motivation, design discussion) is not a formal behavior carrier.
 
-**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through carriers. `validate` Check 5h enforces this boundary on prose, and Check 5a applies it to behavior-domain extraction (step 2) and appendix contract content (step 6): internal implementation detail declared in the body or an appendix creates no coverage obligation.
+**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through a promise. `validate` Check 5h enforces the narrative-to-promise relation, and Check 5a applies the boundary to appendix contract content: internal implementation detail declared in the body or an appendix creates no coverage obligation.
 
-Contract statements must be declared in a carrier — a contract that appears only in non-carrier prose is invalid, and appendix contract content must have a corresponding acceptance item (see §8; `validate` Check 5a fails such content). Carriers must also carry substance: acceptance items must satisfy the [Contract Substance Baseline](#contract-substance-baseline) (§7, enforced by `validate` Check 5e), so a cross-unit check never compares against an empty item set. This carrier definition drives the cross-unit consistency check (`validate` Check 7): the check reads only the dependency unit's carriers; the run records the dependency file's whole content as evidence, so any edit to it is visible to the delta re-run.
+Contract statements must be declared in a promise (`validate` Check 5a/5h enforce the narrative and appendix boundaries; see §8). The cross-unit consistency check (`validate` Check 7) reads the dependency unit's promises through the consumer's `depends_on` edges; the run records the provider promise fingerprints, so a contract change is visible to the delta re-run.
 
 It does not mean:
 
 1. the current unit may edit the referenced unit
 2. the referenced unit is part of the current unit's ownership
 
-If the body says the unit relies on another unit's official behavior, `unit_refs` must list that unit ref.
+If the body says the unit relies on another unit's official behavior, declare the provider promise on the consumer promise's `depends_on`.
 
 ## 5. Rule References
 
@@ -178,13 +268,14 @@ Units, bound and global rules, and appendices use `framework/removal_workflow.md
 
 ## 7. Acceptance Criteria
 
-Each current-layer unit main Spec must include a `Testability / Acceptance Criteria` section or an explicitly equivalent acceptance section.
+Each current-layer unit main Spec must include a `## Promises` section and a `## Acceptance Items` section.
 
-The section must include structured acceptance items:
+The acceptance section must include structured acceptance items; every contract-verifying item names the promise it proves:
 
 ```yaml
 acceptance_item_set:
   - id: demo.core
+    promise: demo.core
     description: Given a demo input, When the demo behavior runs, Then it is accepted.
     verification_type: testable          # testable | inspectable | reviewable
     verification_surface: internal_flow
@@ -201,7 +292,6 @@ acceptance_item_set:
         - internal/demo/handler_test.go
       appendices: []
       rules: []
-      dependencies: []
 ```
 
 > **Note for `testable` items:** When `verification_type` is `testable`, the `description` field must be written as a Gherkin-style Given/When/Then scenario set, not as a single prose sentence. See [§Gherkin-style Description Convention](#gherkin-style-description-convention) for the convention.
@@ -211,24 +301,27 @@ acceptance_item_set:
 | Field | Required | Description |
 |---|---|---|
 | `id` | yes | Unique identifier within the item set; used as primary key in process evidence |
+| `promise` | required for contract items | The unit-owned promise this item proves (for example `demo.core`). The item's `description` and `pass_condition` state the specific check, not the full promise contract. |
+| `non_promise` | required for non-contract items | `true` for cleanup, migration, or one-off inspection items that do not verify a promise. Such an item also carries `non_promise_reason`. |
 | `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
-| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. A spec document is not an implementation code surface: a value inside the spec tree (`docs/specs/` — a unit or rule spec, an appendix, or a meta record) is rejected by the same Check 3 and verify planning, whether or not it resolves; reference a spec document through `unit_refs`, `affects.dependencies`, `affects.evidence_files`, or `affects.appendices` instead (§12). Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
+| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. A spec document is not an implementation code surface: a value inside the spec tree (`docs/specs/` — a unit or rule spec, an appendix, or a meta record) is rejected by the same Check 3 and verify planning, whether or not it resolves; reference a spec document through `affects.evidence_files` or `affects.appendices` instead, and declare a contract dependency on the consumer promise's `depends_on` (§12). Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
 | `verification_method` | yes | The verification method in one sentence (e.g. "Go test for demo behavior"). No step-by-step test plan and no test-double names — see §15.3 |
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |
 | `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
 | `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name) |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
-| `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Like `implementation_surface`, the field declares implementation code — a spec document is not a valid entry (see the `implementation_surface` row). Files may be shared; behavior dependencies are expressed through `unit_refs` and `affects.dependencies` (see §14.4 File Associations and Shared Agreements) |
+| `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Like `implementation_surface`, the field declares implementation code — a spec document is not a valid entry (see the `implementation_surface` row). Files may be shared; behavior dependencies are expressed through the consumer promise's `depends_on`, never through file overlap (see §14.4 File Associations and Shared Agreements) |
 | `affects.evidence_files` | recommended | Read-only verification evidence files (typically tests or code owned by another unit) cited to back this item's judgment. They join the run snapshot and the item session's read refs, but they never define implementation participation, quality coverage keys, or operation write scope. Each cited file must exist and must actually carry the behavior or assertion the item claims — the alignment judgment verifies the citation (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check). The cited file's own quality belongs to its owner's gates |
 | `affects.appendices` | recommended | Appendix names that must be checked |
 | `affects.rules` | recommended | Rule names that must be respected |
-| `affects.dependencies` | recommended | Stable unit dependency names that must be maintained |
 
 When `verification_type` is `inspectable`, the `evidence_requirements` should specify what inspection evidence is needed (e.g. `old_code_deleted`, `no_remaining_refs`).
 When `verification_type` is `reviewable`, human review is the primary verification method; `evidence_requirements` may include `human_review_pass`.
+
+A contract-verifying item's `description` and `pass_condition` must not contradict the `contract` of the promise it names; `validate` Check 5b owns that comparison. The item states one specific check of the promise, not a second contract.
 
 When `verification_type` is `testable`, the acceptance item's `description` and `pass_condition` should be designed so they can be decomposed into a set of unit test scenarios. See `framework/test_decomposition_standard.md` for the decomposition methodology.
 
@@ -310,11 +403,11 @@ Splitting is legitimate when any condition fails. Examples:
 
 #### Relationship to validate
 
-`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains — error paths, boundary cases, and state transitions of the same behavior subject are scenarios of one domain, not separate domains. The correspondence runs both ways: an item whose behavior subject no longer appears as a designed behavior in the spec union is an orphan and is retired in the same round (see §9 Cleanup obligation); `validate` Check 5a fails it. Extraction targets only formal behavior (see `framework/spec_writing_guide.md` §4 Formal behavior carriers): non-constraining narrative (design discussion, motivation, illustrative examples) does not create coverage obligations. See `framework/unit_validate_checklist.md` §5a.
+`validate` Check 5a uses this standard as its granularity baseline: coverage extraction operates on behavior domains — error paths, boundary cases, and state transitions of the same behavior subject are scenarios of one domain, not separate domains. The correspondence runs both ways: an item whose behavior subject no longer appears as a designed behavior in the spec union is an orphan and is retired in the same round (see §9 Cleanup obligation); `validate` Check 5a fails it. Extraction targets only formal behavior (see `framework/spec_writing_guide.md` §4 Formal behavior carrier): non-constraining narrative (design discussion, motivation, illustrative examples) does not create coverage obligations. See `framework/unit_validate_checklist.md` §5a.
 
 ### Contract Substance Baseline
 
-Acceptance items are the formal behavior carrier of a unit (see §4): dependent units read them through the cross-unit check, so an item that carries no concrete contract information leaves the dependency check nothing to compare against. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5e enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §14 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
+Promises are the formal behavior carrier of a unit (see §4); acceptance items prove them. A cross-unit check reads the provider's promise, so an acceptance item's job is to make that promise falsifiable against code: an item that carries no concrete check leaves the verification empty. The following rules are the **generation standard** — every acceptance item must satisfy all five. `validate` Check 5e enforces them. Concrete values must represent genuine Contract Anchors owned by the unit or exported by dependencies per §14 (Truth Ownership Framework); enumerating private implementation mechanisms, transient test fixtures, or collaborating unit internals is prohibited.
 
 | Rule | Requirement | Rejected form |
 |---|---|---|
@@ -332,7 +425,7 @@ Acceptance items are the formal behavior carrier of a unit (see §4): dependent 
     pass_condition: Login succeeds with valid credentials.
 ```
 
-The item is falsifiable (a broken login fails it) but carries zero contract elements: no status code, no token, no error code. A dependent unit cannot compare against it.
+The item is falsifiable (a broken login fails it) but carries zero contract elements: no status code, no token, no error code. It cannot prove the promise it names: a broken implementation would be indistinguishable from a correct one.
 
 **Example — accepted:**
 
@@ -349,7 +442,7 @@ The item is falsifiable (a broken login fails it) but carries zero contract elem
     pass_condition: Returns 200 with JWT on valid credentials; 401 with INVALID_CREDENTIALS on wrong password; token expires after 30 minutes.
 ```
 
-The item carries concrete elements (status codes, error code, token format, expiry bound) that the cross-unit check can compare against.
+The item carries concrete elements (status codes, error code, token format, expiry bound) that make the promise verifiable against code.
 
 ## 8. Appendix Files
 
@@ -359,7 +452,7 @@ They do not replace the unit main Spec.
 
 Appendix ownership is derived from the appendix path and appendix frontmatter, not from a main-Spec index.
 
-**Contract content requires acceptance coverage:** API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are part of the unit's formal behavior (see §4) and must have a corresponding acceptance item in the main spec — scoped to externally-observable content per §15.2's external-visibility boundary: internal implementation detail declared in an appendix is design expression and creates no coverage obligation. `validate` Check 5a fails appendix contract content without such coverage — the acceptance item set is the complete formal behavior carrier, and the cross-unit check reads dependency units through it. Ordinary design appendices and evidence appendices carry no contract-coverage requirement beyond the standard behavior-domain coverage checks.
+**Contract content belongs to a promise:** the carrier rule in §4 applies. API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are normative contract content and must be moved into a promise in the main spec's `## Promises` section, scoped to externally-observable content per §15.2's external-visibility boundary. `validate` Check 5a reports appendix contract content that has no promise carrier, and Check 5h reports narrative contract statements that no promise carries. Internal implementation detail declared in an appendix is design expression and creates no coverage obligation.
 
 Each unit appendix must:
 
@@ -428,7 +521,7 @@ If a decision is intentionally not made, the Spec must state that boundary and e
 
 ### Reader Contract
 
-A Spec is a design document for human readers first, and an execution contract second. The Authoring Baseline above defines what must be made clear; this contract defines how a good Spec presents it — as a design narrative that serves four reader audiences, not as a mechanism inventory. A narrative answers "how it works and why"; an inventory only answers "what exists".
+A Spec's Design Narrative is written for human readers first; Promises and Acceptance Items are the execution contract that consumers and gates read. The Authoring Baseline above defines what must be made clear; this contract defines how a good Spec presents it — as a design narrative that serves four reader audiences, not as a mechanism inventory. A narrative answers "how it works and why"; an inventory only answers "what exists".
 
 | Audience | What the reader must be able to take away |
 |---|---|
@@ -442,19 +535,18 @@ A Spec is a design document for human readers first, and an execution contract s
 1. **Value / function layer** — what problem the unit solves, its position in the system, its relationships, and its boundaries (serves the designer / product manager).
 2. **Design narrative layer** — mechanisms, data flow, sequencing, state ownership, failure behavior, and decision rationale including rejected alternatives (serves the successor).
 3. **Implementation guidance layer** — entry points, step-by-step read/write behavior, boundary exposure, and result shape, with all decisions closed (serves the engineer).
-4. **Acceptance contract layer** — the acceptance item set, kept minimal: verifiable behavior contracts only (see §7 Acceptance Criteria).
+4. **Promise and verification layers** — the stable contract (`## Promises`) and the acceptance items that prove it (`## Acceptance Items`), kept minimal and separate (see §7).
 
-**Document shape (normative order — enforced by §13.9 and validate Check 1):** for a unit main Spec:
+**Document shape (normative order — enforced by §13.9 and `validate` Check 15):** for a unit main Spec:
 
 ```text
-Background & value     → what problem this unit solves and where it sits in the system
-Design narrative       → how the mechanism works, data flow, sequencing, state
-                         ownership, failure behavior, decisions and rejected alternatives
-Boundaries             → what the unit does not do; dependency expectations
-Acceptance items       → minimal verifiable behavior contracts (see §7)
+Design Narrative       → background/value, design narrative, boundaries, and
+                         implementation guidance, expressed as ### subsections
+Promises               → the stable contract consumers read (see §Promise Model)
+Acceptance Items       → the items that prove each promise (see §7)
 ```
 
-Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in prose and structured fields, while the acceptance item set remains the formal behavior carrier (see §4).
+Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in the narrative and structured fields, while the promise block is the formal behavior carrier (see §4).
 
 **Ordering statements and the content boundary.** The required ordered-step account does not conflict with §15.2's exclusion of internal rendering order, prompt block layout, and internal section ordering: §15.2 decides whether an ordering statement may be stated, this contract decides whether the stated content is clear. See §15.2 "Ordering and layout against §9" for where the boundary falls.
 
@@ -491,16 +583,16 @@ Rule files must not store consumer lists. `bound_objects` is not the source of r
 unit → rule
 stable global rule → unit and rule
 rule → unit
-unit → unit through unit_refs
+unit → unit through promise depends_on
 ```
 
 1. unit truth owns behavior responsibility
 2. rule truth owns reusable constraints
-3. unit-to-unit dependency is explicit and stable-only
+3. unit-to-unit dependency is explicit; a contract dependency is declared on the consumer promise's `depends_on` and must resolve to a stable provider promise at publication
 
 ## 12. Prose Content Rules
 
-Spec body prose sections (Description, Responsibility, and any user-defined narrative sections) must not contain code file paths.
+`## Design Narrative` subsections (responsibility, mechanism, boundaries, and any user-defined narrative content) must not contain code file paths.
 
 This rule does not apply to:
 - Framework governance paths (`framework/`) and validation cache paths (`docs/specs/meta/`) — these describe the governance system itself
@@ -511,25 +603,25 @@ All code file path references must be expressed exclusively through the structur
 Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, or the relative forms `candidate/`, `stable/`) — in prose or in code-block examples. Unlike code file paths, layer-prefixed spec paths break or mispoint in any context: candidate files are deleted on promote, and stable paths point to the prior-consensus layer during an active candidate round. Reference appendix files and other specs by concept name or file name instead (e.g. `unit_auth_account_token_claims`) — appendix file names do not encode layer, so the reference stays valid before and after promote.
 
 This rule does not apply to:
-- Path-valued structured fields that may reference a spec document (`affects.dependencies`, `affects.evidence_files`, `affects.appendices`) — when one of these fields references a spec document by path, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid. `unit_refs` is not in this exemption: it references a unit by its bare name (§3), so it carries no layer-prefixed path
+- Path-valued structured fields that may reference a spec document (`affects.evidence_files`, `affects.appendices`) — when one of these fields references a spec document by path, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid.
 
-`implementation_surface` and `affects.files` are **not** in this exemption. They declare implementation code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as implementation would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `unit_refs`, `affects.dependencies`, `affects.evidence_files`, or `affects.appendices` instead.
+`implementation_surface` and `affects.files` are **not** in this exemption. They declare implementation code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as implementation would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `affects.evidence_files` or `affects.appendices` instead; contract dependencies use the promise's `depends_on`.
 
 ## 13. Section Regions
 
-The unit's own main spec must be section-splittable: the content is split by `##` headings — the frontmatter region (file head through the line before the first `##` heading) and one region per `##` heading. Section boundaries define where an `acceptance_item_set` ends (a `##` heading terminates the set), and the structural rules below are enforced mechanically by validate Check 1/8. Validation caches no longer declare section regions — cache freshness is whole-file for validate and conclusion-bound for verify (see `framework/validation_cache.md` §Format) — but the structure still keeps the spec machine-locatable and keeps edits contained for the delta re-run.
+The unit's own main spec must be section-splittable: the content is split by `##` headings — the frontmatter region (file head through the line before the first `##` heading) and one region per `##` heading. Section boundaries define where an `acceptance_item_set` ends (a `##` heading terminates the set); the three-section shape is enforced mechanically by validate Check 15, and region locatability by Check 7. Validation caches no longer declare section regions — cache freshness is whole-file for validate and conclusion-bound for verify (see `framework/validation_cache.md` §Format) — but the structure still keeps the spec machine-locatable and keeps edits contained for the delta re-run.
 
 1. **`##`-organized body:** all spec body content must live inside `##` heading sections. The frontmatter region may contain only the YAML frontmatter block, the `#` document title, and blank lines — any other content before the first `##` heading is stray prose (validate Check 1 fails the spec on it; restructure the spec so the region holds only the YAML block, the title, and blank lines).
 2. **Unique headings:** `##` heading texts must be unique within the file. A duplicated heading cannot be located unambiguously (validate Check 1 fails it).
 3. **One topic per section (cohesion):** each `##` section must cover one semantic topic, so an edit stays contained in one section. If editing any small part of a section tends to touch content across its whole span, the section is too coarse — split it. Cohesion keeps a recorded change set focused, which is what a delta re-run reasons about.
-4. **`###` and deeper headings** belong to their `##` section — they are not separate regions, and they never terminate the acceptance item set. Use them for structure inside a section. A `##` heading ends the `acceptance_item_set`, so keep the item set inside one `##` section.
+4. **`###` and deeper headings** belong to their `##` section — they are not separate regions, and they never terminate the acceptance item set. The shape rule in the Promise Model section defines where `###` is allowed. For region mechanics, a `##` heading ends the `acceptance_item_set`, so keep the item set inside one `##` section.
 5. **Naming stability:** headings are part of the region content — the acceptance item set's structural identity changes with any content inside it, so rename deliberately (a rename is a semantic signal, not a cosmetic edit).
 6. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
-7. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and protocol appendices are contract files and need no section structure.
-8. **Reserved heading name:** `frontmatter` is a reserved spelling — it names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be located by section structure (validate Check 8 fails the reserved name). Choose a different heading text.
-9. **Fixed section order:** value/background and design-narrative sections come first, and the acceptance item set is the **last** content of the file — no heading of any level (`#` through `######`, not only `##`) and no narrative follows the item set (see §9 Document shape). The acceptance section contains only the acceptance item set: a `###`-deep heading that only groups items is allowed, narrative content inside the acceptance section is not — narrative belongs in an earlier section, and set-level content inside the item set is attributed to the last item's region (see §7). Governance and alignment sections (for example rule alignment) are content sections and precede the acceptance item set.
+7. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and support appendices need no section structure.
+8. **Reserved heading name:** `frontmatter` is a reserved spelling — it names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be located by section structure (validate Check 7 fails the reserved name). Choose a different heading text.
+9. **Fixed section order:** the three-section order and its structural rules are defined once by the Promise Model section (`framework/core/promise_model.md` §Unit spec shape). The acceptance item set remains the **last** content of the file — no heading of any level (`#` through `######`, not only `##`) and no narrative follows it (see §9 Document shape). Set-level content inside the item set is attributed to the last item's region (see §7).
 
-A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, stray pre-heading content, or a section order that violates item 9) fails validate Check 1/8; the fix direction is restructuring the spec per this section.
+A spec that fails the structure (no `##` heading, duplicated headings, the reserved `frontmatter` name, stray pre-heading content, or a section order that violates item 9) fails validate: Check 1 for the structural pre-pass, Check 7 for region locatability, and Check 15 for the three-section shape and order. The fix direction is restructuring the spec per this section.
 
 ## 14. Abstraction Boundaries and Anti-Hardcoding Guidelines (The Truth Ownership Framework)
 
@@ -543,7 +635,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
    - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), caller-facing limits (`maxLoops = 20` on a run request, `tokenExpiry = 3600s` on an issued token), and exported serialization keys (`session_id`).
    - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables. An owner declaring an internal value — an internal buffer size, an internal retry count, an internal loop cap — is over-specification under §15.2, not a contract anchor.
 
-2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** (acceptance item sets or protocol appendices) exported by collaborating units.
+2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** — the promises exported by collaborating units. A provider's acceptance items and appendices are not its contract.
    - *Allowed*: Referencing exported contract constants (e.g. `contracts.SpanAttr*`), standard protocol events (`DELEGATE_TASK_REQUESTED`), or describing behaviorally what must be exchanged.
    - *Forbidden (Shadow Specifications)*: Non-owner units enumerating internal, volatile, or unexported parameter names/fields of collaborating units.
 
@@ -578,9 +670,9 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 
 ### 14.4 File Associations and Shared Agreements
 
-`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create `unit_refs` dependencies or require an abstraction unit. `affects.evidence_files` is a different relation: it names read-only verification evidence — typically tests or code owned by another unit — that backs the citing item's judgment. An evidence file is never implementation participation of the citing unit, never a quality coverage key, and never operation write scope; its behavior and its quality belong to its owner's gates. The citing item's judgment verifies only that the cited file actually carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check).
+`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create a dependency or require an abstraction unit. `affects.evidence_files` is a different relation: it names read-only verification evidence — typically tests or code owned by another unit — that backs the citing item's judgment. An evidence file is never implementation participation of the citing unit, never a quality coverage key, and never operation write scope; its behavior and its quality belong to its owner's gates. The citing item's judgment verifies only that the cited file actually carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check).
 
-Units describe independent responsibilities. Behavior, data meaning and shared agreements still have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`, rather than being restated in unit specs. Genuine behavior dependencies continue to use `unit_refs` and per-item `affects.dependencies`.
+Units describe independent responsibilities. Behavior, data meaning and shared agreements still have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`, rather than being restated in unit specs. Genuine behavior dependencies use the consumer promise's `depends_on`.
 
 Declare paths relevant to the acceptance item. Whether each declaration actually participates in the item's behavior is a spec-vs-code judgment owned by verify Step 3 (`framework/unit_verify_checklist.md`); validate Check 6 judges the declaration's own validity — resolution, ownership, path existence, mutual consistency — and reads no code. Check 7 owns shared-agreement single-source consistency; Check 9 reports the mechanical file-association audit. Unit responsibility boundaries remain the responsibility of the design and scope checks. File overlap alone is not a finding.
 
@@ -590,7 +682,7 @@ Declare paths relevant to the acceptance item. Whether each declaration actually
 
 This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1 — the §15.1 mechanical pre-pass, Check 2 Step 5, Check 5a, Check 5e, Check 5h, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
 
-**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** "Externally observable" is judged from the **declaration surface**, never from implementation files: content is externally observable when a **declared consumer** reads it, is bounded by it, or is affected by it. The declaration surface of a unit is its own formal behavior carriers (§4 — the acceptance item set and protocol appendices) together with the carriers of every unit it lists in `unit_refs`; the declaration surface of a rule is the units that consume it through `rule_refs`. A caller, dependent unit, or other consumer that no declaration names is not a declared consumer and cannot make content observable — the judgment is a claim about what the Spec declares, not about runtime behavior, and the runtime observation that would settle it (the implementation files) is outside the judgment surface. Content that no declared consumer reads, is bounded by, or is affected by is not established as observable by the Spec; §15.2 defines its disposition — prohibited outright when the subject is the unit's own design record or the content's own statement places it on the internal side, and an undeclared boundary requiring a decision otherwise.
+**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** "Externally observable" is judged from the **declaration surface**, never from implementation files: content is externally observable when a **declared consumer** reads it, is bounded by it, or is affected by it. The declaration surface of a unit is its own promises (the `## Promises` block) together with the promises of every unit named by its promises' `depends_on` edges. The declaration surface of a rule is the units that consume it through `rule_refs`. A caller, dependent unit, or other consumer that no declaration names is not a declared consumer and cannot make content observable — the judgment is a claim about what the Spec declares, not about runtime behavior, and the runtime observation that would settle it (the implementation files) is outside the judgment surface. Content that no declared consumer reads, is bounded by, or is affected by is not established as observable by the Spec; §15.2 defines its disposition — prohibited outright when the subject is the unit's own design record or the content's own statement places it on the internal side, and an undeclared boundary requiring a decision otherwise.
 
 ### 15.1 Current truth only
 
@@ -618,7 +710,7 @@ The Spec states externally observable behavior: content a declared consumer read
 - internal module, package, or file layout; code file paths in narrative
 - language-level primitives (`sync.RWMutex`, `map[string]any`, channel primitives)
 
-**Prohibited — the unit's own design record:** content whose subject is the Spec document itself — its sections, headings, or field values, an appendix's layout, or any other property of the design record (for example "the unit's document contains six sections"). The Spec document's structure is a format constraint of this framework, enforced mechanically on the file (validate Check 1/8, §13), so it is never restated as an acceptance item. The boundary is the record, not the product: a document the unit produces for its consumers is the unit's output, and its observable properties are behavior stated under the categories below.
+**Prohibited — the unit's own design record:** content whose subject is the Spec document itself — its sections, headings, or field values, an appendix's layout, or any other property of the design record (for example "the unit's document contains six sections"). The Spec document's structure is a format constraint of this framework, enforced mechanically on the file (validate Check 15, §13), so it is never restated as an acceptance item. The boundary is the record, not the product: a document the unit produces for its consumers is the unit's output, and its observable properties are behavior stated under the categories below.
 
 **Allowed — externally observable:**
 
@@ -641,8 +733,10 @@ The Spec states externally observable behavior: content a declared consumer read
 ### 15.3 Not stated elsewhere
 
 - **No test execution recipes and no test doubles.** `verification_method` states the method in one sentence (for example "Go test for demo behavior"). Step-by-step test plans, expected call sequences against stubs, and test-double names belong in the test code, not the Spec (see §14.2 Anti-Pattern C).
-- **Each statement is stated once.** The design narrative states how the unit works and why; the acceptance item set states what must hold for the implementation to be accepted. Mechanism narration inside an acceptance item duplicates the design narrative and is removed — the item keeps the verifiable condition.
+- **Each statement is stated once.** The design narrative states how the unit works and why; the promise block states the stable contract consumers read; the acceptance item set states the specific checks that prove each promise. Mechanism narration inside a promise or acceptance item duplicates the design narrative and is removed — the promise keeps the normative contract, the item keeps the verifiable condition.
 
 ### 15.4 Section order
 
-Value/background and design-narrative sections come first; the acceptance item set is the last content of the file. The structural rule is §13.9.
+`## Design Narrative` comes first, then `## Promises`, then `## Acceptance
+Items`. The structural rule is the Promise Model section's shape rule;
+§13.9 applies it to section regions.

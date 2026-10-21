@@ -198,6 +198,17 @@ func uncoveredChangedFiles(repoRoot string, cache *cacheFile) ([]string, error) 
 			continue // a dead record is already reported as a stale conclusion
 		}
 		for _, d := range r.Dependencies {
+			if d.Promise != "" {
+				// A promise pin governs the provider contract, not the whole
+				// provider file. The provider spec path is still marked pinned
+				// so a narrative edit is not reported as uncovered evidence.
+				if d.Path != "" {
+					if rel, err := repopath.Canonical(repoRoot, d.Path); err == nil {
+						pinned[rel] = true
+					}
+				}
+				continue
+			}
 			rel, err := judgments.ResolveInputPath(repoRoot, d, r.Unit, binding.Layer)
 			if err != nil {
 				continue

@@ -4,22 +4,23 @@
 //  1. Frontmatter completeness
 //  2. Acceptance items format (required fields, Gherkin-style descriptions for testable items, .feature syntax rejected)
 //  3. Anchor integrity (affects.files and affects.evidence_files paths exist; implementation_surface values resolve to real code; implementation_surface and affects.files reject a spec-document value)
-//  4. Reference integrity (unit_refs/rule_refs files exist)
+//  4. Reference integrity (rule_refs files exist)
 //  5. Appendix files exist
 //  6. Body layer-path check (candidate-layer spec paths)
-//  7. Dependency cycle check (unit_refs graph has no cycles through the unit)
-//  8. Region locatability (section and acceptance item regions are splittable and locatable)
-//  9. Surface associations (declarations resolve; file sharing is allowed)
-//  10. Prose path hygiene (source paths in narrative text — WARNING, advisory)
-//  11. Environment agnosticism (dev-machine paths, local addresses, credentials)
-//  12. Reserved content headings (changelog/revision sections — guide §15.1)
-//  13. Process traces (change-history narration — WARNING, guide §15.1)
-//  14. Test doubles (test-double names in the spec — WARNING, guide §15.3)
-//  15. verification_method shape (one-sentence method — guide §15.3)
+//  7. Region locatability (section and acceptance item regions are splittable and locatable)
+//  8. Surface associations (declarations resolve; file sharing is allowed)
+//  9. Prose path hygiene (source paths in narrative text — WARNING, advisory)
+//  10. Environment agnosticism (dev-machine paths, local addresses, credentials)
+//  11. Reserved content headings (changelog/revision sections — guide §15.1)
+//  12. Process traces (change-history narration — WARNING, guide §15.1)
+//  13. Test doubles (test-double names in the spec — WARNING, guide §15.3)
+//  14. verification_method shape (one-sentence method — guide §15.3)
+//  15. Promise model (three-section shape, promise schema, coverage, and promise graph)
 package specvalidation
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -69,7 +70,6 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkReferences(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
-	r.Checks = append(r.Checks, checkDependencyCycles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkRegionLocatability(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkSurfaceAssociations(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkProseHygiene(repoRoot, unitName))
@@ -78,6 +78,7 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkProcessTraces(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkTestDoubles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkVerificationMethodShape(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkPromiseModel(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {
@@ -87,6 +88,37 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 		}
 	}
 	return r
+}
+
+// checkPromiseModel runs the promise-model checks. A unit without the
+// `## Promises` section does not follow the deployed three-section unit shape
+// and fails this check.
+func checkPromiseModel(repoRoot, unitName string) CheckResult {
+	data, err := os.ReadFile(specPath(repoRoot, unitName))
+	if err != nil {
+		return CheckResult{Name: "Promise model", Status: Fail, Details: fmt.Sprintf("cannot read candidate spec: %v", err)}
+	}
+	content := string(data)
+	if !HasPromisesSection(content) {
+		return CheckResult{
+			Name:    "Promise model",
+			Status:  Fail,
+			Details: "no `## Promises` section: a unit spec follows the three-section promise model (see framework/core/promise_model.md)",
+		}
+	}
+	var issues []string
+	for _, check := range CheckPromiseSpec(content, unitName) {
+		if check.Status == Fail {
+			issues = append(issues, check.Name+": "+check.Details)
+		}
+	}
+	if graph := CheckPromiseGraph(repoRoot, unitName); graph.Status == Fail {
+		issues = append(issues, graph.Name+": "+graph.Details)
+	}
+	if len(issues) > 0 {
+		return CheckResult{Name: "Promise model", Status: Fail, Details: strings.Join(issues, "; ")}
+	}
+	return CheckResult{Name: "Promise model", Status: Pass, Details: "shape, schema, coverage, declarations, and graph pass"}
 }
 
 // FormatResult formats the validation result as readable output.

@@ -18,7 +18,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry.Checks = []validationcache.CheckEntry{{Check: "auth.core", Status: "pass"}}
-	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
+	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", withPromiseFormat(t, repoRoot, "auth", "candidate", validationcache.CacheWrite{
 		Command:   "verify",
 		Unit:      "auth",
 		Mode:      "full",
@@ -30,7 +30,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: `{"schema_version":3,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
 		Entries:   []validationcache.FileEntry{*entry},
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +121,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
+	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", withPromiseFormat(t, repoRoot, "auth", "candidate", validationcache.CacheWrite{
 		Command:   "validate",
 		Unit:      "auth",
 		Mode:      "full",
@@ -134,7 +134,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: string(judgments),
 		Entries:   []validationcache.FileEntry{*entry},
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -20,6 +21,37 @@ import (
 func baselineStandard(t *testing.T, repoRoot string) string {
 	t.Helper()
 	return judgments.MustProtocol(repoRoot, "validate", "unit")
+}
+
+// promiseCacheFormat supplies the unit-cache promise fields for a fixture:
+// the format marker for every unit cache, and the provider pins for a passing
+// validate cache.
+func promiseCacheFormat(t *testing.T, root, unit, command, result string) (string, []validationcache.PromisePin, bool) {
+	t.Helper()
+	if command != GateValidate || result != "pass" {
+		return validationcache.PromisePinFormat, nil, false
+	}
+	pins := []validationcache.PromisePin{}
+	data, err := os.ReadFile(filepath.Join(root, "docs/specs/units/candidate", "unit_"+unit+".md"))
+	if err != nil {
+		return validationcache.PromisePinFormat, pins, true
+	}
+	ids := specvalidation.PromiseDependencyIDs(string(data))
+	if len(ids) == 0 {
+		return validationcache.PromisePinFormat, pins, true
+	}
+	current, issues := specvalidation.PromiseFingerprintsForScope(root, specvalidation.PromiseScopeForLayer(TargetCandidate))
+	if len(issues) > 0 {
+		t.Fatalf("promise graph: %s", strings.Join(issues, "; "))
+	}
+	for _, id := range ids {
+		fingerprint, ok := current[id]
+		if !ok {
+			t.Fatalf("dependency promise %q is unresolved", id)
+		}
+		pins = append(pins, validationcache.PromisePin{ID: id, Fingerprint: fingerprint})
+	}
+	return validationcache.PromisePinFormat, pins, true
 }
 
 // writeValidateBaseline writes a validate cache for unit auth with the given
@@ -40,18 +72,22 @@ func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationca
 	if err != nil {
 		t.Fatal(err)
 	}
+	pinFormat, pins, pinsSet := promiseCacheFormat(t, repoRoot, "auth", GateValidate, result)
 	_, err = validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
-		Command:   "validate",
-		Unit:      "auth",
-		Mode:      "full",
-		Basis:     basis,
-		Result:    result,
-		Target:    "candidate",
-		Blocking:  blocking,
-		Standard:  baselineStandard(t, repoRoot),
-		Timestamp: "2026-01-01T00:00:00Z",
-		Judgments: string(judgments),
-		Entries:   entries,
+		Command:        "validate",
+		Unit:           "auth",
+		Mode:           "full",
+		Basis:          basis,
+		Result:         result,
+		Target:         "candidate",
+		Blocking:       blocking,
+		PinFormat:      pinFormat,
+		PromisePins:    pins,
+		PromisePinsSet: pinsSet,
+		Standard:       baselineStandard(t, repoRoot),
+		Timestamp:      "2026-01-01T00:00:00Z",
+		Judgments:      string(judgments),
+		Entries:        entries,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +200,7 @@ func TestUnitValidateExcludesCodeSurface(t *testing.T) {
 }
 
 // TestUnitValidateExcludesUnrelatedPeers pins the one-way dependency direction:
-// a unit validate reads its declared unit_refs providers and rule_refs, never
+// a unit validate reads its declared promise providers and rule_refs, never
 // unrelated peers. Adding an unrelated unit in either layer must not change the
 // target's input surface or its session read refs (issue #68).
 func TestUnitValidateExcludesUnrelatedPeers(t *testing.T) {
@@ -220,7 +256,7 @@ func TestUnitValidateExcludesUnrelatedPeers(t *testing.T) {
 
 func TestUnitValidateStructuralSessionCarriesUnresolvedReference(t *testing.T) {
 	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "missing", "none", "src/auth", "")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "b_rule_missing", "src/auth", "")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
@@ -230,8 +266,8 @@ func TestUnitValidateStructuralSessionCarriesUnresolvedReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stringInSlice(spec.ReadRefs, "unit:missing") {
-		t.Fatalf("structural session must expose the unresolved Check 1 reference, got %+v", spec.ReadRefs)
+	if !stringInSlice(spec.ReadRefs, "rule:b_rule_missing") {
+		t.Fatalf("structural session must expose the unresolved Check 4 reference, got %+v", spec.ReadRefs)
 	}
 }
 
@@ -260,15 +296,18 @@ func TestLoadCarriedResultsAssociatesCrossFindingWithAffectedKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
-		Command:   GateValidate,
-		Unit:      "auth",
-		Mode:      ModeFull,
-		Basis:     ModeFull,
-		Result:    "pass",
-		Target:    TargetCandidate,
-		Timestamp: "2026-01-01T00:00:00Z",
-		Judgments: string(judgments),
-		Entries:   []validationcache.FileEntry{entry},
+		Command:        GateValidate,
+		Unit:           "auth",
+		Mode:           ModeFull,
+		Basis:          ModeFull,
+		Result:         "pass",
+		Target:         TargetCandidate,
+		Timestamp:      "2026-01-01T00:00:00Z",
+		PinFormat:      validationcache.PromisePinFormat,
+		PromisePins:    []validationcache.PromisePin{},
+		PromisePinsSet: true,
+		Judgments:      string(judgments),
+		Entries:        []validationcache.FileEntry{entry},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -298,14 +337,17 @@ func TestLoadCarriedResultsRejectsOldJudgmentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
-		Command:   GateValidate,
-		Unit:      "auth",
-		Mode:      ModeFull,
-		Result:    "pass",
-		Target:    TargetCandidate,
-		Timestamp: "2026-01-01T00:00:00Z",
-		Judgments: string(judgments),
-		Entries:   []validationcache.FileEntry{entry},
+		Command:        GateValidate,
+		Unit:           "auth",
+		Mode:           ModeFull,
+		Result:         "pass",
+		Target:         TargetCandidate,
+		Timestamp:      "2026-01-01T00:00:00Z",
+		PinFormat:      validationcache.PromisePinFormat,
+		PromisePins:    []validationcache.PromisePin{},
+		PromisePinsSet: true,
+		Judgments:      string(judgments),
+		Entries:        []validationcache.FileEntry{entry},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -411,9 +453,12 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 	if err := os.MkdirAll(filepath.Dir(specPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n"
+	content := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n"
 	for _, id := range itemIDs {
-		content += "  - id: " + id + "\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+		content += "  - id: " + id + "\n    promise: auth.core\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	}
 	if err := os.WriteFile(specPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -433,17 +478,21 @@ func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, bl
 	if err != nil {
 		t.Fatal(err)
 	}
+	pinFormat, pins, pinsSet := promiseCacheFormat(t, repoRoot, "auth", command, result)
 	w := validationcache.CacheWrite{
-		Command:   command,
-		Unit:      "auth",
-		Mode:      "full",
-		Basis:     basis,
-		Result:    result,
-		Target:    TargetCandidate,
-		Blocking:  blocking,
-		Timestamp: "2026-01-01T00:00:00Z",
-		Judgments: string(judgments),
-		Entries:   entries,
+		Command:        command,
+		Unit:           "auth",
+		Mode:           "full",
+		Basis:          basis,
+		Result:         result,
+		Target:         TargetCandidate,
+		Blocking:       blocking,
+		Timestamp:      "2026-01-01T00:00:00Z",
+		Judgments:      string(judgments),
+		Entries:        entries,
+		PinFormat:      pinFormat,
+		PromisePins:    pins,
+		PromisePinsSet: pinsSet,
 	}
 	if command == GateValidate {
 		w.Standard = baselineStandard(t, repoRoot)
@@ -955,7 +1004,7 @@ func TestDeltaStableMissingBaselineMessage(t *testing.T) {
 // has no structured judgment state.
 func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "\n## Scope\n\nIn scope.\n")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
 	var decls []validationcache.CheckEntry
 	decls = append(decls, validationcache.CheckEntry{Check: "1"})
@@ -963,16 +1012,19 @@ func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 		decls = append(decls, validationcache.CheckEntry{Check: key})
 	}
 	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	// A legacy baseline: per-check evidence, no GATE_JUDGMENTS block.
+	// A baseline with per-check evidence but no structured judgment state.
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
-		Command:   "validate",
-		Unit:      "auth",
-		Mode:      "full",
-		Basis:     "full",
-		Result:    "pass",
-		Target:    TargetCandidate,
-		Timestamp: "2026-01-01T00:00:00Z",
-		Entries:   []validationcache.FileEntry{entry},
+		Command:        "validate",
+		Unit:           "auth",
+		Mode:           "full",
+		Basis:          "full",
+		Result:         "pass",
+		Target:         TargetCandidate,
+		Timestamp:      "2026-01-01T00:00:00Z",
+		PinFormat:      validationcache.PromisePinFormat,
+		PromisePins:    []validationcache.PromisePin{},
+		PromisePinsSet: true,
+		Entries:        []validationcache.FileEntry{entry},
 	}); err != nil {
 		t.Fatal(err)
 	}

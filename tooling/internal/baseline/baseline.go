@@ -421,53 +421,40 @@ func dedupeStrings(in []string) []string {
 	return out
 }
 
-// entryDrift compares one baseline entry against current content. When the
-// entry records chunk evidence (a chunker) the comparison is the same ordered
+// entryDrift compares one baseline entry against current content. The entry
+// records chunk evidence (a chunker); the comparison is the same ordered
 // bidirectional chunk diff the gates use, and the detail names the changed
 // line spans. A recorded sequence may be empty — content that chunks to
 // nothing (an empty or newline-only file) — and is still diffed, so the
-// empty→content transition is localized. Only a legacy baseline entry with no
-// recorded chunker falls back to whole-file hash equality.
+// empty→content transition is localized. An entry without chunk evidence is
+// not current-format and is reported as drifted; a fresh run rewrites it.
 func entryDrift(repoRoot, rel string, be entry) (string, bool) {
 	full := filepath.Join(repoRoot, filepath.FromSlash(rel))
 	text, err := contenthash.FileText(full)
 	if err != nil {
 		return be.Path + " (unreadable)", true
 	}
-	if be.Chunker != "" {
-		changes := contenthash.DiffChunks(be.Chunks, text)
-		if len(changes) == 0 {
-			return "", false
-		}
-		var spans []string
-		for _, c := range changes {
-			switch c.Kind {
-			case contenthash.ChangeAdded:
-				spans = append(spans, fmt.Sprintf("added lines %d-%d", c.StartLine, c.EndLine))
-			case contenthash.ChangeChanged:
-				spans = append(spans, fmt.Sprintf("changed lines %d-%d", c.StartLine, c.EndLine))
-			case contenthash.ChangeRemoved:
-				if c.StartLine == c.EndLine {
-					spans = append(spans, fmt.Sprintf("removed near line %d", c.StartLine))
-				} else {
-					spans = append(spans, fmt.Sprintf("removed between lines %d-%d", c.StartLine, c.EndLine))
-				}
+	if be.Chunker == "" {
+		return be.Path + " (no chunk evidence recorded)", true
+	}
+	changes := contenthash.DiffChunks(be.Chunks, text)
+	if len(changes) == 0 {
+		return "", false
+	}
+	var spans []string
+	for _, c := range changes {
+		switch c.Kind {
+		case contenthash.ChangeAdded:
+			spans = append(spans, fmt.Sprintf("added lines %d-%d", c.StartLine, c.EndLine))
+		case contenthash.ChangeChanged:
+			spans = append(spans, fmt.Sprintf("changed lines %d-%d", c.StartLine, c.EndLine))
+		case contenthash.ChangeRemoved:
+			if c.StartLine == c.EndLine {
+				spans = append(spans, fmt.Sprintf("removed near line %d", c.StartLine))
+			} else {
+				spans = append(spans, fmt.Sprintf("removed between lines %d-%d", c.StartLine, c.EndLine))
 			}
 		}
-		return be.Path + " (" + strings.Join(spans, "; ") + ")", true
 	}
-	currentHash := contenthash.FileHashText(text)
-	if be.Hash != "" && normalizeCID(currentHash) != normalizeCID(be.Hash) {
-		return be.Path + " (content changed; no localization recorded)", true
-	}
-	return "", false
-}
-
-// normalizeCID strips a "sha256:" prefix so stored and computed CIDs compare
-// on the hex value alone.
-func normalizeCID(cid string) string {
-	if idx := strings.LastIndex(cid, ":"); idx >= 0 {
-		return cid[idx+1:]
-	}
-	return cid
+	return be.Path + " (" + strings.Join(spans, "; ") + ")", true
 }

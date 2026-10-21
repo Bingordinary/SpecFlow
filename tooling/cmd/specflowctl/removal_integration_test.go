@@ -140,7 +140,7 @@ func TestInstalledProjectAppendixReplacementAndReferenceRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grWriteFile(t, root, consumer, strings.Replace(strings.Replace(string(data), "unit_refs: none", "unit_refs: auth", 1), "rule_refs: none", "rule_refs: b_rule_http", 1))
+	grWriteFile(t, root, consumer, strings.Replace(string(data), "rule_refs: none", "rule_refs: b_rule_http", 1))
 	removalPublishUnit(t, root, "consumer")
 	if r := fork.Fork(root, "consumer"); !r.Passed {
 		t.Fatal(r.Issues)
@@ -149,7 +149,7 @@ func TestInstalledProjectAppendixReplacementAndReferenceRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grWriteFile(t, root, consumer, strings.Replace(strings.Replace(string(data), "unit_refs: auth", "unit_refs: none", 1), "rule_refs: b_rule_http", "rule_refs: none", 1))
+	grWriteFile(t, root, consumer, strings.Replace(string(data), "rule_refs: b_rule_http", "rule_refs: none", 1))
 	if _, err := removeRun(t, root, "--unit", "auth", "--rule", "b_rule_http"); err == nil {
 		t.Fatal("stable references hidden by candidate")
 	}

@@ -33,7 +33,7 @@ func TestLayoutAccessFailureStopsCommandBoundaries(t *testing.T) {
 					mustWriteCLITestFile(t, filepath.Join(repoRoot, filepath.FromSlash(otherRoot), "go.mod"), "marker\n")
 				}
 				candidate := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")
-				content := "---\nunit: demo\nunit_refs: []\nrule_refs: []\nevidence_appendix_ref: none\n---\n# Demo\n"
+				content := "---\nunit: demo\nrule_refs: []\nevidence_appendix_ref: none\n---\n# Demo\n"
 				mustWriteCLITestFile(t, candidate, content)
 				frameworkPath := filepath.Join(repoRoot, "framework/concepts.md")
 				mustWriteCLITestFile(t, frameworkPath, "# Framework\n")

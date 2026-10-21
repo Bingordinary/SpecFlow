@@ -17,7 +17,7 @@ func writeOwnershipStable(t *testing.T, repoRoot, unitName, impl string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: " + unitName + "\nunit_refs: none\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: item_1\n    description: test\n    verification_type: testable\n    verification_surface: src/\n    implementation_surface: " + impl + "\n    verification_method: check\n    pass_condition: ok\n    runnable: yes\n"
+	content := "---\nid: " + unitName + "\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: item_1\n    description: test\n    verification_type: testable\n    verification_surface: src/\n    implementation_surface: " + impl + "\n    verification_method: check\n    pass_condition: ok\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unitName+".md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -31,8 +31,8 @@ func TestSurfaceAuditWith_SharesExpansions(t *testing.T) {
 	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
 	writeSurfaceFile(t, repoRoot, "other/b.go", "package other")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "pkg", nil)
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "pkg", []string{"other/"})
+	writeOwnershipSpec(t, repoRoot, "alpha", "pkg", nil)
+	writeOwnershipSpec(t, repoRoot, "beta", "pkg", []string{"other/"})
 	// The same unit's stable layer declares the same directory again.
 	writeOwnershipStable(t, repoRoot, "alpha", "pkg")
 
@@ -54,18 +54,10 @@ func TestSurfaceAuditWith_SharesExpansions(t *testing.T) {
 
 // writeOwnershipSpec writes a candidate spec whose single acceptance item
 // declares impl as implementation_surface and affectsFiles as affects.files.
-func writeOwnershipSpec(t *testing.T, repoRoot, unitName string, unitRefs []string, impl string, affectsFiles []string) {
+func writeOwnershipSpec(t *testing.T, repoRoot, unitName string, impl string, affectsFiles []string) {
 	t.Helper()
 	var b strings.Builder
 	b.WriteString("---\nid: " + unitName + "\n")
-	if len(unitRefs) == 0 {
-		b.WriteString("unit_refs: none\n")
-	} else {
-		b.WriteString("unit_refs:\n")
-		for _, ref := range unitRefs {
-			b.WriteString("  - " + ref + "\n")
-		}
-	}
 	b.WriteString("rule_refs: none\n---\n\n")
 	b.WriteString("acceptance_item_set:\n")
 	b.WriteString("  - id: item_1\n")
@@ -101,8 +93,8 @@ func TestSurfaceAuditOverlapAndOutOfBounds(t *testing.T) {
 	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
 	writeSurfaceFile(t, repoRoot, "pkg/b.go", "package pkg")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "pkg/a.go", []string{"pkg/b.go"})
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "pkg/b.go", nil)
+	writeOwnershipSpec(t, repoRoot, "alpha", "pkg/a.go", []string{"pkg/b.go"})
+	writeOwnershipSpec(t, repoRoot, "beta", "pkg/b.go", nil)
 
 	report, err := SurfaceAudit(repoRoot)
 	if err != nil {
@@ -123,13 +115,13 @@ func TestSurfaceAuditOverlapAndOutOfBounds(t *testing.T) {
 	}
 }
 
-func TestSurfaceAuditOutOfBoundsDepDeclared(t *testing.T) {
+func TestSurfaceAuditSharedFileDeclared(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
 	writeSurfaceFile(t, repoRoot, "pkg/b.go", "package pkg")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", []string{"beta"}, "pkg/a.go", []string{"pkg/b.go"})
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "pkg/b.go", nil)
+	writeOwnershipSpec(t, repoRoot, "alpha", "pkg/a.go", []string{"pkg/b.go"})
+	writeOwnershipSpec(t, repoRoot, "beta", "pkg/b.go", nil)
 
 	report, err := SurfaceAudit(repoRoot)
 	if err != nil {
@@ -145,8 +137,8 @@ func TestSurfaceAuditDirectoryExpansionOverlap(t *testing.T) {
 	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
 	writeSurfaceFile(t, repoRoot, "pkg/b.go", "package pkg")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "pkg", nil)
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "pkg/b.go", nil)
+	writeOwnershipSpec(t, repoRoot, "alpha", "pkg", nil)
+	writeOwnershipSpec(t, repoRoot, "beta", "pkg/b.go", nil)
 
 	report, err := SurfaceAudit(repoRoot)
 	if err != nil {
@@ -176,7 +168,7 @@ func TestSurfaceAuditSameUnitNoOverlap(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "pkg/a.go", "package pkg")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "pkg/a.go", []string{"pkg/a.go"})
+	writeOwnershipSpec(t, repoRoot, "alpha", "pkg/a.go", []string{"pkg/a.go"})
 
 	report, err := SurfaceAudit(repoRoot)
 	if err != nil {
@@ -200,8 +192,8 @@ func TestSurfaceAuditExcludesSpecPaths(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_shared.md", "placeholder")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "docs/specs/units/stable/unit_shared.md", nil)
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "docs/specs/units/stable/unit_shared.md", nil)
+	writeOwnershipSpec(t, repoRoot, "alpha", "docs/specs/units/stable/unit_shared.md", nil)
+	writeOwnershipSpec(t, repoRoot, "beta", "docs/specs/units/stable/unit_shared.md", nil)
 
 	report, err := SurfaceAudit(repoRoot)
 	if err != nil {
@@ -217,8 +209,8 @@ func TestSurfaceAuditDisjointSurfacesPass(t *testing.T) {
 	writeSurfaceFile(t, repoRoot, "alpha/a.go", "package alpha")
 	writeSurfaceFile(t, repoRoot, "beta/b.go", "package beta")
 
-	writeOwnershipSpec(t, repoRoot, "alpha", nil, "alpha/a.go", nil)
-	writeOwnershipSpec(t, repoRoot, "beta", nil, "beta/b.go", nil)
+	writeOwnershipSpec(t, repoRoot, "alpha", "alpha/a.go", nil)
+	writeOwnershipSpec(t, repoRoot, "beta", "beta/b.go", nil)
 
 	if result := checkSurfaceAssociations(repoRoot, "alpha"); result.Status != Pass {
 		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)

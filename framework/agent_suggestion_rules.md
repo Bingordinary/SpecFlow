@@ -11,7 +11,7 @@ The agent only reacts to these concrete signals:
 | **design**: "I want to design X", "let's design X", "I need a design for X" | Create or update the candidate spec | Default mode: assume editing. If no candidate exists, offer to start one. If candidate exists, begin editing. If the goal, user, or scope is unclear, route through the guidance skills first (see `framework/guidance/using-specflow-guidance/SKILL.md`) instead of starting a candidate directly. Do not suggest spec operations. |
 | **quality check**: "check this", "is it right?", "review the design", "validate", "verify" | Run an applicable quality check | For a unit, clarify validate (design quality) vs verify (implementation alignment) when the wording is ambiguous. For a rule, verify is unavailable: use validate. Then disclose relevant cache state. |
 | **code review**: "review the code", "code review", "review quality" | Review code quality with spec awareness | Route to the `quality` lens of `verify`. Disclose verify (quality) cache state. The quality lens must pass before promote. |
-| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote candidate truth | Inspect target type/status. For a unit, read `fresh --unit <name>` first and apply the Rule Publication Prerequisites below. Normal unit requires published bound-rule content plus fresh non-blocking validate+verify (both verify lenses); rule requires validate. Disclose publication blockers, global draft advisories, and missing/stale/blocking applicable gates; ask before running gates. Suggest `promote` only when all applicable prerequisites pass. |
+| **completion**: "it's done", "lock it in", "finalize", "promote this", "wrap it up", "ship it" | Promote candidate truth | Inspect target type/status. For a unit, read `fresh --unit <name>` first and apply the Rule Publication Prerequisites below. Normal unit requires published bound-rule content plus fresh non-blocking validate+verify (both verify lenses) and a recorded promise state with contract closure `CLOSED`; rule requires validate. Disclose publication blockers, global draft advisories, promise closure, and missing/stale/blocking applicable gates; ask before running gates. Suggest `promote` only when all applicable prerequisites pass. |
 | **stuck**: "something is wrong", "it's broken", "I'm stuck" | Diagnose and recover | Diagnose first: is it a code bug, design flaw, or external blocker? See `framework/recovery_patterns.md`. |
 
 Signals classify the user's request; they do not grant extra authority. A request to explain, analyze, or inspect stays read-only even if design is discussed. If the user declines a suggested gate, continue the requested work and do not repeat the suggestion until a new quality/completion signal appears.
@@ -28,13 +28,17 @@ Before suggesting any action, communicate the current file state using concrete,
 | No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
 | Validate cache fresh | "Validate has passed all checks, and the read files have not changed" |
 | Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
+| Validate cache INVALID | "Validate cache predates promise pinning — run a full `validate@{unit}`; delta/repair cannot recover it" |
 | Validate cache with P0/P1 findings | "Validate found {N} P0/P1 finding(s) — validate blocks promote until resolved" |
 | Verify cache fresh | "Verify has passed for all items, and the checked files have not changed" |
 | Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
+| Verify cache INVALID | "Verify cache predates promise pinning — run a full `verify@{unit}`; delta/repair cannot recover it" |
 | Verify cache with P0/P1 findings | "Verify found {N} P0/P1 finding(s) — verify blocks promote until resolved" |
 | Merged verify cache fresh (both lenses) | "Verify has passed — no P0 or P1 findings, and both the alignment and quality lenses are covered" |
 | Merged verify cache with P0/P1 findings | "Verify found {N} P0/P1 finding(s) — verify blocks promote until resolved" |
 | Merged verify cache missing/stale or single-lens | "Verify cache does not exist, is expired, or does not cover both lenses — re-run `verify@{unit}`" |
+| Promise state recorded, contract closure `CLOSED`, and every pinned provider promise published in stable | "The unit's promise contract is recorded, its dependency pins are current, and every pinned provider contract is published" |
+| Promise state missing, malformed, closure `OPEN`/`REOPENED`, or a pinned provider promise unpublished | "The unit's promise contract is not closed or a pinned provider is not published — run `verify@{unit}` or promote the provider first" |
 | Appendix validate check pass | "All appendix files are included in validation" |
 | Appendix validate check fail | "One or more appendix files were not validated — run `validate@{unit}` before promoting" |
 
@@ -46,7 +50,7 @@ Before suggesting any action, communicate the current file state using concrete,
 1. On a unit completion signal or `promote@{unit}`, run read-only `specflowctl fresh --unit <name>` before suggesting promote or supplementary gates. Ordinary discussion and editing do not trigger publication reminders.
 2. For a normal candidate unit, publication blockers come from its own candidate `rule_refs`: an explicit rule with no stable file blocks; a missing rule blocks; a bound rule whose candidate differs from stable blocks until that rule is promoted. Compare normalized complete file content, including version and wording changes. Identical candidate/stable content passes. Unrelated bound rules and bindings dropped by this candidate do not block.
 3. Changed or newly created candidate global rules are unpublished drafts. List them as advisories and recommend publishing them first only if this unit's current round is intended to adopt them. Their existence does not block work under the active stable global rules; identical global candidate/stable content needs no advisory.
-4. Report every blocking rule ID and reason before recommending downstream checks. A read error stops with the failing path. The rule publication result is separate from validate/verify cache state: `READY` requires both the publication check and all applicable gates. Publication prerequisites apply to every unit; stable confirmation reports gain no promote condition.
+4. Report every blocking rule ID and reason before recommending downstream checks. A read error stops with the failing path. The rule publication result is separate from validate/verify cache state and promise readiness: `READY` requires the publication check, all applicable gates, and a recorded promise state with contract closure `CLOSED` and every pinned provider promise published in the stable layer at the same fingerprint. Publication prerequisites apply to every unit; stable confirmation reports gain no promote condition.
 5. Never automatically promote a rule or start a gate. After rule publication, read `fresh --unit <name>` and recommend only the applicable missing, stale, or blocking gates. Evidence captured against the same bound candidate content may remain fresh after its publication; do not require an unconditional re-run.
 ==ATOM_END:unit_rule_publication==
 
@@ -56,7 +60,7 @@ Caches satisfy gates only when a complete-coverage run passed. Targeted runs nev
 
 **State transition lookup table for a normal unit (use only after a quality-check or completion signal):**
 
-This table maps the boolean cache dimensions to the disclosure text and suggested action. On a completion signal, apply the publication prerequisites first: a rule blocker overrides the table's promote suggestion, while a global advisory does not. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. Otherwise the rows below are authoritative: `validate_fresh` and `verify_fresh` are recorded independently, so a passed verify is still disclosed even when the validate cache is expired.
+This table maps the boolean cache dimensions to the disclosure text and suggested action. On a completion signal, apply the publication prerequisites first: a rule blocker overrides the table's promote suggestion, while a global advisory does not. `N/A` means the cache state is irrelevant. When `candidate_exists` is N, all cache dimensions are N/A. Otherwise the rows below are authoritative: `validate_fresh` and `verify_fresh` are recorded independently, so a passed verify is still disclosed even when the validate cache is expired. The `READY FOR PROMOTE` line from `fresh --unit` is the authoritative composite decision; it also requires a recorded promise state with `CLOSED` contract closure and every pinned provider promise published in the stable layer at the same fingerprint.
 
 The merged verify cache (both lenses) is required for promote: when `verify_result.md` is missing, stale, does not cover both lenses, or is `blocking: true`, the agent must disclose the gap before promote and advise running `verify@{unit}`.
 
@@ -70,7 +74,7 @@ A fresh cache always means a complete-coverage run passed. Targeted runs never p
 | Y | N | N | "Candidate exists, but validate has not passed or the cache is expired." | "You can continue updating the candidate, or run validate for a design quality check." |
 | Y | Y | N | "Candidate exists, validate has passed all checks, but verify has not been done or the cache is expired." | "You can continue updating the candidate, or run verify to check if the implementation matches the design." |
 | Y | N | Y | "Candidate exists, verify has passed all items, but the validate cache is expired." | "It is recommended to re-run validate because the design may have changed." |
-| Y | Y | Y | "Candidate has passed validate (all checks) and verify (all items and declared code files)." | "If the merged verify cache is missing, stale, does not cover both lenses, or has P0/P1 findings, advise running `verify@{unit}` before promote. Otherwise: 'If the design is finalized, you can promote it to stable.'" |
+| Y | Y | Y | "Candidate has passed validate (all checks) and verify (all items and declared code files), and its promise contract is recorded and `CLOSED` with its pinned providers published." | "If the merged verify cache is missing, stale, does not cover both lenses, or has P0/P1 findings, advise running `verify@{unit}` before promote. Otherwise, if `fresh --unit` says `READY FOR PROMOTE: yes`: 'If the design is finalized, you can promote it to stable.'" |
 
 ## Decision Progress
 
@@ -85,7 +89,7 @@ While the user works through findings one by one, every decision point must rest
 > Agent: "A candidate spec for user_auth already exists, but the validate cache has expired. I can: 1. Run validate — check the candidate spec's design quality. 2. Run verify — check if the code implementation matches the design. 3. Continue editing the candidate. When you say 'check it', do you mean checking the design (validate) or checking the implementation (verify)?"
 
 > User: "It's done, promote this" (completion signal)
-> Agent: "Fresh reports that the referenced rule content is published, validate has passed all checks, and verify has no P0/P1 findings. Ready to promote. Running `promote@user_auth`..."
+> Agent: "Fresh reports `READY FOR PROMOTE: yes` — the referenced rule content is published, validate has passed all checks, verify has no P0/P1 findings, and the promise contract is recorded and `CLOSED` with its pinned providers published. Running `promote@user_auth`..."
 
 ## RED FLAGS — common agent mistakes
 

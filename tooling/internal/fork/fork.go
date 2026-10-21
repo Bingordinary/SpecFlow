@@ -96,6 +96,11 @@ func Fork(repoRoot, unitName string) *Result {
 			}
 		}
 	}
+	if copied, stateErr := validationcache.CopyPromiseStateToCandidate(repoRoot, unitName); stateErr != nil {
+		r.Actions = append(r.Actions, fmt.Sprintf("Promise state inheritance failed: %v — run verify to rebuild it", stateErr))
+	} else if copied {
+		r.Actions = append(r.Actions, "Inherited promise state (rewritten to candidate layer)")
+	}
 
 	r.Passed = true
 	return r
@@ -193,5 +198,3 @@ func FormatRuleResult(r *RuleResult) string {
 	}
 	return buf.String()
 }
-
-

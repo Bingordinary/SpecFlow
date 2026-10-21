@@ -13,6 +13,8 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 // fixtureStandard is the judging standard a fixture validate cache records: the
@@ -72,11 +74,31 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// writeRecordedPromiseState records the candidate promise state of a fixture
+// unit so freshness reads it as a recorded contract.
+func writeRecordedPromiseState(t *testing.T, repoRoot, name string) {
+	t.Helper()
+	statePath, err := validationcache.PromiseStatePath(repoRoot, name, "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
+		Unit:     name,
+		Layer:    "candidate",
+		Promises: []validationcache.PromisePin{{ID: name + ".core", Fingerprint: promiseFingerprint(t, repoRoot, name, name+".core")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter string, files []cacheFileSpec) {
@@ -107,8 +129,38 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	if command == "validate" {
 		sb.WriteString("standard: " + fixtureStandard(t, repoRoot, "unit") + "\n")
 	}
+	sb.WriteString("pin_format: promise-v1\n")
 	if extraFrontmatter != "" {
 		sb.WriteString(extraFrontmatter)
+	}
+	if command == "validate" {
+		target := "candidate"
+		if strings.Contains(extraFrontmatter, "target: stable") {
+			target = "stable"
+		}
+		specPath := filepath.Join(repoRoot, "docs/specs/units", target, "unit_"+name+".md")
+		data, err := os.ReadFile(specPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope := specvalidation.PromiseScopeForLayer(target)
+		ids := specvalidation.PromiseDependencyIDs(string(data))
+		if len(ids) == 0 {
+			sb.WriteString("promise_pins: []\n")
+		} else {
+			current, issues := specvalidation.PromiseFingerprintsForScope(repoRoot, scope)
+			if len(issues) > 0 {
+				t.Fatalf("promise graph: %s", strings.Join(issues, "; "))
+			}
+			sb.WriteString("promise_pins:\n")
+			for _, id := range ids {
+				fingerprint, ok := current[id]
+				if !ok {
+					t.Fatalf("dependency promise %q is unresolved", id)
+				}
+				fmt.Fprintf(&sb, "  - id: %s\n    fingerprint: %s\n", id, fingerprint)
+			}
+		}
 	}
 	sb.WriteString("files:\n")
 	for _, f := range files {
@@ -128,6 +180,39 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// withPromiseFormat fills the unit-cache format fields a fixture write needs:
+// the promise-pin marker for every unit cache, and the provider contract pins
+// for a passing validate cache.
+func withPromiseFormat(t *testing.T, root, unit, layer string, w validationcache.CacheWrite) validationcache.CacheWrite {
+	t.Helper()
+	w.PinFormat = validationcache.PromisePinFormat
+	if w.Command != "validate" || w.Result != "pass" {
+		return w
+	}
+	w.PromisePinsSet = true
+	w.PromisePins = []validationcache.PromisePin{}
+	data, err := os.ReadFile(filepath.Join(root, "docs/specs/units", layer, "unit_"+unit+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := specvalidation.PromiseDependencyIDs(string(data))
+	if len(ids) == 0 {
+		return w
+	}
+	current, issues := specvalidation.PromiseFingerprintsForScope(root, specvalidation.PromiseScopeForLayer(layer))
+	if len(issues) > 0 {
+		t.Fatalf("promise graph: %s", strings.Join(issues, "; "))
+	}
+	for _, id := range ids {
+		fingerprint, ok := current[id]
+		if !ok {
+			t.Fatalf("dependency promise %q is unresolved", id)
+		}
+		w.PromisePins = append(w.PromisePins, validationcache.PromisePin{ID: id, Fingerprint: fingerprint})
+	}
+	return w
 }
 
 func writeRuleSpec(t *testing.T, repoRoot, id string) string {
@@ -246,6 +331,7 @@ func TestFreshAllMixed(t *testing.T) {
 	filesA := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specA)}}
 	writeUnitCache(t, repoRoot, "user_auth", "validate", "", filesA)
 	writeUnitCache(t, repoRoot, "user_auth", "verify", "target: candidate\n", verifyFilesA)
+	writeRecordedPromiseState(t, repoRoot, "user_auth")
 
 	// payment: validate only (verify missing)
 	specB := writeUnitSpec(t, repoRoot, "payment")
@@ -255,7 +341,7 @@ func TestFreshAllMixed(t *testing.T) {
 	// stable-only unit must NOT appear
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\n---\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n"), 0644)
 
 	// one rule with fresh validate cache
 	rulePath := writeRuleSpec(t, repoRoot, "b_rule_auth")
@@ -442,7 +528,7 @@ func TestFreshUnitVerifyUndeducibleCoverageFailsClosed(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(specPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(specPath, []byte("---\nid: noitems\nunit_refs: none\nrule_refs: none\n---\n\n# noitems\n"), 0644); err != nil {
+	if err := os.WriteFile(specPath, []byte("---\nid: noitems\nrule_refs: none\n---\n\n# noitems\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	codePath := grWriteFile(t, repoRoot, "src/code.go", "package code\n")
@@ -451,7 +537,7 @@ func TestFreshUnitVerifyUndeducibleCoverageFailsClosed(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cache := "---\ncommand: verify\nunit: noitems\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+	cache := "---\ncommand: verify\nunit: noitems\nmode: full\nresult: pass\ntarget: candidate\npin_format: promise-v1\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
 		"  - path: docs/specs/units/candidate/unit_noitems.md\n    hash: sha256:" + computeHash(specPath) + "\n" +
 		cacheDepsAt(t, repoRoot, "docs/specs/units/candidate/unit_noitems.md") +
 		"  - path: src/code.go\n    hash: sha256:" + computeHash(codePath) + "\n" +
@@ -479,7 +565,7 @@ func TestFreshUnitDetailStaleEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_user_auth.md")
 	os.MkdirAll(filepath.Dir(specPath), 0755)
-	specContent := "---\nid: user_auth\nunit_refs: none\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	specContent := "---\nid: user_auth\nrule_refs: none\n---\n\n# User Auth\n\n## Description\n\nAuth prose.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(specContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -650,7 +736,10 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
-	content := "---\nid: " + name + "\nunit_refs: none\nrule_refs: none\n---\n\n## Description\nStable fixture.\n\n## Testability / Acceptance Criteria\nacceptance_item_set:\n  - id: " + name + ".core\n    implementation_surface: src/" + name + ".go\n"
+	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
+		"## Design Narrative\n\nStable fixture.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: test\n    pass_condition: ok\n    runnable: yes\n"
 	grWriteFile(t, repoRoot, "src/"+name+".go", "package fixture\n")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -684,7 +773,7 @@ func TestFreshStableScope(t *testing.T) {
 	writeStableUnitSpec(t, repoRoot, "settled")
 	writeStableUnitSpec(t, repoRoot, "legacy")
 
-	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -752,7 +841,7 @@ func TestFreshStableScope_LocalizesDrift(t *testing.T) {
 	aPath := filepath.Join(srcDir, "a.go")
 	os.WriteFile(aPath, []byte(content), 0644)
 
-	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -803,7 +892,7 @@ func TestFreshStableScope_VerifiedSilence(t *testing.T) {
 	// Baseline says the surface is unchanged...
 	specPath := filepath.Join(repoRoot, "docs/specs/units/stable/unit_settled.md")
 	specHash := computeHash(specPath)
-	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -859,7 +948,7 @@ func TestFreshStableScope_Changed(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	writeStableUnitSpec(t, repoRoot, "settled")
 
-	spec := "---\nid: settled\nunit_refs: none\nrule_refs: none\n---\n" +
+	spec := "---\nid: settled\nrule_refs: none\n---\n" +
 		"acceptance_item_set:\n" +
 		"  - id: settled.core\n" +
 		"    description: t\n" +
@@ -1190,7 +1279,7 @@ func TestFreshOmitsConsumedRule(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 
 	writeRuleSpec(t, repoRoot, "b_rule_auth")
-	unit := "---\nid: user_auth\nunit_refs: none\nrule_refs: b_rule_auth\n---\n"
+	unit := "---\nid: user_auth\nrule_refs: b_rule_auth\n---\n"
 	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(unitDir, 0755); err != nil {
 		t.Fatal(err)

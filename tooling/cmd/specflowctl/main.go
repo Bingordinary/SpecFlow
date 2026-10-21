@@ -93,14 +93,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runGateInvalidate(args[1:], stdout, stderr)
 	case "operation":
 		return runOperation(args[1:], stdout, stderr)
-	case "command", "evaluation", "process", "snapshot", "status", "check-report", "relation":
-		fmt.Fprintf(stderr, "'%s' is no longer supported in this version of specFlow\n", args[0])
-		fmt.Fprintln(stderr, "See specflow/framework/concepts.md for the current framework design")
-		return errors.New("removed command")
-	case "unit":
-		fmt.Fprintf(stderr, "'unit' is deprecated. Use 'next --unit <name>' instead\n")
-		fmt.Fprintln(stderr, "Usage: specflowctl next --unit <name>")
-		return nil
 	case "-h", "--help", "help":
 		writeRootUsage(stdout)
 		return nil
@@ -117,6 +109,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetName string) string {
 	if category == validationcache.CategoryBlocked {
 		return fmt.Sprintf("Resolve the P0/P1 findings, then run `re%s@%s` to recover incrementally.", command, targetName)
+	}
+	if category == validationcache.CategoryInvalid {
+		return fmt.Sprintf("The cache predates promise pinning and is incompatible — run the full `%s@%s` command (delta/repair cannot use it).", command, targetName)
 	}
 	return fmt.Sprintf("Run `%s@%s` first, then retry promote.", command, targetName)
 }

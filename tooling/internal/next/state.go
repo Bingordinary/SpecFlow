@@ -20,10 +20,19 @@ type UnitInfo struct {
 	StableSpec             string
 	Appendices             []string
 	RuleRefs               []string
-	RelatedUnits           []string
 	ImplementationSurfaces []string
 	AffectsFiles           []string
 	AcceptanceItems        []string
+	PromiseModel           bool
+	PromiseModelError      string
+	Promises               []PromiseInfo
+}
+
+// PromiseInfo is one promise discovered in the current spec.
+type PromiseInfo struct {
+	ID        string
+	Kind      string
+	DependsOn []string
 }
 
 // DiscoverUnit reads the file system to discover a unit's file state.
@@ -82,21 +91,30 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 // one selected spec read (deduplicated, document order).
 func populateSpecInfo(info *UnitInfo, content string) {
 	fm := specpaths.ReadFrontmatterStringMap(content)
-	if raw := fm["unit_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
-		var refs []string
-		for _, ref := range specpaths.ParseRefList(raw) {
-			if ref != "" && ref != info.Name {
-				refs = append(refs, ref)
-			}
-		}
-		info.RelatedUnits = dedupe(refs)
-	}
 	if fm["rule_refs"] != "" && !strings.EqualFold(fm["rule_refs"], "none") {
 		info.RuleRefs = specpaths.ParseRefList(fm["rule_refs"])
 	}
 	info.ImplementationSurfaces = dedupe(specvalidation.ExtractImplementationSurfaces(content))
 	info.AffectsFiles = dedupe(specvalidation.ExtractAffectsFiles(content))
 	info.AcceptanceItems = dedupe(specvalidation.ExtractAcceptanceItemIDs(content))
+	promises, issues := specvalidation.ParsePromises(content)
+	if len(issues) == 0 {
+		if check := specvalidation.CheckPromiseSchema(content, info.Name); check.Status == specvalidation.Fail {
+			issues = append(issues, check.Details)
+		}
+	}
+	if len(issues) == 0 {
+		info.PromiseModel = true
+		for _, promise := range promises {
+			info.Promises = append(info.Promises, PromiseInfo{
+				ID:        promise.ID,
+				Kind:      promise.Kind,
+				DependsOn: promise.DependsOn,
+			})
+		}
+	} else {
+		info.PromiseModelError = strings.Join(issues, "; ")
+	}
 }
 
 func dedupe(values []string) []string {
@@ -146,13 +164,6 @@ func FormatInfo(info *UnitInfo) string {
 		}
 	}
 
-	if len(info.RelatedUnits) > 0 {
-		buf.WriteString("Related units:\n")
-		for _, u := range info.RelatedUnits {
-			fmt.Fprintf(&buf, "  - %s\n", u)
-		}
-	}
-
 	if len(info.ImplementationSurfaces) > 0 {
 		buf.WriteString("Implementation surface:\n")
 		for _, s := range info.ImplementationSurfaces {
@@ -164,6 +175,21 @@ func FormatInfo(info *UnitInfo) string {
 		buf.WriteString("Affects files:\n")
 		for _, f := range info.AffectsFiles {
 			fmt.Fprintf(&buf, "  - %s\n", f)
+		}
+	}
+
+	if info.HasCandidate || info.HasStable {
+		if info.PromiseModel {
+			fmt.Fprintf(&buf, "Promise model: %d promise(s)\n", len(info.Promises))
+			for _, promise := range info.Promises {
+				if len(promise.DependsOn) > 0 {
+					fmt.Fprintf(&buf, "  - %s (%s) depends_on: %s\n", promise.ID, promise.Kind, strings.Join(promise.DependsOn, ", "))
+				} else {
+					fmt.Fprintf(&buf, "  - %s (%s)\n", promise.ID, promise.Kind)
+				}
+			}
+		} else {
+			fmt.Fprintf(&buf, "Promise model: INVALID — %s\n", info.PromiseModelError)
 		}
 	}
 

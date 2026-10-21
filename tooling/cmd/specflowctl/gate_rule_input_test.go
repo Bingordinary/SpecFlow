@@ -17,8 +17,11 @@ func TestPlannedPhysicalRuleInputDoesNotDeadlockSubmit(t *testing.T) {
 	grWriteFile(t, root, "docs/specs/rules/stable/g_rule_logging.md",
 		"---\nid: g_rule_logging\nscope: unit\n---\n\n# g_rule_logging\n\n## Constraint\n\nMust log.\n")
 	grWriteFile(t, root, "docs/specs/units/candidate/unit_auth.md",
-		"---\nid: auth\nunit_refs: none\nrule_refs: g_rule_logging\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n"+
-			"  - id: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: contracts.js\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
+		"---\nid: auth\nrule_refs: g_rule_logging\n---\n\n# auth\n\n"+
+			"## Design Narrative\n\nProse.\n\n"+
+			"## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n"+
+			"## Acceptance Items\n\nacceptance_item_set:\n"+
+			"  - id: auth.core\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: contracts.js\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n")
 	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token}; }\n")
 
 	physical := "docs/specs/rules/stable/g_rule_logging.md"

@@ -4,17 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 // ChangeReportEntry is one cache input file's state relative to the accepted
-// cache snapshot.
+// cache snapshot, or one provider promise whose contract moved.
 type ChangeReportEntry struct {
 	Path    string                    `json:"path"`
-	Kind    string                    `json:"kind"` // changed | removed | added | inconsistent
+	Kind    string                    `json:"kind"` // changed | removed | added | inconsistent | promise
 	Changes []contenthash.ChangeEntry `json:"changes,omitempty"`
+	// Promise names the provider promise for a "promise" entry. The entry says
+	// the contract moved; the provider spec is shown for the reviewer's
+	// cross-unit read, not because its whole file is the consumer's contract.
+	Promise string `json:"promise,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // ChangeReport is the mechanically detected change set of one gate cache's
@@ -58,6 +66,20 @@ func (r *ChangeReport) Fingerprint() (string, error) {
 	return contenthash.CID(payload), nil
 }
 
+// promiseEntryPath names the provider spec in repo-relative form for the
+// change report. It falls back to the layer ref when the file cannot be
+// resolved, so the entry still tells the reviewer which provider to read.
+func promiseEntryPath(repoRoot, target, provider string) string {
+	abs := providerSubjectPath(repoRoot, target, provider)
+	if abs == "" {
+		return providerSpecRef(target, provider)
+	}
+	if rel, err := filepath.Rel(repoRoot, filepath.FromSlash(abs)); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return providerSpecRef(target, provider)
+}
+
 // DeriveChangeReport compares one gate cache's recorded file evidence against
 // current content. A file whose whole-file hash still matches is unchanged.
 // Chunk evidence is required in every entry (the cache format), so a changed
@@ -77,7 +99,34 @@ func DeriveChangeReport(repoRoot, targetKind, targetName, command string) (*Chan
 		return nil, err
 	}
 	report := &ChangeReport{}
+	providerSubjects := promiseProviderSubjectPaths(repoRoot, cache)
+	if cache.Command == "validate" && len(cache.PromisePins) > 0 {
+		scope := specvalidation.PromiseScopeForLayer(cache.Target)
+		current, issues := specvalidation.PromiseFingerprintsForScope(repoRoot, scope)
+		if len(issues) > 0 {
+			return nil, fmt.Errorf("promise graph: %s", strings.Join(issues, "; "))
+		}
+		for _, pin := range cache.PromisePins {
+			fingerprint, ok := current[pin.ID]
+			if ok && fingerprint == pin.Fingerprint {
+				continue
+			}
+			reason := "provider promise contract changed"
+			if !ok {
+				reason = "provider promise is unresolved"
+			}
+			report.Entries = append(report.Entries, ChangeReportEntry{
+				Path:    promiseEntryPath(repoRoot, cache.Target, specvalidation.PromiseProvider(pin.ID)),
+				Kind:    "promise",
+				Promise: pin.ID,
+				Reason:  reason,
+			})
+		}
+	}
 	for _, entry := range cache.Files {
+		if providerSubjects[resolveEntryPath(repoRoot, entry.Path)] {
+			continue
+		}
 		fullPath := resolveEntryPath(repoRoot, entry.Path)
 		if fullPath == "" {
 			report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "removed"})

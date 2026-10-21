@@ -9,7 +9,6 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/unitgraph"
 )
 
 // specPath is a shorthand for specpaths.CandidateUnitSpecFileRef(unitName).
@@ -49,7 +48,6 @@ func CheckUnitFrontmatter(content, unitName string) CheckResult {
 		label string
 	}{
 		{"id", "id"},
-		{"unit_refs", "unit_refs"},
 		{"rule_refs", "rule_refs"},
 	}
 
@@ -169,7 +167,7 @@ func checkAnchors(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 4: Reference integrity (unit_refs/rule_refs files exist)
+// Check 4: Reference integrity (rule_refs files exist)
 // ------------------------------------------------------------
 func checkReferences(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)
@@ -185,26 +183,7 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
 
-	unitRefs := fm["unit_refs"]
 	var missingRefs []string
-
-	if unitRefs != "" && !strings.EqualFold(unitRefs, "none") {
-		refs := specpaths.ParseRefList(unitRefs)
-		for _, ref := range refs {
-			candidatePath := filepath.Join(repoRoot, "docs/specs/units/candidate", fmt.Sprintf("unit_%s.md", ref))
-			if _, err := os.Stat(candidatePath); err == nil {
-
-				continue
-			}
-
-			stablePath := filepath.Join(repoRoot, "docs/specs/units/stable", fmt.Sprintf("unit_%s.md", ref))
-			if _, err := os.Stat(stablePath); err == nil {
-				continue
-			}
-
-			missingRefs = append(missingRefs, ref)
-		}
-	}
 
 	ruleRefs := fm["rule_refs"]
 	if ruleRefs != "" && !strings.EqualFold(ruleRefs, "none") {
@@ -397,68 +376,7 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 }
 
 // ------------------------------------------------------------
-// Check 7: Dependency cycles (unit_refs graph)
-// ------------------------------------------------------------
-
-// cycleGuidance is the standard resolution guidance attached to every cycle
-// finding. It lists the two structural resolutions without judging which one
-// applies — the tool reports and blocks, the user decides how to unbind.
-const cycleGuidance = "Resolve by extracting the shared contract into a rule (star-shaped dependencies), or re-drawing unit boundaries. See specflow/framework/unit_validate_checklist.md Check 8 (cycle resolution); run `deps@all` for the dependency graph."
-
-// cycleBuildGuidance is attached when the graph cannot be built at all. The
-// failure cause is unrelated to the validated unit — any unreadable unit
-// spec blocks the whole graph — so the guidance must point at the reported
-// file rather than at cycle resolutions.
-const cycleBuildGuidance = "Check 7 reads every current-layer unit spec to build the graph — an unreadable spec (permission, corruption) blocks all units, not just this one. Repair the reported file and re-run validate; run `deps@all` to reproduce the failure."
-
-// checkDependencyCycles derives the dependency graph from all current-layer
-// units' unit_refs and FAILS when the validated unit participates in a cycle.
-// A cycle means no member can ever reach stable without drifting (the unit is
-// blocked on its own dependency's unstable acceptance items), so every
-// in-cycle unit FAILs — blocking promote. Units outside the cycle are not
-// affected by it. Only explicit unit_refs edges count; prose is never
-func checkDependencyCycles(repoRoot, unitName string) CheckResult {
-	path := specPath(repoRoot, unitName)
-	_, err := os.ReadFile(path)
-	if err != nil {
-		return CheckResult{
-			Name:    "Dependency cycles",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
-		}
-	}
-
-	graph, err := unitgraph.Build(repoRoot, "all")
-	if err != nil {
-		return CheckResult{
-			Name:    "Dependency cycles",
-			Status:  Fail,
-			Details: fmt.Sprintf("cannot build dependency graph: %v. %s", err, cycleBuildGuidance),
-		}
-	}
-
-	var involved []string
-	for _, cycle := range graph.Cycles() {
-		for _, member := range cycle {
-			if member == unitName {
-				involved = append(involved, strings.Join(cycle, " -> "))
-				break
-			}
-		}
-	}
-	if len(involved) == 0 {
-		return CheckResult{Name: "Dependency cycles", Status: Pass}
-	}
-
-	return CheckResult{
-		Name:    "Dependency cycles",
-		Status:  Fail,
-		Details: fmt.Sprintf("circular dependency: %s. %s", strings.Join(involved, "; "), cycleGuidance),
-	}
-}
-
-// ------------------------------------------------------------
-// Check 8: Region locatability
+// Check 7: Region locatability
 // ------------------------------------------------------------
 func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 	path := specPath(repoRoot, unitName)

@@ -27,7 +27,15 @@ func appendToAuthSpec(t *testing.T, repoRoot, extra string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append(data, []byte(extra)...), 0644); err != nil {
+	// Insert under Design Narrative, before the fixed Promises section, so the
+	// three-section shape stays valid.
+	marker := []byte("\n## Promises")
+	if idx := strings.Index(string(data), string(marker)); idx >= 0 {
+		data = append(append(append([]byte{}, data[:idx]...), []byte(extra)...), data[idx:]...)
+	} else {
+		data = append(data, []byte(extra)...)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -35,7 +43,7 @@ func appendToAuthSpec(t *testing.T, repoRoot, extra string) {
 func TestDeltaPlanCreatesReviewCoverage(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -71,7 +79,7 @@ func TestReviewSessionReadsWholeInputSurface(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "none", "src", "")
 	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
 	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -167,7 +175,7 @@ func TestFullPlanToleratesLegacyCache(t *testing.T) {
 func TestApplyReviewRecheckWidensCoverage(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -202,7 +210,7 @@ func TestApplyReviewRecheckWidensCoverage(t *testing.T) {
 func TestApplyReviewEscalates(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -223,7 +231,7 @@ func TestApplyReviewEscalates(t *testing.T) {
 func TestApplyReviewRejectsUnknownKey(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -247,7 +255,7 @@ func TestApplyReviewRejectsUnknownKey(t *testing.T) {
 func TestApplyReviewRejectsGroupAndReportSpellings(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
@@ -267,7 +275,7 @@ func TestApplyReviewRejectsGroupAndReportSpellings(t *testing.T) {
 func TestDeltaPlanRunsForcedAndNewKeys(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, []string{"1"}, nil, time.Now())
 	if err != nil {
@@ -289,7 +297,7 @@ func TestDeltaPlanRunsForcedAndNewKeys(t *testing.T) {
 func TestValidateDeltaDisclosesNewEvidence(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateReviewBaseline(t, repoRoot)
-	appendToAuthSpec(t, repoRoot, "\n## New Requirements\n\nbrand new content\n")
+	appendToAuthSpec(t, repoRoot, "\n### New Requirements\n\nbrand new content\n")
 	writeFile(t, repoRoot, "evidence/new.md", "new evidence\n")
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, []string{"evidence/new.md"}, nil, nil, time.Now())

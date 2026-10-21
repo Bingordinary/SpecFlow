@@ -96,8 +96,9 @@ Read the diff output carefully. Extract every structural rule change that affect
 
 - **Path/filename convention changes**: e.g. unit and rule files no longer use `s_`/`c_` prefix, appendix path rules changed
 - **Frontmatter field changes**: new required fields, removed fields, renamed fields, changed value format (e.g. `rule_refs` from `@version` suffixed to bare names)
-- **Reference format changes**: how `unit_refs` or `rule_refs` are written, what prefix/suffix is expected
-- **Structural rule changes**: new required sections, removed sections, changed validation rules
+- **Reference format changes**: how `rule_refs` are written, what prefix/suffix is expected
+- **Structural rule changes**: new required sections, removed sections, changed validation rules (for example the three-section promise model: `## Design Narrative` → `## Promises` → `## Acceptance Items`, with dependency edges on the consumer promise's `depends_on`)
+- **Retired lifecycle mechanisms**: former `unbound_retention*` metadata or `status: retired` files that the current format no longer uses
 
 Do NOT guess or infer changes from memory. Read the actual `git diff` output.
 
@@ -111,8 +112,22 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 |-----------|---------|
 | **Rename files** | `mv docs/specs/rules/stable/s_g_rule_foo.md docs/specs/rules/stable/g_rule_foo.md` |
 | **Update frontmatter** | Change a field value, add a missing required field, remove a deprecated field |
-| **Update references** | Bulk-replace old ref format in `rule_refs` / `unit_refs` across all spec files |
+| **Update references** | Bulk-replace old ref format in `rule_refs` across all spec files |
 | **Restructure directories** | Move files between directories when path rules change |
+
+**Promise-model migration:** when Step 2 reports the three-section unit shape (`## Design Narrative` → `## Promises` → `## Acceptance Items`), migrate **every unit file in each layer** (candidate and stable):
+
+1. Derive each promise from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing); the acceptance item keeps its code/test scope and references the promise it proves.
+2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
+3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item.
+4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. Do not add a converter or a compatibility path.
+5. Caches written before the promise-pin format are incompatible. After migration every unit needs one full `validate` and one full `verify`; `delta`/`repair` refuses an old cache as a baseline, and `promote` rejects it. `fresh` reports such a cache as `INVALID`.
+
+**Legacy exit-mechanism migration:** when Step 2 reports the former retention metadata or retired status:
+
+1. Move every useful `unbound_retention_reason` and owner rationale into the rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`.
+2. Inspect every unit or appendix file carrying `status: retired` under `framework/removal_workflow.md`. The agent decides whether the responsibility has ended and identifies the exact deletion targets; delete only within clear existing authorization, and report unresolved intent instead of recreating the former promote-based exit logic.
+3. Surviving files use the normal `status: active|exempt` rules. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used.
 
 For each operation:
 
@@ -126,21 +141,17 @@ If a change requires business judgment (e.g. "what value should this new frontma
 
 If no structural changes were detected in Step 2, report that no migration is needed and skip to Step 4.
 
-### Removal-model migration
-
-- Move useful `unbound_retention_reason` and owner rationale into rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`. Rules without consumers may remain valid.
-- Inspect legacy `status: retired` unit and appendix files. Under `framework/removal_workflow.md`, the agent decides whether the responsibility ended and identifies exact deletion targets. Delete only within clear existing authorization; discuss unresolved intent. Do not recreate the old promote-based exit logic. Surviving files use normal active/exempt status rules.
-- Rule validate now has six agent checks: metadata 1–5 and body quality 6. Existing caches using the former check set require normal revalidation against the current contract, not translation of the old retention judgment.
-- Gate conclusions now bind the judging standard they were judged under — validate in the cache's `standard:` frontmatter, verify in each judgment record's protocol fingerprint (`framework/validation_cache.md` §Format → Standard binding; `framework/spec_flow_review.md` §2.17) — and stale whenever that standard changes. The standard includes the whole of `framework/spec_writing_guide.md`: its sections mix judging rules with mechanism references (for example §13 Section Regions defines the structural rules Check 1/8 apply and also explains cache freshness), so no section can be excluded and any edit to that guide — even one no check cites — re-runs the conclusions judged under it. The rules the checks do apply are Check 10's §9 Reader Contract, Check 2's §9 decision closure, Check 5's §15.2 external-visibility boundary and §Acceptance Item Granularity, Check 7's §14 Truth Ownership and §15.2 cross-unit, and verify Step 2 / Step 7's §4 and §14. A cache or record written before this binding, or judged under a standard the deployed documents no longer reproduce, is stale and needs the full `validate@{target}` / `verify@{unit}` run; there is nothing to translate, and no conclusion may be carried from one standard to another.
-
 ### Step 4: Verify and report
 
 After migration, run the format compliance check against `framework/spec_writing_guide.md`:
 
 | Check | What to verify |
 |-------|---------------|
-| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `unit_refs`, `rule_refs`, `acceptance_item_set` present. Compare field format against `spec_writing_guide.md`. |
-| Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present. Compare against `spec_writing_guide.md`. |
+| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `rule_refs`, `acceptance_item_set` present, and the promise model present (`## Design Narrative` → `## Promises` → `## Acceptance Items`). Compare field format against `spec_writing_guide.md`. |
+| Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present and the promise model present (`## Design Narrative` → `## Promises` → `## Acceptance Items`). Compare against `spec_writing_guide.md`. |
+| Promise-model units | For **every unit file present in a layer** (candidate or stable): the three sections are in order, every promise has a stable ID and contract, every contract item declares `promise` or `non_promise`, and no `###` subheading appears inside `## Promises` or `## Acceptance Items`. Run `specflowctl validate promise-model --unit <name> --layer candidate` for a candidate file and `--layer stable` for a stable file. |
+| Legacy dependency fields | No `unit_refs` or `affects.dependencies` remains in any unit spec; every dependency edge is on a consumer promise's `depends_on`. |
+| Legacy exit mechanisms | No `unbound_retention*` field remains in any rule; no unit or appendix uses `status: retired`; surviving files use `status: active` or `exempt`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
 | Rule files | For each rule file: `rule_id`, `rule_scope` present. Path matches convention. |
 
@@ -153,7 +164,7 @@ After format verification, classify downstream impact on existing units:
 1. Determine whether Step 2 detected structural changes involving **path ownership, object registration, or support-surface boundaries** — i.e. boundary changes that cannot be resolved from unit or rule frontmatter. (To detect: check whether the framework diff includes structural path changes in `docs/specs/`, or whether any governance flow explicitly reports an unresolved boundary change.)
 2. If such boundary changes exist, run impact sync per `framework/governance/impact_sync.md` to perform consumer discovery and fallback reason classification for affected units.
 3. Report the impact sync output contract: `affected_candidate_units`, `affected_stable_units`, and `freshness_review_required`.
-4. If `freshness_review_required` is `true`, execute the caller-owned Freshness Review procedure from `framework/governance/impact_sync.md` before any fallback cleanup: run `specflowctl fresh` on each affected unit, classify each as cleanup-allowed or cleanup-blocked by gate status, and report the per-unit classification. Do not execute fallback cleanup on a unit whose gates are STALE, MISSING, or BLOCKED — present the blocking gate to the user instead.
+4. If `freshness_review_required` is `true`, execute the caller-owned Freshness Review procedure from `framework/governance/impact_sync.md` before any fallback cleanup: run `specflowctl fresh` on each affected unit, classify each as cleanup-allowed or cleanup-blocked by gate status, and report the per-unit classification. Do not execute fallback cleanup on a unit whose gates are STALE, INVALID, MISSING, or BLOCKED — present the blocking gate to the user instead.
 5. If no such boundary changes exist, report that no affected units require classification, then continue to Step 6. Do not infer consumers from implementation directories alone.
 
 Do not invent business truth during impact classification — if a fallback decision requires business judgment, present it to the user and ask for input.

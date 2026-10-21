@@ -735,7 +735,57 @@ func InvalidateTargeted(repoRoot, gate, targetKind, targetName, target string, c
 	return result, err
 }
 
+// checkPromisePlanInputs enforces the promise model at gate-plan time. A unit
+// without `## Promises` has no declarable contract or verification keys, so no
+// gate run can be planned for it.
+func checkPromisePlanInputs(repoRoot, gate, targetKind, targetName, target string) error {
+	if targetKind != TargetKindUnit {
+		return nil
+	}
+	if gate != GateValidate && gate != GateVerify {
+		return nil
+	}
+	if target == TargetStable {
+		candidate := specpaths.CandidateUnitSpecFileRef(targetName)
+		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(candidate))); err == nil {
+			// The layer rule owns the stable-only diagnosis; do not replace it
+			// with a promise-model error for a target that cannot be used.
+			return nil
+		}
+	}
+	relPath := targetLayerSpecRef(targetKind, targetName, target)
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			// The layer validator owns the missing-target diagnosis; let it
+			// report the candidate/stable requirement.
+			return nil
+		}
+		return fmt.Errorf("read promise spec %s: %w", relPath, err)
+	}
+	content := string(data)
+	if !specvalidation.HasPromisesSection(content) {
+		return fmt.Errorf("unit %s has no `## Promises` section: a unit spec follows the three-section promise model, so a %s run cannot be planned (see framework/core/promise_model.md)", targetName, gate)
+	}
+	var issues []string
+	for _, check := range specvalidation.CheckPromiseSpec(content, targetName) {
+		if check.Status == specvalidation.Fail {
+			issues = append(issues, check.Name+": "+check.Details)
+		}
+	}
+	if graph := specvalidation.CheckPromiseGraphScope(repoRoot, specvalidation.PromiseScopeForLayer(target), targetName); graph.Status == specvalidation.Fail {
+		issues = append(issues, graph.Name+": "+graph.Details)
+	}
+	if len(issues) > 0 {
+		return fmt.Errorf("promise model invalid for %s: %s — run `specflowctl validate promise-model --unit %s` first", relPath, strings.Join(issues, "; "), targetName)
+	}
+	return nil
+}
+
 func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, extraInputs, rerunKeys, relationships []string, now time.Time) (*Run, error) {
+	if err := checkPromisePlanInputs(repoRoot, gate, targetKind, targetName, target); err != nil {
+		return nil, err
+	}
 	// The plan's reads all precede its writes, so one derivation resolves the
 	// run and builds the coverage plan with shared expansions and audit.
 	derivation, err := NewDerivation(repoRoot)
@@ -1350,14 +1400,36 @@ func (d *Derivation) derive(gate, targetKind, targetName, target string) ([]Ref,
 	return refs, surfaces, nil
 }
 
+// appendUnitProviderRefs adds a provider unit's main spec to a gate read
+// surface. The provider set is derived from promise depends_on by
+// specvalidation.PromiseProviderUnits. Provider appendices are not added: they
+// are explanatory support truth, not contract, so a consumer does not read
+// them and their edits cannot stale the consumer's gate.
+//
+// The reference is layer-scoped: a candidate run resolves the provider in the
+// current layer (candidate preferred, stable fallback) as a logical ref, while
+// a stable run reads the published stable provider as a physical ref. A stable
+// confirmation must read stable truth — a candidate draft of the provider must
+// not enter it — and the run then records the same layer's fingerprints (see
+// `framework/core/promise_model.md` §Layer resolution).
+func appendUnitProviderRefs(repoRoot string, refs []Ref, unit, target string) ([]Ref, error) {
+	if target == TargetStable {
+		return append(refs, physicalRef(repoRoot, specpaths.StableUnitSpecFileRef(unit), SourceDerived)), nil
+	}
+	return append(refs, logicalUnitRef(repoRoot, unit, SourceDerived)), nil
+}
+
 // deriveUnitValidate resolves a validate unit run's inputs: the unit's own
-// spec files in the target layer, the unit_refs dependency units (current
-// layer) with their protocol appendices, and the bound and global rules.
-// affects.files are verify inputs and never join this surface. Cross-unit
-// edges are one-way: a unit reads the providers it declares, never unrelated
-// peers — Check 7 reads only the declared dependencies' carriers, and Check 9
-// is the mechanical `specflowctl surfaces` audit, which reads the repository
-// directly and needs no peer spec read refs.
+// spec files in the target layer, the provider units named by its promises'
+// depends_on edges (current layer for a candidate, stable layer for a stable
+// confirmation), and the bound and global rules. A candidate validate also
+// adds the provider's published stable main spec as comparison evidence when
+// the provider has a candidate; that copy is read-only evidence, not a
+// dependency pin. affects.files are verify inputs and never join this
+// surface. Cross-unit edges are one-way: a unit reads the providers it
+// declares, never unrelated peers — Check 7 reads only the declared
+// dependencies' promises, and Check 9 is the mechanical `specflowctl surfaces`
+// audit, which reads the repository directly and needs no peer spec read refs.
 func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
@@ -1373,14 +1445,26 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
 	}
-	for _, dep := range parseRefList(content, "unit_refs", unitName) {
-		refs = append(refs, logicalUnitRef(repoRoot, dep, SourceDerived))
-		appendixRefs, err := logicalUnitAppendixRefs(repoRoot, dep)
+	for _, provider := range specvalidation.PromiseProviderUnits(content) {
+		if provider == unitName {
+			continue
+		}
+		refs, err = appendUnitProviderRefs(repoRoot, refs, provider, target)
 		if err != nil {
 			return nil, err
 		}
-		for _, appendixRef := range appendixRefs {
-			refs = append(refs, appendixRef)
+		// A candidate validate compares the provider's current contract with
+		// the contract it published. When the provider has a candidate, the
+		// logical ref above resolves that candidate, so add the published
+		// stable main spec as read-only comparison evidence. It is not a
+		// promise dependency pin: the current-layer pin stays the contract
+		// dependency, and a provider narrative edit must not stale the
+		// consumer. See framework/unit_validate_checklist.md Check 7.
+		if target != TargetStable && fileExists(filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateUnitSpecFileRef(provider)))) {
+			stable := specpaths.StableUnitSpecFileRef(provider)
+			if fileExists(filepath.Join(repoRoot, filepath.FromSlash(stable))) {
+				refs = append(refs, physicalRef(repoRoot, stable, SourceDerived))
+			}
 		}
 	}
 	globalIDs, err := globalRuleIDs(repoRoot)
@@ -1447,6 +1531,15 @@ func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surfa
 	}
 	for _, appendix := range appendices {
 		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
+	}
+	for _, provider := range specvalidation.PromiseProviderUnits(content) {
+		if provider == unitName {
+			continue
+		}
+		refs, err = appendUnitProviderRefs(repoRoot, refs, provider, target)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	surfaces, err := d.codeSurfaces(content)
 	if err != nil {
@@ -1862,7 +1955,7 @@ func diffSurfaceEntries(stored, current Surface) []string {
 // Parsing and path helpers
 // ------------------------------------------------------------
 
-// parseRefList reads a frontmatter ref list (unit_refs / rule_refs), drops
+// parseRefList reads a frontmatter ref list (rule_refs), drops
 // the given self name, dedupes, and sorts.
 func parseRefList(content, field, self string) []string {
 	fm := specpaths.ReadFrontmatterStringMap(content)

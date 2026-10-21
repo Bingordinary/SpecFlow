@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-
-
 func TestCollectDefaultSpecFlowScopeSupportsSourceRepoLayout(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeSourceScopeRepo(t, repoRoot)
@@ -51,6 +49,9 @@ func TestCollectDefaultSpecFlowDesignScopeAutoDetectsSourceRepoLayout(t *testing
 	if !containsString(scope.FrameworkGuidelineFiles, "framework/rule_validate_checklist.md") {
 		t.Fatalf("expected rule validate checklist in design scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
+	if !containsString(scope.FrameworkGuidelineFiles, "framework/core/promise_model.md") {
+		t.Fatalf("expected promise model in design scope, got %+v", scope.FrameworkGuidelineFiles)
+	}
 	if containsString(scope.TemplateGovernanceFiles, "framework/operations/output_standard.md") {
 		t.Fatalf("deleted output standard must stay outside lifecycle contract scope, got %+v", scope.TemplateGovernanceFiles)
 	}
@@ -66,6 +67,7 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 	t.Helper()
 	for _, relPath := range []string{
 		"framework/core/object_model.md",
+		"framework/core/promise_model.md",
 		"framework/rule_validate_checklist.md",
 		"framework/rule_promote_workflow.md",
 		"framework/governance/impact_sync.md",
@@ -130,10 +132,6 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
-
-
-
-
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
@@ -146,5 +144,3 @@ func containsString(values []string, target string) bool {
 func deletedCommandPolicyPath(root string) string {
 	return root + "/" + "command_" + "policy.md"
 }
-
-

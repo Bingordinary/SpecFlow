@@ -38,6 +38,10 @@ p3_count: 0
 timestamp: "2026-06-30T10:00:00Z"
 gate_run: 20260916-120000-3f9a1c   # audit: the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes); never gated
 standard: 9f1c...     # validate caches only: the judging standard this conclusion was made under (see §Standard binding); verify caches bind it per judgment record instead
+pin_format: promise-v1  # unit caches only: the promise-pin format marker (required; a cache without it is INVALID — see §Promise-pin format)
+promise_pins:              # unit validate caches only, required on a pass cache (empty list when the unit has no depends_on)
+  - id: auth.login_api
+    fingerprint: sha256:...
 invalidated_checks:                # failure records only; machine-owned targeted P0/P1 invalidations, omitted when empty
   - item:user_auth:auth.login
 reviewed_change_set: sha256:fedcba...  # validate delta/repair caches: fingerprint of the reviewed change set (required on a pass validate delta cache); a verify delta carries no review record
@@ -69,6 +73,26 @@ files:
 GATE_JUDGMENTS_END -->
 Generated human-readable summary of the result.
 ```
+
+### Promise-pin format
+
+A unit cache must carry `pin_format: promise-v1`. `promise_pins` records the
+provider promise contracts a unit validate run read: freshness compares these
+fingerprints instead of the provider spec's whole-file hash, so the provider's
+narrative, acceptance items, tests, and appendices are not part of the
+consumer's cache. A validate cache whose `promise_pins` set does not match the
+spec's own `depends_on` edges is stale; a pin whose provider promise is missing
+or whose fingerprint moved is stale and the change report names the promise.
+`promise_pins` is required only on a pass cache. A failure record carries the
+format marker but no pin block: it is **BLOCKED** and is the repair baseline,
+so pin-set freshness is evaluated only for a passing validate cache.
+
+There is no migration path. A unit cache without `pin_format` — including a
+valid cache written before this format, and any review-protocol record it
+binds — is **INVALID**: `fresh` reports it, `promote` rejects it, and
+`gate-plan --mode delta|repair` refuses it as a baseline. Only the full command
+replaces it. `judgments.RecordVersion` 4 is the matching record format; older
+judgment records are rejected when loaded.
 
 The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair synthesis. Schema version 4 for unit verify, and schema version 3 for other caches, records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, the checked relationship names and `relationship:<name>` statuses, the accepted synthesis digest, the synthesis's supplied-evidence pins (`synthesis_evidence`, unit verify), and (merged verify caches) the run's deferred findings. `gate-finalize` generates it; agents never edit it. The `findings` array carries only gate-driving findings — those owned by the unit or unassigned; findings deferred to another unit (quality ownership) are recorded in the optional `deferred_findings` array for audit and are never carried into a later run of this unit (routing lives in the deferred-findings ledger, see below). For rule validate delta/repair runs, `gate-finalize` combines the disjoint carried baseline judgments and re-run session judgments, so the rewritten block still contains all six logical check statuses; carried and current findings are de-duplicated by finding id. A check that appears in both sets rejects finalization as corrupted run state. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so the final synthesis sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every terminal retained finding that no accepted session report already contains — a carried judgment or a deferral routed in from another unit — into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
 
@@ -142,6 +166,15 @@ the run's recorded input surface:
 
 - the record's pinned whole-file hashes (`Dependency.Hash`) still match the
   current content of the files it read;
+- a consumer's alignment conclusion pins the provider promise fingerprints
+  (`Dependency.Promise` + `Fingerprint` + `Scope`) named by its promises'
+  `depends_on`, so a provider contract change makes that conclusion non-live
+  and forces the consumer's re-verification; a provider narrative,
+  acceptance-item, test, or appendix edit does not. `Scope` records the scope
+  the pin was read in for audit; liveness resolves the pin in the cache
+  binding's layer scope, so a candidate cache rewritten to a stable
+  confirmation resolves published stable providers
+  (`framework/core/promise_model.md` §Layer resolution);
 - the evidence the key currently requires is still inside the evidence the
   record read: a declared surface that gained a file — a new implementation file
   under an item's, the unit scan's or the architecture record's declared
@@ -220,12 +253,13 @@ where its own reuse happens:
   must run again.
 
 The unit and rule validate standards are distinct: unit `validate` reads
-`unit_validate_checklist.md`, rule `validate` reads `rule_validate_checklist.md`,
-and both read `verification_scope.md`, `severity_policy.md`, and
-`spec_writing_guide.md`. Changing one
-checklist therefore invalidates only the caches judged by it. A delta/repair run
-cannot carry any conclusion across a standard change: the planner covers the
-full scope instead (`framework/verification_scope.md` §Delta Runs).
+`unit_validate_checklist.md` and `core/promise_model.md`, rule `validate` reads
+`rule_validate_checklist.md`, and both read `verification_scope.md`,
+`severity_policy.md`, and `spec_writing_guide.md`. Changing one
+checklist or the promise model therefore invalidates only the caches judged by
+it. A delta/repair run cannot carry any conclusion across a standard change:
+the planner covers the full scope instead
+(`framework/verification_scope.md` §Delta Runs).
 
 #### Check markers (`checks`)
 
@@ -281,8 +315,8 @@ carry `invalidated_checks`.
 
 - Check keys are command-specific: validate uses the **agent check number**
   `"1"`–`"10"` (the 10 agent checks of `validate@{unit}`; the mechanical
-  `specflowctl validate` Check 8 — region locatability — is a support check and
-  takes no marker, while mechanical Check 9 — surface associations — is the
+  `specflowctl validate` Check 7 — region locatability — is a support check and
+  takes no marker, while mechanical Check 8 — surface associations — is the
   audit mechanism behind agent Check 9's mechanical association report); verify
   `alignment` uses `item:<unit>:<item>` and `unit:<unit>` (the unit-level scan);
   the `quality` lens uses `code:<file>`, `design:<unit>:<file>` and
@@ -308,7 +342,7 @@ carry `invalidated_checks`.
 
 ### Logical References
 
-Other cross-unit and rule dependencies — any dependency object resolved by name: a dependency unit main spec read by unit `validate` Check 7, a protocol appendix of a dependency unit read by unit `validate` Check 7, a rule file read by unit `validate` Check 8, or a unit spec file read by rule `validate` to check the optional promotion owner — are recorded as **logical references** instead of physical paths:
+Other cross-unit and rule dependencies — any dependency object resolved by name: a dependency unit main spec read by unit `validate` Check 7, a unit appendix carried by the run surface, a rule file read by unit `validate` Check 8, or a unit spec file read by rule `validate` to check the optional promotion owner — are recorded as **logical references** instead of physical paths:
 
 ```yaml
 files:
@@ -319,11 +353,13 @@ files:
       - cid: sha256:7890ab...
         start: 1
         end: 20
-  - path: unit:auth:appendix:unit_auth_account_token_claims  # logical reference — resolves to the current-layer protocol appendix
+  - path: unit:auth:appendix:unit_auth_account_token_claims  # logical reference — resolves to the current-layer unit appendix
     hash: sha256:def456...
   - path: rule:g_rule_http     # logical reference — global rules resolve only to the stable rule file
     hash: sha256:abc123...
 ```
+
+A candidate validate's published stable provider comparison copy is the one physical exception: it is carried by its stable path, is not a dependency pin, and is excluded from whole-file freshness. The current-layer `unit:{provider}` pin remains the contract dependency.
 
 Logical references preserve the rule object's applicability semantics. `unit:{name}`, `unit:{name}:appendix:{file}`, and bound-rule references (`rule:b_rule_*`) resolve to the **current-layer** file (candidate first, stable fallback). Global-rule references (`rule:g_rule_*`) resolve only to the stable file: a candidate global rule is unpublished design truth and must not constrain units before promotion. The recorded `hash`/`chunks` come from the file the run actually read. Current-layer references therefore stay fresh across promotion when recorded content is unchanged, while stable-global references remain bound to the active stable constraint. The appendix form takes the full appendix file base name without the `.md` extension (`unit_auth_account_token_claims`); the unit name is contextual. The tooling records logical references for spec objects resolved by name other than the run's own target files (`unit:`, `unit:{name}:appendix:`, `rule:`); every other entry keeps its physical path (the unit's own main spec and appendices — the promote appendix gate keys on those physical paths — and code files). An unresolved logical reference fails closed; for `rule:g_rule_*`, a candidate file does not satisfy the reference when no stable file exists.
 
@@ -538,7 +574,7 @@ specflowctl gate-plan --gate validate|verify (--unit NAME | --rule ID) \
   --target candidate|stable [--relationships NAMES|none] [--mode full|delta|repair] [--inputs-file PATH] [--rerun CHECK_KEY]... [--repo-root PATH]
 ```
 
-- **Derived input surface:** the tooling resolves the gate's protocol inputs for the target and layer — the target's own files (unit main spec + appendices; for a rule, the rule file and its stable sibling), the dependency spec objects (`unit_refs` units and their appendices, `rule_refs` rules, the stable global rule set; consumer unit specs for rule validate), and, for verify, the declared code surface (`implementation_surface` directories expanded to their repository-content files — the files Git tracks plus untracked files that are not ignored — plus `affects.files`). Verify planning fails closed on that surface: every acceptance item's non-`<pending>` `implementation_surface` must be a single path resolving to at least one real file and must not name a spec document — a semicolon list, wildcard pattern, nonexistent path, a directory with no repository-content files, or a spec-document value rejects the plan with the item id and the reason before any run state is written; a spec-document `affects.files` value rejects the plan on the same field-role rule, while a path that does not exist yet stays tolerated as a divergence. Verify planning also requires at least one structurally located acceptance item: an empty item set has no alignment object, so it rejects the plan before any run state is written (the mechanical `specflowctl validate` Check 2 rejects the same spec). Logical unit and bound-rule references record their current-layer resolution; logical global-rule references record their stable-layer resolution. Candidate-only global rules are not unit-gate inputs. Every physical entry must resolve inside the project root and is recorded by its canonical repo-relative path, resolved file, and content hash; lexical escapes and symlinks that resolve outside the project are rejected before run state is written.
+- **Derived input surface:** the tooling resolves the gate's protocol inputs for the target and layer — the target's own files (unit main spec + appendices; for a rule, the rule file and its stable sibling), the dependency spec objects (promise provider units' main specs, `rule_refs` rules, the stable global rule set; consumer unit specs for rule validate), and, for verify, the declared code surface (`implementation_surface` directories expanded to their repository-content files — the files Git tracks plus untracked files that are not ignored — plus `affects.files`). Verify planning fails closed on that surface: every acceptance item's non-`<pending>` `implementation_surface` must be a single path resolving to at least one real file and must not name a spec document — a semicolon list, wildcard pattern, nonexistent path, a directory with no repository-content files, or a spec-document value rejects the plan with the item id and the reason before any run state is written; a spec-document `affects.files` value rejects the plan on the same field-role rule, while a path that does not exist yet stays tolerated as a divergence. Verify planning also requires at least one structurally located acceptance item: an empty item set has no alignment object, so it rejects the plan before any run state is written (the mechanical `specflowctl validate` Check 2 rejects the same spec). Logical unit and bound-rule references record their current-layer resolution; promise provider dependencies are the one exception — they resolve in the target layer's promise scope (current layer for a candidate, published stable layer for a stable confirmation) so a stable run reads only stable provider truth. A candidate validate whose provider has a candidate also carries the provider's published stable main spec as read-only comparison evidence; that copy is not a dependency pin and its whole-file freshness is not a gate input, so a provider narrative edit does not stale the consumer. Logical global-rule references record their stable-layer resolution. Candidate-only global rules are not unit-gate inputs. Every physical entry must resolve inside the project root and is recorded by its canonical repo-relative path, resolved file, and content hash; lexical escapes and symlinks that resolve outside the project are rejected before run state is written.
 - **Extra inputs (input manifest, `--inputs-file`):** these are evidence inputs available to every session, not work targets. Files, directories (expanded to their repository-content files), and logical references have the same role. Physical inputs must resolve inside the project root; absolute external paths, lexical `..` escapes, and escaping symlinks are rejected. Valid inputs enter the immutable snapshot and session `read_refs`, but never create coverage keys. Only the spec-derived surface determines coverage keys. The manifest itself is scratch input and must not be a repository-content file — keep it under `meta/plan_inputs/` or outside the repository (see `framework/verification_scope.md` §Input roles).
 - **New verify evidence in delta/repair:** a physical manifest entry absent from the baseline cache's recorded evidence is background material: it creates no coverage key and re-runs no conclusion, because a conclusion's reuse is decided by its own pins, never by the run's input surface. The plan notice names the new paths. (A file that a conclusion actually depends on is already pinned by that conclusion's record, so a real change still re-runs it.)
 - **Relationship scope:** unit plans require `--relationships name[,name...]|none`. The coordinator selects relationships touched by the current change; failed or invalidated baseline relationships are forced (repair), and unchanged passing ones carry mechanically when nothing changed (validate otherwise routes them through its change review; verify re-runs them whenever any local conclusion re-runs or its synthesis evidence changed). Each checked relationship records its result under `relationship:<name>`. A relationship-only incremental run can have an empty local coverage set. Rules accept no relationship flag.
@@ -652,7 +688,7 @@ A rule publication blocker does not stale or invalidate a passing cache. After p
 `specflowctl promote --unit <name>` first checks rule publication, then reads the validate and merged verify caches and checks appendix coverage:
 
 1. **Mode check** — `mode` must be `full`. Fail closed: a missing or invalid mode value cannot prove a complete-coverage run. Targeted runs never write caches, so any cache with a non-`full` mode is invalid. The `basis` field is audit metadata and never gates — full, delta, and repair caches pass the same mode and content checks. A **validate pass delta cache** must additionally carry its change-review record (`reviewed_change_set`); a validate delta cache without one is a pre-review artifact and fails closed. Verify has no change review, so no review record is required for a verify delta cache.
-2. **Content check** — validate freshness is whole-file: every listed file's `hash` must match the file's current content, and a changed or missing file makes the cache stale. Verify freshness is **conclusion-bound**: every conclusion's judgment-record pins (whole files, structural regions and the review protocol) must still hold, and the evidence it currently requires must stay inside the evidence the record read; a change to a file the run merely read does not stale the cache (see §Conclusion-bound verify freshness). Either gate recovers with its delta re-run (or a full run).
+2. **Content check** — validate freshness is whole-file for the unit's own spec, appendices, and rules; a provider unit's main spec is governed by `promise_pins` instead, and the provider's published stable comparison copy is excluded on the same footing, so a changed provider narrative or acceptance item does not stale the cache. Verify freshness is **conclusion-bound**: every conclusion's judgment-record pins (whole files, structural regions, provider promise fingerprints, and the review protocol) must still hold, and the evidence it currently requires must stay inside the evidence the record read; a change to a file the run merely read does not stale the cache (see §Conclusion-bound verify freshness). Either gate recovers with its delta re-run (or a full run).
 3. **Verify result check** — `verify_result.md` with `result: pass` passes (P2/P3 pending items are carried by the severity counts). A failure record (`result: fail`) is rejected as `BLOCKED` (see below). Any other result value is rejected.
 4. **Merged verify lens check (required)** — `verify_result.md` must record a check for every expected coverage key of **both** lenses. The alignment expected keys are the unit's current acceptance item ids plus the always-present `unit:<unit>` unit-level scan; the quality expected keys are its declared code files, their unit design keys, and the unit architecture key. A cache that covers only one lens is rejected with guidance to re-run `verify@{unit}`.
 5. **Appendix cache check** — reads the validate cache and verifies every non-exempt candidate appendix file is listed in the validate cache's file list. If any non-exempt appendix on disk is missing from the cache's file list, the appendix was not validated and promote is rejected with guidance to run `validate@{unit}`.
@@ -681,18 +717,54 @@ The validate gate shares the same failure-record handling: a cache declaring `bl
 
 `specflowctl fresh` (agent triggers `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all`) reports freshness without executing any check:
 
-- **`specflowctl fresh`** (alias of `--scope candidate`) — summary for every unit and rule with a candidate file. One row per target with per-gate status and the overall `READY FOR PROMOTE: N of M` count. Normal candidate units also show `rules: OK | BLOCKED`. Blocking rule ID/reason entries and global draft advisories are each listed once for the candidate section, not repeated under every affected unit: a bound rule blocks every unit that binds it, so the summary states the rule fact once while each affected unit keeps its own `rules: BLOCKED` verdict, and a rule that blocks any unit is reported as a blocker only, never also as an advisory (detail mode, `fresh --unit`, keeps the per-unit prerequisite view). Unit readiness includes the publication check; advisories do not lower readiness.
+- **`specflowctl fresh`** (alias of `--scope candidate`) — summary for every unit and rule with a candidate file. One row per target with per-gate status, the per-unit `done:` state, and the overall `READY FOR PROMOTE: N of M` count. Normal candidate units also show `rules: OK | BLOCKED`. Blocking rule ID/reason entries and global draft advisories are each listed once for the candidate section, not repeated under every affected unit: a bound rule blocks every unit that binds it, so the summary states the rule fact once while each affected unit keeps its own `rules: BLOCKED` verdict, and a rule that blocks any unit is reported as a blocker only, never also as an advisory (detail mode, `fresh --unit`, keeps the per-unit prerequisite view). Unit readiness includes the publication check and the promise readiness (state record + `CLOSED` contract closure + every pinned provider promise published in stable); advisories do not lower readiness.
 - **`specflowctl fresh --scope stable`** — summary for every stable unit and rule. One row per target with its two confirmation states — `validate` (dependencies/rules) and `verify` (code alignment + quality) — plus the drift state (see Stable Drift Baseline below). Stable targets have no promote gate and are never counted in `READY FOR PROMOTE`.
 - **`specflowctl fresh --scope all`** — candidate summary and stable summary in one report. `READY FOR PROMOTE` covers the candidate section only.
 - **`specflowctl fresh --unit <name>`** / **`--rule <id>`** — detail for one target. A normal candidate unit detail includes `RULE PREREQUISITES: OK | BLOCKED`, blocking IDs/reasons, and pending global advisories independently of the cache statuses. A target that exists only in stable (no candidate file) reports the stable confirmation + drift detail instead of candidate gate statuses or publication prerequisites.
 
-Fresh reports gate status and publication prerequisites only. Deletion previews use `remove --dry-run` under `framework/removal_workflow.md`.
+Unit summaries include a `done:` column, and the detail view reports promise
+closure and `done`. A unit is `DONE` only when its promise state record is
+present, its promise contract closure is `CLOSED`, and its applicable validate
++ verify caches are fresh; `fresh --scope stable` is the global stable-unit
+done view. This is the single read-only completion report and the promise
+diagnostic. See `framework/core/promise_model.md`.
 
-The gate vocabulary is `FRESH` / `STALE` / `MISSING` / `BLOCKED` (a failure record — validate and verify with P0/P1) / `OK` (appendix). Cache classification reuses the same checks as `specflowctl promote` (Staleness Detection above); rule publication uses its separate shared check. A fresh report and a promote run therefore agree on publication prerequisites and applicable cache requirements. The detail view of a fresh cache shows its `basis` (`full`, `delta`, or `repair`) alongside mode, and for delta/repair caches the recorded review (`result`, `session`, change-set fingerprint) — it is audit visibility, not a gate.
+Fresh reports gate status and publication prerequisites otherwise. Deletion
+previews use `remove --dry-run` under `framework/removal_workflow.md`.
 
-Stable confirmation states use the same vocabulary: `FRESH` means the stable-layer cache exists and its recorded content is unchanged; `STALE` means a recorded file changed (a rule or dependency contract for validate, code for verify); `MISSING` means the stable confirmation was never run; `BLOCKED` means a failure record exists (a stable-only full-run FAIL or a stable delta-run FAIL — `result: fail` + `blocking: true`), recovered by the repair run (`basis: repair`); when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see `framework/verification_scope.md` §Stable-only Targets). The states are informational — they grant nothing and gate nothing.
+The gate vocabulary is `FRESH` / `STALE` / `INVALID` / `MISSING` / `BLOCKED` (a failure record — validate and verify with P0/P1) / `OK` (appendix). `INVALID` means the cache predates promise pinning and cannot be used at all: delta/repair cannot repair it; only the full command replaces it. Cache classification reuses the same checks as `specflowctl promote` (Staleness Detection above); rule publication uses its separate shared check. A fresh report and a promote run therefore agree on cache requirements and promise readiness: `READY FOR PROMOTE` also requires the promise state record, a `CLOSED` contract closure, and every pinned provider promise published in the stable layer at the same fingerprint, so a missing or stale promise state or an unpublished provider contract is visible before promote rejects it. Promote applies the same publication check. The detail view of a fresh cache shows its `basis` (`full`, `delta`, or `repair`) alongside mode, and for delta/repair caches the recorded review (`result`, `session`, change-set fingerprint) — it is audit visibility, not a gate.
 
-`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify. Its purpose is operational visibility while iterating on multiple units that share files — a shared-code change invalidates every verify record depending on that file. A validate cache stales whenever a recorded file's content changes — its recorded `files` list is its freshness contract. A verify cache stales only when a conclusion's own pinned evidence changes; a recorded file that no conclusion depends on leaves the cache fresh, and `fresh` reports it separately (§Conclusion-bound verify freshness). For a stale gate, `fresh` prints the mechanically detected change set (the same change report a validate delta review consumes). Cross-unit and bound-rule dependencies recorded as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:b_rule_*`) stay fresh across a promote of the referenced target when the recorded content is unchanged. Global-rule dependencies (`rule:g_rule_*`) remain bound to stable truth, so candidate-global edits do not stale unit caches and stable-global edits do.
+Stable confirmation states use the same vocabulary: `FRESH` means the stable-layer cache exists and its recorded content is unchanged; `STALE` means a recorded file changed (a rule or dependency contract for validate, code for verify); `INVALID` means the cache predates promise pinning, so only the full confirmation command replaces it; `MISSING` means the stable confirmation was never run; `BLOCKED` means a failure record exists (a stable-only full-run FAIL or a stable delta-run FAIL — `result: fail` + `blocking: true`), recovered by the repair run (`basis: repair`); when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see `framework/verification_scope.md` §Stable-only Targets). The states are informational — they grant nothing and gate nothing.
+
+`fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify. Its purpose is operational visibility while iterating on multiple units that share files — a shared-code change invalidates every verify record depending on that file. A validate cache stales when a recorded own file's content changes or a pinned provider promise fingerprint moves; provider spec text covered by `promise_pins` is not a freshness input. A verify cache stales only when a conclusion's own pinned evidence changes; a recorded file that no conclusion depends on leaves the cache fresh, and `fresh` reports it separately (§Conclusion-bound verify freshness). For a stale gate, `fresh` prints the mechanically detected change set (the same change report a validate delta review consumes); a provider contract change appears there as a `promise <id>` entry, not as a provider file diff. Cross-unit and bound-rule dependencies recorded as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:b_rule_*`) stay fresh across a promote of the referenced target when the recorded content is unchanged. Global-rule dependencies (`rule:g_rule_*`) remain bound to stable truth, so candidate-global edits do not stale unit caches and stable-global edits do.
+
+## Promise State Records
+
+A unit layer with the promise model records its contract state at:
+
+```text
+docs/specs/meta/validation/unit/<unit>/promise_state_<layer>.yaml
+```
+
+The record contains the unit's own promise fingerprints and the provider
+promise fingerprints its verification depended on, in the layer's resolved
+provider scope (`framework/core/promise_model.md` §Layer resolution): a
+candidate record pins the current-layer contracts it read, a stable record
+pins the published stable contracts. A passing unit `verify`
+finalize writes it automatically. `promote` validates that the record is
+current and that every pinned provider promise is already published at the
+same fingerprint, then stages the stable record in the same publication
+transaction as the spec and baseline — a missing or stale record aborts the
+promotion before any accepted truth changes. `fork` copies the stable record to
+the candidate layer, and whole-unit removal clears both layers. It is a durable
+record with the same lifecycle as the stable spec.
+
+`specflowctl fresh --unit <name>` reads the record. A unit is `DONE` when the record
+is present, its promise contract closure is `CLOSED`, and the layer's validate
+and verify caches are fresh. The record does not replace the gate caches: the
+caches remain the code-evidence source, now bound to provider promise
+fingerprints instead of provider whole-file content.
+See `framework/core/promise_model.md`.
 
 ## Stable Drift Baseline
 
@@ -707,7 +779,7 @@ Promote records a **baseline**: a snapshot of the promoted target's code surface
 |---|---|
 | `VERIFIED` | A fresh stable verify cache exists — the code was recently confirmed to still conform. In the summary this surfaces as `verify: FRESH`; the drift column keeps reporting the mechanical surface comparison independently. |
 | `OK` | No verify cache; every surface file's whole-file hash matches the baseline. |
-| `CHANGED` | The surface differs from the baseline: a file's content changed, or files are missing or added (the report names them). A content change is localized to its changed line spans with the same ordered bidirectional chunk diff the gates use (a legacy baseline entry without chunk evidence falls back to hash equality and says "no localization recorded"). The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
+| `CHANGED` | The surface differs from the baseline: a file's content changed, or files are missing or added (the report names them). A content change is localized to its changed line spans with the same ordered bidirectional chunk diff the gates use. A baseline entry without chunk evidence is not current-format: it is reported as `CHANGED` with `no chunk evidence recorded`, and the full stability run rewrites the baseline. The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
 | `MISSING` | No baseline recorded (the target was promoted before baseline support). |
 
 The report states what it mechanically knows: `CHANGED` means "code changed since promote" and names the changed line spans — it never claims the spec is violated. Semantic confirmation is always a user-triggered `verify@{unit}` against the stable target (or `validate@{unit}` for the dependency/rule dimension).

@@ -22,7 +22,7 @@ func createMinimalCandidate(t *testing.T, repoRoot, unitName string) string {
 	path := filepath.Join(dir, "unit_"+unitName+".md")
 	content := "---\n" +
 		"id: " + unitName + "\n" +
-		"unit_refs: none\n" +
+		"" +
 		"rule_refs: none\n" +
 		"---\n" +
 		"\n## Description\n"
@@ -72,7 +72,7 @@ func TestCheckFrontmatter_MissingSpec(t *testing.T) {
 func TestCheckFrontmatter_WrongID(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: other_unit\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: other_unit\nrule_refs: none\n---\n")
 	result := checkFrontmatter(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatal("expected FAIL for id mismatch")
@@ -81,29 +81,36 @@ func TestCheckFrontmatter_WrongID(t *testing.T) {
 
 func TestCheckFrontmatter_MissingField(t *testing.T) {
 	repoRoot := newRepo(t)
-	// Missing unit_refs field
+	// Missing rule_refs field
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nrule_refs: none\n---\n")
+		"---\nid: test_unit\n---\n")
 	result := checkFrontmatter(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatal("expected FAIL for missing unit_refs field")
+		t.Fatal("expected FAIL for missing rule_refs field")
+	}
+}
+
+func TestCheckFrontmatterIgnoresRetiredUnitRefs(t *testing.T) {
+	// unit_refs is not part of the deployed format: a legacy spec that still
+	// carries it validates exactly like one without it.
+	result := CheckUnitFrontmatter("---\nid: demo\nunit_refs: [auth]\nrule_refs: none\n---\n", "demo")
+	if result.Status != Pass {
+		t.Fatalf("a retired frontmatter field must be inert, got %s: %s", result.Status, result.Details)
 	}
 }
 
 func TestCheckUnitFrontmatterRequiredShape(t *testing.T) {
-	complete := "---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n"
+	complete := "---\nid: demo\nrule_refs: none\n---\n"
 	for _, tc := range []struct {
 		name, content, diagnostic string
 	}{
 		{"none", complete, ""},
 		{"active", strings.Replace(complete, "id: demo", "id: demo\nstatus: active", 1), ""},
-		{"inline refs", "---\nid: demo\nunit_refs: [peer]\nrule_refs: [b_rule_peer]\n---\n", ""},
-		{"block refs", "---\nid: demo\nunit_refs:\n  - peer\nrule_refs:\n  - b_rule_peer\n---\n", ""},
-		{"quoted and CRLF", "---\r\nid: \"demo\"\r\nunit_refs: 'none'\r\nrule_refs: none\r\n---\r\n", ""},
+		{"inline refs", "---\nid: demo\nrule_refs: [b_rule_peer]\n---\n", ""},
+		{"block refs", "---\nid: demo\nrule_refs:\n  - b_rule_peer\n---\n", ""},
+		{"quoted and CRLF", "---\r\nid: \"demo\"\r\nrule_refs: 'none'\r\n---\r\n", ""},
 		{"missing id", strings.Replace(complete, "id: demo\n", "", 1), "id"},
 		{"empty id", strings.Replace(complete, "id: demo", "id: \"\"", 1), "id"},
-		{"missing unit refs", strings.Replace(complete, "unit_refs: none\n", "", 1), "unit_refs"},
-		{"empty unit refs", strings.Replace(complete, "unit_refs: none", "unit_refs:", 1), "unit_refs"},
 		{"missing rule refs", strings.Replace(complete, "rule_refs: none\n", "", 1), "rule_refs"},
 		{"empty rule refs", strings.Replace(complete, "rule_refs: none", "rule_refs: \"\"", 1), "rule_refs"},
 		{"wrong id", strings.Replace(complete, "id: demo", "id: another", 1), "does not match"},
@@ -128,7 +135,7 @@ func TestCheckUnitFrontmatterRequiredShape(t *testing.T) {
 func TestCheckAcceptanceItems_Pass(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: first acceptance item\n"+
@@ -156,7 +163,7 @@ func TestCheckAcceptanceItems_MissingSet(t *testing.T) {
 func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n")
 	// acceptance_item_set exists but has no items with "- id:"
 	result := checkAcceptanceItems(repoRoot, "test_unit")
@@ -168,7 +175,7 @@ func TestCheckAcceptanceItems_MissingItems(t *testing.T) {
 func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: only description\n"+
@@ -183,7 +190,7 @@ func TestCheckAcceptanceItems_MissingRequiredField(t *testing.T) {
 func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
@@ -202,7 +209,7 @@ func TestCheckAcceptanceItems_InvalidNotRunnableYet(t *testing.T) {
 func TestCheckAcceptanceItems_EmptyImplementationSurfaceFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test item\n"+
@@ -224,7 +231,7 @@ func TestCheckAcceptanceItems_PlaceholderImplementationSurfacePass(t *testing.T)
 	// <pending> is the legal design-first placeholder — the path is not yet
 	// known; verify blocks on any leftover <pending>.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: Given a caller, When the check runs, Then it passes.\n"+
@@ -264,7 +271,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -286,7 +293,7 @@ func TestCheckAnchors_ExistingFilePass(t *testing.T) {
 func TestCheckAnchors_MissingFileFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -317,7 +324,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 	// affects.files sits in the middle of the item set; the next item's
 	// "- id:" line must not be collected as an anchor file.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -356,7 +363,7 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 	// The files block is followed by a block-form appendices sub-block; its
 	// 8-space "- evidence.md" entries must not be collected as anchor files.
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+
@@ -383,73 +390,21 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 
 func TestCheckReferences_PassNone(t *testing.T) {
 	repoRoot := newRepo(t)
-	createMinimalCandidate(t, repoRoot, "test_unit") // unit_refs: none
+	createMinimalCandidate(t, repoRoot, "test_unit")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
-		t.Fatalf("expected PASS for unit_refs=none, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected PASS for rule_refs=none, got %s: %s", result.Status, result.Details)
 	}
 }
 
-func TestCheckReferences_MissingRefFail(t *testing.T) {
+func TestCheckReferences_MissingRuleRefFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\n"+
-			"unit_refs:\n  - auth\nrule_refs: none\n---\n")
-	// auth does not exist in candidate or stable
+			"rule_refs:\n  - b_rule_missing\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatal("expected FAIL for missing unit ref")
-	}
-}
-
-func TestCheckReferences_CandidateRefPass(t *testing.T) {
-	repoRoot := newRepo(t)
-	// Create the referenced candidate unit (candidate-first resolution)
-	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	if err := os.MkdirAll(candidateDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(candidateDir, "unit_auth.md"),
-		[]byte("---\nid: auth\n---\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs:\n  - auth\nrule_refs: none\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for candidate ref, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckReferences_StableRefPass(t *testing.T) {
-	repoRoot := newRepo(t)
-	// Create the referenced stable unit (no candidate, fallback to stable)
-	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
-	if err := os.MkdirAll(stableDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stableDir, "unit_auth.md"),
-		[]byte("---\nid: auth\n---\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs:\n  - auth\nrule_refs: none\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for stable ref, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckReferences_RefNotFoundFail(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\n"+
-			"unit_refs:\n  - nonexistent_unit\nrule_refs: none\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatal("expected FAIL for nonexistent ref")
+		t.Fatal("expected FAIL for missing rule ref")
 	}
 }
 
@@ -459,7 +414,7 @@ func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
 	writeAppendix(t, repoRoot, "test_unit", "api",
 		"unit: test_unit\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n"+
+		"---\nid: test_unit\nrule_refs: none\n"+
 			"evidence_appendix_ref: unit_test_unit_api.md\n---\n")
 	result := checkReferences(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -638,7 +593,7 @@ func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
 func TestCheckLayerPaths_Pass(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nThis unit depends on the token claims design of unit_auth_account_token_claims.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -649,7 +604,7 @@ func TestCheckLayerPaths_Pass(t *testing.T) {
 func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/candidate/unit_auth.md for details.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -660,7 +615,7 @@ func TestCheckLayerPaths_AbsoluteUnitPathFail(t *testing.T) {
 func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nApplies docs/specs/rules/candidate/g_rule_naming.md.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -671,7 +626,7 @@ func TestCheckLayerPaths_AbsoluteRulePathFail(t *testing.T) {
 func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nSee candidate/unit_auth.md for details.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -682,7 +637,7 @@ func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nClaims structure: candidate/appendix/unit_auth_account_token_claims.md\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
@@ -693,7 +648,7 @@ func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
 func TestCheckLayerPaths_CodePathNoFalsePositive(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nThe handler lives at src/candidate/handler.go.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -707,7 +662,7 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 	// prose by a string-level check — the agent checklist covers prose.
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"# Body\n\nSee docs/specs/units/stable/unit_payment.md.\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Pass {
@@ -718,7 +673,7 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: test_unit\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
@@ -736,7 +691,7 @@ func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n")
+		"---\nid: test_unit\nrule_refs: none\n---\n")
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
@@ -767,11 +722,20 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 	}
 	writeCandidate(t, repoRoot, unitName,
 		"---\nid: "+unitName+"\n"+
-			"unit_refs: none\nrule_refs: none\n---\n"+
+			"rule_refs: none\n---\n"+
 			"\n# "+unitName+"\n\n"+
-			"## Testability / Acceptance Criteria\n\n"+
+			"## Design Narrative\n\nIntegration fixture.\n\n"+
+			"## Promises\n\n"+
+			"promises:\n"+
+			"  - id: "+unitName+".core\n"+
+			"    kind: opaque\n"+
+			"    opaque_reason: no structured kind applies\n"+
+			"    summary: Core contract.\n"+
+			"    contract: {text: core}\n\n"+
+			"## Acceptance Items\n\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
+			"    promise: "+unitName+".core\n"+
 			"    description: integration test item\n"+
 			"    verification_type: inspectable\n"+
 			"    verification_surface: docs/\n"+
@@ -870,121 +834,13 @@ func TestFormatResult_FailedChecksCount(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Check 7: Dependency cycles
-// ---------------------------------------------------------------------------
-
-func writeCandidateWithRefs(t *testing.T, repoRoot, unitName, unitRefs, ruleRefs string) {
-	t.Helper()
-	content := "---\nid: " + unitName + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n"
-	writeCandidate(t, repoRoot, unitName, content)
-}
-
-func TestCheckDependencyCycles_Pass(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
-	writeCandidateWithRefs(t, repoRoot, "payment", "none", "none")
-
-	result := checkDependencyCycles(repoRoot, "auth")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckDependencyCycles_FailsBothCycleMembers(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
-	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
-
-	for _, unit := range []string{"auth", "payment"} {
-		result := checkDependencyCycles(repoRoot, unit)
-		if result.Status != Fail {
-			t.Fatalf("expected FAIL for %s, got %s: %s", unit, result.Status, result.Details)
-		}
-		if !strings.Contains(result.Details, "auth -> payment") {
-			t.Fatalf("expected cycle listing in details, got: %s", result.Details)
-		}
-		if !strings.Contains(result.Details, "unit_validate_checklist.md Check 8") {
-			t.Fatalf("expected resolution guidance in details, got: %s", result.Details)
-		}
-	}
-}
-
-func TestCheckDependencyCycles_OutsideUnitUnaffected(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
-	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
-	writeCandidateWithRefs(t, repoRoot, "session", "[auth]", "none")
-
-	result := checkDependencyCycles(repoRoot, "session")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for unit outside the cycle, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckDependencyCycles_TransitiveCycle(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "a", "[b]", "none")
-	writeCandidateWithRefs(t, repoRoot, "b", "[c]", "none")
-	writeCandidateWithRefs(t, repoRoot, "c", "[a]", "none")
-
-	result := checkDependencyCycles(repoRoot, "b")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for transitive cycle member, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "a -> b -> c") {
-		t.Fatalf("expected normalized cycle listing, got: %s", result.Details)
-	}
-}
-
-func TestCheckDependencyCycles_BuildFailureCarriesGuidance(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "auth", "none", "none")
-	// Make the stable units path a regular file so graph build fails for a
-	// reason unrelated to the validated unit (ReadDir yields ENOTDIR).
-	if err := os.WriteFile(filepath.Join(repoRoot, "docs/specs/units/stable"), []byte("not a dir"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := checkDependencyCycles(repoRoot, "auth")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL, got %s: %s", result.Status, result.Details)
-	}
-	if !strings.Contains(result.Details, "cannot build dependency graph") {
-		t.Fatalf("expected build failure detail, got: %s", result.Details)
-	}
-	if !strings.Contains(result.Details, "Check 7 reads every current-layer unit spec") {
-		t.Fatalf("expected build guidance in details, got: %s", result.Details)
-	}
-}
-
-func TestValidateCandidate_FailsOnCycle(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidateWithRefs(t, repoRoot, "auth", "[payment]", "none")
-	writeCandidateWithRefs(t, repoRoot, "payment", "[auth]", "none")
-
-	result := ValidateCandidate(repoRoot, "auth")
-	if result.Passed {
-		t.Fatal("expected overall FAIL for a unit on a cycle")
-	}
-	found := false
-	for _, c := range result.Checks {
-		if c.Name == "Dependency cycles" && c.Status == Fail {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected a failed Dependency cycles check, got checks: %v", result.Checks)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Check 8: Region locatability
+// Check 7: Region locatability
 // ---------------------------------------------------------------------------
 
 func TestCheckRegionLocatability_Pass(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "ok",
-		"---\nid: ok\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: ok\nrule_refs: none\n---\n"+
 			"\n# OK Unit\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "ok")
 	if result.Status != Pass {
@@ -995,7 +851,7 @@ func TestCheckRegionLocatability_Pass(t *testing.T) {
 func TestCheckRegionLocatability_NoHeadingFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "flat",
-		"---\nid: flat\nunit_refs: none\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+		"---\nid: flat\nrule_refs: none\n---\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "flat")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for a spec without ## headings, got %s: %s", result.Status, result.Details)
@@ -1008,7 +864,7 @@ func TestCheckRegionLocatability_NoHeadingFails(t *testing.T) {
 func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "dup",
-		"---\nid: dup\nunit_refs: none\nrule_refs: none\n---\n\n## Notes\n\nFirst.\n\n## Notes\n\nSecond.\n")
+		"---\nid: dup\nrule_refs: none\n---\n\n## Notes\n\nFirst.\n\n## Notes\n\nSecond.\n")
 	result := checkRegionLocatability(repoRoot, "dup")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for duplicated headings, got %s: %s", result.Status, result.Details)
@@ -1021,7 +877,7 @@ func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
 func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "dupitem",
-		"---\nid: dupitem\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: dupitem\nrule_refs: none\n---\n"+
 			"\n# Dup Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: a.core\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n  - id: a.core\n    description: Duplicate id.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "dupitem")
 	if result.Status != Fail {
@@ -1035,7 +891,7 @@ func TestCheckRegionLocatability_DuplicatedItemIDFails(t *testing.T) {
 func TestCheckRegionLocatability_EmptyItemIDFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "emptyid",
-		"---\nid: emptyid\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: emptyid\nrule_refs: none\n---\n"+
 			"\n# Empty Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id:\n    description: A.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "emptyid")
 	if result.Status != Fail {
@@ -1049,7 +905,7 @@ func TestCheckRegionLocatability_EmptyItemIDFails(t *testing.T) {
 func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "reserved",
-		"---\nid: reserved\nunit_refs: none\nrule_refs: none\n---\n\n## frontmatter\n\nReal section prose.\n\n## Description\n\nProse.\n")
+		"---\nid: reserved\nrule_refs: none\n---\n\n## frontmatter\n\nReal section prose.\n\n## Description\n\nProse.\n")
 	result := checkRegionLocatability(repoRoot, "reserved")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for the reserved frontmatter heading, got %s: %s", result.Status, result.Details)
@@ -1062,7 +918,7 @@ func TestCheckRegionLocatability_ReservedHeadingFails(t *testing.T) {
 func TestCheckRegionLocatability_InlineMarkerFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "inline",
-		"---\nid: inline\nunit_refs: none\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set: [a, b]\n")
+		"---\nid: inline\nrule_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set: [a, b]\n")
 	result := checkRegionLocatability(repoRoot, "inline")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for an inline marker, got %s: %s", result.Status, result.Details)
@@ -1078,7 +934,7 @@ func TestCheckRegionLocatability_FencedOnlyMarkerFails(t *testing.T) {
 	// located even though a naive exact-line scan would pass it.
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "fencedmarker",
-		"---\nid: fencedmarker\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nReal item prose without a marker.\n")
+		"---\nid: fencedmarker\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nReal item prose without a marker.\n")
 	result := checkRegionLocatability(repoRoot, "fencedmarker")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for a fenced-only marker, got %s: %s", result.Status, result.Details)
@@ -1093,7 +949,7 @@ func TestCheckRegionLocatability_FencedExamplePlusRealMarkerPasses(t *testing.T)
 	// outside the fence is what the locator finds.
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "both",
-		"---\nid: both\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: real.core\n    description: Real.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
+		"---\nid: both\nrule_refs: none\n---\n\n## Examples\n\n```\nacceptance_item_set:\n  - id: example.only\n    description: Example.\n```\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: real.core\n    description: Real.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: P.\n    runnable: yes\n")
 	result := checkRegionLocatability(repoRoot, "both")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS with a real marker plus a fenced example, got %s: %s", result.Status, result.Details)
@@ -1103,7 +959,7 @@ func TestCheckRegionLocatability_FencedExamplePlusRealMarkerPasses(t *testing.T)
 func TestCheckRegionLocatability_MalformedHeadingFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "malformed",
-		"---\nid: malformed\nunit_refs: none\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n##NoSpace\n")
+		"---\nid: malformed\nrule_refs: none\n---\n\n## Description\n\nProse.\n\n##NoSpace\n")
 	result := checkRegionLocatability(repoRoot, "malformed")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for a malformed heading, got %s: %s", result.Status, result.Details)
@@ -1118,7 +974,7 @@ func TestCheckRegionLocatability_FencedHeadingDoesNotFail(t *testing.T) {
 	// heading problem and must not break region splitting.
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "fenced",
-		"---\nid: fenced\nunit_refs: none\nrule_refs: none\n---\n\n## Examples\n\n```\n##inside fence\n## not a real heading\n```\n\n## Next\n")
+		"---\nid: fenced\nrule_refs: none\n---\n\n## Examples\n\n```\n##inside fence\n## not a real heading\n```\n\n## Next\n")
 	result := checkRegionLocatability(repoRoot, "fenced")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for fenced heading-like lines, got %s: %s", result.Status, result.Details)
@@ -1129,7 +985,7 @@ func TestCheckAnchors_MissingEvidenceFileFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "src/handler.go", "package main\n")
 	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"+
+		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    description: test\n"+

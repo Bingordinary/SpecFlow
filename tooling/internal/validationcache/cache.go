@@ -28,12 +28,14 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 // CheckCategory classifies why a cache check passed or failed. It mirrors
 // the gate vocabulary of the freshness report: fresh (gate satisfied),
-// missing (no cache file), stale (re-run the gate to fix), blocked
-// (cache is valid but declares P0/P1 findings).
+// missing (no cache file), stale (delta/repair can recover the cache),
+// blocked (cache is valid but declares P0/P1 findings), invalid (cache
+// predates promise pinning and cannot be used at all — only a full run).
 type CheckCategory string
 
 const (
@@ -41,7 +43,13 @@ const (
 	CategoryMissing CheckCategory = "missing"
 	CategoryStale   CheckCategory = "stale"
 	CategoryBlocked CheckCategory = "blocked"
+	CategoryInvalid CheckCategory = "invalid"
 )
+
+// PromisePinFormat is the gate-cache format that binds provider contracts by
+// promise fingerprint instead of whole-file content. A unit cache without this
+// marker is incompatible: there is no delta/repair recovery, only a full run.
+const PromisePinFormat = "promise-v1"
 
 // CheckResult describes whether a cache file is fresh. Category records
 // the classification from the same check chain that promote relies on,
@@ -91,6 +99,17 @@ type cacheFile struct {
 	ReviewSession   string   `yaml:"review_session,omitempty"`
 	ReviewRecheck   []string `yaml:"review_recheck,omitempty"`
 	ReviewDeclined  []string `yaml:"review_declined,omitempty"`
+	// PinFormat is the cache's contract-pinning format marker. Unit caches
+	// must carry PromisePinFormat; a cache without it predates promise
+	// pinning and is incompatible (see CategoryInvalid).
+	PinFormat     string `yaml:"pin_format,omitempty"`
+	pinFormatSeen bool
+	// PromisePins records the provider promise contracts a unit validate run
+	// read. It replaces whole-file freshness for the provider spec entries.
+	// PromisePinsSet distinguishes "computed, no dependencies" from a cache
+	// written before the promise-pin format.
+	PromisePins     []PromisePin
+	promisePinsSeen bool
 	Files           []cacheFileEntry
 }
 
@@ -220,6 +239,13 @@ func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckR
 			Fresh:    false,
 			Category: CategoryStale,
 			Reason:   fmt.Sprintf("cache command is %q, expected 'validate'", cache.Command),
+		}, nil
+	}
+	if cache.PinFormat != PromisePinFormat {
+		return CheckResult{
+			Fresh:    false,
+			Category: CategoryInvalid,
+			Reason:   fmt.Sprintf("validate cache predates promise pinning — run `validate@%s` (full)", unitName),
 		}, nil
 	}
 	if cache.Result != "pass" {
@@ -568,7 +594,15 @@ type CacheWrite struct {
 	// in a marked comment block before the human-readable body.
 	Judgments string
 	Body      string
-	Entries   []FileEntry
+	// PinFormat marks the cache as a promise-aware unit cache. Unit validate
+	// and verify writes set it; rule caches leave it empty.
+	PinFormat string
+	// PromisePins is the validate gate's provider contract snapshot.
+	// PromisePinsSet renders it even when empty, so freshness can prove the
+	// pin set was computed rather than omitted.
+	PromisePins    []PromisePin
+	PromisePinsSet bool
+	Entries        []FileEntry
 }
 
 // RenderCache renders a complete cache candidate in memory. It performs no
@@ -648,6 +682,18 @@ func PublishCache(repoRoot, targetKind, targetName, command string, content []by
 // WriteCache is the direct renderer/publisher used by test and setup code.
 // Gate-finalize uses RenderCache, validates the candidate, then PublishCache.
 func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, error) {
+	// The promise-pin format is an invariant of unit caches, not a caller
+	// choice. A passing validate cache always records its pin set, even when
+	// empty; gate-finalize supplies the computed pins before rendering.
+	if targetKind == "unit" {
+		w.PinFormat = PromisePinFormat
+		if w.Command == "validate" && w.Result == "pass" && !w.PromisePinsSet {
+			w.PromisePinsSet = true
+			if w.PromisePins == nil {
+				w.PromisePins = []PromisePin{}
+			}
+		}
+	}
 	content, err := RenderCache(targetName, w)
 	if err != nil {
 		return "", err
@@ -753,6 +799,19 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 	}
 	if w.Standard != "" {
 		fmt.Fprintf(&b, "standard: %s\n", w.Standard)
+	}
+	if w.PinFormat != "" {
+		fmt.Fprintf(&b, "pin_format: %s\n", w.PinFormat)
+	}
+	if w.PromisePinsSet {
+		if len(w.PromisePins) == 0 {
+			b.WriteString("promise_pins: []\n")
+		} else {
+			b.WriteString("promise_pins:\n")
+			for _, pin := range w.PromisePins {
+				fmt.Fprintf(&b, "  - id: %s\n    fingerprint: %s\n", pin.ID, pin.Fingerprint)
+			}
+		}
 	}
 	if w.ReviewChangeSet != "" {
 		fmt.Fprintf(&b, "reviewed_change_set: %s\n", w.ReviewChangeSet)
@@ -1172,6 +1231,27 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 }
 
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
+	// A unit cache must carry the promise-pinning format. This check comes
+	// before every other classification: a cache written before the format is
+	// incompatible (not a delta/repair baseline), and an old review protocol
+	// must not mask it as a repairable stale state.
+	if targetKind == "unit" {
+		if cache.PinFormat != PromisePinFormat {
+			return CheckResult{
+				Fresh:    false,
+				Category: CategoryInvalid,
+				Reason: fmt.Sprintf("%s cache predates promise pinning (pin_format %q, expected %q) — run `%s@%s` (full); delta/repair cannot use it",
+					command, cache.PinFormat, PromisePinFormat, command, cache.Unit),
+			}, nil
+		}
+		if command == "validate" && cache.Result == "pass" && !cache.promisePinsSeen {
+			return CheckResult{
+				Fresh:    false,
+				Category: CategoryInvalid,
+				Reason:   fmt.Sprintf("validate cache has no `promise_pins` block — run `validate@%s` (full)", cache.Unit),
+			}, nil
+		}
+	}
 	liveConclusions := 0
 	if command == "verify" {
 		states, err := VerifyConclusionStates(repoRoot, targetKind, cache)
@@ -1283,9 +1363,16 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 	// files remain its freshness contract.
 	if command != "verify" {
 		// Re-check every listed file against its recorded whole-file hash.
+		// Provider specs are governed by promise_pins instead: their narrative,
+		// acceptance items, and appendices are not the consumer's contract, so
+		// only a provider promise fingerprint change may stale this cache.
+		providerSubjects := promiseProviderSubjectPaths(repoRoot, cache)
 		var staleFiles []string
 		var missingFiles []string
 		for _, entry := range cache.Files {
+			if providerSubjects[resolveEntryPath(repoRoot, entry.Path)] {
+				continue
+			}
 			state, err := fileFreshness(repoRoot, entry)
 			if err != nil {
 				missingFiles = append(missingFiles, fmt.Sprintf("%s (%v)", entry.Path, err))
@@ -1313,6 +1400,9 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s@%s` to review the change set.", command, strings.Join(staleFiles, ", "), command, cache.Unit),
 			}, nil
 		}
+		if res := checkPromisePinFreshness(repoRoot, targetKind, cache); res != nil {
+			return *res, nil
+		}
 	}
 
 	// Blocking check — fail-capable caches (validate/verify failure records
@@ -1338,6 +1428,159 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		Reason:   reason,
 	}
 	return result, nil
+}
+
+// promiseProviderSubjectPaths returns the resolved cache-entry paths whose
+// freshness is governed by promise_pins: the provider unit's main spec in the
+// cache's own layer, plus the provider's published stable main spec when a
+// candidate validate records it as comparison evidence. A changed provider
+// narrative or acceptance item is not a contract change, so these entries are
+// excluded from whole-file comparison; the promise pin remains the contract
+// dependency.
+func promiseProviderSubjectPaths(repoRoot string, cache *cacheFile) map[string]bool {
+	paths := map[string]bool{}
+	for _, pin := range cache.PromisePins {
+		provider := specvalidation.PromiseProvider(pin.ID)
+		if provider == "" {
+			continue
+		}
+		if path := providerSubjectPath(repoRoot, cache.Target, provider); path != "" {
+			paths[path] = true
+		}
+		if path := providerStableSubjectPath(repoRoot, provider); path != "" {
+			paths[path] = true
+		}
+	}
+	return paths
+}
+
+// providerStableSubjectPath resolves the provider's published stable main spec
+// for the validate comparison surface. A candidate validate may carry this
+// copy when the provider has a candidate; a narrative edit there is not a
+// contract change, so it is excluded from whole-file freshness like the
+// current-layer provider spec.
+func providerStableSubjectPath(repoRoot, provider string) string {
+	abs := resolvePath(repoRoot, specpaths.StableUnitSpecFileRef(provider))
+	if _, err := os.Stat(abs); err != nil {
+		return ""
+	}
+	return filepath.ToSlash(abs)
+}
+
+// providerSubjectPath resolves the provider unit's main spec entry in the
+// cache's own layer. A candidate cache resolves the current layer (candidate
+// preferred, stable fallback), matching the promise graph scope; a stable cache
+// reads only the published stable spec.
+func providerSubjectPath(repoRoot, target, provider string) string {
+	if strings.EqualFold(strings.TrimSpace(target), "stable") {
+		return filepath.ToSlash(resolvePath(repoRoot, specpaths.StableUnitSpecFileRef(provider)))
+	}
+	return specpaths.ResolveUnitFile(repoRoot, provider)
+}
+
+func providerSpecRef(target, provider string) string {
+	if strings.EqualFold(strings.TrimSpace(target), "stable") {
+		return specpaths.StableUnitSpecFileRef(provider)
+	}
+	return specpaths.CandidateUnitSpecFileRef(provider)
+}
+
+// checkPromisePinFreshness compares a validate cache's recorded provider
+// promise fingerprints with the current layer's contracts. A fingerprint
+// change is the only provider-side change that reopens a consumer; the
+// provider's narrative, acceptance items, tests, and appendices are excluded.
+func checkPromisePinFreshness(repoRoot, targetKind string, cache *cacheFile) *CheckResult {
+	if targetKind != "unit" {
+		return nil
+	}
+	if cache.Command != "validate" {
+		return nil
+	}
+	// pin_format and promise_pins are requirements of a passing validate
+	// cache. A failure record is the failure-recovery baseline: it carries no
+	// promise_pins, and its blocking classification must stay BLOCKED rather
+	// than being downgraded to a repairable stale cache.
+	if cache.Result != "pass" {
+		return nil
+	}
+	relPath := specpaths.CandidateUnitSpecFileRef(cache.Unit)
+	if strings.EqualFold(strings.TrimSpace(cache.Target), "stable") {
+		relPath = specpaths.StableUnitSpecFileRef(cache.Unit)
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
+	if err != nil {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryInvalid,
+			Reason:   fmt.Sprintf("validate cache cannot prove its promise pins: read %s: %v", relPath, err),
+		}
+	}
+	required := map[string]bool{}
+	for _, id := range specvalidation.PromiseDependencyIDs(string(data)) {
+		required[id] = true
+	}
+	pinned := map[string]bool{}
+	for _, pin := range cache.PromisePins {
+		pinned[pin.ID] = true
+	}
+	var missing, extra []string
+	for id := range required {
+		if !pinned[id] {
+			missing = append(missing, id)
+		}
+	}
+	for id := range pinned {
+		if !required[id] {
+			extra = append(extra, id)
+		}
+	}
+	if len(missing) > 0 || len(extra) > 0 {
+		sort.Strings(missing)
+		sort.Strings(extra)
+		var parts []string
+		if len(missing) > 0 {
+			parts = append(parts, "missing "+strings.Join(missing, ", "))
+		}
+		if len(extra) > 0 {
+			parts = append(parts, "no longer declared: "+strings.Join(extra, ", "))
+		}
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("validate cache stale: promise_pins do not match the spec's depends_on (%s) — run `validate@%s`", strings.Join(parts, "; "), cache.Unit),
+		}
+	}
+	if len(cache.PromisePins) == 0 {
+		return nil
+	}
+	scope := specvalidation.PromiseScopeForLayer(cache.Target)
+	current, issues := specvalidation.PromiseFingerprintsForScope(repoRoot, scope)
+	if len(issues) > 0 {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   "validate cache stale: promise graph: " + strings.Join(issues, "; "),
+		}
+	}
+	var problems []string
+	for _, pin := range cache.PromisePins {
+		fingerprint, ok := current[pin.ID]
+		if !ok {
+			problems = append(problems, pin.ID+" is unresolved")
+			continue
+		}
+		if fingerprint != pin.Fingerprint {
+			problems = append(problems, pin.ID+" contract changed")
+		}
+	}
+	if len(problems) > 0 {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("validate cache stale: provider promise %s. Run `validate@%s` to review the change set.", strings.Join(problems, ", "), cache.Unit),
+		}
+	}
+	return nil
 }
 
 // readCache parses a cache file (YAML frontmatter + markdown body).
@@ -1391,10 +1634,36 @@ func parseCache(data []byte) (*cacheFile, error) {
 	inChunksBlock := false
 	inInvalidatedChecks := false
 	invalidatedChecksSeen := false
+	inPromisePins := false
+	promisePinsSeen := false
 
 	for _, line := range fmLines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
+			continue
+		}
+		if inPromisePins {
+			if strings.HasPrefix(trimmed, "- id:") {
+				id := unquoteScalar(strings.TrimPrefix(trimmed, "- id:"))
+				if id == "" {
+					return nil, fmt.Errorf("cache file has an empty `promise_pins` id")
+				}
+				cache.PromisePins = append(cache.PromisePins, PromisePin{ID: id})
+				continue
+			}
+			if strings.HasPrefix(trimmed, "fingerprint:") && len(cache.PromisePins) > 0 {
+				cache.PromisePins[len(cache.PromisePins)-1].Fingerprint = unquoteScalar(strings.TrimPrefix(trimmed, "fingerprint:"))
+				continue
+			}
+			inPromisePins = false
+		}
+		if trimmed == "promise_pins:" || trimmed == "promise_pins: []" {
+			if promisePinsSeen {
+				return nil, fmt.Errorf("cache file declares `promise_pins` more than once")
+			}
+			promisePinsSeen = true
+			cache.promisePinsSeen = true
+			inPromisePins = trimmed == "promise_pins:"
 			continue
 		}
 		if inInvalidatedChecks {
@@ -1569,6 +1838,9 @@ func parseCache(data []byte) (*cacheFile, error) {
 					cache.GateRun = value
 				case "standard":
 					cache.Standard = value
+				case "pin_format":
+					cache.PinFormat = value
+					cache.pinFormatSeen = true
 				case "reviewed_change_set":
 					cache.ReviewChangeSet = value
 				case "review_result":
@@ -2090,6 +2362,14 @@ func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBa
 		// by the parser; only missing or malformed required content reaches
 		// this branch.
 		return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s is not in the current format: %v", relPath(repoRoot, cachePath), err)}, nil
+	}
+	if targetKind == "unit" {
+		if cache.PinFormat != PromisePinFormat {
+			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s predates promise pinning — run the full command; delta/repair cannot use it", relPath(repoRoot, cachePath))}, nil
+		}
+		if command == "validate" && cache.Result == "pass" && !cache.promisePinsSeen {
+			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s has no promise_pins block — run the full validate", relPath(repoRoot, cachePath))}, nil
+		}
 	}
 	baseline := &GateBaseline{Command: command,
 		Exists:            true,

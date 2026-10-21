@@ -66,7 +66,7 @@ Identify what conditions cause the operation to be rejected by business logic (n
 
 Identify how the acceptance item should behave when each external dependency is unavailable or returns an error.
 
-- **Input**: Affected dependencies from `affects.dependencies` or implied by `description`
+- **Input**: Affected dependencies from the promise `depends_on` edges or implied by `description`
 - **Method**: For each dependency, consider:
 
 | Dependency | Failure mode |

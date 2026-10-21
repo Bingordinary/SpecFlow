@@ -28,10 +28,17 @@ framework/_atoms/
 ├── generate.sh                  # Generation script
 ├── verify.sh                    # Verification script
 ├── misc/
+│   ├── acceptance_item_example.md   # Deployed acceptance-item example (spec_writing_guide.md + core/promise_model.md)
 │   ├── batch_findings_mechanism.md  # Batch-group assertion re-verification mechanism
+│   ├── cache_evidence_path_forms.md # Cache evidence path forms
 │   ├── framework_path.md            # Framework path resolution reference
+│   ├── promise_carrier_role.md      # Promise as the sole formal behavior carrier
+│   ├── promise_example.md           # Deployed promise example (spec_writing_guide.md + core/promise_model.md)
+│   ├── promise_gate_requirement.md  # Gate requirement for a unit without ## Promises
+│   ├── promise_unit_shape.md        # Canonical unit-spec three-section shape
 │   ├── report_skeleton.md           # Unified quality-gate report skeleton
-│   └── specflowctl_location.md      # Tooling path reference
+│   ├── specflowctl_location.md      # Tooling path reference
+│   └── unit_rule_publication.md     # Rule publication prerequisites
 └── review/
     └── spec_review_standard.md      # Spec-aware code review standard
 ```

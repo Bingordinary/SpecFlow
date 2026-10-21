@@ -8,7 +8,7 @@ It owns consumer discovery and fallback reason classification for affected units
 
 Run impact sync when:
 
-1. a stable unit's content changes and a current-layer consumer's dependency evidence was captured against the prior content (unit refs are bare names that resolve to the current truth — Trigger 1 detects stale dependency evidence by content, not by a reference marker).
+1. a stable unit's content changes and a current-layer consumer's dependency evidence was captured against the prior content (a consumer declares the provider promise on its own promise's `depends_on`, which resolves to the current truth — Trigger 1 detects stale dependency evidence by content, not by a reference marker).
 2. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
 3. a governance flow cannot prove that downstream unit truth remains current.
 
@@ -18,7 +18,7 @@ Use the smallest durable truth that can prove affected consumers:
 
 1. changed rule or global rule truth.
 2. promoted stable unit reference and its changed content.
-3. current-layer unit frontmatter and dependency fields.
+3. current-layer unit frontmatter and promise `depends_on` edges.
 4. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
 
 
@@ -36,7 +36,7 @@ Rule consumers are derived from current-layer unit frontmatter:
 2. `b_rule_` files apply only to units whose `rule_refs` include that rule.
 3. rule files must not store consumer lists.
 
-Stable unit dependency consumers are derived from current-layer dependency fields.
+Stable unit dependency consumers are derived from the current-layer units' promise `depends_on` provider edges.
 
 
 
@@ -104,9 +104,9 @@ Arming rule: `freshness_review_required` is set to `true` whenever `affected_can
    specflowctl fresh --unit <name>
    ```
    (rule targets: `specflowctl fresh --rule <id>`; a whole-scope report `specflowctl fresh --scope all` may replace per-target runs when the affected set is large.)
-2. Classify each affected unit by the reported gate statuses (FRESH / STALE / MISSING / BLOCKED, per `framework/validation_cache.md` §Freshness Check):
+2. Classify each affected unit by the reported gate statuses (FRESH / STALE / INVALID / MISSING / BLOCKED, per `framework/validation_cache.md` §Freshness Check):
    - **FRESH** — all applicable gates have current, non-blocking caches. The unit's truth is mechanically current; fallback cleanup may proceed for this unit.
-   - **STALE / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache never ran, or a gate cache declares P0/P1 findings — a failure record). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
+   - **STALE / INVALID / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache predates promise pinning and cannot be used as a baseline, the cache never ran, or a gate cache declares P0/P1 findings — a failure record). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
 3. Report the classification per unit: `{unit}: {gate status} — cleanup allowed | cleanup blocked ({reason})`.
 
 **Boundaries:**
@@ -121,7 +121,7 @@ Arming rule: `freshness_review_required` is set to `true` whenever `affected_can
 "Fallback cleanup" is not a separate write step. After the Freshness Review, the per-unit classification report is the complete deliverable:
 
 1. A unit classified `cleanup allowed` (FRESH) requires no repair action — its durable truth is mechanically current, and any further change happens through the normal candidate workflow.
-2. A unit classified `cleanup blocked` (STALE / MISSING / BLOCKED) has exactly one legal next action: the caller reports the blocking gate to the user, and the affected gate is re-run by the user (HARD RULE 2 in `framework/concepts.md`). The caller must not repair, rewrite, or delete the unit's truth itself.
+2. A unit classified `cleanup blocked` (STALE / INVALID / MISSING / BLOCKED) has exactly one legal next action: the caller reports the blocking gate to the user, and the affected gate is re-run by the user (HARD RULE 2 in `framework/concepts.md`). The caller must not repair, rewrite, or delete the unit's truth itself.
 3. A target with no candidate and no stable file is reported as `cleanup blocked (target missing)` and stops for user input.
 
 No other cleanup action is defined or permitted.

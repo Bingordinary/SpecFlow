@@ -40,8 +40,24 @@ func writeFile(t *testing.T, repoRoot, rel, content string) string {
 
 // unitSpec builds a minimal candidate/stable unit spec. The acceptance item
 // carries the given implementation_surface and optional extra body content.
-func unitSpec(name, unitRefs, ruleRefs, implSurface, extra string) string {
-	return "---\nid: " + name + "\nunit_refs: " + unitRefs + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+func unitSpec(name, providerUnits, ruleRefs, implSurface, extra string) string {
+	depends := ""
+	if providerUnits != "" && !strings.EqualFold(providerUnits, "none") {
+		var ids []string
+		for _, unit := range strings.Split(providerUnits, ",") {
+			unit = strings.Trim(strings.TrimSpace(unit), "[]")
+			if unit != "" {
+				ids = append(ids, unit+".core")
+			}
+		}
+		if len(ids) > 0 {
+			depends = "    depends_on: [" + strings.Join(ids, ", ") + "]\n"
+		}
+	}
+	return "---\nid: " + name + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n" + depends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 }
 
 func writeUnit(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs, implSurface, extra string) {
@@ -101,16 +117,12 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 	for _, want := range []string{
 		"docs/specs/units/candidate/unit_auth.md",
 		"unit:dep",
-		"unit:dep:appendix:unit_dep_protocol",
 		"rule:b_rule_x",
 		"rule:g_rule_repo",
 	} {
 		ref, ok := refByRef(run, want)
 		if !ok {
 			t.Fatalf("expected derived ref %q, got %+v", want, run.Refs)
-		}
-		if want != "unit:dep:appendix:unit_dep_protocol" && ref.Hash == "" {
-			t.Fatalf("expected a hash for %q", want)
 		}
 		if ref.Hash == "" {
 			t.Fatalf("expected a hash for %q", want)
@@ -139,7 +151,7 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 
 func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	extra := "    affects:\n      files:\n        - docs/design.md\n  - id: auth.pending\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	extra := "    affects:\n      files:\n        - docs/design.md\n  - id: auth.pending\n    promise: auth.core\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", extra)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	writeFile(t, repoRoot, "src/sub/util.go", "package sub\n")
@@ -171,7 +183,7 @@ func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 
 func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 
@@ -196,7 +208,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 // written, with the item id and the reason.
 func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	pending := "  - id: auth.pending\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	pending := "  - id: auth.pending\n    promise: auth.core\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/demo/a.go; internal/demo/b.go", pending)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
@@ -269,7 +281,7 @@ func TestPlanVerifyRejectsSpecDocumentAffectsFiles(t *testing.T) {
 // the item's own indent instead of assuming the canonical column.
 func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n    - id: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
+	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n    - id: auth.core\n      promise: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 
@@ -382,7 +394,7 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
-		"---\nid: auth\nunit_refs: none\nrule_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n")
+		"---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set:\n")
 
 	for _, gate := range []string{GateVerify} {
 		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {

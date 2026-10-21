@@ -70,8 +70,6 @@ func TestLiveFingerprintIgnoresNonToolingFiles(t *testing.T) {
 	}
 }
 
-
-
 func TestLiveFingerprintSupportsSourceRepoLayout(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeSourceToolingRepo(t, repoRoot)

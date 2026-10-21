@@ -44,6 +44,7 @@ var protocolStandards = map[standardKey][]string{
 		"verification_scope.md",
 		"severity_policy.md",
 		"spec_writing_guide.md",
+		"core/promise_model.md",
 	},
 	{gate: "validate", targetKind: "rule"}: {
 		"rule_validate_checklist.md",
@@ -206,6 +207,14 @@ var mechanismSections = map[string][]string{
 	// and the whole document is fingerprint input. The empty list is declared so
 	// the document-set check proves that decision was made, not overlooked.
 	"spec_writing_guide.md": {},
+	// core/promise_model.md is unit validate's promise standard: Check 5h
+	// applies its §Granularity and §Contract shapes, not only the mechanical
+	// Check 15. Its sections mix judging rules with mechanism references (the
+	// validation command, the state-record path, layer resolution), so the whole
+	// document stays in the fingerprint. Excluding too little costs a re-run;
+	// excluding a judging rule would silently reuse a conclusion the current
+	// standard no longer supports (framework/spec_flow_review.md §2.17).
+	"core/promise_model.md": {},
 }
 
 // Protocol fingerprints the judging standard one gate deploys in this project:

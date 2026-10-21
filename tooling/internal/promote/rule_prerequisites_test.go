@@ -40,7 +40,7 @@ func TestUnitRulePrerequisitesPublication(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			writePromotableUnit(t, root, "consumer", "none", "b_rule_http")
+			writePromotableUnit(t, root, "consumer", "b_rule_http")
 			writeVerifyCache(t, root, "consumer")
 			if tc.stable != "" {
 				writePrerequisiteFile(t, root, specpaths.RuleStableFileRef("b_rule_http"), tc.stable)
@@ -73,8 +73,8 @@ func TestUnitRulePrerequisitesPublication(t *testing.T) {
 
 func TestUnitRulePrerequisitesGlobalsAndDirectBindings(t *testing.T) {
 	root := t.TempDir()
-	writePromotableUnit(t, root, "consumer", "dependency", "[b_rule_z, b_rule_a, b_rule_z]")
-	writePromotableUnit(t, root, "dependency", "none", "b_rule_indirect")
+	writePromotableUnit(t, root, "consumer", "[b_rule_z, b_rule_a, b_rule_z]")
+	writePromotableUnit(t, root, "dependency", "b_rule_indirect")
 	writePrerequisiteFile(t, root, specpaths.StableUnitSpecFileRef("consumer"), "---\nid: consumer\nrule_refs: b_rule_dropped\n---\n")
 	for _, id := range []string{"b_rule_z", "b_rule_a", "b_rule_indirect", "b_rule_dropped"} {
 		writePrerequisiteFile(t, root, specpaths.RuleCandidateFileRef(id), "new constraint\n")
@@ -102,7 +102,7 @@ func TestUnitRulePrerequisitesGlobalsAndDirectBindings(t *testing.T) {
 
 func TestUnitRulePrerequisitesExplicitGlobalNeedsStable(t *testing.T) {
 	root := t.TempDir()
-	writePromotableUnit(t, root, "consumer", "none", "g_rule_new")
+	writePromotableUnit(t, root, "consumer", "g_rule_new")
 	writePrerequisiteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_new"), "new global\n")
 	report, err := CheckUnitRulePrerequisites(root, "consumer")
 	if err != nil || len(report.Blockers) != 1 || len(report.Advisories) != 0 {
@@ -125,7 +125,7 @@ func TestUnitRulePrerequisitesReadErrors(t *testing.T) {
 	} {
 		t.Run(ref, func(t *testing.T) {
 			root := t.TempDir()
-			writePromotableUnit(t, root, "consumer", "none", "b_rule_http")
+			writePromotableUnit(t, root, "consumer", "b_rule_http")
 			if ref != specpaths.RuleCandidateDir {
 				writePrerequisiteFile(t, root, specpaths.RuleStableFileRef("b_rule_http"), "published bound\n")
 				writePrerequisiteFile(t, root, specpaths.RuleCandidateFileRef("g_rule_draft"), "global draft\n")
@@ -157,7 +157,7 @@ func TestUnitRulePrerequisitesReadErrors(t *testing.T) {
 func TestRulePublicationBlockerReturnsBeforeAppendixStaging(t *testing.T) {
 	root := t.TempDir()
 	writeCandidateUnit(t, root, "consumer")
-	writePromotableUnit(t, root, "consumer", "none", "b_rule_unpublished")
+	writePromotableUnit(t, root, "consumer", "b_rule_unpublished")
 	writeVerifyCache(t, root, "consumer")
 	writePrerequisiteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_unpublished"), "unpublished constraint\n")
 	before := prerequisiteFiles(t, root)
@@ -191,4 +191,28 @@ func prerequisiteFiles(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+func writePromotableUnit(t *testing.T, repoRoot, unit, ruleRefs string) {
+	t.Helper()
+	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(candDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: " + unit + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + unit + "\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n" +
+		"  - id: " + unit + ".core\n" +
+		"    promise: " + unit + ".core\n" +
+		"    description: Given a caller, When the behavior runs, Then it is accepted.\n" +
+		"    verification_type: testable\n" +
+		"    verification_surface: internal/demo\n" +
+		"    implementation_surface: internal/demo\n" +
+		"    verification_method: Go test\n" +
+		"    pass_condition: passes.\n" +
+		"    runnable: yes\n"
+	if err := os.WriteFile(filepath.Join(candDir, "unit_"+unit+".md"), []byte(spec), 0644); err != nil {
+		t.Fatal(err)
+	}
 }

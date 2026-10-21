@@ -38,9 +38,9 @@ func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs 
 		}
 		validateEntries = append(validateEntries, *entry)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", name, validationcache.CacheWrite{
+	if _, err := validationcache.WriteCache(root, "unit", name, withPromiseFormat(t, root, name, "candidate", validationcache.CacheWrite{
 		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: validateEntries,
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	currentVerifyFixture(t, root, name, "candidate", "")
@@ -253,7 +253,7 @@ func TestRulePublicationDroppedBindingDoesNotBlock(t *testing.T) {
 	id := "b_rule_dropped"
 	grWriteFile(t, root, specpaths.RuleStableFileRef(id), publicationRuleText(id, "bound", "Old constraint."))
 	grWriteFile(t, root, specpaths.RuleCandidateFileRef(id), publicationRuleText(id, "bound", "New constraint."))
-	grWriteFile(t, root, specpaths.StableUnitSpecFileRef("consumer"), "---\nid: consumer\nunit_refs: none\nrule_refs: b_rule_dropped\n---\n")
+	grWriteFile(t, root, specpaths.StableUnitSpecFileRef("consumer"), "---\nid: consumer\nrule_refs: b_rule_dropped\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: consumer.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: consumer.core\n    promise: consumer.core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n")
 	writePublicationUnit(t, root, "consumer", "none", nil)
 	detail, err := freshRun(t, root, "--unit", "consumer")
 	if err != nil || !strings.Contains(detail, "READY FOR PROMOTE: yes") || strings.Contains(detail, id) {

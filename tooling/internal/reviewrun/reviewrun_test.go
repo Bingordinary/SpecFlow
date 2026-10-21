@@ -64,8 +64,14 @@ func TestInitCreatesValidRunState(t *testing.T) {
 
 	for _, input := range []string{
 		"framework/core/object_model.md",
+		"framework/core/promise_model.md",
 		"framework/spec_writing_guide.md",
 		"framework/concepts.md",
+		"framework/unit_validate_checklist.md",
+		"framework/unit_verify_checklist.md",
+		"framework/unit_promote_workflow.md",
+		"framework/removal_workflow.md",
+		"tooling/cmd/specflowctl/validate.go",
 	} {
 		if !containsString(truthSlice.InputFiles, input) {
 			t.Fatalf("expected truth gate input %s, got %+v", input, truthSlice.InputFiles)
@@ -906,7 +912,7 @@ func TestRefreshMarksMissingPassedInputStale(t *testing.T) {
 	}
 }
 
-func TestInitIncludesToolingScriptAndReaderRuntimeInToolingSlices(t *testing.T) {
+func TestInitIncludesToolingScriptsInToolingSlices(t *testing.T) {
 	_, file, _ := createInitializedRun(t)
 	state := mustParse(t, file)
 
@@ -1081,6 +1087,9 @@ func createReviewRunRepo(t *testing.T) string {
 		"verification_scope.md",
 		"unit_validate_checklist.md",
 		"unit_verify_checklist.md",
+		"unit_promote_workflow.md",
+		"removal_workflow.md",
+		"core/promise_model.md",
 		"operations/issues.md",
 	}
 	for _, name := range frameworkFiles {
@@ -1116,6 +1125,17 @@ func createReviewRunRepo(t *testing.T) string {
 		"tooling/cmd/specflowctl/main.go",
 		"tooling/cmd/specflowctl/gate_mission.go",
 		"tooling/cmd/specflowctl/gate_report_contract.go",
+		"tooling/cmd/specflowctl/validate.go",
+		"tooling/cmd/specflowctl/deps.go",
+		"tooling/cmd/specflowctl/fork.go",
+		"tooling/internal/fork/fork.go",
+		"tooling/internal/gaterun/gaterun.go",
+		"tooling/internal/promote/promote.go",
+		"tooling/internal/removal/removal.go",
+		"tooling/internal/unitgraph/unitgraph.go",
+		"tooling/internal/specvalidation/specvalidation.go",
+		"tooling/internal/specvalidation/promises.go",
+		"tooling/internal/specvalidation/promise_graph.go",
 		"tooling/internal/demo/demo.go",
 		"tooling/internal/processcleanup/processcleanup.go",
 		"tooling/go.mod",

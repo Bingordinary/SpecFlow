@@ -79,8 +79,8 @@ func TestLogicalUnitRefForPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(t, "docs/specs/units/candidate/unit_dep.md", "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n")
-	write(t, "docs/specs/units/stable/unit_dep.md", "---\nid: dep\nunit_refs: none\nrule_refs: none\n---\n")
+	write(t, "docs/specs/units/candidate/unit_dep.md", "---\nid: dep\nrule_refs: none\n---\n")
+	write(t, "docs/specs/units/stable/unit_dep.md", "---\nid: dep\nrule_refs: none\n---\n")
 	write(t, "docs/specs/units/candidate/appendix/unit_dep_protocol.md", "---\nunit: dep\nstatus: active\n---\n\nProse.\n")
 	write(t, "docs/specs/units/candidate/appendix/unit_dep_bad.md", "---\nunit: other\n---\n\nProse.\n")
 

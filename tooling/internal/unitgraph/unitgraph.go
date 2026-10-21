@@ -1,9 +1,9 @@
-// Package unitgraph builds the directed dependency graph of units from
-// their declared unit_refs and reports cycles and a promotion order.
+// Package unitgraph builds the directed dependency graph of units from their
+// promise depends_on edges and reports cycles and a promotion order.
 //
-// It is purely mechanical: only explicit unit_refs edges are used, never
-// inference from prose. Rules are leaves — a rule never references a unit or
-// another rule, so cycles can only involve units.
+// It is purely mechanical: only explicit promise dependency edges are used,
+// never inference from prose. Rules are leaves — a rule never references a
+// unit or another rule, so cycles can only involve units.
 package unitgraph
 
 import (
@@ -18,10 +18,11 @@ import (
 
 // Node is one unit in the dependency graph.
 type Node struct {
-	Name     string   // unit name
-	Layer    string   // resolved layer of the spec file read: "candidate" or "stable"
-	UnitRefs []string // out edges: referenced unit names (version stripped)
-	RuleRefs []string // referenced rule ids (version stripped)
+	Name            string   // unit name
+	Layer           string   // resolved layer of the spec file read: "candidate" or "stable"
+	RuleRefs        []string // referenced rule ids (version stripped)
+	PromiseRefs     []string // all out edges derived from promise depends_on (provider units)
+	PublicationRefs []string // out edges whose provider promise is not published stable at the current contract
 }
 
 // Graph is the dependency graph of a set of units.
@@ -32,7 +33,7 @@ type Graph struct {
 	names    []string // unit names, sorted
 }
 
-// Build scans the units in scope and resolves every explicit unit_refs edge.
+// Build scans the units in scope and reads their declared rule references.
 //
 // Scope determines which units become nodes:
 //   - "all": every current-layer unit — candidate layer preferred, stable
@@ -116,7 +117,6 @@ func Build(repoRoot, scope string) (*Graph, error) {
 	}
 
 	for _, node := range g.nodes {
-		sort.Strings(node.UnitRefs)
 		sort.Strings(node.RuleRefs)
 	}
 
@@ -138,13 +138,6 @@ func readNode(path, name, layer string) (*Node, error) {
 	fm := specpaths.ReadFrontmatterStringMap(string(data))
 
 	node := &Node{Name: name, Layer: layer}
-	if raw := fm["unit_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
-		for _, ref := range specpaths.ParseRefList(raw) {
-			if ref != "" {
-				node.UnitRefs = append(node.UnitRefs, ref)
-			}
-		}
-	}
 	if raw := fm["rule_refs"]; raw != "" && !strings.EqualFold(raw, "none") {
 		for _, ref := range specpaths.ParseRefList(raw) {
 			if ref != "" {
@@ -169,9 +162,82 @@ func (g *Graph) Node(name string) *Node {
 	return g.nodes[name]
 }
 
-// Cycles returns every dependency cycle as an ordered member list. Each
-// cycle is normalized to start at its lexicographically smallest member and
-// follows the edge direction; duplicates are removed.
+// AddPromiseDependency records a promise-derived dependency edge between two
+// in-scope units that blocks publication: the provider's current contract is
+// not yet published stable. The edge participates in publication cycle
+// detection and ordering; PromiseRefs keeps the edge visible even when it does
+// not block. Out-of-scope targets are ignored: a scope view only orders units
+// inside that scope.
+func (g *Graph) AddPromiseDependency(from, to string) {
+	g.addPromiseRef(from, to)
+	g.addPublicationRef(from, to)
+}
+
+// AddPublishedPromiseDependency records a promise-derived edge whose provider
+// promise is already published stable at the current fingerprint. It is a real
+// contract dependency (visible to PromiseConsumers and --unit), but it does
+// not block publication order.
+func (g *Graph) AddPublishedPromiseDependency(from, to string) {
+	g.addPromiseRef(from, to)
+}
+
+func (g *Graph) addPromiseRef(from, to string) bool {
+	if from == "" || to == "" || from == to {
+		return false
+	}
+	node := g.nodes[from]
+	if node == nil {
+		return false
+	}
+	if _, ok := g.nodes[to]; !ok {
+		return false
+	}
+	for _, ref := range node.PromiseRefs {
+		if ref == to {
+			return false
+		}
+	}
+	node.PromiseRefs = append(node.PromiseRefs, to)
+	sort.Strings(node.PromiseRefs)
+	return true
+}
+
+func (g *Graph) addPublicationRef(from, to string) {
+	node := g.nodes[from]
+	if node == nil {
+		return
+	}
+	for _, ref := range node.PublicationRefs {
+		if ref == to {
+			return
+		}
+	}
+	node.PublicationRefs = append(node.PublicationRefs, to)
+	sort.Strings(node.PublicationRefs)
+}
+
+// dependencies returns the publication-blocking provider edges of a node,
+// deduplicated. Cycle and ordering logic reads this set: an already-published
+// provider contract does not require the provider to promote again.
+func (g *Graph) dependencies(node *Node) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(node.PublicationRefs))
+	for _, ref := range node.PublicationRefs {
+		if ref == "" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
+	}
+	return out
+}
+
+// Cycles returns every publication-order cycle as an ordered member list. The
+// edges are promise-derived but aggregated per unit and filtered to provider
+// promises that are not yet published stable; a cycle here blocks promotion
+// order, not promise contract validity. Each cycle is normalized to start at
+// its lexicographically smallest member and follows the edge direction;
+// duplicates are removed.
 func (g *Graph) Cycles() [][]string {
 	const (
 		white = 0 // unvisited
@@ -187,7 +253,7 @@ func (g *Graph) Cycles() [][]string {
 	visit = func(name string) {
 		color[name] = gray
 		stack = append(stack, name)
-		for _, dep := range g.nodes[name].UnitRefs {
+		for _, dep := range g.dependencies(g.nodes[name]) {
 			if _, ok := g.nodes[dep]; !ok {
 				continue // target out of scope — no edge inside the graph
 			}
@@ -260,7 +326,8 @@ func normalizeCycle(cycle []string) []string {
 	return rotated
 }
 
-// OnCycle reports whether the unit participates in any cycle.
+// OnCycle reports whether the unit participates in any publication-order
+// cycle.
 func (g *Graph) OnCycle(name string) bool {
 	if _, ok := g.nodes[name]; !ok {
 		return false
@@ -275,10 +342,11 @@ func (g *Graph) OnCycle(name string) bool {
 	return false
 }
 
-// TopoOrder returns the units in promotion order: a unit that another unit
-// depends on comes first (the referenced unit must be stable before its
-// referrer can promote). Units on a cycle have no order and are omitted —
-// cycles are reported separately.
+// TopoOrder returns the units in promotion order over publication-blocking
+// dependencies: a provider whose current promise contract is not yet published
+// stable comes first. Already-published provider edges do not constrain the
+// order. Units on a publication cycle have no order and are omitted — cycles
+// are reported separately.
 func (g *Graph) TopoOrder() []string {
 	// Edge A -> B means A depends on B; B must be ordered before A. Work on
 	// the reversed graph: B -> A, where an indegree of 0 means "depends on
@@ -288,7 +356,7 @@ func (g *Graph) TopoOrder() []string {
 	for _, name := range g.names {
 		node := g.nodes[name]
 		depsCount[name] = 0
-		for _, dep := range node.UnitRefs {
+		for _, dep := range g.dependencies(node) {
 			if _, ok := g.nodes[dep]; !ok {
 				continue
 			}
@@ -329,12 +397,12 @@ func (g *Graph) TopoOrder() []string {
 	return order
 }
 
-// UnitConsumers returns the units that reference the given unit in their
-// unit_refs (in-edges of the graph), sorted.
-func (g *Graph) UnitConsumers(name string) []string {
+// PromiseConsumers returns the units that depend on the given unit through a
+// promise depends_on edge, sorted.
+func (g *Graph) PromiseConsumers(name string) []string {
 	var consumers []string
 	for _, node := range g.nodes {
-		for _, ref := range node.UnitRefs {
+		for _, ref := range node.PromiseRefs {
 			if ref == name {
 				consumers = append(consumers, node.Name)
 				break

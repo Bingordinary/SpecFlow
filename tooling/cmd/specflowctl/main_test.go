@@ -155,18 +155,27 @@ func TestPromoteWithValidSpec(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
-## Description
+## Design Narrative
 
 Test unit for promote testing.
 
-## Testability / Acceptance Criteria
+## Promises
+
+promises:
+  - id: test_unit.core
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Core contract.
+    contract: {text: core}
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: test.check
+    promise: test_unit.core
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -208,6 +217,8 @@ mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 standard: %s
+pin_format: promise-v1
+promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -253,6 +264,12 @@ Validate passed.
 		data, err := os.ReadFile(cf)
 		if err != nil {
 			t.Fatalf("failed to read cache %s: %v", cf, err)
+		}
+		if strings.HasPrefix(filepath.Base(cf), "promise_state_") {
+			if !strings.Contains(string(data), "layer: stable") {
+				t.Fatalf("promise state %s was not rewritten to the stable layer:\n%s", cf, string(data))
+			}
+			continue
 		}
 		// Physical paths must reference stable layer after rewrite (no "candidate"
 		// in any path entry)
@@ -330,7 +347,6 @@ func TestForkUnit(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
@@ -442,18 +458,27 @@ func TestPromoteWithNonBlockingVerifyMismatch(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
-## Description
+## Design Narrative
 
 Test unit for promote testing.
 
-## Testability / Acceptance Criteria
+## Promises
+
+promises:
+  - id: test_unit.core
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Core contract.
+    contract: {text: core}
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: test.check
+    promise: test_unit.core
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -495,6 +520,8 @@ mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 standard: %s
+pin_format: promise-v1
+promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -536,18 +563,27 @@ func TestPromoteWithBlockingVerifyMismatch(t *testing.T) {
 	}
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
-## Description
+## Design Narrative
 
 Test unit for promote testing.
 
-## Testability / Acceptance Criteria
+## Promises
+
+promises:
+  - id: test_unit.core
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Core contract.
+    contract: {text: core}
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: test.check
+    promise: test_unit.core
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -589,6 +625,8 @@ mode: full
 result: pass
 timestamp: "2026-06-30T10:00:00Z"
 standard: %s
+pin_format: promise-v1
+promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
@@ -642,14 +680,27 @@ func TestValidateCandidateFrontmatterDeprecated(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
-## Testability / Acceptance Criteria
+## Design Narrative
+
+Prose.
+
+## Promises
+
+promises:
+  - id: test_unit.core
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Core contract.
+    contract: {text: core}
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: test.check
+    promise: test_unit.core
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -702,7 +753,7 @@ func TestConsumers_GlobalRuleListsAllUnits(t *testing.T) {
 	}
 	for _, name := range []string{"unit_a.md", "unit_b.md"} {
 		if err := os.WriteFile(filepath.Join(unitDir, name),
-			[]byte("---\nid: demo\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+			[]byte("---\nid: demo\nrule_refs: none\n---\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -729,7 +780,7 @@ func TestConsumers_GlobalRuleMissingFileErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(unitDir, "unit_a.md"),
-		[]byte("---\nid: a\nunit_refs: none\nrule_refs: none\n---\n"), 0644); err != nil {
+		[]byte("---\nid: a\nrule_refs: none\n---\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -792,18 +843,27 @@ func TestPromoteRejectsSingleLensVerifyCache(t *testing.T) {
 	os.MkdirAll(candidateDir, 0755)
 	specContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
-## Description
+## Design Narrative
 
 Test unit for promote testing.
 
-## Testability / Acceptance Criteria
+## Promises
+
+promises:
+  - id: test_unit.core
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: Core contract.
+    contract: {text: core}
+
+## Acceptance Items
 
 acceptance_item_set:
   - id: test.check
+    promise: test_unit.core
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -824,7 +884,7 @@ acceptance_item_set:
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 	specHash := computeHash(specPath)
-	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nstandard: %s\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath))
+	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nstandard: %s\npin_format: promise-v1\npromise_pins: []\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath))
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -835,7 +895,7 @@ acceptance_item_set:
 		t.Fatal(err)
 	}
 	specEntry.Checks = []validationcache.CheckEntry{{Check: "test.check", Lens: "alignment"}}
-	if _, err := validationcache.WriteCache(repoRoot, "unit", "test_unit", validationcache.CacheWrite{
+	if _, err := validationcache.WriteCache(repoRoot, "unit", "test_unit", withPromiseFormat(t, repoRoot, "test_unit", "candidate", validationcache.CacheWrite{
 		Command:   "verify",
 		Unit:      "test_unit",
 		Mode:      "full",
@@ -843,7 +903,7 @@ acceptance_item_set:
 		Target:    "candidate",
 		Timestamp: "2026-06-30T11:00:00Z",
 		Entries:   []validationcache.FileEntry{*specEntry},
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 

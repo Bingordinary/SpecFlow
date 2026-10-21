@@ -6,7 +6,7 @@ import (
 )
 
 // ReadFrontmatterStringMap extracts a flat string map from YAML frontmatter.
-// Supports both inline list syntax (unit_refs: [a, b]) and block-style YAML
+// Supports both inline list syntax (rule_refs: [a, b]) and block-style YAML
 // lists. Block-style list items for the same key are accumulated into an
 // inline-formatted string [a, b] for downstream parsing.
 func ReadFrontmatterStringMap(text string) map[string]string {

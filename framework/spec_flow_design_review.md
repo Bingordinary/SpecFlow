@@ -49,6 +49,7 @@ That default scope includes:
    - `operations/operation_scope.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
+   - `core/promise_model.md`
    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
 2. process rules
    - `concepts.md` (the candidate-to-promote process)
@@ -83,6 +84,7 @@ For the default design-baseline review, the execution-local `review_plan` must u
    - `operations/operation_scope.md`
    - `core/object_model.md`
    - `spec_writing_guide.md`
+   - `core/promise_model.md`
    - `rule_validate_checklist.md`, `rule_promote_workflow.md` where they define the rule validate/promote pipeline
    - `governance/impact_sync.md`
 2. `process_and_gate_design`
@@ -99,6 +101,19 @@ For the default design-baseline review, the execution-local `review_plan` must u
 A file listed under more than one block (`concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `spec_writing_guide.md`, `core/object_model.md`, `governance/impact_sync.md`) is reviewed in each block's frame; the dual listing is intentional.
 
 The review must judge whether `framework/concepts.md` (the hook-injected bootstrap) delivers a self-contained routing pack to the executor: after reading it alone, the executor must know what to do now and which command package a trigger requires. Command packages are read on demand when a trigger fires; the review must judge whether each package is self-contained for its phase, and whether cross-file links are used only for non-essential context. Progressive disclosure (routing inline in the bootstrap, phase procedure in the named package) does not fail self-containment; chain reading within a single phase does.
+
+The promise model must be judged as the deployed unit-spec contract: the
+three-section shape, promise/acceptance-item separation, provider derivation
+from `depends_on`, and the command surface's declared rejection of units
+without `## Promises` must be coherent across `core/promise_model.md`,
+`spec_writing_guide.md`, `concepts.md`, and `commands.md`. The review must also
+judge the carrier boundary (promise block carries the contract; acceptance
+items verify; appendices are explanatory), the promise granularity standard
+(one promise, one behavior subject — `core/promise_model.md` §Granularity),
+and the dependency lifecycle (cycles,
+provider derivation, publication ordering) as one coherent design, not as
+separate optional features. Tooling execution and removal reference integrity
+are `spec_flow_review`'s surface, not this review's default scope.
 
 Project-instance migration design must be judged as part of `design_foundation`.
 The review must judge whether `spec_flow_update` solves the real framework-update migration problem without turning old-format compatibility into a permanent second path, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than project-instance format migration requires.

@@ -227,7 +227,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			judging: []string{
 				"## Check 1 — Structural integrity",
 				"## Check 5 — Acceptance coverage & correctness",
-				"### Sub-check 5h — Contract statement carry-over (NEW)",
+				"### Sub-check 5h — Promise block semantics",
 				"## Check 10 — Clarity",
 				"### Severity handling",
 				"## Extraction re-verification (Check 2 Step 1, Check 5)",
@@ -245,6 +245,19 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 				"### Check 6 — Rule Body Quality",
 				"### Severity handling",
 				"## Target-layer applicability",
+			},
+		},
+		{
+			// Unit validate's promise standard. Check 5h applies its
+			// granularity and contract-shape rules, so the whole document is
+			// judging input; no section is declared as mechanism-only.
+			document: "core/promise_model.md",
+			judging: []string{
+				"## Contract shapes",
+				"## Granularity",
+				"## Done",
+				"### Fields",
+				"Too coarse: a promise bundling several endpoints",
 			},
 		},
 		{
@@ -294,7 +307,7 @@ func TestProtocolBindsEachGateToItsOwnStandard(t *testing.T) {
 
 	want := map[standardKey][]string{
 		{gate: "verify", targetKind: "unit"}:   {"unit_verify_checklist.md", "shared_judgments.md", "verification_scope.md", "severity_policy.md", "spec_writing_guide.md"},
-		{gate: "validate", targetKind: "unit"}: {"unit_validate_checklist.md", "verification_scope.md", "severity_policy.md", "spec_writing_guide.md"},
+		{gate: "validate", targetKind: "unit"}: {"unit_validate_checklist.md", "verification_scope.md", "severity_policy.md", "spec_writing_guide.md", "core/promise_model.md"},
 		{gate: "validate", targetKind: "rule"}: {"rule_validate_checklist.md", "verification_scope.md", "severity_policy.md", "spec_writing_guide.md"},
 	}
 	if len(protocolStandards) != len(want) {

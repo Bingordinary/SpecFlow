@@ -62,10 +62,13 @@ The agent reads the specFlow rules automatically, discovers existing truth, and 
 | **candidate** | Spec being edited (`docs/specs/units/candidate/`) |
 | **stable** | Accepted truth (`docs/specs/units/stable/`) — never edited directly |
 | **unit** | One independently governable engineering responsibility |
+| **promise** | The stable contract a unit offers to consumers; consumers depend on promises, not files. See `framework/core/promise_model.md` |
 | **rule** | Formally reusable truth shared across units. Global (`g_`) applies repo-wide; bound (`b_`) applies only to units that reference it via `rule_refs` |
 | **promote** | The user-confirmed stable transition after the target's applicable gates pass |
 
 **File existence is state.** A candidate spec exists = being edited. No candidate = not being edited.
+
+A unit spec has three sections: **Design Narrative → Promises → Acceptance Items**. A unit is *done* when its promise state is recorded, its promises are covered and pinned, and its validate/verify evidence is fresh; `fresh --scope stable` reports the global done state.
 
 ## Commands & Workflow
 
@@ -78,6 +81,7 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 | `validate@{target}` | Checks unit or rule design quality; gate output changes cache state, not spec truth |
 | `verify@{unit}` | Checks unit implementation against spec truth (alignment lens) and code quality (quality lens); P0/P1 findings block promotion |
 | `promote@{target}` | Confirms intent, checks the target's existing applicable gate results, then transitions candidate truth to stable |
+| `fresh@{scope}` | Read-only readiness and done report: gate freshness, promise closure, and the global `DONE` count |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
 | `spec_flow_version` | Checks the installed specFlow version against the remote latest and reports whether the project is up to date |
 

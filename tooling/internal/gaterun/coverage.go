@@ -793,11 +793,16 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 		// An acceptance-item session and the unit-level scan read the own spec
 		// plus the whole declared code surface; the item session judges its
 		// items (Steps 2, 3, 4, 6, 7) and the unit session scans the unit
-		// (Steps 1 and 5).
+		// (Steps 1 and 5). The provider contracts the unit's promises depend on
+		// join this surface: an alignment conclusion must pin the provider
+		// contract it was verified against, so a provider contract change
+		// re-runs the consumer's verification instead of leaving a stale
+		// conclusion reusable.
 		read := append([]string(nil), ownSpecPaths(repoRoot, run)...)
 		read = append(read, surfacePaths(run)...)
 		read = appendUnique(read, affectsEvidencePaths(run)...)
 		read = appendUnique(read, ruleRefNames(run)...)
+		read = appendUnique(read, providerContractRefs(repoRoot, run)...)
 		return appendUnique(read, extraInputPaths(repoRoot, run)...)
 	case SessionKindCode:
 		return appendUnique(append([]string(nil), ck.ReadRefs...), extraInputPaths(repoRoot, run)...)
@@ -813,6 +818,54 @@ func coverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
 		return appendUnique(read, extraInputPaths(repoRoot, run)...)
 	}
 	return nil
+}
+
+// providerSpecRel returns the provider spec path a conclusion records for
+// audit: the resolved current-layer file for a candidate run, the published
+// stable file for a stable run. It is never hashed — freshness comes from the
+// promise fingerprint on the same dependency.
+func providerSpecRel(repoRoot, target, provider string) string {
+	if provider == "" {
+		return ""
+	}
+	if target == TargetStable {
+		return specpaths.StableUnitSpecFileRef(provider)
+	}
+	if abs := specpaths.ResolveUnitFile(repoRoot, provider); abs != "" {
+		if rel, err := filepath.Rel(repoRoot, filepath.FromSlash(abs)); err == nil {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return specpaths.CandidateUnitSpecFileRef(provider)
+}
+
+// providerContractRefs lists the provider specs a unit's promises depend on.
+// Alignment conclusions pin these refs so a provider contract change re-runs
+// the consumer's verification instead of leaving a stale conclusion reusable.
+// A candidate run pins the current-layer logical ref; a stable run pins the
+// published stable provider spec, matching the layer resolution the promise
+// model defines.
+func providerContractRefs(repoRoot string, run *Run) []string {
+	if run.Gate != GateVerify || run.TargetKind != TargetKindUnit {
+		return nil
+	}
+	content, err := readSpecContent(repoRoot, mainSpecRef(run))
+	if err != nil {
+		return nil
+	}
+	var refs []string
+	for _, provider := range specvalidation.PromiseProviderUnits(content) {
+		if provider == "" || provider == run.TargetName {
+			continue
+		}
+		if run.Target == TargetStable {
+			refs = append(refs, specpaths.StableUnitSpecFileRef(provider))
+		} else {
+			refs = append(refs, "unit:"+provider)
+		}
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 // crossReadRefs lists the final synthesis's read surface: every snapshot ref
@@ -939,11 +992,11 @@ func sortedKeySet(keys map[string]bool) []string {
 }
 
 // unitValidateGroupReadRefs derives the exact group-local read surface for one
-// unit validate coverage group. Check 1 (structural) must resolve unit_refs
-// and rule_refs to verify that they exist, while Checks 7-8 (dependencies)
-// read those logical objects for cross-unit and constraint judgments. The
-// logical refs here are the declared unit_refs and rule_refs only — a unit
-// validate never carries unrelated peers (Check 9 is the mechanical
+// unit validate coverage group. Check 4 (structural) must resolve rule_refs to
+// verify that they exist, while the dependency group reads the provider units
+// named by promise depends_on for cross-unit judgments. The logical refs here
+// are the declared promise providers and rule_refs only — a unit validate
+// never carries unrelated peers (Check 9 is the mechanical
 // `specflowctl surfaces` audit and needs no peer spec read ref).
 // Validate is a spec-quality gate: every group reads only the unit's own spec
 // truth, the agent-declared shared inputs, and (structural/dependencies) the
@@ -953,7 +1006,7 @@ func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []stri
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(repoRoot, run)...)
 	if groupID == "structural" || groupID == "dependencies" {
-		read = appendUnique(read, logicalRefNames(run)...)
+		read = appendUnique(read, dependencySpecRefs(run)...)
 	}
 	return append([]string(nil), read...)
 }
@@ -1139,13 +1192,30 @@ func appendUnique(base []string, values ...string) []string {
 	return base
 }
 
-// logicalRefNames lists the logical (unit:/rule:) snapshot refs.
-func logicalRefNames(run *Run) []string {
+// dependencySpecRefs lists the run's cross-object spec references: the logical
+// unit and rule references plus the physical provider spec files a stable run
+// resolves into the stable layer. The structural and dependency validate
+// groups read them (Check 4 reference integrity, Check 6 affects validity,
+// Check 7 cross-unit consistency); a stable run's provider refs are physical
+// so a candidate draft of the provider can never enter the confirmation.
+func dependencySpecRefs(run *Run) []string {
+	own := map[string]bool{}
+	for _, path := range run.OwnSpecFiles {
+		own[path] = true
+	}
 	var out []string
 	for _, ref := range run.Refs {
 		if isLogicalRef(ref.Ref) {
 			out = append(out, ref.Ref)
+			continue
 		}
+		if ref.Source != SourceDerived || own[ref.Ref] {
+			continue
+		}
+		if !strings.HasPrefix(ref.Ref, specpaths.ModulesRootDir+"/") {
+			continue
+		}
+		out = append(out, ref.Ref)
 	}
 	return out
 }

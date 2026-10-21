@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -231,23 +234,44 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("encode judgment baseline: %w", err)
 	}
 
+	promiseState, promiseStatePath, err := preparePromiseState(absRoot, run, result)
+	if err != nil {
+		return err
+	}
+	pinFormat := ""
+	pinsSet := false
+	var promisePins []validationcache.PromisePin
+	if run.TargetKind == gaterun.TargetKindUnit {
+		pinFormat = validationcache.PromisePinFormat
+		if run.Gate == gaterun.GateValidate && result == "pass" {
+			promisePins, err = prepareValidatePromisePins(absRoot, run)
+			if err != nil {
+				return err
+			}
+			pinsSet = true
+		}
+	}
+
 	write := validationcache.CacheWrite{
-		Command:   run.Gate,
-		Unit:      run.TargetName,
-		Mode:      "full",
-		Basis:     run.Mode,
-		Result:    result,
-		Target:    run.Target,
-		Blocking:  result == "fail",
-		P0Count:   counts[0],
-		P1Count:   counts[1],
-		P2Count:   counts[2],
-		P3Count:   counts[3],
-		Timestamp: now,
-		GateRun:   run.RunID,
-		Judgments: string(judgmentData),
-		Body:      body.String(),
-		Entries:   entries,
+		Command:        run.Gate,
+		Unit:           run.TargetName,
+		Mode:           "full",
+		Basis:          run.Mode,
+		Result:         result,
+		Target:         run.Target,
+		Blocking:       result == "fail",
+		P0Count:        counts[0],
+		P1Count:        counts[1],
+		P2Count:        counts[2],
+		P3Count:        counts[3],
+		Timestamp:      now,
+		GateRun:        run.RunID,
+		Judgments:      string(judgmentData),
+		Body:           body.String(),
+		PinFormat:      pinFormat,
+		PromisePins:    promisePins,
+		PromisePinsSet: pinsSet,
+		Entries:        entries,
 	}
 	// A validate conclusion has no judgment record to bind its judging
 	// standard, so the cache itself records it. Verify caches bind it per
@@ -307,6 +331,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if promiseState != nil {
+		if err := validationcache.WritePromiseStateFile(promiseStatePath, *promiseState); err != nil {
+			return fmt.Errorf("%v — the cache at %s was written and is valid, but the promise state could not be recorded; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
+		}
+	}
 	if err := updateDeferredLedger(absRoot, run, outcome); err != nil {
 		return fmt.Errorf("%v — the cache at %s was written and is valid, but the deferred-findings ledger could not be updated; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
 	}
@@ -332,6 +361,147 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "Judgment collection: %d stale-protocol record(s) / %.1f MB reclaimed\n", collected.Count, float64(collected.Bytes)/(1<<20))
 	}
 	return nil
+}
+
+// preparePromiseState builds the promise state record for a passing unit
+// verify run. It returns nil for non-verify runs, rules, failed runs, and
+// units whose spec has no `## Promises` section. The record is written only
+// after the gate cache is published, so a build failure cannot leave a valid
+// cache with a missing state record.
+//
+// The record is layer-scoped: a candidate verifies against the current-layer
+// provider promises it read, a stable confirmation verifies against the
+// published stable provider promises. Provider fingerprints and the input
+// surface check use the same layer, so a recorded pin is always a contract the
+// run actually read.
+func preparePromiseState(absRoot string, run *gaterun.Run, result string) (*validationcache.PromiseStateFile, string, error) {
+	if run.Gate != gaterun.GateVerify || run.TargetKind != gaterun.TargetKindUnit || result != "pass" {
+		return nil, "", nil
+	}
+	relPath := specpaths.CandidateUnitSpecFileRef(run.TargetName)
+	if run.Target == gaterun.TargetStable {
+		relPath = specpaths.StableUnitSpecFileRef(run.TargetName)
+	}
+	data, err := os.ReadFile(filepath.Join(absRoot, filepath.FromSlash(relPath)))
+	if err != nil {
+		return nil, "", fmt.Errorf("read promise spec %s: %w", relPath, err)
+	}
+	content := string(data)
+	promises, parseIssues := specvalidation.ParsePromises(content)
+	if len(parseIssues) > 0 {
+		if strings.Contains(strings.Join(parseIssues, "; "), "section not found") {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("promise state: %s", strings.Join(parseIssues, "; "))
+	}
+	for _, check := range specvalidation.CheckPromiseSpec(content, run.TargetName) {
+		if check.Status == specvalidation.Fail {
+			return nil, "", fmt.Errorf("promise state: %s failed: %s", check.Name, check.Details)
+		}
+	}
+	scope := specvalidation.PromiseScopeForLayer(run.Target)
+	graph := specvalidation.CheckPromiseGraphScope(absRoot, scope, run.TargetName)
+	if graph.Status != specvalidation.Pass {
+		return nil, "", fmt.Errorf("promise state: graph failed: %s", graph.Details)
+	}
+	current, currentIssues := specvalidation.PromiseFingerprintsForScope(absRoot, scope)
+	if len(currentIssues) > 0 {
+		return nil, "", fmt.Errorf("promise state: %s", strings.Join(currentIssues, "; "))
+	}
+
+	own := map[string]string{}
+	for _, promise := range promises {
+		fingerprint, err := specvalidation.PromiseFingerprint(promise)
+		if err != nil {
+			return nil, "", err
+		}
+		own[promise.ID] = fingerprint
+	}
+	state := &validationcache.PromiseStateFile{Unit: run.TargetName, Layer: run.Target}
+	for _, id := range sortedKeys(own) {
+		state.Promises = append(state.Promises, validationcache.PromisePin{ID: id, Fingerprint: own[id]})
+	}
+	pins := map[string]bool{}
+	for _, promise := range promises {
+		for _, dep := range promise.DependsOn {
+			if pins[dep] {
+				continue
+			}
+			provider := specvalidation.PromiseProvider(dep)
+			if !runHasProviderRef(run, provider) {
+				return nil, "", fmt.Errorf("promise state: dependency %q provider %q is not in the verify input surface — re-plan the verify run so it reads the dependency", dep, provider)
+			}
+			fingerprint, ok := current[dep]
+			if !ok {
+				return nil, "", fmt.Errorf("promise state: dependency %q is missing from the %s layer", dep, run.Target)
+			}
+			state.Pins = append(state.Pins, validationcache.PromisePin{ID: dep, Fingerprint: fingerprint})
+			pins[dep] = true
+		}
+	}
+	sort.Slice(state.Pins, func(i, j int) bool { return state.Pins[i].ID < state.Pins[j].ID })
+	path, err := validationcache.PromiseStatePath(absRoot, run.TargetName, run.Target)
+	if err != nil {
+		return nil, "", err
+	}
+	return state, path, nil
+}
+
+// prepareValidatePromisePins records the provider promise contracts a passing
+// unit validate run read. The pin set is the validate cache's contract
+// snapshot: freshness compares these fingerprints instead of the provider
+// spec's whole-file hash, so a provider narrative or acceptance-item edit no
+// longer stales the consumer. A provider that is not in the run's input
+// surface cannot be pinned: the run did not read it.
+func prepareValidatePromisePins(absRoot string, run *gaterun.Run) ([]validationcache.PromisePin, error) {
+	relPath := specpaths.CandidateUnitSpecFileRef(run.TargetName)
+	if run.Target == gaterun.TargetStable {
+		relPath = specpaths.StableUnitSpecFileRef(run.TargetName)
+	}
+	data, err := os.ReadFile(filepath.Join(absRoot, filepath.FromSlash(relPath)))
+	if err != nil {
+		return nil, fmt.Errorf("read promise spec %s: %w", relPath, err)
+	}
+	ids := specvalidation.PromiseDependencyIDs(string(data))
+	if len(ids) == 0 {
+		return []validationcache.PromisePin{}, nil
+	}
+	scope := specvalidation.PromiseScopeForLayer(run.Target)
+	current, issues := specvalidation.PromiseFingerprintsForScope(absRoot, scope)
+	if len(issues) > 0 {
+		return nil, fmt.Errorf("promise pins: %s", strings.Join(issues, "; "))
+	}
+	var pins []validationcache.PromisePin
+	for _, id := range ids {
+		provider := specvalidation.PromiseProvider(id)
+		if !runHasProviderRef(run, provider) {
+			return nil, fmt.Errorf("promise pins: dependency %q provider %q is not in the validate input surface — re-plan the validate run so it reads the dependency", id, provider)
+		}
+		fingerprint, ok := current[id]
+		if !ok {
+			return nil, fmt.Errorf("promise pins: dependency %q is unresolved in the %s layer", id, run.Target)
+		}
+		pins = append(pins, validationcache.PromisePin{ID: id, Fingerprint: fingerprint})
+	}
+	return pins, nil
+}
+
+// runHasProviderRef reports whether the verify run's input surface includes the
+// provider unit's main spec in the run's own layer. A dependency pin is
+// recorded only when the verify sessions actually read the promise it pins, so
+// the provider must be part of the run: a candidate run reads the current-layer
+// provider logical ref, a stable run reads the published stable spec.
+func runHasProviderRef(run *gaterun.Run, unit string) bool {
+	want := "unit:" + unit
+	if run.Target == gaterun.TargetStable {
+		want = specpaths.StableUnitSpecFileRef(unit)
+	}
+	for _, ref := range run.Refs {
+		if ref.Ref == want {
+			return true
+		}
+	}
+	return false
 }
 
 // crossReport returns the accepted final-synthesis report, or nil.

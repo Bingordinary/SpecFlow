@@ -5,72 +5,63 @@ import "testing"
 func TestReadFrontmatter_InlineList(t *testing.T) {
 	text := `---
 id: test
-unit_refs: [auth, billing]
-rule_refs: none
+rule_refs: [b_rule_auth, b_rule_billing]
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
 	if fm["id"] != "test" {
 		t.Fatalf("expected id=test, got %q", fm["id"])
 	}
-	if fm["unit_refs"] != "[auth, billing]" {
-		t.Fatalf("expected unit_refs list, got %q", fm["unit_refs"])
-	}
-	if fm["rule_refs"] != "none" {
-		t.Fatalf("expected rule_refs=none, got %q", fm["rule_refs"])
+	if fm["rule_refs"] != "[b_rule_auth, b_rule_billing]" {
+		t.Fatalf("expected rule_refs list, got %q", fm["rule_refs"])
 	}
 }
 
 func TestReadFrontmatter_BlockStyleList(t *testing.T) {
 	text := `---
 id: test
-unit_refs:
-  - auth
-  - billing
-rule_refs: none
+rule_refs:
+  - b_rule_auth
+  - b_rule_billing
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
 	if fm["id"] != "test" {
 		t.Fatalf("expected id=test, got %q", fm["id"])
 	}
-	if fm["unit_refs"] != "[auth, billing]" {
-		t.Fatalf("expected block-style unit_refs to be parsed as inline list, got %q", fm["unit_refs"])
-	}
-	if fm["rule_refs"] != "none" {
-		t.Fatalf("expected rule_refs=none, got %q", fm["rule_refs"])
+	if fm["rule_refs"] != "[b_rule_auth, b_rule_billing]" {
+		t.Fatalf("expected block-style rule_refs to be parsed as inline list, got %q", fm["rule_refs"])
 	}
 }
 
 func TestReadFrontmatter_BlockStyleSingleItem(t *testing.T) {
 	text := `---
 id: test
-unit_refs:
-  - auth
-rule_refs: none
+rule_refs:
+  - b_rule_auth
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
-	if fm["unit_refs"] != "[auth]" {
-		t.Fatalf("expected single-item block-style list [auth], got %q", fm["unit_refs"])
+	if fm["rule_refs"] != "[b_rule_auth]" {
+		t.Fatalf("expected single-item block-style list [b_rule_auth], got %q", fm["rule_refs"])
 	}
 }
 
 func TestReadFrontmatter_BothBlockStyle(t *testing.T) {
 	text := `---
 id: test
-unit_refs:
-  - auth
 rule_refs:
   - b_rule_x
+rule_exceptions:
+  - rule: g_rule_y
 ---
 `
 	fm := ReadFrontmatterStringMap(text)
-	if fm["unit_refs"] != "[auth]" {
-		t.Fatalf("expected unit_refs=[auth], got %q", fm["unit_refs"])
-	}
 	if fm["rule_refs"] != "[b_rule_x]" {
 		t.Fatalf("expected rule_refs=[b_rule_x], got %q", fm["rule_refs"])
+	}
+	if fm["rule_exceptions"] != "[rule: g_rule_y]" {
+		t.Fatalf("unexpected rule_exceptions parse: %q", fm["rule_exceptions"])
 	}
 }
 

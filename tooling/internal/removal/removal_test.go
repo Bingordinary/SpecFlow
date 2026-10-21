@@ -21,10 +21,10 @@ func put(t *testing.T, root, path, content string) {
 		t.Fatal(err)
 	}
 }
-func unit(t *testing.T, root, layer, name, refs, rules, extra string) string {
+func unit(t *testing.T, root, layer, name, rules, extra string) string {
 	t.Helper()
 	path := "docs/specs/units/" + layer + "/unit_" + name + ".md"
-	put(t, root, path, "---\nid: "+name+"\nunit_refs: "+refs+"\nrule_refs: "+rules+"\n---\n\n# Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: "+name+".core\n    description: core\n"+extra)
+	put(t, root, path, "---\nid: "+name+"\nrule_refs: "+rules+"\n---\n\n# Unit\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: "+name+".core\n    description: core\n"+extra)
 	return path
 }
 func appendix(t *testing.T, root, layer, name, file, extra string) string {
@@ -87,9 +87,9 @@ func assertSnapshot(t *testing.T, root string, before map[string][]byte) {
 func TestExplicitBatchAllLayersAndOwnership(t *testing.T) {
 	root := t.TempDir()
 	for _, layer := range []string{"stable", "candidate"} {
-		unit(t, root, layer, "auth", "dep", "b_rule_http", "")
-		unit(t, root, layer, "dep", "auth", "none", "")
-		unit(t, root, layer, "auth_extra", "none", "none", "")
+		unit(t, root, layer, "auth", "b_rule_http", "")
+		unit(t, root, layer, "dep", "none", "")
+		unit(t, root, layer, "auth_extra", "none", "")
 		appendix(t, root, layer, "auth", "unit_auth_old.md", "status: exempt\n")
 		appendix(t, root, layer, "auth_extra", "unit_auth_extra_old.md", "")
 		rule(t, root, layer, "b_rule_http")
@@ -133,7 +133,7 @@ func TestObjectLayersAndStableFallback(t *testing.T) {
 				for _, layer := range layers {
 					switch kind {
 					case "unit":
-						unit(t, root, layer, "auth", "none", "none", "")
+						unit(t, root, layer, "auth", "none", "")
 						req.Units = []string{"auth"}
 					case "rule", "global":
 						id := "b_rule_http"
@@ -143,7 +143,7 @@ func TestObjectLayersAndStableFallback(t *testing.T) {
 						rule(t, root, layer, id)
 						req.Rules = []string{id}
 					case "appendix":
-						unit(t, root, layer, "auth", "none", "none", "")
+						unit(t, root, layer, "auth", "none", "")
 						appendix(t, root, layer, "auth", "unit_auth_old.md", "")
 						req.Appendices = []string{"auth:unit_auth_old.md"}
 					}
@@ -159,10 +159,10 @@ func TestObjectLayersAndStableFallback(t *testing.T) {
 		}
 	}
 	root := t.TempDir()
-	stable := unit(t, root, "stable", "auth", "none", "none", "")
-	candidate := unit(t, root, "candidate", "auth", "none", "none", "")
-	unit(t, root, "stable", "consumer", "auth", "b_rule_http", "")
-	unit(t, root, "candidate", "consumer", "auth", "b_rule_http", "")
+	stable := unit(t, root, "stable", "auth", "none", "")
+	candidate := unit(t, root, "candidate", "auth", "none", "")
+	unit(t, root, "stable", "consumer", "b_rule_http", "")
+	unit(t, root, "candidate", "consumer", "b_rule_http", "")
 	stableRule := rule(t, root, "stable", "b_rule_http")
 	candidateRule := rule(t, root, "candidate", "b_rule_http")
 	put(t, root, "docs/specs/meta/validation/unit/auth/validate_result.md", "---\ntarget: candidate\n---\ncache")
@@ -180,29 +180,25 @@ func TestObjectLayersAndStableFallback(t *testing.T) {
 }
 func TestEveryRemainingLayerAndStructuredReferenceBlocks(t *testing.T) {
 	for _, layer := range []string{"stable", "candidate"} {
-		for _, field := range []string{"unit_refs", "rule_refs", "affects.dependencies", "affects.appendices", "evidence_appendix_ref"} {
+		for _, field := range []string{"rule_refs", "affects.appendices", "evidence_appendix_ref"} {
 			t.Run(layer+field, func(t *testing.T) {
 				root := t.TempDir()
-				unit(t, root, "stable", "auth", "none", "none", "")
+				unit(t, root, "stable", "auth", "none", "")
 				rule(t, root, "stable", "b_rule_http")
 				appendix(t, root, layer, "auth", "unit_auth_old.md", "")
-				refs, rules, extra := "none", "none", ""
+				rules, extra := "none", ""
 				req := Request{Units: []string{"auth"}}
 				switch field {
-				case "unit_refs":
-					refs = "auth"
 				case "rule_refs":
 					rules = "b_rule_http"
 					req = Request{Rules: []string{"b_rule_http"}}
-				case "affects.dependencies":
-					extra = "    affects:\n      dependencies:\n        - auth\n"
 				case "affects.appendices":
 					extra = "    affects:\n      appendices: [unit_auth_old.md]\n"
 					req = Request{Appendices: []string{"auth:unit_auth_old.md"}}
 				case "evidence_appendix_ref":
 					req = Request{Appendices: []string{"auth:unit_auth_old.md"}}
 				}
-				path := unit(t, root, layer, "consumer", refs, rules, extra)
+				path := unit(t, root, layer, "consumer", rules, extra)
 				if field == "evidence_appendix_ref" {
 					appendix(t, root, layer, "consumer", "unit_consumer_evidence.md", "evidence_appendix_ref: unit_auth_old.md\n")
 				}
@@ -221,8 +217,8 @@ func TestEveryRemainingLayerAndStructuredReferenceBlocks(t *testing.T) {
 }
 func TestAppendixOnlyInvalidatesOwningLayerAndKeepsBaseline(t *testing.T) {
 	root := t.TempDir()
-	unit(t, root, "stable", "auth", "none", "none", "")
-	unit(t, root, "candidate", "auth", "none", "none", "")
+	unit(t, root, "stable", "auth", "none", "")
+	unit(t, root, "candidate", "auth", "none", "")
 	appendix(t, root, "stable", "auth", "unit_auth_old.md", "")
 	put(t, root, "docs/specs/meta/validation/unit/auth/validate_result.md", "---\ntarget: candidate\n---\ncandidate")
 	put(t, root, "docs/specs/meta/validation/unit/auth/stable_verify.md", "---\ntarget: stable\n---\nstable")
@@ -238,7 +234,7 @@ func TestPreflightErrorsAndRollback(t *testing.T) {
 	for _, scenario := range []string{"unknown", "invalid-layer", "path", "read", "ownership", "unresolved", "symlink"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
-			unit(t, root, "stable", "auth", "none", "none", "")
+			unit(t, root, "stable", "auth", "none", "")
 			req := Request{Units: []string{"auth"}}
 			switch scenario {
 			case "unknown":
@@ -254,7 +250,8 @@ func TestPreflightErrorsAndRollback(t *testing.T) {
 			case "ownership":
 				appendix(t, root, "stable", "other", "unit_auth_bad.md", "")
 			case "unresolved":
-				unit(t, root, "candidate", "consumer", "missing", "none", "")
+				put(t, root, "docs/specs/units/candidate/unit_consumer.md",
+					"---\nid: consumer\nrule_refs: none\n---\n\n# Unit\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: consumer.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core.\n    contract: {text: core}\n    depends_on: [ghost.api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: consumer.core\n    promise: consumer.core\n    description: core\n")
 			case "symlink":
 				outside := t.TempDir()
 				put(t, outside, "foreign.md", "---\nid: x\n---\n")
@@ -270,7 +267,7 @@ func TestPreflightErrorsAndRollback(t *testing.T) {
 		})
 	}
 	root := t.TempDir()
-	unit(t, root, "stable", "auth", "none", "none", "")
+	unit(t, root, "stable", "auth", "none", "")
 	appendix(t, root, "stable", "auth", "unit_auth_old.md", "")
 	put(t, root, "meta/test.json", "old run")
 	put(t, root, "meta/other.json", "other record")
@@ -300,12 +297,12 @@ func TestOtherDeclaredRuleReferencesAndMalformedLists(t *testing.T) {
 	for _, field := range []string{"affects.rules", "rule_exceptions", "malformed-list"} {
 		t.Run(field, func(t *testing.T) {
 			root := t.TempDir()
-			unit(t, root, "stable", "auth", "none", "none", "")
+			unit(t, root, "stable", "auth", "none", "")
 			rule(t, root, "stable", "g_rule_policy")
-			path := unit(t, root, "candidate", "consumer", "none", "none", "")
+			path := unit(t, root, "candidate", "consumer", "none", "")
 			switch field {
 			case "affects.rules":
-				unit(t, root, "candidate", "consumer", "none", "none", "    affects:\n      rules: [g_rule_policy]\n")
+				unit(t, root, "candidate", "consumer", "none", "    affects:\n      rules: [g_rule_policy]\n")
 			case "rule_exceptions":
 				data, err := os.ReadFile(filepath.Join(root, path))
 				if err != nil {
@@ -313,7 +310,7 @@ func TestOtherDeclaredRuleReferencesAndMalformedLists(t *testing.T) {
 				}
 				put(t, root, path, strings.Replace(string(data), "rule_refs: none", "rule_refs: none\nrule_exceptions:\n  - rule: g_rule_policy\n    reason: temporary exception", 1))
 			case "malformed-list":
-				unit(t, root, "candidate", "consumer", "[consumer", "none", "")
+				unit(t, root, "candidate", "consumer", "[b_rule_policy", "")
 			}
 			before := snapshot(t, root)
 			r, err := Run(root, Request{Rules: []string{"g_rule_policy"}})
@@ -327,8 +324,8 @@ func TestOtherDeclaredRuleReferencesAndMalformedLists(t *testing.T) {
 
 func TestDeferredFindingsCleanupFollowsOwnerNotSource(t *testing.T) {
 	root := t.TempDir()
-	unit(t, root, "stable", "auth", "none", "none", "")
-	unit(t, root, "stable", "peer", "none", "none", "")
+	unit(t, root, "stable", "auth", "none", "")
+	unit(t, root, "stable", "peer", "none", "")
 	entry := func(id, owner, source string) validationcache.DeferredEntry {
 		return validationcache.DeferredEntry{FindingID: id, OwnerUnit: owner, SourceUnit: source, SourceRun: "old-run", Severity: "P1", Text: "Finding", Detail: "Concrete evidence", SourceKey: "item:auth:auth.core", EvidencePath: "src/shared.go", Reason: "Owner responsibility"}
 	}
@@ -351,4 +348,89 @@ func TestDeferredFindingsCleanupFollowsOwnerNotSource(t *testing.T) {
 	if len(remaining.Entries) != 1 || remaining.Entries[0].FindingID != "sourced" {
 		t.Fatal("wrong deferred records cleaned", remaining)
 	}
+}
+
+func TestRemovalBlocksPromiseProvider(t *testing.T) {
+	root := t.TempDir()
+	unit(t, root, "candidate", "provider", "none", "")
+	put(t, root, "docs/specs/units/candidate/unit_consumer.md", `---
+id: consumer
+rule_refs: none
+---
+
+## Design Narrative
+
+Narrative.
+
+## Promises
+
+promises:
+  - id: consumer.view
+    kind: opaque
+    opaque_reason: no structured kind applies
+    summary: View.
+    contract: {text: view}
+    depends_on: [provider.model]
+
+## Acceptance Items
+
+acceptance_item_set:
+  - id: consumer.check
+    promise: consumer.view
+    description: Given X, When Y, Then Z.
+    verification_type: inspectable
+    verification_surface: api
+    implementation_surface: src/consumer.go
+    verification_method: inspect.
+    pass_condition: Passes.
+    runnable: yes
+`)
+	result, err := Run(root, Request{Units: []string{"provider"}, DryRun: true})
+	if err == nil {
+		t.Fatal("expected removal to be blocked by the promise dependency")
+	}
+	if result == nil {
+		t.Fatalf("expected blocker detail, got no result: %v", err)
+	}
+	blockers := strings.Join(result.Blockers, "; ")
+	if !strings.Contains(blockers, "promise depends_on") || !strings.Contains(blockers, "provider.model") || !strings.Contains(blockers, "does not resolve after removal") {
+		t.Fatalf("expected promise dependency blocker, got %v", result.Blockers)
+	}
+}
+
+func TestRemovalDeletesPromiseStateWithUnitLayer(t *testing.T) {
+	root := t.TempDir()
+	unit(t, root, "candidate", "auth", "none", "")
+	put(t, root, "docs/specs/meta/validation/unit/auth/promise_state_candidate.yaml", "unit: auth\nlayer: candidate\n")
+	put(t, root, "docs/specs/meta/validation/unit/auth/promise_state_stable.yaml", "unit: auth\nlayer: stable\n")
+
+	result, err := Run(root, Request{Units: []string{"auth"}, Layer: "candidate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Blockers) != 0 {
+		t.Fatalf("unexpected blockers: %v", result.Blockers)
+	}
+	assertExists(t, root, "docs/specs/meta/validation/unit/auth/promise_state_candidate.yaml", false)
+	assertExists(t, root, "docs/specs/meta/validation/unit/auth/promise_state_stable.yaml", true)
+}
+
+func TestRemovalKeepsPromiseStateOnAppendixDeletion(t *testing.T) {
+	root := t.TempDir()
+	unit(t, root, "stable", "auth", "none", "")
+	appendix(t, root, "stable", "auth", "unit_auth_old.md", "")
+	put(t, root, "docs/specs/meta/validation/unit/auth/promise_state_candidate.yaml", "unit: auth\nlayer: candidate\n")
+	put(t, root, "docs/specs/meta/validation/unit/auth/promise_state_stable.yaml", "unit: auth\nlayer: stable\n")
+
+	result, err := Run(root, Request{Appendices: []string{"auth:unit_auth_old.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Blockers) != 0 {
+		t.Fatalf("unexpected blockers: %v", result.Blockers)
+	}
+	// Removing one appendix removes the appendix file but not the unit's main
+	// spec, so its durable promise contract record stays in both layers.
+	assertExists(t, root, "docs/specs/meta/validation/unit/auth/promise_state_candidate.yaml", true)
+	assertExists(t, root, "docs/specs/meta/validation/unit/auth/promise_state_stable.yaml", true)
 }

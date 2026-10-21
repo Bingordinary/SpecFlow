@@ -13,7 +13,6 @@ import (
 
 const unitSpec = `---
 id: demo
-unit_refs: none
 rule_refs: none
 ---
 acceptance_item_set:
@@ -355,10 +354,10 @@ func TestWriteUnitBaseline_EmptyFileZeroChunks(t *testing.T) {
 	}
 }
 
-// TestCheckUnitBaseline_LegacyEntryHashFallback pins the graceful display
-// fallback for baselines written before chunk evidence existed: the drift is
-// detected by whole-file hash and reported without localization.
-func TestCheckUnitBaseline_LegacyEntryHashFallback(t *testing.T) {
+// TestCheckUnitBaseline_EntryWithoutChunkEvidenceIsStale pins the
+// current-format rule: an entry without chunk evidence is stale and reported
+// as drifted, regardless of the stored whole-file hash.
+func TestCheckUnitBaseline_EntryWithoutChunkEvidenceIsStale(t *testing.T) {
 	repoRoot := setupRepo(t)
 	full := filepath.Join(repoRoot, "internal/demo/handler.go")
 	text, err := contenthash.FileText(full)
@@ -374,14 +373,11 @@ func TestCheckUnitBaseline_LegacyEntryHashFallback(t *testing.T) {
 	if err := os.WriteFile(basePath, []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(full, []byte("package demo\n// changed\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
 	result := CheckUnitBaseline(repoRoot, "demo")
 	if result.Status != StatusChanged {
-		t.Fatalf("expected CHANGED from the hash fallback, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected CHANGED for an entry without chunk evidence, got %s: %s", result.Status, result.Details)
 	}
-	if !strings.Contains(result.Details, "no localization recorded") {
-		t.Fatalf("expected the fallback wording in the details, got: %s", result.Details)
+	if !strings.Contains(result.Details, "no chunk evidence recorded") {
+		t.Fatalf("expected the chunk-evidence wording in the details, got: %s", result.Details)
 	}
 }

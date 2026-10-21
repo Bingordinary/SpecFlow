@@ -8,3 +8,8 @@ batch_findings_mechanism | misc/batch_findings_mechanism.md | framework/unit_ver
 report_skeleton | misc/report_skeleton.md | framework/unit_validate_checklist.md,framework/unit_verify_checklist.md,framework/rule_validate_checklist.md
 cache_evidence_path_forms | misc/cache_evidence_path_forms.md | framework/unit_validate_checklist.md,framework/rule_validate_checklist.md,framework/unit_verify_checklist.md
 unit_rule_publication | misc/unit_rule_publication.md | framework/agent_suggestion_rules.md,framework/unit_promote_workflow.md
+promise_example | misc/promise_example.md | framework/spec_writing_guide.md,framework/core/promise_model.md
+acceptance_item_example | misc/acceptance_item_example.md | framework/spec_writing_guide.md,framework/core/promise_model.md
+promise_unit_shape | misc/promise_unit_shape.md | framework/core/promise_model.md,framework/spec_writing_guide.md
+promise_carrier_role | misc/promise_carrier_role.md | framework/core/promise_model.md,framework/spec_writing_guide.md,framework/core/object_model.md
+promise_gate_requirement | misc/promise_gate_requirement.md | framework/core/promise_model.md,framework/spec_writing_guide.md

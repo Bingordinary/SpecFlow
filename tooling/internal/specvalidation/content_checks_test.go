@@ -61,7 +61,7 @@ func TestCheckEnvironmentAgnosticism(t *testing.T) {
 }
 
 func TestCheckFrontmatterRegionPurity(t *testing.T) {
-	compliant := "---\nid: auth\nunit_refs: none\n---\n\n# auth\n\n## Description\n\nProse.\n"
+	compliant := "---\nid: auth\n---\n\n# auth\n\n## Description\n\nProse.\n"
 	if got := CheckFrontmatterRegionPurity(compliant); got.Status != Pass {
 		t.Fatalf("compliant = %v, want PASS", got)
 	}

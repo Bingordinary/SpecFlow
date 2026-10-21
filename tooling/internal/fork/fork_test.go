@@ -15,7 +15,6 @@ func TestForkUnit(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	stableContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 
@@ -117,7 +116,6 @@ func TestForkUnitExemptAppendix(t *testing.T) {
 	os.MkdirAll(stableDir, 0755)
 	stableContent := `---
 id: test_unit
-unit_refs: none
 rule_refs: none
 ---
 `
@@ -242,7 +240,7 @@ func writeStableUnitForFork(t *testing.T, repoRoot string) {
 	if err := os.MkdirAll(stableDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: test_unit\nunit_refs: none\nrule_refs: none\n---\n"
+	content := "---\nid: test_unit\nrule_refs: none\n---\n"
 	if err := os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
