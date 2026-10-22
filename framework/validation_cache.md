@@ -30,7 +30,7 @@ mode: full                   # complete results are always full; targeted runs n
 basis: full                  # audit metadata: full | delta | repair (full = full run; delta = re* incremental recovery from a pass baseline; repair = re* recovery from a failure record)
 result: pass                 # pass | fail (fail = a failure record: a delta/repair re-run found P0/P1 and recorded them instead of deleting the cache; a candidate validate/verify full-run FAIL also writes one — see §Failure handling by gate role)
 target: candidate            # the layer the run checked: candidate | stable (both gates record it; stable-only runs — @stable confirmation checks — write target: stable; see framework/verification_scope.md §Stable-only Targets)
-blocking: false              # required on every fail/blocking-capable cache (validate/verify failure records): true iff result: fail (P0/P1 findings); pass caches may omit it (absent = not blocking)
+blocking: false              # required on every failure record (result: fail): must be true; optional on a pass cache (absent = not blocking), and if present must be false
 p0_count: 0                  # (verify) severity counts; P2/P3 pending items when > 0
 p1_count: 0
 p2_count: 1
@@ -400,7 +400,7 @@ fails closed.
 
 The verify cache uses the same `pass` / `fail` vocabulary as validate, at the gate level:
 
-- `result: pass` — no P0/P1 blocking findings. May carry P2/P3 pending items via `p2_count`/`p3_count` (with `blocking: false`).
+- `result: pass` — no P0/P1 blocking findings. May carry P2/P3 pending items via `p2_count`/`p3_count` (declare `blocking: false`, or omit the field — absent means not blocking).
 - `result: fail` — a **failure record**: a delta or repair re-run (`reverify@{unit}`) found P0/P1 and recorded the failure instead of deleting the cache, or a candidate verify full-run FAIL wrote one (see §Failure handling by gate role). It must declare `blocking: true`; the gate rejects it as `BLOCKED` (promote must not proceed). A fail-result cache without the blocking declarations is an invalid write and fails closed.
 
 The per-item ALIGNED / MISMATCH / CANNOT_DETERMINE verdicts of the `alignment` lens are finding-level vocabulary and are unrelated to the cache `result` field.
@@ -419,7 +419,7 @@ p0_count: 0
 p1_count: 0
 p2_count: 1
 p3_count: 0
-blocking: false             # required on every verify cache: true iff result: fail (P0/P1)
+blocking: false             # required on a failure record (true); optional on a pass cache (absent = not blocking)
 target: candidate           # candidate | stable
 timestamp: "2026-06-30T10:00:00Z"
 files:
@@ -467,7 +467,7 @@ GATE_JUDGMENTS_END -->
   # (suppressed) src/auth/config.go:88 — hardcoded key — accepted_tradeoff (dev-only config)
 ```
 
-A PASS cache follows the same shape with `result: pass`, `blocking: false`, no P0/P1 findings, and `p2_count`/`p3_count` matching the findings body. `promote --unit` requires the merged cache to record a marker for **every** expected key of **both** lenses and to be fresh, `mode: full`, and non-blocking; a cache that covers only one lens is rejected.
+A PASS cache follows the same shape with `result: pass`, `blocking: false` (or no `blocking` field — absent means not blocking), no P0/P1 findings, and `p2_count`/`p3_count` matching the findings body. `promote --unit` requires the merged cache to record a marker for **every** expected key of **both** lenses and to be fresh, `mode: full`, and non-blocking; a cache that covers only one lens is rejected.
 
 ## Chunking and Content Identifiers
 
@@ -704,14 +704,14 @@ The merged verify cache at `docs/specs/meta/validation/unit/{name}/verify_result
 2. **Mode check** — `mode` must be `full`. If not, promote is rejected: "verify cache mode is %q, expected 'full' — run `verify@{unit}` before promoting."
 3. **Content check** — every conclusion's recorded evidence pins (whole files, structural regions, review protocol, referenced records, and the synthesis's supplied-evidence pins) must still hold and the evidence the key currently requires must stay inside the evidence the record read; a changed or missing file a conclusion depends on makes the cache stale and promote is rejected: "Verify cache is stale. Run `verify@{unit}` again." A file the run merely read does not stale the cache (§Conclusion-bound verify freshness). A verify delta cache carries no change-review record.
 4. **Lens coverage check** — the cache must record a check for every expected key of both lenses (the acceptance item ids plus the always-present `unit:<unit>` unit-level scan, tagged `alignment`, and the declared code files, their unit design keys, and the unit architecture key, tagged `quality`). A cache covering only one lens is rejected: "verify cache does not cover both lenses — missing key(s): ... Run `verify@{unit}` again."
-5. **Blocking check** — if `blocking: true`, promote is rejected: "Verify found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting."
-6. **Blocking declaration check** — `blocking` is a required field on every verify cache. A cache without it fails closed (the gate cannot determine blocking status): promote is rejected: "verify cache missing required field `blocking` — cannot determine blocking status".
+5. **Blocking check** — a failure record that declares `blocking: true` is rejected as `BLOCKED`: "Verify found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting." (A pass cache that declares `blocking: true` is a conflicting declaration; see check 8.)
+6. **Blocking declaration check** — a failure record must declare `blocking: true`; a pass cache may omit the field (absent = not blocking). A failure record without it fails closed (the gate cannot determine blocking status): promote is rejected: "verify cache missing required field `blocking` — cannot determine blocking status".
 7. **Result value check** — `result` must be `pass` or `fail`. Any other value is rejected.
-8. **Consistency check** — `result: fail` must declare `blocking: true` and `result: pass` must declare `blocking: false`. A conflicting declaration is rejected: the cache was written incorrectly and its blocking status cannot be trusted.
+8. **Consistency check** — `result: fail` must declare `blocking: true`; `result: pass` must not declare `blocking: true` (it may declare `blocking: false` or omit the field). A conflicting declaration is rejected: the cache was written incorrectly and its blocking status cannot be trusted.
 
 ### Validate failure-record promote check
 
-The validate gate shares the same failure-record handling: a cache declaring `blocking: true` (the failure record shape) is rejected as `BLOCKED` — the reason follows the merged verify gate's shape with the gate's command name ("Validate found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting.") — and a `result: fail` cache without the blocking declarations (missing `blocking` or a conflicting result/blocking pair) fails closed. A pass cache stays under the dependency-check gate only. The checks run in the same order as the merged verify gate — stale records are STALE, never BLOCKED — so a fresh report and a promote run never disagree.
+The validate gate shares the same failure-record handling: a failure record (`result: fail` + `blocking: true`) is rejected as `BLOCKED` — the reason follows the merged verify gate's shape with the gate's command name ("Validate found {p0_count} P0 and {p1_count} P1 finding(s). Resolve before promoting.") — and a `result: fail` cache without the blocking declarations (missing `blocking` or a conflicting result/blocking pair) fails closed. A pass cache is never treated as `BLOCKED`; it is rejected only by the dependency-check gate or by a conflicting `blocking: true` declaration. The checks run in the same order as the merged verify gate — stale records are STALE, never BLOCKED — so a fresh report and a promote run never disagree.
 
 ## Freshness Check (read-only)
 
