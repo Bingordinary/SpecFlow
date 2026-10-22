@@ -124,7 +124,7 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -786,7 +786,7 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n\nStable fixture.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: test\n    pass_condition: ok\n    runnable: yes\n"
 	grWriteFile(t, repoRoot, "src/"+name+".go", "package fixture\n")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

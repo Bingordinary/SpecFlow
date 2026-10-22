@@ -23,15 +23,16 @@ Login uses token-based authentication.
 
 promises:
   - id: auth.login_api
-    kind: request_response
     summary: Login returns a token on success and 401 on invalid credentials.
     contract:
-      request:
-        username: {type: string, required: true}
-      response:
-        token: {type: string, required: true}
-      errors:
-        401: INVALID_CREDENTIALS
+      operations:
+        login:
+          inputs:
+            username: {type: string, required: true}
+          outputs:
+            token: {type: string, required: true}
+          errors:
+            401: INVALID_CREDENTIALS
 
 ## Acceptance Items
 
@@ -58,6 +59,42 @@ func writePromiseCLISpec(t *testing.T, repoRoot, content string) {
 	}
 }
 
+const blockCombinationCLISpec = `---
+id: auth
+rule_refs: none
+---
+
+# Auth
+
+## Design Narrative
+
+The logger is the logging seam every unit writes through.
+
+## Promises
+
+promises:
+  - id: auth.logger_api
+    summary: Logger is the logging seam.
+    contract:
+      operations:
+        Logger.Debug: {signature: "Debug(msg string, args ...any)"}
+      invariants:
+        - safe for concurrent use
+
+## Acceptance Items
+
+acceptance_item_set:
+  - id: auth.logger_debug
+    promise: auth.logger_api
+    description: Given a logger, when Debug is called, then the record is written.
+    verification_type: testable
+    verification_surface: api
+    implementation_surface: auth/logger.go
+    verification_method: Go unit test for Debug.
+    pass_condition: The record is written.
+    runnable: yes
+`
+
 func TestValidatePromiseModelCLI(t *testing.T) {
 	repoRoot := t.TempDir()
 	writePromiseCLISpec(t, repoRoot, promiseCLISpec)
@@ -71,6 +108,19 @@ func TestValidatePromiseModelCLI(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Unit spec shape: PASS") {
 		t.Fatalf("expected shape check in output, got:\n%s", stdout.String())
+	}
+}
+
+func TestValidatePromiseModelCLIAcceptsBlockCombination(t *testing.T) {
+	repoRoot := t.TempDir()
+	writePromiseCLISpec(t, repoRoot, blockCombinationCLISpec)
+
+	var stdout, stderr bytes.Buffer
+	if err := runValidate([]string{"promise-model", "--unit", "auth", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("expected PASS, got error: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Validate result: PASS") {
+		t.Fatalf("expected PASS output, got:\n%s", stdout.String())
 	}
 }
 

@@ -45,18 +45,18 @@ content of the last two sections.
 ```yaml
 promises:
   - id: auth.login_api
-    kind: request_response
     summary: Login returns a token on success and 401 on invalid credentials.
     contract:
-      request:
-        username: {type: string, required: true}
-        password: {type: string, required: true}
-      response:
-        token: {type: string, required: true}
-      errors:
-        401: INVALID_CREDENTIALS
-      timing:
-        mode: sync
+      operations:
+        login:
+          inputs:
+            username: {type: string, required: true}
+            password: {type: string, required: true}
+          outputs:
+            token: {type: string, required: true}
+          errors:
+            401: INVALID_CREDENTIALS
+          timing: sync
     depends_on: [common.error_schema]
 ```
 ==ATOM_END:promise_example==
@@ -87,14 +87,15 @@ acceptance_item_set:
 - An acceptance item references the promise it proves and keeps the code/test
   scope.
 - One promise carries one behavior subject — one endpoint, event, data
-  schema, or state machine (`framework/core/promise_model.md` §Granularity).
+  schema, callable surface (an interface method set or one exported function),
+  state machine, or standing property (`framework/core/promise_model.md` §Granularity).
 - Contract closure compares promise fingerprints: a provider's code, test, or
   narrative change does not reopen its consumers' contract closure. A promise
   contract change reopens its consumers, and the validate and verify gate
   caches follow the same rule.
 - Provider units are derived from `depends_on`; a promise depends on another
   unit's contract, not on a promise in the same unit.
-- The full schema, kinds, fingerprint rules, and `done` state are in
+- The full schema, contract blocks, fingerprint rules, and `done` state are in
   `framework/core/promise_model.md`.
 
 ## 1. Formal Spec Paths

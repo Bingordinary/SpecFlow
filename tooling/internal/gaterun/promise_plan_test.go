@@ -34,10 +34,8 @@ Narrative.
 
 promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login}
+    contract: {invariants: [login]}
 
 ## Acceptance Items
 

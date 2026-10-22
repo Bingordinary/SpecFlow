@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -31,7 +32,7 @@ type UnitInfo struct {
 // PromiseInfo is one promise discovered in the current spec.
 type PromiseInfo struct {
 	ID        string
-	Kind      string
+	Blocks    []string
 	DependsOn []string
 }
 
@@ -106,13 +107,22 @@ func populateSpecInfo(info *UnitInfo, content string) {
 		for _, promise := range promises {
 			info.Promises = append(info.Promises, PromiseInfo{
 				ID:        promise.ID,
-				Kind:      promise.Kind,
+				Blocks:    promiseContractBlocks(promise.Contract),
 				DependsOn: promise.DependsOn,
 			})
 		}
 	} else {
 		info.PromiseModelError = strings.Join(issues, "; ")
 	}
+}
+
+func promiseContractBlocks(contract map[string]any) []string {
+	blocks := make([]string, 0, len(contract))
+	for block := range contract {
+		blocks = append(blocks, block)
+	}
+	sort.Strings(blocks)
+	return blocks
 }
 
 func dedupe(values []string) []string {
@@ -181,9 +191,9 @@ func FormatInfo(info *UnitInfo) string {
 			fmt.Fprintf(&buf, "Promise model: %d promise(s)\n", len(info.Promises))
 			for _, promise := range info.Promises {
 				if len(promise.DependsOn) > 0 {
-					fmt.Fprintf(&buf, "  - %s (%s) depends_on: %s\n", promise.ID, promise.Kind, strings.Join(promise.DependsOn, ", "))
+					fmt.Fprintf(&buf, "  - %s (%s) depends_on: %s\n", promise.ID, strings.Join(promise.Blocks, ", "), strings.Join(promise.DependsOn, ", "))
 				} else {
-					fmt.Fprintf(&buf, "  - %s (%s)\n", promise.ID, promise.Kind)
+					fmt.Fprintf(&buf, "  - %s (%s)\n", promise.ID, strings.Join(promise.Blocks, ", "))
 				}
 			}
 		} else {

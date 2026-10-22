@@ -85,7 +85,7 @@ func TestConsumerGateFreshnessFollowsProviderContractOnly(t *testing.T) {
 	}
 
 	// Provider contract edit: the consumer's contract dependency moved.
-	replaceInFile(t, authSpec, "{text: login}", "{text: login changed}")
+	replaceInFile(t, authSpec, "{invariants: [login]}", "{invariants: [login changed]}")
 	validate, err = validationcache.CheckValidate(root, "web")
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestProviderComparisonCopyDoesNotStaleValidate(t *testing.T) {
 	}
 
 	// The current contract is still the dependency: a pin move reopens it.
-	replaceInFile(t, candidateAuth, "{text: login}", "{text: login changed}")
+	replaceInFile(t, candidateAuth, "{invariants: [login]}", "{invariants: [login changed]}")
 	check, err = validationcache.CheckValidate(root, "web")
 	if err != nil {
 		t.Fatal(err)

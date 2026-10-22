@@ -728,10 +728,8 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 			"## Promises\n\n"+
 			"promises:\n"+
 			"  - id: "+unitName+".core\n"+
-			"    kind: opaque\n"+
-			"    opaque_reason: no structured kind applies\n"+
 			"    summary: Core contract.\n"+
-			"    contract: {text: core}\n\n"+
+			"    contract: {invariants: [core]}\n\n"+
 			"## Acceptance Items\n\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+

@@ -19,28 +19,16 @@ import (
 // reference it and carry the evidence/code scope.
 type Promise struct {
 	ID        string
-	Kind      string
 	Summary   string
 	Contract  map[string]any
 	DependsOn []string
-	// OpaqueReason is required when Kind is "opaque": the author's stated
-	// reason no structured kind applies. It is justification metadata, not
-	// contract, so it stays out of the fingerprint.
-	OpaqueReason string
 	// Raw carries every top-level field so schema checks can reject
 	// verification or code fields without a second parser.
 	Raw map[string]any
 }
 
 var (
-	promiseIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
-	promiseKinds     = map[string]bool{
-		"request_response": true,
-		"event":            true,
-		"data_schema":      true,
-		"state_machine":    true,
-		"opaque":           true,
-	}
+	promiseIDPattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 	promiseForbiddenTopLevel = map[string]bool{
 		"implementation_surface": true,
 		"affects":                true,
@@ -58,31 +46,37 @@ var (
 	// format defines. An unknown field is not part of the fingerprint and could
 	// otherwise carry a second, unfingerprinted contract.
 	promiseAllowedTopLevel = map[string]bool{
-		"id":            true,
-		"kind":          true,
-		"summary":       true,
-		"contract":      true,
-		"opaque_reason": true,
-		"depends_on":    true,
+		"id":         true,
+		"summary":    true,
+		"contract":   true,
+		"depends_on": true,
 	}
-	// promiseContractFields is the closed contract shape per kind. An unknown
-	// contract key is rejected: the fingerprint covers `contract`, so an
+	// promiseContractBlocks is the closed vocabulary of contract blocks. Each
+	// block states one kind of externally observable fact; a contract is a
+	// combination of blocks, so a new project shape composes existing blocks
+	// instead of adding a new promise kind.
+	promiseContractBlocks = map[string]bool{
+		"operations":    true,
+		"data":          true,
+		"occurrences":   true,
+		"state_machine": true,
+		"invariants":    true,
+	}
+	// promiseBlockFields is the closed field set of each contract block. An
+	// unknown block field is rejected: the fingerprint covers `contract`, so an
 	// unvalidated key would be contract truth outside the model's shape.
-	promiseContractFields = map[string]map[string]bool{
-		"request_response": {
-			"request": true, "response": true, "errors": true, "timing": true,
+	promiseBlockFields = map[string]map[string]bool{
+		"operations": {
+			"signature": true, "inputs": true, "outputs": true, "errors": true, "timing": true,
 		},
-		"event": {
-			"name": true, "payload": true, "delivery": true, "ordering": true,
-		},
-		"data_schema": {
+		"data": {
 			"fields": true,
+		},
+		"occurrences": {
+			"payload": true, "delivery": true, "ordering": true,
 		},
 		"state_machine": {
 			"states": true, "initial": true, "transitions": true,
-		},
-		"opaque": {
-			"text": true,
 		},
 	}
 )
@@ -234,9 +228,7 @@ func ParsePromises(content string) ([]Promise, []string) {
 		normalized := normalizeYAMLMap(entry)
 		p := Promise{Raw: normalized}
 		p.ID, _ = normalized["id"].(string)
-		p.Kind, _ = normalized["kind"].(string)
 		p.Summary, _ = normalized["summary"].(string)
-		p.OpaqueReason, _ = normalized["opaque_reason"].(string)
 		if contract, ok := normalized["contract"].(map[string]any); ok {
 			p.Contract = contract
 		}
@@ -322,32 +314,22 @@ func CheckPromiseSchema(content, unitName string) CheckResult {
 		}
 		seen[p.ID] = true
 
-		if !promiseKinds[p.Kind] {
-			issues = append(issues, fmt.Sprintf("%s: invalid kind %q; must be request_response, event, data_schema, state_machine, or opaque", label, p.Kind))
-		}
 		if strings.TrimSpace(p.Summary) == "" {
 			issues = append(issues, label+": missing or empty summary")
 		} else if strings.Contains(p.Summary, "\n") {
 			issues = append(issues, label+": summary must be one line")
 		}
-		if len(p.Contract) == 0 && p.Kind != "opaque" {
+		if len(p.Contract) == 0 {
 			issues = append(issues, label+": missing or empty contract")
-		}
-		if _, present := p.Raw["opaque_reason"]; present && p.Kind != "opaque" {
-			issues = append(issues, label+": opaque_reason is only allowed on kind: opaque")
-		}
-		if p.Kind == "opaque" && strings.TrimSpace(p.OpaqueReason) == "" {
-			issues = append(issues, label+": opaque promise requires a non-empty opaque_reason stating why no structured kind applies")
-		}
-		if len(p.Contract) > 0 || p.Kind == "opaque" {
-			issues = append(issues, validatePromiseContract(label, p.Kind, p.Contract)...)
+		} else {
+			issues = append(issues, validateContractBlocks(label, p.Contract)...)
 		}
 		for field := range p.Raw {
 			switch {
 			case promiseForbiddenTopLevel[field]:
 				issues = append(issues, fmt.Sprintf("%s: top-level field %q is not allowed on a promise", label, field))
 			case !promiseAllowedTopLevel[field]:
-				issues = append(issues, fmt.Sprintf("%s: unknown top-level field %q; allowed fields are id, kind, summary, contract, opaque_reason, depends_on", label, field))
+				issues = append(issues, fmt.Sprintf("%s: unknown top-level field %q; allowed fields are id, summary, contract, depends_on", label, field))
 			}
 		}
 		depSeen := map[string]bool{}
@@ -453,140 +435,241 @@ func CheckPromiseSpec(content, unitName string) []CheckResult {
 	}
 }
 
-// validatePromiseContract checks the required shape of one promise kind. It
-// validates structure only; semantic compatibility remains a later diff. The
-// contract keys are closed per kind: an unknown key is not part of the
-// documented shape and would otherwise enter the fingerprint as contract truth
-// the model never defined.
-func validatePromiseContract(label, kind string, contract map[string]any) []string {
-	var shapeIssues []string
-	if allowed, ok := promiseContractFields[kind]; ok {
-		for field := range contract {
-			if !allowed[field] {
-				shapeIssues = append(shapeIssues, fmt.Sprintf("%s: unknown %s contract field %q", label, kind, field))
-			}
+// validateContractBlocks checks the closed contract-block vocabulary and each
+// block's field shape. It validates structure only; semantic compatibility
+// remains a later diff. The block vocabulary is closed, but the combination of
+// blocks is open: a contract that combines existing blocks never needs a new
+// promise kind.
+func validateContractBlocks(label string, contract map[string]any) []string {
+	var issues []string
+	for block := range contract {
+		if !promiseContractBlocks[block] {
+			issues = append(issues, fmt.Sprintf("%s: unknown contract block %q; allowed blocks are operations, data, occurrences, state_machine, invariants", label, block))
 		}
 	}
-	switch kind {
-	case "opaque":
-		issues := append([]string{}, shapeIssues...)
-		text, ok := contract["text"].(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			issues = append(issues, label+": opaque promise requires contract.text")
+	if raw, ok := contract["operations"]; ok {
+		issues = append(issues, validateOperationsBlock(label, raw)...)
+	}
+	if raw, ok := contract["data"]; ok {
+		issues = append(issues, validateDataBlock(label, raw)...)
+	}
+	if raw, ok := contract["occurrences"]; ok {
+		issues = append(issues, validateOccurrencesBlock(label, raw)...)
+	}
+	if raw, ok := contract["state_machine"]; ok {
+		issues = append(issues, validateStateMachineBlock(label, raw)...)
+	}
+	if raw, ok := contract["invariants"]; ok {
+		issues = append(issues, validateInvariantsBlock(label, raw)...)
+	}
+	return issues
+}
+
+func validateOperationsBlock(label string, raw any) []string {
+	operations, ok := raw.(map[string]any)
+	if !ok || len(operations) == 0 {
+		return []string{label + ": operations must be a non-empty map of operation name to operation block"}
+	}
+	var issues []string
+	for name, rawBlock := range operations {
+		if strings.TrimSpace(name) == "" {
+			issues = append(issues, label+": operations has an empty operation name")
+			continue
 		}
-		if len(contract) != 1 {
-			issues = append(issues, label+": opaque promise contract may contain only text")
+		block, ok := rawBlock.(map[string]any)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: operation %q must be a map", label, name))
+			continue
 		}
-		return issues
-	case "request_response":
-		issues := append([]string{}, shapeIssues...)
-		if response, ok := contract["response"]; !ok {
-			issues = append(issues, label+": request_response requires contract.response")
-		} else if fields, ok := response.(map[string]any); !ok || len(fields) == 0 {
-			issues = append(issues, label+": request_response contract.response must be a non-empty field map")
-		} else {
-			issues = append(issues, validatePromiseFields(label+".response", fields)...)
-		}
-		if request, ok := contract["request"]; ok {
-			fields, ok := request.(map[string]any)
-			if !ok {
-				issues = append(issues, label+": request_response contract.request must be a field map")
-			} else {
-				issues = append(issues, validatePromiseFields(label+".request", fields)...)
+		for field := range block {
+			if !promiseBlockFields["operations"][field] {
+				issues = append(issues, fmt.Sprintf("%s: operation %q has unknown field %q", label, name, field))
 			}
 		}
-		if errorsValue, ok := contract["errors"]; ok {
-			errors, ok := errorsValue.(map[string]any)
+		hasShape := false
+		if value, ok := block["signature"]; ok {
+			text, ok := value.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				issues = append(issues, fmt.Sprintf("%s: operation %q signature must be a non-empty string", label, name))
+			} else {
+				hasShape = true
+			}
+		}
+		if value, ok := block["inputs"]; ok {
+			fields, ok := value.(map[string]any)
 			if !ok {
-				issues = append(issues, label+": request_response contract.errors must be a map")
+				issues = append(issues, fmt.Sprintf("%s: operation %q inputs must be a field map", label, name))
+			} else {
+				issues = append(issues, validatePromiseFields(fmt.Sprintf("%s.operations.%s.inputs", label, name), fields)...)
+				hasShape = true
+			}
+		}
+		if value, ok := block["outputs"]; ok {
+			fields, ok := value.(map[string]any)
+			if !ok {
+				issues = append(issues, fmt.Sprintf("%s: operation %q outputs must be a field map", label, name))
+			} else {
+				issues = append(issues, validatePromiseFields(fmt.Sprintf("%s.operations.%s.outputs", label, name), fields)...)
+				hasShape = true
+			}
+		}
+		if value, ok := block["errors"]; ok {
+			errors, ok := value.(map[string]any)
+			if !ok {
+				issues = append(issues, fmt.Sprintf("%s: operation %q errors must be a map", label, name))
 			} else {
 				for code, meaning := range errors {
 					if strings.TrimSpace(fmt.Sprint(code)) == "" {
-						issues = append(issues, label+": request_response contract.errors has an empty code")
+						issues = append(issues, fmt.Sprintf("%s: operation %q has an empty error code", label, name))
 					}
 					if text, ok := meaning.(string); !ok || strings.TrimSpace(text) == "" {
-						issues = append(issues, fmt.Sprintf("%s: request_response error %v must be a non-empty string", label, code))
+						issues = append(issues, fmt.Sprintf("%s: operation %q error %v must be a non-empty string", label, name, code))
 					}
 				}
 			}
 		}
-		if timingValue, ok := contract["timing"]; ok {
-			timing, ok := timingValue.(map[string]any)
-			if !ok {
-				issues = append(issues, label+": request_response contract.timing must be a map")
-			} else if mode, ok := timing["mode"]; ok {
-				if text, ok := mode.(string); !ok || strings.TrimSpace(text) == "" {
-					issues = append(issues, label+": request_response contract.timing.mode must be a non-empty string")
-				}
+		if value, ok := block["timing"]; ok {
+			text, ok := value.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				issues = append(issues, fmt.Sprintf("%s: operation %q timing must be a non-empty string", label, name))
 			}
 		}
-		return issues
-	case "event":
-		issues := append([]string{}, shapeIssues...)
-		if name, ok := contract["name"].(string); !ok || strings.TrimSpace(name) == "" {
-			issues = append(issues, label+": event requires contract.name")
+		if !hasShape {
+			issues = append(issues, fmt.Sprintf("%s: operation %q requires at least one of signature, inputs, or outputs", label, name))
 		}
-		if payload, ok := contract["payload"]; !ok {
-			issues = append(issues, label+": event requires contract.payload")
-		} else if fields, ok := payload.(map[string]any); !ok {
-			issues = append(issues, label+": event contract.payload must be a field map")
-		} else {
-			issues = append(issues, validatePromiseFields(label+".payload", fields)...)
-		}
-		return issues
-	case "data_schema":
-		issues := append([]string{}, shapeIssues...)
-		fields, ok := contract["fields"].(map[string]any)
-		if !ok || len(fields) == 0 {
-			issues = append(issues, label+": data_schema requires a non-empty contract.fields map")
-			return issues
-		}
-		return append(issues, validatePromiseFields(label+".fields", fields)...)
-	case "state_machine":
-		issues := append([]string{}, shapeIssues...)
-		states, ok := stringList(contract["states"])
-		if !ok || len(states) == 0 {
-			issues = append(issues, label+": state_machine requires a non-empty contract.states list")
-		} else if duplicates := duplicateStrings(states); len(duplicates) > 0 {
-			issues = append(issues, fmt.Sprintf("%s: state_machine states duplicate %s", label, strings.Join(duplicates, ", ")))
-		}
-		stateSet := map[string]bool{}
-		for _, state := range states {
-			stateSet[state] = true
-		}
-		if initial, ok := contract["initial"].(string); !ok || strings.TrimSpace(initial) == "" {
-			issues = append(issues, label+": state_machine requires contract.initial")
-		} else if len(stateSet) > 0 && !stateSet[initial] {
-			issues = append(issues, label+": state_machine initial state is not in states")
-		}
-		transitions, ok := contract["transitions"].([]any)
-		if !ok || len(transitions) == 0 {
-			issues = append(issues, label+": state_machine requires a non-empty contract.transitions list")
-			return issues
-		}
-		for i, raw := range transitions {
-			entry, ok := raw.(map[string]any)
-			if !ok {
-				issues = append(issues, fmt.Sprintf("%s: state_machine transition %d must be a map", label, i+1))
-				continue
-			}
-			for _, field := range []string{"from", "event", "to"} {
-				value, ok := entry[field].(string)
-				if !ok || strings.TrimSpace(value) == "" {
-					issues = append(issues, fmt.Sprintf("%s: state_machine transition %d requires %s", label, i+1, field))
-				}
-			}
-			if from, ok := entry["from"].(string); ok && len(stateSet) > 0 && !stateSet[from] {
-				issues = append(issues, fmt.Sprintf("%s: state_machine transition %d from state %q is not in states", label, i+1, from))
-			}
-			if to, ok := entry["to"].(string); ok && len(stateSet) > 0 && !stateSet[to] {
-				issues = append(issues, fmt.Sprintf("%s: state_machine transition %d to state %q is not in states", label, i+1, to))
-			}
-		}
-		return issues
-	default:
-		return nil
 	}
+	return issues
+}
+
+func validateDataBlock(label string, raw any) []string {
+	data, ok := raw.(map[string]any)
+	if !ok || len(data) == 0 {
+		return []string{label + ": data must be a non-empty map of type name to data block"}
+	}
+	var issues []string
+	for name, rawBlock := range data {
+		if strings.TrimSpace(name) == "" {
+			issues = append(issues, label+": data has an empty type name")
+			continue
+		}
+		block, ok := rawBlock.(map[string]any)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: data %q must be a map", label, name))
+			continue
+		}
+		for field := range block {
+			if !promiseBlockFields["data"][field] {
+				issues = append(issues, fmt.Sprintf("%s: data %q has unknown field %q", label, name, field))
+			}
+		}
+		fields, ok := block["fields"].(map[string]any)
+		if !ok || len(fields) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: data %q requires a non-empty fields map", label, name))
+			continue
+		}
+		issues = append(issues, validatePromiseFields(fmt.Sprintf("%s.data.%s.fields", label, name), fields)...)
+	}
+	return issues
+}
+
+func validateOccurrencesBlock(label string, raw any) []string {
+	occurrences, ok := raw.(map[string]any)
+	if !ok || len(occurrences) == 0 {
+		return []string{label + ": occurrences must be a non-empty map of event name to occurrence block"}
+	}
+	var issues []string
+	for name, rawBlock := range occurrences {
+		if strings.TrimSpace(name) == "" {
+			issues = append(issues, label+": occurrences has an empty event name")
+			continue
+		}
+		block, ok := rawBlock.(map[string]any)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: occurrence %q must be a map", label, name))
+			continue
+		}
+		for field := range block {
+			if !promiseBlockFields["occurrences"][field] {
+				issues = append(issues, fmt.Sprintf("%s: occurrence %q has unknown field %q", label, name, field))
+			}
+		}
+		payload, ok := block["payload"].(map[string]any)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: occurrence %q requires a payload field map", label, name))
+		} else {
+			issues = append(issues, validatePromiseFields(fmt.Sprintf("%s.occurrences.%s.payload", label, name), payload)...)
+		}
+		for _, field := range []string{"delivery", "ordering"} {
+			if value, ok := block[field]; ok {
+				text, ok := value.(string)
+				if !ok || strings.TrimSpace(text) == "" {
+					issues = append(issues, fmt.Sprintf("%s: occurrence %q %s must be a non-empty string", label, name, field))
+				}
+			}
+		}
+	}
+	return issues
+}
+
+func validateStateMachineBlock(label string, raw any) []string {
+	contract, ok := raw.(map[string]any)
+	if !ok {
+		return []string{label + ": state_machine must be a map with states, initial, and transitions"}
+	}
+	var issues []string
+	for field := range contract {
+		if !promiseBlockFields["state_machine"][field] {
+			issues = append(issues, fmt.Sprintf("%s: state_machine has unknown field %q", label, field))
+		}
+	}
+	states, ok := stringList(contract["states"])
+	if !ok || len(states) == 0 {
+		issues = append(issues, label+": state_machine requires a non-empty states list")
+	} else if duplicates := duplicateStrings(states); len(duplicates) > 0 {
+		issues = append(issues, fmt.Sprintf("%s: state_machine states duplicate %s", label, strings.Join(duplicates, ", ")))
+	}
+	stateSet := map[string]bool{}
+	for _, state := range states {
+		stateSet[state] = true
+	}
+	if initial, ok := contract["initial"].(string); !ok || strings.TrimSpace(initial) == "" {
+		issues = append(issues, label+": state_machine requires initial")
+	} else if len(stateSet) > 0 && !stateSet[initial] {
+		issues = append(issues, label+": state_machine initial state is not in states")
+	}
+	transitions, ok := contract["transitions"].([]any)
+	if !ok || len(transitions) == 0 {
+		issues = append(issues, label+": state_machine requires a non-empty transitions list")
+		return issues
+	}
+	for i, raw := range transitions {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("%s: state_machine transition %d must be a map", label, i+1))
+			continue
+		}
+		for _, field := range []string{"from", "event", "to"} {
+			value, ok := entry[field].(string)
+			if !ok || strings.TrimSpace(value) == "" {
+				issues = append(issues, fmt.Sprintf("%s: state_machine transition %d requires %s", label, i+1, field))
+			}
+		}
+		if from, ok := entry["from"].(string); ok && len(stateSet) > 0 && !stateSet[from] {
+			issues = append(issues, fmt.Sprintf("%s: state_machine transition %d from state %q is not in states", label, i+1, from))
+		}
+		if to, ok := entry["to"].(string); ok && len(stateSet) > 0 && !stateSet[to] {
+			issues = append(issues, fmt.Sprintf("%s: state_machine transition %d to state %q is not in states", label, i+1, to))
+		}
+	}
+	return issues
+}
+
+func validateInvariantsBlock(label string, raw any) []string {
+	invariants, ok := stringList(raw)
+	if !ok || len(invariants) == 0 {
+		return []string{label + ": invariants must be a non-empty string list"}
+	}
+	return nil
 }
 
 func validatePromiseFields(label string, fields map[string]any) []string {
@@ -650,12 +733,11 @@ func duplicateStrings(values []string) []string {
 }
 
 // PromiseFingerprint returns the canonical fingerprint of a promise contract.
-// The fingerprint covers kind + contract only. Identity, summary, and graph
+// The fingerprint covers the contract blocks only. Identity, summary, and graph
 // edges are excluded so a provider can rename a promise or update prose
 // without reopening consumers.
 func PromiseFingerprint(p Promise) (string, error) {
 	payload := map[string]any{
-		"kind":     p.Kind,
 		"contract": normalizeYAMLValue(p.Contract),
 	}
 	encoded, err := json.Marshal(payload)

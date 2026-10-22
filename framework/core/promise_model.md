@@ -57,13 +57,23 @@ installed base is small.
 
 ## Migrating to this format
 
-`spec_flow_update` migrates an installed project when its framework diff reports the three-section unit shape. Migrate **every unit file in each layer** (candidate and stable):
+`spec_flow_update` migrates an installed project when its framework diff reports the three-section unit shape or the contract-block format. Migrate **every unit file in each layer** (candidate and stable):
 
-1. Derive each promise from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing); the acceptance item keeps its code/test scope and references the promise it proves.
+1. Derive each promise's contract blocks from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing, standing properties); the acceptance item keeps its code/test scope and references the promise it proves. The `kind` and `opaque_reason` fields are removed; map the old shape to blocks:
+
+   | Old `kind` | New `contract` |
+   |---|---|
+   | `request_response` | `operations: {<operation>: {inputs: <request>, outputs: <response>, errors: <errors>, timing: <mode>}}` |
+   | `event` | `occurrences: {<event name>: {payload: <payload>, delivery: <delivery>, ordering: <ordering>}}` |
+   | `data_schema` | `data: {<type name>: {fields: <fields>}}` |
+   | `state_machine` | `state_machine: {states: <states>, initial: <initial>, transitions: <transitions>}` |
+   | `opaque` | `invariants: [<text>]` when the text is a standing property; otherwise restructure the behavior the text describes into the matching structured blocks |
+
+   Name the operation, type, or event after the subject the old contract describes; the promise ID's last segment is a safe default. A `request_response` `timing: {mode: sync}` becomes `timing: sync`; if the old `request` is absent, omit `inputs`.
 2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
 3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item.
-4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. Do not add a converter or a compatibility path.
-5. Caches written before the promise-pin format are incompatible. After migration every unit needs one full `validate` and one full `verify`; `delta`/`repair` refuses an old cache as a baseline, and `promote` rejects it. `fresh` reports such a cache as `INVALID`.
+4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. A structural fact the old carrier establishes goes into its matching block; `invariants` is only for a standing property that has no structural shape. Do not add a converter or a compatibility path.
+5. A cache written before this format does not become `INVALID`: it stays readable, but it no longer matches the migrated truth. The unit's main spec content changed, every promise fingerprint changed, and the judging standard moved, so `fresh` reports those gates as `STALE`. `delta`/`repair` can still use the old cache as a baseline and re-run the affected checks; run `validate` and `verify` for every migrated unit, with a full run as the safe default after a layer-wide migration. `promote` rejects any gate that is not fresh.
 
 Verify each migrated unit with `specflowctl validate promise-model --unit <name> --layer candidate|stable` (see §Validation command); a valid unit declares at least one promise and covers every promise with an acceptance item.
 
@@ -123,18 +133,18 @@ support truth owned by one unit; a rule keeps its own format.
 ```yaml
 promises:
   - id: auth.login_api
-    kind: request_response
     summary: Login returns a token on success and 401 on invalid credentials.
     contract:
-      request:
-        username: {type: string, required: true}
-        password: {type: string, required: true}
-      response:
-        token: {type: string, required: true}
-      errors:
-        401: INVALID_CREDENTIALS
-      timing:
-        mode: sync
+      operations:
+        login:
+          inputs:
+            username: {type: string, required: true}
+            password: {type: string, required: true}
+          outputs:
+            token: {type: string, required: true}
+          errors:
+            401: INVALID_CREDENTIALS
+          timing: sync
     depends_on: [common.error_schema]
 ```
 ==ATOM_END:promise_example==
@@ -144,16 +154,15 @@ promises:
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | Stable promise identity. Unit-owned IDs are `<unit>.<name>`; IDs are unique in the repository. |
-| `kind` | yes | `request_response`, `event`, `data_schema`, `state_machine`, or `opaque`. |
 | `summary` | yes | One-line human description. It is not normative and is excluded from the fingerprint. |
-| `contract` | yes | Normative contract content. Shape depends on `kind`. |
-| `opaque_reason` | required for `opaque` | Why no structured kind applies. It is justification metadata, excluded from the fingerprint. Only `kind: opaque` may carry it. |
+| `contract` | yes | Normative contract content: a combination of the five contract blocks. |
 | `depends_on` | no | Promise IDs this promise relies on, owned by another unit. These are graph edges, not part of the fingerprint. |
 
-The promise field set and each kind's contract field set are closed: an
-unknown field is rejected by promise schema validation. An extra field is not
-part of the deployed format, and a field outside `contract` is not covered by
-the fingerprint — it would be contract truth the model never defined.
+The promise field set is closed: an unknown field is rejected by promise schema
+validation. The contract block vocabulary is also closed, but the combination
+is open: a contract states one behavior subject through whichever blocks that
+subject needs. An unknown block or an unknown block field is rejected, because
+it would enter the fingerprint as contract truth the model never defined.
 
 `depends_on` names a provider promise in another unit. A promise must not
 depend on another promise in the same unit: the unit's own contract versions
@@ -178,68 +187,114 @@ A promise must not contain:
 Verification is declared by acceptance items. Consumers are derived from
 dependencies; the provider must not store a consumer list.
 
-### Contract shapes
+### Contract blocks
 
-`request_response`:
+A contract states one behavior subject through one or more blocks. The blocks
+are the modes in which a consumer can observe the unit; they are not a list of
+project types. A new project shape is a new combination of these blocks, not a
+new promise kind.
 
-```yaml
-contract:
-  request: {field: {type: string, required: true}}
-  response: {field: {type: string, required: true}}
-  errors: {401: INVALID_CREDENTIALS}
-  timing: {mode: sync}
-```
-
-`event`:
+#### `operations`
 
 ```yaml
 contract:
-  name: order.created
-  payload: {field: {type: string, required: true}}
-  delivery: at_least_once
-  ordering: per_key
+  operations:
+    login:
+      inputs:
+        username: {type: string, required: true}
+        password: {type: string, required: true}
+      outputs:
+        token: {type: string, required: true}
+      errors:
+        401: INVALID_CREDENTIALS
+      timing: sync
 ```
 
-`data_schema`:
+A map of operation name to operation block. Each operation states a callable
+surface: `signature` (the exact textual signature), `inputs` and `outputs`
+(field maps), `errors` (error code to meaning), and `timing` (for example
+`sync` or `async`). At least one of `signature`, `inputs`, or `outputs` is
+required. One interface method set or one exported function is one subject;
+two unrelated interfaces belong in separate promises.
+
+#### `data`
 
 ```yaml
 contract:
-  fields:
-    field: {type: string, required: true, nullable: false}
+  data:
+    LoginRequest:
+      fields:
+        username: {type: string, required: true}
+        password: {type: string, required: true}
 ```
 
-`state_machine`:
+A map of type name to record shape. `fields` is required and non-empty. A wire
+type exchanged by an operation may live in the operation's `inputs`/`outputs`;
+a type that is itself the subject is a `data` block.
+
+#### `occurrences`
 
 ```yaml
 contract:
-  states: [pending, paid, cancelled]
-  initial: pending
-  transitions:
-    - {from: pending, event: pay, to: paid}
+  occurrences:
+    order.created:
+      payload:
+        id: {type: string, required: true}
+      delivery: at_least_once
+      ordering: per_key
 ```
 
-`opaque`:
+A map of event name to occurrence block. The occurrence is provider-initiated:
+the consumer does not call it. `payload` is required (an empty field map is
+allowed for a payload-free event); `delivery` and `ordering` are non-empty
+strings when present.
+
+#### `state_machine`
 
 ```yaml
-kind: opaque
-summary: Passwords are never stored in plaintext.
-opaque_reason: The contract is a security property with no structured surface.
 contract:
-  text: Passwords are never stored in plaintext.
+  state_machine:
+    states: [pending, paid, cancelled]
+    initial: pending
+    transitions:
+      - {from: pending, event: pay, to: paid}
 ```
 
-An `opaque` promise is a valid promise when a consumer relies on it and it can
-be judged. It is a last resort. `opaque_reason` must name the structured kind
-that came closest and the concrete obstacle that disqualifies it — a bare
-"no kind fits" does not qualify. The fingerprint still detects an `opaque`
-promise's text changes mechanically, but judging what the text contracts is a
-human decision, so validate re-confirms every `opaque` promise each round. Any
-text change reopens its consumers by default.
+A single state machine: `states` (non-empty, no duplicates), `initial` (must be
+one of the states), and `transitions` (non-empty list of `{from, event, to}`,
+with `from` and `to` in `states`).
+
+#### `invariants`
+
+```yaml
+contract:
+  invariants:
+    - safe for concurrent use
+    - passwords are never stored in plaintext
+```
+
+A non-empty list of standing properties. This is the residual block for a
+property that holds across the subject and has no structural shape. It is still
+contract content: editing an invariant changes the fingerprint and reopens
+consumers, which is correct because the invariant is part of the contract. A
+structural fact that an `operations`, `data`, `occurrences`, or `state_machine`
+block can carry belongs in that block, not here.
+
+#### Block choice
+
+Choose blocks by what the subject offers, not by the project type. A callable
+surface uses `operations`; a record type uses `data`; a provider-initiated
+event uses `occurrences`; a lifecycle uses `state_machine`; a standing property
+uses `invariants`. A contract may combine blocks when they describe one subject
+(for example, an interface with operations and invariants). Bundling unrelated
+subjects into one promise remains a granularity finding.
 
 ## Granularity
 
-One promise carries exactly one behavior subject: one endpoint, one event,
-one exchanged data schema, or one state machine. A behavior subject is the
+One promise carries exactly one behavior subject: one endpoint or callable
+surface, one event, one exchanged data schema, one state machine, or one
+standing property. A contract's blocks are facets of that subject; they do not
+permit bundling unrelated subjects. A behavior subject is the
 same concept `framework/spec_writing_guide.md` §Acceptance Item Granularity
 defines for acceptance items — a subject's error codes, boundary cases, and
 timing guarantees are its scenarios and stay inside one promise.
@@ -301,7 +356,7 @@ Rules:
 A promise fingerprint is the SHA-256 of the canonical JSON encoding of:
 
 ```json
-{"kind": "...", "contract": {...}}
+{"contract": {...}}
 ```
 
 `summary`, `id`, and `depends_on` are excluded.
@@ -313,8 +368,6 @@ Freshness rules:
 - a provider narrative change does not change a promise fingerprint;
 - a provider promise contract change changes the fingerprint and reopens
   consumers of that promise;
-- an `opaque` promise text change changes the fingerprint and reopens
-  consumers;
 - a dependency promise change reopens the provider's promise only when the
   provider updates its own promise, or when the consumer's pinned dependency
   promise changes.

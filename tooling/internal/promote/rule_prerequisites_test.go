@@ -201,7 +201,7 @@ func writePromotableUnit(t *testing.T, repoRoot, unit, ruleRefs string) {
 	}
 	spec := "---\nid: " + unit + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: " + unit + ".core\n" +
 		"    promise: " + unit + ".core\n" +

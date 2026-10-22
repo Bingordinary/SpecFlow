@@ -49,10 +49,8 @@ Prose.
 
 promises:
   - id: demo.%[1]s
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Contract.
-    contract: {text: contract}
+    contract: {invariants: [contract]}
     depends_on: [%[1]s_peer.api]
 
 ## Acceptance Items

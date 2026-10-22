@@ -463,7 +463,7 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 	}
 	content := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n"
 	for _, id := range itemIDs {
 		content += "  - id: " + id + "\n    promise: auth.core\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"

@@ -118,9 +118,8 @@ func TestStableBindingResolvesPromisePinsInStableScope(t *testing.T) {
 			t.Fatal(err)
 		}
 		content := "---\nid: auth\n---\n\n## Promises\n\npromises:\n" +
-			"  - id: auth.login_api\n    kind: opaque\n" +
-			"    opaque_reason: request_response was closest; no status codes are established.\n" +
-			"    summary: Login.\n    contract: {text: " + contract + "}\n"
+			"  - id: auth.login_api\n" +
+			"    summary: Login.\n    contract: {invariants: [" + contract + "]}\n"
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}

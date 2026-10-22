@@ -23,16 +23,12 @@ func TestPromiseGraphResolvesDependencies(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login contract}`)
+    contract: {invariants: [login contract]}`)
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session contract}
+    contract: {invariants: [session contract]}
     depends_on: [auth.login_api]`)
 
 	result := CheckPromiseGraph(root, "web")
@@ -45,22 +41,16 @@ func TestPromiseGraphScopeSeparatesLayers(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "stable", "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Stable login.
-    contract: {text: stable login}`)
+    contract: {invariants: [stable login]}`)
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Candidate login.
-    contract: {text: candidate login}`)
+    contract: {invariants: [candidate login]}`)
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]`)
 
 	candidateEdges, issues := PromiseEdges(root, PromiseScopeCandidate)
@@ -86,7 +76,7 @@ func TestPromiseGraphScopeSeparatesLayers(t *testing.T) {
 }
 
 func TestPromiseProviderUnits(t *testing.T) {
-	content := "## Promises\n\npromises:\n  - id: web.a\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: A.\n    contract: {text: a}\n    depends_on: [auth.login_api, common.error_schema]\n  - id: web.b\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: B.\n    contract: {text: b}\n    depends_on: [auth.login_api]\n"
+	content := "## Promises\n\npromises:\n  - id: web.a\n    summary: A.\n    contract: {invariants: [a]}\n    depends_on: [auth.login_api, common.error_schema]\n  - id: web.b\n    summary: B.\n    contract: {invariants: [b]}\n    depends_on: [auth.login_api]\n"
 	got := PromiseProviderUnits(content)
 	want := []string{"auth", "common"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
@@ -101,10 +91,8 @@ func TestPromiseGraphRejectsUnresolvedDependency(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session contract}
+    contract: {invariants: [session contract]}
     depends_on: [auth.missing]`)
 
 	result := CheckPromiseGraph(root, "web")
@@ -117,24 +105,18 @@ func TestPromiseGraphRejectsCycle(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: auth.a
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: A.
-    contract: {text: a}
+    contract: {invariants: [a]}
     depends_on: [web.b]`)
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.b
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: B.
-    contract: {text: b}
+    contract: {invariants: [b]}
     depends_on: [auth.a]`)
 	writePromiseGraphUnit(t, root, "candidate", "other", `promises:
   - id: other.c
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: C.
-    contract: {text: c}`)
+    contract: {invariants: [c]}`)
 
 	result := CheckPromiseGraph(root, "auth")
 	if result.Status != Fail || !strings.Contains(result.Details, "cycle") {
@@ -153,10 +135,8 @@ func TestPromiseGraphUnrelatedMissingSectionDoesNotBlock(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}`)
+    contract: {invariants: [session]}`)
 	legacyDir := filepath.Join(root, "docs/specs/units/candidate")
 	if err := os.WriteFile(filepath.Join(legacyDir, "unit_legacy.md"), []byte("---\nid: legacy\nunit_refs: none\n---\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set: []\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -177,17 +157,13 @@ func TestPromiseGraphConsumerOfMissingSectionFails(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [legacy.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "other", `promises:
   - id: other.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Other.
-    contract: {text: other}`)
+    contract: {invariants: [other]}`)
 	dir := filepath.Join(root, "docs/specs/units/candidate")
 	if err := os.WriteFile(filepath.Join(dir, "unit_legacy.md"), []byte("---\nid: legacy\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -205,16 +181,12 @@ func TestPromiseGraphRejectsDuplicateIDAcrossUnits(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: shared.contract
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: A.
-    contract: {text: a}`)
+    contract: {invariants: [a]}`)
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: shared.contract
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: B.
-    contract: {text: b}`)
+    contract: {invariants: [b]}`)
 
 	result := CheckPromiseGraph(root, "web")
 	if result.Status != Fail || !strings.Contains(result.Details, "duplicate promise id") {
@@ -226,22 +198,16 @@ func TestPromiseGraphCandidateOverridesStable(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "stable", "auth", `promises:
   - id: auth.login_v1
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Old.
-    contract: {text: old}`)
+    contract: {invariants: [old]}`)
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: auth.login_v2
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: New.
-    contract: {text: new}`)
+    contract: {invariants: [new]}`)
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_v2]`)
 
 	result := CheckPromiseGraph(root, "web")
@@ -254,38 +220,28 @@ func TestPromiseGraphRejectsEveryCycle(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "a", `promises:
   - id: a.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: A.
-    contract: {text: a}
+    contract: {invariants: [a]}
     depends_on: [b.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "b", `promises:
   - id: b.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: B.
-    contract: {text: b}
+    contract: {invariants: [b]}
     depends_on: [a.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "c", `promises:
   - id: c.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: C.
-    contract: {text: c}
+    contract: {invariants: [c]}
     depends_on: [d.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "d", `promises:
   - id: d.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: D.
-    contract: {text: d}
+    contract: {invariants: [d]}
     depends_on: [c.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "solo", `promises:
   - id: solo.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Solo.
-    contract: {text: solo}`)
+    contract: {invariants: [solo]}`)
 
 	// Every unit on either disjoint cycle fails, not just the members of the
 	// first cycle the scan happens to reach.
@@ -304,22 +260,16 @@ func TestPromiseGraphScopeForLayer(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "stable", "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Stable login.
-    contract: {text: stable login}`)
+    contract: {invariants: [stable login]}`)
 	writePromiseGraphUnit(t, root, "candidate", "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Candidate login.
-    contract: {text: candidate login}`)
+    contract: {invariants: [candidate login]}`)
 	writePromiseGraphUnit(t, root, "stable", "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]`)
 
 	// A candidate resolves providers in the current layer; a stable unit
@@ -336,17 +286,13 @@ func TestPromiseGraphScopeForLayer(t *testing.T) {
 	// unit's declared dependency.
 	writePromiseGraphUnit(t, root, "stable", "solo", `promises:
   - id: solo.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Solo.
-    contract: {text: solo}
+    contract: {invariants: [solo]}
     depends_on: [draft.api]`)
 	writePromiseGraphUnit(t, root, "candidate", "draft", `promises:
   - id: draft.api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Draft.
-    contract: {text: draft}`)
+    contract: {invariants: [draft]}`)
 
 	if result := CheckPromiseGraphScope(root, PromiseScopeForLayer("stable"), "solo"); result.Status != Fail {
 		t.Fatalf("stable scope must not resolve a candidate-only provider, got %s — %s", result.Status, result.Details)

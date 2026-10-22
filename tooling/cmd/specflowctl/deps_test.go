@@ -228,7 +228,7 @@ func writePromiseDepsUnit(t *testing.T, repoRoot, layer, unit, promiseID, depend
 	}
 	content := "---\nid: " + unit + "\nrule_refs: " + ruleRefs + "\n---\n\n" +
 		"## Design Narrative\n\nNarrative.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Contract.\n    contract: {text: contract}\n" + depends + "\n" +
+		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [contract]}\n" + depends + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

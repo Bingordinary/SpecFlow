@@ -262,11 +262,11 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 		},
 		{
 			// Unit validate's promise standard. Check 5h applies its
-			// granularity and contract-shape rules, so the whole document is
+			// granularity and contract-block rules, so the whole document is
 			// judging input; no section is declared as mechanism-only.
 			document: "core/promise_model.md",
 			judging: []string{
-				"## Contract shapes",
+				"## Contract blocks",
 				"## Granularity",
 				"## Done",
 				"### Fields",

@@ -166,10 +166,8 @@ Test unit for promote testing.
 
 promises:
   - id: test_unit.core
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Core contract.
-    contract: {text: core}
+    contract: {invariants: [core]}
 
 ## Acceptance Items
 
@@ -469,10 +467,8 @@ Test unit for promote testing.
 
 promises:
   - id: test_unit.core
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Core contract.
-    contract: {text: core}
+    contract: {invariants: [core]}
 
 ## Acceptance Items
 
@@ -574,10 +570,8 @@ Test unit for promote testing.
 
 promises:
   - id: test_unit.core
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Core contract.
-    contract: {text: core}
+    contract: {invariants: [core]}
 
 ## Acceptance Items
 
@@ -691,10 +685,8 @@ Prose.
 
 promises:
   - id: test_unit.core
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Core contract.
-    contract: {text: core}
+    contract: {invariants: [core]}
 
 ## Acceptance Items
 
@@ -854,10 +846,8 @@ Test unit for promote testing.
 
 promises:
   - id: test_unit.core
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Core contract.
-    contract: {text: core}
+    contract: {invariants: [core]}
 
 ## Acceptance Items
 

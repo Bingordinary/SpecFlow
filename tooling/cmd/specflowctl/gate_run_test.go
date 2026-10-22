@@ -46,7 +46,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
 	var b strings.Builder
-	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}", name)
+	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    summary: Core contract.\n    contract: {invariants: [core]}", name)
 	if providerUnits != "" && !strings.EqualFold(providerUnits, "none") {
 		var ids []string
 		for _, unit := range strings.Split(providerUnits, ",") {
@@ -76,7 +76,7 @@ func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) str
 	t.Helper()
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
@@ -3481,7 +3481,7 @@ func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	specPath := "docs/specs/units/candidate/unit_auth.md"
 	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
 	grWriteFile(t, repoRoot, specPath, spec)

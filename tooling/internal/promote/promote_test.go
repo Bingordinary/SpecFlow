@@ -66,7 +66,7 @@ func minimalUnitSpec(unit string, ruleRefs []string) string {
 	}
 	return "---\nid: " + unit + "\nrule_refs: " + refs + "\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + unit + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: passes.\n    runnable: yes\n"
 }
 
@@ -79,7 +79,7 @@ func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	}
 	spec := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + unit + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_"+unit+".md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestPromoteUnitBodyAbsoluteLayerPathWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nSee docs/specs/units/candidate/unit_auth.md.\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nSee docs/specs/units/candidate/unit_auth.md.\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestPromoteUnitBodyCodePathNoWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nThe handler lives at src/candidate/handler.go.\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nThe handler lives at src/candidate/handler.go.\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestPromoteUnitDroppedRuleRefIsRetained(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -430,7 +430,7 @@ func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -470,7 +470,7 @@ func TestPromoteUnitDroppedRuleRefWithRetentionReasonIsRetained(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -510,7 +510,7 @@ func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
 	other := minimalUnitSpec("other", []string{"b_rule_shared"})
 	os.WriteFile(filepath.Join(otherUnitDir, "unit_other.md"), []byte(other), 0644)
 
-	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(otherUnitDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -546,7 +546,7 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	candidate := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
@@ -1014,7 +1014,7 @@ func writePromiseSpecFile(t *testing.T, repoRoot, layer, unit, promiseID, contra
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n" +
 		"## Design Narrative\n\nNarrative.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Contract.\n    contract: {text: " + contractText + "}\n" + depends + "\n" +
+		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

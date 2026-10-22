@@ -22,18 +22,18 @@ Login uses token-based authentication.
 
 promises:
   - id: auth.login_api
-    kind: request_response
     summary: Login returns a token on success and 401 on invalid credentials.
     contract:
-      request:
-        username: {type: string, required: true}
-        password: {type: string, required: true}
-      response:
-        token: {type: string, required: true}
-      errors:
-        401: INVALID_CREDENTIALS
-      timing:
-        mode: sync
+      operations:
+        login:
+          inputs:
+            username: {type: string, required: true}
+            password: {type: string, required: true}
+          outputs:
+            token: {type: string, required: true}
+          errors:
+            401: INVALID_CREDENTIALS
+          timing: sync
 
 ## Acceptance Items
 
@@ -172,18 +172,26 @@ func TestPromiseSchemaRejectsCodeAndVerificationFields(t *testing.T) {
 }
 
 func TestPromiseSchemaRejectsUnknownTopLevelField(t *testing.T) {
-	content := strings.Replace(validPromiseSpec, "    contract:\n", "    contract_v2: {response: {token: {type: int}}}\n    contract:\n", 1)
+	content := strings.Replace(validPromiseSpec, "    contract:\n", "    contract_v2: {operations: {login: {signature: login()}}}\n    contract:\n", 1)
 	result := CheckPromiseSchema(content, "auth")
 	if result.Status != Fail || !strings.Contains(result.Details, "unknown top-level field") {
 		t.Fatalf("expected an unknown-top-level-field failure, got %s — %s", result.Status, result.Details)
 	}
 }
 
-func TestPromiseSchemaRejectsUnknownContractField(t *testing.T) {
-	content := strings.Replace(validPromiseSpec, "    contract:\n      request:", "    contract:\n      implementation_surface: auth/login.go\n      request:", 1)
+func TestPromiseSchemaRejectsRemovedKindField(t *testing.T) {
+	content := strings.Replace(validPromiseSpec, "    summary:", "    kind: request_response\n    summary:", 1)
 	result := CheckPromiseSchema(content, "auth")
-	if result.Status != Fail || !strings.Contains(result.Details, "unknown request_response contract field") {
-		t.Fatalf("expected an unknown-contract-field failure, got %s — %s", result.Status, result.Details)
+	if result.Status != Fail || !strings.Contains(result.Details, "unknown top-level field") {
+		t.Fatalf("expected the removed kind field to fail, got %s — %s", result.Status, result.Details)
+	}
+}
+
+func TestPromiseSchemaRejectsUnknownContractBlock(t *testing.T) {
+	content := strings.Replace(validPromiseSpec, "    contract:\n      operations:", "    contract:\n      implementation_surface: auth/login.go\n      operations:", 1)
+	result := CheckPromiseSchema(content, "auth")
+	if result.Status != Fail || !strings.Contains(result.Details, "unknown contract block") {
+		t.Fatalf("expected an unknown-contract-block failure, got %s — %s", result.Status, result.Details)
 	}
 }
 
@@ -194,7 +202,7 @@ func TestPromiseSchemaRejectsForeignOrDuplicateIDs(t *testing.T) {
 		t.Fatalf("expected foreign-id failure, got %s — %s", result.Status, result.Details)
 	}
 
-	duplicate := strings.Replace(validPromiseSpec, "promises:\n", "promises:\n  - id: auth.login_api\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: duplicate\n    contract: {text: duplicate}\n", 1)
+	duplicate := strings.Replace(validPromiseSpec, "promises:\n", "promises:\n  - id: auth.login_api\n    summary: duplicate\n    contract: {invariants: [duplicate]}\n", 1)
 	result = CheckPromiseSchema(duplicate, "auth")
 	if result.Status != Fail || !strings.Contains(result.Details, "duplicate") {
 		t.Fatalf("expected duplicate-id failure, got %s — %s", result.Status, result.Details)
@@ -206,15 +214,11 @@ func TestPromiseSchemaRejectsSameUnitDependency(t *testing.T) {
 
 promises:
   - id: solo.base
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Base contract.
-    contract: {text: base}
+    contract: {invariants: [base]}
   - id: solo.derived
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Derived contract.
-    contract: {text: derived}
+    contract: {invariants: [derived]}
     depends_on: [solo.base]
 `
 	result := CheckPromiseSchema(content, "solo")
@@ -301,16 +305,12 @@ Sessions and billing.
 
 promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: request_response was closest; no status codes are established.
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]
   - id: web.billing_api
-    kind: opaque
-    opaque_reason: request_response was closest; no status codes are established.
     summary: Billing.
-    contract: {text: billing}
+    contract: {invariants: [billing]}
     depends_on: [billing.charge_api]
 
 ## Acceptance Items
@@ -412,84 +412,248 @@ func TestPromiseFingerprintChangesWithContract(t *testing.T) {
 	}
 }
 
-func TestValidatePromiseContractKinds(t *testing.T) {
+const callableSurfaceSpec = `---
+id: logger
+rule_refs: none
+---
+
+# Logger
+
+## Design Narrative
+
+Logger is the logging seam every unit writes through.
+
+## Promises
+
+promises:
+  - id: logger.interface
+    summary: Logger is the logging seam.
+    contract:
+      operations:
+        Logger.Debug: {signature: "Debug(msg string, args ...any)"}
+        Logger.Info: {signature: "Info(msg string, args ...any)"}
+      invariants:
+        - safe for concurrent use
+
+## Acceptance Items
+
+acceptance_item_set:
+  - id: logger.debug
+    promise: logger.interface
+    description: Given a logger, when Debug is called, then the record is written.
+    verification_type: testable
+    verification_surface: api
+    implementation_surface: logger/logger.go
+    verification_method: Go unit test for Debug.
+    pass_condition: The record is written.
+    runnable: yes
+`
+
+func TestCallableSurfaceFingerprint(t *testing.T) {
+	for _, check := range CheckPromiseSpec(callableSurfaceSpec, "logger") {
+		if check.Status != Pass {
+			t.Fatalf("%s: %s — %s", check.Name, check.Status, check.Details)
+		}
+	}
+	fingerprint := func(spec string) string {
+		t.Helper()
+		promises, issues := ParsePromises(spec)
+		if len(issues) > 0 {
+			t.Fatal(strings.Join(issues, "; "))
+		}
+		value, err := PromiseFingerprint(promises[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+
+	base := fingerprint(callableSurfaceSpec)
+	summaryChanged := fingerprint(strings.Replace(callableSurfaceSpec, "summary: Logger is the logging seam.", "summary: Reworded summary.", 1))
+	if base != summaryChanged {
+		t.Fatal("a summary edit must not change a callable-surface fingerprint")
+	}
+	signatureChanged := fingerprint(strings.Replace(callableSurfaceSpec, `signature: "Debug(msg string, args ...any)"`, `signature: "Debug(msg string)"`, 1))
+	if base == signatureChanged {
+		t.Fatal("a signature change must change a callable-surface fingerprint")
+	}
+	invariantChanged := fingerprint(strings.Replace(callableSurfaceSpec, "safe for concurrent use", "safe for concurrent use and safe to copy", 1))
+	if base == invariantChanged {
+		t.Fatal("an invariant change must change a callable-surface fingerprint")
+	}
+}
+
+func TestValidateContractBlocks(t *testing.T) {
 	field := map[string]any{"type": "string", "required": true}
 	tests := []struct {
 		name     string
-		kind     string
 		contract map[string]any
 		want     string
 	}{
 		{
-			name: "request response valid",
-			kind: "request_response",
+			name: "operations valid",
 			contract: map[string]any{
-				"request":  map[string]any{"username": field},
-				"response": map[string]any{"token": field},
-				"errors":   map[string]any{"401": "INVALID_CREDENTIALS"},
-				"timing":   map[string]any{"mode": "sync"},
-			},
-		},
-		{
-			name:     "request response empty response",
-			kind:     "request_response",
-			contract: map[string]any{"response": map[string]any{}},
-			want:     "response must be a non-empty field map",
-		},
-		{
-			name: "event valid",
-			kind: "event",
-			contract: map[string]any{
-				"name":    "order.created",
-				"payload": map[string]any{"id": field},
-			},
-		},
-		{
-			name:     "event missing name",
-			kind:     "event",
-			contract: map[string]any{"payload": map[string]any{"id": field}},
-			want:     "event requires contract.name",
-		},
-		{
-			name: "data schema valid",
-			kind: "data_schema",
-			contract: map[string]any{
-				"fields": map[string]any{"id": field},
-			},
-		},
-		{
-			name:     "data schema empty fields",
-			kind:     "data_schema",
-			contract: map[string]any{"fields": map[string]any{}},
-			want:     "data_schema requires a non-empty contract.fields map",
-		},
-		{
-			name: "state machine valid",
-			kind: "state_machine",
-			contract: map[string]any{
-				"states":  []any{"pending", "paid"},
-				"initial": "pending",
-				"transitions": []any{
-					map[string]any{"from": "pending", "event": "pay", "to": "paid"},
+				"operations": map[string]any{
+					"login": map[string]any{
+						"inputs":  map[string]any{"username": field},
+						"outputs": map[string]any{"token": field},
+						"errors":  map[string]any{"401": "INVALID_CREDENTIALS"},
+						"timing":  "sync",
+					},
 				},
 			},
 		},
 		{
-			name: "state machine initial not in states",
-			kind: "state_machine",
+			name:     "operations empty",
+			contract: map[string]any{"operations": map[string]any{}},
+			want:     "operations must be a non-empty map",
+		},
+		{
+			name:     "operation not a map",
+			contract: map[string]any{"operations": map[string]any{"login": "login()"}},
+			want:     `operation "login" must be a map`,
+		},
+		{
+			name: "operation missing shape",
 			contract: map[string]any{
-				"states":  []any{"pending", "paid"},
-				"initial": "missing",
-				"transitions": []any{
-					map[string]any{"from": "pending", "event": "pay", "to": "paid"},
+				"operations": map[string]any{"login": map[string]any{"errors": map[string]any{"401": "INVALID_CREDENTIALS"}}},
+			},
+			want: `operation "login" requires at least one of signature, inputs, or outputs`,
+		},
+		{
+			name: "operation unknown field",
+			contract: map[string]any{
+				"operations": map[string]any{"login": map[string]any{"signature": "login()", "returns": "error"}},
+			},
+			want: `operation "login" has unknown field "returns"`,
+		},
+		{
+			name: "operation inputs not a map",
+			contract: map[string]any{
+				"operations": map[string]any{"login": map[string]any{"signature": "login()", "inputs": "username"}},
+			},
+			want: `operation "login" inputs must be a field map`,
+		},
+		{
+			name: "data valid",
+			contract: map[string]any{
+				"data": map[string]any{"LoginRequest": map[string]any{"fields": map[string]any{"username": field}}},
+			},
+		},
+		{
+			name:     "data empty",
+			contract: map[string]any{"data": map[string]any{}},
+			want:     "data must be a non-empty map",
+		},
+		{
+			name:     "data missing fields",
+			contract: map[string]any{"data": map[string]any{"LoginRequest": map[string]any{}}},
+			want:     `data "LoginRequest" requires a non-empty fields map`,
+		},
+		{
+			name: "data unknown field",
+			contract: map[string]any{
+				"data": map[string]any{"LoginRequest": map[string]any{"fields": map[string]any{"id": field}, "encoding": "json"}},
+			},
+			want: `data "LoginRequest" has unknown field "encoding"`,
+		},
+		{
+			name: "occurrences valid",
+			contract: map[string]any{
+				"occurrences": map[string]any{
+					"order.created": map[string]any{
+						"payload":  map[string]any{"id": field},
+						"delivery": "at_least_once",
+						"ordering": "per_key",
+					},
+				},
+			},
+		},
+		{
+			name: "occurrence missing payload",
+			contract: map[string]any{
+				"occurrences": map[string]any{"order.created": map[string]any{"delivery": "at_least_once"}},
+			},
+			want: `occurrence "order.created" requires a payload field map`,
+		},
+		{
+			name: "occurrence unknown field",
+			contract: map[string]any{
+				"occurrences": map[string]any{"order.created": map[string]any{"payload": map[string]any{}, "retries": 3}},
+			},
+			want: `occurrence "order.created" has unknown field "retries"`,
+		},
+		{
+			name: "state machine valid",
+			contract: map[string]any{
+				"state_machine": map[string]any{
+					"states":  []any{"pending", "paid"},
+					"initial": "pending",
+					"transitions": []any{
+						map[string]any{"from": "pending", "event": "pay", "to": "paid"},
+					},
+				},
+			},
+		},
+		{
+			name: "state machine unknown field",
+			contract: map[string]any{
+				"state_machine": map[string]any{
+					"states":  []any{"pending", "paid"},
+					"initial": "pending",
+					"transitions": []any{
+						map[string]any{"from": "pending", "event": "pay", "to": "paid"},
+					},
+					"timeout": "30s",
+				},
+			},
+			want: `state_machine has unknown field "timeout"`,
+		},
+		{
+			name: "state machine initial not in states",
+			contract: map[string]any{
+				"state_machine": map[string]any{
+					"states":  []any{"pending", "paid"},
+					"initial": "missing",
+					"transitions": []any{
+						map[string]any{"from": "pending", "event": "pay", "to": "paid"},
+					},
 				},
 			},
 			want: "initial state is not in states",
 		},
+		{
+			name:     "invariants valid",
+			contract: map[string]any{"invariants": []any{"safe for concurrent use"}},
+		},
+		{
+			name:     "invariants not strings",
+			contract: map[string]any{"invariants": []any{42}},
+			want:     "invariants must be a non-empty string list",
+		},
+		{
+			name:     "invariants empty",
+			contract: map[string]any{"invariants": []any{}},
+			want:     "invariants must be a non-empty string list",
+		},
+		{
+			name:     "unknown block",
+			contract: map[string]any{"request": map[string]any{"username": field}},
+			want:     `unknown contract block "request"`,
+		},
+		{
+			name: "combination of blocks",
+			contract: map[string]any{
+				"operations": map[string]any{
+					"login": map[string]any{"signature": "login(username, password) (Token, error)"},
+				},
+				"invariants": []any{"safe for concurrent use"},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			issues := validatePromiseContract("promise", tc.kind, tc.contract)
+			issues := validateContractBlocks("promise", tc.contract)
 			if tc.want == "" {
 				if len(issues) > 0 {
 					t.Fatalf("unexpected issues: %v", issues)
@@ -503,29 +667,14 @@ func TestValidatePromiseContractKinds(t *testing.T) {
 	}
 }
 
-func TestOpaquePromiseRequiresText(t *testing.T) {
-	content := strings.Replace(validPromiseSpec, `    kind: request_response
-    summary: Login returns a token on success and 401 on invalid credentials.
-    contract:
-      request:
-        username: {type: string, required: true}
-        password: {type: string, required: true}
-      response:
-        token: {type: string, required: true}
-      errors:
-        401: INVALID_CREDENTIALS
-      timing:
-        mode: sync`, `    kind: opaque
-    opaque_reason: no structured kind applies
-    summary: Passwords are never stored in plaintext.
-    contract: {}`, 1)
-	result := CheckPromiseSchema(content, "auth")
-	if result.Status != Fail || !strings.Contains(result.Details, "opaque promise requires contract.text") {
-		t.Fatalf("expected opaque text failure, got %s — %s", result.Status, result.Details)
+func TestInvariantOnlyContractIsValid(t *testing.T) {
+	result := CheckPromiseSchema(invariantSpec("hashed"), "auth")
+	if result.Status != Pass {
+		t.Fatalf("expected an invariant-only contract to pass, got %s — %s", result.Status, result.Details)
 	}
 }
 
-func opaqueSpec(reason, text string) string {
+func invariantSpec(text string) string {
 	return `---
 id: auth
 rule_refs: none
@@ -541,9 +690,10 @@ Passwords are hashed before storage.
 
 promises:
   - id: auth.secret_policy
-    kind: opaque
     summary: Passwords are never stored in plaintext.
-` + reason + `    contract: {text: ` + text + `}
+    contract:
+      invariants:
+        - ` + text + `
 
 ## Acceptance Items
 
@@ -560,47 +710,27 @@ acceptance_item_set:
 `
 }
 
-func TestOpaquePromiseRequiresReason(t *testing.T) {
-	result := CheckPromiseSchema(opaqueSpec("", "hashed"), "auth")
-	if result.Status != Fail || !strings.Contains(result.Details, "opaque_reason") {
-		t.Fatalf("expected a missing opaque_reason failure, got %s — %s", result.Status, result.Details)
-	}
-}
-
-func TestOpaqueReasonRejectedOnStructuredKind(t *testing.T) {
-	content := strings.Replace(validPromiseSpec,
-		"    kind: request_response\n",
-		"    kind: request_response\n    opaque_reason: misplaced\n", 1)
-	result := CheckPromiseSchema(content, "auth")
-	if result.Status != Fail || !strings.Contains(result.Details, "only allowed on kind: opaque") {
-		t.Fatalf("expected a misplaced opaque_reason failure, got %s — %s", result.Status, result.Details)
-	}
-}
-
-func TestOpaqueReasonIsNotFingerprinted(t *testing.T) {
-	first, issues := ParsePromises(opaqueSpec("    opaque_reason: first reason\n", "hashed"))
-	if len(issues) > 0 {
-		t.Fatal(strings.Join(issues, "; "))
-	}
-	second, issues := ParsePromises(opaqueSpec("    opaque_reason: rewritten reason\n", "hashed"))
-	if len(issues) > 0 {
-		t.Fatal(strings.Join(issues, "; "))
-	}
-	third, issues := ParsePromises(opaqueSpec("    opaque_reason: first reason\n", "hashed with salt"))
-	if len(issues) > 0 {
-		t.Fatal(strings.Join(issues, "; "))
-	}
-	fp := func(promises []Promise) string {
-		fingerprint, err := PromiseFingerprint(promises[0])
+func TestInvariantChangeIsFingerprinted(t *testing.T) {
+	fingerprint := func(spec string) string {
+		t.Helper()
+		promises, issues := ParsePromises(spec)
+		if len(issues) > 0 {
+			t.Fatal(strings.Join(issues, "; "))
+		}
+		value, err := PromiseFingerprint(promises[0])
 		if err != nil {
 			t.Fatal(err)
 		}
-		return fingerprint
+		return value
 	}
-	if fp(first) != fp(second) {
-		t.Fatal("changing opaque_reason must not change the fingerprint")
+
+	base := fingerprint(invariantSpec("hashed"))
+	summaryChanged := fingerprint(strings.Replace(invariantSpec("hashed"), "summary: Passwords are never stored in plaintext.", "summary: Reworded summary.", 1))
+	if base != summaryChanged {
+		t.Fatal("a summary edit must not change an invariant-only fingerprint")
 	}
-	if fp(first) == fp(third) {
-		t.Fatal("changing opaque contract text must change the fingerprint")
+	invariantChanged := fingerprint(invariantSpec("hashed with salt"))
+	if base == invariantChanged {
+		t.Fatal("an invariant change must change the fingerprint")
 	}
 }

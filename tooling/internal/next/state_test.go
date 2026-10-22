@@ -35,16 +35,15 @@ Narrative.
 
 promises:
   - id: auth.login_api
-    kind: request_response
     summary: Login.
     contract:
-      response:
-        token: {type: string}
+      operations:
+        login:
+          outputs:
+            token: {type: string}
   - id: auth.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [web.login_api]
 
 ## Acceptance Items
@@ -72,7 +71,7 @@ acceptance_item_set:
 		t.Fatalf("unexpected promise info: %+v", info.Promises)
 	}
 	out := FormatInfo(info)
-	if !strings.Contains(out, "Promise model: 2 promise(s)") || !strings.Contains(out, "auth.session_api (opaque) depends_on: web.login_api") {
+	if !strings.Contains(out, "Promise model: 2 promise(s)") || !strings.Contains(out, "auth.session_api (invariants) depends_on: web.login_api") {
 		t.Fatalf("unexpected output:\n%s", out)
 	}
 }
@@ -80,7 +79,7 @@ acceptance_item_set:
 func writeNextProvider(t *testing.T, root, unit, promiseID string) {
 	t.Helper()
 	dir := filepath.Join(root, "docs/specs/units/candidate")
-	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Provider.\n    contract: {text: provider}\n"
+	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Provider.\n    contract: {invariants: [provider]}\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +102,9 @@ func TestDiscoverUnitWithoutPromisesReportsInvalid(t *testing.T) {
 
 func TestDiscoverUnitSchemaInvalidPromiseReportsInvalid(t *testing.T) {
 	root := t.TempDir()
-	// The section parses but one promise lacks the required kind, so the
-	// mechanical promise schema — not just the YAML parse — decides validity.
+	// The section parses but one promise declares a contract block outside the
+	// allowed vocabulary (`response`), so the mechanical promise schema — not
+	// just the YAML parse — decides validity.
 	writeNextUnit(t, root, `---
 id: auth
 rule_refs: none
@@ -143,7 +143,7 @@ acceptance_item_set:
 	if info.PromiseModel || info.PromiseModelError == "" {
 		t.Fatalf("expected an invalid promise model, got %+v", info)
 	}
-	if out := FormatInfo(info); !strings.Contains(out, "Promise model: INVALID") || !strings.Contains(out, "invalid kind") {
+	if out := FormatInfo(info); !strings.Contains(out, "Promise model: INVALID") || !strings.Contains(out, "unknown contract block") {
 		t.Fatalf("unexpected output:\n%s", out)
 	}
 }

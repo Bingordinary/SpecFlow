@@ -28,17 +28,13 @@ func TestDeriveUnitInputsAddsPromiseProviders(t *testing.T) {
 	root := newRepo(t)
 	writePromiseDerivationUnit(t, root, "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login}
+    contract: {invariants: [login]}
 `, "")
 	writePromiseDerivationUnit(t, root, "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]
 `, "  - id: web.core\n    promise: web.session_api\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n")
 	code := filepath.Join(root, "src/web.go")
@@ -74,17 +70,13 @@ func TestVerifyAlignmentReadRefsPinProviderContracts(t *testing.T) {
 	root := newRepo(t)
 	writePromiseDerivationUnit(t, root, "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login}
+    contract: {invariants: [login]}
 `, "")
 	writePromiseDerivationUnit(t, root, "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]
 `, "  - id: web.core\n    promise: web.session_api\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n")
 	code := filepath.Join(root, "src/web.go")
@@ -114,17 +106,13 @@ func TestVerifyJudgmentPinsProviderContract(t *testing.T) {
 	root := newRepo(t)
 	writePromiseDerivationUnit(t, root, "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login}
+    contract: {invariants: [login]}
 `, "")
 	writePromiseDerivationUnit(t, root, "web", `promises:
   - id: web.session_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Session.
-    contract: {text: session}
+    contract: {invariants: [session]}
     depends_on: [auth.login_api]
 `, "  - id: web.core\n    promise: web.session_api\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n")
 	code := filepath.Join(root, "src/web.go")
@@ -164,10 +152,8 @@ func TestVerifyJudgmentPinsProviderContract(t *testing.T) {
 
 	writePromiseDerivationUnit(t, root, "auth", `promises:
   - id: auth.login_api
-    kind: opaque
-    opaque_reason: no structured kind applies
     summary: Login.
-    contract: {text: login changed}
+    contract: {invariants: [login changed]}
 `, "")
 	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err == nil || !strings.Contains(err.Error(), "auth.login_api contract changed") {
 		t.Fatalf("provider contract change must stale the consumer judgment, got %v", err)
