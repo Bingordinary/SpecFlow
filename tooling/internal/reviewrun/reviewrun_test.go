@@ -509,6 +509,33 @@ func TestTouchAcceptsClosedRunStateShape(t *testing.T) {
 	}
 }
 
+// TestTouchAndRefreshPreserveNotes pins the run-state contract for a demoted
+// finding: notes is a review judgment field the executor writes, and the
+// tooling's whole-file rewrite must carry it forward instead of dropping it.
+func TestTouchAndRefreshPreserveNotes(t *testing.T) {
+	repoRoot, file, now := createInitializedRun(t)
+	const note = "Trace F-001 - slice scope_inventory; reason: dissolved under cross-file verification; artifact_type: note"
+	content := mustRead(t, file)
+	content = strings.Replace(content, "| resume_next_step |", "| notes | "+note+" |\n| resume_next_step |", 1)
+	mustWrite(t, file, content)
+
+	if _, err := Touch(repoRoot, FlowSpecFlowReview, file, now.Add(time.Minute)); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+	state := mustParse(t, file)
+	if state.Fields["notes"] != note {
+		t.Fatalf("touch dropped notes: %q", state.Fields["notes"])
+	}
+
+	if _, err := Refresh(repoRoot, FlowSpecFlowReview, file, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	state = mustParse(t, file)
+	if state.Fields["notes"] != note {
+		t.Fatalf("refresh dropped notes: %q", state.Fields["notes"])
+	}
+}
+
 func TestValidateRejectsInvalidSliceStatus(t *testing.T) {
 	repoRoot, file, now := createInitializedRun(t)
 	state := mustParse(t, file)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -45,6 +46,10 @@ type promiseStateReport struct {
 // in the published stable layer. A unit without a `## Promises` section is an
 // error: the deployed unit shape always carries the promise layer.
 func computePromiseState(absRoot, unitName, layer string) (*promiseStateReport, error) {
+	derivation, err := gaterun.NewDerivation(absRoot)
+	if err != nil {
+		return nil, err
+	}
 	graph, err := specvalidation.LoadPromiseGraphScope(absRoot, specvalidation.PromiseScopeForLayer(layer))
 	if err != nil {
 		return nil, err
@@ -56,10 +61,10 @@ func computePromiseState(absRoot, unitName, layer string) (*promiseStateReport, 
 			return nil, err
 		}
 	}
-	return computePromiseStateWithGraph(absRoot, unitName, layer, graph, stableGraph)
+	return computePromiseStateWithGraph(absRoot, unitName, layer, graph, stableGraph, derivation)
 }
 
-func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stableGraph *specvalidation.PromiseGraph) (*promiseStateReport, error) {
+func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stableGraph *specvalidation.PromiseGraph, derivation *gaterun.Derivation) (*promiseStateReport, error) {
 	report := &promiseStateReport{Unit: unitName, Layer: layer, Own: map[string]string{}}
 	relPath := specpaths.CandidateUnitSpecFileRef(unitName)
 	if layer == "stable" {
@@ -113,7 +118,7 @@ func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stable
 	}
 	report.Closure, report.ClosureReasons = promiseClosure(report.State, report.StateRecorded, report.Unit, report.Layer, report.Promises, report.Own, report.Current, report.Coverage, report.Graph)
 
-	report.ValidateCheck, report.VerifyCheck, err = evidenceChecks(absRoot, unitName, layer)
+	report.ValidateCheck, report.VerifyCheck, err = evidenceChecks(absRoot, unitName, layer, derivation)
 	if err != nil {
 		return nil, err
 	}

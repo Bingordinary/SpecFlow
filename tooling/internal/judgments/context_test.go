@@ -39,8 +39,8 @@ func TestSpecContextUsesActiveContentAcrossLayers(t *testing.T) {
 		t.Fatal("an appendix-only candidate change shared the stable context")
 	}
 	write("candidate", "appendix/unit_auth_protocol.md", "---\nunit: auth\n---\npublished protocol\n")
-	write("candidate", "appendix/unit_auth_notes.md", "---\nunit: auth\nstatus: exempt\n---\nLocal notes.\n")
-	if context("candidate") != stable {
-		t.Fatal("inactive appendices changed the context used after promote")
+	write("candidate", "appendix/unit_auth_notes.md", "---\nunit: auth\n---\nLocal notes.\n")
+	if context("candidate") == stable {
+		t.Fatal("a candidate-only appendix must change the candidate context")
 	}
 }

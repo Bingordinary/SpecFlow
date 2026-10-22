@@ -78,7 +78,7 @@ func writeCacheBaseline(t *testing.T, root string, refs ...judgments.Reference) 
 
 func TestCollectJudgmentsRemovesExactlyUnreachableStaleProtocolRecords(t *testing.T) {
 	root := t.TempDir()
-	current := judgments.MustProtocol(root, "verify", "unit")
+	current := testProtocolFor(t, root, "verify", "unit")
 	stale := "stale-protocol-fingerprint"
 
 	live := gcRecord(t, root, "live.js", current, nil)
@@ -142,7 +142,7 @@ func TestCollectJudgmentsRemovesExactlyUnreachableStaleProtocolRecords(t *testin
 
 func TestCollectJudgmentsRemovesInvalidationMarkerOfCollectedRecord(t *testing.T) {
 	root := t.TempDir()
-	live := gcRecord(t, root, "live.js", judgments.MustProtocol(root, "verify", "unit"), nil)
+	live := gcRecord(t, root, "live.js", testProtocolFor(t, root, "verify", "unit"), nil)
 	orphan := gcRecord(t, root, "orphan.js", "stale-protocol-fingerprint", nil)
 	writeCacheBaseline(t, root, live)
 	if err := judgments.Invalidate(root, orphan.ID, "contradicted by newer evidence"); err != nil {

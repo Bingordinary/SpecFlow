@@ -20,9 +20,57 @@ import (
 // fixtureStandard is the judging standard a fixture validate cache records: the
 // value gate-finalize writes for the same repository. A fixture repo that
 // deploys no framework layout falls back to the version digest.
+func fixtureVerifyProtocol(t *testing.T, repoRoot string) string {
+	t.Helper()
+	deployFixtureStandard(t, repoRoot, "unit")
+	return judgments.MustProtocol(repoRoot, "verify", "unit")
+}
+
 func fixtureStandard(t *testing.T, repoRoot, targetKind string) string {
 	t.Helper()
+	deployFixtureStandard(t, repoRoot, targetKind)
 	return judgments.MustProtocol(repoRoot, "validate", targetKind)
+}
+
+// deployFixtureStandard gives a bare fixture repository the judging documents
+// the validate standard names, so Protocol can fingerprint them instead of
+// failing closed on a missing install.
+func deployFixtureStandard(t *testing.T, repoRoot, targetKind string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(repoRoot, "tooling", "manifest.tsv")); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Join(repoRoot, "tooling"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repoRoot, "tooling", "manifest.tsv"), []byte("fixture"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	documents := map[string]bool{}
+	for _, gate := range []string{"validate", "verify"} {
+		for _, kind := range []string{"unit", "rule"} {
+			for _, name := range judgments.ProtocolDocuments(gate, kind) {
+				documents[name] = true
+			}
+		}
+	}
+	_ = targetKind
+	for name := range documents {
+		path := filepath.Join(repoRoot, "framework", filepath.FromSlash(name))
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		var b strings.Builder
+		b.WriteString("# Fixture " + name + "\n\n## Judging text\n\nFixture.\n\n")
+		for _, section := range judgments.MechanismSectionNames(name) {
+			b.WriteString("## " + section + "\n\nFixture.\n\n")
+		}
+		if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // freshDerivation builds a derivation for single-target gate checks in tests.
@@ -1131,11 +1179,10 @@ func TestFreshCandidateDetailAdvice(t *testing.T) {
 	}
 }
 
-// TestFreshAppendixAdviceRequiresFreshValidate verifies the appendix advice
-// renders only when the validate cache is FRESH: a delta re-run then stops
-// early and cannot pick up a newly added appendix, so the full validate run
-// is the only recovery.
-func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
+// TestFreshNewAppendixStalesValidate verifies a newly added appendix is a
+// current required input: an old validate cache that never recorded it is
+// STALE, not FRESH, and the appendix gate is STALE too.
+func TestFreshNewAppendixStalesValidate(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
@@ -1143,13 +1190,11 @@ func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
 	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
 		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
 
-	// A new non-exempt appendix appears after the validation run: the validate
-	// cache is still fresh, but the appendix gate goes STALE.
 	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
 	if err := os.MkdirAll(appendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nid: iter_b\nstatus: active\n---\n## Extra\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nunit: iter\n---\n## Extra\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1157,14 +1202,17 @@ func TestFreshAppendixAdviceRequiresFreshValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh --unit iter: %v", err)
 	}
-	if !strings.Contains(out, "validate  FRESH") {
-		t.Fatalf("expected validate FRESH, got:\n%s", out)
+	if !strings.Contains(out, "validate  STALE") || !strings.Contains(out, "current required input") {
+		t.Fatalf("expected validate STALE for the new appendix, got:\n%s", out)
 	}
 	if !strings.Contains(out, "appendix  STALE") {
 		t.Fatalf("expected appendix STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "-> required: validate@iter (full run - appendix coverage)") {
-		t.Fatalf("expected full-run appendix advice, got:\n%s", out)
+	if !strings.Contains(out, "CHANGE REPORT (validate):") || !strings.Contains(out, "unit_iter_b.md: added") {
+		t.Fatalf("expected the new appendix in the change report, got:\n%s", out)
+	}
+	if strings.Contains(out, "no changes detected in the recorded input surface") {
+		t.Fatalf("fresh must not report no changes for a required input it calls stale:\n%s", out)
 	}
 }
 
@@ -1184,7 +1232,7 @@ func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
 	if err := os.MkdirAll(appendixDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nid: iter_b\nstatus: active\n---\n## Extra\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nunit: iter\n---\n## Extra\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

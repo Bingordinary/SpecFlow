@@ -219,11 +219,11 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	inline := mission.Sessions[0].ProtocolInline
-	if len(inline) != 5 {
-		t.Fatalf("got %d inlined sections, want 5 (prerequisite, execution rules, checks 1/3/6): %+v", len(inline), inline)
+	if len(inline) != 7 {
+		t.Fatalf("got %d inlined sections, want 7 (prerequisite, execution rules, severity, section 15.2, checks 1/3/6): %+v", len(inline), inline)
 	}
 	for _, chunk := range inline {
-		if chunk.Source != "framework/unit_validate_checklist.md" || chunk.Content == "" {
+		if chunk.Content == "" {
 			t.Fatalf("bad inlined section: %+v", chunk)
 		}
 	}

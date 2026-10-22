@@ -85,6 +85,15 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if err != nil {
 		return err
 	}
+	if spec.Kind == gaterun.SessionKindCross {
+		_, uncovered, cerr := gaterun.CoverageProgress(run, states)
+		if cerr != nil {
+			return cerr
+		}
+		if len(uncovered) > 0 {
+			return fmt.Errorf("final synthesis is not ready — %d coverage key(s) are still uncovered; complete and accept the dependency sessions first", len(uncovered))
+		}
+	}
 	if spec.Kind != gaterun.SessionKindCross {
 		covered, _, cerr := gaterun.CoverageProgress(run, states)
 		if cerr != nil {

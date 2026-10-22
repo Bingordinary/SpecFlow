@@ -186,7 +186,7 @@ func contains(list []string, value string) bool {
 func TestOpenDerivesUnitScope(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "demo", "internal/demo", []string{"docs/design.md"})
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "---\nunit: demo\nstatus: active\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "---\nunit: demo\n---\n# Flows\n")
 	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md", "---\nunit: demo_extra\n---\n# Peer flows\n")
 	commitAll(t, repoRoot, "fixture")
 
@@ -250,7 +250,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingScope(t *testing.T) {
 func TestOpenStableOnlyTargetScopesCandidateForkPaths(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/stable/unit_demo.md", unitSpecContent("demo", "internal/demo", nil))
-	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nunit: demo\nstatus: active\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nunit: demo\n---\n# Flows\n")
 	commitAll(t, repoRoot, "fixture")
 
 	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})

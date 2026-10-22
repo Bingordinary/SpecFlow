@@ -14,6 +14,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/testsupport"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -282,6 +283,7 @@ func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 // deploy no framework layout, so the fallback digest is the standard.
 func fixtureStandard(t *testing.T, repoRoot string) string {
 	t.Helper()
+	testsupport.DeployStandard(t, repoRoot)
 	return judgments.MustProtocol(repoRoot, "validate", "rule")
 }
 

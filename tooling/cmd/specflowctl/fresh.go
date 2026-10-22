@@ -152,7 +152,7 @@ func writeCandidateFreshSection(stdout io.Writer, absRoot string) error {
 				return err
 			}
 			total++
-			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "candidate", promiseGraph, stablePromiseGraph)
+			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "candidate", promiseGraph, stablePromiseGraph, derivation)
 			promiseErrText := ""
 			if promiseErr != nil {
 				promiseErrText = promiseErr.Error()
@@ -234,7 +234,7 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 		}
 		fmt.Fprintf(stdout, "STABLE UNITS (%d):\n", len(unitNames))
 		for _, name := range unitNames {
-			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "stable", promiseGraph, promiseGraph)
+			promiseReport, promiseErr := computePromiseStateWithGraph(absRoot, name, "stable", promiseGraph, promiseGraph, derivation)
 			promiseErrText := ""
 			if promiseErr != nil {
 				promiseErrText = promiseErr.Error()
@@ -539,6 +539,8 @@ func writeChangeReportDetail(stdout io.Writer, report *validationcache.ChangeRep
 			}
 		case "removed":
 			fmt.Fprintf(stdout, "  %s: removed\n", entry.Path)
+		case "added":
+			fmt.Fprintf(stdout, "  %s: added\n", entry.Path)
 		case "promise":
 			fmt.Fprintf(stdout, "  promise %s: %s (%s)\n", entry.Promise, entry.Reason, entry.Path)
 		case "inconsistent":

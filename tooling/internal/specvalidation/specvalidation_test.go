@@ -114,7 +114,7 @@ func TestCheckUnitFrontmatterRequiredShape(t *testing.T) {
 		{"missing rule refs", strings.Replace(complete, "rule_refs: none\n", "", 1), "rule_refs"},
 		{"empty rule refs", strings.Replace(complete, "rule_refs: none", "rule_refs: \"\"", 1), "rule_refs"},
 		{"wrong id", strings.Replace(complete, "id: demo", "id: another", 1), "does not match"},
-		{"invalid status", strings.Replace(complete, "id: demo", "id: demo\nstatus: exempt", 1), "status"},
+		{"invalid status", strings.Replace(complete, "id: demo", "id: demo\nstatus: bogus", 1), "status"},
 		{"unclosed header", strings.TrimSuffix(complete, "---\n"), "required fields"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -564,25 +564,25 @@ func TestCheckAppendices_WrongUnitFail(t *testing.T) {
 	}
 }
 
-func TestCheckAppendices_ExemptAppendixSkip(t *testing.T) {
+func TestCheckAppendices_ReadsEveryAppendix(t *testing.T) {
 	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: test_unit\nstatus: exempt\n")
+		"unit: test_unit\n")
 	result := checkAppendices(repoRoot, "test_unit")
 	if result.Status != Pass {
-		t.Fatalf("expected PASS for exempt appendix (skipped), got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected PASS for a well-formed appendix, got %s: %s", result.Status, result.Details)
 	}
 }
 
-func TestCheckAppendices_ExemptAppendixWithBadFrontmatterSkip(t *testing.T) {
+func TestCheckAppendices_RejectsBadFrontmatter(t *testing.T) {
 	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
 	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: wrong_unit\nstatus: exempt\n")
+		"unit: wrong_unit\n")
 	result := checkAppendices(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for exempt appendix even with bad frontmatter (skip), got %s: %s", result.Status, result.Details)
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a wrong-unit appendix, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -688,7 +688,7 @@ func TestCheckLayerPaths_AppendixFail(t *testing.T) {
 	}
 }
 
-func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
+func TestCheckLayerPaths_ScansEveryAppendix(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nrule_refs: none\n---\n")
@@ -696,13 +696,13 @@ func TestCheckLayerPaths_ExemptAppendixSkip(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: test_unit\nstatus: exempt\n---\n\nReferences candidate/unit_auth.md.\n"
-	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_exempt.md"), []byte(appendix), 0644); err != nil {
+	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_notes.md"), []byte(appendix), 0644); err != nil {
 		t.Fatal(err)
 	}
 	result := checkLayerPaths(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for exempt appendix, got %s: %s", result.Status, result.Details)
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a candidate-layer path in an appendix, got %s: %s", result.Status, result.Details)
 	}
 }
 

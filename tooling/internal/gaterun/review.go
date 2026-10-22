@@ -471,6 +471,11 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	// plan is the full coverage set.
 	if reason, moved := validateStandardMoved(run, baseline); moved {
 		addRelationships(run, standing...)
+		// Nothing carries across a standard change, so this is a full run in
+		// substance. Recording it as such makes gate-finalize write
+		// `basis: full`; a delta basis would require a change-review record
+		// the full-scope plan never schedules.
+		run.Mode = ModeFull
 		return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
 	}
 	report, err := validationcache.DeriveChangeReport(d.root, run.TargetKind, run.TargetName, run.Gate)
@@ -479,24 +484,64 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	}
 	// New physical inputs the baseline never recorded are part of the change
 	// set: the reviewer sees them as added files
-	// (framework/verification_scope.md §Delta Runs → Change detection). Logical
-	// references resolve through the freshness chain and are not duplicated
-	// here.
+	// (framework/verification_scope.md §Delta Runs → Change detection). The
+	// cache's own required inputs — its appendices and the published stable
+	// global rules — are added by DeriveChangeReport; this block adds the
+	// plan's supplementary inputs and the logical refs the baseline never
+	// recorded, without duplicating an entry the report already carries.
+	changeKey := func(p string) string {
+		if isLogicalRef(p) {
+			return p
+		}
+		return filepath.ToSlash(filepath.Clean(p))
+	}
 	var newEvidence []string
 	recorded := map[string]bool{}
 	for _, entry := range baseline.Entries {
-		recorded[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+		recorded[changeKey(entry.Path)] = true
+	}
+	added := map[string]bool{}
+	for _, entry := range report.Entries {
+		if entry.Kind == "added" {
+			added[changeKey(entry.Path)] = true
+		}
+	}
+	addAdded := func(path string) bool {
+		k := changeKey(path)
+		if recorded[k] || added[k] {
+			return false
+		}
+		report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: path, Kind: "added"})
+		added[k] = true
+		return true
 	}
 	for _, p := range extraInputPaths(d.root, run) {
 		if isLogicalRef(p) {
 			continue
 		}
-		clean := filepath.ToSlash(filepath.Clean(p))
-		if recorded[clean] {
+		if addAdded(p) {
+			newEvidence = append(newEvidence, p)
+		}
+	}
+	// The target's own current files and the current logical read refs are
+	// required inputs even when the old cache never recorded them: a new
+	// appendix or a new stable global rule must reach the change review
+	// instead of being reported as "nothing changed".
+	for _, p := range run.OwnSpecFiles {
+		if recorded[changeKey(p)] {
 			continue
 		}
-		report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: p, Kind: "added"})
+		if ref := logicalAppendixRef(run, p); ref != "" && recorded[ref] {
+			continue
+		}
+		addAdded(p)
 		newEvidence = append(newEvidence, p)
+	}
+	for _, ref := range run.Refs {
+		if !isLogicalRef(ref.Ref) || recorded[changeKey(ref.Ref)] {
+			continue
+		}
+		addAdded(ref.Ref)
 	}
 	inconsistent := report.Inconsistent()
 	if len(inconsistent) > 0 {

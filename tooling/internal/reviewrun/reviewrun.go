@@ -1236,6 +1236,13 @@ func renderState(config flowConfig, state runState) string {
 	for _, field := range []string{"review_flow", "review_layout", "review_run_id", "scope_label", "status", "created_at", "last_updated_at", "active_slice", "baseline_slice_table", "dynamic_slice_table", "finding_refs", "blocked_reason", "resume_next_step"} {
 		b.WriteString(fmt.Sprintf("| %s | %s |\n", field, cleanCell(state.Fields[field])))
 	}
+	// notes is an optional review judgment field (framework/spec_flow_review.md
+	// Section 8.1). The tool rewrites the file on refresh and touch, so it must
+	// carry the field forward instead of dropping it; the row is omitted when
+	// no note exists.
+	if notes := strings.TrimSpace(state.Fields["notes"]); notes != "" {
+		b.WriteString(fmt.Sprintf("| notes | %s |\n", cleanCell(notes)))
+	}
 	b.WriteString("\n## Baseline Slices\n\n")
 	renderSliceTable(&b, state.Baseline)
 	b.WriteString("\n## Dynamic Slices\n\n")

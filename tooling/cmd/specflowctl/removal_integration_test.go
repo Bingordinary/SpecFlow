@@ -108,7 +108,7 @@ func TestInstalledProjectAppendixReplacementAndReferenceRemoval(t *testing.T) {
 	grWriteSpecSurface(t, root, "auth", "contracts.js", "    affects:\n      appendices: [unit_auth_old.md]\n")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_old.md"
-	grWriteFile(t, root, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Old protocol\nThe previous response contract.\n")
+	grWriteFile(t, root, appendix, "---\nunit: auth\n---\n\n# Old protocol\nThe previous response contract.\n")
 	removalPublishUnit(t, root, "auth")
 	if result := fork.Fork(root, "auth"); !result.Passed {
 		t.Fatal(result.Issues)

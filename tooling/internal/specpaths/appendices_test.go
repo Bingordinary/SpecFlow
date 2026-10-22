@@ -17,7 +17,7 @@ func TestUnitAppendicesResolvesDeclaredOwnerAcrossSharedPrefixes(t *testing.T) {
 	for name, fields := range map[string]string{
 		"unit_auth_protocol.md":       "unit: auth",
 		"unit_auth_extra_protocol.md": "unit: auth_extra",
-		"unit_auth_notes.md":          "unit: auth\nstatus: exempt",
+		"unit_auth_notes.md":          "unit: auth",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("---\n"+fields+"\n---\nContent.\n"), 0644); err != nil {
 			t.Fatal(err)
@@ -43,7 +43,7 @@ func TestUnitAppendicesResolvesDeclaredOwnerAcrossSharedPrefixes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := UnitAppendices(root, "auth", "candidate"); err == nil {
-		t.Fatal("active appendix with inconsistent ownership was accepted")
+		t.Fatal("appendix with inconsistent ownership was accepted")
 	}
 }
 
@@ -53,8 +53,7 @@ func TestPlanUnitAppendixCopiesRejectsUnresolvedDestinationOwnership(t *testing.
 			name, content string
 			directory     bool
 		}{
-			{"missing_owner", "---\nstatus: active\n---\nUnknown owner.\n", false},
-			{"exempt_missing_owner", "---\nstatus: exempt\n---\nUnknown owner.\n", false},
+			{"missing_owner", "---\n---\nUnknown owner.\n", false},
 			{"inconsistent_owner", "---\nunit: other\n---\nWrong filename.\n", false},
 			{"malformed_frontmatter", "---\nunit: auth\nNo closing marker.\n", false},
 			{"unreadable_destination", "", true},
@@ -86,11 +85,11 @@ func TestPlanUnitAppendixCopiesRejectsUnresolvedDestinationOwnership(t *testing.
 				} else if err := os.WriteFile(path, []byte(tc.content), 0644); err != nil {
 					t.Fatal(err)
 				}
-				copies, skipped, err := PlanUnitAppendixCopies(root, "auth", sourceLayer)
+				copies, err := PlanUnitAppendixCopies(root, "auth", sourceLayer)
 				if err == nil || !strings.Contains(err.Error(), destination) {
 					t.Fatalf("must identify unresolved destination: %v", err)
 				}
-				if len(copies) != 0 || len(skipped) != 0 {
+				if len(copies) != 0 {
 					t.Fatal("failed plan returned a partial copy set")
 				}
 				if _, err := os.Stat(filepath.Join(filepath.Dir(path), "unit_auth_a_first.md")); !os.IsNotExist(err) {

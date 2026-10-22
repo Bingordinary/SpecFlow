@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,17 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
+
+// promiseStateRepo is a git worktree: the merged verify check derives the
+// expected coverage set, and directory code surfaces expand over Git content.
+func promiseStateRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return root
+}
 
 func writePromiseStateUnit(t *testing.T, repoRoot, unit, promiseID, dependsOn, contractText string) {
 	t.Helper()
@@ -88,7 +100,7 @@ func promiseStateText(t *testing.T, root, unit, layer string) string {
 // stable spec's own depends_on against published stable providers and must not
 // be affected by the candidate layer's declarations.
 func TestPromiseStateStableLayerUsesStableGraph(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writeLayerPromiseUnit(t, root, "stable", "auth", "auth.legacy_api", "", "legacy")
 	writeLayerPromiseUnit(t, root, "stable", "web", "web.session_api", "auth.legacy_api", "session")
 	writeLayerPromiseUnit(t, root, "candidate", "web", "web.session_api", "ghost.api", "session")
@@ -108,7 +120,7 @@ func TestPromiseStateStableLayerUsesStableGraph(t *testing.T) {
 }
 
 func TestPromiseStatePublicationRequiresStableProvider(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 	webFP := promiseFingerprint(t, root, "web", "web.session_api")
@@ -154,7 +166,7 @@ func TestPromiseStatePublicationRequiresStableProvider(t *testing.T) {
 }
 
 func TestPromiseStateCLOSED(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 
@@ -180,7 +192,7 @@ func TestPromiseStateCLOSED(t *testing.T) {
 }
 
 func TestPromiseStateREOPENED(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 
@@ -208,7 +220,7 @@ func TestPromiseStateREOPENED(t *testing.T) {
 }
 
 func TestPromiseStateUnrelatedCycleDoesNotFailGraph(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.a", "web.b", "a")
 	writePromiseStateUnit(t, root, "web", "web.b", "auth.a", "b")
 	writePromiseStateUnit(t, root, "other", "other.c", "", "c")
@@ -220,7 +232,7 @@ func TestPromiseStateUnrelatedCycleDoesNotFailGraph(t *testing.T) {
 }
 
 func TestPromiseStateOPENMissingDependencyPin(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 
@@ -244,7 +256,7 @@ func TestPromiseStateOPENMissingDependencyPin(t *testing.T) {
 }
 
 func TestPromiseStateOPENWithoutRecord(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
 
 	out := promiseStateText(t, root, "web", "candidate")
@@ -254,7 +266,7 @@ func TestPromiseStateOPENWithoutRecord(t *testing.T) {
 }
 
 func TestPromiseStateRejectsMislayeredRecord(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
 	webFP := promiseFingerprint(t, root, "web", "web.session_api")
 	statePath, err := validationcache.PromiseStatePath(root, "web", "candidate")
@@ -276,7 +288,7 @@ func TestPromiseStateRejectsMislayeredRecord(t *testing.T) {
 }
 
 func TestPromiseStateRejectsExtraDependencyPin(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "other", "other.api", "", "other")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
@@ -306,7 +318,7 @@ func TestPromiseStateRejectsExtraDependencyPin(t *testing.T) {
 }
 
 func TestPromiseStateRejectsDuplicateDependencyPin(t *testing.T) {
-	root := t.TempDir()
+	root := promiseStateRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 	webFP := promiseFingerprint(t, root, "web", "web.session_api")

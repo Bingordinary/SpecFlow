@@ -27,9 +27,7 @@ func SpecContext(root, unit, layer string) (string, error) {
 		return "", err
 	}
 	for _, appendix := range appendices {
-		if appendix.Status != "exempt" {
-			paths = append(paths, filepath.Join(root, filepath.FromSlash(appendix.Path)))
-		}
+		paths = append(paths, filepath.Join(root, filepath.FromSlash(appendix.Path)))
 	}
 	var entries []string
 	for _, path := range paths {

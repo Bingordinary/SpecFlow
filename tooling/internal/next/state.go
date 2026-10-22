@@ -78,9 +78,7 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 			return nil, err
 		}
 		for _, appendix := range appendices {
-			if appendix.Status != "exempt" {
-				info.Appendices = append(info.Appendices, appendix.Path)
-			}
+			info.Appendices = append(info.Appendices, appendix.Path)
 		}
 	}
 

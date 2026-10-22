@@ -136,6 +136,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 		{2, "Check 8 — Constraint alignment"},
 		{2, "Check 9 — File associations (mechanical)"},
 		{2, "Check 10 — Clarity"},
+		{3, "Severity handling"},
 	},
 	"rule_validate_checklist.md": {
 		{2, "Execution Rules"},
@@ -146,6 +147,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 		{3, "Check 4 — Rule documentation field"},
 		{3, "Check 5 — Prohibited Fields"},
 		{3, "Check 6 — Rule Body Quality"},
+		{3, "Severity handling"},
 	},
 	"unit_verify_checklist.md": {
 		{2, "Prerequisite — Read all unit files"},
@@ -162,7 +164,13 @@ var grFrameworkFixtureSections = map[string][]struct {
 	"verification_scope.md": {
 		{3, "The change review (validate)"},
 		{3, "Final synthesis"},
+		{3, "Relationship vocabulary"},
 	},
+	"spec_writing_guide.md": {
+		{3, "15.2 Externally observable only"},
+	},
+	"shared_judgments.md":   {},
+	"core/promise_model.md": {},
 	"severity_policy.md": {
 		{2, "4. Severity Levels"},
 		{2, "5. Blocking Relationship"},
@@ -828,7 +836,18 @@ func grSubmitValidateSessions(t *testing.T, repoRoot, runID, specPath string, ex
 		"8": {desc},
 	}))
 	grSubmitClarity(t, repoRoot, runID, specPath)
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(specPath, "Description"))
+	run := mustLoadRun(t, repoRoot, runID)
+	states, err := gaterun.LoadSessionStates(repoRoot, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, uncovered, err := gaterun.CoverageProgress(run, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gateNextAction(run, states, uncovered) == "synthesize" {
+		grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(specPath, "Description"))
+	}
 }
 
 // grSubmitPlannedValidateSessions submits exactly the coverage keys the run's
@@ -2262,7 +2281,7 @@ func TestGateRunAppendixCoverage(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Protocol\n\nPOST /login.\n")
+	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nPOST /login.\n")
 
 	// The structural session declares the protocol appendix as evidence, so
 	// the appendix reaches the validated surface.
@@ -2352,7 +2371,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Protocol\n")
+	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
 
@@ -2382,7 +2401,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 				grSubmitValidateSessions(t, repoRoot, runID, main, appendix+": all")
 			},
 			mutate: func() {
-				grWriteFile(t, repoRoot, appendix, "---\nunit: auth\nstatus: active\n---\n\n# Protocol\n\nPOST /login.\n")
+				grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nPOST /login.\n")
 			},
 			want: "modified: " + appendix,
 		},
@@ -2650,6 +2669,50 @@ func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	// Nothing in auth's own surface changed, so a delta plan is refused.
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
 		t.Fatalf("expected the freshness refusal after an unrelated peer edit, got %v", err)
+	}
+}
+
+// TestGateRunDeltaPlanAddsNewAppendixOnce pins that a new appendix that makes
+// the validate cache stale reaches the delta review exactly once: the change
+// report is produced from the same current-required-input discovery fresh uses,
+// and the plan does not add a duplicate entry.
+func TestGateRunDeltaPlanAddsNewAppendixOnce(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+
+	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, fullRun, main)
+	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
+
+	appendix := "docs/specs/units/candidate/appendix/unit_auth_notes.md"
+	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n## Extra\n\nMore.\n")
+
+	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, repoRoot, deltaRun)
+	added := 0
+	for _, entry := range run.ChangeReport.Entries {
+		if entry.Kind != "added" {
+			continue
+		}
+		added++
+		if entry.Path != appendix {
+			t.Fatalf("unexpected added entry %q", entry.Path)
+		}
+	}
+	if added != 1 {
+		t.Fatalf("the new appendix must appear once in the change set, got %d: %+v", added, run.ChangeReport.Entries)
+	}
+	mission := missionJSON(t, repoRoot, deltaRun, "review")
+	count := 0
+	for _, line := range mission.Sessions[0].ChangeSet {
+		if strings.Contains(line, appendix) {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("the review mission must carry the new appendix once, got %d: %v", count, mission.Sessions[0].ChangeSet)
 	}
 }
 
@@ -3084,8 +3147,20 @@ func grVerifyItemRegionReport(item, specPath, codeFile string) string {
 	return grVerifyItemBody(item, "ALIGNED", codeFile+":1") + fmt.Sprintf("%s: %s: acceptance_item:%s\n%s: %s: all\n", item, specPath, item, item, codeFile)
 }
 
+func TestGateSubmitRejectsFinalSynthesisBeforeCoverage(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main := grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	if err := sharedSubmit(t, root, id, "cross", "Cross-check: 1/1 PASS — consistent\n\ncross: "+main+": acceptance_items\n"); err == nil || !strings.Contains(err.Error(), "uncovered") {
+		t.Fatalf("early final synthesis must be rejected, got %v", err)
+	}
+}
+
 func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
 	specPath := grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.login", "auth.logout"})
 	main := "docs/specs/units/candidate/unit_auth.md"
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n\nfunc Login() {}\n")

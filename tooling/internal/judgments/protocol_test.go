@@ -102,6 +102,19 @@ func TestProtocolResolvesDeclaredMechanismSections(t *testing.T) {
 	}
 }
 
+func TestProtocolRejectsMissingJudgingDocument(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "tooling"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tooling", "manifest.tsv"), []byte("fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Protocol(root, "validate", "unit"); err == nil {
+		t.Fatal("a resolved layout with a missing judging document must fail closed")
+	}
+}
+
 func TestProtocolRejectsUnknownGateStandard(t *testing.T) {
 	if _, err := Protocol(sourceRepoRoot(t), "verify", "rule"); err == nil {
 		t.Fatal("a gate/target pair with no declared standard was accepted")

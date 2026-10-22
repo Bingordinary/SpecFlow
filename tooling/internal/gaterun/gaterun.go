@@ -1690,9 +1690,7 @@ func unitAppendices(repoRoot, unitName, layer string) ([]string, error) {
 	}
 	var out []string
 	for _, appendix := range appendices {
-		if appendix.Status != "exempt" {
-			out = append(out, appendix.Path)
-		}
+		out = append(out, appendix.Path)
 	}
 	return out, nil
 }
@@ -1764,7 +1762,18 @@ func physicalRef(repoRoot, rel, source string) Ref {
 	return ref
 }
 
-// logicalUnitRef builds a unit main spec logical ref (`unit:{name}`).
+// logicalAppendixRef maps an own appendix path to the logical reference form
+// the cache records for it. The main spec has no logical self-reference and
+// returns "".
+func logicalAppendixRef(run *Run, path string) string {
+	clean := filepath.ToSlash(path)
+	if !strings.Contains(clean, "/appendix/") {
+		return ""
+	}
+	base := strings.TrimSuffix(filepath.Base(clean), ".md")
+	return "unit:" + run.TargetName + ":appendix:" + base
+}
+
 func logicalUnitRef(repoRoot, unitName, source string) Ref {
 	return refreshRef(repoRoot, Ref{Ref: "unit:" + unitName, Source: source})
 }

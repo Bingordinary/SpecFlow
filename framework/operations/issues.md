@@ -51,13 +51,13 @@ For each issue, launch a read-only subagent that performs the analysis independe
 - **Protocol reference:** "framework/operations/issues.md Step 3 — the only protocol source; the prompt contains no restatement of protocol rules."
 - **Glossary:** one line per term used in the assembled prompt, sourced from this file's classification table and output contract: `classification`, `basis`, `REAL-bug`, `REAL-design`, `NOT-ISSUE`, `DUPLICATE`, `ENHANCEMENT`, `severity` — each with a one-sentence definition and its source reference in this file (the classification table below, and `framework/severity_policy.md` §4 for severity). A term with no definition or source is a prompt defect.
 
-**Input (mandatory, provided by the main agent):** the full issue content — title, body, all labels, and all comments — passed verbatim. Never pass only the title or a summary; the sub-agent must not infer issue content.
+**Input (mandatory, provided by the main agent):** the full issue content — title, body, all labels, and all comments — passed verbatim. Never pass only the title or a summary; the sub-agent must not infer issue content. For a possible DUPLICATE, the main agent also passes a duplicate index — the other issue numbers and titles in the current extraction set (open by default; `:all` adds closed), plus the body when the title is not decisive — because the sub-agent cannot see the GitHub issue list.
 
 **Permissions (verbatim):** "You may read files, search text by pattern, glob for files, and run read-only git queries. You must NOT modify any file, run any command that changes state, or launch further sub-agents."
 
 **Output (mandatory, per issue):**
 
-- One line: `#{issue number} | {classification} | {basis}` where `{basis}` cites the deterministic evidence — a documentation `file:line` or a code `file:line` reference. A classification without a cited basis is not a valid output.
+- One line: `#{issue number} | {classification} | {basis}` where `{basis}` cites the deterministic evidence — a documentation `file:line`, a code `file:line` reference, or, for DUPLICATE only, `issue #N`. A classification without a cited basis is not a valid output.
 - For REAL-bug and REAL-design: `Severity: {P0 | P1 | P2 | P3}` per `framework/severity_policy.md` §4, plus root cause (first-principles analysis, not symptom description), affected files with `file:line` references, fix plan, and verification method (see Step 4).
 - For NOT-ISSUE, DUPLICATE, and ENHANCEMENT: one or two sentences of reasoning.
 - If the triage could not complete: "Triage could not complete — {reason}"
@@ -77,7 +77,7 @@ The subagent must:
 | **REAL-bug** | Behavior contradicts the documented promise | Documentation says X, code does Y |
 | **REAL-design** | Documentation and behavior agree, but the mechanism itself is defective | e.g. the triage keyword mapping is too coarse and merges distinct defect classes into one, with the docs truthfully describing that mapping |
 | **NOT-ISSUE** | False report; behavior matches the design | User misread, environment issue, or a documented non-issue pattern |
-| **DUPLICATE** | Already covered by another issue or by existing documentation | — |
+| **DUPLICATE** | Already covered by another issue or by existing documentation | Issue `#N` from the supplied index, or a documentation `file:line` |
 | **ENHANCEMENT** | Not a defect; a new feature or improvement request | — |
 
 Severity follows the shared P0–P3 grading defined in `framework/severity_policy.md` (§4). This flow explicitly adopts that policy; the scale is not redefined here.

@@ -156,5 +156,28 @@ func DeriveChangeReport(repoRoot, targetKind, targetName, command string) (*Chan
 		}
 		report.Entries = append(report.Entries, ChangeReportEntry{Path: entry.Path, Kind: "changed", Changes: changes})
 	}
+	// A validate cache's current required inputs are discovered from current
+	// repository state, not from the old cache: a new own appendix or a newly
+	// published stable global rule is part of the change set as an added file,
+	// so a delta review sees it instead of "nothing changed" (the same
+	// discovery backs the cache's freshness check).
+	if command == "validate" && targetKind == "unit" && (cache.Target == "candidate" || cache.Target == "stable") {
+		recorded := map[string]bool{}
+		for _, entry := range cache.Files {
+			if resolved := resolveEntryPath(repoRoot, entry.Path); resolved != "" {
+				recorded[filepath.Clean(resolved)] = true
+			}
+		}
+		required, err := currentRequiredValidateInputs(repoRoot, cache, cache.Target)
+		if err != nil {
+			return nil, err
+		}
+		for _, input := range required {
+			if recorded[input.Abs] {
+				continue
+			}
+			report.Entries = append(report.Entries, ChangeReportEntry{Path: input.Entry, Kind: "added"})
+		}
+	}
 	return report, nil
 }

@@ -78,7 +78,7 @@ func TestCheckFrontmatterRegionPurity(t *testing.T) {
 func TestCheckContentScanCoversAppendices(t *testing.T) {
 	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "scan_unit")
-	// A non-exempt appendix with a narrative environment-specific path fails
+	// An appendix with a narrative environment-specific path fails
 	// the scan even when the main spec is clean.
 	appendix := "docs/specs/units/candidate/appendix/unit_scan_unit_proto.md"
 	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs/units/candidate/appendix"), 0755); err != nil {

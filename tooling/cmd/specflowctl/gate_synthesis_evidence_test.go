@@ -218,7 +218,7 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	// The item record pins only its own spec object: a changed synthesis
 	// evidence file does not invalidate it mechanically — the recorded change
 	// set below is what the delta review judges.
-	if err := judgments.Check(root, binding.Reference, binding.Layer, judgments.MustProtocol(root, "verify", "unit")); err != nil {
+	if err := judgments.Check(root, binding.Reference, binding.Layer, fixtureVerifyProtocol(t, root)); err != nil {
 		t.Fatalf("the item record's own object is unchanged; it must stay valid: %v", err)
 	}
 	check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate")

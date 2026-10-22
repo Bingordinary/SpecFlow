@@ -96,7 +96,7 @@ func TestPrepareSharedChecksReusesAndInvalidatesBySubject(t *testing.T) {
 	root := newRepo(t)
 	writeUnit(t, root, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, root, "src/auth.go", "package auth\n")
-	protocol := judgments.MustProtocol(root, "verify", "unit")
+	protocol := testProtocolFor(t, root, "verify", "unit")
 
 	valid := publicCodeRecord(t, root, "auth", "src/auth.go", protocol)
 
@@ -140,7 +140,7 @@ func TestPrepareSharedChecksReusesAndInvalidatesBySubject(t *testing.T) {
 func TestPrepareSharedChecksDefersStoreWork(t *testing.T) {
 	root := newRepo(t)
 	writeUnit(t, root, "candidate", "auth", "none", "none", "src", "")
-	protocol := judgments.MustProtocol(root, "verify", "unit")
+	protocol := testProtocolFor(t, root, "verify", "unit")
 
 	settled := sharedCheckRun(protocol, "code:src/auth.go", "src/auth.go")
 	settled.Coverage[0].Source = "executed"

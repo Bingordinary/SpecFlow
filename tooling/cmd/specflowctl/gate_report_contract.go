@@ -391,7 +391,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		if run.Gate == gaterun.GateVerify {
-			add("cross-quality-conclusions", "one author-declared final quality conclusion with reason per design and architecture key, including carried judgments; unacceptable iff finalized gate-driving P0/P1 findings exist; do not infer quality from pass/fail", "Quality conclusion: <design_or_architecture_key> = <acceptable|needs_attention|unacceptable> — <reason>")
+			add("cross-quality-conclusions", "one author-declared final quality conclusion with reason per design and architecture key, including carried judgments; unacceptable iff a finalized gate-driving P0/P1 finding affects that key; do not infer quality from pass/fail", "Quality conclusion: <design_or_architecture_key> = <acceptable|needs_attention|unacceptable> — <reason>")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "unit_quality_keys"
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1
@@ -405,7 +405,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 	if !gaterun.IsAlignmentKind(session.Kind) {
 		finding := "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>"
 		if session.Kind == gaterun.SessionKindCross {
-			finding = "[P1] <location> — <new cross finding>\nFinding affects: <new_finding_id> = <check_key>"
+			finding = "[P1] <location> — <new cross finding>\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>\nFinding affects: <new_finding_id> = <check_key>"
 		}
 		if gaterun.IsQualityKind(session.Kind) {
 			finding = ""

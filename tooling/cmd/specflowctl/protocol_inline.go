@@ -47,6 +47,8 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 		sections := []protocolSectionRef{
 			{"rule_validate_checklist.md", 2, "Execution Rules"},
 			{"rule_validate_checklist.md", 2, "Target-layer applicability"},
+			{"rule_validate_checklist.md", 3, "Severity handling"},
+			{"spec_writing_guide.md", 3, "15.2 Externally observable only"},
 		}
 		for _, key := range keys {
 			sections = append(sections, protocolSectionRef{"rule_validate_checklist.md", 3, "Check " + key})
@@ -56,6 +58,8 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 		sections := []protocolSectionRef{
 			{"unit_validate_checklist.md", 2, "Prerequisite"},
 			{"unit_validate_checklist.md", 2, "Execution Rules"},
+			{"unit_validate_checklist.md", 3, "Severity handling"},
+			{"spec_writing_guide.md", 3, "15.2 Externally observable only"},
 		}
 		for _, key := range keys {
 			sections = append(sections, protocolSectionRef{"unit_validate_checklist.md", 2, "Check " + key})
@@ -69,7 +73,7 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 				verifyStepSection("Step 6"), verifyStepSection("Step 7")), nil
 		case gaterun.SessionKindUnit:
 			return append(verifyPrerequisiteSections(),
-				verifyStepSection("Step 1"), verifyStepSection("Step 5")), nil
+				verifyStepSection("Step 1"), verifyStepSection("Step 5"), verifyStepSection("Step 7")), nil
 		case gaterun.SessionKindCode, gaterun.SessionKindDesign, gaterun.SessionKindArchitecture:
 			return []protocolSectionRef{
 				{"unit_verify_checklist.md", 2, "Quality Lens Standard"},
@@ -85,6 +89,7 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 func finalSynthesisSections() []protocolSectionRef {
 	return []protocolSectionRef{
 		{"verification_scope.md", 3, "Final synthesis"},
+		{"verification_scope.md", 3, "Relationship vocabulary"},
 		{"severity_policy.md", 2, "4. Severity Levels"},
 		{"severity_policy.md", 2, "5. Blocking Relationship"},
 		{"severity_policy.md", 2, "9. Severity Consistency Check"},

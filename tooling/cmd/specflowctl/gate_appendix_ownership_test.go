@@ -56,45 +56,43 @@ func TestAppendixDestinationOwnershipRejectsWithoutWrites(t *testing.T) {
 	const collision = "unit_auth_account_token.md"
 	const first = "unit_auth_a_first.md"
 	for _, operation := range []string{"promote", "fork"} {
-		for _, status := range []string{"active", "exempt"} {
-			t.Run(operation+"/"+status, func(t *testing.T) {
-				root := createCLITestRepo(t)
-				layer := "stable"
-				if operation == "promote" {
-					ownershipCandidate(t, root, "auth_account", collision)
-					ownershipPublish(t, root, "auth_account")
-					ownershipCandidate(t, root, "auth", first, collision)
-				} else {
-					ownershipCandidate(t, root, "auth", first, collision)
-					ownershipPublish(t, root, "auth")
-					ownershipCandidate(t, root, "auth_account", collision)
-					layer = "candidate"
-				}
-				destination := "docs/specs/units/" + layer + "/appendix/" + collision
-				grWriteFile(t, root, destination, "---\nunit: auth_account\nstatus: "+status+"\n---\nPeer design.\n")
-				if operation == "promote" {
-					ownershipCheckCandidate(t, root, "auth")
-				}
-				before := publicationFiles(t, root)
-				var out string
-				var err error
-				if operation == "promote" {
-					out, err = publicationPromote(t, root, "unit", "auth")
-				} else {
-					var stdout, stderr bytes.Buffer
-					err = runFork([]string{"--repo-root", root, "--unit", "auth"}, &stdout, &stderr)
-					out = stdout.String()
-				}
-				if err == nil {
-					t.Errorf("%s accepted a foreign-owned destination:\n%s", operation, out)
-				} else if !strings.Contains(out, destination) || !strings.Contains(out, "auth_account") {
-					t.Errorf("failure did not identify the destination and owner: %v\n%s", err, out)
-				}
-				if after := publicationFiles(t, root); !reflect.DeepEqual(before, after) {
-					t.Error("ownership rejection changed files: main specs, earlier appendices, caches, baselines and candidates must stay unchanged")
-				}
-			})
-		}
+		t.Run(operation, func(t *testing.T) {
+			root := createCLITestRepo(t)
+			layer := "stable"
+			if operation == "promote" {
+				ownershipCandidate(t, root, "auth_account", collision)
+				ownershipPublish(t, root, "auth_account")
+				ownershipCandidate(t, root, "auth", first, collision)
+			} else {
+				ownershipCandidate(t, root, "auth", first, collision)
+				ownershipPublish(t, root, "auth")
+				ownershipCandidate(t, root, "auth_account", collision)
+				layer = "candidate"
+			}
+			destination := "docs/specs/units/" + layer + "/appendix/" + collision
+			grWriteFile(t, root, destination, "---\nunit: auth_account\n---\nPeer design.\n")
+			if operation == "promote" {
+				ownershipCheckCandidate(t, root, "auth")
+			}
+			before := publicationFiles(t, root)
+			var out string
+			var err error
+			if operation == "promote" {
+				out, err = publicationPromote(t, root, "unit", "auth")
+			} else {
+				var stdout, stderr bytes.Buffer
+				err = runFork([]string{"--repo-root", root, "--unit", "auth"}, &stdout, &stderr)
+				out = stdout.String()
+			}
+			if err == nil {
+				t.Errorf("%s accepted a foreign-owned destination:\n%s", operation, out)
+			} else if !strings.Contains(out, destination) || !strings.Contains(out, "auth_account") {
+				t.Errorf("failure did not identify the destination and owner: %v\n%s", err, out)
+			}
+			if after := publicationFiles(t, root); !reflect.DeepEqual(before, after) {
+				t.Error("ownership rejection changed files: main specs, earlier appendices, caches, baselines and candidates must stay unchanged")
+			}
+		})
 	}
 }
 
@@ -146,7 +144,7 @@ func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
 	if err := os.Rename(peer, filepath.Join(root, "docs/specs/units/stable/unit_auth_extra.md")); err != nil {
 		t.Fatal(err)
 	}
-	grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_auth_extra_protocol.md", "---\nunit: auth_extra\nstatus: active\n---\n\n# Independent design\nNo auth dependency.\n")
+	grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_auth_extra_protocol.md", "---\nunit: auth_extra\n---\n\n# Independent design\nNo auth dependency.\n")
 	after, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
 	if err != nil || !after.Fresh {
 		t.Fatalf("unrelated unit appendix made auth stale: %+v %v", after, err)

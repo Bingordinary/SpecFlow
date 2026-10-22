@@ -47,15 +47,12 @@ func Fork(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	appendixCopies, skipped, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "stable")
+	appendixCopies, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "stable")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r
 	}
 
-	for _, path := range skipped {
-		r.Actions = append(r.Actions, fmt.Sprintf("Skipped exempt appendix: %s", path))
-	}
 	for _, appendix := range appendixCopies {
 		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", appendix.Source))
 	}

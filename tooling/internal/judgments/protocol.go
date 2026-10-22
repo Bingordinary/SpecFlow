@@ -217,6 +217,16 @@ var mechanismSections = map[string][]string{
 	"core/promise_model.md": {},
 }
 
+// ProtocolDocuments returns the judging documents a gate/target standard
+// deploys, in fingerprint order. An unknown pair returns nil.
+func ProtocolDocuments(gate, targetKind string) []string {
+	documents, ok := protocolStandards[standardKey{gate: gate, targetKind: targetKind}]
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), documents...)
+}
+
 // Protocol fingerprints the judging standard one gate deploys in this project:
 // the judging text of that gate's protocol documents, with the mechanism
 // sections removed. It errors on an unknown gate/target pair instead of
@@ -228,6 +238,10 @@ func Protocol(root, gate, targetKind string) (string, error) {
 	}
 	layout, err := specflowlayout.Resolve(root)
 	if err != nil {
+		// A root with no SpecFlow layout is not a deployed project: there is
+		// no judging standard to bind, and the version-only digest keeps
+		// non-project tooling deterministic. Once a layout resolves, a
+		// missing judging document is a broken install and fails closed.
 		return Digest([]byte(ProtocolVersion)), nil
 	}
 	content := []byte(ProtocolVersion)
@@ -236,8 +250,7 @@ func Protocol(root, gate, targetKind string) (string, error) {
 		path := filepath.Join(root, filepath.FromSlash(layout.FrameworkRoot), name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			content = append(content, []byte("missing")...)
-			continue
+			return "", fmt.Errorf("read judging document %s: %w", name, err)
 		}
 		criteria, err := withoutMechanismSections(string(data), mechanismSections[name])
 		if err != nil {

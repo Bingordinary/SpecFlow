@@ -612,7 +612,7 @@ Any one of them forces the final conclusion to `blocked`, regardless of the weig
 
 1. the core mechanism cannot clearly explain which real problem it solves
 2. boundary or process design leaves repair ownership or repair landing point unstable
-3. any key gate has Question `4 = 0`
+3. Question `4 = 0`
 4. the mechanism clearly rewards surface compliance over real risk reduction
 5. the primary executor (LLM agent) cannot rely on the official documents alone to know current position, next step, and why that step is next
 6. the mechanism forces simple changes through a full heavy path when the work does not change durable truth, object ownership, or end-to-end verification obligations, and the design provides no smaller legal path
@@ -638,6 +638,7 @@ If no hard blocker exists, passing still requires all of the following:
 3. `weighted_score` is at least `75`
 4. the `entry_control_chain_check` is complete and its result is reflected in the hard-blocker result, findings result, optimization result, and Question 6, 7, and 8 score bases
 5. when `routine_work_path_check` is triggered, the check is complete and its result is reflected in the hard-blocker result, findings result, optimization result, and Question 6, 7, and 8 score bases
+6. no finding carries `blocking: yes`
 
 When these pass-gate conditions hold:
 
@@ -645,6 +646,10 @@ When these pass-gate conditions hold:
 2. use `pass-with-optimization` when at least one non-blocking optimization exists
 
 Otherwise the result is `blocked`.
+
+A finding that carries `blocking: yes` sets the open run status to
+`blocked_on_finding` until it is resolved; the review
+must not issue `pass` or `pass-with-optimization` while such a finding stands.
 
 ## 8. Output Contract
 

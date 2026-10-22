@@ -8,7 +8,7 @@ Read the original spec and necessary code. Establish whether the responsibility 
 
 Deletion must fit the user's authorized change. Reuse clear authorization already given; discuss only unclear intent or scope. Do not add a separate deletion approval protocol. Explain the deletion basis and the selected objects in the ordinary change report. Search prose and code for semantic references and effects; the tool checks structured references only.
 
-Deleting an object does not require fork, validate, verify, or promote. Any surviving unit or rule that changes still follows its normal editing and publication path. The tool never selects another unit or rule and never deletes business code.
+Deleting an object does not require fork, validate, verify, or promote. Any surviving unit or rule that changes still follows its normal editing and publication path. The tool never selects another unit or rule and never deletes business code. Removal is not an operation-scope edit: do not open an operation for a removal batch (`framework/operations/operation_scope.md` §Out of scope).
 
 ## Command and routing
 
@@ -45,7 +45,7 @@ This prevents old candidate appendix content from participating in checks of the
 
 ## Tool integrity and records
 
-A whole-unit deletion includes all appendices whose `unit` frontmatter identifies that unit in the selected layers, including exempt appendices. Similar filename prefixes do not establish ownership. Ambiguous ownership, unreadable required files, unresolvable references (including a remaining unit's promise `depends_on` provider), and paths outside the project stop execution before writes, with the file and reason reported. A target with no matching file or current record in the selected layers is an error.
+A whole-unit deletion includes all appendices whose `unit` frontmatter identifies that unit in the selected layers. Similar filename prefixes do not establish ownership. Ambiguous ownership, unreadable required files, unresolvable references (including a remaining unit's promise `depends_on` provider), and paths outside the project stop execution before writes, with the file and reason reported. A target with no matching file or current record in the selected layers is an error.
 
 Whole unit/rule deletion clears its selected-layer validation caches and promise state records. Removing both layers also clears its publication baseline. An appendix deletion clears its owner's caches in the affected layers, preserving its code baseline and its promise state record — the unit's main spec truth, and therefore its promises, is unchanged. Removing a unit from both layers also removes pending deferred findings assigned to that unit; findings owned by other units remain even when this unit was their source.
 

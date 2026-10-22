@@ -187,7 +187,7 @@ func CheckValidateStable(repoRoot, unitName string) (CheckResult, error) {
 	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
 }
 
-// CheckAppendicesInCache verifies that every non-exempt candidate appendix for
+// CheckAppendicesInCache verifies that every candidate appendix for
 // the given unit is listed in the validate_result.md cache file. This is a
 // mechanical promote gate — it ensures the agent included all appendix files
 // in the validation run. If an appendix exists on disk but is missing from
@@ -272,12 +272,9 @@ func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckR
 		}, nil
 	}
 
-	// 4. Check each non-exempt candidate appendix.
+	// 4. Check each candidate appendix.
 	var missing []string
 	for _, m := range matches {
-		if m.Status == "exempt" {
-			continue
-		}
 		if !cachedPaths[m.Path] {
 			missing = append(missing, m.Path)
 		}
@@ -1353,6 +1350,22 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		}
 	}
 
+	// A validate cache is bound to the input surface it judged. A new own
+	// appendix or a new stable global rule is a required input that the old
+	// cache never recorded, so the cache cannot stay fresh — otherwise a unit
+	// could be promoted after a new global constraint landed without Check 8
+	// ever reading it. Verify has per-conclusion evidence requirements for the
+	// same purpose (NewlyRequiredEvidence).
+	if command == "validate" && targetKind == "unit" {
+		layer := "candidate"
+		if strings.Contains(filepath.ToSlash(requiredMainFile), "/stable/") {
+			layer = "stable"
+		}
+		if res := checkCurrentValidateInputs(repoRoot, cache, layer); res != nil {
+			return *res, nil
+		}
+	}
+
 	// Conclusion-bound freshness (verify) vs input-surface freshness
 	// (validate). Verify conclusions bind their own evidence per judgment
 	// record: VerifyDeadConclusions above has already checked every
@@ -1428,6 +1441,103 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		Reason:   reason,
 	}
 	return result, nil
+}
+
+// requiredValidateInput is one input the current repository state requires a
+// unit validate cache to carry. Entry is the spelling a cache entry uses
+// (a repository-relative appendix path, or rule:<id> for a stable global
+// rule); Abs is the resolved absolute path used for membership comparison.
+type requiredValidateInput struct {
+	Entry string
+	Abs   string
+}
+
+// currentRequiredValidateInputs resolves the inputs a unit validate cache must
+// currently carry: the unit's own appendices in the cache's target layer and
+// every published stable global rule. Both are discovered from current
+// repository state, never from the old cache, so a newly added input cannot
+// be silently carried.
+func currentRequiredValidateInputs(repoRoot string, cache *cacheFile, layer string) ([]requiredValidateInput, error) {
+	appendices, err := specpaths.UnitAppendices(repoRoot, cache.Unit, layer)
+	if err != nil {
+		return nil, fmt.Errorf("resolve current appendix input surface: %w", err)
+	}
+	var out []requiredValidateInput
+	for _, appendix := range appendices {
+		out = append(out, requiredValidateInput{
+			Entry: appendix.Path,
+			Abs:   filepath.Clean(resolvePath(repoRoot, appendix.Path)),
+		})
+	}
+	globalRules, err := currentStableGlobalRuleIDs(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve current global-rule input surface: %w", err)
+	}
+	for _, ruleID := range globalRules {
+		path := specpaths.RuleStableFileRef(ruleID)
+		out = append(out, requiredValidateInput{
+			Entry: "rule:" + ruleID,
+			Abs:   filepath.Clean(resolvePath(repoRoot, path)),
+		})
+	}
+	return out, nil
+}
+
+// checkCurrentValidateInputs fails a validate cache closed when an input that
+// the current unit requires is absent from the cache's recorded file list.
+func checkCurrentValidateInputs(repoRoot string, cache *cacheFile, layer string) *CheckResult {
+	listed := map[string]bool{}
+	for _, entry := range cache.Files {
+		if resolved := resolveEntryPath(repoRoot, entry.Path); resolved != "" {
+			listed[filepath.Clean(resolved)] = true
+		}
+	}
+	required, err := currentRequiredValidateInputs(repoRoot, cache, layer)
+	if err != nil {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("validate cache cannot verify its current input surface: %v — revalidate@%s (delta) or validate@%s (full)", err, cache.Unit, cache.Unit),
+		}
+	}
+	var missing []string
+	for _, input := range required {
+		if !listed[input.Abs] {
+			missing = append(missing, input.Entry)
+		}
+	}
+	if len(missing) > 0 {
+		return &CheckResult{
+			Fresh:    false,
+			Category: CategoryStale,
+			Reason:   fmt.Sprintf("validate cache does not include current required input %s — revalidate@%s (delta) or validate@%s (full)", strings.Join(missing, ", "), cache.Unit, cache.Unit),
+		}
+	}
+	return nil
+}
+
+// currentStableGlobalRuleIDs lists published global rules that apply to every
+// current-layer unit by default.
+func currentStableGlobalRuleIDs(repoRoot string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleStableDir)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "g_rule_") && strings.HasSuffix(name, ".md") {
+			out = append(out, strings.TrimSuffix(name, ".md"))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // promiseProviderSubjectPaths returns the resolved cache-entry paths whose
@@ -2095,6 +2205,11 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 		Timestamp: cache.Timestamp, GateRun: cache.GateRun,
 		Standard:          cache.Standard,
 		InvalidatedChecks: cache.InvalidatedChecks,
+		ReviewChangeSet:   cache.ReviewChangeSet,
+		ReviewResult:      cache.ReviewResult,
+		ReviewSession:     cache.ReviewSession,
+		ReviewRecheck:     append([]string(nil), cache.ReviewRecheck...),
+		ReviewDeclined:    append([]string(nil), cache.ReviewDeclined...),
 	}
 	// The candidate input surface may record the rule file under both its
 	// candidate path and its stable sibling; projecting the candidate path to

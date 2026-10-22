@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -71,13 +72,13 @@ func writePromiseStateDetail(stdout io.Writer, report *promiseStateReport) {
 // evidenceChecks reads the layer's validate and verify cache states. These are
 // the existing code-evidence gates; the promise view adds the contract-level
 // closure on top of them.
-func evidenceChecks(repoRoot, unitName, layer string) (validationcache.CheckResult, validationcache.CheckResult, error) {
+func evidenceChecks(repoRoot, unitName, layer string, derivation *gaterun.Derivation) (validationcache.CheckResult, validationcache.CheckResult, error) {
 	if layer == "stable" {
 		validateCheck, err := validationcache.CheckValidateStable(repoRoot, unitName)
 		if err != nil {
 			return validationcache.CheckResult{}, validationcache.CheckResult{}, err
 		}
-		verifyCheck, err := validationcache.CheckVerifyStable(repoRoot, unitName)
+		verifyCheck, err := checkStableUnitVerifyMerged(derivation, repoRoot, unitName)
 		if err != nil {
 			return validationcache.CheckResult{}, validationcache.CheckResult{}, err
 		}
@@ -87,7 +88,7 @@ func evidenceChecks(repoRoot, unitName, layer string) (validationcache.CheckResu
 	if err != nil {
 		return validationcache.CheckResult{}, validationcache.CheckResult{}, err
 	}
-	verifyCheck, err := validationcache.CheckVerify(repoRoot, unitName)
+	verifyCheck, err := checkUnitVerifyMerged(derivation, repoRoot, unitName, "candidate")
 	if err != nil {
 		return validationcache.CheckResult{}, validationcache.CheckResult{}, err
 	}

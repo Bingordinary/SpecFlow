@@ -354,9 +354,6 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 		return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}
 	}
 	for _, appendix := range appendices {
-		if appendix.Status == "exempt" {
-			continue
-		}
 		appendixData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
 		if err != nil {
 			return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}

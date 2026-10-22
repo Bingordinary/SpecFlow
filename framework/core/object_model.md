@@ -22,7 +22,7 @@ Unit truth lives in:
 | stable | `docs/specs/units/stable/unit_{unit}.md` | `docs/specs/units/stable/appendix/unit_{unit}_{name}.md` |
 | candidate | `docs/specs/units/candidate/unit_{unit}.md` | `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md` |
 
-Unit frontmatter records identity and `rule_refs` — the layer is encoded by the file path (see `framework/spec_writing_guide.md` §3). Appendix files may carry an optional `status` field (`active` or `exempt`) — see `framework/spec_writing_guide.md` §Appendix Files.
+Unit frontmatter records identity and `rule_refs` — the layer is encoded by the file path (see `framework/spec_writing_guide.md` §3).
 
 A unit main spec also declares its **promises** in the `## Promises` section. A consumer declares the provider promise on its own promise's `depends_on`. See `framework/core/promise_model.md`.
 

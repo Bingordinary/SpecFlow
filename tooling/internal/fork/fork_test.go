@@ -109,7 +109,7 @@ func TestForkUnitCandidateExists(t *testing.T) {
 	}
 }
 
-func TestForkUnitExemptAppendix(t *testing.T) {
+func TestForkUnitCopiesEveryAppendix(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
@@ -125,7 +125,7 @@ rule_refs: none
 	os.MkdirAll(appendixDir, 0755)
 
 	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_active.md"), []byte("---\nunit: test_unit\n---\nActive\n"), 0644)
-	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_exempt.md"), []byte("---\nunit: test_unit\nstatus: exempt\n---\nExempt\n"), 0644)
+	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_notes.md"), []byte("---\nunit: test_unit\n---\nNotes\n"), 0644)
 
 	result := Fork(repoRoot, "test_unit")
 	if !result.Passed {
@@ -136,19 +136,8 @@ rule_refs: none
 	if _, err := os.Stat(filepath.Join(candidateAppendixDir, "unit_test_unit_active.md")); os.IsNotExist(err) {
 		t.Fatal("active appendix should have been forked")
 	}
-	if _, err := os.Stat(filepath.Join(candidateAppendixDir, "unit_test_unit_exempt.md")); err == nil {
-		t.Fatal("exempt appendix should NOT have been forked")
-	}
-
-	hasSkip := false
-	for _, a := range result.Actions {
-		if strings.Contains(a, "Skipped exempt") {
-			hasSkip = true
-			break
-		}
-	}
-	if !hasSkip {
-		t.Fatal("expected action mentioning exempt skip")
+	if _, err := os.Stat(filepath.Join(candidateAppendixDir, "unit_test_unit_notes.md")); os.IsNotExist(err) {
+		t.Fatal("notes appendix should have been forked")
 	}
 }
 

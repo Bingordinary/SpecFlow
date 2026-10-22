@@ -6,38 +6,38 @@ This file is the on-demand command surface reference. The session bootstrap (`fr
 
 `validate`, `revalidate`, and `promote` accept either a unit or a rule. `verify` and `reverify` are unit-only; a rule uses validate as its sole quality gate. Resolve `validate`, `revalidate`, and `promote` with this three-stage process. Resolve `fresh@{target}` with the separate existing-target process below.
 
-**Stage 1 — Physical file check.** Must complete both steps before deciding.
+**Stage 1 — Physical file check.** Check both layers of all three file families before deciding:
 
-Step 1: Glob for unit candidate files — run `Glob "docs/specs/units/candidate/unit_{target}.md"`.
+1. Unit: `docs/specs/units/candidate/unit_{target}.md` and `docs/specs/units/stable/unit_{target}.md`.
+2. Global rule: `docs/specs/rules/candidate/g_rule_{target}.md` and `docs/specs/rules/stable/g_rule_{target}.md`.
+3. Bound rule: `docs/specs/rules/candidate/b_rule_{target}.md` and `docs/specs/rules/stable/b_rule_{target}.md`.
 
-Step 2: Glob for rule candidate files — run `Glob "docs/specs/rules/candidate/g_rule_{target}.md"` and `Glob "docs/specs/rules/candidate/b_rule_{target}.md"` (both `g_rule_` and `b_rule_` prefixes).
+The same logical object in both layers is one match. Treat a unit name and a rule ID as different objects even when the target text is the same.
 
-**Decision (use after both steps complete):**
+**Decision (use after all six checks complete):**
 
-| Unit candidate found | Rule candidate found | Result |
-|:---:|:---:|---|
-| Yes | No | Type = Unit |
-| No | Yes | Type = Rule. Resolve full `rule_id` from matched filename (e.g., matched `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). |
-| Yes | Yes | Ambiguous. List found files and ask user to clarify. |
-| No | No | → Stage 2 |
+| Distinct objects matched | Result |
+|---|---|
+| Exactly one | Use its type: Unit, or Rule with the full `rule_id` from the matched filename (e.g., `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). |
+| Two or more | Ambiguous. List every matching path and ask the user to choose; never pick one. |
+| None | → Stage 2 |
 
-**Stage 2 — Prefix fallback (new target).** Only reach here if neither unit nor rule files were found in Stage 1:
+**Stage 2 — Prefix fallback (new target).** Only reach here if no file was found in Stage 1:
 
 | Target format | Detected as | Example |
 |---------------|-------------|---------|
 | Name without prefix (`auth`, `user_service`) | Unit | `validate@auth` |
 | Name with `g_rule_` or `b_rule_` prefix | Rule | `validate@b_rule_auth` |
 
-**Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target.
-
-When Stage 2 classifies a no-prefix target as Unit, the agent looks for its unit files (`Glob "docs/specs/units/candidate/unit_{target}.md"` and `Glob "docs/specs/units/stable/unit_{target}.md"`). If **neither** candidate nor stable unit files exist, do not report "does not exist" yet. Instead:
+**Stage 3 — Rule directory fallback.** Only reach here when Stage 2 detected "Unit" but no unit files exist for the target in either layer.
 
 Run `Glob "docs/specs/rules/candidate/*.md"` and `Glob "docs/specs/rules/stable/*.md"`. Scan all filenames for one whose name contains the target (e.g., `b_rule_runtime_model.md` contains `runtime_model`).
 
 | Result | Action |
 |---|---|
-| Matching rule file found | Type = Rule. Resolve full `rule_id` from the matched filename (e.g., `b_rule_runtime_model.md` → `rule_id = b_rule_runtime_model`). Proceed with the rule pipeline. |
-| No matching rule file found | Report: target does not exist. |
+| Exactly one matching rule file | Type = Rule. Resolve the full `rule_id` from the matched filename and proceed with the rule pipeline. |
+| Two or more matching rule files | Ambiguous. List every matching path and ask the user to choose; never pick one. |
+| No matching rule file | Report: target does not exist. |
 
 ### Existing-Target Resolution for `fresh@{target}`
 
@@ -63,7 +63,7 @@ The applicable path depends on the target:
 | Step | Unit | Rule |
 |---|---|---|
 | validate | 10-point unit design checklist (`unit_validate_checklist.md`) | Rule metadata and body-quality checklist (`rule_validate_checklist.md`) |
-| verify | Required: spec-vs-code check (`unit_verify_checklist.md`), run as one gate with two lenses — `alignment` and `quality`. The alignment lens runs in item sessions (Steps 2, 3, 4, 6, 7 per acceptance item) and one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5) | Not applicable; rule verify was removed |
+| verify | Required: spec-vs-code check (`unit_verify_checklist.md`), run as one gate with two lenses — `alignment` and `quality`. The alignment lens runs in item sessions (Steps 2, 3, 4, and 6 per acceptance item, with Step 7 for the mismatches they raise) and one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5, with Step 7 for its own mismatches) | Not applicable; rule verify was removed |
 | promote | candidate→stable archive (`unit_promote_workflow.md`) | version promotion + consumer migration (`rule_promote_workflow.md`) |
 
 ## Command Reference
@@ -73,7 +73,7 @@ The applicable path depends on the target:
 | `specflowctl fork --unit <name>` | Copy stable unit spec + appendices to candidate layer (pure copy, layer encoded by path), inherit pass stable confirmation caches into the candidate round (rewritten to the candidate layer; gates without a usable baseline are listed in the manifest), and copy the stable promise state to candidate. Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
 | `specflowctl fork --rule <id>` | Copy stable rule to candidate layer (pure copy, layer encoded by path). Rejects if candidate already exists or stable does not exist. | Agent (as fork prerequisite) |
 | `specflowctl next --unit <name>` | Discover unit files, dependencies, and the promise model. Reports each promise and its `depends_on`; reports `Promise model: INVALID — ...` when the spec has no `## Promises` section or the section is malformed. When neither a candidate nor a stable spec exists for the unit, reports the empty state (no design recorded) with exit code 0; fails on tool errors. | Agent |
-| `specflowctl promote --unit <name>` | First checks direct rule publication: missing stable explicit refs or different bound candidate/stable content block; pending global drafts are advisory. Runs the promise checks (a unit without `## Promises` is rejected), requires `promise_state_candidate.yaml`, validates that the state's own promises and dependency pins are current, and requires every pinned provider promise to exist in the stable layer at the same fingerprint (missing state rejects with guidance to run verify; an unpublished provider rejects with guidance to promote the provider first). Then checks the merged validate+verify (+appendix) cache freshness, validates format + copies candidate→stable, rewrites the candidate gate caches and stages the stable promise state in the same publication transaction (`target: stable`, paths rewritten to `stable/`). The verify cache must carry both the `alignment` and `quality` sections (both lenses) and be fresh, `mode: full`, non-blocking. Rejects if any cache stale, missing, or blocking. Also rejects if any non-exempt appendix file is missing from the validate cache. | Agent (after user confirmation, after validate+verify) |
+| `specflowctl promote --unit <name>` | First checks direct rule publication: missing stable explicit refs or different bound candidate/stable content block; pending global drafts are advisory. Runs the promise checks (a unit without `## Promises` is rejected), requires `promise_state_candidate.yaml`, validates that the state's own promises and dependency pins are current, and requires every pinned provider promise to exist in the stable layer at the same fingerprint (missing state rejects with guidance to run verify; an unpublished provider rejects with guidance to promote the provider first). Then checks the merged validate+verify (+appendix) cache freshness, validates format + copies candidate→stable, rewrites the candidate gate caches and stages the stable promise state in the same publication transaction (`target: stable`, paths rewritten to `stable/`). The verify cache must carry both the `alignment` and `quality` sections (both lenses) and be fresh, `mode: full`, non-blocking. Rejects if any cache stale, missing, or blocking. Also rejects if any appendix file is missing from the validate cache. | Agent (after user confirmation, after validate+verify) |
 | `specflowctl promote --rule <id>` | Checks rule validate cache freshness, validates rule frontmatter, copies candidate rule→stable, deletes candidate, rewrites the rule validate cache into a stable confirmation cache. Rejects if the cache is missing or stale. Consumer impact assessment is the agent's responsibility. See `framework/spec_writing_guide.md` §6. | Agent or human maintainer |
 | `specflowctl review run-*` | Governance review run-state management. Subcommands: `collect-default-scope` (collect the deterministic default scope for a review flow), `run-init` (create/reuse run-state), `run-validate` (validate run-state shape), `run-refresh` (recompute fingerprints, mark stale), `run-touch` (update timestamp). See `framework/spec_flow_review.md` §6. | Deep audit executor |
 | `specflowctl operation ...` | Operation-scope state carrier. `open` declares and freezes a bounded change scope (target spec-derived surface + explicit `--allow` paths + `--require-spec` paths) and records the starting commit plus the working-tree snapshot every later check measures against; `check` mechanically evaluates the final change set against it (read-only, fail closed); `close` ends the operation (it removes the state; a normal close requires PASS, and `--abandon` ends a violating operation explicitly, removing the state with the `abandoned` outcome printed); `update` widens the declared scope explicitly (user-authorized only); `status` inspects open operations. State: `meta/operations/<id>.json` (local process state; removed by `close`, and a surviving closed state is swept by `specflowctl clean`). See `framework/operations/operation_scope.md` and `tooling/README.md` §Operation scope. | Agent (when the project rules or the user require bounded scope) |
@@ -81,7 +81,7 @@ The applicable path depends on the target:
 | `verify@{target}` (agent trigger) | Complete unit runs fix a merged coverage set (alignment = the acceptance item tasks plus the always-present `unit:<unit>` unit-level scan of Steps 1 and 5; quality = public code, unit design and unit architecture tasks) and write through `gate-finalize`; rule verify has been removed. Complete FAIL writes the failure record. Targeted checks never publish a complete cache; targeted P0/P1 immediately runs `gate-invalidate --gate verify ... --check {item}`. | User says "verify" or confirms agent suggestion |
 | `revalidate@{target}` (agent trigger) | Change-review delta/repair coverage run. The review session accepts, names re-run keys, or escalates to full; failed checks, persisted `invalidated_checks`, current checks the baseline never declared, and explicit `--rerun` overrides are forced mechanically; unmappable failed or invalidated keys get a full-scope plan (which re-runs the standing relationships). Writes `basis: delta|repair` with the recorded review; FAIL updates the failure record. | User says "revalidate" or confirms agent suggestion |
 | `reverify@{unit}` (agent trigger) | Mechanical verify delta/repair coverage run: `gate-plan` derives the re-run set from each conclusion's own judgment-record pins (changed file or region, moved protocol, invalidation, missing record) and from the evidence its key currently requires (a new file in a declared surface), plus current keys the baseline never declared and explicit `--rerun` overrides; repair also forces failed judgments, persisted invalidations, and failed relationships. No change review is scheduled. Writes `basis: delta|repair` with no review record; FAIL updates the failure record. | User says "reverify" or confirms agent suggestion |
-| `promote@{target}` (agent trigger) | Resolves type through §Target Resolution, then uses the unit 3-step or rule 2-step workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration + body-ref cleanup (`rule_promote_workflow.md`). On FAIL: rejects unpublished bound-rule content or invalid explicit rule refs before checking caches; also rejects if an applicable cache is stale/missing/blocking, the merged verify cache does not cover both lenses, format is invalid, or copy fails; changes no truth. Report the concrete blocker: an unpublished rule requires user-triggered rule promotion, while a gate gap requires its indicated user-triggered check before retrying. | User says "promote" or confirms agent suggestion |
+| `promote@{target}` (agent trigger) | Resolves type through §Target Resolution, then uses the unit 3-step or rule 2-step workflow. Unit: archive (`unit_promote_workflow.md`). Rule: version promotion + consumer migration (`rule_promote_workflow.md`). On FAIL: rejects unpublished bound-rule content or invalid explicit rule refs before checking caches; also rejects if an applicable cache is stale/missing/blocking, the merged verify cache does not cover both lenses, format is invalid, or copy fails; changes no truth. Report the concrete blocker: an unpublished rule requires user-triggered rule promotion, while a gate gap requires its indicated user-triggered check before retrying. | User says "promote" or confirms agent suggestion |
 | `specflowctl init` | Initialize specFlow project | Human |
 | `specflowctl doctor` | Diagnose project setup | Human |
 | `spec_flow_update` (agent trigger) | Full update: pull framework, detect format changes, migrate spec files, check document format. See `framework/operations/update.md` for full procedure. | User says `spec_flow_update` |

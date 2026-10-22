@@ -131,3 +131,12 @@ func TestValidateUnitAcceptanceBodyRejectsPunctuationOnlyReason(t *testing.T) {
 		t.Fatal("a punctuation-only sub-check reason must be rejected")
 	}
 }
+
+func TestAnalysisEvidenceBlockStopsAtAnalysisFields(t *testing.T) {
+	report := "Problem: the declared behavior disagrees\n  Evidence:\n    - spec: declared behavior\n    - code: implemented behavior\n  Impact: the surface cannot be satisfied\n  Fix: align the implementation\n  Root cause: incomplete\n  Suggested direction: code_gap\n  Severity: P1\n  Confidence: high\n"
+	got := analysisBlockLines(report, "Evidence")
+	want := "- spec: declared behavior|- code: implemented behavior"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("evidence block = %v, want %s", got, want)
+	}
+}

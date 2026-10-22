@@ -634,12 +634,24 @@ func analysisBlockLines(report, name string) []string {
 		return nil
 	}
 	lines := strings.Split(report[loc[1]:], "\n")
+	// A finding block indents every analysis field by two spaces, so the
+	// Evidence block must stop at the next known field header instead of
+	// swallowing Impact/Fix/Root cause/... as evidence sub-lines.
+	fieldHeaders := map[string]bool{
+		"Problem": true, "Evidence": true, "Impact": true, "Fix": true,
+		"Decision": true, "Options": true, "Root cause": true,
+		"Suggested direction": true, "Severity": true, "Confidence": true,
+	}
 	var out []string
 	for _, raw := range lines[1:] {
 		if strings.TrimSpace(raw) == "" || (raw[0] != ' ' && raw[0] != '\t') {
 			break
 		}
-		out = append(out, strings.TrimSpace(raw))
+		trimmed := strings.TrimSpace(raw)
+		if key, _, ok := strings.Cut(trimmed, ":"); ok && fieldHeaders[strings.TrimSpace(key)] {
+			break
+		}
+		out = append(out, trimmed)
 	}
 	return out
 }

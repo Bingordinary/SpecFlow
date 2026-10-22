@@ -16,7 +16,7 @@ There is no narrowed or scoped `spec_flow_design_review` mode.
 
 ## Entries
 
-The exact review forms are `spec_flow_review`, `spec_flow_review:full`, and `spec_flow_design_review`. These are referenced by the keyword table below.
+The exact review forms are `spec_flow_review`, `spec_flow_review:full`, and `spec_flow_design_review`. These are referenced by the keyword table below. Plain `spec_flow_review` followed by one or more repository-relative paths is the scoped entry form for explicit file or directory review; the paths are the scope inputs.
 
 0. If the entry expression does not match an exact review form, match against this keyword table in order:
    - If the expression contains "mechanism audit" or "framework correctness" → treat as `spec_flow_review`, default `scoped_review`.

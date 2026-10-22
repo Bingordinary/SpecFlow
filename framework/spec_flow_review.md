@@ -101,11 +101,11 @@ Each command must have clearly defined boundaries. The review must verify:
 
 2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
-3. **verify** (normal-unit implementation-alignment and code-quality gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Runs one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality). The alignment lens runs in item sessions (Steps 2, 3, 4, 6, 7 per acceptance item) and one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5). Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user, plus P0-P3 code-quality findings with code references. P0/P1 from either lens block normal-unit promote; P2/P3 are advisory. Rules use validate; deletion uses `framework/removal_workflow.md`.
+3. **verify** (normal-unit implementation-alignment and code-quality gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Runs one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality). The alignment lens runs in item sessions (Steps 2, 3, 4, and 6 per acceptance item, with Step 7 for their mismatches) and one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5, with Step 7 for its own mismatches). Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user, plus P0-P3 code-quality findings with code references. P0/P1 from either lens block normal-unit promote; P2/P3 are advisory. Rules use validate; deletion uses `framework/removal_workflow.md`.
 
 4. **promote**: given a unit name or rule id, resolves target type, requires user confirmation, and applies only that target's path:
    a. Normal unit: validate and verify are independent prerequisites, not phases inside promote. The agent performs the unit body-path pre-check, then the CLI independently checks all applicable caches before candidate→stable archive.
-   b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns version promotion, consumer migration, and body-reference cleanup.
+   b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns version promotion and consumer migration.
    c. Removal: the agent chooses explicit objects; `framework/removal_workflow.md` owns two-layer integrity checks and transactional cleanup without gates.
    d. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
@@ -242,11 +242,11 @@ It does not review business truth correctness.
 The migration closure check must judge:
 
 1. entry routing for `spec_flow_update`
-2. rejection of migration write authority for requests that do not explicitly invoke `spec_flow_update`
+2. rejection of migration write authority for requests that do not explicitly invoke `spec_flow_update` or use the documented out-of-band `UPDATE.md` entry
 3. migration read surface and target surface
 4. mechanical writeback boundaries
 5. forbidden compatibility aliases, fallback logic, and business-truth rewriting
-6. registered path handling
+6. spec path, filename, and layer-placement handling as checked by `framework/operations/update.md` Steps 3-4
 7. blocked-stop and output contracts for blocked migration
 8. agreement with tooling boundaries when existing tooling is used
 
@@ -357,7 +357,7 @@ A sub-agent is a zero-context, one-shot worker: it has no conversation history a
 
 **Scope (scenario inventory):** the current framework's sub-agent scenarios are —
 
-1. validate, verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
+1. validate (including the delta/repair change-review session, kind `delta_review`), verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
 2. verify Step 7 mismatch-analysis semantics — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
 3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
 
@@ -382,6 +382,7 @@ The reviewer must verify the scenario inventory is complete with a deterministic
    - Exercise C: a verify alignment MISMATCH mission (the item's divergence analysis)
    - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
    - Exercise E: a validate session mission (unit or rule target) and a final-synthesis mission after accepted dependencies
+   - Exercise F: a validate change-review mission (kind `delta_review`) from a delta plan
    - Each exercise uses a distinct fixture so a static example cannot confirm itself.
 3. **Escalation (optional)** — when a checkpoint is in doubt on a produced mission or prompt, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
 
@@ -881,6 +882,7 @@ The output must report at least:
    - when real findings exist, the final or stop report shown to the user must include every required information item from Section 8.2 for each finding
    - a run-state file may store the same finding information, but pointing to that file does not satisfy the user-facing report requirement
    - do not summarize a real finding only as a problem statement, impact statement, or blocked reason
+   - the notes result after the findings: explicit `none` when no note exists, otherwise every note recorded per Section 8.3
 19. the final conclusion:
    - `pass`
    - `blocked`
@@ -904,6 +906,8 @@ The run-state file must contain these run fields:
 11. `finding_refs`
 12. `blocked_reason`
 13. `resume_next_step`
+14. `notes`
+    - optional; present only when a candidate finding was demoted
 
 Each slice entry must contain:
 
@@ -1005,7 +1009,7 @@ Every note must record:
 2. a one-line reason for demotion
 3. `artifact_type: note`
 
-Notes require no background, impact, or recommended fix sections. A finding demoted to a note ceases to be a finding; it must not appear in the final findings list.
+The note is stored in the run-state `notes` field and reported after the findings result in the final output. The run-state tooling carries the field forward across `review run-refresh` and `review run-touch`; a refresh or timestamp update must not drop a note. Notes require no background, impact, or recommended fix sections. A finding demoted to a note ceases to be a finding; it must not appear in the final findings list.
 
 ## 9. Non-Goals
 

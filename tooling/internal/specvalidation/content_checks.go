@@ -387,7 +387,7 @@ func scanNonFenced(content string, re *regexp.Regexp) []string {
 }
 
 // ------------------------------------------------------------
-// Wiring: scan the main spec and every non-exempt appendix
+// Wiring: scan the main spec and every appendix
 // ------------------------------------------------------------
 
 func checkContentScan(repoRoot, unitName, name string, scan func(content string) CheckResult) CheckResult {
@@ -409,9 +409,6 @@ func checkContentScan(repoRoot, unitName, name string, scan func(content string)
 		return CheckResult{Name: name, Status: Fail, Details: err.Error()}
 	}
 	for _, appendix := range appendices {
-		if appendix.Status == "exempt" {
-			continue
-		}
 		appendixData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
 		if err != nil {
 			return CheckResult{Name: name, Status: Fail, Details: err.Error()}

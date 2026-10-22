@@ -298,9 +298,7 @@ func appendixFiles(repoRoot, unit, layer string) ([]string, error) {
 	}
 	var out []string
 	for _, appendix := range appendices {
-		if appendix.Status != "exempt" {
-			out = append(out, appendix.Path)
-		}
+		out = append(out, appendix.Path)
 	}
 	sort.Strings(out)
 	return out, nil

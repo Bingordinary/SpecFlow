@@ -127,7 +127,7 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 
 1. Move every useful `unbound_retention_reason` and owner rationale into the rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`.
 2. Inspect every unit or appendix file carrying `status: retired` under `framework/removal_workflow.md`. The agent decides whether the responsibility has ended and identifies the exact deletion targets; delete only within clear existing authorization, and report unresolved intent instead of recreating the former promote-based exit logic.
-3. Surviving files use the normal `status: active|exempt` rules. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used.
+3. Surviving files are normal rule or appendix files. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used.
 
 For each operation:
 
@@ -151,7 +151,7 @@ After migration, run the format compliance check against `framework/spec_writing
 | Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present and the promise model present (`## Design Narrative` → `## Promises` → `## Acceptance Items`). Compare against `spec_writing_guide.md`. |
 | Promise-model units | For **every unit file present in a layer** (candidate or stable): the three sections are in order, every promise has a stable ID and contract, every contract item declares `promise` or `non_promise`, and no `###` subheading appears inside `## Promises` or `## Acceptance Items`. Run `specflowctl validate promise-model --unit <name> --layer candidate` for a candidate file and `--layer stable` for a stable file. |
 | Legacy dependency fields | No `unit_refs` or `affects.dependencies` remains in any unit spec; every dependency edge is on a consumer promise's `depends_on`. |
-| Legacy exit mechanisms | No `unbound_retention*` field remains in any rule; no unit or appendix uses `status: retired`; surviving files use `status: active` or `exempt`. |
+| Legacy exit mechanisms | No `unbound_retention*` field remains in any rule; no unit or appendix uses `status: retired`. |
 | Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
 | Rule files | For each rule file: `rule_id`, `rule_scope` present. Path matches convention. |
 
@@ -161,7 +161,7 @@ Report each check as PASSED or FAILED with details. If any check fails and the c
 
 After format verification, classify downstream impact on existing units:
 
-1. Determine whether Step 2 detected structural changes involving **path ownership, object registration, or support-surface boundaries** — i.e. boundary changes that cannot be resolved from unit or rule frontmatter. (To detect: check whether the framework diff includes structural path changes in `docs/specs/`, or whether any governance flow explicitly reports an unresolved boundary change.)
+1. Determine whether Step 2 detected structural changes involving **path ownership, object registration, or support-surface boundaries** — i.e. boundary changes that cannot be resolved from unit or rule frontmatter. (To detect: check whether the framework diff changes a path, filename, ownership, registration, or support-surface rule that governs `docs/specs/`, or whether any governance flow explicitly reports an unresolved boundary change. The diff covers `framework/` and `templates/`; it never contains the project’s `docs/specs/` tree itself.)
 2. If such boundary changes exist, run impact sync per `framework/governance/impact_sync.md` to perform consumer discovery and fallback reason classification for affected units.
 3. Report the impact sync output contract: `affected_candidate_units`, `affected_stable_units`, and `freshness_review_required`.
 4. If `freshness_review_required` is `true`, execute the caller-owned Freshness Review procedure from `framework/governance/impact_sync.md` before any fallback cleanup: run `specflowctl fresh` on each affected unit, classify each as cleanup-allowed or cleanup-blocked by gate status, and report the per-unit classification. Do not execute fallback cleanup on a unit whose gates are STALE, INVALID, MISSING, or BLOCKED — present the blocking gate to the user instead.

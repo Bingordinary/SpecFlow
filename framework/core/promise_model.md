@@ -73,12 +73,17 @@ rule_refs: none
 
 ## Promises
 
-promises: []
+promises:
 
 ## Acceptance Items
 
-acceptance_item_set: []
+acceptance_item_set:
 ```
+
+This is the section skeleton, not a valid unit: a valid unit adds at least one
+promise entry and at least one acceptance item (see the examples below). The
+structure-only skeleton still uses the exact marker lines the tooling locates;
+`promises: []` and `acceptance_item_set: []` are not structural marker lines.
 
 ==ATOM_BEGIN:promise_unit_shape==
 A unit main spec has exactly three top-level `##` sections, in this order:
@@ -342,9 +347,9 @@ scope is fixed by the layer:
 - a **stable** layer resolves provider promises in the published stable layer,
   so a candidate draft of a provider never changes published contract state.
 
-`validate promise-model --layer <layer>` and the matching `fresh --unit` view
-evaluate the layer's own `depends_on` edges and compare its pins against that
-layer's provider fingerprints. A stable
+`validate promise-model --layer <layer>` checks the layer's own `depends_on`
+edges and the resulting graph. `fresh --unit` and `promote` compare the
+recorded pins against that layer's provider fingerprints. A stable
 confirmation run records the stable provider fingerprints it read; a candidate
 run records the current-layer fingerprints. `promote` then requires the
 candidate pin to match both the current provider and the published stable
@@ -450,7 +455,7 @@ caches.
 An appendix remains subordinate support truth for one unit:
 
 - path: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`;
-- frontmatter: `unit` required, optional `status: active|exempt`;
+- frontmatter: `unit` required;
 - no required section structure;
 - no acceptance items and no independent lifecycle;
 - explanatory detail, examples, and evidence only.

@@ -13,13 +13,21 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/testsupport"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 // baselineStandard is the judging standard a fixture validate baseline
 // records: the value gate-finalize writes for the same repository.
+func testProtocolFor(t *testing.T, root, gate, targetKind string) string {
+	t.Helper()
+	testsupport.DeployStandard(t, root)
+	return judgments.MustProtocol(root, gate, targetKind)
+}
+
 func baselineStandard(t *testing.T, repoRoot string) string {
 	t.Helper()
+	testsupport.DeployStandard(t, repoRoot)
 	return judgments.MustProtocol(repoRoot, "validate", "unit")
 }
 
@@ -795,6 +803,9 @@ func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
 	}
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("a moved standard must carry nothing, got %v", run.CarriedKeys)
+	}
+	if run.Mode != ModeFull {
+		t.Fatalf("a full-scope plan after a standard move must be recorded as full, got %q", run.Mode)
 	}
 	notices := strings.Join(run.Notices, " ")
 	if !strings.Contains(notices, "validate standard changed") || !strings.Contains(notices, "full scope") {

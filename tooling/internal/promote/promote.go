@@ -263,7 +263,7 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	appendixCopies, _, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "candidate")
+	appendixCopies, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "candidate")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r

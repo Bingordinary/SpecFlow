@@ -34,7 +34,7 @@ Report:
 
 ## Boundaries
 
-1. Candidate writeback is not the final review step—run `promote@{target}` as the agent-level gateway for final validation (the CLI independently validates cache freshness and format).
+1. Candidate writeback is not the final review step. After the user's completion signal and explicit confirmation, route to `promote@{target}` as the agent-level gateway for final validation (the CLI independently validates cache freshness and format); never run promote on your own.
 2. Do not implement from chat-only design.
 3. Do not ask the user to choose internal rule-governance flow names.
 4. Do not treat a guidance conclusion as durable until it has been written into the required truth target.

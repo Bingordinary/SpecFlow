@@ -90,7 +90,7 @@ func TestExplicitBatchAllLayersAndOwnership(t *testing.T) {
 		unit(t, root, layer, "auth", "b_rule_http", "")
 		unit(t, root, layer, "dep", "none", "")
 		unit(t, root, layer, "auth_extra", "none", "")
-		appendix(t, root, layer, "auth", "unit_auth_old.md", "status: exempt\n")
+		appendix(t, root, layer, "auth", "unit_auth_old.md", "")
 		appendix(t, root, layer, "auth_extra", "unit_auth_extra_old.md", "")
 		rule(t, root, layer, "b_rule_http")
 		rule(t, root, layer, "g_rule_policy")

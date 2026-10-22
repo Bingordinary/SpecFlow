@@ -16,7 +16,7 @@ func TestPlanNormalizesPhysicalUnitSpecInputToLogicalRef(t *testing.T) {
 	writeFile(t, repoRoot, "src/a.go", "package a\n")
 	writeFile(t, repoRoot, "src/d.go", "package d\n")
 	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_dep_protocol.md",
-		"---\nunit: dep\nstatus: active\n---\n\nProse.\n")
+		"---\nunit: dep\n---\n\nProse.\n")
 
 	physicalSpec := "docs/specs/units/candidate/unit_dep.md"
 	physicalAppendix := "docs/specs/units/candidate/appendix/unit_dep_protocol.md"

@@ -10,8 +10,7 @@ import (
 )
 
 type UnitAppendix struct {
-	Path   string
-	Status string
+	Path string
 }
 
 type UnitAppendixCopy struct {
@@ -61,65 +60,52 @@ func UnitAppendices(root, unit, layer string) ([]UnitAppendix, error) {
 		fm, _, err := ParseFrontmatterFields(string(data))
 		owner, ownerErr := appendixOwner(canonical, fm)
 		if err != nil || ownerErr != nil {
-			if fm["status"] == "exempt" {
-				continue
-			}
 			return nil, fmt.Errorf("%s: appendix ownership is missing or inconsistent", canonical)
 		}
 		if owner != unit {
 			continue
 		}
-		status := fm["status"]
-		if status != "" && status != "active" && status != "exempt" {
-			return nil, fmt.Errorf("%s: appendix status must be active, exempt or absent", canonical)
-		}
-		out = append(out, UnitAppendix{Path: canonical, Status: status})
+		out = append(out, UnitAppendix{Path: canonical})
 	}
 	return out, nil
 }
 
 // PlanUnitAppendixCopies resolves the complete opposite-layer copy set before
 // callers write any lifecycle artifact. Existing destinations must have the
-// same declared owner. Stable exempt appendices are omitted from unit forks.
-// Copy paths and the returned skipped paths are repository-relative.
-func PlanUnitAppendixCopies(root, unit, sourceLayer string) ([]UnitAppendixCopy, []string, error) {
+// same declared owner. Copy paths are repository-relative.
+func PlanUnitAppendixCopies(root, unit, sourceLayer string) ([]UnitAppendixCopy, error) {
 	appendices, err := UnitAppendices(root, unit, sourceLayer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	destinationLayer := "stable"
 	if sourceLayer == "stable" {
 		destinationLayer = "candidate"
 	}
 	var copies []UnitAppendixCopy
-	var skipped []string
 	for _, appendix := range appendices {
-		if sourceLayer == "stable" && appendix.Status == "exempt" {
-			skipped = append(skipped, appendix.Path)
-			continue
-		}
 		destination := "docs/specs/units/" + destinationLayer + "/appendix/" + filepath.Base(appendix.Path)
 		if _, err := repopath.Canonical(root, destination); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", destination, err)
+			return nil, fmt.Errorf("%s: %w", destination, err)
 		}
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(destination)))
 		if err != nil && !os.IsNotExist(err) {
-			return nil, nil, fmt.Errorf("read destination appendix %s: %w", destination, err)
+			return nil, fmt.Errorf("read destination appendix %s: %w", destination, err)
 		}
 		if err == nil {
 			fields, _, err := ParseFrontmatterFields(string(data))
 			if err != nil {
-				return nil, nil, fmt.Errorf("%s: cannot determine destination appendix ownership: %w", destination, err)
+				return nil, fmt.Errorf("%s: cannot determine destination appendix ownership: %w", destination, err)
 			}
 			owner, err := appendixOwner(destination, fields)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if owner != unit {
-				return nil, nil, fmt.Errorf("%s: destination appendix belongs to unit %q, cannot copy appendix for unit %q", destination, owner, unit)
+				return nil, fmt.Errorf("%s: destination appendix belongs to unit %q, cannot copy appendix for unit %q", destination, owner, unit)
 			}
 		}
 		copies = append(copies, UnitAppendixCopy{Source: appendix.Path, Destination: destination})
 	}
-	return copies, skipped, nil
+	return copies, nil
 }

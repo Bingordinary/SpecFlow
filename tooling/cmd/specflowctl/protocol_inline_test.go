@@ -41,6 +41,8 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			wantChunks: []protocolChunk{
 				{Source: "framework/unit_validate_checklist.md", Heading: "Prerequisite"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Execution Rules"},
+				{Source: "framework/unit_validate_checklist.md", Heading: "Severity handling"},
+				{Source: "framework/spec_writing_guide.md", Heading: "15.2 Externally observable only"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Check 2"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Check 4"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Check 5"},
@@ -56,6 +58,8 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			wantChunks: []protocolChunk{
 				{Source: "framework/rule_validate_checklist.md", Heading: "Execution Rules"},
 				{Source: "framework/rule_validate_checklist.md", Heading: "Target-layer applicability"},
+				{Source: "framework/rule_validate_checklist.md", Heading: "Severity handling"},
+				{Source: "framework/spec_writing_guide.md", Heading: "15.2 Externally observable only"},
 				{Source: "framework/rule_validate_checklist.md", Heading: "Check 3"},
 				{Source: "framework/rule_validate_checklist.md", Heading: "Check 4"},
 			},
@@ -86,6 +90,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 				{Source: "framework/unit_verify_checklist.md", Heading: "Prerequisite"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 1"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 5"},
+				{Source: "framework/unit_verify_checklist.md", Heading: "Step 7"},
 			},
 		},
 		{
@@ -107,6 +112,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			kind: gaterun.SessionKindCross, keys: []string{gaterun.CrossKey},
 			wantChunks: []protocolChunk{
 				{Source: "framework/verification_scope.md", Heading: "Final synthesis"},
+				{Source: "framework/verification_scope.md", Heading: "Relationship vocabulary"},
 				{Source: "framework/severity_policy.md", Heading: "4. Severity Levels"},
 				{Source: "framework/severity_policy.md", Heading: "5. Blocking Relationship"},
 				{Source: "framework/severity_policy.md", Heading: "9. Severity Consistency Check"},
@@ -117,6 +123,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			kind: gaterun.SessionKindCross, keys: []string{gaterun.CrossKey},
 			wantChunks: []protocolChunk{
 				{Source: "framework/verification_scope.md", Heading: "Final synthesis"},
+				{Source: "framework/verification_scope.md", Heading: "Relationship vocabulary"},
 				{Source: "framework/severity_policy.md", Heading: "4. Severity Levels"},
 				{Source: "framework/severity_policy.md", Heading: "5. Blocking Relationship"},
 				{Source: "framework/severity_policy.md", Heading: "9. Severity Consistency Check"},
