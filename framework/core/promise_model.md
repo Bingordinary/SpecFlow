@@ -55,6 +55,18 @@ cover it. The migration is agent work, executed once per installed project
 through `spec_flow_update`, and the one-time cost is lowest while the
 installed base is small.
 
+## Migrating to this format
+
+`spec_flow_update` migrates an installed project when its framework diff reports the three-section unit shape. Migrate **every unit file in each layer** (candidate and stable):
+
+1. Derive each promise from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing); the acceptance item keeps its code/test scope and references the promise it proves.
+2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
+3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item.
+4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. Do not add a converter or a compatibility path.
+5. Caches written before the promise-pin format are incompatible. After migration every unit needs one full `validate` and one full `verify`; `delta`/`repair` refuses an old cache as a baseline, and `promote` rejects it. `fresh` reports such a cache as `INVALID`.
+
+Verify each migrated unit with `specflowctl validate promise-model --unit <name> --layer candidate|stable` (see §Validation command); a valid unit declares at least one promise and covers every promise with an acceptance item.
+
 ## Unit spec shape
 
 ```markdown

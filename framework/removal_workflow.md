@@ -55,4 +55,10 @@ The tool checks first, performs one transaction, and checks the deletion list an
 
 ## Upgrade from the former exit mechanisms
 
-Follow `framework/operations/update.md` §Legacy exit-mechanism migration. Move useful retention rationale into rule prose and remove the former retention metadata. Have the agent inspect legacy retired files under the decision rules above and identify explicit deletion targets. Execute only when the user's authorization covers that deletion; otherwise report the unresolved intent. New tooling has no retired-status deletion or retention-based selection branch.
+When `spec_flow_update` reports the former retention metadata or retired status, migrate as follows:
+
+1. Move every useful `unbound_retention_reason` and owner rationale into the rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`.
+2. Inspect every unit or appendix file carrying `status: retired` under the decision rules above. The agent decides whether the responsibility has ended and identifies the exact deletion targets; delete only within clear existing authorization, and report unresolved intent instead of recreating the former promote-based exit logic.
+3. Surviving files are normal rule or appendix files. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used.
+
+New tooling has no retired-status deletion or retention-based selection branch.

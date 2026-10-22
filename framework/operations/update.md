@@ -115,19 +115,10 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 | **Update references** | Bulk-replace old ref format in `rule_refs` across all spec files |
 | **Restructure directories** | Move files between directories when path rules change |
 
-**Promise-model migration:** when Step 2 reports the three-section unit shape (`## Design Narrative` → `## Promises` → `## Acceptance Items`), migrate **every unit file in each layer** (candidate and stable):
+Some structural changes carry a target format or lifecycle that one document owns. For those, do not reconstruct the format here: read the owner document's migration guidance, apply it to the detected change, and verify with the validator it names. Ownership routing for the current known cases:
 
-1. Derive each promise from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing); the acceptance item keeps its code/test scope and references the promise it proves.
-2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
-3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item.
-4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. Do not add a converter or a compatibility path.
-5. Caches written before the promise-pin format are incompatible. After migration every unit needs one full `validate` and one full `verify`; `delta`/`repair` refuses an old cache as a baseline, and `promote` rejects it. `fresh` reports such a cache as `INVALID`.
-
-**Legacy exit-mechanism migration:** when Step 2 reports the former retention metadata or retired status:
-
-1. Move every useful `unbound_retention_reason` and owner rationale into the rule body prose, then remove `unbound_retention`, `unbound_retention_reason`, and `unbound_retention_owner`.
-2. Inspect every unit or appendix file carrying `status: retired` under `framework/removal_workflow.md`. The agent decides whether the responsibility has ended and identifies the exact deletion targets; delete only within clear existing authorization, and report unresolved intent instead of recreating the former promote-based exit logic.
-3. Surviving files are normal rule or appendix files. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used.
+- the three-section unit promise format (`## Design Narrative` → `## Promises` → `## Acceptance Items`, with dependency edges on the consumer promise's `depends_on`) → `framework/core/promise_model.md` §Migrating to this format
+- the former retention metadata and `status: retired` exit files → `framework/removal_workflow.md` §Upgrade from the former exit mechanisms
 
 For each operation:
 
@@ -143,17 +134,11 @@ If no structural changes were detected in Step 2, report that no migration is ne
 
 ### Step 4: Verify and report
 
-After migration, run the format compliance check against `framework/spec_writing_guide.md`:
+After migration, verify the files against the owner document of each detected change and against the spec-format contract `framework/spec_writing_guide.md`:
 
-| Check | What to verify |
-|-------|---------------|
-| Candidate spec files | For each `docs/specs/units/candidate/unit_*.md`: `id`, `rule_refs`, `acceptance_item_set` present, and the promise model present (`## Design Narrative` → `## Promises` → `## Acceptance Items`). Compare field format against `spec_writing_guide.md`. |
-| Stable spec files | For each `docs/specs/units/stable/unit_*.md`: required frontmatter fields present and the promise model present (`## Design Narrative` → `## Promises` → `## Acceptance Items`). Compare against `spec_writing_guide.md`. |
-| Promise-model units | For **every unit file present in a layer** (candidate or stable): the three sections are in order, every promise has a stable ID and contract, every contract item declares `promise` or `non_promise`, and no `###` subheading appears inside `## Promises` or `## Acceptance Items`. Run `specflowctl validate promise-model --unit <name> --layer candidate` for a candidate file and `--layer stable` for a stable file. |
-| Legacy dependency fields | No `unit_refs` or `affects.dependencies` remains in any unit spec; every dependency edge is on a consumer promise's `depends_on`. |
-| Legacy exit mechanisms | No `unbound_retention*` field remains in any rule; no unit or appendix uses `status: retired`. |
-| Appendix files | Path follows: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`. |
-| Rule files | For each rule file: `rule_id`, `rule_scope` present. Path matches convention. |
+- For every change whose target format or lifecycle an owner document defines, run the verification that document's migration section names — for the promise-model migration, `specflowctl validate promise-model --unit <name> --layer candidate|stable` for every unit file in a layer.
+- Compare each spec file's path, frontmatter, and section structure against `framework/spec_writing_guide.md` (unit main specs, rule files, and appendices).
+- Confirm no retired field or mechanism named by an owner's migration section remains.
 
 Report each check as PASSED or FAILED with details. If any check fails and the cause is a missed migration, fix it. If the cause is unclear or requires business judgment, report it to the user.
 
