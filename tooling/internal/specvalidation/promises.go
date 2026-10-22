@@ -168,8 +168,9 @@ func hasDeeperHeading(section string) bool {
 	return false
 }
 
-// hasTopLevelMarker reports whether a section contains `key:` at column zero,
-// outside a fenced code block.
+// hasTopLevelMarker reports whether a section contains the exact marker line
+// `key:` (a bare structural marker with no same-line value), mirroring the
+// acceptance-item-set locator: `promises: []` is not a structural marker line.
 func hasTopLevelMarker(section, key string) bool {
 	inFence := false
 	var fenceChar byte
@@ -191,7 +192,7 @@ func hasTopLevelMarker(section, key string) bool {
 			}
 			continue
 		}
-		if strings.HasPrefix(line, key+":") {
+		if trimmed == key+":" {
 			return true
 		}
 	}
@@ -291,8 +292,14 @@ func CheckPromiseSchema(content, unitName string) CheckResult {
 		return result
 	}
 	if len(promises) == 0 {
-		result.Status = Pass
-		result.Details = "no promises declared"
+		// A valid unit declares at least one promise (framework/core/promise_model.md).
+		// This is the mechanical half of the promise model's minimum: with no
+		// promise, promise coverage is vacuous and the model's guarantee that
+		// every promise is covered by an acceptance item no longer implies the
+		// unit has any acceptance item at all. The gate planner relies on that
+		// implication to reject an item-less spec, so an empty promise list must
+		// fail here rather than pass as "no promises declared".
+		result.Details = "no promises declared: a valid unit declares at least one promise"
 		return result
 	}
 

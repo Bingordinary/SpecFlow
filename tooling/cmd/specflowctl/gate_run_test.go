@@ -47,9 +47,6 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 	path := filepath.Join(dir, "unit_"+name+".md")
 	var b strings.Builder
 	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}", name)
-	if len(items) == 0 {
-		promiseBlock = "promises: []"
-	}
 	if providerUnits != "" && !strings.EqualFold(providerUnits, "none") {
 		var ids []string
 		for _, unit := range strings.Split(providerUnits, ",") {
@@ -1084,16 +1081,17 @@ func TestGatePlanRejectsUnresolvedImplementationSurface(t *testing.T) {
 }
 
 // TestGatePlanRejectsEmptyAcceptanceItemSet verifies the end-to-end work-set
-// precondition: a verify plan for a spec whose acceptance_item_set has no
-// items is rejected before any run state is written, while the validate gate
-// still plans the same spec so its Check 2 can report the empty set.
+// precondition: a spec whose acceptance_item_set has no items is
+// promise-model invalid (coverage requires every promise to be covered by at
+// least one acceptance item), so both gates reject the plan before any run
+// state is written and point at the promise-model validator.
 func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpecItems(t, repoRoot, "demo", "none", "none", nil)
 
 	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "demo", "--target", "candidate")
-	if err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
-		t.Fatalf("expected the empty-item-set rejection, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "promise model invalid") {
+		t.Fatalf("expected the promise-model rejection, got %v", err)
 	}
 	entries, readErr := os.ReadDir(filepath.Join(repoRoot, "meta/gate_runs"))
 	if readErr != nil && !os.IsNotExist(readErr) {
@@ -1102,8 +1100,8 @@ func TestGatePlanRejectsEmptyAcceptanceItemSet(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("a rejected verify plan must not persist run state, found %d entries", len(entries))
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "demo", "--target", "candidate"); err != nil {
-		t.Fatalf("validate planning must still plan an empty item set, got %v", err)
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "demo", "--target", "candidate"); err == nil || !strings.Contains(err.Error(), "promise model invalid") {
+		t.Fatalf("validate planning must refuse a promise-invalid spec for the same reason, got %v", err)
 	}
 }
 
@@ -1821,6 +1819,7 @@ func TestGateVerifyMismatchFindingIsSelfContained(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyMismatchReport("auth.core", main, "src/auth.go", "P1"))
+	grAutoSubmitRemaining(t, repoRoot, runID)
 	state, err := grLoadSessionState(repoRoot, mustLoadRun(t, repoRoot, runID), "auth.core")
 	if err != nil {
 		t.Fatal(err)

@@ -823,10 +823,11 @@ For full-scope review:
     - a finding that only appears valid within a single slice's local
       context but dissolves under broader cross-file verification must be
       demoted to a note
-    - severity P3 findings and notes are exempt from this
-      validation step (they are reported as graded; a P3 finding that
+    - severity P3 findings are exempt from this
+      validation step and are reported as graded; a P3 finding that
       claims a blocking status must first be re-graded under
-      `framework/severity_policy.md` §9)
+      `framework/severity_policy.md` §9. A demoted candidate is a note
+      per Section 8.3 and carries no severity.
     - for every retained finding (P0-P2), validate the severity per
       `framework/severity_policy.md` §9 before final conclusion:
       the reviewer must read at least one impact-surface file beyond the
@@ -959,7 +960,7 @@ Every real finding must still contain these information items:
 2. severity
    - required for every real finding and must be one of `P0`, `P1`, `P2`, or `P3`
    - must be validated per `framework/severity_policy.md` §9 before the final conclusion (Section 7 step 10)
-   - P3 findings and notes exempted per Section 7 step 10 are reported as graded
+   - P3 findings exempted per Section 7 step 10 are reported as graded; demoted candidates are notes per Section 8.3 and carry no severity
 3. background
    - the minimum repository or rule context needed to understand why this finding matters
 4. what happened

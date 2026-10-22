@@ -73,6 +73,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runSurfaces(args[1:], stdout, stderr)
 	case "fresh":
 		return runFresh(args[1:], stdout, stderr)
+	case "resolve":
+		return runResolve(args[1:], stdout, stderr)
 	case "remove":
 		return runRemove(args[1:], stdout, stderr)
 	case "clean":
@@ -560,6 +562,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
 	fmt.Fprintln(w, "  surfaces   Display code-surface associations, shared files, and per-unit judgments")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
+	fmt.Fprintln(w, "  resolve    Classify a target text as unit, rule, ambiguous, or not found (read-only)")
 	fmt.Fprintln(w, "  remove     Remove explicitly selected units, rules, and appendices after structured-reference checks")
 	fmt.Fprintln(w, "  clean      Remove disposable local state (orphaned and terminal runs, unreferenced shared tasks, plan inputs, strays, closed operations)")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")

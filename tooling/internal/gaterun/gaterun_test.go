@@ -387,18 +387,18 @@ func TestPlanValidateIgnoresCodeSurfaceResolution(t *testing.T) {
 
 // TestPlanCodeGatesRejectEmptyAcceptanceItemSet verifies the work-set
 // precondition: a verify plan for a spec with an empty
-// acceptance_item_set is rejected before any run state is written — an empty
-// item set has no verifiable object and would plan only the cross session.
-// The validate gate still plans it, because reporting the empty set as a
-// check failure is the validate gate's job.
+// acceptance_item_set is rejected before any run state is written — the spec
+// is promise-model invalid: coverage requires every promise to be covered by
+// at least one acceptance item, and both gates refuse the plan with the
+// promise-model diagnosis instead of planning a session for it.
 func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
-		"---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set:\n")
+		"---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: auth.core\n    kind: opaque\n    opaque_reason: no structured kind applies\n    summary: Core contract.\n    contract: {text: core}\n\n## Acceptance Items\n\nacceptance_item_set:\n")
 
-	for _, gate := range []string{GateVerify} {
-		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "at least one acceptance item") {
-			t.Fatalf("expected the empty-item-set rejection for %s, got %v", gate, err)
+	for _, gate := range []string{GateVerify, GateValidate} {
+		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "promise model invalid") {
+			t.Fatalf("expected the promise-model rejection for %s, got %v", gate, err)
 		}
 	}
 	runs, err := ListRuns(repoRoot)
@@ -408,8 +408,30 @@ func TestPlanCodeGatesRejectEmptyAcceptanceItemSet(t *testing.T) {
 	if len(runs) != 0 {
 		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
 	}
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err != nil {
-		t.Fatalf("validate planning must still plan an empty item set so Check 2 can report it, got %v", err)
+}
+
+// TestPlanCodeGatesRejectEmptyPromiseList pins the promise model's minimum at
+// the plan boundary: an empty promise list (the exact `promises:` marker line
+// kept, the YAML list empty) used to pass the schema as "no promises declared",
+// which made promise coverage vacuous and let gate-plan accept an item-less
+// verify run carrying no spec-to-code evidence. The schema now fails the empty
+// list, so both gates reject the plan before any run state is written.
+func TestPlanCodeGatesRejectEmptyPromiseList(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md",
+		"---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  []\n\n## Acceptance Items\n\nacceptance_item_set:\n")
+
+	for _, gate := range []string{GateVerify, GateValidate} {
+		if _, err := Plan(repoRoot, gate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "promise model invalid") {
+			t.Fatalf("expected the promise-model rejection for %s, got %v", gate, err)
+		}
+	}
+	runs, err := ListRuns(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
 	}
 }
 

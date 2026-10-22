@@ -271,6 +271,26 @@ func TestGateMissionValidateFinalSynthesis(t *testing.T) {
 	}
 }
 
+// TestGateMissionFinalRefusesUncoveredRun pins the mission-side readiness
+// guard: the final-synthesis mission must not be generated while coverage
+// keys are uncovered — the same fail-closed fact gate-submit enforces, from
+// the same CoverageProgress source — so a zero-context reviewer never
+// receives a mission whose readiness claim is false.
+func TestGateMissionFinalRefusesUncoveredRun(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	var out, errOut bytes.Buffer
+	err := runGateMission([]string{"--repo-root", root, "--run", runID, "--final"}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "final synthesis is not ready") {
+		t.Fatalf("final mission must refuse an uncovered run, got %v (%s)", err, errOut.String())
+	}
+	if strings.Contains(out.String(), "Why now") {
+		t.Fatalf("no mission text may be produced for an uncovered run:\n%s", out.String())
+	}
+}
+
 func TestGateMissionUsesInstalledFrameworkPath(t *testing.T) {
 	root := createCLITestRepo(t)
 	grWriteFile(t, root, "specflow/tooling/manifest.tsv", "fixture\n")
@@ -360,8 +380,9 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 		t.Fatalf("wrong quality file mission: %+v", file.Sessions[0])
 	}
 	grSubmitOK(t, root, verifyRun, "src/auth.go", grQualityReport("src/auth.go", main))
+	grAutoSubmitRemaining(t, root, verifyRun)
 	cross := missionJSON(t, root, verifyRun, "cross")
-	if len(cross.Sessions[0].Dependencies) != 3 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
+	if len(cross.Sessions[0].Dependencies) != 5 || cross.Sessions[0].Dependencies[0].Digest == "" || len(cross.Sessions[0].Dependencies[0].Verdicts) == 0 ||
 		len(cross.Sessions[0].ProtocolInline) == 0 || !strings.Contains(cross.Sessions[0].ReportContract.Template, "Finding disposition:") || strings.Contains(cross.Sessions[0].ReportContract.Template, "Effective status:") {
 		t.Fatalf("wrong cross mission: %+v", cross.Sessions[0])
 	}
@@ -607,6 +628,7 @@ func TestFinalSynthesisMissionExcludesPublicObservations(t *testing.T) {
 	finding := designState.Result.Findings[0]
 
 	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitRemaining(t, root, id)
 
 	var crossOut, crossErr bytes.Buffer
 	if err := runGateMission([]string{"--repo-root", root, "--run", id, "--final", "--format", "json"}, &crossOut, &crossErr); err != nil {

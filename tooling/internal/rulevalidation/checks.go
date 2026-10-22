@@ -70,6 +70,39 @@ func checkFrontmatter(repoRoot, ruleID string) CheckResult {
 	return CheckResult{Name: "Frontmatter completeness", Status: Pass}
 }
 
+// checkFilenameConsistency enforces the File Path Consistency check
+// (rule_validate_checklist Check 3) mechanically: the candidate rule must
+// live at the canonical candidate-layer path whose filename equals the rule
+// id, and the file's `rule_id` frontmatter must agree with that filename.
+// The layer is encoded by the path, so reading the canonical candidate path
+// is both the layer check and the filename check.
+func checkFilenameConsistency(repoRoot, ruleID string) CheckResult {
+	path := candidateRulePath(repoRoot, ruleID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return CheckResult{
+			Name:    "File path consistency",
+			Status:  Fail,
+			Details: fmt.Sprintf("candidate rule not found at canonical path %s: %v", specpaths.RuleCandidateFileRef(ruleID), err),
+		}
+	}
+
+	fm := specpaths.ReadFrontmatterStringMap(string(data))
+	if id := strings.TrimSpace(fm["rule_id"]); id != ruleID {
+		return CheckResult{
+			Name:    "File path consistency",
+			Status:  Fail,
+			Details: fmt.Sprintf("filename/rule_id disagreement: %s carries rule_id %q", specpaths.RuleCandidateFileRef(ruleID), id),
+		}
+	}
+
+	return CheckResult{
+		Name:    "File path consistency",
+		Status:  Pass,
+		Details: fmt.Sprintf("%s matches its rule_id", specpaths.RuleCandidateFileRef(ruleID)),
+	}
+}
+
 func checkIDScopeConsistency(repoRoot, ruleID string) CheckResult {
 	fm := frontmatterKeys(repoRoot, ruleID)
 	if fm == nil {

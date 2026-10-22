@@ -777,7 +777,7 @@ func checkPromisePlanInputs(repoRoot, gate, targetKind, targetName, target strin
 		issues = append(issues, graph.Name+": "+graph.Details)
 	}
 	if len(issues) > 0 {
-		return fmt.Errorf("promise model invalid for %s: %s — run `specflowctl validate promise-model --unit %s` first", relPath, strings.Join(issues, "; "), targetName)
+		return fmt.Errorf("promise model invalid for %s: %s — run `specflowctl validate promise-model --unit %s --layer %s` first", relPath, strings.Join(issues, "; "), targetName, target)
 	}
 	return nil
 }
@@ -1507,21 +1507,15 @@ func specAffectsRefs(repoRoot string, paths []string) ([]Ref, error) {
 // own spec files in the target layer plus the declared code surface
 // (implementation_surface directories expanded to their repository-content
 // files + affects.files). It fails closed before any run state is written on
-// a spec with no acceptance items or an unresolvable declared surface.
+// an unresolvable declared surface. The promise-model checks already guarantee
+// at least one acceptance item (coverage requires every promise to be covered),
+// so it never has to reject an item-less spec here.
 func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surface, error) {
 	repoRoot := d.root
 	unitMain := targetLayerSpecRef(TargetKindUnit, unitName, target)
 	content, err := readSpecContent(repoRoot, unitMain)
 	if err != nil {
 		return nil, nil, err
-	}
-	// Fail closed before any run state is written: a verify run's work
-	// set is the acceptance items, so an empty item set has no verifiable
-	// object — the session plan would carry only the cross session and could
-	// finalize a pass cache with no code evidence at all. The same
-	// precondition is enforced by mechanical validate Check 2.
-	if len(specvalidation.ExtractAcceptanceItemIDs(content)) == 0 {
-		return nil, nil, fmt.Errorf("declared acceptance item set is empty — add at least one acceptance item before planning a verify run")
 	}
 	var refs []Ref
 	refs = append(refs, physicalRef(repoRoot, unitMain, SourceDerived))

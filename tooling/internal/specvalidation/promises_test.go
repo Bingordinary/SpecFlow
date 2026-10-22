@@ -141,6 +141,11 @@ func TestUnitSpecShapeRequiresFixedSections(t *testing.T) {
 			content: strings.Replace(validPromiseSpec, "promises:", "contracts:", 1),
 			want:    "promises:",
 		},
+		{
+			name:    "empty promise marker",
+			content: strings.Replace(validPromiseSpec, "promises:", "promises: []", 1),
+			want:    "promises:",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,6 +220,28 @@ promises:
 	result := CheckPromiseSchema(content, "solo")
 	if result.Status != Fail || !strings.Contains(result.Details, "owned by this unit") {
 		t.Fatalf("expected same-unit dependency failure, got %s — %s", result.Status, result.Details)
+	}
+}
+
+// TestPromiseSchemaRejectsEmptyPromiseList pins the promise model's minimum:
+// a valid unit declares at least one promise. An empty list built from the
+// marker line plus an empty YAML list (the only representation that keeps the
+// exact `promises:` marker line) previously passed as "no promises declared",
+// which made promise coverage vacuous and let an item-less spec plan a verify
+// run with no spec-to-code evidence.
+func TestPromiseSchemaRejectsEmptyPromiseList(t *testing.T) {
+	content := `## Promises
+
+promises:
+  []
+
+## Acceptance Items
+
+acceptance_item_set:
+`
+	result := CheckPromiseSchema(content, "auth")
+	if result.Status != Fail || !strings.Contains(result.Details, "at least one promise") {
+		t.Fatalf("expected an empty-promise-list failure, got %s — %s", result.Status, result.Details)
 	}
 }
 

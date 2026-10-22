@@ -1,6 +1,6 @@
 # Impact Sync
 
-Impact sync reconciles downstream units after unit, rule, or global rule truth changes.
+Impact sync reconciles downstream units after unit truth changes or governance-flow uncertainty. Rule truth changes do not route through impact sync — see §Rule Change Impact.
 
 It owns consumer discovery and fallback reason classification for affected units. Deterministic freshness classification (the mechanical gate-state check) is owned by the caller per the Freshness Review section below — the two classifications are separate steps with separate owners.
 
@@ -16,10 +16,9 @@ Run impact sync when:
 
 Use the smallest durable truth that can prove affected consumers:
 
-1. changed rule or global rule truth.
-2. promoted stable unit reference and its changed content.
-3. current-layer unit frontmatter and promise `depends_on` edges.
-4. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
+1. the promoted stable unit reference and its changed content.
+2. current-layer unit frontmatter and promise `depends_on` edges.
+3. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
 
 
 Do not infer consumers from implementation directories alone.

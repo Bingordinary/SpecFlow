@@ -81,15 +81,23 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if spec.Kind != gaterun.SessionKindCross {
-		states, cerr := gaterun.LoadSessionStates(absRoot, run)
-		if cerr != nil {
-			return cerr
+	// The mission and the submit side enforce the same coverage facts from
+	// the same CoverageProgress source, so a mission can never claim a
+	// readiness its run does not have: a coverage batch refuses already
+	// accepted keys, and the final synthesis refuses an uncovered run.
+	states, cerr := gaterun.LoadSessionStates(absRoot, run)
+	if cerr != nil {
+		return cerr
+	}
+	covered, uncovered, cerr := gaterun.CoverageProgress(run, states)
+	if cerr != nil {
+		return cerr
+	}
+	if spec.Kind == gaterun.SessionKindCross {
+		if len(uncovered) > 0 {
+			return fmt.Errorf("final synthesis is not ready — %d coverage key(s) are still uncovered; complete and accept the dependency sessions first", len(uncovered))
 		}
-		covered, _, cerr := gaterun.CoverageProgress(run, states)
-		if cerr != nil {
-			return cerr
-		}
+	} else {
 		for _, key := range keys {
 			if owner, ok := covered[key]; ok {
 				return fmt.Errorf("coverage key %q is already covered by accepted session %q — its judgment is terminal", key, owner)

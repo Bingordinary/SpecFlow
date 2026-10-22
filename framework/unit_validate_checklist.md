@@ -681,7 +681,7 @@ affects.appendices:
 
 - **Delta/repair:** check 10's dependency evidence is the spec sections (and appendices) the clarity judgment read. An edit inside a declared section or appendix re-runs check 10; rule and dependency changes carry it over like any other check.
 - **Stable-only targets:** the check runs against the stable main spec and appendices like every other check.
-- **Empty acceptance item set:** runs normally — the clarity judgment reads the spec text, not the item set; validate still plans the run so Check 2 can report the empty set.
+- **Empty acceptance item set:** the spec is promise-model invalid — coverage requires every promise to be covered by at least one acceptance item (the Promise-model checks Coverage standard above), and a unit without a real `promises:` list fails the shape check — so the mechanical pre-pass and `gate-plan` reject the run before any session launches, with `specflowctl validate promise-model --unit <name> --layer <candidate|stable>` as the diagnosis entry. The clarity judgment never sees a promise-invalid spec.
 - **Targeted runs:** `validate@{unit}:clarity` (or `:check-10`) executes the same single-session clarity check directly in the main agent session, without a coverage run or cache write; a P0/P1 finding must first be persisted with `gate-invalidate --check 10`.
 
 ---

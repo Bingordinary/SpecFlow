@@ -16,6 +16,8 @@ A candidate full-run FAIL writes a failure record (`result: fail` + `blocking: t
 | `validate@{rule}:check-{n}` | targeted | Single check `{n}` only. User explicitly chooses focus. Does not write a cache. |
 | `validate@{rule}:{keyword}` | targeted | Match keyword to check name. User explicitly chooses focus. Does not write a cache. |
 
+**Mechanical pre-pass:** for a candidate target, every full and delta `validate@{rule}` run starts with `specflowctl validate rule --id {rule_id}`, which mechanically enforces the rule's metadata checks — frontmatter completeness, file path consistency (the candidate-layer condition of Check 3), ID/scope consistency, `promotion_owner_unit` (warning), and prohibited fields — before any session launches. A mechanical FAIL stops the run — fix and re-run the tool before planning; no gate run is planned and no session launches until it passes. A stable-only confirmation has no mechanical pre-pass — the tool checks the candidate layer only — so the stable-layer path condition and Check 6 stay agent-verified.
+
 ## Execution Rules
 
 - **Subagent permissions:** rule validate executes in an independent read-only sub-agent session using the generated `specflowctl gate-mission --run {run_id} --keys {keys} --format prompt` mission. The sub-agent may read rule files, search text patterns, check file existence, query read-only repository history, and run the read-only framework inspection subcommands its checks instruct it to run (`specflowctl deps`, `specflowctl surfaces`, `specflowctl validate candidate`). It must NOT modify files, run state-changing commands, or delegate to other agents. Targeted runs (`:check-{n}` / `:{keyword}`) execute directly in the main agent session instead.
@@ -163,6 +165,8 @@ When both are present, `rule_scope` in frontmatter takes precedence (per `spec_w
 Verify the rule file is in the target layer directory: `docs/specs/rules/candidate/{rule_id}.md` for a candidate run, or `docs/specs/rules/stable/{rule_id}.md` for a stable confirmation. The rule layer is encoded by the file path — no `layer` frontmatter field is declared (see `framework/spec_writing_guide.md` §6).
 
 Filenames follow the pattern `{g_or_b}_rule_{id}.md` — `g_rule_` for global rules, `b_rule_` for bound rules.
+
+Mechanical enforcement: `specflowctl validate rule --id <rule_id>` runs this check's candidate-layer condition before the session — it fails when the candidate file is not at the canonical candidate-layer path or when the file's `rule_id` frontmatter disagrees with its filename. The stable-layer condition for a stable confirmation remains agent-verified.
 
 ### Check 4 — `promotion_owner_unit` (optional documentation field)
 

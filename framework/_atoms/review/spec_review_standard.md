@@ -1,6 +1,6 @@
 ## Quality Lens Standard
 
-The `quality` lens separates reusable public code facts from unit-specific design judgments and the unit's overall architecture assessment. The complete protocol is `framework/shared_judgments.md`.
+The `quality` lens separates reusable public code facts from unit-specific design judgments and the unit's overall architecture assessment.
 
 ### 1. Core Principle
 

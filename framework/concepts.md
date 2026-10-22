@@ -40,14 +40,14 @@ Resolve mode, then read the target row and its required packages.
 
 | Trigger | First action and required packages |
 |---|---|
-| `validate@{target}` | Resolve `framework/commands.md`; full run. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
-| `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | Resolve with `framework/commands.md`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `validate@{target}` | `specflowctl resolve --target {target}`; full run. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `validate@{target}:check-{n}` / `validate@{target}:{keyword}` | `specflowctl resolve --target {target}`; run targeted check directly; read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `verify@{unit}` | Resolve candidate/stable; discover evidence paths into the input manifest (`--inputs-file`, kept outside the evidence surface), then full run. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `verify@{rule}` | rule verify was removed; report `validate@{rule}`. Read `framework/verification_scope.md`. |
-| `revalidate@{target}` | Resolve `framework/commands.md`; delta/repair. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
+| `revalidate@{target}` | `specflowctl resolve --target {target}`; delta/repair. Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md` or `framework/rule_validate_checklist.md`. |
 | `reverify@{unit}` | Discover evidence for all items, including carried; delta/repair with `--inputs-file`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
-| `promote@{target}` | Resolve with `framework/commands.md`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
+| `promote@{target}` | `specflowctl resolve --target {target}`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
 | `remove@{unit}` / `remove@{rule}` / `remove@{unit}:appendix:{filename.md}` | Read `framework/removal_workflow.md`; resolve targets; run remove. |
 | `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |

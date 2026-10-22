@@ -226,14 +226,14 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 		}
 	}
 
-	assertRoute("validate@{target}", []string{"framework/commands.md", "full run", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
-	assertRoute("validate@{target}:check-{n}", []string{"framework/commands.md", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
+	assertRoute("validate@{target}", []string{"specflowctl resolve --target {target}", "full run", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
+	assertRoute("validate@{target}:check-{n}", []string{"specflowctl resolve --target {target}", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("verify@{unit}", []string{"discover evidence paths", "input manifest", "full run", "--inputs-file", "framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md"}, nil)
 	assertRoute("verify@{unit}:{keyword}", []string{"framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md", "targeted check directly"}, []string{"framework/validation_cache.md", "gate-plan"})
 	assertRoute("verify@{rule}", []string{"rule verify was removed", "validate@{rule}", "framework/verification_scope.md"}, nil)
-	assertRoute("revalidate@{target}", []string{"framework/commands.md", "delta/repair", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
+	assertRoute("revalidate@{target}", []string{"specflowctl resolve --target {target}", "delta/repair", "framework/verification_scope.md", "framework/unit_validate_checklist.md", "framework/rule_validate_checklist.md"}, nil)
 	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta/repair", "--inputs-file", "framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md"}, nil)
-	assertRoute("promote@{target}", []string{"framework/commands.md", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
+	assertRoute("promote@{target}", []string{"specflowctl resolve --target {target}", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
 	assertRoute("fresh@{target}", []string{"For `{target}`, resolve via `framework/commands.md`", "`specflowctl fresh`", "framework/validation_cache.md"}, nil)
 
 	for _, metaTrigger := range []string{"`spec_flow_review`", "`spec_flow_review:full`", "`spec_flow_design_review`"} {
