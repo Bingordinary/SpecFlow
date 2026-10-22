@@ -73,3 +73,22 @@ Default `spec_flow_review` scoped review uses the layered framework structure:
 
 `framework/spec_flow_review.md` is the mechanism deep-audit owner and is not ordinary default context for scoped review.
 `framework/spec_flow_design_review.md` is the ordinary owner for every `spec_flow_design_review`.
+
+## Repair Recommendation Soundness
+
+A `recommended fix` that removes, weakens, or changes the behavior of an existing mechanism must name the premise that makes the change safe, and the review must verify that premise before the finding is reported.
+
+The premise is one of three classes, each with its own verification:
+
+1. executable behavior — the premise states what a command, tool, or code path does.
+   Verify by executing it on a constructed input and recording the observed result.
+2. repository text — the premise states what a rule document says, or that two texts agree or conflict.
+   Verify by citing the exact governing lines, using the P3 fact-anchor proof shapes (absence, contradiction, convention deviation; `framework/severity_policy.md` §10).
+3. future executor behavior — the premise states what an executor will do after the change.
+   This class is not verifiable. The finding must not present such a fix as settled: it must state that the repair path is unresolved, name the assumption, and leave the decision to the user.
+
+The verification result is part of the finding's `evidence`. A class 1 or class 2 premise without its verification makes the finding incomplete. A class 3 premise is the unresolved-repair case: the finding keeps its `recommended fix` field, states that the repair path is unresolved, and names the assumption for the user to decide.
+
+This check is agent work and is deliberately not tooling-enforced: choosing the verification target and judging class 2 and class 3 premises is semantic judgment, which `framework/tooling_execution_policy.md` §5 forbids tooling from performing.
+
+Execution position: the same step as the severity validation — scoped review conclusion stage (`framework/governance/review_scope.md`), full-scope procedure step 10 (`framework/spec_flow_review.md`), and design review procedure step 13 (`framework/spec_flow_design_review.md`).

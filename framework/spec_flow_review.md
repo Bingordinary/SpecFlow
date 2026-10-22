@@ -1000,6 +1000,7 @@ Additional rules:
 5. do not replace `recommended fix` with a vague statement such as "should be aligned" or "needs cleanup"
 6. if more than one plausible repair exists and the review cannot justify one minimal correct fix, the finding must say that the repair path is still unresolved and the review must not present a guessed fix as settled
 7. when no real finding exists, the output must say so explicitly instead of omitting the finding section
+8. a `recommended fix` that removes, weakens, or changes the behavior of an existing mechanism must satisfy the repair recommendation soundness rule in `framework/governance/review.md` — the premise that makes the change safe is verified per its class, and the verification result is part of `evidence`
 
 ### 8.3 Notes
 

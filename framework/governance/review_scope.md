@@ -63,6 +63,8 @@ Severity describes harm level; it does not replace explicit blocking status.
 
 Every scoped finding's severity must be validated per `framework/severity_policy.md` §9 before the conclusion: read at least one boundary or owner ref beyond the finding's source inputs that the severity claim depends on (the owner file governing the affected mechanism, or the consumer of the affected rule) and verify the §9.3 boundary. A grade found too low is raised; no confirmation record is written.
 
+Every scoped finding whose `recommended fix` removes, weakens, or changes the behavior of an existing mechanism must satisfy the repair recommendation soundness rule in `framework/governance/review.md` before the conclusion: the premise that makes the change safe is verified per its class, and the verification result is part of `evidence`.
+
 The conclusion may be:
 
 ```text

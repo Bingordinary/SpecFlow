@@ -735,6 +735,7 @@ Additional rules:
 6. when a finding concerns avoidable rule weight or incorrect rule-consumption timing, `recommended fix` must state the smallest correct repair: keep as `action_before_hard_rule`, downgrade to `on_demand_rule_lookup`, convert to `post_action_check`, keep only as `example_or_wording`, merge or link as `duplicate_or_restatement`, or remove or narrow an `overweight_rule`
 7. when a finding comes from `routine_work_path_check`, `recommended fix` must state whether the minimal repair is a lighter B rule set, a narrower D action boundary, an E automatic impact check, or a hard pre-action stop that the current design failed to isolate
 8. when no real finding exists, the output must say so explicitly instead of omitting the finding section
+9. a `recommended fix` that removes, weakens, or changes the behavior of an existing mechanism must satisfy the repair recommendation soundness rule in `framework/governance/review.md` — the premise that makes the change safe is verified per its class, and the verification result is part of `evidence`
 
 ### 8.2 Optimization Contract
 
