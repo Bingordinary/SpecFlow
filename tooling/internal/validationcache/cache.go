@@ -58,6 +58,15 @@ type CheckResult struct {
 	Fresh    bool
 	Category CheckCategory
 	Reason   string
+	// RepairOnly marks a STALE state whose only recovery is the repair run:
+	// the cache carries pending invalidations (a salvaged pass cache) or is a
+	// failure record (delta refuses a failure-record baseline). A plain STALE
+	// state is delta-recoverable.
+	RepairOnly bool
+	// FailureRecord marks a cache whose result is `fail`. A BLOCKED failure
+	// record keeps its P0/P1 disclosure; a STALE failure record is recovered
+	// by resolving the findings and running repair, never delta.
+	FailureRecord bool
 }
 
 // cacheFile is the parsed representation of a cache file.
@@ -88,9 +97,10 @@ type cacheFile struct {
 	// standard judged it, so freshness treats it as invalid. Verify caches
 	// bind their standard per judgment record instead and leave this empty.
 	Standard string `yaml:"standard,omitempty"`
-	// InvalidatedChecks records targeted P0/P1 contradictions discovered
-	// after this failure record was written. It is machine-owned recovery
-	// state, separate from the historical per-check status map.
+	// InvalidatedChecks records the machine-owned recovery state: judgments
+	// whose recorded result was contradicted by a targeted P0/P1 after the
+	// cache was written, or whose evidence basis a salvaged finalize declared
+	// invalid. It is separate from the historical per-check status map.
 	InvalidatedChecks []string `yaml:"invalidated_checks,omitempty"`
 	invalidatedSeen   bool     `yaml:"-"`
 	// Review fields record the delta review that accepted the change set.
@@ -498,10 +508,14 @@ func blockingCheck(command string, cache *cacheFile) *CheckResult {
 
 	// Blocking check — P0/P1 findings block promote
 	if cache.Blocking {
+		reason := fmt.Sprintf("%s found %d P0 and %d P1 finding(s). Resolve before promoting.", capitalize(command), cache.P0Count, cache.P1Count)
+		if len(cache.InvalidatedChecks) > 0 {
+			reason += fmt.Sprintf(" Pending invalidations will also re-run: %s.", strings.Join(cache.InvalidatedChecks, ", "))
+		}
 		return &CheckResult{
 			Fresh:    false,
 			Category: CategoryBlocked,
-			Reason:   fmt.Sprintf("%s found %d P0 and %d P1 finding(s). Resolve before promoting.", capitalize(command), cache.P0Count, cache.P1Count),
+			Reason:   reason,
 		}
 	}
 
@@ -515,6 +529,20 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// failureRecordStaleReason adds the failure-record facts the raw staleness
+// chain cannot state: a stale failure record still has unresolved P0/P1
+// findings, and its recovery is resolve-then-repair, never a delta re-run.
+// Pending invalidations are named because repair re-runs them with the failed
+// judgments.
+func failureRecordStaleReason(staleReason, command string, cache *cacheFile) string {
+	note := fmt.Sprintf("%s is a failure record with %d P0 and %d P1 finding(s); resolve them before promoting",
+		capitalize(command), cache.P0Count, cache.P1Count)
+	if len(cache.InvalidatedChecks) > 0 {
+		note += fmt.Sprintf("; pending invalidations will also re-run: %s", strings.Join(cache.InvalidatedChecks, ", "))
+	}
+	return staleReason + " — " + note
 }
 
 // FileEntry is the full content of one cache `files` entry: the whole-file
@@ -573,9 +601,11 @@ type CacheWrite struct {
 	// before the cache is reusable. Verify writes leave it empty: a verify
 	// conclusion binds its standard per judgment record instead.
 	Standard string
-	// InvalidatedChecks is used only when rendering an existing failure
-	// record's machine-owned targeted invalidation state. Gate-finalize leaves
-	// it empty, which clears every invalidation the completed plan re-ran.
+	// InvalidatedChecks carries the machine-owned targeted invalidation
+	// state: the pending re-run set of a salvaged finalize (a full run whose
+	// input drifted mid-run) or a targeted P0/P1 merged into an existing
+	// failure record by gate-invalidate. A normal finalize leaves it empty,
+	// which clears every invalidation the completed plan re-ran.
 	InvalidatedChecks []string
 	// ReviewChangeSet/ReviewResult/ReviewSession/ReviewRecheck record the
 	// delta review that accepted this cache's change set (delta/repair runs
@@ -700,9 +730,11 @@ func WriteCache(repoRoot, targetKind, targetName string, w CacheWrite) (string, 
 
 // CacheResult mirrors CheckResult for gate-finalize output.
 type CacheResult struct {
-	Fresh    bool
-	Category CheckCategory
-	Reason   string
+	Fresh         bool
+	Category      CheckCategory
+	Reason        string
+	RepairOnly    bool
+	FailureRecord bool
 }
 
 // CheckWriteResult runs the gate's full freshness chain against a freshly
@@ -734,7 +766,7 @@ func CheckWriteResult(repoRoot, targetKind, targetName, command, target string) 
 	if err != nil {
 		return CacheResult{}, err
 	}
-	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason}, nil
+	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason, RepairOnly: res.RepairOnly, FailureRecord: res.FailureRecord}, nil
 }
 
 // CheckRenderedCache runs the same parsed-cache checks used by fresh and
@@ -764,7 +796,7 @@ func CheckRenderedCache(repoRoot, targetKind, targetName, command, target string
 	if err != nil {
 		return CacheResult{}, err
 	}
-	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason}, nil
+	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason, RepairOnly: res.RepairOnly, FailureRecord: res.FailureRecord}, nil
 }
 
 // renderCacheFrontmatter renders the YAML frontmatter of a cache file
@@ -1227,7 +1259,30 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 	return checkCacheObject(repoRoot, targetKind, targetName, command, validResults, requiredMainFile, cache)
 }
 
+// checkCacheObject classifies one parsed cache and adds the failure-record
+// disclosure the raw freshness chain cannot see. A stale failure record keeps
+// its P0/P1 findings in the reason and is recoverable only by repair, because
+// delta/repair planning refuses a failure-record baseline for delta.
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
+	result, err := classifyCache(repoRoot, targetKind, targetName, command, validResults, requiredMainFile, cache)
+	if err != nil {
+		return result, err
+	}
+	if cache.Result != "fail" {
+		return result, nil
+	}
+	result.FailureRecord = true
+	if result.Category != CategoryStale {
+		return result, nil
+	}
+	result.RepairOnly = true
+	if cache.blockingSeen && cache.Blocking {
+		result.Reason = failureRecordStaleReason(result.Reason, command, cache)
+	}
+	return result, nil
+}
+
+func classifyCache(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
 	// A unit cache must carry the promise-pinning format. This check comes
 	// before every other classification: a cache written before the format is
 	// incompatible (not a delta/repair baseline), and an old review protocol
@@ -1250,6 +1305,26 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 		}
 	}
 	liveConclusions := 0
+	// Pending invalidations on a salvaged PASS cache are the state itself: the
+	// cache deliberately publishes no record for an invalidated key, so the
+	// per-conclusion verification below cannot classify it, and the only
+	// recovery is repair. The list is still checked first so its reason is the
+	// honest one.
+	//
+	// A failure record is different: its unresolved P0/P1 findings are the
+	// dominant gate fact, and the invalidation list is repair-plan input. The
+	// record continues through the normal chain (BLOCKED with its findings, or
+	// STALE when its own evidence changed), and the wrapper appends the
+	// pending keys to the reason.
+	if len(cache.InvalidatedChecks) > 0 && cache.Result == "pass" {
+		return CheckResult{
+			Fresh:      false,
+			Category:   CategoryStale,
+			RepairOnly: true,
+			Reason: fmt.Sprintf("%s cache carries pending invalidations (%s) — run `re%s@%s --mode repair`",
+				command, strings.Join(cache.InvalidatedChecks, ", "), command, cache.Unit),
+		}, nil
+	}
 	if command == "verify" {
 		states, err := VerifyConclusionStates(repoRoot, targetKind, cache)
 		if err != nil {
@@ -1982,8 +2057,15 @@ func parseCache(data []byte) (*cacheFile, error) {
 		return nil, fmt.Errorf("cache file missing required frontmatter fields (command, result)")
 	}
 	if cache.invalidatedSeen {
-		if cache.Result != "fail" || !cache.blockingSeen || !cache.Blocking {
-			return nil, fmt.Errorf("`invalidated_checks` is valid only on a failure record (result: fail, blocking: true)")
+		// The list is machine-owned recovery state with two writers: a
+		// targeted P0/P1 records it on a failure record (gate-invalidate),
+		// and a salvaged finalize records it on an otherwise-complete pass
+		// cache whose input drifted mid-run. Both mean the same thing — the
+		// named judgments must re-run before the cache can satisfy a gate.
+		failureRecord := cache.Result == "fail" && cache.blockingSeen && cache.Blocking
+		salvagedPass := cache.Result == "pass" && cache.blockingSeen && !cache.Blocking
+		if !failureRecord && !salvagedPass {
+			return nil, fmt.Errorf("`invalidated_checks` is valid only on a failure record (result: fail, blocking: true) or a salvaged pass cache (result: pass, blocking: false)")
 		}
 		for i, key := range cache.InvalidatedChecks {
 			if strings.TrimSpace(key) == "" {

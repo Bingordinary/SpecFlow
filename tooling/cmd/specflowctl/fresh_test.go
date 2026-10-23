@@ -683,6 +683,40 @@ func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	}
 }
 
+// TestFreshUnitDetailBlockedWithPendingInvalidation pins the failure-record
+// state: adding a targeted invalidation to a failure record must not replace
+// its blocking findings with a bare STALE state. The record stays BLOCKED,
+// names its P0/P1 findings and the pending keys, and keeps the resolve-then-
+// repair advice. (A salvaged pass cache is the catalog state that the pending
+// list alone makes STALE.)
+func TestFreshUnitDetailBlockedWithPendingInvalidation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
+	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: computeHash(specPath)}}
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "", files)
+	writeUnitCache(t, repoRoot, "user_auth", "verify", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", verifyFiles)
+	// Persist the targeted contradiction through the real writer, so the test
+	// exercises the same transition a targeted P0/P1 performs.
+	if _, err := validationcache.InvalidateGateCache(repoRoot, "unit", "user_auth", "verify", "candidate", []string{"item:user_auth:session"}); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "verify", "BLOCKED")
+	if !strings.Contains(output, "Verify found 1 P0 and 0 P1 finding(s). Resolve before promoting.") {
+		t.Fatalf("expected the unresolved findings to stay disclosed, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Pending invalidations will also re-run: item:user_auth:session.") {
+		t.Fatalf("expected the pending invalidation to be named, got:\n%s", output)
+	}
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+		t.Fatalf("expected the resolve-then-repair advice, got:\n%s", output)
+	}
+}
+
 // TestFreshUnitDetailBlockedValidate verifies that a validate failure record
 // is reported BLOCKED like the verify records.
 func TestFreshUnitDetailBlockedValidate(t *testing.T) {
@@ -701,7 +735,9 @@ func TestFreshUnitDetailBlockedValidate(t *testing.T) {
 // TestFreshUnitDetailStaleBlockedVerify verifies that a verify failure record
 // whose files changed since the run is reported STALE, not BLOCKED — the
 // gate needs a re-run, matching promote's own stale reason and the
-// stale-over-blocking precedence.
+// stale-over-blocking precedence. The failure record does not lose its
+// findings in that state: the reason names them and the advice stays
+// resolve-then-repair, never delta.
 func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath, _, verifyFiles := writeMergedVerifyFixture(t, repoRoot, "user_auth")
@@ -736,6 +772,12 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	}
 	if strings.Contains(output, "plan:") {
 		t.Fatalf("a read-only report must not print planner lines:\n%s", output)
+	}
+	if !strings.Contains(output, "Verify is a failure record with 1 P0 and 0 P1 finding(s); resolve them before promoting") {
+		t.Fatalf("expected the failure-record findings to stay disclosed, got:\n%s", output)
+	}
+	if !strings.Contains(output, "-> resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+		t.Fatalf("expected resolve-then-repair advice, got:\n%s", output)
 	}
 }
 

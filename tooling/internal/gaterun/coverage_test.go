@@ -848,7 +848,7 @@ func TestDeltaRepairUsesPersistedTargetedInvalidation(t *testing.T) {
 	if got := strings.Join(run.CarriedKeys, ","); got != "10,5,7,8,9" {
 		t.Fatalf("invalidated judgment must not be carried, got %v", run.CarriedKeys)
 	}
-	if !strings.Contains(strings.Join(run.Notices, " "), "persisted targeted invalidations: 2") {
+	if !strings.Contains(strings.Join(run.Notices, " "), "persisted invalidations: 2") {
 		t.Fatalf("plan did not disclose the persisted invalidation: %v", run.Notices)
 	}
 }

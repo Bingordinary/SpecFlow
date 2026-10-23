@@ -266,14 +266,14 @@ func writeStableFreshSection(stdout io.Writer, absRoot string) error {
 // means the code was recently confirmed to still conform even when the
 // baseline surface differs.
 func stableUnitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, promiseReport *promiseStateReport, promiseErr string) string {
-	vaStatus, _ := checkStableUnitGate(derivation, repoRoot, unitName, "validate")
-	vfStatus, _ := checkStableUnitGate(derivation, repoRoot, unitName, "verify")
+	vaStatus, _, _, _ := checkStableUnitGate(derivation, repoRoot, unitName, "validate")
+	vfStatus, _, _, _ := checkStableUnitGate(derivation, repoRoot, unitName, "verify")
 	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  drift: %-8s  done: %-9s",
 		unitName, vaStatus, vfStatus, stableDriftLabel(repoRoot, unitName, baseline.CheckUnitBaseline(repoRoot, unitName)), promiseDoneLabel(promiseReport, promiseErr))
 }
 
 func stableRuleSummaryLine(repoRoot, ruleID string) string {
-	vStatus, _ := checkStableRuleGate(repoRoot, ruleID)
+	vStatus, _, _, _ := checkStableRuleGate(repoRoot, ruleID)
 	return fmt.Sprintf("%-13s  validate: %-8s  drift: %-8s",
 		ruleID, vStatus, stableDriftLabel(repoRoot, ruleID, baseline.CheckRuleBaseline(repoRoot, ruleID)))
 }
@@ -304,7 +304,7 @@ func writeStaleImpactAfterPromote(stdout io.Writer, absRoot, promotedUnit string
 			continue
 		}
 		for _, gate := range []string{"validate", "verify"} {
-			status, reason := checkStableUnitGate(derivation, absRoot, name, gate)
+			status, reason, _, _ := checkStableUnitGate(derivation, absRoot, name, gate)
 			if status != gateStale && status != gateBlocked && status != gateInvalid {
 				continue
 			}
@@ -336,8 +336,8 @@ func stableDriftLabel(repoRoot, name string, result baseline.CheckResult) string
 
 func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, rules promote.RulePrerequisites, promiseReport *promiseStateReport, promiseErr string) (string, bool) {
 
-	vStatus, _ := checkUnitGate(derivation, repoRoot, unitName, "validate")
-	vfStatus, _ := checkUnitGate(derivation, repoRoot, unitName, "verify")
+	vStatus, _, _, _ := checkUnitGate(derivation, repoRoot, unitName, "validate")
+	vfStatus, _, _, _ := checkUnitGate(derivation, repoRoot, unitName, "verify")
 	aStatus, _ := checkAppendixGate(repoRoot, unitName)
 
 	ruleStatus := "OK"
@@ -403,7 +403,7 @@ func promiseDoneLabel(report *promiseStateReport, errText string) string {
 }
 
 func ruleSummaryLine(repoRoot, ruleID string) (string, bool) {
-	vStatus, _ := checkRuleGate(repoRoot, ruleID)
+	vStatus, _, _, _ := checkRuleGate(repoRoot, ruleID)
 	ready := gatePassed(vStatus)
 	return fmt.Sprintf("%-13s  validate: %-8s  READY: %t",
 		ruleID, vStatus, ready), ready
@@ -436,18 +436,18 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 
 	nonFresh := 0
 
-	vStatus, vDetail := checkUnitGate(derivation, absRoot, unitName, "validate")
+	vStatus, vDetail, vRepair, vFailure := checkUnitGate(derivation, absRoot, unitName, "validate")
 	if vStatus == gateFresh {
 		vDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
 	} else {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, unitName); advice != "" {
+	if advice := gateAdvice("validate", vStatus, unitName, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
-	vfStatus, vfDetail := checkUnitGate(derivation, absRoot, unitName, "verify")
+	vfStatus, vfDetail, vfRepair, vfFailure := checkUnitGate(derivation, absRoot, unitName, "verify")
 	if vfStatus == gateFresh {
 		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
 	} else {
@@ -462,7 +462,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
 		}
 	}
-	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
+	if advice := gateAdvice("verify", vfStatus, unitName, vfRepair, vfFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
@@ -556,16 +556,16 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 	if err != nil {
 		return err
 	}
-	vaStatus, vaDetail := checkStableUnitGate(derivation, absRoot, unitName, "validate")
+	vaStatus, vaDetail, vaRepair, vaFailure := checkStableUnitGate(derivation, absRoot, unitName, "validate")
 	if vaStatus == gateFresh {
 		vaDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vaStatus, vaDetail)
-	if advice := gateAdvice("validate", vaStatus, unitName); advice != "" {
+	if advice := gateAdvice("validate", vaStatus, unitName, vaRepair, vaFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
-	vfStatus, vfDetail := checkStableUnitGate(derivation, absRoot, unitName, "verify")
+	vfStatus, vfDetail, vfRepair, vfFailure := checkStableUnitGate(derivation, absRoot, unitName, "verify")
 	if vfStatus == gateFresh {
 		vfDetail = freshDetail(readSummary(absRoot, "unit", unitName, "verify_result.md"))
 	}
@@ -578,7 +578,7 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
 		}
 	}
-	if advice := gateAdvice("verify", vfStatus, unitName); advice != "" {
+	if advice := gateAdvice("verify", vfStatus, unitName, vfRepair, vfFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
@@ -621,12 +621,12 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule)\n\n", ruleID)
 
-	vStatus, vDetail := checkRuleGate(absRoot, ruleID)
+	vStatus, vDetail, vRepair, vFailure := checkRuleGate(absRoot, ruleID)
 	if vStatus == gateFresh {
 		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, ruleID); advice != "" {
+	if advice := gateAdvice("validate", vStatus, ruleID, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	fmt.Fprintln(stdout, "verify does not apply to rules.")
@@ -645,12 +645,12 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 	fmt.Fprintf(stdout, "FRESHNESS REPORT — %s (rule, stable)\n\n", ruleID)
 
-	vStatus, vDetail := checkStableRuleGate(absRoot, ruleID)
+	vStatus, vDetail, vRepair, vFailure := checkStableRuleGate(absRoot, ruleID)
 	if vStatus == gateFresh {
 		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, ruleID); advice != "" {
+	if advice := gateAdvice("validate", vStatus, ruleID, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
@@ -683,7 +683,7 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 // caches must list the stable main spec). A candidate-run cache fails the
 // matching stable variant, so the stable report never mislabels a candidate
 // cache as a stable confirmation.
-func checkStableUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, command string) (gateStatus, string) {
+func checkStableUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, command string) (gateStatus, string, bool, bool) {
 	var (
 		result validationcache.CheckResult
 		err    error
@@ -697,22 +697,22 @@ func checkStableUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, com
 		// spec's coverage can be derived, its expected keys must be present.
 		result, err = checkStableUnitVerifyMerged(derivation, repoRoot, unitName)
 	default:
-		return gateStale, fmt.Sprintf("unknown gate %q", command)
+		return gateStale, fmt.Sprintf("unknown gate %q", command), false, false
 	}
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), false, false
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.RepairOnly, result.FailureRecord
 }
 
 // checkStableRuleGate classifies the stable-layer validate confirmation
 // state of a rule.
-func checkStableRuleGate(repoRoot, ruleID string) (gateStatus, string) {
+func checkStableRuleGate(repoRoot, ruleID string) (gateStatus, string, bool, bool) {
 	result, err := validationcache.CheckRuleValidateStable(repoRoot, ruleID)
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), false, false
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.RepairOnly, result.FailureRecord
 }
 
 // writeDeferredFindingsNote reports the unit's pending deferred findings —
@@ -737,7 +737,7 @@ func writeDeferredFindingsNote(stdout io.Writer, repoRoot, unitName string) {
 
 // checkUnitGate classifies one of the unit gates (validate/verify) and
 // returns the promote-identical reason text.
-func checkUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, command string) (gateStatus, string) {
+func checkUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, command string) (gateStatus, string, bool, bool) {
 	var (
 		result validationcache.CheckResult
 		err    error
@@ -751,12 +751,12 @@ func checkUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, command s
 		// alignment and quality lenses.
 		result, err = checkUnitVerifyMerged(derivation, repoRoot, unitName, "candidate")
 	default:
-		return gateStale, fmt.Sprintf("unknown gate %q", command)
+		return gateStale, fmt.Sprintf("unknown gate %q", command), false, false
 	}
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), false, false
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.RepairOnly, result.FailureRecord
 }
 
 // checkUnitVerifyMerged applies the merged-cache promote requirement: the
@@ -795,12 +795,12 @@ func checkStableUnitVerifyMerged(derivation *gaterun.Derivation, repoRoot, unitN
 	}, false)
 }
 
-func checkRuleGate(repoRoot, ruleID string) (gateStatus, string) {
+func checkRuleGate(repoRoot, ruleID string) (gateStatus, string, bool, bool) {
 	result, err := validationcache.CheckRuleValidate(repoRoot, ruleID)
 	if err != nil {
-		return gateStale, fmt.Sprintf("gate check error: %v", err)
+		return gateStale, fmt.Sprintf("gate check error: %v", err), false, false
 	}
-	return classifyGate(result), result.Reason
+	return classifyGate(result), result.Reason, result.RepairOnly, result.FailureRecord
 }
 
 func checkAppendixGate(repoRoot, unitName string) (gateStatus, string) {
@@ -845,16 +845,22 @@ func gatePassed(status gateStatus) bool {
 	return status == gateFresh || status == gateOK
 }
 
-// gateAdvice renders the recovery suggestion for a non-fresh gate. STALE is
-// recoverable by the delta re-run (re* — the pass-baseline recovery path);
-// MISSING has no usable baseline and needs the full command; BLOCKED is a
-// failure record (validate/verify P0/P1 findings) whose recovery is
-// the repair re-run (`gate-plan --mode repair`) after the findings are
-// resolved — the failure record is the failure-recovery baseline (see
+// gateAdvice renders the recovery suggestion for a non-fresh gate. A STALE
+// failure record and a BLOCKED one are recovered the same way: resolve the
+// P0/P1 findings, then run repair. A salvaged pass cache's STALE state is
+// recovered by repair because its pending invalidations make delta refuse the
+// baseline. A plain STALE pass cache is delta-recoverable. MISSING has no
+// usable baseline and needs the full command (see
 // framework/verification_scope.md §Delta Runs → Failure recovery).
-func gateAdvice(command string, status gateStatus, targetName string) string {
+func gateAdvice(command string, status gateStatus, targetName string, repairOnly, failureRecord bool) string {
 	switch status {
 	case gateStale:
+		if failureRecord {
+			return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
+		}
+		if repairOnly {
+			return fmt.Sprintf("-> suggestion: re%s@%s --mode repair (repair recovery from pending invalidations)", command, targetName)
+		}
 		return fmt.Sprintf("-> suggestion: re%s@%s (delta recovery)", command, targetName)
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)

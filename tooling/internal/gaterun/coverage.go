@@ -775,6 +775,14 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 	return spec, nil
 }
 
+// CoverageReadRefs lists one coverage key's read surface — the evidence
+// inputs the key's judgment is accountable to. The finalize salvage
+// intersects this set with the drifted declarations to compute, mechanically,
+// which judgments a mid-run input change can have influenced.
+func CoverageReadRefs(repoRoot string, run *Run, ck CoverageKey) []string {
+	return coverageReadRefs(repoRoot, run, ck)
+}
+
 // coverageReadRefs derives the read surface of one coverage key. A validate
 // group's surface is the existing group read refs; a verify item reads the own
 // spec plus the whole declared code surface; a file reads the own spec plus

@@ -2376,12 +2376,24 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
 
+	// verifySortedKeys lists every merged verify key of the fixture: the drift
+	// in these cases is in material every session reads (the declared surface,
+	// or an extra input), so every key is invalidated.
+	verifySortedKeys := "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.core,unit:auth"
+	// validateSortedKeys lists every unit validate report key: every group
+	// reads the unit's own spec files, so a spec or appendix edit invalidates
+	// all of them.
+	validateSortedKeys := "1,10,2,3,4,5,6,7,8,9"
+
 	cases := []struct {
 		name     string
 		plan     []string
 		sessions func(runID string)
 		mutate   func()
-		want     string
+		salvage  bool
+		// invalidated lists the check keys the salvage must record, joined by
+		// commas. Empty means the finalize must still be rejected.
+		invalidated string
 	}{
 		{
 			name: "modified spec",
@@ -2393,7 +2405,8 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 				data, _ := os.ReadFile(specPath)
 				os.WriteFile(specPath, []byte(strings.Replace(string(data), "Prose.", "Prose. Edited.", 1)), 0644)
 			},
-			want: "modified: " + main,
+			salvage:     true,
+			invalidated: validateSortedKeys,
 		},
 		{
 			name: "modified appendix",
@@ -2404,7 +2417,8 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 			mutate: func() {
 				grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nPOST /login.\n")
 			},
-			want: "modified: " + appendix,
+			salvage:     true,
+			invalidated: validateSortedKeys,
 		},
 		{
 			name: "modified code",
@@ -2414,8 +2428,9 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 				grSubmitClarity(t, repoRoot, runID, main)
 				grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 			},
-			mutate: func() { grWriteFile(t, repoRoot, "src/auth.go", "package auth // edited\n") },
-			want:   "modified: src/auth.go",
+			mutate:      func() { grWriteFile(t, repoRoot, "src/auth.go", "package auth // edited\n") },
+			salvage:     true,
+			invalidated: verifySortedKeys,
 		},
 		{
 			name: "modified discovered test input",
@@ -2425,10 +2440,14 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 				grSubmitClarity(t, repoRoot, runID, main)
 				grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 			},
-			mutate: func() { grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests // edited\n") },
-			want:   "modified: tests/auth_test.go",
+			mutate:      func() { grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests // edited\n") },
+			salvage:     true,
+			invalidated: verifySortedKeys,
 		},
 		{
+			// A surface file that appeared mid-run changes the entry set itself
+			// (the cache's files list IS the input surface), so the run is
+			// discarded instead of salvaged.
 			name: "added surface file",
 			plan: []string{"--gate", "verify", "--unit", "auth", "--target", "candidate"},
 			sessions: func(runID string) {
@@ -2437,7 +2456,6 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 				grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 			},
 			mutate: func() { grWriteFile(t, repoRoot, "src/extra.go", "package auth\n") },
-			want:   "added: src/extra.go",
 		},
 	}
 	for _, tc := range cases {
@@ -2445,21 +2463,63 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 			runID := grPlan(t, repoRoot, tc.plan...)
 			tc.sessions(runID)
 			tc.mutate()
-			_, err := grFinalize(t, repoRoot, runID, "--result", "pass")
-			if err == nil {
-				t.Fatal("expected the finalize to be rejected after the input changed")
+			out, err := grFinalize(t, repoRoot, runID, "--result", "pass")
+			if !tc.salvage {
+				if err == nil {
+					t.Fatal("expected the finalize to be rejected after a structural input change")
+				}
+				if !strings.Contains(err.Error(), "Run state discarded") {
+					t.Fatalf("expected the run state to be discarded, got: %v", err)
+				}
+				if _, serr := os.Stat(filepath.Join(repoRoot, "meta/gate_runs", runID)); !os.IsNotExist(serr) {
+					t.Fatal("expected the discarded run state to be removed")
+				}
+				return
 			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("expected %q in the rejection, got: %v", tc.want, err)
+			if err != nil {
+				t.Fatalf("expected the content drift to be salvaged, got: %v", err)
 			}
+			joined := strings.Join(strings.Split(tc.invalidated, ","), ", ")
+			if !strings.Contains(out, "Salvaged: result persisted") || !strings.Contains(out, "invalidated check(s): "+joined) {
+				t.Fatalf("expected the salvage notice with the affected keys %s, got:\n%s", tc.invalidated, out)
+			}
+			// The run concluded: the salvaged cache is the run's record.
 			if _, serr := os.Stat(filepath.Join(repoRoot, "meta/gate_runs", runID)); !os.IsNotExist(serr) {
-				t.Fatal("expected the discarded run state to be removed")
+				t.Fatal("expected the concluded run state to be removed")
+			}
+			var cachePath string
+			if strings.Contains(strings.Join(tc.plan, " "), "validate") {
+				cachePath = "docs/specs/meta/validation/unit/auth/validate_result.md"
+			} else {
+				cachePath = "docs/specs/meta/validation/unit/auth/verify_result.md"
+			}
+			cache := grReadCache(t, repoRoot, cachePath)
+			if !strings.Contains(cache, "invalidated_checks:") {
+				t.Fatalf("expected the salvaged cache to record invalidated checks, got:\n%s", cache)
+			}
+			for _, key := range strings.Split(tc.invalidated, ",") {
+				if !strings.Contains(cache, `  - "`+key+`"`+"\n") {
+					t.Fatalf("expected invalidated check %q in the salvaged cache, got:\n%s", key, cache)
+				}
+			}
+			// The gate's own freshness chain reports the salvaged baseline
+			// stale: the drifted evidence keeps its plan-time hash and the
+			// invalidations are pending until repair re-runs them.
+			res, cerr := validationcache.CheckValidate(repoRoot, "auth")
+			if strings.Contains(strings.Join(tc.plan, " "), "verify") {
+				res, cerr = validationcache.CheckVerify(repoRoot, "auth")
+			}
+			if cerr != nil {
+				t.Fatal(cerr)
+			}
+			if res.Fresh || res.Category != validationcache.CategoryStale || !strings.Contains(res.Reason, "pending invalidations") {
+				t.Fatalf("expected the salvaged cache to be stale with pending invalidations, got fresh=%t category=%s reason=%s", res.Fresh, res.Category, res.Reason)
 			}
 		})
 	}
 }
 
-func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
+func TestGateRunSalvagesLogicalRefLayerMove(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
@@ -2485,7 +2545,10 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 	grSubmitClarity(t, repoRoot, runID, main)
 	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
 
-	// Simulate a concurrent promote of the dependency unit.
+	// Simulate a concurrent promote of the dependency unit: the logical ref
+	// unit:auth now resolves to the stable file. The groups whose read set
+	// contains the ref (structural, dependencies) are invalidated; the groups
+	// that never read it keep their accepted verdicts.
 	depCandidate := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_auth.md")
 	depStable := filepath.Join(repoRoot, "docs/specs/units/stable/unit_auth.md")
 	data, _ := os.ReadFile(depCandidate)
@@ -2493,9 +2556,220 @@ func TestGateRunRejectsLogicalRefLayerMove(t *testing.T) {
 	os.WriteFile(depStable, data, 0644)
 	os.Remove(depCandidate)
 
-	_, err := grFinalize(t, repoRoot, runID, "--result", "pass")
-	if err == nil || !strings.Contains(err.Error(), "layer resolution changed: unit:auth") {
-		t.Fatalf("expected a layer-resolution divergence, got %v", err)
+	out, err := grFinalize(t, repoRoot, runID, "--result", "pass")
+	if err != nil {
+		t.Fatalf("expected the layer move to be salvaged, got %v", err)
+	}
+	if !strings.Contains(out, "Input drift since gate-plan: unit:auth") {
+		t.Fatalf("expected the salvage notice to name the moved ref, got:\n%s", out)
+	}
+	if !strings.Contains(out, "invalidated check(s): 1, 3, 6, 7, 8, 9") {
+		t.Fatalf("expected exactly the groups that read unit:auth invalidated, got:\n%s", out)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
+	for _, key := range []string{`"1"`, `"6"`, `"7"`, `"9"`} {
+		if !strings.Contains(cache, "  - "+key) {
+			t.Fatalf("expected %s in invalidated_checks, got:\n%s", key, cache)
+		}
+	}
+	for _, key := range []string{`"2"`, `"5"`, `"10"`} {
+		if strings.Contains(cache, "  - "+key+"\n") {
+			t.Fatalf("unaffected check %s must not be invalidated, got:\n%s", key, cache)
+		}
+	}
+}
+
+func TestGateRunSalvageRepairRecovery(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	grWriteSpecWithRefs(t, repoRoot, "self", "auth", "none")
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_self.md"
+
+	// A full run finishes executing while a parallel session promotes the
+	// dependency unit: the logical ref unit:auth moves layers mid-run.
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+		"1": {main + ": Description"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+		"2": {main + ": Description"},
+		"4": {main + ": Description"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
+		"5": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+		"7": {"unit:auth: Description"},
+		"8": {main + ": Description"},
+	}))
+	grSubmitClarity(t, repoRoot, runID, main)
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+
+	depCandidate := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_auth.md")
+	depStable := filepath.Join(repoRoot, "docs/specs/units/stable/unit_auth.md")
+	data, _ := os.ReadFile(depCandidate)
+	os.MkdirAll(filepath.Dir(depStable), 0755)
+	os.WriteFile(depStable, data, 0644)
+	os.Remove(depCandidate)
+
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	// Delta cannot offer invalidated judgments as carry candidates.
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "pending invalidations") {
+		t.Fatalf("expected the delta plan to refuse the salvaged baseline, got %v", err)
+	}
+
+	// Repair re-runs exactly the invalidated groups and carries the rest.
+	repairRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "repair")
+	run := mustLoadRun(t, repoRoot, repairRun)
+	if got := coverageKeysOf(run); strings.Join(got, ",") != "review,structural,dependencies" {
+		t.Fatalf("expected the review plus the invalidated groups, got %v", got)
+	}
+	if strings.Join(run.CarriedKeys, ",") != "10,2,4,5" {
+		t.Fatalf("expected the unaffected checks carried, got %v", run.CarriedKeys)
+	}
+	grReviewAccept(t, repoRoot, repairRun)
+	grSubmitPlannedValidateSessions(t, repoRoot, repairRun, main)
+	grFinalizeOK(t, repoRoot, repairRun, "--result", "pass")
+
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
+	if !strings.Contains(cache, "basis: repair") || strings.Contains(cache, "invalidated_checks:") {
+		t.Fatalf("expected the repair cache to clear the invalidations, got:\n%s", cache)
+	}
+	if !strings.Contains(cache, `check: "2"`) {
+		t.Fatalf("expected the carried check 2 evidence, got:\n%s", cache)
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected the repair cache to be fresh, got: %s", res.Reason)
+	}
+}
+
+func TestGateRunSalvagedDriftStalesEvidence(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, runID, main)
+
+	// The drift happens inside the run window; the salvaged cache must record
+	// the plan-time hash, not the post-drift content, for the drifted file.
+	planRun := mustLoadRun(t, repoRoot, runID)
+	planHash, ok := planRun.SnapshotHash(repoRoot, main)
+	if !ok || planHash == "" {
+		t.Fatal("expected the main spec in the plan snapshot")
+	}
+	data, _ := os.ReadFile(specPath)
+	os.WriteFile(specPath, []byte(strings.Replace(string(data), "Prose.", "Prose. Edited.", 1)), 0644)
+
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	if !strings.Contains(cache, "hash: sha256:"+planHash) {
+		t.Fatalf("expected the drifted entry to keep the plan-time hash %s, got:\n%s", planHash, cache)
+	}
+}
+
+// TestGateRunSalvagesRemovedSurfaceFile proves a recorded input that
+// disappears mid-run is salvaged like any other content drift: the cache keeps
+// the plan-time entry (path + hash, empty chunk sequence), the judgments that
+// read the file are invalidated, and the unaffected judgments carry.
+func TestGateRunSalvagesRemovedSurfaceFile(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+	grWriteFile(t, repoRoot, "src/other.go", "package auth\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+
+	if err := os.Remove(filepath.Join(repoRoot, "src/auth.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := grFinalize(t, repoRoot, runID, "--result", "pass")
+	if err != nil {
+		t.Fatalf("expected the removed input to be salvaged, got %v", err)
+	}
+	if !strings.Contains(out, "Salvaged: result persisted") {
+		t.Fatalf("expected the salvage notice, got:\n%s", out)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/verify_result.md")
+	if !strings.Contains(cache, "  - path: src/auth.go") {
+		t.Fatalf("expected the removed file to keep its plan-time evidence entry, got:\n%s", cache)
+	}
+	if !strings.Contains(cache, `  - "code:src/auth.go"`) {
+		t.Fatalf("expected the removed file's key to be invalidated, got:\n%s", cache)
+	}
+	if strings.Contains(cache, `  - "code:src/other.go"`) {
+		t.Fatalf("an unaffected key must not be invalidated, got:\n%s", cache)
+	}
+	if !strings.Contains(cache, `check: "code:src/other.go"`) {
+		t.Fatalf("expected the unaffected code key to stay covered, got:\n%s", cache)
+	}
+
+	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Fresh || res.Category != validationcache.CategoryStale {
+		t.Fatalf("expected the salvaged cache to be stale, got fresh=%t category=%s", res.Fresh, res.Category)
+	}
+	if !strings.Contains(res.Reason, "pending invalidations") || !strings.Contains(res.Reason, "reverify@auth --mode repair") {
+		t.Fatalf("expected the verify-gate recovery command in the reason, got: %s", res.Reason)
+	}
+
+	var freshOut, freshErr bytes.Buffer
+	if err := runFresh([]string{"--repo-root", repoRoot, "--unit", "auth"}, &freshOut, &freshErr); err != nil {
+		t.Fatalf("fresh: %v (%s)", err, freshErr.String())
+	}
+	if !strings.Contains(freshOut.String(), "reverify@auth --mode repair (repair recovery from pending invalidations)") {
+		t.Fatalf("expected the repair recovery suggestion, got:\n%s", freshOut.String())
+	}
+}
+
+// TestGateRunSalvagedFailureRecordReportsStale proves a salvaged failure
+// record whose recorded evidence changed reports STALE (the gate's
+// stale-over-blocking precedence) without losing its failure-record
+// disclosure: the reason still names the unresolved findings and the pending
+// invalidations, and the recovery is repair, not delta.
+func TestGateRunSalvagedFailureRecordReportsStale(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyMismatchReport("auth.core", main, "src/auth.go", "P1"))
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth // edited\n")
+
+	out, err := grFinalize(t, repoRoot, runID)
+	if err != nil {
+		t.Fatalf("expected the salvaged failure record, got %v", err)
+	}
+	if !strings.Contains(out, "Self-check: STALE") || strings.Contains(out, "Self-check: BLOCKED") {
+		t.Fatalf("a salvaged write must report STALE, got:\n%s", out)
+	}
+	res, err := validationcache.CheckVerify(repoRoot, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Category != validationcache.CategoryStale || !res.RepairOnly || !res.FailureRecord {
+		t.Fatalf("expected a repair-only stale failure record, got category=%s repairOnly=%t failureRecord=%t reason=%s", res.Category, res.RepairOnly, res.FailureRecord, res.Reason)
+	}
+	if !strings.Contains(res.Reason, "failure record") || !strings.Contains(res.Reason, "pending invalidations") {
+		t.Fatalf("expected the failure-record findings and pending invalidations to stay disclosed, got: %s", res.Reason)
 	}
 }
 

@@ -102,9 +102,15 @@ func TestInvalidateGateCachePersistsFailureRecordKeysWithoutChangingEvidence(t *
 	}
 }
 
-func TestParseCacheRejectsInvalidationOnPassCache(t *testing.T) {
-	content := []byte("---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\ninvalidated_checks:\n  - \"auth.login\"\nfiles: []\n---\n")
-	if _, err := parseCache(content); err == nil || !strings.Contains(err.Error(), "failure record") {
-		t.Fatalf("expected invalidated pass cache to fail closed, got %v", err)
+func TestParseCacheRejectsInvalidationOnNonSalvageResult(t *testing.T) {
+	// A salvaged pass cache (result pass, blocking false) is the one non-
+	// failure shape allowed to carry the machine-owned invalidation list.
+	salvaged := []byte("---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\nblocking: false\ninvalidated_checks:\n  - \"auth.login\"\nfiles: []\n---\n")
+	if _, err := parseCache(salvaged); err != nil {
+		t.Fatalf("expected the salvaged pass cache to parse, got %v", err)
+	}
+	content := []byte("---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\nblocking: true\ninvalidated_checks:\n  - \"auth.login\"\nfiles: []\n---\n")
+	if _, err := parseCache(content); err == nil || !strings.Contains(err.Error(), "salvaged pass cache") {
+		t.Fatalf("expected a non-salvage invalidated cache to fail closed, got %v", err)
 	}
 }

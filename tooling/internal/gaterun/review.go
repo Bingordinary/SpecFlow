@@ -81,6 +81,11 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// salvagedBaseline marks a pass cache whose finalize persisted pending
+	// invalidations (mid-run input drift): repair force re-runs exactly that
+	// list, so it is a valid repair baseline even though it is not a failure
+	// record.
+	salvagedBaseline := baseline.Exists && baseline.Result == "pass" && len(baseline.InvalidatedChecks) > 0
 	switch run.Mode {
 	case ModeDelta:
 		switch {
@@ -94,6 +99,8 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
 		case baseline.Mode != "full":
 			return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
+		case len(baseline.InvalidatedChecks) > 0:
+			return nil, nil, nil, nil, fmt.Errorf("baseline cache carries pending invalidations (%s) — run `--mode repair` to re-run them, or the full command instead", strings.Join(baseline.InvalidatedChecks, ", "))
 		case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:
 			return nil, nil, nil, nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
 		case baseline.Result == "fail":
@@ -105,8 +112,8 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		if !baseline.Exists && run.Target == TargetStable {
 			return nil, nil, nil, nil, noUsableBaselineError(run)
 		}
-		if !baseline.Exists || baseline.Result != "fail" || !baseline.Blocking {
-			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) — none found; run the full command instead")
+		if !salvagedBaseline && (!baseline.Exists || baseline.Result != "fail" || !baseline.Blocking) {
+			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) or a salvaged pass cache with pending invalidations — none found; run the full command instead")
 		}
 	default:
 		return nil, nil, nil, nil, fmt.Errorf("verify planning requires --mode delta or --mode repair")
@@ -116,12 +123,14 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		return nil, nil, nil, nil, err
 	}
 	standing := standingRelationships(state)
-	if run.Mode == ModeRepair {
+	if run.Mode == ModeRepair && !salvagedBaseline {
 		// A failure record whose per-check status map is absent, invalid, or
 		// inconsistent with its judgment baseline cannot say which judgments
 		// failed: nothing is carried, so the plan covers the full scope. The
 		// final synthesis is a conclusion over the full local result, so the
-		// baseline's standing relationships re-check rather than vanish.
+		// baseline's standing relationships re-check rather than vanish. A
+		// salvaged pass cache has no status map by design (nothing failed);
+		// its forced set is the persisted invalidation list.
 		if reason, defective := repairStatusMapDefect(baseline, state); defective {
 			addRelationships(run, standing...)
 			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
@@ -418,6 +427,11 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// salvagedBaseline marks a pass cache whose finalize persisted pending
+	// invalidations (mid-run input drift): repair force re-runs exactly that
+	// list, so it is a valid repair baseline even though it is not a failure
+	// record.
+	salvagedBaseline := baseline.Exists && baseline.Result == "pass" && len(baseline.InvalidatedChecks) > 0
 	switch run.Mode {
 	case ModeDelta:
 		switch {
@@ -431,6 +445,8 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
 		case baseline.Mode != "full":
 			return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
+		case len(baseline.InvalidatedChecks) > 0:
+			return nil, nil, nil, nil, fmt.Errorf("baseline cache carries pending invalidations (%s) — run `--mode repair` to re-run them, or the full command instead", strings.Join(baseline.InvalidatedChecks, ", "))
 		case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:
 			return nil, nil, nil, nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
 		case baseline.Result == "fail":
@@ -442,8 +458,8 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		if !baseline.Exists && run.Target == TargetStable {
 			return nil, nil, nil, nil, noUsableBaselineError(run)
 		}
-		if !baseline.Exists || baseline.Result != "fail" || !baseline.Blocking {
-			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) — none found; run the full command instead")
+		if !salvagedBaseline && (!baseline.Exists || baseline.Result != "fail" || !baseline.Blocking) {
+			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) or a salvaged pass cache with pending invalidations — none found; run the full command instead")
 		}
 	default:
 		return nil, nil, nil, nil, fmt.Errorf("review planning requires --mode delta or --mode repair")
@@ -453,13 +469,15 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		return nil, nil, nil, nil, err
 	}
 	standing := standingRelationships(state)
-	if run.Mode == ModeRepair {
+	if run.Mode == ModeRepair && !salvagedBaseline {
 		// A failure record whose per-check status map is absent, invalid, or
 		// does not match its judgment baseline cannot say which judgments
 		// failed: nothing may be carried over, so the plan is the full
 		// coverage set (fail closed — carrying unresolved findings is never
 		// allowed). The full local result re-runs the synthesis, so the
-		// standing relationship conclusions re-check too.
+		// standing relationship conclusions re-check too. A salvaged pass
+		// cache has no status map by design (nothing failed); its forced set
+		// is the persisted invalidation list.
 		if reason, defective := repairStatusMapDefect(baseline, state); defective {
 			addRelationships(run, standing...)
 			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
@@ -614,7 +632,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 			forced[key] = true
 		}
 		if len(baseline.InvalidatedChecks) > 0 {
-			recordNotices = append(recordNotices, "persisted targeted invalidations: "+strings.Join(baseline.InvalidatedChecks, ", "))
+			recordNotices = append(recordNotices, "persisted invalidations: "+strings.Join(baseline.InvalidatedChecks, ", "))
 		}
 	}
 	for key := range state.LogicalStatus {

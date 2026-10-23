@@ -25,7 +25,7 @@ func TestPreparePromiseStateRecordsOwnAndPins(t *testing.T) {
 
 	run := promiseVerifyRun("web")
 	run.Refs = []gaterun.Ref{{Ref: "unit:auth"}}
-	state, path, err := preparePromiseState(root, run, "pass")
+	state, path, err := preparePromiseState(root, run, "pass", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestPreparePromiseStateSkipsFailedAndOldFormat(t *testing.T) {
 	root := t.TempDir()
 	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
 
-	state, _, err := preparePromiseState(root, promiseVerifyRun("web"), "fail")
+	state, _, err := preparePromiseState(root, promiseVerifyRun("web"), "fail", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestPreparePromiseStateSkipsFailedAndOldFormat(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "docs/specs/units/candidate/unit_web.md"), []byte(oldSpec), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	state, _, err = preparePromiseState(root, promiseVerifyRun("web"), "pass")
+	state, _, err = preparePromiseState(root, promiseVerifyRun("web"), "pass", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPreparePromiseStateRejectsMissingDependency(t *testing.T) {
 	root := t.TempDir()
 	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
 
-	_, _, err := preparePromiseState(root, promiseVerifyRun("web"), "pass")
+	_, _, err := preparePromiseState(root, promiseVerifyRun("web"), "pass", nil)
 	if err == nil || !strings.Contains(err.Error(), "unresolved depends_on") {
 		t.Fatalf("expected missing-dependency error, got %v", err)
 	}

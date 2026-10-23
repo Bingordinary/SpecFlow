@@ -1197,24 +1197,73 @@ func SaveSessionState(repoRoot string, run *Run, state *SessionState) error {
 // (a removed main spec, an unreadable input) is reported as a divergence —
 // the snapshot cannot be verified, so the run must not be finalized.
 func Compare(repoRoot string, run *Run) ([]string, error) {
-	if run.Status != StatusOpen {
-		return nil, fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
-	}
-	derivation, err := NewDerivation(repoRoot)
+	drift, err := CompareDetailed(repoRoot, run)
 	if err != nil {
 		return nil, err
 	}
+	return drift.Divergences, nil
+}
+
+// SnapshotDrift is the structured result of the input-snapshot comparison:
+// every divergence line plus the classification the finalize salvage needs.
+type SnapshotDrift struct {
+	// Drifted lists the canonical declarations (logical refs and snapshot
+	// paths) whose recorded content is no longer current: a modified hash, a
+	// moved layer resolution, or a recorded file that disappeared. These are
+	// the declarations the coverage read sets intersect to compute which
+	// judgments a finalize salvage must invalidate.
+	Drifted []string
+	// Divergences lists every divergence line (sorted), structural ones
+	// included.
+	Divergences []string
+	// Structural reports whether any divergence changed the surface shape
+	// itself — a ref or surface that appeared or disappeared, a new file
+	// inside a declared surface, a moved review protocol, an unresolvable
+	// surface. A structurally diverged run cannot be salvaged: the cache's
+	// entry set IS the input surface, so the entry set itself is no longer
+	// representable at the recorded snapshot.
+	Structural bool
+}
+
+// DriftedSet returns the drifted declarations as a set keyed by their
+// canonical spelling.
+func (d SnapshotDrift) DriftedSet() map[string]bool {
+	set := make(map[string]bool, len(d.Drifted))
+	for _, decl := range d.Drifted {
+		set[decl] = true
+	}
+	return set
+}
+
+// CompareDetailed is Compare with structured classification: content drift
+// (which declarations changed) is separated from structural divergence
+// (which discards the run — see SnapshotDrift.Structural).
+func CompareDetailed(repoRoot string, run *Run) (SnapshotDrift, error) {
+	drift := SnapshotDrift{}
+	if run.Status != StatusOpen {
+		return drift, fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
+	}
+	derivation, err := NewDerivation(repoRoot)
+	if err != nil {
+		return drift, err
+	}
 	refs, surfaces, err := derivation.derive(run.Gate, run.TargetKind, run.TargetName, run.Target)
 	if err != nil {
-		return []string{fmt.Sprintf("input surface no longer resolvable: %v", err)}, nil
+		drift.Divergences = []string{fmt.Sprintf("input surface no longer resolvable: %v", err)}
+		drift.Structural = true
+		return drift, nil
 	}
 	if run.Gate == GateVerify {
 		current, err := derivation.resolveRun(run.Gate, run.TargetKind, run.TargetName, run.Target, ModeFull, run.ExtraInputs, nil)
 		if err != nil {
-			return []string{err.Error()}, nil
+			drift.Divergences = []string{err.Error()}
+			drift.Structural = true
+			return drift, nil
 		}
 		if current.Protocol != run.Protocol {
-			return []string{"review protocol changed"}, nil
+			drift.Divergences = []string{"review protocol changed"}
+			drift.Structural = true
+			return drift, nil
 		}
 		var derived []Ref
 		for _, ref := range current.Refs {
@@ -1233,7 +1282,7 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 			inputStoredRefs = append(inputStoredRefs, ref)
 			if !isLogicalRef(ref.Ref) {
 				if _, err := repopath.Canonical(repoRoot, ref.Ref); err != nil {
-					return nil, fmt.Errorf("input %q is no longer project-contained: %w", ref.Ref, err)
+					return drift, fmt.Errorf("input %q is no longer project-contained: %w", ref.Ref, err)
 				}
 			}
 			inputCurrentRefs = append(inputCurrentRefs, refreshRef(repoRoot, ref))
@@ -1247,20 +1296,29 @@ func Compare(repoRoot string, run *Run) ([]string, error) {
 			inputStoredSurfaces = append(inputStoredSurfaces, surface)
 			current, err := derivation.resolveSurface(surface)
 			if err != nil {
-				return nil, fmt.Errorf("input surface %q is no longer project-contained: %w", surface.Path, err)
+				return drift, fmt.Errorf("input surface %q is no longer project-contained: %w", surface.Path, err)
 			}
 			inputCurrentSurfaces = append(inputCurrentSurfaces, current)
 		} else {
 			derivedStoredSurfaces = append(derivedStoredSurfaces, surface)
 		}
 	}
-	var divergences []string
-	divergences = append(divergences, diffRefs(derivedStoredRefs, refs)...)
-	divergences = append(divergences, diffRefs(inputStoredRefs, inputCurrentRefs)...)
-	divergences = append(divergences, diffSurfaces(derivedStoredSurfaces, surfaces)...)
-	divergences = append(divergences, diffSurfaces(inputStoredSurfaces, inputCurrentSurfaces)...)
-	sort.Strings(divergences)
-	return divergences, nil
+	refLines, refDrift, refStructural := diffRefs(derivedStoredRefs, refs)
+	inputLines, inputDrift, inputStructural := diffRefs(inputStoredRefs, inputCurrentRefs)
+	surfaceLines, surfaceDrift, surfaceStructural := diffSurfaces(derivedStoredSurfaces, surfaces)
+	inputSurfaceLines, inputSurfaceDrift, inputSurfaceStructural := diffSurfaces(inputStoredSurfaces, inputCurrentSurfaces)
+	drift.Divergences = append(drift.Divergences, refLines...)
+	drift.Divergences = append(drift.Divergences, inputLines...)
+	drift.Divergences = append(drift.Divergences, surfaceLines...)
+	drift.Divergences = append(drift.Divergences, inputSurfaceLines...)
+	drift.Drifted = append(drift.Drifted, refDrift...)
+	drift.Drifted = append(drift.Drifted, inputDrift...)
+	drift.Drifted = append(drift.Drifted, surfaceDrift...)
+	drift.Drifted = append(drift.Drifted, inputSurfaceDrift...)
+	drift.Structural = refStructural || inputStructural || surfaceStructural || inputSurfaceStructural
+	sort.Strings(drift.Divergences)
+	sort.Strings(drift.Drifted)
+	return drift, nil
 }
 
 // Consume concludes a finalized run: the cache is already published when
@@ -1874,84 +1932,104 @@ func resolveLogical(repoRoot, ref string) string {
 // Diff
 // ------------------------------------------------------------
 
-func diffRefs(stored, current []Ref) []string {
+// diffRefs compares stored snapshot refs against their re-resolved current
+// state. It returns the divergence lines, the drifted declarations (a
+// modified hash or a moved layer resolution — content drift a salvage can
+// attribute to coverage keys), and whether the surface shape changed
+// (structural).
+func diffRefs(stored, current []Ref) ([]string, []string, bool) {
 	currentByRef := make(map[string]Ref, len(current))
 	for _, ref := range current {
 		currentByRef[ref.Ref] = ref
 	}
 	storedByRef := make(map[string]Ref, len(stored))
-	var out []string
+	var out, drifted []string
+	structural := false
 	for _, ref := range stored {
 		storedByRef[ref.Ref] = ref
 		now, ok := currentByRef[ref.Ref]
 		if !ok {
 			out = append(out, fmt.Sprintf("input removed: %s", ref.Ref))
+			structural = true
 			continue
 		}
 		if now.Resolved != ref.Resolved {
 			out = append(out, fmt.Sprintf("layer resolution changed: %s (%s → %s)", ref.Ref, orNone(ref.Resolved), orNone(now.Resolved)))
+			drifted = append(drifted, ref.Ref)
 			continue
 		}
 		if now.Hash != ref.Hash {
 			out = append(out, fmt.Sprintf("modified: %s", ref.Ref))
+			drifted = append(drifted, ref.Ref)
 		}
 	}
 	for _, ref := range current {
 		if _, ok := storedByRef[ref.Ref]; !ok {
 			out = append(out, fmt.Sprintf("input added: %s", ref.Ref))
+			structural = true
 		}
 	}
-	return out
+	return out, drifted, structural
 }
 
-func diffSurfaces(stored, current []Surface) []string {
+func diffSurfaces(stored, current []Surface) ([]string, []string, bool) {
 	currentByPath := make(map[string]Surface, len(current))
 	for _, surface := range current {
 		currentByPath[surface.Path] = surface
 	}
 	storedByPath := make(map[string]Surface, len(stored))
-	var out []string
+	var out, drifted []string
+	structural := false
 	for _, surface := range stored {
 		storedByPath[surface.Path] = surface
 		now, ok := currentByPath[surface.Path]
 		if !ok {
 			out = append(out, fmt.Sprintf("input surface removed: %s", surface.Path))
+			structural = true
 			continue
 		}
-		out = append(out, diffSurfaceEntries(surface, now)...)
+		lines, entriesDrifted, entriesStructural := diffSurfaceEntries(surface, now)
+		out = append(out, lines...)
+		drifted = append(drifted, entriesDrifted...)
+		structural = structural || entriesStructural
 	}
 	for _, surface := range current {
 		if _, ok := storedByPath[surface.Path]; !ok {
 			out = append(out, fmt.Sprintf("input surface added: %s", surface.Path))
+			structural = true
 		}
 	}
-	return out
+	return out, drifted, structural
 }
 
-func diffSurfaceEntries(stored, current Surface) []string {
+func diffSurfaceEntries(stored, current Surface) ([]string, []string, bool) {
 	currentByPath := make(map[string]Entry, len(current.Entries))
 	for _, entry := range current.Entries {
 		currentByPath[entry.Path] = entry
 	}
 	storedByPath := make(map[string]Entry, len(stored.Entries))
-	var out []string
+	var out, drifted []string
+	structural := false
 	for _, entry := range stored.Entries {
 		storedByPath[entry.Path] = entry
 		now, ok := currentByPath[entry.Path]
 		if !ok {
 			out = append(out, fmt.Sprintf("removed: %s", entry.Path))
+			drifted = append(drifted, entry.Path)
 			continue
 		}
 		if now.Hash != entry.Hash {
 			out = append(out, fmt.Sprintf("modified: %s", entry.Path))
+			drifted = append(drifted, entry.Path)
 		}
 	}
 	for _, entry := range current.Entries {
 		if _, ok := storedByPath[entry.Path]; !ok {
 			out = append(out, fmt.Sprintf("added: %s", entry.Path))
+			structural = true
 		}
 	}
-	return out
+	return out, drifted, structural
 }
 
 // ------------------------------------------------------------

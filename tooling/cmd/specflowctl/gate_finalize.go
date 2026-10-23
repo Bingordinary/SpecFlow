@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
@@ -43,10 +44,15 @@ type gateOutcome struct {
 // reports, after coverage closure and snapshot checks. Every coverage key must
 // be covered by exactly one accepted session (plus carried-over baseline
 // evidence for delta/repair); a run with findings must carry an accepted final
-// synthesis. The input snapshot must be unchanged since gate-plan. Cache
-// evidence is assembled from the accepted declarations, while result,
-// blocking, severity counts, and statuses are derived from the accepted
-// synthesis artifact. See framework/verification_scope.md §Coverage model and
+// synthesis. The input snapshot must be unchanged since gate-plan: on a full
+// run, content drift (a recorded input whose bytes, layer resolution, or
+// existence changed mid-run) is salvaged — the result is persisted with the
+// coverage keys whose read surface intersects the drift recorded as
+// invalidated, and repair re-runs them; a structural divergence (the surface
+// shape itself changed) still discards the run. Cache evidence is assembled
+// from the accepted declarations, while result, blocking, severity counts, and
+// statuses are derived from the accepted synthesis artifact.
+// See framework/verification_scope.md §Coverage model and
 // framework/validation_cache.md §Write Rules → Tooled writes.
 func runGateFinalize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("gate-finalize", flag.ContinueOnError)
@@ -149,14 +155,24 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("gate-finalize rejected: the run has relationships to check or findings but no accepted final synthesis — generate it with `specflowctl gate-mission --run %s --final --format prompt`, then submit it with `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
 	}
 
-	// Snapshot check — the closure of the time-of-check/time-of-use gap. Any
-	// divergence rejects the write and discards the run.
-	divergences, err := gaterun.Compare(absRoot, run)
+	// Snapshot check — the closure of the time-of-check/time-of-use gap. On
+	// a full run, content drift (a recorded input whose bytes moved) does not
+	// discard the run: the affected coverage keys are computed mechanically
+	// from the plan-time read sets, and the salvaged cache records them as
+	// invalidated. A structural divergence (the surface shape itself changed)
+	// and any drift on a delta/repair run discard the run: a delta/repair
+	// run's carried keys have no session coverage to re-attribute, so the
+	// salvage's re-run set could not be covered by the planned sessions.
+	var salvage *runSalvage
+	drift, err := gaterun.CompareDetailed(absRoot, run)
 	if err != nil {
 		return err
 	}
-	if len(divergences) > 0 {
-		return rejectSnapshotDivergence(absRoot, run, divergences)
+	if len(drift.Divergences) > 0 {
+		if run.Mode != gaterun.ModeFull || drift.Structural {
+			return rejectSnapshotDivergence(absRoot, run, drift.Divergences)
+		}
+		salvage = newRunSalvage(drift.DriftedSet())
 	}
 
 	outcome, err := deriveGateOutcome(run, reports)
@@ -176,7 +192,24 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return err
 	}
 	if evidenceDivergences := evidenceSnapshotDivergences(absRoot, run, entries); len(evidenceDivergences) > 0 {
-		return rejectSnapshotDivergence(absRoot, run, evidenceDivergences)
+		if salvage == nil {
+			return rejectSnapshotDivergence(absRoot, run, evidenceDivergences)
+		}
+		// Salvage: an entry assembled from drifted bytes is the expected
+		// divergence — the drift joins the salvage set and the entry is
+		// re-bound to its plan-time hash below. Any other class (a path the
+		// snapshot never recorded) is structural and discards the run.
+		var structural []string
+		for _, divergence := range evidenceDivergences {
+			if path, ok := evidenceDriftPath(divergence); ok {
+				salvage.drift[gaterun.CanonicalDeclPath(absRoot, path)] = true
+				continue
+			}
+			structural = append(structural, divergence)
+		}
+		if len(structural) > 0 {
+			return rejectSnapshotDivergence(absRoot, run, structural)
+		}
 	}
 	if result == "fail" {
 		if err := applyFailureStatuses(run, outcome.EffectiveStatus, entries); err != nil {
@@ -205,7 +238,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	schema := 3
 	if run.Gate == gaterun.GateVerify {
 		schema = 4
-		if err := publishUnitJudgments(absRoot, run, reports, outcome); err != nil {
+		// A salvaged run publishes no judgment record for a coverage key the
+		// drift invalidated: the record would pin plan-time evidence the key
+		// can no longer prove it read cleanly. An unbound key makes the
+		// recovery plan force its re-run.
+		if err := publishUnitJudgments(absRoot, run, reports, outcome, salvage.affectedCoverageKeys(absRoot, run)); err != nil {
 			return err
 		}
 	}
@@ -234,7 +271,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("encode judgment baseline: %w", err)
 	}
 
-	promiseState, promiseStatePath, err := preparePromiseState(absRoot, run, result)
+	drifted := map[string]bool{}
+	if salvage != nil {
+		drifted = salvage.drift
+	}
+	promiseState, promiseStatePath, err := preparePromiseState(absRoot, run, result, drifted)
 	if err != nil {
 		return err
 	}
@@ -244,7 +285,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if run.TargetKind == gaterun.TargetKindUnit {
 		pinFormat = validationcache.PromisePinFormat
 		if run.Gate == gaterun.GateValidate && result == "pass" {
-			promisePins, err = prepareValidatePromisePins(absRoot, run)
+			promisePins, err = prepareValidatePromisePins(absRoot, run, drifted)
 			if err != nil {
 				return err
 			}
@@ -287,6 +328,34 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		write.ReviewDeclined = declinedReviewCandidates(run.Review)
 	}
 
+	// Re-resolve the complete input surface after evidence assembly and
+	// before rendering. A change after this comparison can only make the
+	// published cache stale — never mix an old judgment with new bytes —
+	// because every entry is bound to its plan-time snapshot hash (on a
+	// salvaged run, explicitly re-bound below).
+	drift, err = gaterun.CompareDetailed(absRoot, run)
+	if err != nil {
+		return err
+	}
+	if len(drift.Divergences) > 0 {
+		if salvage == nil || drift.Structural {
+			return rejectSnapshotDivergence(absRoot, run, drift.Divergences)
+		}
+		for decl := range drift.DriftedSet() {
+			salvage.drift[decl] = true
+		}
+	}
+	if salvage != nil {
+		// The drifted entries re-bind to the plan-time snapshot: the
+		// judgments were made against those bytes, so the cache records
+		// exactly what was judged, and the whole-file freshness comparison
+		// reports the drifted files stale until repair rewrites the evidence.
+		if err := salvage.bind(absRoot, run, entries); err != nil {
+			return err
+		}
+		write.InvalidatedChecks = salvage.invalidatedChecks(absRoot, run)
+	}
+
 	rendered, err := validationcache.RenderCache(run.TargetName, write)
 	if err != nil {
 		return err
@@ -301,6 +370,13 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if expectedBlocked && check.Category == validationcache.CategoryBlocked {
 		accepted = true
 	}
+	if salvage != nil && check.Category == validationcache.CategoryStale {
+		// A salvaged write is stale by construction — plan-time hashes on the
+		// drifted entries plus the declared pending invalidations. The
+		// self-check proves the candidate parses and is classified by the
+		// gate's own chain; it is a recovery baseline, not a promotable pass.
+		accepted = true
+	}
 	if !accepted {
 		return fmt.Errorf("gate-finalize self-check FAILED: %s — the candidate cache is not accepted by the %s gate and was not published", check.Reason, run.Gate)
 	}
@@ -313,18 +389,6 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		if !appendixResult.Fresh {
 			return fmt.Errorf("gate-finalize rejected: %s — the candidate cache was not published", appendixResult.Reason)
 		}
-	}
-
-	// Re-resolve the complete input surface after evidence assembly and
-	// self-check. A change after this comparison can only make the published
-	// cache stale; it cannot combine an old judgment with evidence from new
-	// bytes because every entry was already bound to its plan-time hash above.
-	divergences, err = gaterun.Compare(absRoot, run)
-	if err != nil {
-		return err
-	}
-	if len(divergences) > 0 {
-		return rejectSnapshotDivergence(absRoot, run, divergences)
 	}
 
 	writtenPath, err := validationcache.PublishCache(absRoot, run.TargetKind, run.TargetName, run.Gate, rendered)
@@ -346,9 +410,17 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%v — the cache at %s was written and is valid, but judgment collection failed; re-run gate-finalize --run %s", err, relToRepo(absRoot, writtenPath), run.RunID)
 	}
-	if expectedBlocked {
+	if salvage != nil {
+		fmt.Fprintf(stdout, "Input drift since gate-plan: %s\n", salvage.noticeList())
+		fmt.Fprintf(stdout, "Salvaged: result persisted; invalidated check(s): %s\n", strings.Join(write.InvalidatedChecks, ", "))
+		fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeRepair))
+	}
+	switch check.Category {
+	case validationcache.CategoryStale:
+		fmt.Fprintf(stdout, "Self-check: STALE (result: %s — a recovery baseline, not promotable until the invalidated checks re-run)\n", result)
+	case validationcache.CategoryBlocked:
 		fmt.Fprintf(stdout, "Self-check: BLOCKED (result: fail — the failure record blocks promote and is the failure-recovery baseline)\n")
-	} else {
+	default:
 		fmt.Fprintf(stdout, "Self-check: FRESH (result: %s, whole-file content of %d file(s) unchanged)\n", result, len(entries))
 	}
 
@@ -363,6 +435,45 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	return nil
 }
 
+// salvagedFingerprintMark prefixes a promise fingerprint that could not be
+// computed from the bytes the run read: the file drifted mid-run, so the
+// plan-time contract is unrecoverable from the snapshot. The value never
+// equals a real fingerprint, so every downstream comparison treats the
+// contract as changed and the next run recomputes it.
+const salvagedFingerprintMark = "salvaged:"
+
+func salvagedFingerprint(snapshotHash string) string {
+	return salvagedFingerprintMark + snapshotHash
+}
+
+// salvagedPin returns the pin for a provider whose spec drifted mid-run. The
+// run read the provider spec's plan-time bytes; the current promise
+// fingerprints are computed from post-drift content, so recording them would
+// claim a contract the run never read. The pin carries the plan-time
+// whole-file hash under the salvage mark instead.
+func salvagedPin(absRoot string, run *gaterun.Run, drifted map[string]bool, dep, provider string) (validationcache.PromisePin, bool, error) {
+	want := "unit:" + provider
+	if run.Target == gaterun.TargetStable {
+		want = specpaths.StableUnitSpecFileRef(provider)
+	}
+	if !driftedDecl(absRoot, drifted, want) {
+		return validationcache.PromisePin{}, false, nil
+	}
+	hash, ok := run.SnapshotHash(absRoot, want)
+	if !ok || hash == "" {
+		return validationcache.PromisePin{}, false, fmt.Errorf("salvage: drifted provider ref %s has no plan-time snapshot hash", want)
+	}
+	return validationcache.PromisePin{ID: dep, Fingerprint: salvagedFingerprint(hash)}, true, nil
+}
+
+// driftedDecl reports whether a declaration is in the run's drift set.
+func driftedDecl(absRoot string, drifted map[string]bool, declared string) bool {
+	if len(drifted) == 0 {
+		return false
+	}
+	return drifted[gaterun.CanonicalDeclPath(absRoot, declared)]
+}
+
 // preparePromiseState builds the promise state record for a passing unit
 // verify run. It returns nil for non-verify runs, rules, failed runs, and
 // units whose spec has no `## Promises` section. The record is written only
@@ -373,8 +484,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 // provider promises it read, a stable confirmation verifies against the
 // published stable provider promises. Provider fingerprints and the input
 // surface check use the same layer, so a recorded pin is always a contract the
-// run actually read.
-func preparePromiseState(absRoot string, run *gaterun.Run, result string) (*validationcache.PromiseStateFile, string, error) {
+// run actually read — a drifted provider records the salvage mark instead of a
+// post-drift fingerprint.
+func preparePromiseState(absRoot string, run *gaterun.Run, result string, drifted map[string]bool) (*validationcache.PromiseStateFile, string, error) {
 	if run.Gate != gaterun.GateVerify || run.TargetKind != gaterun.TargetKindUnit || result != "pass" {
 		return nil, "", nil
 	}
@@ -410,7 +522,23 @@ func preparePromiseState(absRoot string, run *gaterun.Run, result string) (*vali
 	}
 
 	own := map[string]string{}
+	// A drifted own spec means every own-promise fingerprint would be
+	// computed from post-drift content — content the run never judged. The
+	// salvage mark records that the contract identity is unrecoverable.
+	ownDrifted := driftedDecl(absRoot, drifted, relPath)
+	ownSalvageMark := ""
+	if ownDrifted {
+		hash, ok := run.SnapshotHash(absRoot, relPath)
+		if !ok || hash == "" {
+			return nil, "", fmt.Errorf("promise state: drifted own spec %s has no plan-time snapshot hash", relPath)
+		}
+		ownSalvageMark = salvagedFingerprint(hash)
+	}
 	for _, promise := range promises {
+		if ownDrifted {
+			own[promise.ID] = ownSalvageMark
+			continue
+		}
 		fingerprint, err := specvalidation.PromiseFingerprint(promise)
 		if err != nil {
 			return nil, "", err
@@ -430,6 +558,13 @@ func preparePromiseState(absRoot string, run *gaterun.Run, result string) (*vali
 			provider := specvalidation.PromiseProvider(dep)
 			if !runHasProviderRef(run, provider) {
 				return nil, "", fmt.Errorf("promise state: dependency %q provider %q is not in the verify input surface — re-plan the verify run so it reads the dependency", dep, provider)
+			}
+			if pin, salvaged, err := salvagedPin(absRoot, run, drifted, dep, provider); err != nil {
+				return nil, "", err
+			} else if salvaged {
+				state.Pins = append(state.Pins, pin)
+				pins[dep] = true
+				continue
 			}
 			fingerprint, ok := current[dep]
 			if !ok {
@@ -452,8 +587,9 @@ func preparePromiseState(absRoot string, run *gaterun.Run, result string) (*vali
 // snapshot: freshness compares these fingerprints instead of the provider
 // spec's whole-file hash, so a provider narrative or acceptance-item edit no
 // longer stales the consumer. A provider that is not in the run's input
-// surface cannot be pinned: the run did not read it.
-func prepareValidatePromisePins(absRoot string, run *gaterun.Run) ([]validationcache.PromisePin, error) {
+// surface cannot be pinned: the run did not read it. A drifted provider
+// records the salvage mark instead of a post-drift fingerprint.
+func prepareValidatePromisePins(absRoot string, run *gaterun.Run, drifted map[string]bool) ([]validationcache.PromisePin, error) {
 	relPath := specpaths.CandidateUnitSpecFileRef(run.TargetName)
 	if run.Target == gaterun.TargetStable {
 		relPath = specpaths.StableUnitSpecFileRef(run.TargetName)
@@ -476,6 +612,12 @@ func prepareValidatePromisePins(absRoot string, run *gaterun.Run) ([]validationc
 		provider := specvalidation.PromiseProvider(id)
 		if !runHasProviderRef(run, provider) {
 			return nil, fmt.Errorf("promise pins: dependency %q provider %q is not in the validate input surface — re-plan the validate run so it reads the dependency", id, provider)
+		}
+		if pin, salvaged, err := salvagedPin(absRoot, run, drifted, id, provider); err != nil {
+			return nil, err
+		} else if salvaged {
+			pins = append(pins, pin)
+			continue
 		}
 		fingerprint, ok := current[id]
 		if !ok {
@@ -913,6 +1055,109 @@ func rejectSnapshotDivergence(absRoot string, run *gaterun.Run, divergences []st
 		strings.Join(divergences, "\n  "), gaterun.PlanCommand(run, run.Mode))
 }
 
+// runSalvage carries a full run's mid-run content drift through finalize: the
+// run is persisted (its verdicts dictate a pass cache or a failure record)
+// with the coverage keys whose plan-time read set intersects the drift
+// recorded as invalidated. The intersection is the framework's own trust
+// model — a verdict can only be influenced by material its session read, and
+// the read set is fixed at plan time and enforced at gate-submit — so the
+// attribution needs no judgment, and a verdict whose read surface never
+// contained a drifted file stays valid by construction.
+type runSalvage struct {
+	drift map[string]bool
+}
+
+func newRunSalvage(drifted map[string]bool) *runSalvage {
+	return &runSalvage{drift: drifted}
+}
+
+// noticeList renders the drifted declarations for the finalize output.
+func (s *runSalvage) noticeList() string {
+	decls := make([]string, 0, len(s.drift))
+	for decl := range s.drift {
+		decls = append(decls, decl)
+	}
+	sort.Strings(decls)
+	return strings.Join(decls, ", ")
+}
+
+// affectedCoverageKeys returns the coverage keys whose read surface
+// intersects the drifted declarations — the judgments the drift can have
+// influenced. Nil-safe: a non-salvaged run affects nothing.
+func (s *runSalvage) affectedCoverageKeys(absRoot string, run *gaterun.Run) map[string]bool {
+	affected := map[string]bool{}
+	if s == nil {
+		return affected
+	}
+	for _, ck := range run.Coverage {
+		if ck.Kind == gaterun.SessionKindDeltaReview {
+			continue
+		}
+		for _, ref := range gaterun.CoverageReadRefs(absRoot, run, ck) {
+			if s.drift[gaterun.CanonicalDeclPath(absRoot, ref)] {
+				affected[ck.Key] = true
+				break
+			}
+		}
+	}
+	return affected
+}
+
+// invalidatedChecks renders the salvage's machine-owned re-run set: the
+// report keys of every affected coverage key. The recovery plan forces
+// exactly this list (mapped back onto coverage keys) and carries the rest.
+func (s *runSalvage) invalidatedChecks(absRoot string, run *gaterun.Run) []string {
+	var keys []string
+	for key := range s.affectedCoverageKeys(absRoot, run) {
+		ck := run.CoverageByKey(key)
+		if ck == nil {
+			continue
+		}
+		keys = append(keys, run.ReportKeys(*ck)...)
+	}
+	sort.Strings(keys)
+	deduped := keys[:0]
+	for i, key := range keys {
+		if i > 0 && keys[i-1] == key {
+			continue
+		}
+		deduped = append(deduped, key)
+	}
+	return deduped
+}
+
+// bind re-binds every drifted evidence entry to its plan-time snapshot hash.
+// The judgments were made against the snapshot bytes, so the cache records
+// exactly what was judged; the whole-file freshness comparison then reports
+// the drifted files stale until repair rewrites the evidence. The chunk
+// sequence is recorded empty (a valid recorded block): the plan-time chunking
+// is gone with the bytes, so the change cannot be localized — the next change
+// report shows the file as changed without a line-level diff.
+func (s *runSalvage) bind(absRoot string, run *gaterun.Run, entries []validationcache.FileEntry) error {
+	for i := range entries {
+		if !s.drift[gaterun.CanonicalDeclPath(absRoot, entries[i].Path)] {
+			continue
+		}
+		hash, ok := run.SnapshotHash(absRoot, entries[i].Path)
+		if !ok || hash == "" {
+			return fmt.Errorf("salvage: drifted evidence %s has no plan-time snapshot hash", entries[i].Path)
+		}
+		entries[i].Hash = hash
+		entries[i].Chunks = nil
+	}
+	return nil
+}
+
+// evidenceDriftPath reports the declared path of an evidence divergence that
+// re-binds to its plan-time snapshot hash (the entry was assembled from
+// drifted bytes); ok is false for every other divergence class.
+func evidenceDriftPath(divergence string) (string, bool) {
+	if rest, found := strings.CutPrefix(divergence, "evidence differs from snapshot: "); found {
+		return rest, true
+	}
+	return "", false
+}
+
 // assembleEntries builds the cache files list from the run's input surface.
 // Every entry records the whole-file hash and the ordered chunk sequence of
 // one surface file, computed from current bytes and bound to the plan-time
@@ -941,7 +1186,17 @@ func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEn
 			return nil, err
 		}
 		if entry == nil {
-			return nil, nil
+			// The declaration's file is gone (a mid-run removal). The cache's
+			// files list is the plan-time input surface, so the entry keeps
+			// its plan-time identity with an empty chunk sequence: the change
+			// cannot be localized, and the salvage invalidations force every
+			// judgment that read the file to re-run. A declaration outside the
+			// snapshot still fails closed.
+			hash, ok := run.SnapshotHash(absRoot, ref)
+			if !ok || hash == "" {
+				return nil, fmt.Errorf("no evidence record for %q — the path is not in the plan-time input surface", ref)
+			}
+			entry = &validationcache.FileEntry{Path: ref, Hash: hash, Chunker: contenthash.ChunkerVersion}
 		}
 		a := &agg{entry: *entry}
 		aggByAbs[abs] = a
@@ -1149,16 +1404,21 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Writes the gate cache from the run's accepted session reports, after coverage")
 	fmt.Fprintln(w, "closure and snapshot checks: every coverage key must be covered by exactly one")
-	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for delta/repair), and no")
-	fmt.Fprintln(w, "input may have changed since gate-plan (a divergence discards the run). A run")
-	fmt.Fprintln(w, "that produced findings must carry an accepted final synthesis (the optional")
+	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for delta/repair), and the")
+	fmt.Fprintln(w, "input snapshot must still verify against gate-plan. On a full run, content drift")
+	fmt.Fprintln(w, "(a recorded input whose bytes changed mid-run) is salvaged: the result is")
+	fmt.Fprintln(w, "persisted with the coverage keys whose read set intersects the drift recorded as")
+	fmt.Fprintln(w, "invalidated (a recovery baseline; the gate's repair run — `revalidate` /")
+	fmt.Fprintln(w, "`reverify` with `--mode repair` — re-runs exactly those). A structural divergence")
+	fmt.Fprintln(w, "(the input surface itself changed) discards the run. A run that produced findings")
+	fmt.Fprintln(w, "must carry an accepted final synthesis (the optional")
 	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles one")
 	fmt.Fprintln(w, "files entry per run input-surface file (whole-file hash + ordered chunk")
 	fmt.Fprintln(w, "sequence), attaches each check's lens and failure status, derives the")
 	fmt.Fprintln(w, "failure-record status map mechanically, then re-reads and runs the gate's own")
-	fmt.Fprintln(w, "freshness chain (pass → FRESH, failure record → BLOCKED; validate@")
-	fmt.Fprintln(w, "additionally checks appendix coverage). Result, blocking, severity counts,")
-	fmt.Fprintln(w, "and failure statuses are derived from accepted artifacts.")
+	fmt.Fprintln(w, "freshness chain (pass → FRESH, failure record → BLOCKED, salvage → STALE;")
+	fmt.Fprintln(w, "validate@ additionally checks appendix coverage). Result, blocking, severity")
+	fmt.Fprintln(w, "counts, and failure statuses are derived from accepted artifacts.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  --run RUN_ID     gate run id printed by gate-plan (required)")
@@ -1166,7 +1426,7 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --repo-root PATH Repository root path (default: .)")
 }
 
-func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, outcome *gateOutcome) error {
+func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, outcome *gateOutcome, skip map[string]bool) error {
 	coverage, err := gaterun.RequiredCoverage(root, run)
 	if err != nil {
 		return err
@@ -1184,6 +1444,13 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 		// Public observations are independent facts, published at acceptance.
 		// Unit-specific synthesis must not rewrite them.
 		if ck.Kind == gaterun.SessionKindCode {
+			continue
+		}
+		if skip[ck.Key] {
+			// A salvaged run publishes no judgment record for a key whose
+			// evidence basis the drift invalidated: the record could only pin
+			// plan-time evidence the key can no longer prove it read cleanly.
+			// An unbound key forces the recovery plan to re-run it.
 			continue
 		}
 		binding, bound := run.Records[ck.Key]
