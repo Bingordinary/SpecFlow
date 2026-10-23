@@ -45,6 +45,20 @@ func TestAcceptanceSchemaChecksEveryItem(t *testing.T) {
 	}
 }
 
+// TestAcceptanceSchemaUnattributableAffectsLineFails pins the issue-#96
+// fail-closed repair: an affects declaration the parser cannot attribute is a
+// mechanical failure, never a silent empty extraction.
+func TestAcceptanceSchemaUnattributableAffectsLineFails(t *testing.T) {
+	content := "acceptance_item_set:\n" + schemaItem("first") +
+		"    affects:\n      - internal/demo/handler.go\n"
+	root := newRepo(t)
+	writeCandidate(t, root, "demo", content)
+	result := checkAcceptanceItems(root, "demo")
+	if result.Status != Fail || !strings.Contains(result.Details, "not under a recognised affects field") {
+		t.Fatalf("expected fail-closed affects problem, got %+v", result)
+	}
+}
+
 func TestAcceptanceSchemaFieldBoundariesAndValues(t *testing.T) {
 	complete := "acceptance_item_set:\n" + schemaItem("first")
 	method := "    verification_method: Run the request test.\n"

@@ -271,6 +271,70 @@ func TestCheckAnchors_ResolvableSurfaceAndMissingAnchorFail(t *testing.T) {
 	}
 }
 
+// TestCheckAnchors_AffectsSequenceAtFieldColumnFails pins the issue-#96
+// regression repair: an affects.files entry indented at its field's own column
+// (the indentless sequence form) is read, so a declared file that does not
+// exist is reported instead of Check 3 passing with "no entries to check".
+func TestCheckAnchors_AffectsSequenceAtFieldColumnFails(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nrule_refs: none\n---\n\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test\n"+
+			"    verification_type: testable\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: internal/demo/a.go\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n"+
+			"    affects:\n"+
+			"      files:\n"+
+			"      - internal/demo/gone.go\n")
+
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for the missing same-column affects.files anchor, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "affects.files") || !strings.Contains(result.Details, "internal/demo/gone.go") {
+		t.Fatalf("expected the affects.files failure detail, got %s", result.Details)
+	}
+}
+
+// TestCheckAnchors_AffectsSequenceAtFieldColumnResolves verifies the repair
+// reads the same-column form without failing a valid declaration.
+func TestCheckAnchors_AffectsSequenceAtFieldColumnResolves(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
+	writeSurfaceFile(t, repoRoot, "internal/demo/handler.go", "package demo\n")
+	writeSurfaceFile(t, repoRoot, "internal/demo/handler_test.go", "package demo\n")
+	writeCandidate(t, repoRoot, "test_unit",
+		"---\nid: test_unit\nrule_refs: none\n---\n\n"+
+			"acceptance_item_set:\n"+
+			"  - id: item_1\n"+
+			"    description: test\n"+
+			"    verification_type: testable\n"+
+			"    verification_surface: src/\n"+
+			"    implementation_surface: internal/demo/a.go\n"+
+			"    verification_method: check\n"+
+			"    pass_condition: ok\n"+
+			"    runnable: yes\n"+
+			"    affects:\n"+
+			"      files:\n"+
+			"      - internal/demo/handler.go\n"+
+			"      evidence_files:\n"+
+			"      - internal/demo/handler_test.go\n")
+
+	result := checkAnchors(repoRoot, "test_unit")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for a valid same-column affects block, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "1 affects.files path(s) and 1 evidence file(s)") {
+		t.Fatalf("expected both same-column entries counted, got %s", result.Details)
+	}
+}
+
 // evidenceFilesSpec builds a candidate spec whose single acceptance item
 // declares the given affects.evidence_files values.
 func evidenceFilesSpec(values ...string) string {

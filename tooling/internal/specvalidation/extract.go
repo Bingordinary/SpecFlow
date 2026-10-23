@@ -1,6 +1,7 @@
 package specvalidation
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
@@ -15,6 +16,18 @@ type acceptanceItemFields struct {
 	affectsEvidenceFiles  []string
 	affectsAppendices     []string
 	affectsRules          []string
+	affectsProblems       []string
+}
+
+// affectsSubfields is the closed set of `affects:` mapping keys the framework
+// defines (framework/spec_writing_guide.md §7). A key outside this set is a
+// declaration the parser cannot attribute to a known field, so it is reported
+// rather than silently dropped.
+var affectsSubfields = map[string]bool{
+	"files":          true,
+	"evidence_files": true,
+	"appendices":     true,
+	"rules":          true,
 }
 
 // parseAcceptanceItems is the single semantic parser for acceptance-item
@@ -24,10 +37,15 @@ type acceptanceItemFields struct {
 // set they are reading.
 //
 // Item fields are read relative to the item's own nesting: the region starts
-// at the `- id:` line, its fields sit two columns deeper, and the
-// affects.files list two columns deeper again. No document-absolute column is
-// assumed, so a consistently nested item block reads the same however far the
-// list is indented.
+// at the `- id:` line and its fields sit two columns deeper. Inside the
+// `affects:` mapping, a block-sequence entry may sit at its field's own column
+// or deeper — both are legal YAML — so entries are matched by the item-relative
+// column rather than a fixed offset. No document-absolute column is assumed, so
+// a consistently nested item block reads the same however far the list is
+// indented. A YAML comment carries no content and never terminates a block
+// mapping, so a comment line is skipped at every level. A line the parser
+// cannot attribute to a known field is recorded in affectsProblems instead of
+// being treated as an absent declaration.
 func parseAcceptanceItems(content string) []acceptanceItemFields {
 	regions := contenthash.AcceptanceItemRegions(content)
 	items := make([]acceptanceItemFields, 0, len(regions))
@@ -61,12 +79,20 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 				}
 				blockField = ""
 			}
+			// A YAML comment carries no field content and never terminates a
+			// block mapping: skip it without changing the field, affects, or
+			// block-scalar state. A comment inside a block scalar is content
+			// and was already consumed by the blockField branch above, so this
+			// guard only sees comments outside one.
+			if strings.HasPrefix(trimmed, "#") {
+				continue
+			}
 			switch {
 			case indent == fieldIndent && trimmed != "":
 				inAffects = false
 				listField = ""
 				key, raw, ok := strings.Cut(trimmed, ":")
-				if !ok || strings.HasPrefix(trimmed, "#") {
+				if !ok {
 					continue
 				}
 				key = strings.TrimSpace(key)
@@ -82,16 +108,27 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 					}
 				}
 				inAffects = key == "affects" && value == ""
+			case inAffects && indent >= fieldIndent+2 && strings.HasPrefix(trimmed, "- "):
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+				if listField == "" {
+					item.affectsProblems = append(item.affectsProblems, fmt.Sprintf("block-sequence entry %q is not under a recognised affects field", value))
+					continue
+				}
+				if value != "" {
+					appendAffects(&item, listField, strings.Trim(value, `"'`))
+				}
 			case inAffects && indent == fieldIndent+2 && strings.Contains(trimmed, ":"):
 				key, value, _ := strings.Cut(trimmed, ":")
+				key = strings.TrimSpace(key)
 				listField = key
+				if !affectsSubfields[key] {
+					item.affectsProblems = append(item.affectsProblems, fmt.Sprintf("unknown affects field %q", key))
+				}
 				for _, entry := range parseInlineRefList(strings.TrimSpace(value)) {
 					appendAffects(&item, key, entry)
 				}
-			case inAffects && listField != "" && indent == fieldIndent+4 && strings.HasPrefix(trimmed, "- "):
-				if value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")); value != "" {
-					appendAffects(&item, listField, strings.Trim(value, `"'`))
-				}
+			case inAffects && indent > fieldIndent && trimmed != "":
+				item.affectsProblems = append(item.affectsProblems, fmt.Sprintf("line %q inside the affects mapping is not a recognised affects field", trimmed))
 			}
 		}
 		item.implementationSurface = strings.TrimSpace(item.fields["implementation_surface"])

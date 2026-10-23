@@ -2,6 +2,7 @@ package specvalidation
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -244,6 +245,137 @@ func TestExtractAcceptanceFields_ItemRelativeIndent(t *testing.T) {
 			}
 			if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("files: expected %v, got %v", want, got)
+			}
+		})
+	}
+}
+
+// TestExtractAcceptanceFields_AffectsSequenceAtFieldColumn verifies that a
+// block-sequence entry indented at its affects field's own column (the
+// indentless sequence form) is read like the deeper form — both are legal YAML
+// (issue #96).
+func TestExtractAcceptanceFields_AffectsSequenceAtFieldColumn(t *testing.T) {
+	spec := "# Demo\n\nacceptance_item_set:\n" +
+		"- id: demo.core\n" +
+		"  description: Demo behavior.\n" +
+		"  implementation_surface: internal/demo\n" +
+		"  affects:\n" +
+		"    files:\n" +
+		"    - internal/demo/handler.go\n" +
+		"    evidence_files:\n" +
+		"    - internal/demo/handler_test.go\n"
+	if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files: expected %v, got %v", want, got)
+	}
+	if got, want := ExtractAffectsEvidenceFiles(spec), []string{"internal/demo/handler_test.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence files: expected %v, got %v", want, got)
+	}
+	if got, want := ItemCodeSurfaces(spec)["demo.core"], []string{"internal/demo", "internal/demo/handler.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("item code surfaces: expected %v, got %v", want, got)
+	}
+}
+
+// TestParseAcceptanceItems_UnattributableAffectsLinesReported verifies the
+// parser fails closed instead of silently dropping an affects declaration it
+// cannot attribute (issue #96).
+func TestParseAcceptanceItems_UnattributableAffectsLinesReported(t *testing.T) {
+	cases := []struct {
+		name string
+		spec string
+		want string
+	}{
+		{
+			name: "entry before any affects field",
+			spec: "- id: demo.core\n  affects:\n    - internal/demo/handler.go\n",
+			want: "not under a recognised affects field",
+		},
+		{
+			name: "unknown affects field",
+			spec: "- id: demo.core\n  affects:\n    file:\n      - internal/demo/handler.go\n",
+			want: "unknown affects field",
+		},
+		{
+			name: "unrecognised line in the affects mapping",
+			spec: "- id: demo.core\n  affects:\n    files:\n      - internal/demo/handler.go\n    stray\n",
+			want: "not a recognised affects field",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := parseAcceptanceItems("# Demo\n\nacceptance_item_set:\n" + tc.spec)
+			if len(items) != 1 {
+				t.Fatalf("expected one item, got %d", len(items))
+			}
+			if joined := strings.Join(items[0].affectsProblems, "; "); !strings.Contains(joined, tc.want) {
+				t.Fatalf("expected a problem containing %q, got %v", tc.want, items[0].affectsProblems)
+			}
+		})
+	}
+}
+
+// TestParseAcceptanceItems_H3SubheadingBetweenItemsNoProblem verifies a `###`
+// subheading at column 0 between items (legal per
+// framework/spec_writing_guide.md §7) is not mistaken for an unreadable affects
+// line (issue #96).
+func TestParseAcceptanceItems_H3SubheadingBetweenItemsNoProblem(t *testing.T) {
+	spec := "# Demo\n\nacceptance_item_set:\n" +
+		"- id: demo.a\n" +
+		"  affects:\n" +
+		"    files:\n" +
+		"    - internal/demo/a.go\n" +
+		"### Related items\n" +
+		"- id: demo.b\n" +
+		"  affects:\n" +
+		"    files:\n" +
+		"    - internal/demo/b.go\n"
+	if got, want := ExtractAffectsFiles(spec), []string{"internal/demo/a.go", "internal/demo/b.go"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files: expected %v, got %v", want, got)
+	}
+	for _, item := range parseAcceptanceItems(spec) {
+		if len(item.affectsProblems) != 0 {
+			t.Fatalf("item %s: expected no affects problems, got %v", item.id, item.affectsProblems)
+		}
+	}
+}
+
+// TestParseAcceptanceItems_CommentInsideAffectsIsIgnored verifies that a YAML
+// comment line inside the affects mapping — including one indented at the
+// item-field level — never terminates the mapping: the subfields after it are
+// still read and no unattributable-line problem is recorded (issue #96
+// fail-closed).
+func TestParseAcceptanceItems_CommentInsideAffectsIsIgnored(t *testing.T) {
+	cases := []struct {
+		name  string
+		spec  string
+		files []string
+		rules []string
+	}{
+		{
+			name:  "comment at the item-field indent before the first subfield",
+			spec:  "- id: demo.a\n  affects:\n  # verified files\n    files:\n    - internal/demo/a.go\n",
+			files: []string{"internal/demo/a.go"},
+		},
+		{
+			name:  "comment at the item-field indent between subfields",
+			spec:  "- id: demo.a\n  affects:\n    files:\n    - internal/demo/a.go\n  # provisional\n    rules:\n    - g_rule_example\n",
+			files: []string{"internal/demo/a.go"},
+			rules: []string{"g_rule_example"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := parseAcceptanceItems("# Demo\n\nacceptance_item_set:\n" + tc.spec)
+			if len(items) != 1 {
+				t.Fatalf("expected one item, got %d", len(items))
+			}
+			if got := items[0].affectsFiles; !reflect.DeepEqual(got, tc.files) {
+				t.Fatalf("files: expected %v, got %v", tc.files, got)
+			}
+			if got := items[0].affectsRules; !reflect.DeepEqual(got, tc.rules) {
+				t.Fatalf("rules: expected %v, got %v", tc.rules, got)
+			}
+			if len(items[0].affectsProblems) != 0 {
+				t.Fatalf("expected no affects problems, got %v", items[0].affectsProblems)
 			}
 		})
 	}

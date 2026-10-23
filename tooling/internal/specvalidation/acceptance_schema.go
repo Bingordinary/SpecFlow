@@ -40,6 +40,9 @@ func CheckAcceptanceItemSchema(content string) CheckResult {
 		for _, key := range item.duplicateFields {
 			issue("duplicate field " + key)
 		}
+		for _, problem := range item.affectsProblems {
+			issue(problem)
+		}
 		for _, key := range required {
 			if strings.TrimSpace(item.fields[key]) == "" {
 				issue("missing or empty required field " + key)
