@@ -301,8 +301,16 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	if err != nil {
 		return gateMission{}, err
 	}
-	if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule {
-		session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
+	// The scope line advertises the layer resolution section when the session's
+	// inlined standard carries it: the validate checklist inlines it, and a
+	// session that judges by another document (delta review, final synthesis)
+	// does not. Deriving it from the inlined sections keeps the advertised
+	// scope aligned with the text the reviewer actually receives.
+	for _, section := range sections {
+		if section.Heading == "Target-layer applicability" {
+			session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
+			break
+		}
 	}
 	// A run with a review session (delta/repair, or a full run preserving
 	// standing relationship conclusions) shows every session the mechanically

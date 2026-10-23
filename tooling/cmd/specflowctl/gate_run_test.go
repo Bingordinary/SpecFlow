@@ -122,6 +122,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 }{
 	"unit_validate_checklist.md": {
 		{2, "Prerequisite — Read all unit files"},
+		{2, "Target-layer applicability"},
 		{2, "Execution Rules"},
 		{2, "Check 1 — Structural integrity"},
 		{2, "Check 2 — Design soundness"},
@@ -148,6 +149,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 	},
 	"unit_verify_checklist.md": {
 		{2, "Prerequisite — Read all unit files"},
+		{2, "Target-layer applicability"},
 		{2, "Quality Lens Standard"},
 		{4, "Dimension 8: Architectural Design Quality"},
 		{2, "Step 1 — Structural alignment"},

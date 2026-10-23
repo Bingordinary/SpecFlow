@@ -27,7 +27,7 @@ func TestUnitScanCoverageAndMission(t *testing.T) {
 	}
 
 	unit := missionJSON(t, root, runID, "unit:auth")
-	if unit.Sessions[0].ProtocolScope != "Steps 1 and 5 over the whole unit" {
+	if unit.Sessions[0].ProtocolScope != "Target-layer applicability and Steps 1 and 5 over the whole unit" {
 		t.Fatalf("unit mission protocol scope = %q", unit.Sessions[0].ProtocolScope)
 	}
 	template := unit.Sessions[0].ReportContract.Template
@@ -47,7 +47,7 @@ func TestUnitScanCoverageAndMission(t *testing.T) {
 	}
 
 	item := missionJSON(t, root, runID, "auth.core")
-	if item.Sessions[0].ProtocolScope != "Steps 2, 3, 4, 6, 7 for acceptance item(s) item:auth:auth.core" {
+	if item.Sessions[0].ProtocolScope != "Target-layer applicability and Steps 2, 3, 4, 6, 7 for acceptance item(s) item:auth:auth.core" {
 		t.Fatalf("item mission protocol scope = %q", item.Sessions[0].ProtocolScope)
 	}
 	if strings.Contains(strings.Join(item.Sessions[0].Context, " "), "Steps 1 (structural alignment) and 5") == false {

@@ -185,6 +185,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 				"## Step 1 — Structural alignment",
 				"## Step 2 — Acceptance alignment",
 				"## Core Principle",
+				"## Target-layer applicability",
 				"**Verdict folding:**",
 				"### 6. Severity Levels",
 				"#### P3 Reportability Gate",
@@ -240,6 +241,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			judging: []string{
 				"## Check 1 — Structural integrity",
 				"## Check 5 — Acceptance coverage & correctness",
+				"## Target-layer applicability",
 				"### Sub-check 5h — Promise block semantics",
 				"## Check 10 — Clarity",
 				"### Severity handling",

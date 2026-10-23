@@ -232,16 +232,20 @@ The `alignment` lens is the remainder of this file (Steps 1–7 and the analysis
 
 The steps are split by session: **Step 1**, **Step 5**, and their **Step 7** analyses run in the unit-level scan session (`unit:<unit>`); **Steps 2, 3, 4, and 6**, and their **Step 7** analyses, run in the item sessions (`item:<unit>:<item>`). Each step below states its session.
 
+## Target-layer applicability
+
+Use the planned `Target layer` (`candidate` or `stable`) shown in the gate mission when applying this checklist. For a targeted run without a gate mission, use the layer resolved by the command: candidate when present, otherwise stable. The Read Procedure resolves the main spec and the appendices from that layer, and every step reads that layer's content. A stable-only target is a drift confirmation: run Steps 1–6 against the stable content, do not enter divergence resolution (Step 7), and do not propose spec or code repairs — report a MISMATCH as drift and recommend forking the unit (see §Stable-only mode).
+
 ## Prerequisite — Read all unit files
 
 The unit's complete spec is the union of the main spec and all appendix files. All verify steps that follow operate on this union. The `## Promises` block is the formal contract; appendix content is explanatory support truth — examples, detail, and evidence — not a second contract. Appendix claims are verified as they support a promise, and normative contract content that appears only in an appendix is a validate finding (Check 5a step 6), not a verify contract.
 
 ### Read Procedure
 
-Before executing any verify step, the agent must read the complete unit spec:
+Before executing any verify step, the agent must read the complete unit spec. `{layer}` is the resolved target layer (`candidate` or `stable`) per §Target-layer applicability:
 
-1. Read the main spec: `docs/specs/units/candidate/unit_{unit}.md`
-2. Glob all candidate appendix files: `docs/specs/units/candidate/appendix/unit_{unit}_*.md`
+1. Read the main spec: `docs/specs/units/{layer}/unit_{unit}.md`
+2. Glob all appendix files in the resolved layer: `docs/specs/units/{layer}/appendix/unit_{unit}_*.md`
 3. For each appendix, read its frontmatter and confirm ownership by the appendix `unit` field.
 4. Read the content of every appendix file.
 
@@ -1209,7 +1213,7 @@ After presenting the summary:
 
 ### Stable-only mode
 
-When no candidate spec exists (verify against stable):
+When no candidate spec exists (verify against stable), using §Target-layer applicability:
 
 ```
 1. Run Steps 1-6 against stable spec

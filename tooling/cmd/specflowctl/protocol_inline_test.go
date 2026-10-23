@@ -39,6 +39,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			name: "validate unit checks", gate: gaterun.GateValidate, targetKind: gaterun.TargetKindUnit,
 			kind: gaterun.SessionKindChecks, keys: []string{"2", "4", "5", "7", "8", "9", "10"},
 			wantChunks: []protocolChunk{
+				{Source: "framework/unit_validate_checklist.md", Heading: "Target-layer applicability"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Prerequisite"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Execution Rules"},
 				{Source: "framework/unit_validate_checklist.md", Heading: "Severity handling"},
@@ -75,6 +76,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			name: "verify item session", gate: gaterun.GateVerify, targetKind: gaterun.TargetKindUnit,
 			kind: gaterun.SessionKindItem, keys: []string{"item:auth:auth.core"},
 			wantChunks: []protocolChunk{
+				{Source: "framework/unit_verify_checklist.md", Heading: "Target-layer applicability"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Prerequisite"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 2"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 3"},
@@ -87,6 +89,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			name: "verify unit scan session", gate: gaterun.GateVerify, targetKind: gaterun.TargetKindUnit,
 			kind: gaterun.SessionKindUnit, keys: []string{"unit:auth"},
 			wantChunks: []protocolChunk{
+				{Source: "framework/unit_verify_checklist.md", Heading: "Target-layer applicability"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Prerequisite"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 1"},
 				{Source: "framework/unit_verify_checklist.md", Heading: "Step 5"},
@@ -178,6 +181,69 @@ func TestValidateCheckSectionCoversSubChecks(t *testing.T) {
 		if !strings.Contains(chunks[0].Content, sub) {
 			t.Fatalf("Check 5 section omits %s", sub)
 		}
+	}
+}
+
+// TestUnitValidateChecklistIsLayerAware locks the stable-only unit
+// confirmation fix onto the real checklist: the inlined Prerequisite resolves
+// the main spec and appendices from the planned layer, Check 1's mechanical
+// pre-pass is candidate-only, and Check 8's promise-model command is
+// layer-parameterized, so a stable-only reviewer is not told to read a
+// candidate path or run a command that cannot succeed.
+func TestUnitValidateChecklistIsLayerAware(t *testing.T) {
+	root := sourceRepoRoot(t)
+	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{
+		{"unit_validate_checklist.md", 2, "Target-layer applicability"},
+		{"unit_validate_checklist.md", 2, "Prerequisite"},
+		{"unit_validate_checklist.md", 2, "Check 1"},
+		{"unit_validate_checklist.md", 2, "Check 8"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHeading := map[string]string{}
+	for _, c := range chunks {
+		byHeading[judgments.SectionSlug(c.Heading)] = c.Content
+	}
+	prereq, ok := byHeading["Prerequisite"]
+	if !ok || !strings.Contains(prereq, "docs/specs/units/{layer}/unit_{unit}.md") || strings.Contains(prereq, "docs/specs/units/candidate/unit_{unit}.md") {
+		t.Fatalf("Prerequisite is not layer-aware:\n%s", prereq)
+	}
+	check1, ok := byHeading["Check 1"]
+	if !ok || !strings.Contains(check1, "candidate targets only") || !strings.Contains(check1, "A stable-only target runs no mechanical pre-pass") {
+		t.Fatalf("Check 1 is not layer-aware:\n%s", check1)
+	}
+	check8, ok := byHeading["Check 8"]
+	if !ok || !strings.Contains(check8, "specflowctl validate promise-model --unit <name> --layer <candidate|stable>") || strings.Contains(check8, "`validate candidate`") {
+		t.Fatalf("Check 8 is not layer-aware:\n%s", check8)
+	}
+}
+
+// TestUnitVerifyChecklistIsLayerAware locks the stable-only verify fix onto
+// the real checklist: the inlined Prerequisite resolves the main spec and
+// appendices from the planned layer, and the layer section tells a stable-only
+// reviewer this is a drift confirmation that does not enter divergence
+// resolution.
+func TestUnitVerifyChecklistIsLayerAware(t *testing.T) {
+	root := sourceRepoRoot(t)
+	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{
+		{"unit_verify_checklist.md", 2, "Target-layer applicability"},
+		{"unit_verify_checklist.md", 2, "Prerequisite"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHeading := map[string]string{}
+	for _, c := range chunks {
+		byHeading[judgments.SectionSlug(c.Heading)] = c.Content
+	}
+	prereq, ok := byHeading["Prerequisite"]
+	if !ok || !strings.Contains(prereq, "docs/specs/units/{layer}/unit_{unit}.md") || strings.Contains(prereq, "docs/specs/units/candidate/unit_{unit}.md") {
+		t.Fatalf("Prerequisite is not layer-aware:\n%s", prereq)
+	}
+	layer, ok := byHeading["Target-layer applicability"]
+	if !ok || !strings.Contains(layer, "drift confirmation") || !strings.Contains(layer, "Step 7") {
+		t.Fatalf("Target-layer applicability does not state the stable-only drift rule:\n%s", layer)
 	}
 }
 

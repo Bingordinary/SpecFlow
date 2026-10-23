@@ -56,6 +56,7 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 		return sections, nil
 	case gate == gaterun.GateValidate:
 		sections := []protocolSectionRef{
+			{"unit_validate_checklist.md", 2, "Target-layer applicability"},
 			{"unit_validate_checklist.md", 2, "Prerequisite"},
 			{"unit_validate_checklist.md", 2, "Execution Rules"},
 			{"unit_validate_checklist.md", 3, "Severity handling"},
@@ -97,7 +98,10 @@ func finalSynthesisSections() []protocolSectionRef {
 }
 
 func verifyPrerequisiteSections() []protocolSectionRef {
-	return []protocolSectionRef{{"unit_verify_checklist.md", 2, "Prerequisite"}}
+	return []protocolSectionRef{
+		{"unit_verify_checklist.md", 2, "Target-layer applicability"},
+		{"unit_verify_checklist.md", 2, "Prerequisite"},
+	}
 }
 
 func verifyStepSection(step string) protocolSectionRef {

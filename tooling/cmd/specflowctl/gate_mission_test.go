@@ -50,6 +50,54 @@ func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
 	}
 }
 
+// TestUnitMissionIncludesTargetLayerApplicability proves the unit validate
+// mission resolves the target layer the same way the rule mission does: the
+// inlined standard carries the layer resolution section, the printed spec
+// source is the stable file for a stable-only target, and the advertised
+// protocol scope names the layer section.
+func TestUnitMissionIncludesTargetLayerApplicability(t *testing.T) {
+	cases := []struct {
+		name, target      string
+		candidate, stable bool
+	}{
+		{"stable confirmation", "stable", false, true},
+		{"candidate over stable", "candidate", true, true},
+		{"new candidate", "candidate", true, false},
+	}
+	const name = "logger"
+	spec := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
+		"## Design Narrative\n\nProse.\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n" +
+		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := createCLITestRepo(t)
+			grEnableMissionLayout(t, root)
+			for layer, present := range map[string]bool{"candidate": tc.candidate, "stable": tc.stable} {
+				if present {
+					grWriteFile(t, root, "docs/specs/units/"+layer+"/unit_"+name+".md", spec)
+				}
+			}
+			runID := grPlan(t, root, "--gate", "validate", "--unit", name, "--target", tc.target, "--relationships", "none")
+			var out, errOut bytes.Buffer
+			if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural,design,acceptance,dependencies,clarity", "--format", "prompt"}, &out, &errOut); err != nil {
+				t.Fatalf("mission: %v (%s)", err, errOut.String())
+			}
+			for _, want := range []string{
+				"Target layer: " + tc.target,
+				"Spec source: docs/specs/units/" + tc.target + "/unit_" + name + ".md",
+				"Target-layer applicability",
+				"Protocol scope: Target-layer applicability and checks",
+			} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("mission omits %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
 func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
@@ -199,6 +247,7 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 	for _, want := range []string{
 		"inlined judging standard",
 		"----- Inlined protocol from framework/unit_validate_checklist.md",
+		"## Target-layer applicability",
 		"## Check 1 — Structural integrity",
 		"## Check 3 — Scope integrity",
 		"## Check 6 — Affects-source validity",
@@ -219,8 +268,8 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	inline := mission.Sessions[0].ProtocolInline
-	if len(inline) != 7 {
-		t.Fatalf("got %d inlined sections, want 7 (prerequisite, execution rules, severity, section 15.2, checks 1/3/6): %+v", len(inline), inline)
+	if len(inline) != 8 {
+		t.Fatalf("got %d inlined sections, want 8 (target-layer applicability, prerequisite, execution rules, severity, section 15.2, checks 1/3/6): %+v", len(inline), inline)
 	}
 	for _, chunk := range inline {
 		if chunk.Content == "" {
@@ -352,7 +401,7 @@ func TestGateMissionsCoverRuleVerifyAndCross(t *testing.T) {
 	grWriteFile(t, root, "src/auth.go", "package auth\n")
 	verifyRun := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	item := missionJSON(t, root, verifyRun, "auth.core")
-	if item.Sessions[0].ProtocolScope != "Steps 2, 3, 4, 6, 7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part A:") || strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
+	if item.Sessions[0].ProtocolScope != "Target-layer applicability and Steps 2, 3, 4, 6, 7 for acceptance item(s) item:auth:auth.core" || !strings.Contains(item.Sessions[0].ReportContract.Template, "Part A:") || strings.Contains(item.Sessions[0].ReportContract.Template, "Part B:") || !strings.Contains(item.Sessions[0].ReportContract.Template, "Severity:") {
 		t.Fatalf("wrong verify item mission: %+v", item.Sessions[0])
 	}
 	if !strings.Contains(strings.Join(item.Constraints, "\n"), "missing read ref: <repo-relative path>") {
