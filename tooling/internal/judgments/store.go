@@ -610,10 +610,17 @@ func CoversInputs(actual, required []string) bool {
 
 // inputSpelling maps one evidence path to the spelling a record's own input
 // list uses: a file this unit owns (its main spec or one of its appendices)
-// becomes own:<suffix>; every other entry keeps its path or logical spelling.
-func inputSpelling(p, unit, layer string, owned []string) string {
+// becomes own:<suffix>; another unit's spec or appendix becomes the logical
+// reference that carries it (unit:<name> / unit:<owner>:appendix:<file>), so
+// the same evidence keeps one spelling across layers even though the read
+// surface names the layer it reads; every other entry keeps its path or
+// logical spelling.
+func inputSpelling(root, p, unit, layer string, owned []string) string {
 	if suffix, ok := OwnSuffix(p, unit, layer, owned); ok {
 		return "own:" + suffix
+	}
+	if ref, ok := specpaths.LogicalUnitRefForPath(root, p); ok {
+		return ref
 	}
 	return p
 }
@@ -645,7 +652,7 @@ func NormalizeInputs(root, unit, layer string, inputs []string) ([]string, error
 	}
 	out := append([]string(nil), inputs...)
 	for i, p := range out {
-		out[i] = inputSpelling(p, unit, layer, owned)
+		out[i] = inputSpelling(root, p, unit, layer, owned)
 	}
 	sort.Strings(out)
 	return out, nil
@@ -666,10 +673,10 @@ func NewlyRequiredEvidence(root, unit, layer string, record Record, required []s
 	}
 	declared := map[string]bool{}
 	for _, p := range record.Inputs {
-		declared[p] = true
+		declared[inputSpelling(root, p, unit, layer, owned)] = true
 	}
 	for _, p := range required {
-		if !declared[inputSpelling(p, unit, layer, owned)] {
+		if !declared[inputSpelling(root, p, unit, layer, owned)] {
 			return p, true, nil
 		}
 	}

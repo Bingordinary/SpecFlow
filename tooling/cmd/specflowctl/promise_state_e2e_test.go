@@ -48,6 +48,59 @@ func TestStableFreshDone(t *testing.T) {
 	}
 }
 
+// TestPromotedConsumerVerifyStaysFresh pins the documented promote outcome for
+// a unit whose promises depend on a provider: the promoted cache is an
+// immediately usable stable confirmation baseline, so its own verify reports
+// FRESH and done YES right after the promote (issue #97). The candidate record
+// reads the provider as the logical reference unit:logger, while the stable
+// requirement names the published stable file — the same evidence in two
+// spellings.
+func TestPromotedConsumerVerifyStaysFresh(t *testing.T) {
+	root := createCLITestRepo(t)
+	writeLayerPromiseUnit(t, root, "stable", "logger", "logger.interface", "", "log")
+	writeLayerPromiseUnit(t, root, "candidate", "trace", "trace.span_api", "logger.interface", "span")
+	for _, name := range []string{"logger", "trace"} {
+		path := filepath.Join(root, "src", name+".go")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package src\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	specPath := filepath.Join(root, "docs/specs/units/candidate/unit_trace.md")
+	writeUnitCache(t, root, "trace", "validate", "target: candidate\n", []cacheFileSpec{{
+		path: "docs/specs/units/candidate/unit_trace.md",
+		hash: computeHash(specPath),
+	}})
+	currentVerifyFixture(t, root, "trace", "candidate", "target: candidate\n")
+
+	var out, errOut bytes.Buffer
+	if err := runPromote([]string{"--repo-root", root, "--unit", "trace"}, &out, &errOut); err != nil {
+		t.Fatalf("promote: %v\n%s", err, out.String())
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runFresh([]string{"--repo-root", root, "--scope", "stable"}, &stdout, &stderr); err != nil {
+		t.Fatalf("fresh: %v\n%s", err, stderr.String())
+	}
+	report := stdout.String()
+	traceLine := ""
+	for _, line := range strings.Split(report, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "trace" {
+			traceLine = line
+			break
+		}
+	}
+	if !strings.Contains(traceLine, "verify: FRESH") || !strings.Contains(traceLine, "done: YES") {
+		t.Fatalf("promoted consumer is not an immediate stable confirmation baseline:\n%s", report)
+	}
+	if !strings.Contains(report, "DONE: 1 of 2") {
+		t.Fatalf("only the promoted consumer has confirmation caches:\n%s", report)
+	}
+}
+
 func TestPromiseStateDependencyPinAfterGates(t *testing.T) {
 	root := createCLITestRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")

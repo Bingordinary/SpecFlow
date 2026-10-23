@@ -399,3 +399,71 @@ func TestBoundStableContextCannotBypassItsCurrentDecision(t *testing.T) {
 		t.Fatal("historical context bypassed the current stable decision")
 	}
 }
+
+// A dependency unit's main spec is one evidence input in every layer: a
+// candidate run reads it as the logical reference unit:<provider>, a stable
+// run reads the published stable file, and both spellings must canonicalize to
+// the same key. A promote keeps the recorded logical spelling while the stable
+// requirement names the physical file, so without this canonicalization the
+// promoted cache reports a newly required input that changed nothing.
+func TestEvidenceInputsCanonicalizeAcrossLayers(t *testing.T) {
+	root := t.TempDir()
+	write := func(ref, content string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(ref))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("docs/specs/units/candidate/unit_trace.md", "---\nid: trace\nrule_refs: none\n---\n")
+	write("docs/specs/units/stable/unit_logger.md", "---\nid: logger\nrule_refs: none\n---\n")
+	write("docs/specs/units/candidate/appendix/unit_trace_protocol.md", "---\nunit: trace\n---\n")
+	write("docs/specs/units/candidate/appendix/unit_logger_protocol.md", "---\nunit: logger\n---\n")
+
+	got, err := NormalizeInputs(root, "trace", "candidate", []string{
+		"docs/specs/units/candidate/unit_trace.md",
+		"docs/specs/units/candidate/appendix/unit_trace_protocol.md",
+		"docs/specs/units/stable/unit_logger.md",
+		"docs/specs/units/candidate/appendix/unit_logger_protocol.md",
+		"unit:logger",
+		"src/trace.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"own:.md",
+		"own:/appendix/unit_trace_protocol.md",
+		"src/trace.go",
+		"unit:logger",
+		"unit:logger",
+		"unit:logger:appendix:unit_logger_protocol",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("normalized inputs = %q, want %q", got, want)
+	}
+
+	// The promoted record keeps unit:logger while the stable requirement names
+	// the published file.
+	if missing, ok, err := NewlyRequiredEvidence(root, "trace", "stable", Record{Inputs: []string{"unit:logger"}}, []string{"docs/specs/units/stable/unit_logger.md"}); err != nil || ok {
+		t.Fatalf("stable physical requirement must match the logical record input: %q %v %v", missing, ok, err)
+	}
+	// A record written with the physical stable spelling is the same evidence
+	// when the comparison runs in the candidate layer.
+	if missing, ok, err := NewlyRequiredEvidence(root, "trace", "candidate", Record{Inputs: []string{"docs/specs/units/stable/unit_logger.md"}}, []string{"unit:logger"}); err != nil || ok {
+		t.Fatalf("physical record input must match the logical requirement: %q %v %v", missing, ok, err)
+	}
+	// A genuinely new dependency is still newly required evidence, reported in
+	// the caller's spelling.
+	missing, ok, err := NewlyRequiredEvidence(root, "trace", "stable", Record{Inputs: []string{"unit:logger"}}, []string{"docs/specs/units/stable/unit_metrics.md"})
+	if err != nil || !ok || missing != "docs/specs/units/stable/unit_metrics.md" {
+		t.Fatalf("new provider dependency must stay required: %q %v %v", missing, ok, err)
+	}
+	// Non-unit paths keep their spelling.
+	if missing, ok, err := NewlyRequiredEvidence(root, "trace", "stable", Record{Inputs: []string{"src/trace.go"}}, []string{"src/logger.go"}); err != nil || !ok || missing != "src/logger.go" {
+		t.Fatalf("code inputs must compare literally: %q %v %v", missing, ok, err)
+	}
+}
