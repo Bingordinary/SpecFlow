@@ -1,5 +1,6 @@
 // Package unitgraph builds the directed dependency graph of units from their
-// promise depends_on edges and reports cycles and a promotion order.
+// promise depends_on edges and reports unit and publication cycle member sets
+// and a structural dependency order.
 //
 // It is purely mechanical: only explicit promise dependency edges are used,
 // never inference from prose. Rules are leaves — a rule never references a
@@ -21,8 +22,8 @@ type Node struct {
 	Name            string   // unit name
 	Layer           string   // resolved layer of the spec file read: "candidate" or "stable"
 	RuleRefs        []string // referenced rule ids (version stripped)
-	PromiseRefs     []string // all out edges derived from promise depends_on (provider units)
-	PublicationRefs []string // out edges whose provider promise is not published stable at the current contract
+	PromiseRefs     []string // all out edges derived from promise depends_on (provider units) — the structural ordering relation
+	UnpublishedRefs []string // out edges whose provider promise is not published stable at the current contract — the promotion blocker relation
 }
 
 // Graph is the dependency graph of a set of units.
@@ -163,22 +164,22 @@ func (g *Graph) Node(name string) *Node {
 }
 
 // AddPromiseDependency records a promise-derived dependency edge between two
-// in-scope units that blocks publication: the provider's current contract is
-// not yet published stable. The edge participates in publication cycle
-// detection and ordering; PromiseRefs keeps the edge visible even when it does
-// not block. Out-of-scope targets are ignored: a scope view only orders units
+// in-scope units. Every edge participates in the structural ordering and unit
+// cycle detection; publication state is an annotation, never a filter on that
+// ordering. Out-of-scope targets are ignored: a scope view only orders units
 // inside that scope.
 func (g *Graph) AddPromiseDependency(from, to string) {
 	g.addPromiseRef(from, to)
-	g.addPublicationRef(from, to)
 }
 
-// AddPublishedPromiseDependency records a promise-derived edge whose provider
-// promise is already published stable at the current fingerprint. It is a real
-// contract dependency (visible to PromiseConsumers and --unit), but it does
-// not block publication order.
-func (g *Graph) AddPublishedPromiseDependency(from, to string) {
+// AddUnpublishedPromiseDependency records a promise-derived dependency edge
+// whose provider promise is not yet published stable at its current contract.
+// The edge constrains structural ordering exactly like any other edge; the
+// unpublished state is additionally recorded because it is the promotion
+// blocker relation that publication-cycle detection reports.
+func (g *Graph) AddUnpublishedPromiseDependency(from, to string) {
 	g.addPromiseRef(from, to)
+	g.addUnpublishedRef(from, to)
 }
 
 func (g *Graph) addPromiseRef(from, to string) bool {
@@ -202,27 +203,42 @@ func (g *Graph) addPromiseRef(from, to string) bool {
 	return true
 }
 
-func (g *Graph) addPublicationRef(from, to string) {
-	node := g.nodes[from]
-	if node == nil {
+func (g *Graph) addUnpublishedRef(from, to string) {
+	if from == "" || to == "" || from == to {
 		return
 	}
-	for _, ref := range node.PublicationRefs {
+	node := g.nodes[from]
+	if node == nil || g.nodes[to] == nil {
+		return
+	}
+	for _, ref := range node.UnpublishedRefs {
 		if ref == to {
 			return
 		}
 	}
-	node.PublicationRefs = append(node.PublicationRefs, to)
-	sort.Strings(node.PublicationRefs)
+	node.UnpublishedRefs = append(node.UnpublishedRefs, to)
+	sort.Strings(node.UnpublishedRefs)
 }
 
-// dependencies returns the publication-blocking provider edges of a node,
-// deduplicated. Cycle and ordering logic reads this set: an already-published
-// provider contract does not require the provider to promote again.
+// dependencies returns the complete promise dependency edges of a node,
+// deduplicated. Structural ordering and unit cycle detection read this set:
+// publication state never narrows the relation they describe.
 func (g *Graph) dependencies(node *Node) []string {
+	return dedupeRefs(node.PromiseRefs)
+}
+
+// publicationDependencies returns the edges whose provider promise is not yet
+// published stable at its current contract, deduplicated. Publication-cycle
+// detection reads this subset; it answers whether a consumer must wait for a
+// provider's publication, not which unit comes first.
+func (g *Graph) publicationDependencies(node *Node) []string {
+	return dedupeRefs(node.UnpublishedRefs)
+}
+
+func dedupeRefs(refs []string) []string {
 	seen := map[string]bool{}
-	out := make([]string, 0, len(node.PublicationRefs))
-	for _, ref := range node.PublicationRefs {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
 		if ref == "" || seen[ref] {
 			continue
 		}
@@ -232,102 +248,46 @@ func (g *Graph) dependencies(node *Node) []string {
 	return out
 }
 
-// Cycles returns every publication-order cycle as an ordered member list. The
-// edges are promise-derived but aggregated per unit and filtered to provider
-// promises that are not yet published stable; a cycle here blocks promotion
-// order, not promise contract validity. Each cycle is normalized to start at
-// its lexicographically smallest member and follows the edge direction;
-// duplicates are removed.
+// Cycles returns the publication-order cycle member sets. Each set is one
+// strongly connected component of the unpublished dependency relation: every
+// unit in it can reach every other unit through provider promises that are not
+// yet published stable, so every member waits for another member's unpublished
+// contract. A publication cycle is the promotion diagnostic of a unit dependency
+// cycle whose edges are all unpublished; it is not a promise contract validity
+// problem. Members are sorted by name, and sets are sorted by their smallest
+// member.
 func (g *Graph) Cycles() [][]string {
-	const (
-		white = 0 // unvisited
-		gray  = 1 // on the DFS stack
-		black = 2 // fully explored
-	)
-	color := map[string]int{}
-	var stack []string
-	seen := map[string]bool{}
+	return g.componentsOver(g.publicationDependencies)
+}
+
+// UnitCycles returns the unit-level dependency cycle member sets over the
+// complete promise dependency relation. A unit cycle can exist while the promise
+// graph is acyclic: one promise of a unit can depend on another unit's promise
+// while a different promise of the same unit is depended on by that unit. It is
+// a management violation — the units cannot be ordered — and validate fails
+// every unit on it. Members are sorted by name, and sets are sorted by their
+// smallest member.
+func (g *Graph) UnitCycles() [][]string {
+	return g.componentsOver(g.dependencies)
+}
+
+// componentsOver returns every multi-unit strongly connected component of the
+// unit graph over the given edge set. Each component is a cycle member set: its
+// units can all reach one another through that edge set. A single-unit component
+// is not a cycle and is omitted.
+func (g *Graph) componentsOver(edges func(*Node) []string) [][]string {
 	var cycles [][]string
-
-	var visit func(name string)
-	visit = func(name string) {
-		color[name] = gray
-		stack = append(stack, name)
-		for _, dep := range g.dependencies(g.nodes[name]) {
-			if _, ok := g.nodes[dep]; !ok {
-				continue // target out of scope — no edge inside the graph
-			}
-			switch color[dep] {
-			case white:
-				visit(dep)
-			case gray:
-				cycle := normalizeCycle(extractCycle(stack, dep))
-				if key := canonicalCycleKey(cycle); !seen[key] {
-					seen[key] = true
-					cycles = append(cycles, cycle)
-				}
-			}
-		}
-		stack = stack[:len(stack)-1]
-		color[name] = black
-	}
-
-	for _, name := range g.names {
-		if color[name] == white {
-			visit(name)
+	for _, members := range g.stronglyConnectedOver(edges) {
+		if len(members) > 1 {
+			cycles = append(cycles, members)
 		}
 	}
-
 	sort.Slice(cycles, func(i, j int) bool { return cycles[i][0] < cycles[j][0] })
 	return cycles
 }
 
-// extractCycle returns the members from the first occurrence of target on
-// the DFS stack to the top, keeping the edge direction.
-func extractCycle(stack []string, target string) []string {
-	start := -1
-	for i, name := range stack {
-		if name == target {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return nil
-	}
-	cycle := make([]string, len(stack)-start)
-	copy(cycle, stack[start:])
-	return cycle
-}
-
-// canonicalCycleKey identifies a cycle independent of its rotation. The key
-// is the member list sorted, joined; the cycle itself is normalized by
-// rotating it to start at its smallest member.
-func canonicalCycleKey(cycle []string) string {
-	parts := append([]string(nil), cycle...)
-	sort.Strings(parts)
-	return strings.Join(parts, "->")
-}
-
-func normalizeCycle(cycle []string) []string {
-	if len(cycle) <= 1 {
-		return cycle
-	}
-	minIdx := 0
-	for i := 1; i < len(cycle); i++ {
-		if cycle[i] < cycle[minIdx] {
-			minIdx = i
-		}
-	}
-	rotated := make([]string, len(cycle))
-	for i := 0; i < len(cycle); i++ {
-		rotated[i] = cycle[(minIdx+i)%len(cycle)]
-	}
-	return rotated
-}
-
-// OnCycle reports whether the unit participates in any publication-order
-// cycle.
+// OnCycle reports whether the unit is a member of a publication-order cycle
+// member set.
 func (g *Graph) OnCycle(name string) bool {
 	if _, ok := g.nodes[name]; !ok {
 		return false
@@ -342,59 +302,156 @@ func (g *Graph) OnCycle(name string) bool {
 	return false
 }
 
-// TopoOrder returns the units in promotion order over publication-blocking
-// dependencies: a provider whose current promise contract is not yet published
-// stable comes first. Already-published provider edges do not constrain the
-// order. Units on a publication cycle have no order and are omitted — cycles
-// are reported separately.
-func (g *Graph) TopoOrder() []string {
-	// Edge A -> B means A depends on B; B must be ordered before A. Work on
-	// the reversed graph: B -> A, where an indegree of 0 means "depends on
-	// nothing" — first to promote.
-	dependents := map[string][]string{} // name -> units that depend on it
-	depsCount := map[string]int{}       // name -> number of units it depends on
+// TopoOrder returns the structural dependency order as groups, dependencies
+// first. Ordering uses the complete promise dependency relation: every
+// displayed edge constrains the sequence, regardless of publication state.
+//
+// A group is one position in the structural order. A multi-unit group holds
+// units that are mutually reachable through promise dependencies (a strongly
+// connected component) and is a unit dependency cycle — a violation, because
+// the units have no order; it is kept in the order only so the cycle members
+// stay visible. Publication waits are a separate relation reported as edge
+// annotations. Group members are sorted by name, and groups are emitted in a
+// deterministic dependency-first order.
+func (g *Graph) TopoOrder() [][]string {
+	components := g.stronglyConnected()
+	componentOf := map[string]int{}
+	for i, members := range components {
+		for _, name := range members {
+			componentOf[name] = i
+		}
+	}
+
+	// Condensed graph: an edge from component A to component B means A depends
+	// on B, so B is ordered first. Work on the reversed graph: indegree counts
+	// the components a component still depends on.
+	dependsOn := make([]map[int]bool, len(components))
+	dependents := make([]map[int]bool, len(components))
+	for i := range components {
+		dependsOn[i] = map[int]bool{}
+		dependents[i] = map[int]bool{}
+	}
 	for _, name := range g.names {
-		node := g.nodes[name]
-		depsCount[name] = 0
-		for _, dep := range g.dependencies(node) {
-			if _, ok := g.nodes[dep]; !ok {
+		from := componentOf[name]
+		for _, dep := range g.dependencies(g.nodes[name]) {
+			to, ok := componentOf[dep]
+			if !ok || to == from {
 				continue
 			}
-			dependents[dep] = append(dependents[dep], name)
-			depsCount[name]++
+			dependsOn[from][to] = true
+			dependents[to][from] = true
 		}
 	}
 
-	var ready []string
-	for _, name := range g.names {
-		if depsCount[name] == 0 {
-			ready = append(ready, name)
+	// Deterministic tie-break: the group whose smallest member sorts first.
+	less := func(a, b int) bool { return components[a][0] < components[b][0] }
+	var ready []int
+	for i := range components {
+		if len(dependsOn[i]) == 0 {
+			ready = append(ready, i)
 		}
 	}
-	sort.Strings(ready)
+	sort.Slice(ready, func(i, j int) bool { return less(ready[i], ready[j]) })
 
-	var order []string
-	remaining := map[string]bool{}
-	for _, name := range g.names {
-		remaining[name] = true
-	}
+	var order [][]string
+	emitted := make([]bool, len(components))
 	for len(ready) > 0 {
-		name := ready[0]
+		next := ready[0]
 		ready = ready[1:]
-		if !remaining[name] {
+		if emitted[next] {
 			continue
 		}
-		delete(remaining, name)
-		order = append(order, name)
-		for _, dependent := range dependents[name] {
-			depsCount[dependent]--
-			if depsCount[dependent] == 0 && remaining[dependent] {
+		emitted[next] = true
+		order = append(order, components[next])
+		for dependent := range dependents[next] {
+			delete(dependsOn[dependent], next)
+			if len(dependsOn[dependent]) == 0 && !emitted[dependent] {
 				ready = append(ready, dependent)
 			}
 		}
-		sort.Strings(ready)
+		sort.Slice(ready, func(i, j int) bool { return less(ready[i], ready[j]) })
 	}
 	return order
+}
+
+// UnitCycleGroup returns the units that are mutually reachable with the given
+// unit through promise dependencies, sorted. A single-member result means the
+// unit is not on a unit dependency cycle. Units outside the graph return nil.
+func (g *Graph) UnitCycleGroup(name string) []string {
+	if _, ok := g.nodes[name]; !ok {
+		return nil
+	}
+	for _, members := range g.stronglyConnected() {
+		for _, member := range members {
+			if member == name {
+				return members
+			}
+		}
+	}
+	return nil
+}
+
+// stronglyConnected returns the strongly connected components of the complete
+// promise dependency graph, each sorted by unit name (Tarjan).
+func (g *Graph) stronglyConnected() [][]string {
+	return g.stronglyConnectedOver(g.dependencies)
+}
+
+// stronglyConnectedOver returns the strongly connected components of the unit
+// graph over the given edge set, each sorted by unit name (Tarjan).
+func (g *Graph) stronglyConnectedOver(edges func(*Node) []string) [][]string {
+	index := 0
+	indices := map[string]int{}
+	lowlink := map[string]int{}
+	onStack := map[string]bool{}
+	var stack []string
+	var components [][]string
+
+	var visit func(name string)
+	visit = func(name string) {
+		indices[name] = index
+		lowlink[name] = index
+		index++
+		stack = append(stack, name)
+		onStack[name] = true
+		for _, dep := range edges(g.nodes[name]) {
+			if _, ok := g.nodes[dep]; !ok {
+				continue
+			}
+			if _, seen := indices[dep]; !seen {
+				visit(dep)
+				if lowlink[dep] < lowlink[name] {
+					lowlink[name] = lowlink[dep]
+				}
+				continue
+			}
+			if onStack[dep] && indices[dep] < lowlink[name] {
+				lowlink[name] = indices[dep]
+			}
+		}
+		if lowlink[name] != indices[name] {
+			return
+		}
+		var members []string
+		for {
+			last := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			onStack[last] = false
+			members = append(members, last)
+			if last == name {
+				break
+			}
+		}
+		sort.Strings(members)
+		components = append(components, members)
+	}
+
+	for _, name := range g.names {
+		if _, seen := indices[name]; !seen {
+			visit(name)
+		}
+	}
+	return components
 }
 
 // PromiseConsumers returns the units that depend on the given unit through a

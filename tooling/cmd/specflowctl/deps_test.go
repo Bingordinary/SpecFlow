@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
 func writeUnitSpecRefs(t *testing.T, repoRoot, layer, name, ruleRefs string) {
@@ -31,7 +33,7 @@ func TestDepsUsageWithoutFlags(t *testing.T) {
 		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
 	}
 	output := stdout.String()
-	for _, want := range []string{"DEPENDENCY GRAPH", "Rule refs", "CYCLES (PUBLICATION)", "Promotion order"} {
+	for _, want := range []string{"DEPENDENCY GRAPH", "Rule refs", "UNIT DEPENDENCY CYCLES", "CYCLES (PUBLICATION)", "Dependency order"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %q in output:\n%s", want, output)
 		}
@@ -49,18 +51,25 @@ func TestDepsReportsCycleAndOrder(t *testing.T) {
 		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "auth -> payment") {
-		t.Fatalf("expected cycle listing, got:\n%s", output)
+	if !strings.Contains(output, "UNIT DEPENDENCY CYCLES (INVALID) (1)") {
+		t.Fatalf("expected one unit dependency cycle, got:\n%s", output)
+	}
+	if !strings.Contains(output, "auth, payment") {
+		t.Fatalf("expected cycle member listing, got:\n%s", output)
 	}
 	if !strings.Contains(output, "CYCLES (PUBLICATION) (1)") {
 		t.Fatalf("expected one publication cycle, got:\n%s", output)
 	}
-	// session depends on the cycle member auth, so nothing can be ordered.
-	if !strings.Contains(output, "Promotion order (0 of 3") {
-		t.Fatalf("expected empty promotion order, got:\n%s", output)
+	// auth and payment are mutually dependent, so they form one invalid group;
+	// session follows them. No unit is dropped from the order.
+	if !strings.Contains(output, "Dependency order (structural, dependencies first; 3 unit(s), 2 group(s), 3 candidate unit(s))") {
+		t.Fatalf("expected a complete grouped dependency order, got:\n%s", output)
 	}
-	if !strings.Contains(output, "unpublished dependency cycle") {
-		t.Fatalf("expected the publication-cycle note in promotion order, got:\n%s", output)
+	if !strings.Contains(output, "1. auth + payment  (unit dependency cycle — invalid; see above)") {
+		t.Fatalf("expected the mutually dependent units as one invalid group, got:\n%s", output)
+	}
+	if !strings.Contains(output, "2. session") {
+		t.Fatalf("expected session after the invalid group, got:\n%s", output)
 	}
 }
 
@@ -74,28 +83,165 @@ func TestDepsSingleUnit(t *testing.T) {
 		t.Fatalf("deps --unit failed: %v\nstderr=%s", err, stderr.String())
 	}
 	output := stdout.String()
-	for _, want := range []string{"DEPENDENCIES — auth", "payment", "b_rule_1", "Referenced by (promise depends_on):", "ON A CYCLE"} {
+	for _, want := range []string{"DEPENDENCIES — auth", "payment", "b_rule_1", "Referenced by (promise depends_on):", "ON A CYCLE", "Unit dependency cycle (INVALID — validate fails these units):", "auth, payment", "publishing a provider does not clear the unit cycle"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %q in output:\n%s", want, output)
 		}
 	}
+	for _, unwanted := range []string{"validate may still pass", "Publish a provider first"} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("publication cycle must not report %q:\n%s", unwanted, output)
+		}
+	}
 }
 
-func TestDepsPublishedProviderDoesNotBlockOrder(t *testing.T) {
+func TestDepsPublishedProviderStillConstrainsStructuralOrder(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	writePromiseDepsUnit(t, repoRoot, "stable", "provider", "provider.api", "", "none")
 	writePromiseDepsUnit(t, repoRoot, "candidate", "consumer", "consumer.view", "provider.api", "none")
 
 	var stdout, stderr bytes.Buffer
+	if err := runDeps([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	if strings.Contains(output, "provider.api  [wait]") {
+		t.Fatalf("a provider published at the same contract must not be marked [wait], got:\n%s", output)
+	}
+	// Publication state is an annotation: the published provider still comes
+	// first in the structural dependency order.
+	for _, want := range []string{
+		"Dependency order (structural, dependencies first; 2 unit(s), 2 group(s), 1 candidate unit(s))",
+		"1. provider (stable)",
+		"2. consumer",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in the dependency order:\n%s", want, output)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
 	if err := runDeps([]string{"--unit", "consumer", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
 		t.Fatalf("deps --unit failed: %v\nstderr=%s", err, stderr.String())
 	}
-	output := stdout.String()
-	if !strings.Contains(output, "Publication blockers: none") {
-		t.Fatalf("a provider already published at the same contract must not block, got:\n%s", output)
+	unitOutput := stdout.String()
+	if !strings.Contains(unitOutput, "Publication blockers: none") {
+		t.Fatalf("a provider already published at the same contract must not block, got:\n%s", unitOutput)
 	}
-	if !strings.Contains(output, "Publication cycle: none") {
-		t.Fatalf("expected no publication cycle, got:\n%s", output)
+	if !strings.Contains(unitOutput, "Publication cycle: none") {
+		t.Fatalf("expected no publication cycle, got:\n%s", unitOutput)
+	}
+	if !strings.Contains(unitOutput, "Unit dependency cycle: none") {
+		t.Fatalf("expected no unit dependency cycle, got:\n%s", unitOutput)
+	}
+}
+
+func TestDepsUnitCycleIsReportedAsViolation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	// a and b are mutually dependent through different promises (a.p1 ->
+	// b.q1 while b.q2 -> a.p2), so the promise graph stays acyclic while the
+	// unit aggregation has a cycle: a violation. No promise of a unit reaches
+	// another promise of the same unit. a's contracts are unchanged from
+	// stable, so b's dependency on a.p2 is already satisfied; b.q1's contract
+	// changed, so a's dependency on b.q1 is the only promotion blocker.
+	writeTwoPromiseLayerUnit(t, repoRoot, "stable", "a", "a.p1", "b.q1", "c1", "a.p2", "", "c2")
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "a", "a.p1", "b.q1", "c1", "a.p2", "", "c2")
+	writeTwoPromiseLayerUnit(t, repoRoot, "stable", "b", "b.q1", "", "c3", "b.q2", "a.p2", "c4")
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "b", "b.q1", "", "c3-changed", "b.q2", "a.p2", "c4")
+
+	// The promise graph itself stays acyclic; the unit aggregation is what
+	// fails, and the mechanical check must report it.
+	res := specvalidation.CheckPromiseGraphScope(repoRoot, specvalidation.PromiseScopeAll, "a")
+	if res.Status != specvalidation.Fail || !strings.Contains(res.Details, "unit dependency cycle") {
+		t.Fatalf("fixture must fail on the unit dependency cycle, got %v: %s", res.Status, res.Details)
+	}
+	if strings.Contains(res.Details, "promise dependency cycle") {
+		t.Fatalf("fixture must not contain a promise cycle, got %s", res.Details)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runDeps([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"-> b.q1  [wait]",
+		"-> a.p2\n",
+		"UNIT DEPENDENCY CYCLES (INVALID) (1)",
+		"a, b",
+		"CYCLES (PUBLICATION): none",
+		"Dependency order (structural, dependencies first; 2 unit(s), 1 group(s), 2 candidate unit(s))",
+		"1. a + b  (unit dependency cycle — invalid; see above)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := runDeps([]string{"--unit", "a", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps --unit failed: %v\nstderr=%s", err, stderr.String())
+	}
+	unitOutput := stdout.String()
+	for _, want := range []string{
+		"Publication blockers (provider contract not published stable):",
+		"  - b",
+		"Unit dependency cycle (INVALID — validate fails these units):",
+		"  - a, b",
+		"Publication cycle: none",
+	} {
+		if !strings.Contains(unitOutput, want) {
+			t.Fatalf("expected %q in unit output:\n%s", want, unitOutput)
+		}
+	}
+}
+
+func TestDepsCycleMemberSetIncludesCrossEdgeClosure(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	// a -> b -> c -> a is one unit cycle; b -> d -> c closes a second cycle
+	// through a cross edge. The member set is all four units. There is no
+	// stable layer, so every edge is also an unpublished publication wait and
+	// the publication deadlock covers the same four units.
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "a", "a.p1", "b.p1", "c1", "a.p2", "", "c2")
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "b", "b.p1", "c.p1", "c1", "b.p2", "d.p1", "c2")
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "c", "c.p1", "a.p2", "c1", "c.p2", "", "c2")
+	writeTwoPromiseLayerUnit(t, repoRoot, "candidate", "d", "d.p1", "c.p2", "c1", "d.p2", "", "c2")
+
+	var stdout, stderr bytes.Buffer
+	if err := runDeps([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"UNIT DEPENDENCY CYCLES (INVALID) (1)",
+		"a, b, c, d",
+		"CYCLES (PUBLICATION) (1)",
+		"1. a + b + c + d  (unit dependency cycle — invalid; see above)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in output:\n%s", want, output)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := runDeps([]string{"--unit", "d", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps --unit failed: %v\nstderr=%s", err, stderr.String())
+	}
+	unitOutput := stdout.String()
+	for _, want := range []string{
+		"Publication blockers (provider contract not published stable):",
+		"  - c",
+		"Unit dependency cycle (INVALID — validate fails these units):",
+		"  - a, b, c, d",
+		"Publication cycle: ON A CYCLE",
+		"publishing a provider does not clear the unit cycle",
+	} {
+		if !strings.Contains(unitOutput, want) {
+			t.Fatalf("expected %q in unit output:\n%s", want, unitOutput)
+		}
 	}
 }
 
@@ -239,6 +385,61 @@ func writePromiseDepsUnit(t *testing.T, repoRoot, layer, unit, promiseID, depend
 	}
 }
 
+// writeTwoPromiseLayerUnit writes a unit with two promises, each with an
+// optional dependency on another unit's promise. It lets a test build a
+// unit-level cycle through different promises while the promise graph stays
+// acyclic.
+func writeTwoPromiseLayerUnit(t *testing.T, repoRoot, layer, unit, firstID, firstDep, firstContract, secondID, secondDep, secondContract string) {
+	t.Helper()
+	firstDepends := ""
+	if firstDep != "" {
+		firstDepends = "    depends_on: [" + firstDep + "]\n"
+	}
+	secondDepends := ""
+	if secondDep != "" {
+		secondDepends = "    depends_on: [" + secondDep + "]\n"
+	}
+	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
+		"## Design Narrative\n\nNarrative.\n\n" +
+		"## Promises\n\npromises:\n" +
+		"  - id: " + firstID + "\n    summary: Contract.\n    contract: {invariants: [" + firstContract + "]}\n" + firstDepends +
+		"  - id: " + secondID + "\n    summary: Contract.\n    contract: {invariants: [" + secondContract + "]}\n" + secondDepends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n" +
+		"  - id: " + unit + ".core\n    promise: " + firstID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n" +
+		"  - id: " + unit + ".model\n    promise: " + secondID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
+	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDepsStableScopeOrdersByDependency(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	writePromiseDepsUnit(t, repoRoot, "stable", "aaa", "aaa.view", "zzz.model", "none")
+	writePromiseDepsUnit(t, repoRoot, "stable", "zzz", "zzz.model", "", "none")
+
+	var stdout, stderr bytes.Buffer
+	if err := runDeps([]string{"--scope", "stable", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("deps --scope stable failed: %v\nstderr=%s", err, stderr.String())
+	}
+	output := stdout.String()
+	// In the stable scope every edge is already published relative to the
+	// stable layer; ordering must still follow the dependency, not the
+	// alphabet.
+	for _, want := range []string{
+		"Dependency order (structural, dependencies first; 2 unit(s), 2 group(s), 0 candidate unit(s))",
+		"1. zzz (stable)",
+		"2. aaa (stable)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in stable-scope output:\n%s", want, output)
+		}
+	}
+}
+
 func TestDepsPromiseEdgesOrderCyclesAndScope(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	writePromiseDepsUnit(t, repoRoot, "candidate", "aaa", "aaa.view", "zzz.model", "none")
@@ -251,9 +452,9 @@ func TestDepsPromiseEdgesOrderCyclesAndScope(t *testing.T) {
 		t.Fatalf("deps failed: %v\nstderr=%s", err, stderr.String())
 	}
 	output := stdout.String()
-	orderStart := strings.Index(output, "Promotion order")
+	orderStart := strings.Index(output, "Dependency order")
 	if orderStart < 0 {
-		t.Fatalf("missing promotion order:\n%s", output)
+		t.Fatalf("missing dependency order:\n%s", output)
 	}
 	order := output[orderStart:]
 	if strings.Index(order, "zzz") > strings.Index(order, "aaa") {

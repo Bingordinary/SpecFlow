@@ -74,11 +74,14 @@ func LoadPromiseGraphScope(repoRoot, scope string) (*PromiseGraph, error) {
 }
 
 // Check validates promise dependency resolution and cycles for one unit.
-// Duplicate IDs and read failures are repository-wide issues; a cycle is a
-// defect for every unit that owns a promise on it, and it is detected no
-// matter how many other cycles the graph contains. A unit whose own promises
-// are not on the cycle is not blocked. Unresolved depends_on is reported for
-// the requested unit.
+// Duplicate IDs and read failures are repository-wide issues; a promise cycle
+// is a defect for every unit that owns a promise on it, and it is detected no
+// matter how many other cycles the graph contains. A unit dependency cycle —
+// two units each having a promise that depends on a promise of the other
+// through the unit aggregation — is a defect for every unit on it as well. A
+// unit whose own promises are not on a promise cycle and that is not on a unit
+// dependency cycle is not blocked. Unresolved depends_on is reported for the
+// requested unit.
 func (g *PromiseGraph) Check(unitName string) CheckResult {
 	result := CheckResult{Name: "Promise graph", Status: Fail}
 	unitIssues := g.unitIssues[unitName]
@@ -103,12 +106,15 @@ func (g *PromiseGraph) Check(unitName string) CheckResult {
 	for _, cycle := range g.unitCycles(unitName) {
 		issues = append(issues, "promise dependency cycle: "+strings.Join(cycle, " -> "))
 	}
+	if cycle, via := g.unitCycleThrough(unitName); len(cycle) > 0 {
+		issues = append(issues, "unit dependency cycle: "+strings.Join(cycle, " -> ")+" (via "+strings.Join(via, ", ")+")")
+	}
 	if len(issues) > 0 {
 		result.Details = strings.Join(issues, "; ")
 		return result
 	}
 	result.Status = Pass
-	result.Details = fmt.Sprintf("%d promise(s) resolved; no cycles", len(g.nodes))
+	result.Details = fmt.Sprintf("%d promise(s) resolved; no promise or unit cycles", len(g.nodes))
 	return result
 }
 
@@ -137,6 +143,105 @@ func (g *PromiseGraph) unitCycles(unitName string) [][]string {
 	}
 	sort.Slice(cycles, func(i, j int) bool { return promiseCycleKey(cycles[i]) < promiseCycleKey(cycles[j]) })
 	return cycles
+}
+
+// unitCycleThrough returns a unit-level dependency cycle through unitName and
+// the promise edges that create it, or nil when the unit is not on one.
+//
+// Unit edges aggregate every promise of one unit onto another unit, so two
+// units can be mutually reachable while the promise graph stays acyclic:
+// a.p1 -> b.q1 and b.q2 -> a.p2 make a -> b -> a at the unit level even though
+// no promise depends on itself. The receiving and sending promises may be
+// different, so this does not require a promise of one unit to reach another
+// promise of the same unit. It is a management defect — the units cannot be
+// ordered and their implementations reference each other — so validate fails
+// every unit on it.
+func (g *PromiseGraph) unitCycleThrough(unitName string) ([]string, []string) {
+	deps := map[string]map[string]bool{}
+	via := map[string]string{}
+	for _, node := range g.nodes {
+		for _, dep := range node.DependsOn {
+			target, ok := g.byID[dep]
+			if !ok || target.Unit == node.Unit {
+				continue
+			}
+			if deps[node.Unit] == nil {
+				deps[node.Unit] = map[string]bool{}
+			}
+			deps[node.Unit][target.Unit] = true
+			key := node.Unit + "\x00" + target.Unit
+			edge := node.ID + " -> " + target.ID
+			if previous, exists := via[key]; !exists || edge < previous {
+				via[key] = edge
+			}
+		}
+	}
+	if len(deps[unitName]) == 0 {
+		return nil, nil
+	}
+	successors := make([]string, 0, len(deps[unitName]))
+	for next := range deps[unitName] {
+		successors = append(successors, next)
+	}
+	sort.Strings(successors)
+	for _, next := range successors {
+		path := unitPath(deps, next, unitName)
+		if len(path) == 0 {
+			continue
+		}
+		cycle := append([]string{unitName}, path...)
+		edges := make([]string, 0, len(cycle)-1)
+		for i := 0; i+1 < len(cycle); i++ {
+			edges = append(edges, via[cycle[i]+"\x00"+cycle[i+1]])
+		}
+		return cycle, edges
+	}
+	return nil, nil
+}
+
+// unitPath returns a unit path from start to target (both inclusive) in the
+// unit-level aggregation of the promise graph, or nil when target is
+// unreachable. Breadth-first search keeps the reported cycle short.
+func unitPath(deps map[string]map[string]bool, start, target string) []string {
+	prev := map[string]string{start: ""}
+	queue := []string{start}
+	for len(queue) > 0 {
+		unit := queue[0]
+		queue = queue[1:]
+		next := make([]string, 0, len(deps[unit]))
+		for candidate := range deps[unit] {
+			next = append(next, candidate)
+		}
+		sort.Strings(next)
+		for _, candidate := range next {
+			if _, seen := prev[candidate]; seen {
+				continue
+			}
+			prev[candidate] = unit
+			if candidate == target {
+				return rebuildUnitPath(prev, start, target)
+			}
+			queue = append(queue, candidate)
+		}
+	}
+	return nil
+}
+
+// rebuildUnitPath reverses the breadth-first predecessor chain into a
+// start-to-target unit path.
+func rebuildUnitPath(prev map[string]string, start, target string) []string {
+	path := []string{target}
+	for unit := target; unit != start; {
+		unit = prev[unit]
+		if unit == "" {
+			return nil
+		}
+		path = append(path, unit)
+	}
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	return path
 }
 
 // promiseCycleThrough returns a cycle path that starts and ends at the promise

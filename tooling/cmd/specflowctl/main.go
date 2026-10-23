@@ -559,7 +559,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  promote    Validate candidate spec and archive to stable")
 	fmt.Fprintln(w, "  review     Collect governance review scope or maintain run-state files")
 	fmt.Fprintln(w, "  consumers  List units that reference a given rule")
-	fmt.Fprintln(w, "  deps       Report the unit dependency graph, cycles, and promotion order")
+	fmt.Fprintln(w, "  deps       Report the unit dependency graph, unit and publication cycles, and structural dependency order")
 	fmt.Fprintln(w, "  surfaces   Display code-surface associations, shared files, and per-unit judgments")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  resolve    Classify a target text as unit, rule, ambiguous, or not found (read-only)")

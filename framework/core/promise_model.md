@@ -481,13 +481,22 @@ specflowctl validate promise-model --unit <name> [--layer candidate|stable]
 The command checks the three-section shape, promise schema, coverage, and
 dependency graph of the selected layer. A dependency cycle fails every unit
 that owns a promise on the cycle; an unrelated unit's contract does not depend
-on it and is not blocked. A repository-level identity or read failure (a
-duplicate promise ID, an unreadable unit spec) still fails every unit. A unit
-whose own `## Promises` section is missing or malformed fails that unit (and
-any consumer whose `depends_on` edge stays unresolved); it does not fail
-unrelated units. The selected layer also fixes the provider scope the graph
-resolves in (see §Layer resolution), so `--layer stable` validates the stable
-spec's own `depends_on` edges against published stable providers.
+on it and is not blocked. A **unit dependency cycle** also fails every unit on
+it: unit edges aggregate every promise of one unit onto another, so two units
+can be mutually dependent through different promises (`a.p1` depends on
+`b.q1` while `b.q2` depends on `a.p2`) even though the promise graph stays
+acyclic. The units are mutually reachable through aggregated promise edges;
+this does not require a promise of one unit to reach another promise of the
+same unit, because the promise that receives the incoming edge may differ from
+the promise that sends the outgoing edge. Units are the management and
+promotion unit, so this cycle is a violation, not a reportable structure. A
+repository-level identity or read failure (a duplicate promise ID, an
+unreadable unit spec) still fails every unit. A unit whose own `## Promises`
+section is missing or malformed fails that unit (and any consumer whose
+`depends_on` edge stays unresolved); it does not fail unrelated units. The
+selected layer also fixes the provider scope the graph resolves in (see §Layer
+resolution), so `--layer stable` validates the stable spec's own `depends_on`
+edges against published stable providers.
 
 ## Change impact matrix
 

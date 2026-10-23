@@ -56,12 +56,12 @@ func TestBuildNoCycle(t *testing.T) {
 		t.Fatal("no unit should be on a cycle")
 	}
 	// beta must be promoted before alpha and gamma (dependency first).
-	if got := g.TopoOrder(); !reflect.DeepEqual(got, []string{"beta", "gamma", "alpha"}) {
-		t.Fatalf("topo order = %v, want [beta gamma alpha]", got)
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"beta"}, {"gamma"}, {"alpha"}}) {
+		t.Fatalf("topo order = %v, want [[beta] [gamma] [alpha]]", got)
 	}
 }
 
-func TestPublishedPromiseDependencyDoesNotBlockOrder(t *testing.T) {
+func TestPublishedPromiseDependencyStillConstrainsOrder(t *testing.T) {
 	repo := t.TempDir()
 	writeUnit(t, repo, "candidate", "alpha", "")
 	writeUnit(t, repo, "candidate", "beta", "")
@@ -69,24 +69,77 @@ func TestPublishedPromiseDependencyDoesNotBlockOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.AddPublishedPromiseDependency("alpha", "beta")
+	g.AddPromiseDependency("alpha", "beta")
 	if cycles := g.Cycles(); len(cycles) != 0 {
 		t.Fatalf("cycles = %v, want none", cycles)
 	}
 	if g.OnCycle("alpha") || g.OnCycle("beta") {
 		t.Fatal("a published provider edge must not form a publication cycle")
 	}
-	if got := g.TopoOrder(); !reflect.DeepEqual(got, []string{"alpha", "beta"}) {
-		t.Fatalf("topo order = %v, want [alpha beta] (no blocking edge)", got)
+	// Publication state is an annotation, not the ordering basis: the provider
+	// still comes first.
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"beta"}, {"alpha"}}) {
+		t.Fatalf("topo order = %v, want [[beta] [alpha]] (published edge still constrains order)", got)
 	}
 	if got := g.Node("alpha").PromiseRefs; !reflect.DeepEqual(got, []string{"beta"}) {
 		t.Fatalf("all promise refs = %v, want [beta]", got)
 	}
-	if got := g.Node("alpha").PublicationRefs; len(got) != 0 {
-		t.Fatalf("publication refs = %v, want none", got)
+	if got := g.Node("alpha").UnpublishedRefs; len(got) != 0 {
+		t.Fatalf("unpublished refs = %v, want none", got)
 	}
 	if got := g.PromiseConsumers("beta"); !reflect.DeepEqual(got, []string{"alpha"}) {
 		t.Fatalf("consumers = %v, want [alpha]", got)
+	}
+}
+
+func TestMutualDependencyIsUnitCycleNotPublicationCycle(t *testing.T) {
+	repo := t.TempDir()
+	writeUnit(t, repo, "candidate", "a", "")
+	writeUnit(t, repo, "candidate", "b", "")
+
+	g, err := Build(repo, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.AddPromiseDependency("a", "b")
+	g.AddPromiseDependency("b", "a")
+	// Unit-level mutual dependency through promise edges that need no
+	// publication wait is a unit dependency cycle (a violation), not a
+	// publication cycle: the promise-level graph stays acyclic.
+	if cycles := g.Cycles(); len(cycles) != 0 {
+		t.Fatalf("publication cycles = %v, want none", cycles)
+	}
+	if g.OnCycle("a") || g.OnCycle("b") {
+		t.Fatal("a satisfied mutual dependency must not be a publication cycle")
+	}
+	unitCycles := g.UnitCycles()
+	if len(unitCycles) != 1 || !reflect.DeepEqual(unitCycles[0], []string{"a", "b"}) {
+		t.Fatalf("unit cycles = %v, want one cycle [a b]", unitCycles)
+	}
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"a", "b"}}) {
+		t.Fatalf("topo order = %v, want one invalid group [a b]", got)
+	}
+	if got := g.UnitCycleGroup("a"); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("unit cycle group = %v, want [a b]", got)
+	}
+}
+
+func TestUnitCycleGroupIndependentUnit(t *testing.T) {
+	repo := t.TempDir()
+	writeUnit(t, repo, "candidate", "solo", "")
+
+	g, err := Build(repo, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.UnitCycleGroup("solo"); !reflect.DeepEqual(got, []string{"solo"}) {
+		t.Fatalf("unit cycle group = %v, want [solo]", got)
+	}
+	if got := g.UnitCycleGroup("ghost"); got != nil {
+		t.Fatalf("unit cycle group for unknown unit = %v, want nil", got)
+	}
+	if got := g.UnitCycles(); len(got) != 0 {
+		t.Fatalf("unit cycles = %v, want none", got)
 	}
 }
 
@@ -99,8 +152,8 @@ func TestBuildTwoUnitCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.AddPromiseDependency("auth", "payment")
-	g.AddPromiseDependency("payment", "auth")
+	g.AddUnpublishedPromiseDependency("auth", "payment")
+	g.AddUnpublishedPromiseDependency("payment", "auth")
 	cycles := g.Cycles()
 	if len(cycles) != 1 {
 		t.Fatalf("cycles = %v, want exactly 1", cycles)
@@ -111,8 +164,8 @@ func TestBuildTwoUnitCycle(t *testing.T) {
 	if !g.OnCycle("auth") || !g.OnCycle("payment") {
 		t.Fatal("both cycle members must be OnCycle")
 	}
-	if len(g.TopoOrder()) != 0 {
-		t.Fatalf("topo order = %v, want empty (all on cycle)", g.TopoOrder())
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"auth", "payment"}}) {
+		t.Fatalf("topo order = %v, want one invalid group [auth payment]", got)
 	}
 }
 
@@ -126,9 +179,9 @@ func TestBuildTransitiveCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.AddPromiseDependency("a", "b")
-	g.AddPromiseDependency("b", "c")
-	g.AddPromiseDependency("c", "a")
+	g.AddUnpublishedPromiseDependency("a", "b")
+	g.AddUnpublishedPromiseDependency("b", "c")
+	g.AddUnpublishedPromiseDependency("c", "a")
 	cycles := g.Cycles()
 	if len(cycles) != 1 {
 		t.Fatalf("cycles = %v, want exactly 1", cycles)
@@ -138,6 +191,9 @@ func TestBuildTransitiveCycle(t *testing.T) {
 	}
 	if !g.OnCycle("a") || !g.OnCycle("b") || !g.OnCycle("c") {
 		t.Fatal("all members must be OnCycle")
+	}
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"a", "b", "c"}}) {
+		t.Fatalf("topo order = %v, want one invalid group [a b c]", got)
 	}
 }
 
@@ -240,12 +296,12 @@ func TestTopoOrderDAG(t *testing.T) {
 	g.AddPromiseDependency("b", "c")
 	g.AddPromiseDependency("c", "d")
 	// d -> c -> {a, b}; d first, then c, then a and b (tie sorted).
-	if got := g.TopoOrder(); !reflect.DeepEqual(got, []string{"d", "c", "a", "b"}) {
-		t.Fatalf("topo order = %v, want [d c a b]", got)
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"d"}, {"c"}, {"a"}, {"b"}}) {
+		t.Fatalf("topo order = %v, want [[d] [c] [a] [b]]", got)
 	}
 }
 
-func TestCycleDedup(t *testing.T) {
+func TestCycleMemberSetMergesOverlappingCycles(t *testing.T) {
 	repo := t.TempDir()
 	writeUnit(t, repo, "candidate", "x", "")
 	writeUnit(t, repo, "candidate", "y", "")
@@ -255,13 +311,54 @@ func TestCycleDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.AddPromiseDependency("x", "y")
-	g.AddPromiseDependency("x", "z")
-	g.AddPromiseDependency("y", "x")
-	g.AddPromiseDependency("z", "x")
+	g.AddUnpublishedPromiseDependency("x", "y")
+	g.AddUnpublishedPromiseDependency("x", "z")
+	g.AddUnpublishedPromiseDependency("y", "x")
+	g.AddUnpublishedPromiseDependency("z", "x")
+	// Overlapping cycles collapse to the one member set: x, y, and z are all
+	// mutually reachable through the same unpublished relations.
 	cycles := g.Cycles()
-	if len(cycles) != 2 {
-		t.Fatalf("cycles = %v, want 2 (x-y and x-z)", cycles)
+	if len(cycles) != 1 {
+		t.Fatalf("cycles = %v, want one member set [x y z]", cycles)
+	}
+	if got := cycles[0]; !reflect.DeepEqual(got, []string{"x", "y", "z"}) {
+		t.Fatalf("cycle = %v, want [x y z]", got)
+	}
+}
+
+func TestCycleMemberSetIncludesCrossEdgeClosure(t *testing.T) {
+	repo := t.TempDir()
+	for _, name := range []string{"a", "b", "c", "d"} {
+		writeUnit(t, repo, "candidate", name, "")
+	}
+
+	g, err := Build(repo, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a -> b -> c -> a is one cycle; b -> d -> c closes another through a
+	// cross edge. A DFS that records only back-edge cycles can miss d even
+	// though d is on a cycle; the member set must include all four units.
+	g.AddUnpublishedPromiseDependency("a", "b")
+	g.AddUnpublishedPromiseDependency("b", "c")
+	g.AddUnpublishedPromiseDependency("b", "d")
+	g.AddUnpublishedPromiseDependency("c", "a")
+	g.AddUnpublishedPromiseDependency("d", "c")
+
+	want := [][]string{{"a", "b", "c", "d"}}
+	if got := g.Cycles(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("publication cycles = %v, want %v", got, want)
+	}
+	if got := g.UnitCycles(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unit cycles = %v, want %v", got, want)
+	}
+	for _, name := range []string{"a", "b", "c", "d"} {
+		if !g.OnCycle(name) {
+			t.Fatalf("%s must be on the publication cycle", name)
+		}
+	}
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("topo order = %v, want %v", got, want)
 	}
 }
 
@@ -275,14 +372,30 @@ func TestPromiseDependenciesParticipateInOrderAndCycles(t *testing.T) {
 		t.Fatal(err)
 	}
 	g.AddPromiseDependency("aaa", "zzz")
-	if got := g.TopoOrder(); !reflect.DeepEqual(got, []string{"zzz", "aaa"}) {
-		t.Fatalf("promise topo order = %v, want [zzz aaa]", got)
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"zzz"}, {"aaa"}}) {
+		t.Fatalf("promise topo order = %v, want [[zzz] [aaa]]", got)
 	}
 	if got := g.PromiseConsumers("zzz"); !reflect.DeepEqual(got, []string{"aaa"}) {
 		t.Fatalf("promise consumers = %v", got)
 	}
 
-	g.AddPromiseDependency("zzz", "aaa")
+	// The reverse edge makes the units mutually dependent: a unit dependency
+	// cycle (a violation), not a publication deadlock, because only one member
+	// waits for the other.
+	g.AddUnpublishedPromiseDependency("zzz", "aaa")
+	if cycles := g.Cycles(); len(cycles) != 0 {
+		t.Fatalf("cycles = %v, want none (only one wait edge)", cycles)
+	}
+	if got := g.UnitCycles(); len(got) != 1 {
+		t.Fatalf("unit cycles = %v, want one cycle", got)
+	}
+	if got := g.TopoOrder(); !reflect.DeepEqual(got, [][]string{{"aaa", "zzz"}}) {
+		t.Fatalf("promise topo order = %v, want one invalid group [aaa zzz]", got)
+	}
+
+	// Marking the forward edge unpublished too creates the publication
+	// deadlock: both members wait for each other.
+	g.AddUnpublishedPromiseDependency("aaa", "zzz")
 	cycles := g.Cycles()
 	if len(cycles) != 1 || len(cycles[0]) != 2 {
 		t.Fatalf("promise cycle not detected: %v", cycles)

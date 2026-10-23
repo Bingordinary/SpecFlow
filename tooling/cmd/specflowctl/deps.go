@@ -49,36 +49,41 @@ func runDeps(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	promiseEdges, promiseIssues := specvalidation.PromiseEdges(absRoot, scope)
-	// Publication order depends on whether the provider promise is already
-	// published stable at its current contract. A candidate consumer resolves
-	// providers in the current layer (candidate preferred, stable fallback), so
-	// the current map uses the candidate layer's promise scope even when the
-	// report scope is `candidate`.
+	// Publication state answers whether a consumer must wait for a provider's
+	// contract to be published stable at the same fingerprint. It is an edge
+	// annotation: the structural dependency order is computed over every
+	// dependency edge.
+	// A candidate consumer resolves providers in the current layer (candidate
+	// preferred, stable fallback), so the current map uses the candidate
+	// layer's promise scope even when the report scope is `candidate`.
 	current, currentIssues := specvalidation.PromiseFingerprintsForScope(absRoot, specvalidation.PromiseScopeForLayer(scope))
 	stable, stableIssues := specvalidation.PromiseFingerprintsForScope(absRoot, specvalidation.PromiseScopeStable)
 	promiseIssues = append(promiseIssues, currentIssues...)
 	promiseIssues = append(promiseIssues, stableIssues...)
+	annotatedEdges := make([]depsEdge, 0, len(promiseEdges))
 	for _, edge := range promiseEdges {
+		blocking := false
 		provider := specvalidation.PromiseProvider(edge.To)
-		if provider == "" || provider == edge.Unit {
-			continue
-		}
-		// Only a candidate unit has a promotion step. A stable unit's edge is
-		// display/consumer information; it is not a pending publication.
-		fromNode := graph.Node(edge.Unit)
-		blocking := fromNode != nil && fromNode.Layer == "candidate"
-		if blocking {
-			if currentFingerprint, ok := current[edge.To]; ok {
-				if stableFingerprint, published := stable[edge.To]; published && stableFingerprint == currentFingerprint {
-					blocking = false
+		if provider != "" && provider != edge.Unit {
+			// Only a candidate consumer can be blocked on a promotion. A stable
+			// unit's edge is display/consumer information; it is not a pending
+			// publication.
+			fromNode := graph.Node(edge.Unit)
+			blocking = fromNode != nil && fromNode.Layer == "candidate"
+			if blocking {
+				if currentFingerprint, ok := current[edge.To]; ok {
+					if stableFingerprint, published := stable[edge.To]; published && stableFingerprint == currentFingerprint {
+						blocking = false
+					}
 				}
 			}
+			if blocking {
+				graph.AddUnpublishedPromiseDependency(edge.Unit, provider)
+			} else {
+				graph.AddPromiseDependency(edge.Unit, provider)
+			}
 		}
-		if blocking {
-			graph.AddPromiseDependency(edge.Unit, provider)
-		} else {
-			graph.AddPublishedPromiseDependency(edge.Unit, provider)
-		}
+		annotatedEdges = append(annotatedEdges, depsEdge{edge: edge, blocking: blocking})
 	}
 
 	switch {
@@ -87,11 +92,17 @@ func runDeps(args []string, stdout, stderr io.Writer) error {
 	case ruleID != "":
 		return writeRuleDeps(stdout, graph, absRoot, ruleID)
 	default:
-		return writeAllDeps(stdout, graph, promiseEdges, promiseIssues)
+		return writeAllDeps(stdout, graph, annotatedEdges, promiseIssues)
 	}
 }
 
-func writeAllDeps(stdout io.Writer, graph *unitgraph.Graph, promiseEdges []specvalidation.PromiseEdge, promiseIssues []string) error {
+// depsEdge is one printed promise edge plus its publication annotation.
+type depsEdge struct {
+	edge     specvalidation.PromiseEdge
+	blocking bool // the consumer must wait for the provider contract's publication
+}
+
+func writeAllDeps(stdout io.Writer, graph *unitgraph.Graph, edges []depsEdge, promiseIssues []string) error {
 	nodes := graph.Nodes()
 	fmt.Fprintf(stdout, "DEPENDENCY GRAPH (scope: %s, %d unit(s))\n", graph.Scope(), len(nodes))
 	fmt.Fprintln(stdout)
@@ -113,11 +124,15 @@ func writeAllDeps(stdout io.Writer, graph *unitgraph.Graph, promiseEdges []specv
 	}
 	fmt.Fprintln(stdout)
 
-	edges, edgeIssues := promiseEdges, promiseIssues
+	edgeIssues := promiseIssues
 	if len(edges) > 0 || len(edgeIssues) > 0 {
-		fmt.Fprintln(stdout, "Promise edges (promise -> depends_on):")
-		for _, edge := range edges {
-			fmt.Fprintf(stdout, "  %-32s -> %s\n", edge.From, edge.To)
+		fmt.Fprintln(stdout, "Promise edges (promise -> depends_on; [wait] = provider contract not yet published stable):")
+		for _, e := range edges {
+			wait := ""
+			if e.blocking {
+				wait = "  [wait]"
+			}
+			fmt.Fprintf(stdout, "  %-32s -> %s%s\n", e.edge.From, e.edge.To, wait)
 		}
 		if len(edges) == 0 {
 			fmt.Fprintln(stdout, "  (none)")
@@ -128,14 +143,31 @@ func writeAllDeps(stdout io.Writer, graph *unitgraph.Graph, promiseEdges []specv
 		fmt.Fprintln(stdout)
 	}
 
+	unitCycles := graph.UnitCycles()
+	if len(unitCycles) > 0 {
+		fmt.Fprintf(stdout, "UNIT DEPENDENCY CYCLES (INVALID) (%d):\n", len(unitCycles))
+		for _, cycle := range unitCycles {
+			fmt.Fprintf(stdout, "  %s\n", strings.Join(cycle, ", "))
+		}
+		fmt.Fprintln(stdout, "  These units are mutually dependent: each has a promise that depends on")
+		fmt.Fprintln(stdout, "  a promise of the other, so the units have no order and validate fails")
+		fmt.Fprintln(stdout, "  them. Split the shared contract into a rule or redraw unit boundaries.")
+		fmt.Fprintln(stdout)
+	} else {
+		fmt.Fprintln(stdout, "UNIT DEPENDENCY CYCLES: none")
+		fmt.Fprintln(stdout)
+	}
+
 	cycles := graph.Cycles()
 	if len(cycles) > 0 {
 		fmt.Fprintf(stdout, "CYCLES (PUBLICATION) (%d):\n", len(cycles))
 		for _, cycle := range cycles {
-			fmt.Fprintf(stdout, "  %s\n", strings.Join(cycle, " -> "))
+			fmt.Fprintf(stdout, "  %s\n", strings.Join(cycle, ", "))
 		}
-		fmt.Fprintln(stdout, "  Over unpublished provider promises; this blocks publication order, not contract validity.")
-		fmt.Fprintln(stdout, "  Promise contract cycles are reported by validate Check 15.")
+		fmt.Fprintln(stdout, "  A publication deadlock: every member waits for another member's unpublished")
+		fmt.Fprintln(stdout, "  provider contract, so none can be promoted first. The members are on the")
+		fmt.Fprintln(stdout, "  unit dependency cycle reported above, which validate fails; split the")
+		fmt.Fprintln(stdout, "  dependency or redraw unit boundaries.")
 		fmt.Fprintln(stdout)
 	} else {
 		fmt.Fprintln(stdout, "CYCLES (PUBLICATION): none")
@@ -143,14 +175,34 @@ func writeAllDeps(stdout io.Writer, graph *unitgraph.Graph, promiseEdges []specv
 	}
 
 	order := graph.TopoOrder()
-	fmt.Fprintf(stdout, "Promotion order (%d of %d, dependencies first):\n", len(order), len(nodes))
-	for _, name := range order {
-		fmt.Fprintf(stdout, "  %d. %s\n", indexOfName(order, name)+1, name)
+	candidateUnits := 0
+	for _, node := range nodes {
+		if node.Layer == "candidate" {
+			candidateUnits++
+		}
 	}
-	if len(order) < len(nodes) {
-		fmt.Fprintln(stdout, "  (units without a promotion order are blocked by an unpublished dependency cycle — publish a provider first or split the dependency)")
+	fmt.Fprintf(stdout, "Dependency order (structural, dependencies first; %d unit(s), %d group(s), %d candidate unit(s)):\n", len(nodes), len(order), candidateUnits)
+	for i, group := range order {
+		fmt.Fprintf(stdout, "  %d. %s", i+1, groupLabel(graph, group))
+		if len(group) > 1 {
+			fmt.Fprint(stdout, "  (unit dependency cycle — invalid; see above)")
+		}
+		fmt.Fprintln(stdout)
 	}
 	return nil
+}
+
+// groupLabel renders one group in the structural order, marking stable-only
+// units because they are ordered but have no promotion action.
+func groupLabel(graph *unitgraph.Graph, group []string) string {
+	parts := make([]string, len(group))
+	for i, name := range group {
+		parts[i] = name
+		if node := graph.Node(name); node != nil && node.Layer == "stable" {
+			parts[i] = name + " (stable)"
+		}
+	}
+	return strings.Join(parts, " + ")
 }
 
 func allRuleRefsEmpty(nodes []*unitgraph.Node) bool {
@@ -160,15 +212,6 @@ func allRuleRefsEmpty(nodes []*unitgraph.Node) bool {
 		}
 	}
 	return true
-}
-
-func indexOfName(names []string, name string) int {
-	for i, n := range names {
-		if n == name {
-			return i
-		}
-	}
-	return -1
 }
 
 func writeUnitDeps(stdout io.Writer, graph *unitgraph.Graph, unitName string) error {
@@ -191,14 +234,24 @@ func writeUnitDeps(stdout io.Writer, graph *unitgraph.Graph, unitName string) er
 		fmt.Fprintln(stdout)
 	}
 
-	if len(node.PublicationRefs) > 0 {
+	if len(node.UnpublishedRefs) > 0 {
 		fmt.Fprintln(stdout, "Publication blockers (provider contract not published stable):")
-		for _, ref := range node.PublicationRefs {
+		for _, ref := range node.UnpublishedRefs {
 			fmt.Fprintf(stdout, "  - %s\n", ref)
 		}
 		fmt.Fprintln(stdout)
 	} else {
 		fmt.Fprintln(stdout, "Publication blockers: none")
+		fmt.Fprintln(stdout)
+	}
+
+	if group := graph.UnitCycleGroup(unitName); len(group) > 1 {
+		fmt.Fprintln(stdout, "Unit dependency cycle (INVALID — validate fails these units):")
+		fmt.Fprintf(stdout, "  - %s\n", strings.Join(group, ", "))
+		fmt.Fprintln(stdout, "  Split the shared contract into a rule or redraw unit boundaries.")
+		fmt.Fprintln(stdout)
+	} else {
+		fmt.Fprintln(stdout, "Unit dependency cycle: none")
 		fmt.Fprintln(stdout)
 	}
 
@@ -226,10 +279,12 @@ func writeUnitDeps(stdout io.Writer, graph *unitgraph.Graph, unitName string) er
 	}
 
 	if graph.OnCycle(unitName) {
-		fmt.Fprintln(stdout, "Publication cycle: ON A CYCLE — publication order is blocked by an")
-		fmt.Fprintln(stdout, "unpublished provider contract. This is not a promise contract cycle and")
-		fmt.Fprintln(stdout, "validate may still pass. Publish a provider first or split the dependency")
-		fmt.Fprintln(stdout, "(see specflow/framework/unit_validate_checklist.md Check 8).")
+		fmt.Fprintln(stdout, "Publication cycle: ON A CYCLE — every member waits for another member's")
+		fmt.Fprintln(stdout, "unpublished provider contract, so none can be promoted first. This is the")
+		fmt.Fprintln(stdout, "promotion symptom of the unit dependency cycle reported above: validate fails")
+		fmt.Fprintln(stdout, "these units, and publishing a provider does not clear the unit cycle. Split")
+		fmt.Fprintln(stdout, "the dependency or redraw the unit boundaries (see")
+		fmt.Fprintln(stdout, "specflow/framework/unit_validate_checklist.md Check 8).")
 	} else {
 		fmt.Fprintln(stdout, "Publication cycle: none")
 	}
@@ -277,8 +332,12 @@ func writeDepsUsage(w io.Writer) {
 	fmt.Fprintln(w, "  specflowctl deps --rule RULE_ID [--scope ...] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Builds the directed dependency graph from all in-scope units' promise")
-	fmt.Fprintln(w, "depends_on edges and reports edges, publication-order cycles, and a")
-	fmt.Fprintln(w, "promotion order. Promise contract cycles are reported by validate.")
+	fmt.Fprintln(w, "depends_on edges and reports edges, unit dependency cycles, publication-")
+	fmt.Fprintln(w, "order cycles, and a structural dependency order. Every dependency edge")
+	fmt.Fprintln(w, "constrains that order; publication state is an annotation. A unit")
+	fmt.Fprintln(w, "dependency cycle (two units mutually dependent through different promises)")
+	fmt.Fprintln(w, "is a violation: validate fails the units on it. Promise contract cycles are")
+	fmt.Fprintln(w, "reported by validate.")
 	fmt.Fprintln(w, "Pure mechanical computation — no inference, no judgment, no file writes.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")

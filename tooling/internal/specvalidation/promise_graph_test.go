@@ -131,6 +131,47 @@ func TestPromiseGraphRejectsCycle(t *testing.T) {
 	}
 }
 
+func TestPromiseGraphRejectsUnitCycle(t *testing.T) {
+	root := t.TempDir()
+	// No promise depends on itself, so the promise graph is acyclic; the unit
+	// aggregation still has a cycle: a.p1 depends on b.q1 while b.q2 depends
+	// on a.p2. No promise of a unit reaches another promise of the same unit,
+	// so this also pins the general definition of a unit dependency cycle.
+	writePromiseGraphUnit(t, root, "candidate", "a", `promises:
+  - id: a.p1
+    summary: One.
+    contract: {invariants: [p1]}
+    depends_on: [b.q1]
+  - id: a.p2
+    summary: Two.
+    contract: {invariants: [p2]}`)
+	writePromiseGraphUnit(t, root, "candidate", "b", `promises:
+  - id: b.q1
+    summary: One.
+    contract: {invariants: [q1]}
+  - id: b.q2
+    summary: Two.
+    contract: {invariants: [q2]}
+    depends_on: [a.p2]`)
+	writePromiseGraphUnit(t, root, "candidate", "solo", `promises:
+  - id: solo.api
+    summary: Solo.
+    contract: {invariants: [solo]}`)
+
+	for _, unit := range []string{"a", "b"} {
+		result := CheckPromiseGraph(root, unit)
+		if result.Status != Fail || !strings.Contains(result.Details, "unit dependency cycle") {
+			t.Fatalf("unit %s: expected a unit dependency cycle failure, got %s — %s", unit, result.Status, result.Details)
+		}
+		if strings.Contains(result.Details, "promise dependency cycle") {
+			t.Fatalf("unit %s: the fixture must not contain a promise cycle, got %s", unit, result.Details)
+		}
+	}
+	if result := CheckPromiseGraph(root, "solo"); result.Status != Pass {
+		t.Fatalf("unrelated unit must not fail on another unit's cycle, got %s — %s", result.Status, result.Details)
+	}
+}
+
 func TestPromiseGraphUnrelatedMissingSectionDoesNotBlock(t *testing.T) {
 	root := t.TempDir()
 	writePromiseGraphUnit(t, root, "candidate", "web", `promises:
