@@ -280,9 +280,11 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 
 // TestGateMissionValidateFinalSynthesis pins the validate run's final
 // synthesis: a validate run whose checks produced findings must materialize
-// its final-synthesis mission from the same gate-independent section set as
-// verify (§Final synthesis plus the severity policy), never by mapping the
-// `cross` key onto a checklist check.
+// its final-synthesis mission from the verify-shared gate-independent base
+// (§Final synthesis plus the severity policy) plus the extraction
+// re-verification standard and the §15.2 boundary it classifies against —
+// verify carries neither addition (it re-verifies no extraction artifacts) —
+// never by mapping the `cross` key onto a checklist check.
 func TestGateMissionValidateFinalSynthesis(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
@@ -310,6 +312,8 @@ func TestGateMissionValidateFinalSynthesis(t *testing.T) {
 		"----- Inlined protocol from framework/verification_scope.md (Final synthesis)",
 		"----- Inlined protocol from framework/severity_policy.md (4. Severity Levels)",
 		"----- Inlined protocol from framework/severity_policy.md (9. Severity Consistency Check)",
+		"----- Inlined protocol from framework/unit_validate_checklist.md (Extraction re-verification (Check 2 Step 1, Check 5))",
+		"----- Inlined protocol from framework/spec_writing_guide.md (15.2 Externally observable only)",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks inlined protocol %q:\n%s", want, prompt)

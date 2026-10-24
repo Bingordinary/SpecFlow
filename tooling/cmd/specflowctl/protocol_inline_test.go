@@ -122,7 +122,7 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 			},
 		},
 		{
-			name: "validate final synthesis is the same gate-independent standard", gate: gaterun.GateValidate, targetKind: gaterun.TargetKindUnit,
+			name: "validate final synthesis adds the extraction re-verification standard", gate: gaterun.GateValidate, targetKind: gaterun.TargetKindUnit,
 			kind: gaterun.SessionKindCross, keys: []string{gaterun.CrossKey},
 			wantChunks: []protocolChunk{
 				{Source: "framework/verification_scope.md", Heading: "Final synthesis"},
@@ -130,6 +130,8 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 				{Source: "framework/severity_policy.md", Heading: "4. Severity Levels"},
 				{Source: "framework/severity_policy.md", Heading: "5. Blocking Relationship"},
 				{Source: "framework/severity_policy.md", Heading: "9. Severity Consistency Check"},
+				{Source: "framework/unit_validate_checklist.md", Heading: "Extraction re-verification (Check 2 Step 1, Check 5)"},
+				{Source: "framework/spec_writing_guide.md", Heading: "15.2 Externally observable only"},
 			},
 		},
 	}
@@ -162,6 +164,48 @@ func TestProtocolSectionsResolveAgainstSourceDocs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestFinalSynthesisCarriesExtractionStandard proves the validate final
+// synthesis hands the reviewer the extraction re-verification standard the
+// checklist assigns to it, while the verify synthesis stays without it (a
+// verify synthesis re-verifies no extraction artifacts).
+func TestFinalSynthesisCarriesExtractionStandard(t *testing.T) {
+	root := sourceRepoRoot(t)
+	chunksByHeading := func(gate string) map[string]string {
+		sections, err := protocolSectionsFor(gate, gaterun.TargetKindUnit, gaterun.SessionKindCross, []string{gaterun.CrossKey})
+		if err != nil {
+			t.Fatalf("%s cross sections: %v", gate, err)
+		}
+		chunks, err := inlineProtocol(root, "framework", sections)
+		if err != nil {
+			t.Fatalf("%s cross protocol inline: %v", gate, err)
+		}
+		out := map[string]string{}
+		for _, chunk := range chunks {
+			out[judgments.SectionSlug(chunk.Heading)] = chunk.Content
+		}
+		return out
+	}
+
+	const extraction = "Extraction re-verification (Check 2 Step 1, Check 5)"
+	const boundary = "15.2 Externally observable only"
+
+	validate := chunksByHeading(gaterun.GateValidate)
+	body, ok := validate[extraction]
+	if !ok {
+		t.Fatalf("validate final synthesis omits %q", extraction)
+	}
+	if !strings.Contains(body, "Re-verification failure") {
+		t.Fatalf("%q omits its suppression rule", extraction)
+	}
+	if _, ok := validate[boundary]; !ok {
+		t.Fatalf("validate final synthesis omits %q, the boundary its classification step depends on", boundary)
+	}
+
+	if _, ok := chunksByHeading(gaterun.GateVerify)[extraction]; ok {
+		t.Fatalf("verify final synthesis carries %q; verify has no extraction artifacts to re-verify", extraction)
 	}
 }
 

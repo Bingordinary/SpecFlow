@@ -134,6 +134,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 		{2, "Check 8 — Constraint alignment"},
 		{2, "Check 9 — File associations (mechanical)"},
 		{2, "Check 10 — Clarity"},
+		{2, "Extraction re-verification (Check 2 Step 1, Check 5)"},
 		{3, "Severity handling"},
 	},
 	"rule_validate_checklist.md": {

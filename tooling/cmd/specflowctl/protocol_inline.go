@@ -41,8 +41,18 @@ func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protoc
 	case kind == gaterun.SessionKindCross:
 		// The final synthesis runs for every gate that can produce findings
 		// or relationships (only a rule target never synthesizes), so its
-		// judging standard is gate-independent.
-		return finalSynthesisSections(), nil
+		// core judging standard is gate-independent. Validate additionally
+		// re-verifies the extraction artifacts of its Check 2 Step 1 and
+		// Check 5 findings (unit_validate_checklist.md Step 9), so its mission
+		// carries that standard and the §15.2 boundary it classifies against.
+		sections := finalSynthesisSections()
+		if gate == gaterun.GateValidate {
+			sections = append(sections,
+				protocolSectionRef{"unit_validate_checklist.md", 2, "Extraction re-verification (Check 2 Step 1, Check 5)"},
+				protocolSectionRef{"spec_writing_guide.md", 3, "15.2 Externally observable only"},
+			)
+		}
+		return sections, nil
 	case gate == gaterun.GateValidate && targetKind == gaterun.TargetKindRule:
 		sections := []protocolSectionRef{
 			{"rule_validate_checklist.md", 2, "Execution Rules"},
