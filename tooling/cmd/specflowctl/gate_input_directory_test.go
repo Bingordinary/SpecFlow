@@ -16,8 +16,6 @@ func TestGatePlanRejectsDirectoryDiscoveryErrors(t *testing.T) {
 		name, directory, expectedRef, targetKind string
 	}{
 		{"global rules", "docs/specs/rules/stable", "rule:g_rule_required", "unit"},
-		{"candidate units for rule", "docs/specs/units/candidate", "unit:demo", "rule"},
-		{"stable units for rule", "docs/specs/units/stable", "unit:peer", "rule"},
 	} {
 		for _, failure := range []string{"permission", "not a directory"} {
 			t.Run(tc.name+"/"+failure, func(t *testing.T) {
@@ -74,6 +72,33 @@ func TestGatePlanRejectsDirectoryDiscoveryErrors(t *testing.T) {
 				grPlan(t, root, args...)
 			})
 		}
+	}
+}
+
+func TestRulePlanIgnoresUnitDirectories(t *testing.T) {
+	for _, failure := range []string{"permission", "not a directory"} {
+		t.Run(failure, func(t *testing.T) {
+			root := createCLITestRepo(t)
+			grWriteFile(t, root, "docs/specs/rules/candidate/b_rule_target.md", publicationRuleText("b_rule_target", "bound", "Name exact owners."))
+			grWriteSpec(t, root, "demo")
+			peer := strings.ReplaceAll(nextDiscoverySpec("old"), "demo", "peer")
+			grWriteFile(t, root, "docs/specs/units/stable/unit_peer.md", peer)
+
+			restoreCandidate := failGateInputDirectory(t, filepath.Join(root, "docs/specs/units/candidate"), failure)
+			restoreStable := failGateInputDirectory(t, filepath.Join(root, "docs/specs/units/stable"), failure)
+
+			// A rule run reads no unit directory (issue #100), so a broken unit
+			// tree cannot fail the plan or enter the rule's input surface.
+			id := grPlan(t, root, "--gate", "validate", "--rule", "b_rule_target", "--target", "candidate")
+			run := mustLoadRun(t, root, id)
+			for _, ref := range run.Refs {
+				if strings.HasPrefix(ref.Ref, "unit:") || strings.Contains(ref.Ref, "docs/specs/units/") {
+					t.Fatalf("a unit entry reached the rule input surface: %+v", run.Refs)
+				}
+			}
+			restoreCandidate()
+			restoreStable()
+		})
 	}
 }
 

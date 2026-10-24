@@ -2252,20 +2252,19 @@ func TestCheckRuleValidateStable(t *testing.T) {
 	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
 	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
 
-	// A consumer unit is an external dependency of the stable rule: when the
-	// consumer changes, the rule's validate@stable confirmation goes stale.
+	// A consumer unit may exist, but it is never a recorded entry: the
+	// consumer set is derived from unit rule_refs, not stored as rule input
+	// (issue #100).
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
 	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
-	consumerHash, _ := fileHash(consumerPath)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_http")
 	os.MkdirAll(cacheDir, 0755)
 
-	// validate@stable on a rule records the STABLE rule path and the consumer
-	// units it scanned.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandardFor(t, repoRoot, "rule") + "\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/units/stable/unit_consumer.md\n    hash: sha256:" + consumerHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
+	// validate@stable on a rule records the STABLE rule path only.
+	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandardFor(t, repoRoot, "rule") + "\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
@@ -2286,7 +2285,12 @@ func TestCheckRuleValidateStable(t *testing.T) {
 	}
 }
 
-func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
+// TestCheckRuleValidateStable_IgnoresConsumerUnits pins the one-way dependency
+// (issue #100): consumer units are derived from current-layer rule_refs at
+// freshness/mission time, so a consumer-side edit — including dropping the
+// reference — leaves a stable rule confirmation FRESH, while an edit to the
+// rule file itself stales it.
+func TestCheckRuleValidateStable_IgnoresConsumerUnits(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	stableRuleDir := filepath.Join(repoRoot, "docs/specs/rules/stable")
@@ -2295,28 +2299,39 @@ func TestCheckRuleValidateStable_ConsumerChanged(t *testing.T) {
 	os.MkdirAll(unitsStableDir, 0755)
 
 	rulePath := filepath.Join(stableRuleDir, "g_rule_http.md")
-	writeCacheFixtureFile(t, rulePath, []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n"), 0644)
+	ruleContent := []byte("---\nid: g_rule_http\n---\nAll APIs must use HTTPS.\n")
+	writeCacheFixtureFile(t, rulePath, ruleContent, 0644)
 
 	consumerPath := filepath.Join(unitsStableDir, "unit_consumer.md")
 	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n---\n"), 0644)
 
 	ruleHash, _ := fileHash(rulePath)
-	consumerHash, _ := fileHash(consumerPath)
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/rule/g_rule_http")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandardFor(t, repoRoot, "rule") + "\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/units/stable/unit_consumer.md\n    hash: sha256:" + consumerHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandardFor(t, repoRoot, "rule") + "\nunit: g_rule_http\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
-	// The consumer changes (e.g. its rule_refs) -> the confirmation goes stale.
+	// The consumer changes its rule_refs -> the rule confirmation stays fresh.
 	writeCacheFixtureFile(t, consumerPath, []byte("---\nid: consumer\nrule_refs:\n  - g_rule_http\n  - g_rule_audit\n---\n"), 0644)
 
 	result, err := CheckRuleValidateStable(repoRoot, "g_rule_http")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !result.Fresh {
+		t.Fatalf("expected fresh after a consumer-side edit, got: %s", result.Reason)
+	}
+
+	// The rule file itself is the bound input.
+	writeCacheFixtureFile(t, rulePath, append(ruleContent, []byte("\nAdditional constraint.\n")...), 0644)
+
+	result, err = CheckRuleValidateStable(repoRoot, "g_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result.Fresh {
-		t.Fatalf("expected stale after consumer change, got: %s", result.Reason)
+		t.Fatalf("expected stale after a rule file edit")
 	}
 }
 

@@ -266,7 +266,6 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			for _, key := range keys {
 				scopes[key] = []string{candidate + ": all"}
 			}
-			scopes["4"] = append(scopes["4"], "unit:consumer: all")
 			if tc.livePrior {
 				scopes["6"] = append(scopes["6"], stable+": all")
 			}
@@ -289,8 +288,10 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			if n := strings.Count(cache, "- path: "+stable); !tc.livePrior && n != 1 {
 				t.Errorf("expected one published rule evidence entry, got %d", n)
 			}
-			if !strings.Contains(cache, "- path: unit:consumer") {
-				t.Fatal("lost live consumer evidence")
+			// A consumer unit is derived from unit rule_refs, never recorded
+			// as rule evidence (issue #100).
+			if strings.Contains(cache, "- path: unit:consumer") {
+				t.Fatal("a consumer unit must not be a published rule evidence entry")
 			}
 			fresh, err := freshRun(t, root, "--rule", id)
 			t.Log(fresh)
@@ -318,13 +319,16 @@ func TestRulePublicationConfirmation(t *testing.T) {
 			if err := os.WriteFile(consumer, append(data, []byte("\nChanged consumer contract.\n")...), 0644); err != nil {
 				t.Fatal(err)
 			}
+			// A consumer-side edit does not touch the rule's recorded input, so
+			// the confirmation stays FRESH and the change report stays empty
+			// (framework/validation_cache.md; see also spec_writing_guide.md §6.3).
 			changed, err := validationcache.CheckRuleValidateStable(root, id)
-			if err != nil || changed.Fresh {
-				t.Fatalf("consumer change was lost by projection: %+v %v", changed, err)
+			if err != nil || !changed.Fresh {
+				t.Fatalf("a consumer edit must not stale the rule confirmation: %+v %v", changed, err)
 			}
 			report, rerr := validationcache.DeriveChangeReport(root, "rule", id, "validate")
-			if rerr != nil || report.Empty() {
-				t.Fatalf("expected the consumer change in the change report: %+v %v", report, rerr)
+			if rerr != nil || !report.Empty() {
+				t.Fatalf("a consumer edit must not enter the rule change report: %+v %v", report, rerr)
 			}
 		})
 	}

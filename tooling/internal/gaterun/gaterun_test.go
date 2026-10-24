@@ -435,25 +435,68 @@ func TestPlanCodeGatesRejectEmptyPromiseList(t *testing.T) {
 	}
 }
 
+// TestOpenDerivesRuleValidateSurface pins the narrowed rule validate input
+// surface: the rule file and its stable sibling only. Consumer units are
+// derived as a plan-time name set at mission assembly, never as input-surface
+// entries, so an unrelated unit edit cannot stale the cache (issue #100).
 func TestOpenDerivesRuleValidateSurface(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeRule(t, repoRoot, "candidate", "b_rule_http")
 	writeRule(t, repoRoot, "stable", "b_rule_http")
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "b_rule_http", "src", "")
 	writeUnit(t, repoRoot, "stable", "dep", "none", "none", "src", "")
 
 	run, err := open(t, repoRoot, GateValidate, TargetKindRule, "b_rule_http", TargetCandidate, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"docs/specs/rules/candidate/b_rule_http.md",
-		"docs/specs/rules/stable/b_rule_http.md",
-		"unit:auth",
-		"unit:dep",
-	} {
-		if _, ok := refByRef(run, want); !ok {
-			t.Fatalf("expected derived ref %q, got %+v", want, run.Refs)
+	want := map[string]bool{
+		"docs/specs/rules/candidate/b_rule_http.md": true,
+		"docs/specs/rules/stable/b_rule_http.md":    true,
+	}
+	if len(run.Refs) != len(want) {
+		t.Fatalf("expected exactly the rule files as input-surface refs, got %+v", run.Refs)
+	}
+	for _, ref := range run.Refs {
+		if !want[ref.Ref] {
+			t.Fatalf("unexpected derived ref %q — a unit main spec must never be a rule validate input-surface entry, got %+v", ref.Ref, run.Refs)
+		}
+	}
+}
+
+// TestRuleValidateSessionContextCarriesConsumers pins the narrowed surface's
+// consumer channel: the checks session receives the mechanically derived
+// consumer names as context, while the consumer unit specs stay out of the
+// recorded input surface.
+func TestRuleValidateSessionContextCarriesConsumers(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeRule(t, repoRoot, "candidate", "b_rule_http")
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "b_rule_http", "src", "")
+	writeUnit(t, repoRoot, "candidate", "other", "none", "none", "src", "")
+
+	run, err := open(t, repoRoot, GateValidate, TargetKindRule, "b_rule_http", TargetCandidate, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := BuildSessionSpec(repoRoot, run, RuleValidateChecks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var consumerLine string
+	for _, line := range spec.Context {
+		if strings.HasPrefix(line, "Consumer set ") {
+			consumerLine = line
+		}
+	}
+	if consumerLine == "" {
+		t.Fatalf("expected a consumer-set context line, got %+v", spec.Context)
+	}
+	if !strings.HasPrefix(consumerLine, "Consumer set (derived from current-layer unit rule_refs): auth.") {
+		t.Fatalf("expected the derived consumer set to name only auth, got %q", consumerLine)
+	}
+	for _, ref := range spec.ReadRefs {
+		if strings.HasPrefix(ref, "unit:") {
+			t.Fatalf("consumer unit %q must not be a read ref of the rule validate session", ref)
 		}
 	}
 }

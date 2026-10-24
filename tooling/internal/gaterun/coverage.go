@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulerefs"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -772,7 +773,34 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 	if kind == SessionKindUnit {
 		spec.Context = append(spec.Context, "Unit-level alignment scan: execute Step 1 (structural alignment) and Step 5 (implementation integrity and code design-surface surplus) over the whole unit — Step 5 covers both the code design-surface surplus analysis (Part A) and the non-runnable assessment (count the acceptance items marked `runnable: no`, check each carries a substantive `not_runnable_reason` with external evidence, and judge whether the remaining runnable set gives meaningful coverage) — Step 2 acceptance alignment, Step 3 scope accuracy and Step 6 are owned by the item sessions, while this session completes Step 7 first-principles divergence analysis for every structural or surplus MISMATCH it retains. Attribute code structures and designs to the responsibility of this unit before judging surplus: shared-file association is not exclusive ownership, independent behavior outside that responsibility is not surplus, and helpers or shared mechanisms implementing or constraining this unit's requirements remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location. Report one `declarations.<class>:` line per declaration class, one `surplus:` line for the code design-surface scan, and one `non_runnable:` line for the non-runnable assessment, as the report contract requires, so neither an unexamined declaration class nor the Step 5 Part 2 result is silent.")
 	}
+	if kind == SessionKindChecks && run.TargetKind == TargetKindRule {
+		spec.Context = append(spec.Context, ruleConsumerContext(repoRoot, run))
+	}
 	return spec, nil
+}
+
+// ruleConsumerContext states a rule validate run's consumer set as a plan-time
+// name set. Consumers are derived mechanically from current-layer unit
+// `rule_refs` (a set comparison); no consumer unit spec is a derived
+// input-surface entry, so a consumer edit or a dropped reference does not
+// stale the rule's validate cache by itself. A consumer unit the run adds with
+// `specflowctl gate-extend` is recorded evidence, so a later edit to it stales
+// that cache. A judgment that needs a consumer spec's content — Check 4's
+// owner existence is a live path fact and needs none — reports the missing
+// read ref so the run can be extended, instead of judging from memory.
+func ruleConsumerContext(repoRoot string, run *Run) string {
+	if strings.HasPrefix(run.TargetName, "g_rule_") {
+		return "Consumer set: a global rule applies to every current-layer unit by default, so its consumers are not enumerated. Consumer units are not derived input-surface entries: a consumer-side edit does not stale this cache by itself. A consumer unit added to this run with `specflowctl gate-extend` is recorded like any extra input, and a later edit to it stales this cache. If a judgment needs a consumer spec's content, report the missing read ref."
+	}
+	consumers, err := rulerefs.FindRuleConsumers(repoRoot, run.TargetName)
+	if err != nil {
+		return "Consumer set could not be derived (" + err.Error() + "). Consumer units are not derived input-surface entries: a consumer-side edit does not stale this cache by itself. A consumer unit added to this run with `specflowctl gate-extend` is recorded like any extra input, and a later edit to it stales this cache. If a judgment needs a consumer spec's content, report the missing read ref."
+	}
+	list := "none"
+	if len(consumers) > 0 {
+		list = strings.Join(consumers, ", ")
+	}
+	return "Consumer set (derived from current-layer unit rule_refs): " + list + ". These names are not derived input-surface entries: a consumer-side edit does not stale this cache by itself. A consumer unit added to this run with `specflowctl gate-extend` is recorded like any extra input, and a later edit to it stales this cache. If a judgment needs a consumer spec's content, report the missing read ref."
 }
 
 // CoverageReadRefs lists one coverage key's read surface — the evidence

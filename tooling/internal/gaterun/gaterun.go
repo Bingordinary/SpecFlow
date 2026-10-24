@@ -1613,9 +1613,13 @@ func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surfa
 	return refs, surfaces, nil
 }
 
-// deriveRuleValidate resolves a validate rule run's inputs: the rule file and
-// its stable sibling, plus every unit main spec (consumer discovery reads all
-// of them).
+// deriveRuleValidate resolves a validate rule run's inputs: the rule file and,
+// for a candidate, its published stable sibling. Rule checks read the rule
+// file only; Check 4's promotion-owner test is a live existence fact, and the
+// consumer set is derived from current-layer unit rule_refs as a name set at
+// mission time, never as input-surface content. Recording consumer file bytes
+// would invert the one-way dependency (units reference rules, not the reverse)
+// and let an unrelated unit edit stale every rule cache.
 func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 	var refs []Ref
 	if target == TargetCandidate {
@@ -1626,13 +1630,6 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 		}
 	} else {
 		refs = append(refs, physicalRef(repoRoot, specpaths.RuleStableFileRef(ruleID), SourceDerived))
-	}
-	unitNames, err := allUnitNames(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	for _, unitName := range unitNames {
-		refs = append(refs, logicalUnitRef(repoRoot, unitName, SourceDerived))
 	}
 	sortRefs(refs)
 	return refs, nil
@@ -1744,36 +1741,6 @@ func unitAppendices(repoRoot, unitName, layer string) ([]string, error) {
 	for _, appendix := range appendices {
 		out = append(out, appendix.Path)
 	}
-	return out, nil
-}
-
-// allUnitNames lists every unit with a main spec in either layer.
-func allUnitNames(repoRoot string) ([]string, error) {
-	seen := map[string]bool{}
-	for _, dir := range []string{specpaths.CandidateDir, specpaths.StableDir} {
-		entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(dir)))
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read unit directory %s: %w", dir, err)
-		}
-		for _, entry := range entries {
-			if !strings.HasPrefix(entry.Name(), "unit_") || !strings.HasSuffix(entry.Name(), ".md") {
-				continue
-			}
-			base := strings.TrimSuffix(entry.Name(), ".md")
-			name := strings.TrimPrefix(base, "unit_")
-			if name != "" {
-				seen[name] = true
-			}
-		}
-	}
-	var out []string
-	for name := range seen {
-		out = append(out, name)
-	}
-	sort.Strings(out)
 	return out, nil
 }
 

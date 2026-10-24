@@ -1513,10 +1513,16 @@ func TestGateRunRuleTarget(t *testing.T) {
 	}
 }
 
-func TestGateRunRuleWithConsumerRef(t *testing.T) {
+// TestGateRunRuleCacheExcludesConsumerUnits pins the one-way dependency for
+// rule validate (issue #100): a consumer unit spec is not an input-surface
+// entry. An unrelated consumer edit — including dropping the rule from its
+// rule_refs — leaves the cache FRESH, while an edit to the rule file itself
+// stales it.
+func TestGateRunRuleCacheExcludesConsumerUnits(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+	ruleContent := "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n"
+	grWriteFile(t, repoRoot, rulePath, ruleContent)
 	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
@@ -1525,21 +1531,40 @@ func TestGateRunRuleWithConsumerRef(t *testing.T) {
 		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
 	}
 	for c := 1; c <= 6; c++ {
-		scope, decl := rulePath, "Constraint"
-		if c == 4 {
-			scope, decl = "unit:auth", "Acceptance Items"
-		}
-		fmt.Fprintf(&b, "check-%d: %s: %s\n", c, scope, decl)
+		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
 	}
 	grSubmitOK(t, repoRoot, runID, "checks", b.String())
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/rule/b_rule_http/validate_result.md")
-	if !strings.Contains(cache, "- path: unit:auth") {
-		t.Fatalf("expected the consumer logical reference, got:\n%s", cache)
+	if strings.Contains(cache, "unit:auth") || strings.Contains(cache, "docs/specs/units/") {
+		t.Fatalf("a consumer unit spec must not be a rule validate input-surface entry, got:\n%s", cache)
 	}
 	if judgments := grGateJudgments(t, cache); !strings.Contains(judgments, `"findings":[]`) {
 		t.Fatalf("expected the zero-finding rule judgment baseline to record an empty findings array, got:\n%s", judgments)
+	}
+
+	// A consumer-side edit — even dropping the rule reference — is not a rule
+	// input change and must not stale the cache (framework/validation_cache.md;
+	// see also spec_writing_guide.md §6.3).
+	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "none")
+	grWriteSpecWithRefs(t, repoRoot, "unrelated", "none", "none")
+	res, err := validationcache.CheckRuleValidate(repoRoot, "b_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fresh {
+		t.Fatalf("expected the rule validate cache to stay fresh after unit-side edits, got: %s", res.Reason)
+	}
+
+	// The rule file itself remains the bound input.
+	grWriteFile(t, repoRoot, rulePath, ruleContent+"\nAdditional constraint.\n")
+	res, err = validationcache.CheckRuleValidate(repoRoot, "b_rule_http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Fresh {
+		t.Fatalf("expected the rule validate cache to go stale after a rule file edit")
 	}
 }
 
@@ -2996,7 +3021,7 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 	repoRoot := createCLITestRepo(t)
 	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
 	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
-	consumerPath := grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
+	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
 	fullScopes := map[string][]string{}
@@ -3004,17 +3029,17 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 		key := fmt.Sprint(c)
 		fullScopes[key] = []string{rulePath + ": Constraint"}
 	}
-	fullScopes["4"] = []string{"unit:auth: Acceptance Items"}
 	grSubmitOK(t, repoRoot, fullRun, "checks", grValidateReport([]string{"1", "2", "3", "4", "5", "6"}, fullScopes))
 	grFinalizeOK(t, repoRoot, fullRun)
 
 	runDelta := func(oldText, newText string) {
 		t.Helper()
-		data, err := os.ReadFile(consumerPath)
+		ruleAbs := filepath.Join(repoRoot, filepath.FromSlash(rulePath))
+		data, err := os.ReadFile(ruleAbs)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(consumerPath, []byte(strings.Replace(string(data), oldText, newText, 1)), 0644); err != nil {
+		if err := os.WriteFile(ruleAbs, []byte(strings.Replace(string(data), oldText, newText, 1)), 0644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -3029,7 +3054,7 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 			t.Fatalf("unexpected carried checks: %s", got)
 		}
 		grSubmitKeys(t, repoRoot, deltaRun, []string{"4"}, grValidateReport([]string{"4"}, map[string][]string{
-			"4": {"unit:auth: Acceptance Items"},
+			"4": {rulePath + ": Constraint"},
 		}))
 		grFinalizeOK(t, repoRoot, deltaRun)
 
@@ -3044,8 +3069,8 @@ func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) 
 		}
 	}
 
-	runDelta("Given a caller, When the behavior runs, Then it is accepted.", "Given a caller, When the behavior runs, Then it is accepted. Changed.")
-	runDelta("Given a caller, When the behavior runs, Then it is accepted. Changed.", "Given a caller, When the behavior runs, Then it is accepted. Changed again.")
+	runDelta("Must use TLS.", "Must use TLS everywhere.")
+	runDelta("Must use TLS everywhere.", "Must use TLS everywhere, always.")
 }
 
 func TestRuleOutcomeRejectsCarriedRerunOverlap(t *testing.T) {

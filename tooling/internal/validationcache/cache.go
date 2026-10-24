@@ -315,10 +315,11 @@ func CheckRuleValidate(repoRoot, ruleID string) (CheckResult, error) {
 
 // CheckRuleValidateStable reads and validates the validate cache for the given
 // rule against the STABLE rule path. A validate@stable run on a rule (no
-// candidate round) records the stable rule file and the consumer units it
-// scanned; the candidate-based CheckRuleValidate cannot validate such a cache
-// (its main-file check points at the candidate rule). The fresh stable report
-// consumes it as the stable rule's consumer/consistency confirmation state.
+// candidate round) records the stable rule file; the candidate-based
+// CheckRuleValidate cannot validate such a cache (its main-file check points
+// at the candidate rule). The fresh stable report consumes it as the stable
+// rule's consistency confirmation state, and consumer units — derived from
+// current-layer unit rule_refs — are not recorded entries (issue #100).
 func CheckRuleValidateStable(repoRoot, ruleID string) (CheckResult, error) {
 	return checkCache(repoRoot, "rule", ruleID, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/rules/stable/%s.md", ruleID))
 }

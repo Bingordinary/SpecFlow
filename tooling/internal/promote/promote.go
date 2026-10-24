@@ -583,8 +583,11 @@ func PromoteRule(repoRoot, ruleID string) *RuleResult {
 	r.Actions = append(r.Actions, fmt.Sprintf("Removed candidate rule: docs/specs/rules/candidate/%s.md", ruleID))
 
 	// Step 9: Rewrite the candidate validate cache into a stable confirmation
-	// cache. The rule's promote-time dependencies (consumer units, rule file
-	// content) stay valid as the stable-layer consumer/consistency baseline.
+	// cache. The recorded rule file content stays valid as the stable-layer
+	// consistency baseline; on the normal path consumer units are derived from
+	// current-layer unit rule_refs and are not recorded entries (issue #100) —
+	// a consumer unit the run added with `specflowctl gate-extend` stays
+	// recorded and its later edit stales the projected cache.
 	// Unlike unit caches, only the validate gate applies to rules (verify
 	// has been removed for rules — see framework/validation_cache.md §Failure handling by gate role).
 	rewriteReport, rewrErr := validationcache.RewriteCachesToStable(repoRoot, "rule", ruleID)

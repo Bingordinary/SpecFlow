@@ -31,11 +31,14 @@ func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
 				}
 			}
 			runID := grPlan(t, root, "--gate", "validate", "--rule", id, "--target", tc.target)
+			// A consumer unit reaches the session as a plan-time name set, not
+			// as an input-surface entry (issue #100).
+			grWriteSpecWithRefs(t, root, "auth", "none", id)
 			var out, errOut bytes.Buffer
 			if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "3,4", "--format", "prompt"}, &out, &errOut); err != nil {
 				t.Fatalf("mission: %v (%s)", err, errOut.String())
 			}
-			for _, want := range []string{"Target layer: " + tc.target, "Spec source: docs/specs/rules/" + tc.target + "/" + id + ".md", "Target-layer applicability", "checks 3, 4"} {
+			for _, want := range []string{"Target layer: " + tc.target, "Spec source: docs/specs/rules/" + tc.target + "/" + id + ".md", "Target-layer applicability", "checks 3, 4", "Consumer set (derived from current-layer unit rule_refs): auth."} {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("mission omits %q:\n%s", want, out.String())
 				}
