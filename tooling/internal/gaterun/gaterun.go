@@ -623,7 +623,20 @@ func (d *Derivation) appendRunInputs(run *Run, inputs []string) ([]string, error
 				continue
 			}
 			seenRefs[canonical] = true
-			run.Refs = append(run.Refs, refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput}))
+			entry := refreshRef(repoRoot, Ref{Ref: canonical, Source: SourceInput})
+			if entry.Resolved == "" {
+				// A logical reference is fixed into the snapshot here, so it
+				// must resolve at this boundary — the same boundary where a
+				// physical input is stat-checked below. An entry that
+				// resolves to no file is unreadable by every assigned
+				// session, and the only consumer that needs the resolution
+				// (finalize's evidence assembly) would reject the finished
+				// run: a whole accepted round discarded where a rejected
+				// input costs one command, and extend cannot remove the
+				// entry once it is in the snapshot.
+				return nil, fmt.Errorf("input %q resolves to no file — units and bound rules resolve current-layer (candidate first, stable fallback), global rules stable-only; an appendix reference is the full appendix file base name without .md (e.g. unit:auth:appendix:unit_auth_account_token_claims)", canonical)
+			}
+			run.Refs = append(run.Refs, entry)
 			continue
 		}
 		abs := filepath.Join(repoRoot, filepath.FromSlash(canonical))

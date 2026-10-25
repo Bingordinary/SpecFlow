@@ -907,6 +907,37 @@ func TestOpenLogicalInputRef(t *testing.T) {
 	}
 }
 
+// TestOpenRejectsUnresolvedLogicalInputRef pins the snapshot-boundary rule: a
+// logical input reference is resolved when it is fixed into the run snapshot.
+// An entry that resolves to no file is unreadable by every assigned session,
+// so accepting it would only move the failure to finalize's evidence
+// assembly — after the whole run has executed, with no in-place repair.
+func TestOpenRejectsUnresolvedLogicalInputRef(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_auth_claims.md", "---\nunit: auth\n---\n\n# Claims\n")
+
+	for _, ref := range []string{
+		"unit:auth:appendix:unit_auth_claims.md", // appendix spelled with its .md suffix
+		"unit:missing",
+		"rule:g_rule_missing",
+	} {
+		if _, err := open(t, repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, []string{ref}, time.Now()); err == nil || !strings.Contains(err.Error(), ref) {
+			t.Fatalf("expected logical input %q to be rejected at plan time, got %v", ref, err)
+		}
+	}
+	if _, err := open(t, repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, []string{"unit:auth:appendix:unit_auth_claims"}, time.Now()); err != nil {
+		t.Fatalf("expected the correctly spelled appendix ref to plan, got %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(repoRoot, "meta", "gate_runs"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("rejected plans must not persist run state, found %d entries", len(entries))
+	}
+}
+
 // open is the test helper for a full-mode plan.
 func open(t *testing.T, repoRoot, gate, targetKind, targetName, target string, extraInputs []string, now time.Time) (*Run, error) {
 	t.Helper()

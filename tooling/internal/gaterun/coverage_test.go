@@ -1479,6 +1479,41 @@ func TestExtendAddsInputsInPlaceKeepsCoverage(t *testing.T) {
 	}
 }
 
+// TestExtendRejectsUnresolvedLogicalInput pins the same snapshot-boundary rule
+// for supplements: a logical reference that resolves to no file is rejected at
+// the point it is added, and the open run — including its accepted sessions —
+// is left unchanged and extensible with the corrected spelling.
+func TestExtendRejectsUnresolvedLogicalInput(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	writeFile(t, repoRoot, "src/main.go", "package main\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_auth_claims.md", "---\nunit: auth\n---\n\n# Claims\n")
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Extend(repoRoot, run.RunID, []string{"unit:auth:appendix:unit_auth_claims.md"}, time.Now()); err == nil || !strings.Contains(err.Error(), "unit:auth:appendix:unit_auth_claims.md") {
+		t.Fatalf("expected the unresolved logical input to be rejected, got %v", err)
+	}
+	reloaded, err := Load(repoRoot, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.ExtraInputs) != 0 {
+		t.Fatalf("rejected extension mutated the run: extra=%v", reloaded.ExtraInputs)
+	}
+	if last := len(reloaded.Notices) - 1; last >= 0 && strings.Contains(reloaded.Notices[last], "evidence extended") {
+		t.Fatalf("rejected extension recorded an extension notice: %v", reloaded.Notices)
+	}
+	extended, err := Extend(repoRoot, run.RunID, []string{"unit:auth:appendix:unit_auth_claims"}, time.Now())
+	if err != nil {
+		t.Fatalf("the correctly spelled supplement must still extend the run: %v", err)
+	}
+	if _, ok := refByRef(extended, "unit:auth:appendix:unit_auth_claims"); !ok {
+		t.Fatalf("corrected appendix ref not added: %+v", extended.Refs)
+	}
+}
+
 // TestExtendRefreshesUncoveredSessionReadRefs pins the recovery contract: a
 // supplement must reach the read refs of every session that re-missions over
 // it — including a public code key, whose read surface is materialized at

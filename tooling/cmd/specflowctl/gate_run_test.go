@@ -4148,6 +4148,29 @@ func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 	}
 }
 
+// TestGatePlanRejectsUnresolvedLogicalInput verifies that a logical input-
+// manifest entry that resolves to no file — the issue's appendix spelled with
+// its .md suffix — is rejected at plan time with the expected spelling, before
+// run state is written, instead of surviving until finalize's evidence
+// assembly discards a fully executed run.
+func TestGatePlanRejectsUnresolvedLogicalInput(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "unit:auth:appendix:unit_auth_claims.md"))
+	if err == nil || !strings.Contains(err.Error(), "resolves to no file") || !strings.Contains(err.Error(), "unit_auth_claims.md") {
+		t.Fatalf("expected the unresolved logical input to be rejected at plan time, got %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(repoRoot, "meta/gate_runs"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("rejected plan must not persist run state, found %d entries", len(entries))
+	}
+}
+
 // TestGateRuleValidateSessionSeverityDrivesResult pins D9 for rule validate:
 // the single checks session sets each finding's severity directly (no
 // severity-confirmation chain), and the derived result and counts come from
