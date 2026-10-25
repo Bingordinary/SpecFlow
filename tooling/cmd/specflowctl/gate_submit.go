@@ -188,7 +188,7 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 		}
 		return fmt.Errorf("gate-submit: session %q declared it is over capacity (%s) — split these keys into smaller sessions of the same lens and mission each; this assignment is terminal: %s", sessionID, detail, strings.Join(keys, ","))
 	}
-	parsed, perr := parseSessionReport(run, spec, report)
+	parsed, perr := parseSessionReport(absRoot, run, spec, report)
 	if perr != nil {
 		return reject(perr.Error())
 	}

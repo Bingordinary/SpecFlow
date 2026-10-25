@@ -61,6 +61,22 @@ func TestGateQualityBatchKeepsPerFileResults(t *testing.T) {
 			t.Errorf("quality mission lacks the file block for %s", key)
 		}
 	}
+	contract := reportContractFor(run, spec)
+	placement := false
+	for _, rule := range contract.Requirements {
+		if rule.ID == "design-finding-placement" {
+			placement = true
+		}
+	}
+	// The finding example is rendered inside each File: block template, not
+	// appended as a placeholder block: a placeholder File: header matches no
+	// assigned key and would be rejected if a reviewer copied it.
+	if !placement || !strings.Contains(contract.Template, "  # a finding block is written inside this block, after the lines above and before the\n  # next File: line") {
+		t.Errorf("quality mission must show design finding blocks inside their file's block:\n%s", contract.Template)
+	}
+	if strings.Contains(contract.Template, "File: design:<unit>:<file>") {
+		t.Errorf("quality mission must not append a placeholder file block:\n%s", contract.Template)
+	}
 	bad := strings.Replace(grQualityReport(a, main), "conclusion: acceptable", "conclusion: unacceptable — boundary defect", 1)
 	bad = strings.Replace(bad, "gate_findings: none", "gate_findings: [P1] boundary defect", 1)
 	bad += "[P1] src/a.go:1 — boundary defect (actionable)\n  problem: responsibility placed in the wrong module\n  evidence: package src\n  impact: consumers receive the wrong behavior\n  fix: move the responsibility to its owner\n"
@@ -212,6 +228,51 @@ func TestGateQualityBatchRejectsSharedOrMisassignedAssessments(t *testing.T) {
 				t.Fatalf("invalid per-file report accepted:\n%s", tc.report)
 			}
 		})
+	}
+}
+
+// TestGateQualityBatchBindsFindingToItsOwnFileKey pins issue #102: a finding
+// binds to the File: block it is written in. A finding whose location names
+// another file this session judges, but that is written in a different file's
+// block, must be rejected — never silently recorded under the wrong key — and
+// the same finding placed inside its own file's block binds to that key.
+func TestGateQualityBatchBindsFindingToItsOwnFileKey(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpec(t, root, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	a, b := "src/a.go", "src/b.go"
+	grWriteFile(t, root, a, "package src\n")
+	grWriteFile(t, root, b, "package src\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	keys := []string{"design:auth:" + a, "design:auth:" + b}
+	session := gaterun.SessionID(keys)
+	run := mustLoadRun(t, root, runID)
+	grPreparePublic(t, root, run, keys)
+	finding := "[P2] " + a + ":3 — responsibility placement is unclear (actionable)\n  problem: responsibility placement is unclear\n  evidence: package src\n  impact: maintainers may misplace the change\n  fix: document the boundary\n"
+	submit := func(report string) error {
+		path := grWriteFile(t, t.TempDir(), "report.md", grAdaptReport(run, report))
+		var out, errOut bytes.Buffer
+		return runGateSubmit([]string{"--repo-root", root, "--run", runID, "--session", session, "--keys", strings.Join(keys, ","), "--report", path}, &out, &errOut)
+	}
+
+	// The finding sits after the last file block, so it binds to the last
+	// file's key while its own location names the other file: reject.
+	misplaced := grQualityReport(a, main) + grQualityReport(b, main) + finding
+	if err := submit(misplaced); err == nil || !strings.Contains(err.Error(), keys[0]) {
+		t.Fatalf("a finding bound to the wrong file's key must be rejected, got %v", err)
+	}
+
+	// The same finding inside its own file's block binds to that key.
+	if err := submit(grQualityReport(a, main) + finding + grQualityReport(b, main)); err != nil {
+		t.Fatalf("a finding placed in its own file's block must be accepted: %v", err)
+	}
+	state, err := grLoadSessionState(root, mustLoadRun(t, root, runID), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Result.Findings) != 1 || state.Result.Findings[0].SourceKey != keys[0] {
+		t.Fatalf("finding bound to the wrong key: %+v", state.Result.Findings)
 	}
 }
 

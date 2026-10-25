@@ -96,7 +96,7 @@ func parseDeltaReviewReport(spec *gaterun.SessionSpec, report string) (*parsedRe
 	return out, nil
 }
 
-func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
+func parseSessionReport(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
 	if strings.TrimSpace(report) == "" {
 		return nil, fmt.Errorf("empty report")
 	}
@@ -105,7 +105,7 @@ func parseSessionReport(run *gaterun.Run, spec *gaterun.SessionSpec, report stri
 		return parseDeltaReviewReport(spec, report)
 	}
 	if gaterun.IsQualityKind(spec.Kind) {
-		return parseQualitySessionReport(run, spec, report)
+		return parseQualitySessionReport(absRoot, run, spec, report)
 	}
 	out := &parsedReport{Verdicts: map[string]string{}, EffectiveStatus: map[string]string{}, Analysis: map[string]string{}}
 	verdictLines := map[int]bool{}

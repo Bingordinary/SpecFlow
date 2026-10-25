@@ -211,7 +211,15 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			if kind == gaterun.SessionKindArchitecture {
 				lines = append(lines, "Suppressed by spec (0):")
 			}
-			lines = append(lines, "")
+			lines = append(lines,
+				"  # a finding block is written inside this block, after the lines above and before the",
+				"  # next "+prefix+"line; its id is the finding's report-order id:",
+				"  #   [P2] <location> — <retained observation or new finding> (actionable)",
+				"  #     problem: <problem>",
+				"  #     evidence: <evidence>",
+				"  #     impact: <impact>",
+				"  #     fix: <repair>   # or decision:/options: for needs_decision",
+				"")
 
 		case gaterun.SessionKindCross:
 			if items := crossItemsFor(run); len(items) > 0 {
@@ -347,6 +355,10 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 		add("quality-p3-anchor", "every P3 finding has a fact_anchor line", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_p3_finding"
+		c.Requirements[len(c.Requirements)-1].MinCount = 0
+		c.Requirements[len(c.Requirements)-1].MaxCount = -1
+		add("design-finding-placement", "a design finding block is written inside the File: design:<unit>:<file> block of the file it judges, after that block's gate_findings: line and before the next File: line; a finding whose location names another file this session judges is rejected, because a finding binds to the File: block it appears in — a finding listed after the last file block binds to the last file's key", "")
+		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	}
