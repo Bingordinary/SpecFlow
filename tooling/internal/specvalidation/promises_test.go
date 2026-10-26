@@ -15,6 +15,9 @@ rule_refs: none
 # Auth
 
 ## Design Narrative
+### Narrative
+
+### Authentication model
 
 Login uses token-based authentication.
 
@@ -298,6 +301,7 @@ rule_refs: none
 # Web
 
 ## Design Narrative
+### Narrative
 
 Sessions and billing.
 
@@ -420,6 +424,7 @@ rule_refs: none
 # Logger
 
 ## Design Narrative
+### Narrative
 
 Logger is the logging seam every unit writes through.
 
@@ -683,6 +688,7 @@ rule_refs: none
 # Auth
 
 ## Design Narrative
+### Narrative
 
 Passwords are hashed before storage.
 

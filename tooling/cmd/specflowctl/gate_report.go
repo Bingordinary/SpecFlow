@@ -29,7 +29,11 @@ type parsedReport struct {
 	Ownerships         []gaterun.FindingOwnership
 	Analysis           map[string]string
 	FileGateFindings   map[string]string // file key -> gate_findings content
-	Review             *gaterun.ReviewRecord
+	// SpecBasis records, per design key, the spec anchors the block declared
+	// (narrative-block headings and promise entry ids). The design record's
+	// spec pins are derived from them.
+	SpecBasis map[string][]string
+	Review    *gaterun.ReviewRecord
 }
 
 // itemMismatchTypeSet is the fixed MISMATCH type vocabulary of an item

@@ -182,7 +182,8 @@ the run's recorded input surface:
   file existed never judged it. This is the same rule the delta planner applies,
   so the planner can never carry a conclusion this check then rejects;
 - its structural region dependencies (`region:acceptance_item:<id>:<cid>`,
-  `region:section:<heading>:<cid>`) still resolve to the same content identity;
+  `region:promise:<id>:<cid>`, `region:section:<heading>:<cid>`,
+  `region:subsection:<heading>:<cid>`) still resolve to the same content identity;
 - the record's review protocol is the deployed one;
 - the record is not explicitly invalidated;
 - the records it references are themselves live;
@@ -394,12 +395,17 @@ the applicable rules whole-file (**not** the run's supplied evidence inputs:
 they stay readable but never define the record's dependencies, so neither an
 unrelated evidence edit nor a newly supplied evidence input re-runs the
 record); a
-design judgment pins the reviewed file whole-file and the unit main spec by
-section region — every section except the one carrying the acceptance-item
-set, so an acceptance-item edit re-runs that item without mechanically
-invalidating the unit's design judgments while a design-prose edit still
-re-runs them, and a spec that cannot be split that way falls back to the
-whole file, fail closed; an architecture judgment and the unit-level
+design judgment pins the reviewed file whole-file and **exactly the spec
+anchors its report declared** (`Spec basis` lines): a `###` or deeper
+narrative block (`region:subsection:<heading>:<cid>`, the block running from
+its heading through the line before the next heading of the same or a
+shallower level), a promise entry (`region:promise:<id>:<cid>`, the promise's
+`- id:` line through the line before the next promise's, located by id), or a
+`##` section heading (`region:section:<heading>:<cid>`) — so an
+acceptance-item edit, or a narrative or promise edit the judgment never
+declared, re-runs nothing while an edit to a declared anchor re-runs the
+judgment, and an anchor that no longer resolves fails closed and re-runs it;
+an architecture judgment and the unit-level
 alignment scan (`unit:<unit>`) pin the whole unit main spec, every declared
 code-surface file, and the unit's own appendices whole-file — the unit's
 recorded truth includes its appendices. An unknown region type

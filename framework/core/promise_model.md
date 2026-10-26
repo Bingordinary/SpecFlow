@@ -129,6 +129,13 @@ support truth owned by one unit; a rule keeps its own format.
 
 `## Promises` contains one `promises:` list. Each entry is one promise.
 
+A promise entry is also a **structural region**: it runs from the promise's
+`- id:` line through the line before the next promise's `- id:` line, and a
+design conclusion that relied on one promise pins that entry
+(`region:promise:<id>:<cid>`), located by id rather than by position — so
+reordering promises preserves every entry's content identity, while editing
+one promise re-runs only the design judgments that declared it.
+
 ==ATOM_BEGIN:promise_example==
 ```yaml
 promises:

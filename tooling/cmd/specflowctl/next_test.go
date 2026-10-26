@@ -42,6 +42,7 @@ rule_refs: [b_rule_%[1]s]
 # Demo
 
 ## Design Narrative
+### Narrative
 
 Prose.
 

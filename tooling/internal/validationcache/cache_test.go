@@ -518,7 +518,7 @@ func TestCheckValidateFailureRecordWithDependencyStaysBlocked(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(specPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: web\nrule_refs: none\n---\n\n## Design Narrative\n\nWeb.\n\n## Promises\n\npromises:\n  - id: web.session_api\n    summary: Session.\n    contract: {invariants: [session]}\n    depends_on: [auth.login_api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: web.session_ok\n    promise: web.session_api\n    description: Given a session, when read, then it returns.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: Go test.\n    pass_condition: Session read passes.\n    runnable: yes\n"
+	spec := "---\nid: web\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nWeb.\n\n## Promises\n\npromises:\n  - id: web.session_api\n    summary: Session.\n    contract: {invariants: [session]}\n    depends_on: [auth.login_api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: web.session_ok\n    promise: web.session_api\n    description: Given a session, when read, then it returns.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: Go test.\n    pass_condition: Session read passes.\n    runnable: yes\n"
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}

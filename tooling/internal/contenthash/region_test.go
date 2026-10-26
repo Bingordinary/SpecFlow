@@ -839,22 +839,16 @@ func TestLocateEnclosingSectionRegion(t *testing.T) {
 	}
 }
 
-func TestDesignSpecRegionsExcludesAcceptanceItemSection(t *testing.T) {
-	deps, ok := DesignSpecRegions(specWithItems)
-	if !ok {
-		t.Fatal("expected the acceptance-item section to be excludable")
+func TestSectionRegionPinsExcludeAcceptanceItemsByDeclaration(t *testing.T) {
+	deps := []string{
+		"region:section:Description:" + RegionCID(mustSection(t, specWithItems, "Description")),
+		"region:section:Dependencies:" + RegionCID(mustSection(t, specWithItems, "Dependencies")),
 	}
 	if !DepsPresent(specWithItems, deps) {
 		t.Fatalf("pinned section regions must hold for the same text: %v", deps)
 	}
-	// A section heading that carries the acceptance item set must not be pinned.
-	for _, dep := range deps {
-		if strings.HasPrefix(dep, "region:section:Testability") {
-			t.Fatalf("the acceptance-item section must be excluded, got %v", deps)
-		}
-	}
 
-	// Editing an acceptance item leaves the pinned regions intact.
+	// Editing the acceptance item set leaves the pinned regions intact.
 	itemEdited := strings.Replace(specWithItems, "The dependency unit", "The dependency unit, edited", 1)
 	if !DepsPresent(itemEdited, deps) {
 		t.Fatalf("an acceptance-item edit must not invalidate the pinned design sections: %v", deps)
@@ -867,17 +861,12 @@ func TestDesignSpecRegionsExcludesAcceptanceItemSection(t *testing.T) {
 	}
 }
 
-func TestDesignSpecRegionsFailsClosedWithoutSplittableSpec(t *testing.T) {
-	// No `##` heading at all: the whole text is one frontmatter region.
-	if _, ok := DesignSpecRegions("# U\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n"); ok {
-		t.Fatal("a spec with no section heading must not produce section deps")
+// mustSection locates a ## section of the given text or fails the test.
+func mustSection(t *testing.T, text, heading string) string {
+	t.Helper()
+	region, ok := LocateSectionRegion(text, heading)
+	if !ok {
+		t.Fatalf("section %q must be locatable", heading)
 	}
-	// The marker sits in the frontmatter region, before any `##` heading.
-	if _, ok := DesignSpecRegions("# U\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n\n## Notes\n\nProse.\n"); ok {
-		t.Fatal("a marker in the frontmatter region must fail closed")
-	}
-	// A duplicated `##` heading is not locatable, so it must not be pinned.
-	if _, ok := DesignSpecRegions("---\nid: u\n---\n\n## Notes\n\nA.\n\n## Notes\n\nB.\n\n## Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: u.core\n    description: Core.\n"); ok {
-		t.Fatal("a duplicated section heading must fail closed")
-	}
+	return region.Text
 }

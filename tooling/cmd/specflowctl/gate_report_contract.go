@@ -202,7 +202,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 					lines = append(lines, field+": <assessment> — <basis>")
 				}
 			} else {
-				lines = append(lines, "spec_requirements: <active check of the unit requirements> — <basis>", "Observation disposition: <public observation id> = <retained|suppressed> — <unit-specific evidence and reason>")
+				lines = append(lines, "spec_requirements: <active check of the unit requirements> — <basis>")
+				lines = append(lines,
+					"Spec basis: <narrative block heading or promise id>",
+					"  # at least one Spec basis line per file block, one anchor each: the spec",
+					"  # anchors this judgment relied on — a ### (or deeper) narrative block heading,",
+					"  # a promise id, or a ## section heading. Every anchor must resolve; an edit to",
+					"  # an anchor you declared re-runs this judgment, an edit elsewhere does not.")
+				lines = append(lines, "Observation disposition: <public observation id> = <retained|suppressed> — <unit-specific evidence and reason>")
 			}
 			lines = append(lines,
 				"gate_findings: none | [P0|P1] {finding};",
@@ -347,6 +354,8 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			add("quality-"+field, "exactly one assessment and non-empty basis per file block", "")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		}
+		add("quality-spec-basis", "at least one `Spec basis: <anchor>` line per file block, one anchor each — the narrative block headings and promise entry ids this judgment relied on; every anchor must resolve to an existing unique heading or promise entry of the unit spec, and an edit to a declared anchor re-runs the judgment while an edit elsewhere does not", "")
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		add("quality-gate-findings", "exactly one gate_findings line per file block: `none` or one or more `[P0|P1] {finding}` entries separated by `;` — a retained P2/P3 observation is never listed here", "")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		add("quality-finding-id-order", "finding ids are {run}/{session}/F{n} assigned in report order across the whole report (the k-th finding block in report order is F{k}), not restarted per file; a design Observation disposition copies the id of the code block that reported it", "")

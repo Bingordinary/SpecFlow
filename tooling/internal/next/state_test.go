@@ -28,6 +28,7 @@ rule_refs: none
 # Auth
 
 ## Design Narrative
+### Narrative
 
 Narrative.
 
@@ -79,7 +80,7 @@ acceptance_item_set:
 func writeNextProvider(t *testing.T, root, unit, promiseID string) {
 	t.Helper()
 	dir := filepath.Join(root, "docs/specs/units/candidate")
-	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Provider.\n    contract: {invariants: [provider]}\n"
+	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Provider.\n    contract: {invariants: [provider]}\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +112,7 @@ rule_refs: none
 ---
 
 ## Design Narrative
+### Narrative
 
 Narrative.
 

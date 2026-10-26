@@ -123,7 +123,7 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
-		"## Design Narrative\n\nProse.\n\n" +
+		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
 		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -389,7 +389,7 @@ func TestFreshAllMixed(t *testing.T) {
 	// stable-only unit must NOT appear
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	os.MkdirAll(stableDir, 0755)
-	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\nrule_refs: none\n---\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n"), 0644)
+	os.WriteFile(filepath.Join(stableDir, "unit_legacy.md"), []byte("---\nid: legacy\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n"), 0644)
 
 	// one rule with fresh validate cache
 	rulePath := writeRuleSpec(t, repoRoot, "b_rule_auth")
@@ -827,7 +827,7 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 	}
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
-		"## Design Narrative\n\nStable fixture.\n\n" +
+		"## Design Narrative\n### Narrative\n\nStable fixture.\n\n" +
 		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: test\n    pass_condition: ok\n    runnable: yes\n"
 	grWriteFile(t, repoRoot, "src/"+name+".go", "package fixture\n")

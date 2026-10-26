@@ -724,7 +724,7 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 		"---\nid: "+unitName+"\n"+
 			"rule_refs: none\n---\n"+
 			"\n# "+unitName+"\n\n"+
-			"## Design Narrative\n\nIntegration fixture.\n\n"+
+			"## Design Narrative\n### Narrative\n\n### Fixture narrative\n\nIntegration fixture.\n\n"+
 			"## Promises\n\n"+
 			"promises:\n"+
 			"  - id: "+unitName+".core\n"+
@@ -869,6 +869,46 @@ func TestCheckRegionLocatability_DuplicatedHeadingFails(t *testing.T) {
 	}
 	if !strings.Contains(result.Details, "duplicated ## heading") {
 		t.Fatalf("expected duplication detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_DeepDuplicatedHeadingFails(t *testing.T) {
+	// A design record locates a narrative block by its heading text, so a
+	// duplicated text at any level is a locatability defect, not only `##`.
+	repoRoot := newRepo(t)
+	writeCandidate(t, repoRoot, "deepdup",
+		"---\nid: deepdup\nrule_refs: none\n---\n\n## Design Narrative\n\n### Same\n\nFirst.\n\n#### Same\n\nSecond.\n")
+	result := checkRegionLocatability(repoRoot, "deepdup")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for a duplicated heading text below ##, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "levels 1-6") {
+		t.Fatalf("expected all-level duplication detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_NarrativeStrayProseFails(t *testing.T) {
+	// Design records pin the narrative blocks their report declares, so prose
+	// outside every ### block would belong to no anchor.
+	repoRoot := newRepo(t)
+	writeCandidate(t, repoRoot, "stray",
+		"---\nid: stray\nrule_refs: none\n---\n\n## Design Narrative\n\nStray prose.\n\n### Block\n\nReasoned prose.\n")
+	result := checkRegionLocatability(repoRoot, "stray")
+	if result.Status != Fail {
+		t.Fatalf("expected FAIL for Design Narrative prose outside every ### block, got %s: %s", result.Status, result.Details)
+	}
+	if !strings.Contains(result.Details, "outside every ### block") {
+		t.Fatalf("expected stray-prose detail, got: %s", result.Details)
+	}
+}
+
+func TestCheckRegionLocatability_OrganizedNarrativePasses(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeCandidate(t, repoRoot, "organized",
+		"---\nid: organized\nrule_refs: none\n---\n\n## Design Narrative\n\n### First\n\nFirst rationale.\n\n### Second\n\nSecond rationale, with a nested heading.\n\n#### Second detail\n\nMore.\n")
+	result := checkRegionLocatability(repoRoot, "organized")
+	if result.Status != Pass {
+		t.Fatalf("expected PASS for a ###-organized narrative, got %s: %s", result.Status, result.Details)
 	}
 }
 

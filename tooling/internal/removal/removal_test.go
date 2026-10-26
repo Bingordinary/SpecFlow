@@ -251,7 +251,7 @@ func TestPreflightErrorsAndRollback(t *testing.T) {
 				appendix(t, root, "stable", "other", "unit_auth_bad.md", "")
 			case "unresolved":
 				put(t, root, "docs/specs/units/candidate/unit_consumer.md",
-					"---\nid: consumer\nrule_refs: none\n---\n\n# Unit\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: consumer.core\n    summary: Core.\n    contract: {invariants: [core]}\n    depends_on: [ghost.api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: consumer.core\n    promise: consumer.core\n    description: core\n")
+					"---\nid: consumer\nrule_refs: none\n---\n\n# Unit\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: consumer.core\n    summary: Core.\n    contract: {invariants: [core]}\n    depends_on: [ghost.api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: consumer.core\n    promise: consumer.core\n    description: core\n")
 			case "symlink":
 				outside := t.TempDir()
 				put(t, outside, "foreign.md", "---\nid: x\n---\n")
@@ -359,6 +359,7 @@ rule_refs: none
 ---
 
 ## Design Narrative
+### Narrative
 
 Narrative.
 

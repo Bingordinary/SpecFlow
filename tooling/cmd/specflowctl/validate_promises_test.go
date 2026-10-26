@@ -16,6 +16,7 @@ rule_refs: none
 # Auth
 
 ## Design Narrative
+### Narrative
 
 Login uses token-based authentication.
 
@@ -67,6 +68,7 @@ rule_refs: none
 # Auth
 
 ## Design Narrative
+### Narrative
 
 The logger is the logging seam every unit writes through.
 

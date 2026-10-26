@@ -440,6 +440,32 @@ func checkRegionLocatability(repoRoot, unitName string) CheckResult {
 		seen[r.Heading] = true
 	}
 
+	// 3b. Unique heading texts at every level: design records pin the
+	// narrative blocks and promise entries their report declares, and a
+	// narrative block is located by its heading text, so a duplicated heading
+	// text at any level cannot be located unambiguously and fails closed
+	// (framework/spec_writing_guide.md §13).
+	if dups := contenthash.DuplicateHeadings(content); len(dups) > 0 {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: fmt.Sprintf("duplicated heading text at levels 1-6: %q — heading texts must be unique at every level so a design record's narrative-block anchors can be located; rename one of them", strings.Join(dups, `", "`)),
+		}
+	}
+
+	// 3c. Design Narrative content must live inside level-3-or-deeper blocks:
+	// a design record pins the narrative blocks its report declares, so prose
+	// sitting directly under the section heading has no anchor and would be
+	// silently uncovered by every design pin
+	// (framework/spec_writing_guide.md §13).
+	if stray, found := contenthash.NarrativeStrayProseLines(content); found && len(stray) > 0 {
+		return CheckResult{
+			Name:    "Region locatability",
+			Status:  Fail,
+			Details: fmt.Sprintf("Design Narrative carries prose outside every ### block at lines %v — organize the narrative into ### blocks so a design record can pin the blocks it relies on; every line of the section must belong to a ### or deeper block", stray),
+		}
+	}
+
 	// 4. Non-empty acceptance item ids: an empty id cannot be located as an
 	// item region and makes the whole-set semantic identity uncomputable
 	// (contenthash.AcceptanceItemSetCID fails closed on it), so it is the

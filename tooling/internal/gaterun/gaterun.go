@@ -276,6 +276,11 @@ type SessionResult struct {
 	ReportDigest            string               `json:"report_digest"`
 	Observations            []Finding            `json:"observations,omitempty"`
 	ObservationDispositions []FindingDisposition `json:"observation_dispositions,omitempty"`
+	// SpecBasis records, per design key, the spec anchors the report declared
+	// as the rationale its judgment relied on: narrative-block headings and
+	// promise entry ids. The design record's spec pins are derived from these
+	// anchors (framework/unit_verify_checklist.md §Output Format → Spec basis).
+	SpecBasis map[string][]string `json:"spec_basis,omitempty"`
 }
 
 // EvidencePin is the whole-file content pin of one evidence file a

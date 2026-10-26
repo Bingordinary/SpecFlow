@@ -56,6 +56,12 @@ func qualityReportBlocks(spec *gaterun.SessionSpec, report string) ([]qualityRep
 // `src/a.go`. A location that carries no line suffix is returned unchanged.
 var findingLocationLineRe = regexp.MustCompile(`^(.*?):\d+(?:-\d+)?$`)
 
+// specBasisLineRe captures one design `Spec basis:` declaration: the anchor —
+// a narrative-block heading text or a promise entry id — that the judgment
+// relied on. One line per anchor, so a heading text may contain any character
+// except a newline.
+var specBasisLineRe = regexp.MustCompile(`(?m)^Spec basis: (\S[^\n]*)$`)
+
 // findingLocationFile extracts the file a finding's own `{location}` names —
 // the text before the subject separator, with its `:{line}` suffix removed. A
 // location that names no file (a bare subject such as `token shape`, or a
@@ -160,6 +166,31 @@ func parseQualitySessionReport(absRoot string, run *gaterun.Run, spec *gaterun.S
 		}
 		if err != nil {
 			return nil, fmt.Errorf("file %q: %w", block.Key, err)
+		}
+		// A design judgment declares the spec anchors its conclusion relied
+		// on — narrative-block headings and promise entry ids — and the
+		// record's spec pins are derived from them. A block without the
+		// declaration is rejected here rather than under-pinned silently; the
+		// anchors themselves are resolved against the unit spec when the
+		// record is saved (gaterun.SaveJudgment), where an unresolvable anchor
+		// is rejected too.
+		if ck.Kind == gaterun.SessionKindDesign {
+			matches := specBasisLineRe.FindAllStringSubmatch(block.Text, -1)
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("file %q: a design block must declare the spec anchors its judgment relied on — add at least one `Spec basis: <narrative block heading or promise id>` line", block.Key)
+			}
+			if out.SpecBasis == nil {
+				out.SpecBasis = map[string][]string{}
+			}
+			for _, m := range matches {
+				out.SpecBasis[block.Key] = append(out.SpecBasis[block.Key], strings.TrimSpace(m[1]))
+			}
+			// Resolve the anchors here so an anchor that names nothing is
+			// rejected where the report is submitted; SaveJudgment resolves
+			// the same anchors again when it derives the record's pins.
+			if err := gaterun.ValidateSpecBasis(absRoot, run, out.SpecBasis[block.Key]); err != nil {
+				return nil, fmt.Errorf("file %q: %w", block.Key, err)
+			}
 		}
 		out.Verdicts[block.Key] = token
 		out.FileGateFindings[block.Key] = gateFindings

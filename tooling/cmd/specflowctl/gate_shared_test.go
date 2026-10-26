@@ -99,7 +99,7 @@ func TestSharedPublicReviewReuseAndIndependentDesign(t *testing.T) {
 }
 func TestSharedUnfinishedPeerDoesNotBlock(t *testing.T) {
 	root, _, orderSpec := sharedFixture(t)
-	grWriteFile(t, root, orderSpec, "---\nid: order\nrule_refs: none\n---\n\n## Design Narrative\n\nDraft. Design unfinished.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n")
+	grWriteFile(t, root, orderSpec, "---\nid: order\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nDraft. Design unfinished.\n\n## Promises\n\npromises: []\n\n## Acceptance Items\n\nacceptance_item_set: []\n")
 	auth := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 	sharedFinish(t, root, auth)
 	records, err := judgments.List(root)
@@ -298,13 +298,13 @@ func TestSharedObservationDecisionsRemainIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation := result.Observations[0].ID
-	authDesign := "File: design:auth:contracts.js\nconclusion: acceptable\nspec_requirements: token behavior checked — auth contract uses this shape\ngate_findings: none\nObservation disposition: " + observation + " = suppressed — auth spec explicitly accepts this shape and its caller retains token\nDependency scope:\ndesign:auth:contracts.js: " + authSpec + ": Description\ndesign:auth:contracts.js: contracts.js: all\n"
+	authDesign := "File: design:auth:contracts.js\nconclusion: acceptable\nspec_requirements: token behavior checked — auth contract uses this shape\nSpec basis: Narrative\nSpec basis: Promises\ngate_findings: none\nObservation disposition: " + observation + " = suppressed — auth spec explicitly accepts this shape and its caller retains token\nDependency scope:\ndesign:auth:contracts.js: " + authSpec + ": Description\ndesign:auth:contracts.js: contracts.js: all\n"
 	if err := sharedSubmit(t, root, auth, "design:auth:contracts.js", authDesign); err != nil {
 		t.Fatal(err)
 	}
 	sharedFinish(t, root, auth)
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
-	orderDesign := "File: design:order:contracts.js\nconclusion: unacceptable — token required\nspec_requirements: order requires token — the contract discards it\ngate_findings: [P1] token shape\nObservation disposition: " + observation + " = retained — order spec requires a caller shape that is violated\nDependency scope:\ndesign:order:contracts.js: " + orderSpec + ": Description\ndesign:order:contracts.js: contracts.js: all\n"
+	orderDesign := "File: design:order:contracts.js\nconclusion: unacceptable — token required\nspec_requirements: order requires token — the contract discards it\nSpec basis: Narrative\nSpec basis: Promises\ngate_findings: [P1] token shape\nObservation disposition: " + observation + " = retained — order spec requires a caller shape that is violated\nDependency scope:\ndesign:order:contracts.js: " + orderSpec + ": Description\ndesign:order:contracts.js: contracts.js: all\n"
 	if err := sharedSubmit(t, root, order, "design:order:contracts.js", orderDesign); err != nil {
 		t.Fatal(err)
 	}

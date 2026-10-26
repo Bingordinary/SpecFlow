@@ -462,7 +462,7 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 		t.Fatal(err)
 	}
 	content := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
-		"## Design Narrative\n\nProse.\n\n" +
+		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
 		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n"
 	for _, id := range itemIDs {
@@ -476,11 +476,11 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 
 // writeGateBaseline writes a unit gate baseline cache with the given logical
 // statuses.
-func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, blocking bool, entries []validationcache.FileEntry, statuses map[string]string) {
+func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, blocking bool, entries []validationcache.FileEntry, statuses map[string]string, designAnchors ...[]string) {
 	t.Helper()
 	state := JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"}
 	if command == GateVerify {
-		entries, state = buildVerifyBaselineFixture(t, repoRoot, entries, statuses)
+		entries, state = buildVerifyBaselineFixture(t, repoRoot, entries, statuses, designAnchors...)
 	}
 	judgments, err := json.Marshal(state)
 	if err != nil {
@@ -1274,8 +1274,12 @@ func TestPartitionBatchesGroupsRunnableSessions(t *testing.T) {
 	}
 }
 
-func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationcache.FileEntry, statuses map[string]string) ([]validationcache.FileEntry, JudgmentBaseline) {
+func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationcache.FileEntry, statuses map[string]string, designAnchors ...[]string) ([]validationcache.FileEntry, JudgmentBaseline) {
 	t.Helper()
+	anchors := []string{"Narrative", "Promises"}
+	if len(designAnchors) > 0 {
+		anchors = designAnchors[0]
+	}
 	var extra []string
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Path, "tests/") {
@@ -1315,6 +1319,9 @@ func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationc
 		}
 		state.LogicalStatus[ck.Key] = status
 		result := SessionResult{Kind: ck.Kind, Verdicts: map[string]string{ck.Key: verdict}, EffectiveStatus: map[string]string{ck.Key: status}, ReportDigest: judgments.Digest([]byte("fixture"))}
+		if ck.Kind == SessionKindDesign {
+			result.SpecBasis = map[string][]string{ck.Key: anchors}
+		}
 		for _, p := range coverageReadRefs(root, run, ck) {
 			generated = append(generated, evidenceEntryWithChecks(t, root, p, []validationcache.CheckEntry{{Check: ck.Key, Lens: ck.Lens, Status: status}}))
 		}

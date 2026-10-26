@@ -158,7 +158,7 @@ func TestCheckVerificationMethodShape(t *testing.T) {
 	if got := CheckVerificationMethodShape(recipe); got.Status != Fail {
 		t.Fatalf("step recipe = %v, want FAIL", got)
 	}
-	// A step recipe shown inside a fenced example is content (guide §13.6),
+	// A step recipe shown inside a fenced example is content (guide §13.7),
 	// not a real field — it must PASS.
 	fenced := "---\nid: auth\n---\n\n# auth\n\n## 1. Context\n\n```yaml\nacceptance_item_set:\n  - id: auth.core\n    verification_method: Verify (1) save (2) load.\n```\n\n## 2. Testability / Acceptance Criteria\n\nacceptance_item_set:\n  - id: auth.real\n    description: Given X, When Y, Then Z.\n    verification_method: Go test for login behavior.\n    pass_condition: Holds.\n"
 	if got := CheckVerificationMethodShape(fenced); got.Status != Pass {

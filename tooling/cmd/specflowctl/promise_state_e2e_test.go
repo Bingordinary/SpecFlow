@@ -310,7 +310,7 @@ func TestMalformedPromiseSectionDiagnostics(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: broken\nrule_refs: none\n---\n\n# Broken\n\n## Design Narrative\n\nProse.\n\n## Promises\n\npromises: [\n  - id: broken.api\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: broken.check\n    promise: broken.api\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/broken.go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
+	spec := "---\nid: broken\nrule_refs: none\n---\n\n# Broken\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises: [\n  - id: broken.api\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: broken.check\n    promise: broken.api\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/broken.go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_broken.md"), []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}

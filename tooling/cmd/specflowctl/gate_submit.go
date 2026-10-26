@@ -612,6 +612,7 @@ func sessionResult(spec *gaterun.SessionSpec, parsed *parsedReport, digest strin
 		Dispositions:            parsed.Dispositions,
 		Ownerships:              parsed.Ownerships,
 		Analysis:                parsed.Analysis,
+		SpecBasis:               parsed.SpecBasis,
 		ReportDigest:            digest,
 	}
 }

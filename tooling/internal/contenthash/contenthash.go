@@ -218,19 +218,6 @@ func AcceptanceItemsRegion(text string) (region string, ok bool) {
 	return strings.Join(lines[startIdx:endIdx], "\n"), true
 }
 
-// AcceptanceMarkerIndex returns the 0-based line index of the exact
-// acceptance_item_set marker line — the same fence-aware location
-// AcceptanceItemsRegion uses — so callers can map the marker onto the
-// section regions of the same text. ok is false when the marker is absent.
-func AcceptanceMarkerIndex(text string) (int, bool) {
-	lines := strings.Split(text, "\n")
-	startIdx, _, ok := acceptanceItemsRegionBounds(lines)
-	if !ok || startIdx < 0 {
-		return 0, false
-	}
-	return startIdx, true
-}
-
 // acceptanceItemsRegionBounds locates the acceptance_item_set structural
 // region of the split text and returns its line bounds: startIdx is the index
 // of the exact marker line, endIdx the index one past the region's last line
@@ -701,63 +688,6 @@ func SectionRegions(text string) []SectionRegion {
 	return regions
 }
 
-// DesignSpecRegions returns the section-region dependency strings a design
-// judgment pins to hold the unit spec as its rationale: every section region
-// (frontmatter plus each `##` section) except the one carrying the
-// acceptance_item_set marker, whose text is owned by the per-item judgments.
-// An acceptance-item edit therefore does not mechanically invalidate the
-// unit's design judgments, while an edit to the unit's design prose still
-// does. ok is false when exactly the item section cannot be excluded — a spec
-// with no `##` heading, or one whose marker sits in the frontmatter region —
-// so the caller falls back to pinning the whole file, fail closed
-// (framework/validation_cache.md §Structural Region Dependencies).
-func DesignSpecRegions(text string) ([]string, bool) {
-	regions := SectionRegions(text)
-	if len(regions) < 2 {
-		return nil, false
-	}
-	// A duplicated section heading is not locatable (LocateSectionRegion
-	// fails closed), so pinning it would make the record uncheckable. Fall
-	// back to the whole file instead.
-	seen := map[string]int{}
-	for _, r := range regions {
-		if r.Heading == "" {
-			continue
-		}
-		seen[r.Heading]++
-		if seen[r.Heading] > 1 {
-			return nil, false
-		}
-	}
-	exclude := -1
-	if idx, ok := AcceptanceMarkerIndex(text); ok {
-		line := idx + 1
-		for i, r := range regions {
-			if r.Heading == "" {
-				continue
-			}
-			if r.Start <= line && line <= r.End {
-				exclude = i
-				break
-			}
-		}
-	}
-	if exclude < 0 {
-		return nil, false
-	}
-	deps := make([]string, 0, len(regions)-1)
-	for i, r := range regions {
-		if i == exclude {
-			continue
-		}
-		deps = append(deps, "region:section:"+r.Heading+":"+RegionCID(r.Text))
-	}
-	if len(deps) == 0 {
-		return nil, false
-	}
-	return deps, true
-}
-
 // LocateSectionRegion locates the section region with the given heading text
 // (without the `## ` prefix). ok is false when no section has that heading
 // or when more than one section has it — duplicated headings fail closed.
@@ -862,14 +792,297 @@ func IsSectionSplittable(text string) bool {
 	return len(SectionRegions(text)) >= 2
 }
 
+// headingLevel returns the heading level of a heading line (1 for `#` through
+// 6 for `######`), or 0 when the line is not a heading: the trimmed line must
+// be `#` characters followed by a space or a tab, and markdown has no heading
+// deeper than level six.
+func headingLevel(line string) int {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "#") {
+		return 0
+	}
+	n := 0
+	for n < len(t) && t[n] == '#' {
+		n++
+	}
+	if n > 6 || n >= len(t) || (t[n] != ' ' && t[n] != '\t') {
+		return 0
+	}
+	return n
+}
+
+// narrativeHeadingText extracts the heading text of a heading line at any
+// level: every leading `#` character removed, surrounding space trimmed.
+func narrativeHeadingText(line string) string {
+	return strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "#"))
+}
+
+// NarrativeBlock is one addressable narrative block: a heading of level 3 or
+// deeper through the line before the next heading of the same or a shallower
+// level. A `##` section heading ends every block nested inside it; a deeper
+// heading (a `####` inside a `###`) does not. Blocks are located by heading
+// text — the format requires heading texts to be unique at every level — so
+// moving a block never changes its content identity, while editing it does.
+type NarrativeBlock struct {
+	Level   int    // the heading's level (3 = `###`, 4 = `####`, …)
+	Heading string // the heading text without its `#` prefix
+	Start   int    // 1-based line number of the block's first line (the heading)
+	End     int    // 1-based line number of the block's last line (inclusive)
+	Text    string // the block content, heading line included
+}
+
+// NarrativeBlocks lists every level-3-or-deeper heading block of the given
+// normalized text in document order, nested blocks included (a `####` inside
+// a `###` is listed as its own block, and its parent lists the same lines as
+// its own tail). Fenced code blocks are content: a heading-like line inside a
+// fence neither starts nor ends a block.
+func NarrativeBlocks(text string) []NarrativeBlock {
+	lines := strings.Split(text, "\n")
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n]
+	}
+	var blocks []NarrativeBlock
+	fence := fenceTracker{}
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		if fence.active {
+			fence.advance(line)
+			i++
+			continue
+		}
+		level := headingLevel(line)
+		if level < 3 {
+			fence.advance(line)
+			i++
+			continue
+		}
+		inner := fenceTracker{}
+		j := i + 1
+		for j < len(lines) {
+			l2 := lines[j]
+			if inner.active {
+				inner.advance(l2)
+				j++
+				continue
+			}
+			if h := headingLevel(l2); h > 0 && h <= level {
+				break
+			}
+			inner.advance(l2)
+			j++
+		}
+		end := j
+		for end-1 > i && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		blocks = append(blocks, NarrativeBlock{
+			Level:   level,
+			Heading: narrativeHeadingText(line),
+			Start:   i + 1,
+			End:     end,
+			Text:    strings.Join(lines[i:end], "\n"),
+		})
+		// Keep scanning inside the block: a deeper heading is an addressable
+		// block of its own.
+		i++
+	}
+	return blocks
+}
+
+// LocateNarrativeBlock locates the level-3-or-deeper block with the given
+// heading text. ok is false when no block has that heading or when more than
+// one does — the format requires heading texts to be unique at every level, so
+// a duplicate is a structural defect and the locator fails closed.
+func LocateNarrativeBlock(text, heading string) (NarrativeBlock, bool) {
+	var found NarrativeBlock
+	seen := false
+	for _, b := range NarrativeBlocks(text) {
+		if b.Heading != heading {
+			continue
+		}
+		if seen {
+			return NarrativeBlock{}, false
+		}
+		found = b
+		seen = true
+	}
+	if !seen {
+		return NarrativeBlock{}, false
+	}
+	return found, true
+}
+
+// PromiseRegions lists every promise entry region of the `## Promises` section
+// in document order. A promise region is the promise's `- id:` line through
+// the line before the next promise's `- id:` line (or the end of the section),
+// with trailing blank lines excluded — the same shape an acceptance item
+// region has. Regions are located by id, not by position, so reordering
+// promises preserves every region's content identity.
+func PromiseRegions(text string) []AcceptanceItemRegion {
+	section, ok := LocateSectionRegion(text, "Promises")
+	if !ok {
+		return nil
+	}
+	lines := strings.Split(section.Text, "\n")
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n]
+	}
+	var boundaries []int
+	fence := fenceTracker{}
+	for i, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if _, isID := acceptanceItemID(line); isID {
+			boundaries = append(boundaries, i)
+		}
+		fence.advance(line)
+	}
+	var regions []AcceptanceItemRegion
+	for i, start := range boundaries {
+		end := len(lines)
+		if i+1 < len(boundaries) {
+			end = boundaries[i+1]
+		}
+		for end-1 > start && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		id, _ := acceptanceItemID(lines[start])
+		regions = append(regions, AcceptanceItemRegion{
+			ID:    id,
+			Start: section.Start + start,
+			End:   section.Start + end,
+			Text:  strings.Join(lines[start:end], "\n"),
+		})
+	}
+	return regions
+}
+
+// LocatePromiseRegion locates the promise entry region with the given id.
+// ok is false when no promise has that id or when more than one does — every
+// failure mode fails closed.
+func LocatePromiseRegion(text, id string) (AcceptanceItemRegion, bool) {
+	var found AcceptanceItemRegion
+	seen := false
+	for _, r := range PromiseRegions(text) {
+		if r.ID != id {
+			continue
+		}
+		if seen {
+			return AcceptanceItemRegion{}, false
+		}
+		found = r
+		seen = true
+	}
+	if !seen {
+		return AcceptanceItemRegion{}, false
+	}
+	return found, true
+}
+
+// SpecAnchorDep resolves one design report's declared spec anchor to the
+// region dependency string that pins it. A promise id pins that promise's
+// entry region; a `##` heading text pins the section region; a deeper heading
+// text pins its narrative block. ok is false when the anchor resolves to
+// nothing — the caller rejects the report instead of under-pinning the
+// judgment.
+func SpecAnchorDep(text, anchor string) (string, bool) {
+	if region, ok := LocatePromiseRegion(text, anchor); ok {
+		return "region:promise:" + anchor + ":" + RegionCID(region.Text), true
+	}
+	if region, ok := LocateSectionRegion(text, anchor); ok {
+		return "region:section:" + anchor + ":" + RegionCID(region.Text), true
+	}
+	if block, ok := LocateNarrativeBlock(text, anchor); ok {
+		return "region:subsection:" + anchor + ":" + RegionCID(block.Text), true
+	}
+	return "", false
+}
+
+// DuplicateHeadings returns the heading texts that appear more than once in
+// the given normalized text — at any heading level, outside fenced code
+// blocks, in first-appearance order. Design records pin narrative blocks by
+// heading text and promise entries by id, so a duplicated heading text cannot
+// be located unambiguously (framework/spec_writing_guide.md §13).
+func DuplicateHeadings(text string) []string {
+	lines := strings.Split(text, "\n")
+	fence := fenceTracker{}
+	seen := map[string]int{}
+	var order []string
+	for _, line := range lines {
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if level := headingLevel(line); level > 0 {
+			h := narrativeHeadingText(line)
+			if seen[h] == 0 {
+				order = append(order, h)
+			}
+			seen[h]++
+		}
+		fence.advance(line)
+	}
+	var dups []string
+	for _, h := range order {
+		if seen[h] > 1 {
+			dups = append(dups, h)
+		}
+	}
+	return dups
+}
+
+// NarrativeStrayProseLines returns the 1-based line numbers of the non-blank
+// content lines that sit directly inside the `## Design Narrative` section but
+// outside every level-3-or-deeper block — prose no design-block anchor can
+// address. ok is false when the section is absent; another check reports a
+// missing section.
+func NarrativeStrayProseLines(text string) (lines []int, ok bool) {
+	section, ok := LocateSectionRegion(text, "Design Narrative")
+	if !ok {
+		return nil, false
+	}
+	body := strings.Split(section.Text, "\n")
+	if n := len(body); n > 0 && body[n-1] == "" {
+		body = body[:n]
+	}
+	fence := fenceTracker{}
+	level := 0
+	// body[0] is the section's own `## Design Narrative` heading; the scan
+	// starts after it so the section heading itself is not a boundary.
+	for i := 1; i < len(body); i++ {
+		line := body[i]
+		if fence.active {
+			fence.advance(line)
+			continue
+		}
+		if h := headingLevel(line); h > 0 {
+			if h <= 2 {
+				break
+			}
+			level = h
+			fence.advance(line)
+			continue
+		}
+		if level == 0 && strings.TrimSpace(line) != "" {
+			lines = append(lines, section.Start+i)
+		}
+		fence.advance(line)
+	}
+	return lines, true
+}
+
 // ListMissingDeps reports which declared dependencies no longer hold for the
 // given normalized text. Chunk CIDs are matched against the text's current
 // content-defined chunk set; structural region dependencies
 // (`region:acceptance_items:<cid>` whole set, `region:acceptance_item:<id>:<cid>`
-// one item) and section region dependencies
-// (`region:section:<heading>:<cid>`) are re-located by structure and compared
-// by content identity. An unknown region type fails closed (reported
-// missing). Missing dependencies are returned in declaration order.
+// one item, `region:promise:<id>:<cid>` one promise) and section region
+// dependencies (`region:section:<heading>:<cid>` a `##` section,
+// `region:subsection:<heading>:<cid>` a level-3-or-deeper narrative block) are
+// re-located by structure and compared by content identity. An unknown region
+// type fails closed (reported missing). Missing dependencies are returned in
+// declaration order.
 func ListMissingDeps(text string, deps []string) []string {
 	fc := ChunkText(text)
 	present := make(map[string]bool, len(fc.Chunks))
@@ -913,6 +1126,28 @@ func ListMissingDeps(text string, deps []string) []string {
 				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region.Text)) {
 					missing = append(missing, dep)
 				}
+			case "subsection":
+				idx := strings.LastIndex(payload, ":sha256:")
+				if idx < 0 {
+					missing = append(missing, dep)
+					continue
+				}
+				heading, cid := payload[:idx], payload[idx+1:]
+				block, ok := LocateNarrativeBlock(text, heading)
+				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(block.Text)) {
+					missing = append(missing, dep)
+				}
+			case "promise":
+				idx := strings.LastIndex(payload, ":sha256:")
+				if idx < 0 {
+					missing = append(missing, dep)
+					continue
+				}
+				id, cid := payload[:idx], payload[idx+1:]
+				region, ok := LocatePromiseRegion(text, id)
+				if !ok || stripCIDPrefix(cid) != stripCIDPrefix(RegionCID(region.Text)) {
+					missing = append(missing, dep)
+				}
 			default:
 				missing = append(missing, dep)
 			}
@@ -928,10 +1163,10 @@ func ListMissingDeps(text string, deps []string) []string {
 // DepsPresent reports whether every declared dependency still holds for the
 // given normalized text. Chunk CIDs are matched against the text's current
 // content-defined chunk set; structural region dependencies
-// (`region:<type>:<cid>` / `region:acceptance_item:<id>:<cid>`) are
-// re-located by structure and compared by content identity, so edits outside
-// the region do not invalidate them. An unknown region type fails closed. An
-// empty deps list reports true.
+// (`region:<type>:<cid>` / `region:acceptance_item:<id>:<cid>` /
+// `region:promise:<id>:<cid>`) are re-located by structure and compared by
+// content identity, so edits outside the region do not invalidate them. An
+// unknown region type fails closed. An empty deps list reports true.
 func DepsPresent(text string, deps []string) bool {
 	return len(ListMissingDeps(text, deps)) == 0
 }

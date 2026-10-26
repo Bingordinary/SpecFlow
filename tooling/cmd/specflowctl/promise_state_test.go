@@ -30,7 +30,7 @@ func writePromiseStateUnit(t *testing.T, repoRoot, unit, promiseID, dependsOn, c
 		depends = "    depends_on: [" + dependsOn + "]\n"
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
-		"## Design Narrative\n\nNarrative.\n\n" +
+		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
 		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -73,7 +73,7 @@ func writeLayerPromiseUnit(t *testing.T, repoRoot, layer, unit, promiseID, depen
 		depends = "    depends_on: [" + dependsOn + "]\n"
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
-		"## Design Narrative\n\nNarrative.\n\n" +
+		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
 		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)

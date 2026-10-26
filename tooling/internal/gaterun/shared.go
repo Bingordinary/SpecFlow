@@ -505,6 +505,37 @@ func PublishPublic(root string, run *Run, spec *SessionSpec, state *SessionState
 	return writeRun(root, run)
 }
 
+// SpecBasisError is the shared diagnostic for a design report whose declared
+// spec anchor cannot be resolved against the unit main spec. gate-submit calls
+// ValidateSpecBasis so the report is rejected where it is submitted, and
+// SaveJudgment resolves the same anchors again when it derives the record's
+// pins — the two must never disagree.
+type SpecBasisError struct {
+	Anchor string
+	Spec   string
+}
+
+func (e SpecBasisError) Error() string {
+	return fmt.Sprintf("Spec basis anchor %q does not resolve in %s — name an existing promise id or a unique heading of the unit spec", e.Anchor, e.Spec)
+}
+
+// ValidateSpecBasis resolves a design report's declared spec anchors against
+// the unit main spec of the run. An anchor is a promise entry id, a `##`
+// section heading, or a `###` or deeper narrative block heading.
+func ValidateSpecBasis(root string, run *Run, anchors []string) error {
+	mainSpec := mainSpecRef(run)
+	text, err := contenthash.FileText(filepath.Join(root, filepath.FromSlash(mainSpec)))
+	if err != nil {
+		return err
+	}
+	for _, anchor := range anchors {
+		if _, ok := contenthash.SpecAnchorDep(text, anchor); !ok {
+			return SpecBasisError{Anchor: anchor, Spec: mainSpec}
+		}
+	}
+	return nil
+}
+
 func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, report string, refs []judgments.Binding) (judgments.Reference, error) {
 	layer := run.Target
 	unit := ck.Unit
@@ -546,6 +577,15 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	copyResult.Analysis = nil
 	if analysis, ok := result.Analysis[ck.Key]; ok {
 		copyResult.Analysis = map[string]string{ck.Key: analysis}
+	}
+	copyResult.SpecBasis = nil
+	if ck.Kind == SessionKindDesign {
+		if basis, ok := result.SpecBasis[ck.Key]; ok {
+			// The declared anchors travel with the record: the record's spec
+			// pins are derived from them, so the record states its own
+			// dependency basis.
+			copyResult.SpecBasis = map[string][]string{ck.Key: basis}
+		}
 	}
 	copyResult.ReportDigest = "sha256:" + judgments.Digest([]byte(specpaths.NormalizeText(report)))
 	if ck.Kind == SessionKindDesign {
@@ -700,14 +740,15 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		}
 	case SessionKindDesign:
 		// A design judgment reviews the named file (pinned whole-file) against
-		// the unit spec. The spec is its rationale, pinned by section region:
-		// every section except the acceptance-item section, whose text is
-		// owned by the per-item judgments. An acceptance-item edit therefore
-		// re-runs that item without mechanically invalidating every design
-		// judgment of the unit, while an edit to the unit's design prose still
-		// re-runs them (framework/validation_cache.md §Structural Region
-		// Dependencies). A spec that cannot be split this way falls back to
-		// the whole file, fail closed.
+		// the unit spec. The spec is its rationale, pinned by the anchors the
+		// report declares: the narrative blocks and promise entries the
+		// conclusion actually relied on
+		// (framework/unit_verify_checklist.md §Output Format → Spec basis).
+		// An acceptance-item edit therefore re-runs that item without
+		// mechanically invalidating every design judgment of the unit, and an
+		// edit to narrative the judgment never relied on does not re-run it
+		// either. Every declared anchor is resolved against the spec and every
+		// failure is rejected, so the record can never silently under-pin.
 		if err := addWholeFile(ck.File); err != nil {
 			return judgments.Reference{}, err
 		}
@@ -715,13 +756,15 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		if err != nil {
 			return judgments.Reference{}, err
 		}
-		specDeps, split := contenthash.DesignSpecRegions(text)
-		if !split {
-			if err := addWholeFile(mainSpec); err != nil {
-				return judgments.Reference{}, err
-			}
+		anchors := result.SpecBasis[ck.Key]
+		if len(anchors) == 0 {
+			return judgments.Reference{}, fmt.Errorf("design judgment for %s declares no Spec basis anchors — a design record must name the narrative blocks and promise entries it relied on", ck.Key)
 		}
-		for _, dep := range specDeps {
+		for _, anchor := range anchors {
+			dep, ok := contenthash.SpecAnchorDep(text, anchor)
+			if !ok {
+				return judgments.Reference{}, SpecBasisError{Anchor: anchor, Spec: mainSpec}
+			}
 			if err := addRegion(mainSpec, dep); err != nil {
 				return judgments.Reference{}, err
 			}

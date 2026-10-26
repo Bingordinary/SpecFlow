@@ -59,7 +59,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 			promiseBlock += "\n    depends_on: [" + strings.Join(ids, ", ") + "]"
 		}
 	}
-	fmt.Fprintf(&b, "---\nid: %s\nrule_refs: %s\n---\n\n# %s\n\n## Design Narrative\n\nProse.\n\n## Promises\n\n%s\n\n## Acceptance Items\n\nacceptance_item_set:\n", name, ruleRefs, name, promiseBlock)
+	fmt.Fprintf(&b, "---\nid: %s\nrule_refs: %s\n---\n\n# %s\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\n%s\n\n## Acceptance Items\n\nacceptance_item_set:\n", name, ruleRefs, name, promiseBlock)
 	for _, item := range items {
 		fmt.Fprintf(&b, "  - id: %s\n    promise: %s.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item, name)
 	}
@@ -75,7 +75,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) string {
 	t.Helper()
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
-		"## Design Narrative\n\nProse.\n\n" +
+		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
 		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
@@ -923,7 +923,7 @@ func grQualityArchitecture(file, conclusion string) string {
 	if strings.HasPrefix(conclusion, "unacceptable") {
 		gateFindings = "[P1] gate-level architectural boundary defect"
 	}
-	return fmt.Sprintf("File: %s\nspec_requirements: requirements checked — fixture design evidence\nArchitecture assessment:\n  conclusion: %s\n  module_boundaries: sound — reviewed module boundary\n  responsibility_organization: sound — reviewed responsibility placement\n  dependency_clarity: sound — reviewed dependency direction\n  abstraction_level: sound — reviewed abstraction level\n  extension_landing_points: sound — reviewed extension seams\n  engineering_patterns: sound — reviewed engineering patterns\n  gate_findings: %s\n\nSuppressed by spec (0):\n", file, conclusion, gateFindings)
+	return fmt.Sprintf("File: %s\nspec_requirements: requirements checked — fixture design evidence\nSpec basis: Narrative\nSpec basis: Promises\nArchitecture assessment:\n  conclusion: %s\n  module_boundaries: sound — reviewed module boundary\n  responsibility_organization: sound — reviewed responsibility placement\n  dependency_clarity: sound — reviewed dependency direction\n  abstraction_level: sound — reviewed abstraction level\n  extension_landing_points: sound — reviewed extension seams\n  engineering_patterns: sound — reviewed engineering patterns\n  gate_findings: %s\n\nSuppressed by spec (0):\n", file, conclusion, gateFindings)
 }
 
 // grQualityReport builds a complete quality file session report with an
@@ -1581,6 +1581,8 @@ func grCoBatchedPairedReport() string {
 		"\n" +
 		"File: design:auth:src/auth.go\n" +
 		"spec_requirements: fixture design evidence\n" +
+		"Spec basis: Narrative\nSpec basis: Promises\n" +
+		"Spec basis: Narrative\nSpec basis: Promises\n" +
 		"Architecture assessment:\n" +
 		"  conclusion: acceptable\n" +
 		"  module_boundaries: sound — reviewed module boundary\n" +
@@ -3139,7 +3141,7 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(data), "## Design Narrative\n\nProse.", "## Design Narrative\n\nProse. Changed.", 1)
+	edited := strings.Replace(string(data), "## Design Narrative\n### Narrative\n\nProse.", "## Design Narrative\n### Narrative\n\nProse. Changed.", 1)
 	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -3782,7 +3784,7 @@ func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := "docs/specs/units/candidate/unit_auth.md"
 	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
-		"## Design Narrative\n\nProse.\n\n" +
+		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
 		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
@@ -4764,6 +4766,7 @@ func TestGateSubmitJoinsQualityUnitsAcrossFiles(t *testing.T) {
 			"\n" +
 			"File: " + design + "\n" +
 			"spec_requirements: fixture design evidence\n" +
+			"Spec basis: Narrative\nSpec basis: Promises\n" +
 			"Architecture assessment:\n" +
 			"  conclusion: acceptable\n" +
 			"  module_boundaries: sound — reviewed module boundary\n" +

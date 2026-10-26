@@ -234,7 +234,7 @@ func CheckFrontmatterRegionPurity(content string) CheckResult {
 // FAIL outright; process traces and test-double names are WARNING for the
 // owning session to confirm. The semantic residue — whether a passage states
 // internal implementation rather than observable behavior, and what follows
-// the acceptance item set (§13.9) — is the agent judgment of Check 2 Step 5,
+// the acceptance item set (§13.10) — is the agent judgment of Check 2 Step 5,
 // Check 5e, and Check 1.
 
 var (
@@ -316,7 +316,7 @@ func CheckTestDoubles(content string) CheckResult {
 
 // CheckVerificationMethodShape enforces the one-sentence method rule
 // (guide §15.3): a step-by-step test plan FAILs. Fenced code blocks are
-// content examples (guide §13.6) and are skipped, like every other scan in
+// content examples (guide §13.7) and are skipped, like every other scan in
 // this file — only real item-set fields are judged.
 func CheckVerificationMethodShape(content string) CheckResult {
 	var fails []string

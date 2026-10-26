@@ -36,6 +36,7 @@ func TestGateRunCoBatchedRetainedObservation(t *testing.T) {
 		"File: design:auth:src/auth.go\n" +
 		"conclusion: unacceptable — the retained observation blocks the design\n" +
 		"spec_requirements: token behavior required by the auth design\n" +
+		"Spec basis: Narrative\nSpec basis: Promises\n" +
 		"gate_findings: [P1] token shape\n" +
 		"Observation disposition: " + obsID + " = retained — the unit design cannot accept the discarded identity\n" +
 		"[P2] src/auth.go:2 — responsibility placement is unclear (actionable)\n" +

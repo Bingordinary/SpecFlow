@@ -17,7 +17,7 @@ func writePromiseDerivationUnit(t *testing.T, root, unit, promises, item string)
 		t.Fatal(err)
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
-		"## Design Narrative\n\nNarrative.\n\n## Promises\n\n" + promises + "\n" +
+		"## Design Narrative\n### Narrative\n\nNarrative.\n\n## Promises\n\n" + promises + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" + item
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
