@@ -732,7 +732,7 @@ func InvalidateTargeted(repoRoot, gate, targetKind, targetName, target string, c
 			}
 			reason := fmt.Sprintf("targeted P0/P1: verify@%s (%s), checks: %s", targetName, target, strings.Join(keys, ", "))
 			for _, ref := range refs {
-				if err := judgments.Invalidate(repoRoot, ref.ID, reason); err != nil {
+				if err := judgments.Invalidate(repoRoot, ref, reason); err != nil {
 					return err
 				}
 				result.InvalidatedJudgmentIDs = append(result.InvalidatedJudgmentIDs, ref.ID)

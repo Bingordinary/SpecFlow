@@ -3599,7 +3599,11 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 		t.Fatalf("carried item retained the previous spec context: %s %v", record.SpecContext, err)
 	}
 	synthesisPromote(t, repoRoot, "auth")
-	latest, accepted, err := judgments.LatestItem(repoRoot, "auth", "auth.logout", "stable")
+	protocol, perr := judgments.Protocol(repoRoot, "verify", "unit")
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	latest, accepted, err := judgments.LatestItem(repoRoot, protocol, "auth", "auth.logout", "stable")
 	if err != nil || !accepted || latest != binding.Reference {
 		t.Fatalf("promotion lost the carried current decision: %+v %v %v", latest, accepted, err)
 	}

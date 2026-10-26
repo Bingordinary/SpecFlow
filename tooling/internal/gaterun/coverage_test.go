@@ -76,7 +76,7 @@ func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationca
 			statuses[check.Check] = status
 		}
 	}
-	judgments, err := json.Marshal(JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
+	judgments, err := json.Marshal(JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaValidate, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestLoadCarriedResultsAssociatesCrossFindingWithAffectedKey(t *testing.T) {
 		statuses[key] = "pass"
 	}
 	judgments, err := json.Marshal(JudgmentBaseline{
-		SchemaVersion: 3,
+		SchemaVersion: validationcache.RecordStateSchemaValidate,
 		LogicalStatus: statuses,
 		Findings: []Finding{{
 			ID:           "cross/F1",
@@ -478,7 +478,7 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 // statuses.
 func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, blocking bool, entries []validationcache.FileEntry, statuses map[string]string, designAnchors ...[]string) {
 	t.Helper()
-	state := JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"}
+	state := JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaValidate, LogicalStatus: statuses, SynthesisDigest: "sha256:test"}
 	if command == GateVerify {
 		entries, state = buildVerifyBaselineFixture(t, repoRoot, entries, statuses, designAnchors...)
 	}
@@ -1299,7 +1299,7 @@ func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationc
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := JudgmentBaseline{SchemaVersion: 4, LogicalStatus: map[string]string{}, SynthesisDigest: "sha256:test", Records: map[string]judgments.Binding{}}
+	state := JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaVerify, LogicalStatus: map[string]string{}, SynthesisDigest: "sha256:test", Records: map[string]judgments.Binding{}}
 	var generated []validationcache.FileEntry
 	for _, ck := range coverage {
 		old := ck.File

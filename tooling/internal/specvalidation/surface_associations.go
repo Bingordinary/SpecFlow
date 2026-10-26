@@ -63,7 +63,7 @@ type SurfaceAuditReport struct {
 // Sharing a file creates no behavioral dependency. Invalid declarations remain
 // the responsibility of the anchor checks.
 func SurfaceAudit(repoRoot string) (*SurfaceAuditReport, error) {
-	expander, err := repofiles.NewExpander(repoRoot)
+	expander, err := repofiles.NewListingExpander(repoRoot)
 	if err != nil {
 		return nil, err
 	}

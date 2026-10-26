@@ -82,6 +82,12 @@ func FormatSurfaceProblems(problems []SurfaceProblem) string {
 // validate Check 3 and gate-plan share this check, so a declared surface that
 // cannot expand to a code file never silently produces an empty file set.
 func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem {
+	// One lister for the whole declaration set: repeat declarations of the
+	// same directory, and every directory in the unit, expand from one
+	// repository listing instead of one git invocation each. It is created on
+	// the first directory declaration, so a declaration set that names only
+	// files never needs the worktree.
+	lister := &surfaceLister{repoRoot: repoRoot}
 	var problems []SurfaceProblem
 	for _, item := range parseAcceptanceItems(specContent) {
 		value := strings.TrimSpace(item.implementationSurface)
@@ -95,7 +101,7 @@ func CheckImplementationSurfaces(repoRoot, specContent string) []SurfaceProblem 
 			})
 			continue
 		}
-		canonical, reason := surfaceValueProblem(repoRoot, value)
+		canonical, reason := surfaceValueProblem(lister, repoRoot, value)
 		if reason != "" {
 			problems = append(problems, SurfaceProblem{ItemID: item.id, Value: value, Reason: reason})
 			continue
@@ -211,7 +217,25 @@ func CheckAffectsFilesSpecDocuments(repoRoot, specContent string) []SurfaceProbl
 // empty canonical path and the mechanical reason it does not. The value is
 // matched literally and is never classified by shape: a list or pattern is
 // rejected because it is not a resolvable path, not because of its characters.
-func surfaceValueProblem(repoRoot, value string) (string, string) {
+// surfaceLister expands directory declarations through one listing expander,
+// created on first use.
+type surfaceLister struct {
+	repoRoot string
+	expander *repofiles.Expander
+}
+
+func (l *surfaceLister) expand(dir string) ([]repofiles.File, error) {
+	if l.expander == nil {
+		expander, err := repofiles.NewListingExpander(l.repoRoot)
+		if err != nil {
+			return nil, err
+		}
+		l.expander = expander
+	}
+	return l.expander.Expand(dir)
+}
+
+func surfaceValueProblem(lister *surfaceLister, repoRoot, value string) (string, string) {
 	canonical, err := repopath.Canonical(repoRoot, value)
 	if err != nil {
 		return "", fmt.Sprintf("cannot be resolved: %v", err)
@@ -227,7 +251,7 @@ func surfaceValueProblem(repoRoot, value string) (string, string) {
 	if !info.IsDir() {
 		return canonical, ""
 	}
-	files, err := repofiles.ExpandDir(repoRoot, canonical)
+	files, err := lister.expand(canonical)
 	if err != nil {
 		return "", fmt.Sprintf("cannot be expanded: %v", err)
 	}

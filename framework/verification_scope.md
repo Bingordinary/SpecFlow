@@ -120,7 +120,7 @@ Public observations cannot be suppressed by a private rationale.
 
 ### Public Reuse and Allocation
 
-`framework/shared_judgments.md` defines public reuse, unit design judgments and schema 4 verify records. Accepted public tasks are reused or awaited rather than independently allocated to several runs.
+`framework/shared_judgments.md` defines public reuse, unit design judgments and schema 5 verify records. Accepted public tasks are reused or awaited rather than independently allocated to several runs.
 
 ## Coverage Model
 
@@ -261,7 +261,7 @@ A unit run executes one final session when it has assigned relationships to chec
 
 **Relationship scope at planning.** Before every unit full, delta, or repair plan, the coordinator compares the current change with the last applicable reviewed state and declares the relationships it touches through required `--relationships name[,name...]`, or `--relationships none`. Select the names from the relationship tables below. The tooling fixes the selection in run state and rejects names outside the gate's relationship vocabulary.
 
-**Incremental relationship work.** Each relationship reports its Cross item result; the tooling derives `Effective status: relationship:<name>` from the retained findings. Cache judgment schema 4 for unit verify, and schema 3 for unchanged cache roles, records the checked names and statuses. A full run carries unchanged passing relationship judgments from a usable baseline mechanically only when nothing changed; otherwise the standing conclusions re-run. Delta/repair force failed (repair), invalidated, and explicitly selected relationships into the re-run scope. A verify delta that re-runs any local conclusion, or whose pinned synthesis evidence changed, re-checks the standing relationships rather than carrying them (for validate the change reviewer is the scope decision). A run may have no local coverage keys and still require a relationship-only final session. New or changed relationships absent from the baseline must be selected by the coordinator.
+**Incremental relationship work.** Each relationship reports its Cross item result; the tooling derives `Effective status: relationship:<name>` from the retained findings. Cache judgment schema 5 for unit verify, and schema 4 for the unchanged cache roles, records the checked names and statuses. A full run carries unchanged passing relationship judgments from a usable baseline mechanically only when nothing changed; otherwise the standing conclusions re-run. Delta/repair force failed (repair), invalidated, and explicitly selected relationships into the re-run scope. A verify delta that re-runs any local conclusion, or whose pinned synthesis evidence changed, re-checks the standing relationships rather than carrying them (for validate the change reviewer is the scope decision). A run may have no local coverage keys and still require a relationship-only final session. New or changed relationships absent from the baseline must be selected by the coordinator.
 
 Its result must:
 

@@ -53,13 +53,12 @@ func TestCodeEvidenceIsDeclaredSurfaceNotNameTokenClosure(t *testing.T) {
 // publicCodeRecord saves a minimal valid public code record for one file. Its
 // only dependency is the file itself with no pinned hash, so judgments.Check
 // passes while that file exists.
-func publicCodeRecord(t *testing.T, root, unit, subject, protocol string) judgments.Reference {
+func publicCodeRecord(t *testing.T, root, subject, protocol string) judgments.Reference {
 	t.Helper()
 	report := "fixture report"
 	ref, err := judgments.Save(root, judgments.Record{
 		Version:      judgments.RecordVersion,
 		Kind:         judgments.Code,
-		Unit:         unit,
 		Subject:      subject,
 		Coverage:     []string{"code:" + subject},
 		Inputs:       []string{subject},
@@ -84,7 +83,9 @@ func sharedCheckRun(protocol, key, file string) *Run {
 		RunID: "20260101-000000-aaaaaa", Gate: GateVerify, TargetKind: TargetKindUnit,
 		TargetName: "auth", Target: TargetCandidate, Status: StatusOpen, Mode: ModeFull,
 		Protocol: protocol, Records: map[string]judgments.Binding{},
-		Coverage: []CoverageKey{{Key: key, Kind: SessionKindCode, Lens: LensQuality, File: file, Unit: "auth", ReadRefs: []string{file}}},
+		// A public code record is shared across units, so its key carries no
+		// unit: the record's slot is keyed by the reviewed file alone.
+		Coverage: []CoverageKey{{Key: key, Kind: SessionKindCode, Lens: LensQuality, File: file, ReadRefs: []string{file}}},
 	}
 }
 
@@ -98,7 +99,7 @@ func TestPrepareSharedChecksReusesAndInvalidatesBySubject(t *testing.T) {
 	writeFile(t, root, "src/auth.go", "package auth\n")
 	protocol := testProtocolFor(t, root, "verify", "unit")
 
-	valid := publicCodeRecord(t, root, "auth", "src/auth.go", protocol)
+	valid := publicCodeRecord(t, root, "src/auth.go", protocol)
 
 	reused := sharedCheckRun(protocol, "code:src/auth.go", "src/auth.go")
 	if err := prepareSharedChecks(root, reused); err != nil {
@@ -114,7 +115,7 @@ func TestPrepareSharedChecksReusesAndInvalidatesBySubject(t *testing.T) {
 
 	// An invalidated record is not reusable: the key must execute with its own
 	// task instead.
-	if err := judgments.Invalidate(root, valid.ID, "fixture invalidation"); err != nil {
+	if err := judgments.Invalidate(root, valid, "fixture invalidation"); err != nil {
 		t.Fatal(err)
 	}
 	executed := sharedCheckRun(protocol, "code:src/auth.go", "src/auth.go")

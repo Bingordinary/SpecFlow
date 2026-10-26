@@ -628,7 +628,7 @@ func loadPromiseNodes(repoRoot, scope string) ([]promiseNode, []string, map[stri
 	var nodes []promiseNode
 	for _, unit := range names {
 		path := units[unit]
-		data, err := os.ReadFile(path)
+		data, _, err := specpaths.FileBytes(path)
 		if err != nil {
 			globalIssues = append(globalIssues, fmt.Sprintf("read %s: %v", path, err))
 			continue

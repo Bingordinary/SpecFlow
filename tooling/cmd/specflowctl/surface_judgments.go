@@ -50,29 +50,51 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			}
 		}
 	}
-	refs, err := judgments.List(root)
-	if err != nil {
-		return nil, err
-	}
-	for _, ref := range refs {
-		r, err := judgments.Load(root, ref)
+	// Each report file's slot is computed from the key it names, so the store
+	// is asked one question per file instead of being read whole: the slot holds
+	// the handful of decisions ever accepted for that key.
+	for path, view := range files {
+		codeSlot, err := judgments.Slot(protocol, judgments.Code, "", path, "")
 		if err != nil {
-			continue
+			return nil, err
 		}
-		if r.Kind == judgments.Code && judgments.Check(root, ref, "stable", protocol) == nil {
-			if view := files[r.Subject]; view != nil {
+		codeRefs, err := judgments.RefsInSlot(root, codeSlot)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range codeRefs {
+			r, err := judgments.Load(root, ref)
+			if err != nil || r.Kind != judgments.Code {
+				continue
+			}
+			if judgments.Verify(root, r, ref, "stable", protocol) == nil {
 				view.Public = append(view.Public, ref)
 			}
 		}
-		if r.Kind == judgments.Design {
-			if view := files[r.Subject]; view != nil {
-				for _, association := range view.Associations {
-					name := association.Unit + "@" + association.Layer
-					if r.Unit == association.Unit && view.Designs[name] == nil && judgments.Check(root, ref, association.Layer, protocol) == nil {
-						binding := judgments.Binding{Reference: ref, Layer: association.Layer, Source: "reused"}
-						view.Designs[name] = &binding
-					}
+		for _, association := range view.Associations {
+			name := association.Unit + "@" + association.Layer
+			if view.Designs[name] != nil {
+				continue
+			}
+			designSlot, err := judgments.Slot(protocol, judgments.Design, association.Unit, path, "")
+			if err != nil {
+				return nil, err
+			}
+			designRefs, err := judgments.RefsInSlot(root, designSlot)
+			if err != nil {
+				return nil, err
+			}
+			for _, ref := range designRefs {
+				r, err := judgments.Load(root, ref)
+				if err != nil || r.Kind != judgments.Design || r.Unit != association.Unit {
+					continue
 				}
+				if judgments.Verify(root, r, ref, association.Layer, protocol) != nil {
+					continue
+				}
+				binding := judgments.Binding{Reference: ref, Layer: association.Layer, Source: "reused"}
+				view.Designs[name] = &binding
+				break
 			}
 		}
 	}

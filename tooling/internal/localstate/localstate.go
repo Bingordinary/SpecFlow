@@ -44,6 +44,33 @@ func BindID(requested, embedded string) error {
 	return nil
 }
 
+// Root returns relStateRoot itself, proving the same containment Path proves
+// for a target below it. A caller that enumerates a whole state tree needs the
+// tree's own path, and must not bypass the symlink check Path applies.
+func Root(repoRoot, relStateRoot string) (string, error) {
+	repoAbs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	repoAbs = filepath.Clean(repoAbs)
+	stateAbs := filepath.Join(repoAbs, filepath.FromSlash(relStateRoot))
+	if !inside(repoAbs, stateAbs) || filepath.Clean(stateAbs) == repoAbs {
+		return "", fmt.Errorf("state root %q is outside repository root", relStateRoot)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repoAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root symlinks: %w", err)
+	}
+	resolvedState, err := repopath.ResolveExistingAncestor(stateAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolve state root %s: %w", relStateRoot, err)
+	}
+	if !inside(resolvedRepo, resolvedState) {
+		return "", fmt.Errorf("state root %q resolves outside repository root", relStateRoot)
+	}
+	return filepath.Clean(stateAbs), nil
+}
+
 // Path joins elems below relStateRoot and proves both the lexical path and
 // the symlink-resolved path remain inside the repository and state root. It
 // supports not-yet-existing targets by resolving the nearest existing

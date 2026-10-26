@@ -15,30 +15,36 @@ type CollectedJudgments struct {
 
 // CollectJudgments deletes stale-protocol judgment records that no live
 // reference can reach. The live set is the union of every published cache's
-// GATE_JUDGMENTS bindings, every accepted item pointer, and every on-disk
-// open run's planned bindings — including run states the strict loader
-// rejects, and the shared task records those runs reach — expanded
-// transitively through the record-reference chain. Records outside this
-// closure whose review protocol differs from the deployed protocol can never
-// pass judgments.Check again — a protocol mismatch fails closed and old
+// GATE_JUDGMENTS bindings, the deployed standard's current-decision pointers,
+// and every on-disk open run's planned bindings — including run states the
+// strict loader rejects, and the shared task records those runs reach —
+// expanded transitively through the record-reference chain. Records outside
+// this closure whose review protocol differs from the deployed protocol can
+// never pass judgments.Check again — a protocol mismatch fails closed and old
 // in-progress runs must be replanned — so they are pure storage debt.
-// Same-protocol superseded history is retained, and a record that cannot be
-// loaded is never deleted: unprovable state is kept for diagnosis, not
-// collected. The caller must hold the repository mutation lock
-// (gate-finalize's transaction).
+// Same-protocol superseded history is retained.
+//
+// A record's standard is the first component of its slot, so staleness is
+// decided from where a record is filed, never from its body: collecting a
+// whole retired standard costs directory reads, and an unreadable record filed
+// under the current standard stays with the rest of that standard's history.
+// A current-decision pointer confers liveness only under the standard that
+// filed it: no reader asks a retired standard for a decision, so that decision
+// is storage debt too, and Remove drops the pointer with its record. The caller
+// must hold the repository mutation lock (gate-finalize's transaction).
 func CollectJudgments(root string) (CollectedJudgments, error) {
 	protocol, err := judgments.Protocol(root, GateVerify, TargetKindUnit)
 	if err != nil {
 		return CollectedJudgments{}, err
 	}
 	live := map[string]bool{}
-	var queue []string
+	var queue []judgments.Reference
 	seed := func(ref judgments.Reference) {
 		if ref.ID == "" || live[ref.ID] {
 			return
 		}
 		live[ref.ID] = true
-		queue = append(queue, ref.ID)
+		queue = append(queue, ref)
 	}
 	cacheRefs, err := validationcache.CacheJudgmentReferences(root)
 	if err != nil {
@@ -47,11 +53,11 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 	for _, ref := range cacheRefs {
 		seed(ref)
 	}
-	acceptedRefs, err := judgments.AcceptedReferences(root)
+	currentRefs, err := judgments.Current(root, protocol)
 	if err != nil {
 		return CollectedJudgments{}, err
 	}
-	for _, ref := range acceptedRefs {
+	for _, ref := range currentRefs {
 		seed(ref)
 	}
 	// The open-run closure is enumerated raw, not through ListRuns: a run
@@ -86,9 +92,9 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 		}
 	}
 	for len(queue) > 0 {
-		id := queue[len(queue)-1]
+		ref := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
-		record, err := judgments.Load(root, judgments.Reference{ID: id, Digest: id})
+		record, err := judgments.Load(root, ref)
 		if err != nil {
 			continue
 		}
@@ -105,11 +111,14 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 		if live[ref.ID] {
 			continue
 		}
-		record, err := judgments.Load(root, ref)
-		if err != nil || record.Protocol == protocol {
+		recordProtocol, err := judgments.SlotProtocol(ref.Slot)
+		if err != nil {
+			return CollectedJudgments{}, err
+		}
+		if recordProtocol == protocol {
 			continue
 		}
-		bytes, err := judgments.Remove(root, ref.ID)
+		bytes, err := judgments.Remove(root, ref)
 		if err != nil {
 			return CollectedJudgments{}, err
 		}

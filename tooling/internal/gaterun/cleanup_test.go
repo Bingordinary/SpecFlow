@@ -471,7 +471,11 @@ func TestSweepReclaimsOpenRunWithDeadEvidence(t *testing.T) {
 		t.Fatalf("a run with resolvable evidence must not be reclaimable: %+v", planned.Runs)
 	}
 
-	if err := os.Remove(filepath.Join(repoRoot, filepath.FromSlash(judgments.Directory), record.ID+".json")); err != nil {
+	recordPath, pathErr := judgments.StoredPath(repoRoot, record)
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	if err := os.Remove(recordPath); err != nil {
 		t.Fatal(err)
 	}
 	run, err := Load(repoRoot, runID)

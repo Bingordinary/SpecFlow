@@ -3,7 +3,6 @@ package specpaths
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 	"strings"
 )
 
@@ -23,12 +22,14 @@ func NormalizeText(text string) string {
 // FileHash computes the SHA-256 hash of a file's normalized content.
 // Uses NormalizeText to ensure cross-platform consistency regardless of
 // git autocrlf settings or the host operating system.
+// Repeated hashes of the same unchanged file inside one command reuse the
+// first read (see filecache.go).
 func FileHash(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	entry, err := cachedFile(path, false)
 	if err != nil {
 		return "", err
 	}
-	return HashText(data), nil
+	return entry.hash, nil
 }
 
 // HashText computes the same hash FileHash produces for the same bytes, so a

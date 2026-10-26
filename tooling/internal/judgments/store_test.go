@@ -89,7 +89,7 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 	if err := Check(root, ref, "candidate", testProtocol(t)); err != nil {
 		t.Fatal(err)
 	}
-	if err := Invalidate(root, public.ID, "contradicted by new evidence"); err != nil {
+	if err := Invalidate(root, public, "contradicted by new evidence"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Check(root, ref, "candidate", testProtocol(t)); err == nil {
@@ -176,7 +176,7 @@ func TestDamageCannotBeOverwritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := recordPath(root, ref.ID)
+	p, err := StoredPath(root, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err := Check(root, current, "stable", testProtocol(t)); err != nil {
 		t.Fatalf("equivalent accepted decision invalidated a consumer: %v", err)
 	}
-	path, err := recordPath(root, equivalent.ID)
+	path, err := StoredPath(root, equivalent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for layer, want := range map[string]Reference{"stable": stable, "candidate": candidate} {
-		got, accepted, err := LatestItem(root, "auth", "auth.core", layer)
+		got, accepted, err := LatestItem(root, testProtocol(t), "auth", "auth.core", layer)
 		if err != nil || !accepted || got != want {
 			t.Fatalf("%s lost its own current decision: %+v %v %v", layer, got, accepted, err)
 		}
@@ -351,7 +351,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 	if err := Check(root, previous, "stable", testProtocol(t)); err == nil {
 		t.Fatal("different candidate context resurrected the old stable ALIGNED record")
 	}
-	path, err := recordPath(root, stable.ID)
+	path, err := StoredPath(root, stable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,5 +465,35 @@ func TestEvidenceInputsCanonicalizeAcrossLayers(t *testing.T) {
 	// Non-unit paths keep their spelling.
 	if missing, ok, err := NewlyRequiredEvidence(root, "trace", "stable", Record{Inputs: []string{"src/trace.go"}}, []string{"src/logger.go"}); err != nil || !ok || missing != "src/logger.go" {
 		t.Fatalf("code inputs must compare literally: %q %v %v", missing, ok, err)
+	}
+}
+
+// TestVerifyChecksALoadedRecord pins the split between reading a record and
+// judging it: a caller that already loaded a record gets the same verdict as
+// Check, without a second read, and a changed dependency still fails.
+func TestVerifyChecksALoadedRecord(t *testing.T) {
+	root, r := fixture(t)
+	ref, err := Save(root, r)
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	record, err := Load(root, ref)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	protocol := testProtocol(t)
+
+	if err := Verify(root, record, ref, "candidate", protocol); err != nil {
+		t.Fatalf("verify an unchanged record: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "contracts.js"), []byte("export const token = false;\n"), 0o644); err != nil {
+		t.Fatalf("rewrite dependency: %v", err)
+	}
+	if err := Verify(root, record, ref, "candidate", protocol); err == nil {
+		t.Fatal("a changed dependency must fail verification")
+	}
+	if err := Check(root, ref, "candidate", protocol); err == nil {
+		t.Fatal("Check must fail the same way Verify does")
 	}
 }

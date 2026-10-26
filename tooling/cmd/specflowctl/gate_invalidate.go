@@ -37,7 +37,11 @@ func runGateInvalidate(args []string, stdout, stderr io.Writer) error {
 			return errors.New("--judgment cannot be combined with unit/check invalidation")
 		}
 		return gaterun.WithMutation(mustAbs(*repoRootPtr), func() error {
-			if err := judgments.Invalidate(mustAbs(*repoRootPtr), id, *reasonPtr); err != nil {
+			ref, err := judgments.Find(mustAbs(*repoRootPtr), id)
+			if err != nil {
+				return err
+			}
+			if err := judgments.Invalidate(mustAbs(*repoRootPtr), ref, *reasonPtr); err != nil {
 				return err
 			}
 			fmt.Fprintf(stdout, "Judgment invalidated: %s; all consumers must recheck affected judgments.\n", id)

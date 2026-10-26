@@ -16,6 +16,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/promote"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewrun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/reviewscope"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/toolingfreshness"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -28,6 +29,10 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	// One process runs one command: start with empty read caches so a previous
+	// command's reads can never serve this one.
+	specpaths.ResetFileCache()
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err

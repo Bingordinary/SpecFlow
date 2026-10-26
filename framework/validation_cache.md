@@ -69,7 +69,7 @@ files:
         end: 40
 ---
 <!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":3,"logical_status":{"1":"pass","cross":"pass"},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":[]}
+{"schema_version":4,"logical_status":{"1":"pass","cross":"pass"},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":[]}
 GATE_JUDGMENTS_END -->
 Generated human-readable summary of the result.
 ```
@@ -94,7 +94,7 @@ binds — is **INVALID**: `fresh` reports it, `promote` rejects it, and
 replaces it. `judgments.RecordVersion` 4 is the matching record format; older
 judgment records are rejected when loaded.
 
-The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair synthesis. Schema version 4 for unit verify, and schema version 3 for other caches, records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, the checked relationship names and `relationship:<name>` statuses, the accepted synthesis digest, the synthesis's supplied-evidence pins (`synthesis_evidence`, unit verify), and (merged verify caches) the run's deferred findings. `gate-finalize` generates it; agents never edit it. The `findings` array carries only gate-driving findings — those owned by the unit or unassigned; findings deferred to another unit (quality ownership) are recorded in the optional `deferred_findings` array for audit and are never carried into a later run of this unit (routing lives in the deferred-findings ledger, see below). For rule validate delta/repair runs, `gate-finalize` combines the disjoint carried baseline judgments and re-run session judgments, so the rewritten block still contains all six logical check statuses; carried and current findings are de-duplicated by finding id. A check that appears in both sets rejects finalization as corrupted run state. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so the final synthesis sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every terminal retained finding that no accepted session report already contains — a carried judgment or a deferral routed in from another unit — into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
+The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair synthesis. Schema version 5 for unit verify, and schema version 4 for other caches, records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, the checked relationship names and `relationship:<name>` statuses, the accepted synthesis digest, the synthesis's supplied-evidence pins (`synthesis_evidence`, unit verify), and (merged verify caches) the run's deferred findings. `gate-finalize` generates it; agents never edit it. The `findings` array carries only gate-driving findings — those owned by the unit or unassigned; findings deferred to another unit (quality ownership) are recorded in the optional `deferred_findings` array for audit and are never carried into a later run of this unit (routing lives in the deferred-findings ledger, see below). For rule validate delta/repair runs, `gate-finalize` combines the disjoint carried baseline judgments and re-run session judgments, so the rewritten block still contains all six logical check statuses; carried and current findings are de-duplicated by finding id. A check that appears in both sets rejects finalization as corrupted run state. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so the final synthesis sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every terminal retained finding that no accepted session report already contains — a carried judgment or a deferral routed in from another unit — into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
 
 **Deferred-findings ledger:** `docs/specs/meta/validation/deferred_findings.json` is the durable handoff of pending verify deferrals — findings whose recorded ownership routes them to another unit (`framework/verification_scope.md` §Coverage Model → Deferred findings). It lives beside the validation caches and shares their lifecycle (durable project state, version controlled). Schema version 1:
 
@@ -469,7 +469,7 @@ files:
       - check: "relationship:contract_consistency"
 ---
 <!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":4,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","unit:user_auth":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"},"unit:user_auth":{"id":"<digest>","digest":"<digest>","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
+{"schema_version":5,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","unit:user_auth":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/code/_/src/auth/login.go/_","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/design/user_auth/src/auth/login.go/_","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/architecture/user_auth/_/_","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/item/user_auth/<subject digest>/<spec context>","layer":"candidate","source":"executed"},"unit:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/unit/user_auth/_/_","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
 GATE_JUDGMENTS_END -->
 ## Findings
 
@@ -826,25 +826,25 @@ When you need to read a cache file, use this ordered strategy:
    (rather than searching from a broader root).
 
 
-## Shared verify records (schema 4)
+## Shared verify records (schema 5)
 
-Unit verify uses `framework/shared_judgments.md`. Its structured block contains `records`, mapping every necessary task key to `{id, digest, layer, source}`. Sources are executed, carried or reused. Public, design, architecture and acceptance records are immutable JSON files in `docs/specs/meta/validation/judgments/`. Other caches retain schema 3.
+Unit verify uses `framework/shared_judgments.md`. Its structured block contains `records`, mapping every necessary task key to `{id, digest, slot, layer, source}`. Sources are executed, carried or reused. `slot` is the store directory the record lives in, so reading a binding opens the record directly instead of searching for it. Public, design, architecture and acceptance records are immutable JSON files under `docs/specs/meta/validation/judgments/<protocol>/<kind>/<unit>/<subject>/<spec context>/`. Other caches carry schema 4.
 
 Code dependencies use exact whole-file fingerprints on the conclusion's own object — the reviewed file plus the applicable rules — not the run's supplied evidence inputs, which stay readable but never define a record's dependencies, so neither an unrelated evidence edit nor a newly supplied evidence input re-runs the record. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated or old-protocol record is a concrete gate gap. Old verify caches require full verify and are never converted into public judgments.
 
-Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. Removal clears this unit's current cache references without deleting shared records. History cleanup runs inside gate-finalize: stale-protocol records unreachable from every current cache binding, accepted pointer, and open run — through the record-reference chain — are collected and reported; same-protocol history and unreadable records are retained.
+Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. Removal clears this unit's current cache references without deleting shared records. History cleanup runs inside gate-finalize: stale-protocol records unreachable from every current cache binding, current decision of the deployed standard, and open run — through the record-reference chain — are collected and reported; same-protocol history is retained. A record's standard is the first component of its slot, so collection decides staleness from where a record is filed and never from its body; a retired standard's current-decision pointer dies with its record.
 
-A schema 4 verify binding example (the ids and digests below are illustrative):
+A schema 5 verify binding example (the ids, digests and slots below are illustrative):
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "logical_status": {"code:contracts.js": "pass", "design:auth:contracts.js": "pass", "architecture:auth": "pass", "item:auth:auth.login": "pass"},
   "records": {
-    "code:contracts.js": {"id": "<digest>", "digest": "<digest>", "layer": "candidate", "source": "reused"},
-    "design:auth:contracts.js": {"id": "<digest>", "digest": "<digest>", "layer": "candidate", "source": "executed"},
-    "architecture:auth": {"id": "<digest>", "digest": "<digest>", "layer": "candidate", "source": "executed"},
-    "item:auth:auth.login": {"id": "<digest>", "digest": "<digest>", "layer": "candidate", "source": "executed"}
+    "code:contracts.js": {"id": "<digest>", "digest": "<digest>", "slot": "<protocol>/code/_/contracts.js/_", "layer": "candidate", "source": "reused"},
+    "design:auth:contracts.js": {"id": "<digest>", "digest": "<digest>", "slot": "<protocol>/design/auth/contracts.js/_", "layer": "candidate", "source": "executed"},
+    "architecture:auth": {"id": "<digest>", "digest": "<digest>", "slot": "<protocol>/architecture/auth/_/_", "layer": "candidate", "source": "executed"},
+    "item:auth:auth.login": {"id": "<digest>", "digest": "<digest>", "slot": "<protocol>/item/auth/<subject digest>/<spec context>", "layer": "candidate", "source": "executed"}
   },
   "findings": [],
   "relationships": [],

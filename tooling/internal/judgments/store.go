@@ -29,9 +29,16 @@ const Architecture = "architecture"
 const Item = "item"
 const Unit = "unit"
 
+// Reference names one record: its content hash, the digest that must match it,
+// and the store directory the record lives in. The slot travels with the
+// reference because a caller that holds a reference must be able to open the
+// record without searching the store, and a record's own identity fields
+// recompute that slot, so a reference cannot point somewhere the record does
+// not claim.
 type Reference struct {
 	ID     string `json:"id"`
 	Digest string `json:"digest"`
+	Slot   string `json:"slot"`
 }
 
 // Own spec paths are stored relative to their unit layer. Binding supplies
@@ -78,18 +85,84 @@ type Binding struct {
 }
 
 func Digest(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
+
+// canonicalBytes is the record bytes a record's identity is derived from. The
+// slot inside a reference is a locator computed from the referenced record's
+// own fields, so it is not part of the referencing record's meaning: leaving it
+// out keeps every identity stable while slots are filled in, and a record
+// cannot gain or lose meaning by being moved.
+func canonicalBytes(r Record) ([]byte, error) {
+	canonical := r
+	canonical.References = make([]Binding, len(r.References))
+	copy(canonical.References, r.References)
+	for i := range canonical.References {
+		canonical.References[i].Slot = ""
+	}
+	return json.Marshal(canonical)
+}
+
 func identity(r Record) (string, []byte, error) {
-	data, err := json.Marshal(r)
+	data, err := canonicalBytes(r)
 	return Digest(data), data, err
 }
 
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-func recordPath(root, id string) (string, error) {
+// KindDirectories is the fixed set of per-kind record directories, and the
+// order a bare id is probed in. A record's kind is part of its identity, so it
+// lives in the path: a caller that wants one kind enumerates that directory
+// instead of reading every record to discover what it is.
+var KindDirectories = []string{Code, Design, Architecture, Item, Unit}
+
+func knownKind(kind string) bool {
+	for _, known := range KindDirectories {
+		if kind == known {
+			return true
+		}
+	}
+	return false
+}
+
+func recordPath(root, slot, id string) (string, error) {
 	if !idPattern.MatchString(id) {
 		return "", fmt.Errorf("invalid judgment id %q", id)
 	}
-	return localstate.Path(root, Directory, id+".json")
+	if err := validateSlot(slot); err != nil {
+		return "", err
+	}
+	return localstate.Path(root, Directory, filepath.FromSlash(slot), id+".json")
+}
+
+// validateSlot proves a slot is a store-relative directory shaped like
+// <protocol>/<kind>/<unit>/<subject...>/<context> and cannot name a file
+// outside the store.
+func validateSlot(slot string) error {
+	if slot == "" {
+		return fmt.Errorf("judgment reference has no slot")
+	}
+	parts := strings.Split(slot, "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid judgment slot %q", slot)
+	}
+	for _, part := range parts {
+		if !validPathComponent(part) {
+			return fmt.Errorf("invalid judgment slot %q", slot)
+		}
+	}
+	if !validPathComponent(parts[0]) {
+		return fmt.Errorf("invalid judgment slot protocol %q", parts[0])
+	}
+	if !knownKind(parts[1]) {
+		return fmt.Errorf("invalid judgment slot kind %q", parts[1])
+	}
+	return nil
+}
+
+// StoredPath returns the store path that holds ref. Callers that must touch a
+// record's file directly (size accounting, diagnosis) use it instead of
+// assuming a layout: the layout is the store's business.
+func StoredPath(root string, ref Reference) (string, error) {
+	return recordPath(root, ref.Slot, ref.ID)
 }
 func Save(root string, r Record) (Reference, error) {
 	if r.Version != RecordVersion || r.Subject == "" || r.Protocol == "" || len(r.Inputs) == 0 || len(r.Dependencies) == 0 || len(r.Coverage) == 0 || len(r.Result) == 0 || r.SourceRun == "" || r.ReportDigest != Digest([]byte(r.Report)) {
@@ -103,11 +176,21 @@ func Save(root string, r Record) (Reference, error) {
 	if r.Kind == Item && !idPattern.MatchString(r.SpecContext) {
 		return Reference{}, fmt.Errorf("item judgment requires a spec context fingerprint")
 	}
-	id, data, err := identity(r)
+	id, _, err := identity(r)
 	if err != nil {
 		return Reference{}, err
 	}
-	p, err := recordPath(root, id)
+	// The stored bytes carry the locator of every consumed record; the identity
+	// is derived from the bytes without them (see canonicalBytes).
+	data, err := json.Marshal(r)
+	if err != nil {
+		return Reference{}, err
+	}
+	slot, err := SlotOf(&r)
+	if err != nil {
+		return Reference{}, err
+	}
+	p, err := recordPath(root, slot, id)
 	if err != nil {
 		return Reference{}, err
 	}
@@ -127,7 +210,7 @@ func Save(root string, r Record) (Reference, error) {
 	if err = temp.Close(); err != nil {
 		return Reference{}, err
 	}
-	ref := Reference{ID: id, Digest: id}
+	ref := Reference{ID: id, Digest: id, Slot: slot}
 	if err = os.Link(temp.Name(), p); err != nil {
 		if !os.IsExist(err) {
 			return Reference{}, err
@@ -137,7 +220,7 @@ func Save(root string, r Record) (Reference, error) {
 		}
 	}
 	if r.Kind == Item {
-		if err := acceptItem(root, r, ref); err != nil {
+		if err := acceptItem(root, slot, ref); err != nil {
 			return Reference{}, err
 		}
 	}
@@ -145,7 +228,7 @@ func Save(root string, r Record) (Reference, error) {
 }
 
 func Load(root string, ref Reference) (*Record, error) {
-	p, err := recordPath(root, ref.ID)
+	p, err := recordPath(root, ref.Slot, ref.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,47 +236,116 @@ func Load(root string, ref Reference) (*Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("judgment %s: %w", ref.ID, err)
 	}
+	return parse(p, data, ref)
+}
+
+// parse validates one record's canonical bytes against the reference that names
+// it. It is the single validation rule shared by Load and Verify, so a record
+// handed to Verify is held to exactly the check a freshly read record gets.
+func parse(p string, data []byte, ref Reference) (*Record, error) {
 	var r Record
-	if err = json.Unmarshal(data, &r); err != nil {
+	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("corrupt judgment %s: %w", ref.ID, err)
 	}
 	id, _, err := identity(r)
-	if err != nil || id != ref.ID || ref.Digest != id || r.Version != RecordVersion || r.ReportDigest != Digest([]byte(r.Report)) || r.Kind == Item && !idPattern.MatchString(r.SpecContext) {
+	slot, slotErr := SlotOf(&r)
+	if err != nil || slotErr != nil || slot != ref.Slot || id != ref.ID || ref.Digest != id || r.Version != RecordVersion || r.ReportDigest != Digest([]byte(r.Report)) || r.Kind == Item && !idPattern.MatchString(r.SpecContext) {
 		return nil, fmt.Errorf("judgment %s digest or schema mismatch", ref.ID)
 	}
 	return &r, nil
 }
-func List(root string) ([]Reference, error) {
-	p, err := localstate.Path(root, Directory, "index")
-	if err != nil {
-		return nil, err
+
+// currentPointerName is the file inside a slot that names the decision in
+// force for that key and spec context.
+const currentPointerName = "current"
+
+// walkStore enumerates the store. It returns every record reference and every
+// current-decision pointer; the store is a directory tree keyed by protocol,
+// kind, unit, subject and spec context, so the walk reads directories only and
+// never a record body.
+func walkStore(root string, kinds map[string]bool) (records, currents []Reference, err error) {
+	store, rootErr := localstate.Root(root, Directory)
+	if rootErr != nil {
+		return nil, nil, rootErr
 	}
-	entries, err := os.ReadDir(filepath.Dir(p))
-	if os.IsNotExist(err) {
-		return nil, nil
+	protocols, readErr := os.ReadDir(store)
+	if os.IsNotExist(readErr) {
+		return nil, nil, nil
 	}
-	if err != nil {
-		return nil, err
+	if readErr != nil {
+		return nil, nil, readErr
 	}
-	var out []Reference
-	for _, e := range entries {
-		id := strings.TrimSuffix(e.Name(), ".json")
-		if idPattern.MatchString(id) && strings.HasSuffix(e.Name(), ".json") {
-			ref := Reference{ID: id, Digest: id}
-			out = append(out, ref)
+	for _, protocol := range protocols {
+		if !protocol.IsDir() || !validPathComponent(protocol.Name()) {
+			continue
+		}
+		kindEntries, readErr := os.ReadDir(filepath.Join(store, protocol.Name()))
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		for _, kindEntry := range kindEntries {
+			if !kindEntry.IsDir() || !kinds[kindEntry.Name()] {
+				continue
+			}
+			dir := filepath.Join(store, protocol.Name(), kindEntry.Name())
+			if walkErr := walkSlotTree(store, dir, &records, &currents); walkErr != nil {
+				return nil, nil, walkErr
+			}
 		}
 	}
-	return out, nil
+	return records, currents, nil
 }
 
-// AcceptedReferences returns every accepted item pointer target. Accepted
-// pointers are load-bearing current decisions: a damaged pointer is an
-// error, never a skipped entry.
-func AcceptedReferences(root string) ([]Reference, error) {
-	dir, err := localstate.Path(root, Directory, "accepted")
+func walkSlotTree(store, dir string, records, currents *[]Reference) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(store, dir)
+	if err != nil {
+		return err
+	}
+	slot := filepath.ToSlash(rel)
+	for _, e := range entries {
+		if e.IsDir() {
+			if err := walkSlotTree(store, filepath.Join(dir, e.Name()), records, currents); err != nil {
+				return err
+			}
+			continue
+		}
+		name := e.Name()
+		if name == currentPointerName {
+			data, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				return err
+			}
+			var ref Reference
+			if err := json.Unmarshal(data, &ref); err != nil || !idPattern.MatchString(ref.ID) || ref.Digest != ref.ID || ref.Slot != slot {
+				return fmt.Errorf("damaged current decision pointer in %s", slot)
+			}
+			*currents = append(*currents, ref)
+			continue
+		}
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(name, ".json")
+		if idPattern.MatchString(id) {
+			*records = append(*records, Reference{ID: id, Digest: id, Slot: slot})
+		}
+	}
+	return nil
+}
+
+// RefsInSlot returns the records filed under one slot. A query that knows the
+// key it is asking about reads that slot's directory instead of walking the
+// store, and a slot holds the handful of decisions ever accepted for one key.
+func RefsInSlot(root, slot string) ([]Reference, error) {
+	anchor, err := localstate.Path(root, Directory, filepath.FromSlash(slot), "_slot")
 	if err != nil {
 		return nil, err
 	}
+	dir := filepath.Dir(anchor)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -203,20 +355,60 @@ func AcceptedReferences(root string) ([]Reference, error) {
 	}
 	var out []Reference
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		id := strings.TrimSuffix(name, ".json")
+		if idPattern.MatchString(id) {
+			out = append(out, Reference{ID: id, Digest: id, Slot: slot})
+		}
+	}
+	return out, nil
+}
+
+// List returns every record reference in the store, or only the records in the
+// named kinds. The walk reads directories, never record bodies.
+func List(root string, kinds ...string) ([]Reference, error) {
+	records, _, err := walkStore(root, kindSet(kinds))
+	return records, err
+}
+
+// Current returns the current-decision pointers a reader under protocol can
+// use. A pointer filed under a retired standard is skipped: every reader asks
+// with the deployed standard (see latestItemForContext's callers), so a retired
+// decision can never be read again and must not confer liveness. The walk still
+// parses every pointer, deployed or retired: a damaged pointer is an error,
+// never a skipped entry.
+func Current(root, protocol string) ([]Reference, error) {
+	_, currents, err := walkStore(root, kindSet(nil))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Reference, 0, len(currents))
+	for _, ref := range currents {
+		filed, err := SlotProtocol(ref.Slot)
 		if err != nil {
 			return nil, err
 		}
-		var ref Reference
-		if err := json.Unmarshal(data, &ref); err != nil || !idPattern.MatchString(ref.ID) || ref.Digest != ref.ID {
-			return nil, fmt.Errorf("damaged accepted item reference %s", e.Name())
+		if filed == protocol {
+			out = append(out, ref)
 		}
-		out = append(out, ref)
 	}
 	return out, nil
+}
+
+func kindSet(kinds []string) map[string]bool {
+	set := map[string]bool{}
+	if len(kinds) == 0 {
+		kinds = KindDirectories
+	}
+	for _, kind := range kinds {
+		if knownKind(kind) {
+			set[kind] = true
+		}
+	}
+	return set
 }
 
 // Remove deletes one judgment record and any invalidation marker naming it,
@@ -224,8 +416,8 @@ func AcceptedReferences(root string) ([]Reference, error) {
 // repository lock and must have proven the record unreachable from every
 // live consumer (see gaterun.CollectJudgments); accepted records are
 // otherwise permanent.
-func Remove(root, id string) (int64, error) {
-	p, err := recordPath(root, id)
+func Remove(root string, ref Reference) (int64, error) {
+	p, err := recordPath(root, ref.Slot, ref.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -236,7 +428,22 @@ func Remove(root, id string) (int64, error) {
 	if err := os.Remove(p); err != nil {
 		return 0, err
 	}
-	marker, err := localstate.Path(root, Directory, "invalidated", id+".json")
+	slotDir, err := localstate.Path(root, Directory, filepath.FromSlash(ref.Slot))
+	if err != nil {
+		return info.Size(), err
+	}
+	// A current-decision pointer that names the removed record goes with it, so
+	// a collection never leaves a pointer to a record it just deleted.
+	pointer := filepath.Join(slotDir, currentPointerName)
+	if data, readErr := os.ReadFile(pointer); readErr == nil {
+		var current Reference
+		if json.Unmarshal(data, &current) == nil && current.ID == ref.ID {
+			if err := os.Remove(pointer); err != nil && !os.IsNotExist(err) {
+				return info.Size(), err
+			}
+		}
+	}
+	marker, err := localstate.Path(root, Directory, "invalidated", ref.ID+".json")
 	if err != nil {
 		return info.Size(), err
 	}
@@ -246,26 +453,29 @@ func Remove(root, id string) (int64, error) {
 	return info.Size(), nil
 }
 
-func itemHeadPath(root, unit, subject, context string) (string, error) {
+func itemPointerPath(root, protocol, unit, subject, context string) (string, error) {
 	if !idPattern.MatchString(context) {
 		return "", fmt.Errorf("invalid item spec context %q", context)
 	}
-	key := Digest([]byte(unit + "\n" + subject + "\n" + context))
-	return localstate.Path(root, Directory, "accepted", key+".json")
+	slot, err := Slot(protocol, Item, unit, subject, context)
+	if err != nil {
+		return "", err
+	}
+	return localstate.Path(root, Directory, filepath.FromSlash(slot), currentPointerName)
 }
 
 // LatestItem selects the current decision for the requested layer's spec
 // content. A different candidate context never replaces stable's decision.
-func LatestItem(root, unit, subject, layer string) (Reference, bool, error) {
+func LatestItem(root, protocol, unit, subject, layer string) (Reference, bool, error) {
 	context, err := SpecContext(root, unit, layer)
 	if err != nil {
 		return Reference{}, false, err
 	}
-	return latestItemForContext(root, unit, subject, context)
+	return latestItemForContext(root, protocol, unit, subject, context)
 }
 
-func latestItemForContext(root, unit, subject, context string) (Reference, bool, error) {
-	p, err := itemHeadPath(root, unit, subject, context)
+func latestItemForContext(root, protocol, unit, subject, context string) (Reference, bool, error) {
+	p, err := itemPointerPath(root, protocol, unit, subject, context)
 	if err != nil {
 		return Reference{}, false, err
 	}
@@ -278,15 +488,15 @@ func latestItemForContext(root, unit, subject, context string) (Reference, bool,
 	}
 	var ref Reference
 	if err := json.Unmarshal(data, &ref); err != nil || !idPattern.MatchString(ref.ID) || ref.Digest != ref.ID {
-		return Reference{}, false, fmt.Errorf("damaged accepted item reference for %s:%s", unit, subject)
+		return Reference{}, false, fmt.Errorf("damaged current decision for %s:%s", unit, subject)
 	}
 	return ref, true, nil
 }
 
 // The mutable reference advances atomically under the repository lock; the
 // record it names and all earlier records remain immutable.
-func acceptItem(root string, record Record, ref Reference) error {
-	p, err := itemHeadPath(root, record.Unit, record.Subject, record.SpecContext)
+func acceptItem(root, slot string, ref Reference) error {
+	p, err := localstate.Path(root, Directory, filepath.FromSlash(slot), currentPointerName)
 	if err != nil {
 		return err
 	}
@@ -419,6 +629,21 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 	if err != nil {
 		return err
 	}
+	return verifyRecord(root, r, ref, layer, protocol, seen, promises)
+}
+
+// Verify runs the same verification Check runs, for a record the caller has
+// already loaded. The record must be the one Load returned for ref; id and
+// digest are re-derived only when a record is read, so Verify trusts that
+// pairing. A caller that reads a record to inspect it and then asks whether it
+// is still valid would otherwise read and digest-verify the same file twice in
+// one command.
+func Verify(root string, record *Record, ref Reference, layer, protocol string) error {
+	seen := map[string]bool{ref.ID: true}
+	return verifyRecord(root, record, ref, layer, protocol, seen, &promiseLiveness{root: root})
+}
+
+func verifyRecord(root string, r *Record, ref Reference, layer, protocol string, seen map[string]bool, promises *promiseLiveness) error {
 	p, err := localstate.Path(root, Directory, "invalidated", ref.ID+".json")
 	if err != nil {
 		return err
@@ -445,12 +670,12 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(canonical)))
+		data, hash, err := specpaths.FileBytes(filepath.Join(root, filepath.FromSlash(canonical)))
 		if err != nil {
 			return fmt.Errorf("judgment %s input %s: %w", ref.ID, d.Path, err)
 		}
 		if d.Hash != "" {
-			if specpaths.HashText(data) != d.Hash {
+			if hash != d.Hash {
 				return fmt.Errorf("judgment %s whole-file input changed: %s", ref.ID, canonical)
 			}
 		}
@@ -477,7 +702,7 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 			contexts = append(contexts, boundContext)
 		}
 		for _, context := range contexts {
-			latest, accepted, err := latestItemForContext(root, r.Unit, r.Subject, context)
+			latest, accepted, err := latestItemForContext(root, r.Protocol, r.Unit, r.Subject, context)
 			if err != nil {
 				return err
 			}
@@ -554,10 +779,31 @@ func sameItemDecision(a, b *Record) (bool, error) {
 	right, err := decision(b)
 	return left == right, err
 }
-func Invalidate(root, id, reason string) error {
-	if _, err := Load(root, Reference{ID: id, Digest: id}); err != nil {
+
+// Find returns the reference for one record id. An id alone no longer locates a
+// record, so a caller that only has an id — an operator naming a judgment on
+// the command line — walks the store's directories once.
+func Find(root, id string) (Reference, error) {
+	if !idPattern.MatchString(id) {
+		return Reference{}, fmt.Errorf("invalid judgment id %q", id)
+	}
+	records, _, err := walkStore(root, kindSet(nil))
+	if err != nil {
+		return Reference{}, err
+	}
+	for _, ref := range records {
+		if ref.ID == id {
+			return ref, nil
+		}
+	}
+	return Reference{}, fmt.Errorf("judgment %s is not in the store", id)
+}
+
+func Invalidate(root string, ref Reference, reason string) error {
+	if _, err := Load(root, ref); err != nil {
 		return err
 	}
+	id := ref.ID
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("invalidation reason is required")
 	}

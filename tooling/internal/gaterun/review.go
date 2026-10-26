@@ -181,19 +181,19 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 			continue
 		}
 		binding.Layer = run.Target
-		if err := judgments.Check(d.root, binding.Reference, binding.Layer, run.Protocol); err != nil {
+		record, err := judgments.Load(d.root, binding.Reference)
+		if err != nil {
+			forced[ck.Key] = true
+			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
+			continue
+		}
+		if err := judgments.Verify(d.root, record, binding.Reference, binding.Layer, run.Protocol); err != nil {
 			forced[ck.Key] = true
 			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
 			continue
 		}
 		want, ok := requiredByKey[ck.Key]
 		if !ok {
-			continue
-		}
-		record, err := judgments.Load(d.root, binding.Reference)
-		if err != nil {
-			forced[ck.Key] = true
-			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
 			continue
 		}
 		missing, newlyRequired, err := judgments.NewlyRequiredEvidence(d.root, want.Unit, want.Layer, *record, want.Inputs)

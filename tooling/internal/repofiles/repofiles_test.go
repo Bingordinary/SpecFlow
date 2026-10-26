@@ -226,6 +226,34 @@ func TestExpander_MatchesExpandDir(t *testing.T) {
 	}
 }
 
+// TestExpander_ExpandsWholeRepository pins the "." expansion: a caller that
+// asks for the repository listing (operation scope, gate snapshots) must see
+// every repository-content path, not an empty set.
+func TestExpander_ExpandsWholeRepository(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeFile(t, repoRoot, "web/app.js", "export {};\n")
+	writeFile(t, repoRoot, "src/lib/util.js", "export {};\n")
+
+	e, err := NewExpander(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := e.Expand(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneShot, err := ExpandDir(repoRoot, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(shared, oneShot) {
+		t.Fatalf("Expander.Expand(\".\") must match ExpandDir: got %v, want %v", shared, oneShot)
+	}
+	if len(shared) != 2 {
+		t.Fatalf("the whole-repository expansion must list both files, got %v", shared)
+	}
+}
+
 // TestExpander_ExpandsDistinctDirectoriesOnce pins the operation-count
 // contract: K declarations over D distinct directories expand D times, not
 // K times, and different spellings of one directory share the expansion.

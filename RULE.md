@@ -68,6 +68,31 @@ behavior. See `framework/spec_flow_review.md` Section 2.15 for the authoritative
 deployment-layout rule.
 
 
+## No Migration Artifacts Rule
+
+Any change to stored state — paths, formats, schemas, identifiers — ships with
+**no migration code, no migration command, no migration script, and no
+step-by-step migration procedure or guide**. Migrating an installed project is
+the consuming project's agent's job, not this repository's responsibility.
+
+This repository's responsibility ends at exactly one thing: **state what the new
+expected state is** — the format the current tooling reads and writes.
+
+Do not add anything else around it:
+
+1. no detection of older layouts;
+2. no legacy branch, legacy path lookup, or "the store is from an older version"
+   diagnostic;
+3. no upgrade path that assumes SpecFlow will transform existing data, and no
+   description of such a transformation in framework documents.
+
+The tooling knows exactly one format. State that does not match it fails through
+the same validation every malformed state goes through — nothing special-cases
+it, and nothing explains it in compatibility terms. A consumer that should not
+re-generate its state does the moving itself, with its own agent and its own
+rules.
+
+
 ## Solution Rules
 
   When you need to provide a modification or refactor plan, it must follow these rules:

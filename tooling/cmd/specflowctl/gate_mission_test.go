@@ -9,6 +9,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulevalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 func TestRuleMissionIncludesTargetLayerApplicability(t *testing.T) {
@@ -617,7 +618,7 @@ func TestGateMissionReportLineFormsMatchValidator(t *testing.T) {
 func renderMissionPrompt(t *testing.T, run *gaterun.Run, session *gaterun.SessionSpec) string {
 	t.Helper()
 	mission := gateMission{
-		SchemaVersion: 3, RunID: "20260101-000000-abc123", Gate: run.Gate,
+		SchemaVersion: validationcache.RecordStateSchemaValidate, RunID: "20260101-000000-abc123", Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target, Mode: run.Mode,
 		SpecSource: "docs/specs/units/candidate/unit_auth.md",
 		Sessions: []missionSession{{

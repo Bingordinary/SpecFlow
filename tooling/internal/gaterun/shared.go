@@ -38,6 +38,10 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 	if err != nil {
 		return nil, err
 	}
+	protocol, err := judgments.Protocol(root, GateVerify, TargetKindUnit)
+	if err != nil {
+		return nil, err
+	}
 	refs := map[string]judgments.Reference{}
 	collect := func(bindings map[string]judgments.Binding) error {
 		for _, key := range keys {
@@ -93,7 +97,7 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 		if parts[1] != unit {
 			continue
 		}
-		ref, accepted, err := judgments.LatestItem(root, parts[1], parts[2], layer)
+		ref, accepted, err := judgments.LatestItem(root, protocol, parts[1], parts[2], layer)
 		if err != nil {
 			return nil, err
 		}
@@ -196,20 +200,22 @@ func prepareSharedChecks(root string, run *Run) error {
 		ref    judgments.Reference
 		record *judgments.Record
 	}
+	// One subject's code records are read the first time that subject is
+	// asked about. The key names the subject, so its slot is computed rather
+	// than searched for, and a plan never reads the records of a file it is not
+	// planning.
 	bySubject := map[string][]codeRecord{}
-	indexed := false
-	index := func() error {
-		if indexed {
+	loaded := map[string]bool{}
+	loadSubject := func(subject string) error {
+		if loaded[subject] {
 			return nil
 		}
-		// Index the code records by subject once. The reuse search and the
-		// invalidated-record fingerprint both read the same per-subject view;
-		// reloading the whole store for every coverage key made planning
-		// quadratic in the store size (issue #79). Records are indexed in List
-		// order so the reuse search walks a subject group backwards exactly as
-		// it walked the full reference list, and the fingerprint walks it
-		// forwards.
-		refs, err := judgments.List(root)
+		loaded[subject] = true
+		slot, err := judgments.Slot(run.Protocol, judgments.Code, "", subject, "")
+		if err != nil {
+			return err
+		}
+		refs, err := judgments.RefsInSlot(root, slot)
 		if err != nil {
 			return err
 		}
@@ -218,9 +224,8 @@ func prepareSharedChecks(root string, run *Run) error {
 			if loadErr != nil || record.Kind != judgments.Code {
 				continue
 			}
-			bySubject[record.Subject] = append(bySubject[record.Subject], codeRecord{ref: ref, record: record})
+			bySubject[subject] = append(bySubject[subject], codeRecord{ref: ref, record: record})
 		}
-		indexed = true
 		return nil
 	}
 	layer := run.Target
@@ -270,7 +275,7 @@ func prepareSharedChecks(root string, run *Run) error {
 		if ck.Kind != SessionKindCode {
 			continue
 		}
-		if err := index(); err != nil {
+		if err := loadSubject(ck.File); err != nil {
 			return err
 		}
 		inputs := coverageReadRefs(root, run, *ck)
@@ -430,11 +435,11 @@ func sharedStates(root string, run *Run, states []*SessionState) ([]*SessionStat
 		if !ok {
 			continue
 		}
-		if err := judgments.Check(root, binding.Reference, binding.Layer, run.Protocol); err != nil {
-			return nil, err
-		}
 		r, err := judgments.Load(root, binding.Reference)
 		if err != nil {
+			return nil, err
+		}
+		if err := judgments.Verify(root, r, binding.Reference, binding.Layer, run.Protocol); err != nil {
 			return nil, err
 		}
 		result, err := BoundJudgmentResult(r, *ck, binding.Layer)
@@ -884,11 +889,11 @@ func PublicResultForDesignKey(root string, run *Run, ck CoverageKey) (SessionRes
 	if !ok {
 		return SessionResult{}, fmt.Errorf("design check %s has no accepted public record", ck.Key)
 	}
-	if err := judgments.Check(root, binding.Reference, binding.Layer, run.Protocol); err != nil {
-		return SessionResult{}, err
-	}
 	record, err := judgments.Load(root, binding.Reference)
 	if err != nil {
+		return SessionResult{}, err
+	}
+	if err := judgments.Verify(root, record, binding.Reference, binding.Layer, run.Protocol); err != nil {
 		return SessionResult{}, err
 	}
 	result, err := BoundJudgmentResult(record, CoverageKey{Key: publicKey, Kind: SessionKindCode, File: ck.File}, binding.Layer)

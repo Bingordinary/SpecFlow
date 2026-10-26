@@ -143,6 +143,18 @@ type Expander struct {
 	repoRoot   string
 	cache      map[string]expansion
 	expansions int
+	// listing marks an expander that reports repository-content paths without
+	// the content hash. A caller that only classifies or associates files never
+	// needs the hash, and hashing every declared file is what made a single
+	// unit validation read the whole declared surface of every unit.
+	listing bool
+	// repository is the repository-content path list, read once per expander.
+	// Every directory expansion is a filter over it: one git call lists the
+	// repository whether the expander expands one declared directory or every
+	// declared directory of one caller.
+	repository []string
+	listed     bool
+	listedErr  error
 }
 
 type expansion struct {
@@ -158,6 +170,17 @@ func NewExpander(repoRoot string) (*Expander, error) {
 		return nil, err
 	}
 	return &Expander{repoRoot: repoRoot, cache: map[string]expansion{}}, nil
+}
+
+// NewListingExpander returns an expander whose expansions carry paths only.
+// The expansion rule is identical to NewExpander's; only the content hash is
+// omitted, so callers that judge associations or resolve declarations pay one
+// git listing instead of one file read per file.
+func NewListingExpander(repoRoot string) (*Expander, error) {
+	if err := RequireWorkTreeTop(repoRoot); err != nil {
+		return nil, err
+	}
+	return &Expander{repoRoot: repoRoot, cache: map[string]expansion{}, listing: true}, nil
 }
 
 // Expansions reports how many distinct directories were expanded through git,
@@ -186,7 +209,7 @@ func (e *Expander) Expand(dir string) ([]File, error) {
 		return previous.files, nil
 	}
 	e.expansions++
-	files, err := expandDir(e.repoRoot, canonical)
+	files, err := e.expandDir(canonical)
 	e.cache[canonical] = expansion{files: files, err: err}
 	if err != nil {
 		return nil, fmt.Errorf("expand directory %q: %w", dir, err)
@@ -194,23 +217,44 @@ func (e *Expander) Expand(dir string) ([]File, error) {
 	return files, nil
 }
 
-// expandDir runs the git expansion for an already-canonical directory: every
-// repository-content file under it, hashed and sorted by path.
-func expandDir(repoRoot, canonical string) ([]File, error) {
-	out, err := runGit(repoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", canonical)
+// repositoryPaths lists every repository-content path once per expander.
+func (e *Expander) repositoryPaths() ([]string, error) {
+	if e.listed {
+		return e.repository, e.listedErr
+	}
+	e.listed = true
+	out, err := runGit(e.repoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		e.listedErr = err
+		return nil, err
+	}
+	e.repository = strings.Split(out, "\x00")
+	return e.repository, nil
+}
+
+// expandDir expands an already-canonical directory by filtering the
+// invocation's repository listing: every repository-content file under it,
+// sorted by path, with the content hash unless the caller asked for a listing.
+func (e *Expander) expandDir(canonical string) ([]File, error) {
+	paths, err := e.repositoryPaths()
 	if err != nil {
 		return nil, err
 	}
+	prefix := canonical + "/"
+	whole := canonical == "."
 	var files []File
-	for _, p := range strings.Split(out, "\x00") {
+	for _, p := range paths {
 		if p == "" {
 			continue
 		}
-		rel, err := repopath.Canonical(repoRoot, p)
+		if !whole && p != canonical && !strings.HasPrefix(p, prefix) {
+			continue
+		}
+		rel, err := repopath.Canonical(e.repoRoot, p)
 		if err != nil {
 			return nil, err
 		}
-		abs := filepath.Join(repoRoot, filepath.FromSlash(rel))
+		abs := filepath.Join(e.repoRoot, filepath.FromSlash(rel))
 		info, err := os.Stat(abs)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -221,11 +265,15 @@ func expandDir(repoRoot, canonical string) ([]File, error) {
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		hash, err := specpaths.FileHash(abs)
-		if err != nil {
-			return nil, err
+		entry := File{Path: rel}
+		if !e.listing {
+			hash, err := specpaths.FileHash(abs)
+			if err != nil {
+				return nil, err
+			}
+			entry.Hash = hash
 		}
-		files = append(files, File{Path: rel, Hash: hash})
+		files = append(files, entry)
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil

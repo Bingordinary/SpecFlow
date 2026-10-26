@@ -74,7 +74,7 @@ func TestCheckVerifyIgnoresInputOnlyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, _ := json.Marshal(map[string]any{
-		"schema_version": 4,
+		"schema_version": 5,
 		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
 		"logical_status": map[string]string{key: "pass"},
 	})
@@ -176,7 +176,7 @@ func TestUncoveredChangedFilesReportsChangedUnpinnedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, _ := json.Marshal(map[string]any{
-		"schema_version": 4,
+		"schema_version": 5,
 		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
 		"logical_status": map[string]string{key: "pass"},
 	})
@@ -275,7 +275,7 @@ func TestUncoveredChangedFilesExcludesSynthesisEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, _ := json.Marshal(map[string]any{
-		"schema_version": 4,
+		"schema_version": 5,
 		"records":        map[string]judgments.Binding{key: {Reference: ref, Layer: "candidate", Source: "executed"}},
 		"logical_status": map[string]string{key: "pass"},
 		"synthesis_evidence": []map[string]string{
@@ -3537,7 +3537,7 @@ func writeCacheFixtureFile(t *testing.T, p string, data []byte, mode os.FileMode
 	if len(refs) == 0 {
 		refs["fixture"] = judgments.Binding{}
 	}
-	state, _ := json.Marshal(map[string]any{"schema_version": 4, "records": refs, "logical_status": statuses})
+	state, _ := json.Marshal(map[string]any{"schema_version": 5, "records": refs, "logical_status": statuses})
 	content += "\n<!-- GATE_JUDGMENTS_BEGIN\n" + string(state) + "\nGATE_JUDGMENTS_END -->"
 	return os.WriteFile(p, []byte(content), mode)
 }

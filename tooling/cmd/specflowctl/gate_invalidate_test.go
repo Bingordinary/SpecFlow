@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestGateInvalidatePersistsFailureRecordWithoutRerunFlag(t *testing.T) {
 		Blocking:  true,
 		P1Count:   1,
 		Timestamp: "2026-09-19T00:00:00Z",
-		Judgments: `{"schema_version":3,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`,
+		Judgments: fmt.Sprintf(`{"schema_version": %d,"logical_status":{"auth.core":"pass"},"findings":[],"synthesis_digest":"sha256:test"}`, validationcache.RecordStateSchemaValidate),
 		Entries:   []validationcache.FileEntry{*entry},
 	})); err != nil {
 		t.Fatal(err)
@@ -117,7 +118,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry.Checks = checks
-	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: 3, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
+	judgments, err := json.Marshal(gaterun.JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaValidate, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
 	if err != nil {
 		t.Fatal(err)
 	}

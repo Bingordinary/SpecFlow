@@ -137,7 +137,8 @@ func capturedCarriedLenses(repoRoot string, run *Run, carried []string) (map[str
 }
 
 // validatedJudgmentState re-reads and validates the baseline cache's
-// structured judgment state (the GATE_JUDGMENTS schema-3 block). A cache
+// structured judgment state (the GATE_JUDGMENTS block at the schema its gate
+// requires). A cache
 // without it cannot supply carried semantic results or a complete findings
 // body, so any partial run that must carry something is refused instead of
 // guessed from prose (see framework/verification_scope.md §Delta Runs and
@@ -1330,9 +1331,9 @@ func CoverageProgress(run *Run, states []*SessionState) (covered map[string]stri
 
 func expectedBaselineSchema(b *validationcache.GateBaseline) int {
 	if b.Command == GateVerify {
-		return 4
+		return validationcache.RecordStateSchemaVerify
 	}
-	return 3
+	return validationcache.RecordStateSchemaValidate
 }
 
 // stubScanPatterns are the deterministic stub/placeholder patterns of verify

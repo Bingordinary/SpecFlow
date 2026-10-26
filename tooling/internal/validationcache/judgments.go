@@ -13,6 +13,14 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
 
+// Structured-judgment schema versions. A record binding carries the record's
+// store slot as well as its id, so a cache written before slots existed cannot
+// name its records and is refused rather than half-read.
+const (
+	RecordStateSchemaVerify   = 5
+	RecordStateSchemaValidate = 4
+)
+
 type recordState struct {
 	SchemaVersion     int                          `json:"schema_version"`
 	Records           map[string]judgments.Binding `json:"records"`
@@ -52,7 +60,7 @@ type ConclusionState struct {
 // has to run again.
 func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]ConclusionState, error) {
 	var state recordState
-	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != 4 {
+	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != RecordStateSchemaVerify {
 		return nil, fmt.Errorf("verify cache uses an old or damaged review protocol; run a full verify")
 	}
 	if len(state.Records) == 0 {
@@ -71,15 +79,18 @@ func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]Conclu
 	for _, key := range keys {
 		binding := state.Records[key]
 		st := ConclusionState{Key: key, Live: true}
-		if err := judgments.Check(root, binding.Reference, binding.Layer, protocol); err != nil {
+		r, err := judgments.Load(root, binding.Reference)
+		if err != nil {
 			st.Live = false
 			st.Reason = fmt.Sprintf("%s: %v", key, err)
 			states = append(states, st)
 			continue
 		}
-		r, err := judgments.Load(root, binding.Reference)
-		if err != nil {
-			return nil, err
+		if err := judgments.Verify(root, r, binding.Reference, binding.Layer, protocol); err != nil {
+			st.Live = false
+			st.Reason = fmt.Sprintf("%s: %v", key, err)
+			states = append(states, st)
+			continue
 		}
 		if r.Kind != judgments.Code {
 			var result struct {
@@ -188,7 +199,7 @@ func UncoveredChangedFilesForUnit(repoRoot, unitName string) ([]string, error) {
 
 func uncoveredChangedFiles(repoRoot string, cache *cacheFile) ([]string, error) {
 	var state recordState
-	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != 4 {
+	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != RecordStateSchemaVerify {
 		return nil, nil
 	}
 	pinned := map[string]bool{}

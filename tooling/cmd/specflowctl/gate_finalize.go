@@ -235,9 +235,9 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		body.WriteString("\n\nAdditional retained findings:\n")
 		body.WriteString(strings.Join(retainedDetails, "\n\n"))
 	}
-	schema := 3
+	schema := validationcache.RecordStateSchemaValidate
 	if run.Gate == gaterun.GateVerify {
-		schema = 4
+		schema = validationcache.RecordStateSchemaVerify
 		// A salvaged run publishes no judgment record for a coverage key the
 		// drift invalidated: the record would pin plan-time evidence the key
 		// can no longer prove it read cleanly. An unbound key makes the

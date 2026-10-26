@@ -178,7 +178,10 @@ func TestSharedInvalidationAndWholeFileIdentity(t *testing.T) {
 	if newer.Records["code:contracts.js"].ID == public.ID {
 		t.Fatal("invalidated record reused")
 	}
-	p := filepath.Join(root, judgments.Directory, newer.Records["code:contracts.js"].ID+".json")
+	p, err := judgments.StoredPath(root, newer.Records["code:contracts.js"].Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
@@ -662,7 +665,11 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	synthesisPromote(t, root, "auth")
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	sharedFinish(t, root, order)
-	stable, accepted, err := judgments.LatestItem(root, "auth", "auth.core", "stable")
+	protocol, perr := judgments.Protocol(root, "verify", "unit")
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	stable, accepted, err := judgments.LatestItem(root, protocol, "auth", "auth.core", "stable")
 	if err != nil || !accepted {
 		t.Fatalf("stable decision missing: %v", err)
 	}

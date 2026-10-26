@@ -324,7 +324,10 @@ func TestCleanReclaimsRunWithDeadEvidence(t *testing.T) {
 
 	// Remove the bound record like the pre-fix collection could: from here on
 	// every resolution path for the run fails.
-	p := filepath.Join(root, filepath.FromSlash(judgments.Directory), binding.Reference.ID+".json")
+	p, err := judgments.StoredPath(root, binding.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)
 	}
