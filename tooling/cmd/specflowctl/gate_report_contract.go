@@ -204,11 +204,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			} else {
 				lines = append(lines, "spec_requirements: <active check of the unit requirements> — <basis>")
 				lines = append(lines,
-					"Spec basis: <narrative block heading or promise id>",
+					"Spec basis: <narrative block heading text or promise id>",
 					"  # at least one Spec basis line per file block, one anchor each: the spec",
-					"  # anchors this judgment relied on — a ### (or deeper) narrative block heading,",
-					"  # a promise id, or a ## section heading. Every anchor must resolve; an edit to",
-					"  # an anchor you declared re-runs this judgment, an edit elsewhere does not.")
+					"  # anchors this judgment relied on — a promise id, or the heading text of a",
+					"  # ### (or deeper) narrative block or a ## section. Heading text is the heading",
+					"  # line without its leading '#' markers and surrounding space: the heading",
+					"  # `### 3. Data Structures` is named `3. Data Structures`. Every anchor must",
+					"  # resolve; an edit to an anchor you declared re-runs this judgment, an edit",
+					"  # elsewhere does not.")
 				lines = append(lines, "Observation disposition: <public observation id> = <retained|suppressed> — <unit-specific evidence and reason>")
 			}
 			lines = append(lines,
@@ -354,7 +357,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			add("quality-"+field, "exactly one assessment and non-empty basis per file block", "")
 			c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		}
-		add("quality-spec-basis", "at least one `Spec basis: <anchor>` line per file block, one anchor each — the narrative block headings and promise entry ids this judgment relied on; every anchor must resolve to an existing unique heading or promise entry of the unit spec, and an edit to a declared anchor re-runs the judgment while an edit elsewhere does not", "")
+		add("quality-spec-basis", "at least one `Spec basis: <anchor>` line per file block, one anchor each — a promise entry id, or the heading text of a `##` section or `###`/deeper narrative block, where heading text is the heading line without its leading '#' markers and surrounding space (the heading `### 3. Data Structures` is named `3. Data Structures`); every anchor must resolve to an existing unique heading or promise entry of the unit spec, and an edit to a declared anchor re-runs the judgment while an edit elsewhere does not", "")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"
 		add("quality-gate-findings", "exactly one gate_findings line per file block: `none` or one or more `[P0|P1] {finding}` entries separated by `;` — a retained P2/P3 observation is never listed here", "")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_file_key"

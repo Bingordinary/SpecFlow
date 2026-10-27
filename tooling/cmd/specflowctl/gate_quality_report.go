@@ -57,9 +57,9 @@ func qualityReportBlocks(spec *gaterun.SessionSpec, report string) ([]qualityRep
 var findingLocationLineRe = regexp.MustCompile(`^(.*?):\d+(?:-\d+)?$`)
 
 // specBasisLineRe captures one design `Spec basis:` declaration: the anchor —
-// a narrative-block heading text or a promise entry id — that the judgment
-// relied on. One line per anchor, so a heading text may contain any character
-// except a newline.
+// a promise entry id, or a heading text (the heading line without its leading
+// `#` markers) — that the judgment relied on. One line per anchor, so a heading
+// text may contain any character except a newline.
 var specBasisLineRe = regexp.MustCompile(`(?m)^Spec basis: (\S[^\n]*)$`)
 
 // findingLocationFile extracts the file a finding's own `{location}` names —
@@ -177,7 +177,7 @@ func parseQualitySessionReport(absRoot string, run *gaterun.Run, spec *gaterun.S
 		if ck.Kind == gaterun.SessionKindDesign {
 			matches := specBasisLineRe.FindAllStringSubmatch(block.Text, -1)
 			if len(matches) == 0 {
-				return nil, fmt.Errorf("file %q: a design block must declare the spec anchors its judgment relied on — add at least one `Spec basis: <narrative block heading or promise id>` line", block.Key)
+				return nil, fmt.Errorf("file %q: a design block must declare the spec anchors its judgment relied on — add at least one `Spec basis: <promise id or heading text>` line, where heading text is the heading line without its leading '#' markers", block.Key)
 			}
 			if out.SpecBasis == nil {
 				out.SpecBasis = map[string][]string{}

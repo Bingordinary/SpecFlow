@@ -521,12 +521,13 @@ type SpecBasisError struct {
 }
 
 func (e SpecBasisError) Error() string {
-	return fmt.Sprintf("Spec basis anchor %q does not resolve in %s — name an existing promise id or a unique heading of the unit spec", e.Anchor, e.Spec)
+	return fmt.Sprintf("Spec basis anchor %q does not resolve in %s — name an existing unique heading text or promise id of the unit spec: heading text is the heading line without its leading '#' markers (the heading `### 3. Data Structures` is named `3. Data Structures`)", e.Anchor, e.Spec)
 }
 
 // ValidateSpecBasis resolves a design report's declared spec anchors against
-// the unit main spec of the run. An anchor is a promise entry id, a `##`
-// section heading, or a `###` or deeper narrative block heading.
+// the unit main spec of the run. An anchor is a promise entry id, or the
+// heading text of a `##` section or a `###` or deeper narrative block; heading
+// text is the heading line without its leading `#` markers.
 func ValidateSpecBasis(root string, run *Run, anchors []string) error {
 	mainSpec := mainSpecRef(run)
 	text, err := contenthash.FileText(filepath.Join(root, filepath.FromSlash(mainSpec)))

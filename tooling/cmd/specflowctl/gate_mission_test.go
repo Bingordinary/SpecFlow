@@ -516,13 +516,26 @@ func TestGateMissionCoBatchedContractFollowsEachKind(t *testing.T) {
 		t.Fatalf("co-batched template must state the gate_findings grammar, got:\n%s", template)
 	}
 	requirementIDs := map[string]bool{}
+	var specBasisRequirement string
 	for _, rule := range mission.Sessions[0].ReportContract.Requirements {
 		requirementIDs[rule.ID] = true
+		if rule.ID == "quality-spec-basis" {
+			specBasisRequirement = rule.Description
+		}
 	}
 	for _, id := range []string{"public-finding-placement", "quality-finding-id-order"} {
 		if !requirementIDs[id] {
 			t.Fatalf("co-batched report contract is missing requirement %q", id)
 		}
+	}
+	// The contract defines the anchor syntax in both places a reviewer reads:
+	// the template's Spec basis form and the printed requirement. A heading
+	// anchor is the heading text, never the heading line with its '#' markers.
+	if !strings.Contains(template, "without its leading '#' markers") {
+		t.Fatalf("co-batched template must state the heading-text spelling of Spec basis anchors, got:\n%s", template)
+	}
+	if !strings.Contains(specBasisRequirement, "without its leading '#' markers") {
+		t.Fatalf("quality-spec-basis must state the heading-text spelling, got %q", specBasisRequirement)
 	}
 
 	// The printed submission command must be self-consistent: its --keys list
