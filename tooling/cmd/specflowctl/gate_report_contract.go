@@ -395,11 +395,11 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].Allowed = []string{"PASS", "FAIL"}
 		}
 		if len(crossItemsFor(run)) > 0 {
-			desc := "one link from each failed Cross item to a new retained cross finding, at any severity; no link for a passing item"
+			desc := "one link from each failed Cross item to a new retained cross finding, at any severity; no link for a passing item; the name is the bare relationship name the Cross item line prints, not its `relationship:<name>` logical key"
 			if run.Gate == gaterun.GateValidate {
-				desc = "one link from each failed Cross item to a new retained cross finding at P0/P1; no link for a passing item"
+				desc = "one link from each failed Cross item to a new retained cross finding at P0/P1; no link for a passing item; the name is the bare relationship name the Cross item line prints, not its `relationship:<name>` logical key"
 			}
-			add("cross-item-finding", desc, "Cross item finding: <failed_item_key> = <new_cross_finding_id>")
+			add("cross-item-finding", desc, "Cross item finding: <relationship_name> = <new_cross_finding_id>")
 			c.Requirements[len(c.Requirements)-1].When = "if_cross_item_fail"
 			c.Requirements[len(c.Requirements)-1].MinCount = 0
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1

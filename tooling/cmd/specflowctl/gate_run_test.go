@@ -4510,7 +4510,7 @@ func TestVerifyCrossContractKeepsNonblockingFourOfFivePass(t *testing.T) {
 			t.Fatalf("mission omitted %s", item)
 		}
 	}
-	if !strings.Contains(mission.Sessions[0].ReportContract.Template, "Cross item finding: <failed_item_key> = <new_cross_finding_id>") {
+	if !strings.Contains(mission.Sessions[0].ReportContract.Template, "Cross item finding: <relationship_name> = <new_cross_finding_id>") {
 		t.Fatalf("mission omitted failed-item finding links: %s", mission.Sessions[0].ReportContract.Template)
 	}
 	// The contract must state the summary/item coupling the validator enforces:
@@ -4526,6 +4526,12 @@ func TestVerifyCrossContractKeepsNonblockingFourOfFivePass(t *testing.T) {
 	}
 	if !strings.Contains(crossFinding, "at any severity") {
 		t.Fatalf("cross-item-finding requirement must state at any severity, got %q", crossFinding)
+	}
+	// The accepted spelling must be stated where the reviewer reads it: the
+	// bare relationship name printed by the Cross item line, never the
+	// relationship:<name> logical key (#107).
+	if !strings.Contains(crossFinding, "bare relationship name") || !strings.Contains(crossFinding, "`relationship:<name>` logical key") {
+		t.Fatalf("cross-item-finding requirement must declare the accepted key spelling, got %q", crossFinding)
 	}
 	if _, err := grSubmitRaw(t, root, runID, "cross", grVerifyCrossReport(runID, main, 4, "P2", "PASS")); err != nil {
 		t.Fatal(err)
@@ -4560,6 +4566,12 @@ func TestVerifyCrossItemFindingLinks(t *testing.T) {
 		{"unknown item", func(report, runID string) string {
 			return strings.Replace(report, "Cross item finding: cross_reference_integrity", "Cross item finding: unknown_check", 1)
 		}, "unknown Cross item finding key"},
+		{"unknown item lists accepted names", func(report, runID string) string {
+			return strings.Replace(report, "Cross item finding: cross_reference_integrity", "Cross item finding: unknown_check", 1)
+		}, "cross_reference_integrity"},
+		{"logical key spelling", func(report, runID string) string {
+			return strings.Replace(report, "Cross item finding: cross_reference_integrity", "Cross item finding: relationship:cross_reference_integrity", 1)
+		}, "bare relationship name"},
 		{"unknown finding", func(report, runID string) string {
 			return strings.Replace(report, runID+"/cross/F1", runID+"/cross/F9", 1)
 		}, "not a finding created"},

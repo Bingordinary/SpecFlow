@@ -149,7 +149,7 @@ A reviewer session that cannot carry its assigned batch does not submit a partia
 Session over capacity: <what it could not carry>
 ```
 
-instead of a report. `gate-submit` records the session as `over_capacity` — terminal for that assignment, leaving its keys uncovered — rather than rejecting the text as a defective report; `gate-status` then reports those keys as needing a split. The coordinator splits them into smaller sessions of the same lens, one mission each; a quality piece keeps each file's `code:<file>` and `design:<unit>:<file>` pairing, and accepted sessions are untouched. Capacity is never declared in advance: it is whatever a session turns out to carry, so a run's sessions converge on the largest key sets its reviewers accept, without any configured session size.
+instead of a report. `gate-submit` records the session as `over_capacity` — terminal for that assignment, leaving its keys uncovered — rather than rejecting the text as a defective report; `gate-status` then reports those keys as needing a split. The coordinator splits them into smaller sessions of the same lens, one mission each; when a multi-file quality session is split, each piece keeps each file's `code:<file>` and `design:<unit>:<file>` pairing, and accepted sessions are untouched. A refused batch that is itself one file's code+design pair has no smaller pair-preserving piece: it splits into those two keys, missioning the `code:<file>` key first because the design session consumes its accepted public record. Capacity is never declared in advance: it is whatever a session turns out to carry, so a run's sessions converge on the largest key sets its reviewers accept, without any configured session size.
 
 The declaration applies only to a batch with more than one key. A single-key batch — the unit-level scan, a lone item, the delta review key, or the final cross synthesis — is already atomic and has no smaller batch to split into, so the mission does not offer the declaration and the session must carry its report; the over-capacity text submitted for such a batch is a defective report, not a terminal capacity signal.
 
@@ -296,8 +296,10 @@ Cross item: {relationship_name} = PASS | FAIL — {reason}
 # carrying only P2/P3 findings therefore keeps the summary as {passed}/{N} PASS.
 Cross-check: {passed}/{N} PASS | FAIL — {reason}
 # Validate/verify only, exactly once for every failed assigned relationship;
-# a verify finding may be any severity, a validate finding must be P0/P1:
-Cross item finding: {failed_item_key} = {new_retained_synthesis_finding_id}
+# a verify finding may be any severity, a validate finding must be P0/P1; the
+# name is the bare relationship name the Cross item line prints, not its
+# `relationship:<name>` logical key:
+Cross item finding: {relationship_name} = {new_retained_synthesis_finding_id}
 # Verify findings may be deferred to another unit by recorded ownership:
 Finding ownership: {retained_finding_id} = owned_by {unit} — evidence: {read_ref}; reason: {one line}
 ```

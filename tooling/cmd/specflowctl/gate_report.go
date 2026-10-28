@@ -236,10 +236,14 @@ func validateCrossItemBody(run *gaterun.Run, report string, out *parsedReport) e
 		if strings.HasPrefix(line, "Cross item finding:") {
 			match := crossItemFindingRe.FindStringSubmatch(line)
 			if match == nil {
-				return fmt.Errorf("malformed Cross item finding line %q: expected `Cross item finding: <key> = <finding_id>`", line)
+				return fmt.Errorf("malformed Cross item finding line %q: expected `Cross item finding: <relationship_name> = <finding_id>`, where <relationship_name> is the bare relationship name the Cross item line prints, not its `relationship:<name>` logical key", line)
 			}
 			if !stringInList(items, match[1]) {
-				return fmt.Errorf("unknown Cross item finding key %q for %s", match[1], gate)
+				hint := ""
+				if len(items) > 0 {
+					hint = " — use the bare relationship name the Cross item line prints (" + strings.Join(items, ", ") + "), not its `relationship:<name>` logical key"
+				}
+				return fmt.Errorf("unknown Cross item finding key %q for %s%s", match[1], gate, hint)
 			}
 			if _, exists := links[match[1]]; exists {
 				return fmt.Errorf("duplicate Cross item finding for %q", match[1])
