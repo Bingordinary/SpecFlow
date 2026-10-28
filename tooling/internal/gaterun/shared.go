@@ -350,6 +350,16 @@ func ClaimShared(root string, run *Run, keys []string) error {
 	// Validate the whole batch before saving any assignment. The repository
 	// lock keeps task ownership unchanged between this preflight and writes.
 	session := SessionID(keys)
+	// A terminal assignment never publishes, so claiming for it would reserve
+	// the task for a session that can no longer submit — blocking the split
+	// that state requires. Claim only for a live assignment.
+	state, err := readSessionStateFile(root, run, session)
+	if err != nil {
+		return err
+	}
+	if state != nil && state.Status == SessionOverCapacity {
+		return fmt.Errorf("session %s is over_capacity (terminal) — split its assigned batch into smaller sessions of the same lens; it accepts no new assignment", session)
+	}
 	var updates []*sharedTask
 	for _, key := range keys {
 		ck := run.CoverageByKey(key)
@@ -405,6 +415,40 @@ func ClaimShared(root string, run *Run, keys []string) error {
 	}
 	return nil
 }
+
+// ReleaseShared drops the session assignment of a terminal session that will
+// never publish its task, so the coordinator can split the refused batch into
+// smaller sessions inside the same run. The task stays owned by the run, which
+// keeps the one-owner rule for public evidence: a replaced run reclaims the
+// same pending task, while another run's task and another session's assignment
+// are untouched. Call it under the repository lock, in the same transition
+// that records the session terminal.
+func ReleaseShared(root string, run *Run, keys []string) error {
+	session := SessionID(keys)
+	var updates []*sharedTask
+	for _, key := range keys {
+		ck := run.CoverageByKey(key)
+		if ck == nil || ck.Kind != SessionKindCode || ck.Task == "" {
+			continue
+		}
+		task, err := readTask(root, ck.Task)
+		if err != nil {
+			return err
+		}
+		if task.Owner != run.RunID || task.Session != session {
+			continue
+		}
+		task.Session = ""
+		updates = append(updates, task)
+	}
+	for _, task := range updates {
+		if err := saveTask(root, task); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func sharedStates(root string, run *Run, states []*SessionState) ([]*SessionState, error) {
 	covered := map[string]bool{}
 	for _, s := range states {

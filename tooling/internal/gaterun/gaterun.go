@@ -1084,22 +1084,37 @@ func ListRuns(repoRoot string) ([]*Run, error) {
 // LoadSessionState reads one session's state. A missing state file means the
 // session is still pending.
 func LoadSessionState(repoRoot string, run *Run, sessionID string) (*SessionState, error) {
+	state, err := readSessionStateFile(repoRoot, run, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if state != nil {
+		return state, nil
+	}
+	states, err := sharedStates(repoRoot, run, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range states {
+		if s.SessionID == sessionID {
+			return s, nil
+		}
+	}
+	return &SessionState{SessionID: sessionID, Status: SessionPending}, nil
+}
+
+// readSessionStateFile reads the session's own state file, or nil when the
+// session has none. LoadSessionState additionally projects accepted shared
+// records, which reads the whole coverage set; callers that only need the
+// recorded assignment lifecycle use this instead.
+func readSessionStateFile(repoRoot string, run *Run, sessionID string) (*SessionState, error) {
 	statePath, err := sessionStatePath(repoRoot, run.RunID, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(statePath)
 	if os.IsNotExist(err) {
-		states, err := sharedStates(repoRoot, run, nil)
-		if err != nil {
-			return nil, err
-		}
-		for _, s := range states {
-			if s.SessionID == sessionID {
-				return s, nil
-			}
-		}
-		return &SessionState{SessionID: sessionID, Status: SessionPending}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot read session %q state: %w", sessionID, err)

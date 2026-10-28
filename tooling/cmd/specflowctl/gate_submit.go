@@ -74,9 +74,6 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if err != nil {
 		return err
 	}
-	if err := gaterun.ClaimShared(absRoot, run, keys); err != nil {
-		return err
-	}
 	if spec.SessionID != sessionID {
 		return fmt.Errorf("--session %q does not match the id derived from --keys %s (%q) — use the session id printed by gate-mission", sessionID, strings.Join(keys, ","), spec.SessionID)
 	}
@@ -118,6 +115,12 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	}
 	if state.Status == gaterun.SessionOverCapacity {
 		return fmt.Errorf("session %q is over_capacity (terminal) — its assigned batch must be split into smaller sessions of the same lens, not re-submitted: %s", sessionID, strings.Join(keys, ","))
+	}
+	// Only a live assignment may take the shared tasks: every terminal state
+	// above returns before this point, so a refused batch can never re-claim
+	// the tasks its split must take over.
+	if err := gaterun.ClaimShared(absRoot, run, keys); err != nil {
+		return err
 	}
 	for _, dep := range spec.DependsOn {
 		depState, derr := gaterun.LoadSessionState(absRoot, run, dep)
@@ -183,6 +186,14 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 			RejectionReason: detail,
 			ResultDigest:    digest,
 		})
+		// The session is terminal and never publishes its public tasks, so the
+		// claim it holds must end with it; otherwise the documented in-run split
+		// cannot mission those keys again. Release before recording the session,
+		// so a failed write leaves the assignment recoverable (a claim-less
+		// pending session can be claimed again), never the reverse.
+		if relErr := gaterun.ReleaseShared(absRoot, run, keys); relErr != nil {
+			return relErr
+		}
 		if saveErr := gaterun.SaveSessionState(absRoot, run, state); saveErr != nil {
 			return saveErr
 		}

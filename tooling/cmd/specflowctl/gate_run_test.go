@@ -4896,6 +4896,94 @@ func TestGateSubmitOverCapacitySplitsBatch(t *testing.T) {
 	}
 }
 
+// TestGateSubmitOverCapacityReleasesSharedClaimForSplit is the #106 regression:
+// a quality session that declares its batch too large is terminal, so its
+// public code keys must stay missionable in smaller sessions of the same run;
+// neither a re-submission nor a re-mission of the refused batch may take the
+// claim back.
+func TestGateSubmitOverCapacityReleasesSharedClaimForSplit(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpecItems(t, repoRoot, "auth", "none", "none", []string{"auth.core"})
+	grWriteFile(t, repoRoot, "src/a.go", "package auth\n")
+	grWriteFile(t, repoRoot, "src/b.go", "package auth\n")
+	grEnableMissionLayout(t, repoRoot)
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	run := mustLoadRun(t, repoRoot, runID)
+
+	var quality []string
+	for _, ck := range run.Coverage {
+		if ck.Lens == gaterun.LensQuality && (ck.Kind == gaterun.SessionKindCode || ck.Kind == gaterun.SessionKindDesign) {
+			quality = append(quality, ck.Key)
+		}
+	}
+	if len(quality) != 4 {
+		t.Fatalf("expected two quality code+design pairs, got %v", quality)
+	}
+	submit := func(keys []string, report string) error {
+		t.Helper()
+		path := grWriteFile(t, t.TempDir(), "report.md", report)
+		var out, errOut bytes.Buffer
+		return runGateSubmit([]string{"--repo-root", repoRoot, "--run", runID, "--session", gaterun.SessionID(keys), "--keys", strings.Join(keys, ","), "--report", path}, &out, &errOut)
+	}
+	submitOverCapacity := func(keys []string) {
+		t.Helper()
+		err := submit(keys, "Session over capacity: the batch exceeds one session\n")
+		if err == nil || !strings.Contains(err.Error(), "over capacity") {
+			t.Fatalf("expected the over-capacity declaration to be recorded, got %v", err)
+		}
+	}
+	mission := func(keys ...string) {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		if err := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", strings.Join(keys, ","), "--format", "prompt"}, &out, &errOut); err != nil {
+			t.Fatalf("split mission %v must run after the over-capacity declaration: %v (%s)", keys, err, errOut.String())
+		}
+	}
+
+	// The quality batch is the case the framework's split promise could not
+	// execute: its code keys carry the shared-task claim.
+	submitOverCapacity(quality)
+
+	// Re-submitting the refused batch, or missioning it again, must be refused
+	// without taking the claim back: either would leave the task reserved by a
+	// session that can never submit, and the split would fail again.
+	if err := submit(quality, "Session over capacity: the batch exceeds one session\n"); err == nil || !strings.Contains(err.Error(), "over_capacity") {
+		t.Fatalf("re-submitting a refused batch must stay terminal, got %v", err)
+	}
+	var refusedOut, refusedErr bytes.Buffer
+	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", strings.Join(quality, ","), "--format", "prompt"}, &refusedOut, &refusedErr); err == nil || !strings.Contains(err.Error(), "over_capacity") {
+		t.Fatalf("missioning a refused batch must be refused instead of re-claiming its tasks, got %v", err)
+	}
+
+	pair := []string{"code:src/a.go", "design:auth:src/a.go"}
+	mission(pair...)
+
+	// A split session may itself turn out over capacity: the release must work
+	// for every round, not only the first.
+	submitOverCapacity(pair)
+	mission("code:src/a.go")
+
+	code := run.CoverageByKey("code:src/a.go")
+	if err := grSubmitPrinted(t, repoRoot, runID, gaterun.SessionID([]string{code.Key}), code.Key, grDefaultQualityReport(run, *code)); err != nil {
+		t.Fatalf("the split code session must be accepted: %v", err)
+	}
+
+	var statusJSON, errOut bytes.Buffer
+	if err := runGateStatus([]string{"--repo-root", repoRoot, "--run", runID, "--format", "json"}, &statusJSON, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	var view gateRunView
+	if err := json.Unmarshal(statusJSON.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if containsString(view.SplitRequiredKeys, code.Key) {
+		t.Fatalf("the accepted split key must leave split_required_keys: %v", view.SplitRequiredKeys)
+	}
+	if !containsString(view.SplitRequiredKeys, "design:auth:src/a.go") {
+		t.Fatalf("the refused remainder must stay split-required: %v", view.SplitRequiredKeys)
+	}
+}
+
 // TestGateSubmitOverCapacityRequiresSplittableBatch: the over-capacity
 // declaration is the recovery signal for a batch that can be reduced. A
 // single-key batch — the unit-level scan, a lone item, the delta review key,

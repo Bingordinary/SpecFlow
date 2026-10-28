@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,5 +171,81 @@ func TestPrepareSharedChecksDefersStoreWork(t *testing.T) {
 	// store fails it — the fixture can observe the read.
 	if err := prepareSharedChecks(root, sharedCheckRun(protocol, "code:src/auth.go", "src/auth.go")); err == nil {
 		t.Fatal("an unprepared code key must read the judgment store")
+	}
+}
+
+// TestReleaseSharedDropsOnlyThisRunsTerminalAssignment is the #106 regression:
+// a terminal over_capacity session never publishes its public tasks, so
+// releasing its assignment must let a smaller same-run session claim the task,
+// while the task stays owned by that run and another run's task or another
+// session's assignment is untouched.
+func TestReleaseSharedDropsOnlyThisRunsTerminalAssignment(t *testing.T) {
+	root := newRepo(t)
+	const otherRun = "20260101-000000-bbbbbb"
+	run := &Run{
+		RunID: "20260101-000000-aaaaaa", Gate: GateVerify, TargetKind: TargetKindUnit,
+		TargetName: "auth", Target: TargetCandidate, Status: StatusOpen,
+		Coverage: []CoverageKey{
+			{Key: "code:src/a.go", Kind: SessionKindCode, Task: "task-a"},
+			{Key: "code:src/b.go", Kind: SessionKindCode, Task: "task-b"},
+			{Key: "code:src/c.go", Kind: SessionKindCode, Task: "task-c"},
+		},
+	}
+	refused := SessionID([]string{"code:src/a.go"})
+	refusedPair := SessionID([]string{"code:src/a.go", "code:src/c.go"})
+	for _, task := range []*sharedTask{
+		{ID: "task-a", Owner: run.RunID, Session: refused, Key: "code:src/a.go"},
+		{ID: "task-b", Owner: otherRun, Session: SessionID([]string{"code:src/b.go"}), Key: "code:src/b.go"},
+		{ID: "task-c", Owner: run.RunID, Session: refusedPair, Key: "code:src/c.go"},
+	} {
+		if err := saveTask(root, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := ReleaseShared(root, run, []string{"code:src/a.go"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := readTask(root, "task-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Session != "" || a.Owner != run.RunID {
+		t.Fatalf("the refused session's claim must be released and the run must keep ownership: %+v", a)
+	}
+	if err := ClaimShared(root, run, []string{"code:src/a.go"}); err != nil {
+		t.Fatalf("a released task must be claimable by the split session: %v", err)
+	}
+	if a, err = readTask(root, "task-a"); err != nil || a.Session != SessionID([]string{"code:src/a.go"}) {
+		t.Fatalf("the split session did not claim the released task: %+v %v", a, err)
+	}
+
+	// Releasing a subset of another session's batch (or another run's task)
+	// must not take an assignment away from that session or run.
+	if err := ReleaseShared(root, run, []string{"code:src/b.go", "code:src/c.go"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := readTask(root, "task-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Owner != otherRun || b.Session != SessionID([]string{"code:src/b.go"}) {
+		t.Fatalf("another run's task must be untouched: %+v", b)
+	}
+	c, err := readTask(root, "task-c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Session != refusedPair {
+		t.Fatalf("another session's assignment must be untouched: %+v", c)
+	}
+
+	// A terminal over_capacity assignment never publishes, so it must not be
+	// able to take a claim again (a re-mission of the refused batch).
+	if err := SaveSessionState(root, run, &SessionState{SessionID: refusedPair, Keys: []string{"code:src/a.go", "code:src/c.go"}, Status: SessionOverCapacity}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClaimShared(root, run, []string{"code:src/a.go", "code:src/c.go"}); err == nil || !strings.Contains(err.Error(), "over_capacity") {
+		t.Fatalf("a terminal assignment must not claim its tasks again, got %v", err)
 	}
 }
