@@ -230,6 +230,20 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	}
 }
 
+// appendGateJudgments embeds a GATE_JUDGMENTS block in a hand-written unit
+// cache exactly the way the real cache writer does, so fixture caches can
+// carry (current- or old-schema) structured judgment state.
+func appendGateJudgments(t *testing.T, repoRoot, name, command, judgments string) {
+	t.Helper()
+	path := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", name, command+"_result.md")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "\n<!-- GATE_JUDGMENTS_BEGIN\n%s\nGATE_JUDGMENTS_END -->", judgments)
+}
+
 // withPromiseFormat fills the unit-cache format fields a fixture write needs:
 // the promise-pin marker for every unit cache, and the provider contract pins
 // for a passing validate cache.
@@ -1162,7 +1176,10 @@ func TestFreshStableDetailAdvice(t *testing.T) {
 }
 
 // TestFreshStableDetailStaleEvidence verifies a STALE stable confirmation
-// gate shows its stale evidence section and the delta recovery suggestion.
+// gate shows its stale evidence section. The hand-written fixture cache
+// predates structured judgments, so the recovery advice is the full command
+// (see TestFreshDeltaAdviceRequiresCurrentJudgmentSchema for the
+// judgment-state split).
 func TestFreshStableDetailStaleEvidence(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeStableUnitSpec(t, repoRoot, "settled")
@@ -1183,8 +1200,8 @@ func TestFreshStableDetailStaleEvidence(t *testing.T) {
 	if !strings.Contains(out, "validate  STALE") {
 		t.Fatalf("expected validate STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "-> suggestion: revalidate@settled (delta recovery)") {
-		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
+	if !strings.Contains(out, "-> required: validate@settled (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)") {
+		t.Fatalf("expected full-run advice for a judgment-less baseline, got:\n%s", out)
 	}
 	if !strings.Contains(out, "CHANGE REPORT (validate):") {
 		t.Fatalf("expected the change report section, got:\n%s", out)
@@ -1210,14 +1227,66 @@ func TestFreshCandidateDetailAdvice(t *testing.T) {
 		t.Fatalf("expected verify advice, got:\n%s", out)
 	}
 
-	// The spec changes -> validate STALE -> delta recovery suggestion.
+	// The spec changes -> validate STALE. The hand-written fixture cache
+	// carries no GATE_JUDGMENTS block, so the advice is the full command
+	// (gate-plan would refuse this baseline for a delta run).
 	appendToFile(t, specPath, "# appended\n")
 	out, err = freshRun(t, repoRoot, "--unit", "iter")
 	if err != nil {
 		t.Fatalf("fresh --unit iter: %v", err)
 	}
+	if !strings.Contains(out, "-> required: validate@iter (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)") {
+		t.Fatalf("expected full-run advice for a judgment-less baseline, got:\n%s", out)
+	}
+}
+
+// TestFreshDeltaAdviceRequiresCurrentJudgmentSchema verifies the partial-run
+// advice is gated on the same predicate gate-plan enforces: a STALE gate
+// whose baseline carries the current structured judgment state keeps the
+// delta-recovery suggestion, while a STALE gate whose GATE_JUDGMENTS block
+// predates the current schema (written by an older tool) gets the full
+// command — the planner would refuse the suggested delta run on that
+// baseline (issue #105).
+func TestFreshDeltaAdviceRequiresCurrentJudgmentSchema(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	specPath := writeUnitSpec(t, repoRoot, "iter")
+	specHash := computeHash(specPath)
+	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}}
+
+	// Current judgment schema: the spec change makes validate STALE and the
+	// baseline still supports a delta run.
+	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n", files)
+	appendGateJudgments(t, repoRoot, "iter", "validate",
+		fmt.Sprintf(`{"schema_version":%d,"logical_status":{},"synthesis_digest":"sha256:test","findings":[],"relationships":[]}`, validationcache.RecordStateSchemaValidate))
+	appendToFile(t, specPath, "# appended\n")
+	out, err := freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "validate  STALE") {
+		t.Fatalf("expected validate STALE, got:\n%s", out)
+	}
 	if !strings.Contains(out, "-> suggestion: revalidate@iter (delta recovery)") {
-		t.Fatalf("expected revalidate advice, got:\n%s", out)
+		t.Fatalf("expected delta recovery suggestion for a current-schema baseline, got:\n%s", out)
+	}
+
+	// Old judgment schema: same STALE state, but the advice is the full
+	// command — gate-plan refuses this baseline for delta/repair.
+	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n", files)
+	appendGateJudgments(t, repoRoot, "iter", "validate",
+		`{"schema_version":3,"logical_status":{},"synthesis_digest":"sha256:test","findings":[],"relationships":[]}`)
+	out, err = freshRun(t, repoRoot, "--unit", "iter")
+	if err != nil {
+		t.Fatalf("fresh --unit iter: %v", err)
+	}
+	if !strings.Contains(out, "validate  STALE") {
+		t.Fatalf("expected validate STALE, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-> required: validate@iter (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)") {
+		t.Fatalf("expected full-run advice for an old-schema baseline, got:\n%s", out)
+	}
+	if strings.Contains(out, "delta recovery") {
+		t.Fatalf("an old-schema baseline must not be suggested as delta-recoverable, got:\n%s", out)
 	}
 }
 
@@ -1259,9 +1328,10 @@ func TestFreshNewAppendixStalesValidate(t *testing.T) {
 }
 
 // TestFreshAppendixAdviceSuppressedWhenValidateStale verifies the appendix
-// advice is suppressed when the validate cache is STALE: the delta re-run
-// restores appendix coverage through its complete files list, so only the
-// delta recovery suggestion is printed.
+// advice is suppressed when the validate cache is STALE: only the validate
+// gate's own recovery advice is printed. A delta re-run restores appendix
+// coverage through its complete files list, so no separate full-run demand
+// for the appendix is added on top.
 func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
@@ -1288,8 +1358,8 @@ func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
 	if !strings.Contains(out, "validate  STALE") {
 		t.Fatalf("expected validate STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "-> suggestion: revalidate@iter (delta recovery)") {
-		t.Fatalf("expected delta recovery suggestion, got:\n%s", out)
+	if !strings.Contains(out, "-> required: validate@iter (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)") {
+		t.Fatalf("expected full-run advice for a judgment-less baseline, got:\n%s", out)
 	}
 	if strings.Contains(out, "full run - appendix coverage") {
 		t.Fatalf("appendix full-run advice must be suppressed when validate is STALE, got:\n%s", out)

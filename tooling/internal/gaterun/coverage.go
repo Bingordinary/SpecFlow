@@ -142,10 +142,11 @@ func capturedCarriedLenses(repoRoot string, run *Run, carried []string) (map[str
 // without it cannot supply carried semantic results or a complete findings
 // body, so any partial run that must carry something is refused instead of
 // guessed from prose (see framework/verification_scope.md §Delta Runs and
-// framework/validation_cache.md §Format). Delta and repair share this check
-// through the derivation and the carried-result loader, so `fresh@` and
-// `gate-plan` never disagree about whether the baseline supports a partial
-// run.
+// framework/validation_cache.md §Format). Delta and repair consult it
+// through the derivation and the carried-result loader; fresh@ consults the
+// same predicate through PartialRunBaselineError before suggesting a
+// partial-run recovery, so `fresh@` and `gate-plan` never disagree about
+// whether the baseline supports a partial run.
 func validatedJudgmentState(baseline *validationcache.GateBaseline) (JudgmentBaseline, error) {
 	if strings.TrimSpace(baseline.Judgments) == "" {
 		return JudgmentBaseline{}, fmt.Errorf("baseline cache has no structured judgment state — run the full command before using delta/repair")
@@ -173,6 +174,17 @@ func validatedJudgmentState(baseline *validationcache.GateBaseline) (JudgmentBas
 		}
 	}
 	return state, nil
+}
+
+// PartialRunBaselineError reports why a gate's baseline cache cannot support
+// a partial (delta/repair) run: nil when the baseline carries the current
+// structured judgment state, non-nil — with the planner's refusal reason —
+// otherwise. fresh@ runs this same predicate before suggesting a delta or
+// repair recovery, so the read-only report and the planner cannot disagree
+// about whether the baseline supports a partial run.
+func PartialRunBaselineError(baseline *validationcache.GateBaseline) error {
+	_, err := validatedJudgmentState(baseline)
+	return err
 }
 
 // validateCheckGroups is the coverage decomposition of the unit validate

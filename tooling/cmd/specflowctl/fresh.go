@@ -443,7 +443,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, unitName, vRepair, vFailure); advice != "" {
+	if advice := gateAdvice("validate", "unit", absRoot, unitName, vStatus, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
@@ -462,7 +462,7 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
 		}
 	}
-	if advice := gateAdvice("verify", vfStatus, unitName, vfRepair, vfFailure); advice != "" {
+	if advice := gateAdvice("verify", "unit", absRoot, unitName, vfStatus, vfRepair, vfFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
@@ -561,7 +561,7 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		vaDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vaStatus, vaDetail)
-	if advice := gateAdvice("validate", vaStatus, unitName, vaRepair, vaFailure); advice != "" {
+	if advice := gateAdvice("validate", "unit", absRoot, unitName, vaStatus, vaRepair, vaFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
@@ -578,7 +578,7 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 			fmt.Fprintf(stdout, "  note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s\n", len(uncovered), unitName, strings.Join(uncovered, ", "))
 		}
 	}
-	if advice := gateAdvice("verify", vfStatus, unitName, vfRepair, vfFailure); advice != "" {
+	if advice := gateAdvice("verify", "unit", absRoot, unitName, vfStatus, vfRepair, vfFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
@@ -626,7 +626,7 @@ func writeRuleFreshDetail(stdout io.Writer, absRoot, ruleID string) error {
 		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, ruleID, vRepair, vFailure); advice != "" {
+	if advice := gateAdvice("validate", "rule", absRoot, ruleID, vStatus, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 	fmt.Fprintln(stdout, "verify does not apply to rules.")
@@ -650,7 +650,7 @@ func writeRuleStableFreshDetail(stdout io.Writer, absRoot, ruleID string) error 
 		vDetail = freshDetail(readSummary(absRoot, "rule", ruleID, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
-	if advice := gateAdvice("validate", vStatus, ruleID, vRepair, vFailure); advice != "" {
+	if advice := gateAdvice("validate", "rule", absRoot, ruleID, vStatus, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
@@ -852,10 +852,24 @@ func gatePassed(status gateStatus) bool {
 // baseline. A plain STALE pass cache is delta-recoverable. MISSING has no
 // usable baseline and needs the full command (see
 // framework/verification_scope.md §Delta Runs → Failure recovery).
-func gateAdvice(command string, status gateStatus, targetName string, repairOnly, failureRecord bool) string {
+//
+// Every delta/repair suggestion is emitted only when the baseline actually
+// supports a partial run: the same predicate the planner enforces
+// (gaterun.PartialRunBaselineError) is consulted before suggesting, so the
+// read-only report and gate-plan never disagree about whether the baseline
+// supports a partial run. When it does not — e.g. a cache whose structured
+// judgment state predates the current schema — the advice is the full
+// command and the status word stays STALE: the cache can still satisfy the
+// gate, only its partial-run baseline capability is gone (see
+// framework/verification_scope.md §Gate status vocabulary).
+func gateAdvice(command, targetKind, repoRoot, targetName string, status gateStatus, repairOnly, failureRecord bool) string {
 	switch status {
-	case gateStale:
-		if failureRecord {
+	case gateStale, gateBlocked:
+		baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, command)
+		if err != nil || gaterun.PartialRunBaselineError(baseline) != nil {
+			return fmt.Sprintf("-> required: %s@%s (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)", command, targetName)
+		}
+		if status == gateBlocked || failureRecord {
 			return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
 		}
 		if repairOnly {
@@ -864,8 +878,6 @@ func gateAdvice(command string, status gateStatus, targetName string, repairOnly
 		return fmt.Sprintf("-> suggestion: re%s@%s (delta recovery)", command, targetName)
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
-	case gateBlocked:
-		return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
 	case gateInvalid:
 		return fmt.Sprintf("-> required: %s@%s (full run — the cache predates promise pinning; delta/repair cannot use it)", command, targetName)
 	default:
