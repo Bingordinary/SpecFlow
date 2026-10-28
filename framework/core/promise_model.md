@@ -5,7 +5,10 @@
 
 ==ATOM_BEGIN:promise_gate_requirement==
 A unit without `## Promises` is rejected by unit validate, gate-plan, and
-promote. The promise format is deployed; there is no second format.
+promote. A promise without `source`, or an acceptance item that verifies a
+promise without `source`, is rejected by the same checks: the projection must
+name the Design Narrative block it comes from. The promise format is deployed;
+there is no second format.
 ==ATOM_END:promise_gate_requirement==
 
 This document defines the promise layer of a unit spec. It is the design
@@ -25,6 +28,12 @@ truth: if it needs its own contract, dependencies, acceptance items, code
 scope, or independent verification, it is a unit, not an appendix. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
+
+Provenance is explicit: every promise, and every acceptance item that verifies
+a promise, declares `source:` with the heading text of the Design Narrative
+block it projects. `source` records where the contract comes from; it is not
+part of the contract fingerprint. A source block change makes the projection
+re-checkable without pretending the consumer contract changed.
 ==ATOM_END:promise_carrier_role==
 
 ## Why promises exist
@@ -71,7 +80,7 @@ installed base is small.
 
    Name the operation, type, or event after the subject the old contract describes; the promise ID's last segment is a safe default. A `request_response` `timing: {mode: sync}` becomes `timing: sync`; if the old `request` is absent, omit `inputs`.
 2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
-3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item.
+3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item. Add `source:` to every promise and contract-verifying item, naming the Design Narrative heading block it projects; an unresolvable source fails validate.
 4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. A structural fact the old carrier establishes goes into its matching block; `invariants` is only for a standing property that has no structural shape. Do not add a converter or a compatibility path.
 5. A cache written before this format does not become `INVALID`: it stays readable, but it no longer matches the migrated truth. The unit's main spec content changed, every promise fingerprint changed, and the judging standard moved, so `fresh` reports those gates as `STALE`. `delta`/`repair` can still use the old cache as a baseline and re-run the affected checks; run `validate` and `verify` for every migrated unit, with a full run as the safe default after a layer-wide migration. `promote` rejects any gate that is not fresh.
 
@@ -141,6 +150,7 @@ one promise re-runs only the design judgments that declared it.
 promises:
   - id: auth.login_api
     summary: Login returns a token on success and 401 on invalid credentials.
+    source: [Authentication model]
     contract:
       operations:
         login:
@@ -162,6 +172,7 @@ promises:
 |---|---|---|
 | `id` | yes | Stable promise identity. Unit-owned IDs are `<unit>.<name>`; IDs are unique in the repository. |
 | `summary` | yes | One-line human description. It is not normative and is excluded from the fingerprint. |
+| `source` | yes | Design Narrative block heading(s) this promise projects. One or more `###` or deeper heading texts, written exactly as `Spec basis` names them (without `#` markers). Provenance only: excluded from the contract fingerprint. |
 | `contract` | yes | Normative contract content: a combination of the five contract blocks. |
 | `depends_on` | no | Promise IDs this promise relies on, owned by another unit. These are graph edges, not part of the fingerprint. |
 
@@ -193,6 +204,34 @@ A promise must not contain:
 
 Verification is declared by acceptance items. Consumers are derived from
 dependencies; the provider must not store a consumer list.
+
+### Source
+
+`source` names the Design Narrative block(s) the promise projects. It is the
+author's side of the projection: the reviewer's `Spec basis` names the block
+it actually read, while `source` names the block the contract claims to carry.
+When the basis anchor is a `###`-or-deeper narrative block, both use the same
+heading-text spelling and can be compared; a `##` section or a promise entry id
+is a context anchor, not a source candidate.
+
+- At least one source is required. A promise without source is a schema
+  failure.
+- A source is a `###` or deeper heading inside `## Design Narrative`. A `##`
+  section, a promise id, an acceptance-item id, or a line number is not a
+  source.
+- Multiple sources are allowed when one promise carries values from several
+  cohesive blocks.
+- One block should carry one cohesive contract subject. If a block mixes
+  independent subjects, split the block; do not add a second anchor syntax.
+- `source` is provenance, not a second contract. It is excluded from the
+  contract fingerprint; the promise remains the sole formal behavior carrier.
+  Editing `source` alone does not reopen consumers. The provider's promise
+  state records each source block's content identity; a source-block edit
+  reopens that state and requires the provider to re-verify, while a consumer
+  contract reopens only when the `contract` block changes.
+- An acceptance item that verifies a promise declares its own `source` the
+  same way. A `non_promise` item may omit `source` because it projects no
+  contract.
 
 ### Contract blocks
 
@@ -331,6 +370,7 @@ proves and keeps the evidence/code scope.
 acceptance_item_set:
   - id: auth.login_success
     promise: auth.login_api
+    source: [Authentication model]
     description: Given valid credentials, when login is called, then 200 + token is returned.
     verification_type: testable
     verification_surface: api
@@ -348,6 +388,8 @@ acceptance_item_set:
 Rules:
 
 - `promise` is required for an item that verifies a contract;
+- an item that verifies a promise declares `source` with the Design Narrative
+  block it proves; a `non_promise` item may omit `source`;
 - an item that does not verify a promise (cleanup, migration, one-off
   inspection) declares `non_promise: true` and a `non_promise_reason`;
 - `pass_condition` states this item's specific check and must not repeat the
@@ -366,13 +408,18 @@ A promise fingerprint is the SHA-256 of the canonical JSON encoding of:
 {"contract": {...}}
 ```
 
-`summary`, `id`, and `depends_on` are excluded.
+`summary`, `id`, `depends_on`, and `source` are excluded.
 
 Freshness rules:
 
 - a provider code change does not change a promise fingerprint;
 - a provider test/evidence change does not change a promise fingerprint;
 - a provider narrative change does not change a promise fingerprint;
+- a source declaration is provenance, not contract content: editing `source`
+  alone does not change the fingerprint or reopen consumers;
+- the promise state records source-block content identities; a source-block
+  change reopens the provider's own state (not a consumer contract) and
+  requires re-verification;
 - a provider promise contract change changes the fingerprint and reopens
   consumers of that promise;
 - a dependency promise change reopens the provider's promise only when the
@@ -442,13 +489,19 @@ promises:
   - {id: web.session_api, fingerprint: "sha256:..."}
 pins:
   - {id: auth.login_api, fingerprint: "sha256:..."}
+source_pins:
+  - {id: web.session_api, anchor: "3.4.3 Span → 时间线转换", cid: "sha256:..."}
 ```
 
 `promises` records the unit's own contract versions. `pins` records the
 provider promise versions its verification depended on, in the layer's
 resolved provider scope (see §Layer resolution): a candidate record pins the
 current-layer contracts it read, a stable record pins the published stable
-contracts.
+contracts. `source_pins` records the Design Narrative block content identity
+each own promise projected at verify time. A source block change reopens the
+provider's own state; it does not change the contract fingerprint or reopen
+consumers. A record without source pins is stale for a spec that declares
+sources and is rebuilt by a full verify — there is no migration path.
 
 A passing unit `verify` finalize records this file automatically. `promote`
 validates that the record is current and that every
@@ -458,9 +511,9 @@ publication. `fork` copies the stable record to candidate, and whole-unit
 removal clears both layers.
 
 `fresh` is the single read-only view: its unit summaries include a `done:`
-column, and `fresh --unit <name>` reports the complete promise state: own
-promise fingerprints, coverage, graph status, pin status, **contract closure**,
-gate evidence, and `DONE`. `DONE: YES` requires contract closure `CLOSED` and
+column, and `fresh --unit <name>` reports the complete promise state: schema
+status, own promise fingerprints, coverage, graph status, provider pin status,
+source-pin status, **contract closure**, gate evidence, and `DONE`. `DONE: YES` requires contract closure `CLOSED` and
 fresh validate + verify caches for the layer; otherwise it reports the blocking
 gate. `fresh --scope stable` is the global “all stable units done” view. Only a
 passing `verify` finalize records the state, so a missing or reopened record is
@@ -514,6 +567,7 @@ edges against published stable providers.
 | Acceptance item split/merge | Open (verify) | Unchanged |
 | Appendix | Open (validate + verify) | Unchanged |
 | Narrative | Open (validate + verify) | Unchanged |
+| Promise source | Open (validate + verify); provider promise state REOPENED | Unchanged |
 | Promise contract | Open (validate + verify) | Reopened |
 | Rule | Open (validate/verify) | Rule consumers reopened |
 | Global rule | All units open | All units reopened |
@@ -522,6 +576,9 @@ A narrative edit also re-runs the provider's design and architecture
 conclusions (design conclusions pin the design prose; the architecture
 judgment pins the whole main spec), so the provider's verify cache is stale
 even though the promise fingerprints and every consumer cache are unchanged.
+A source-block edit additionally reopens the provider's promise state through
+its `source_pins` and re-runs the acceptance items that declare the block; it
+still does not change the contract fingerprint or reopen consumers.
 
 The Consumers column is enforced by both gate caches. A unit validate cache
 records a `promise_pins` block of the provider promise fingerprints it read;

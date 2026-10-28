@@ -36,13 +36,15 @@ Narrative.
 promises:
   - id: auth.login_api
     summary: Login.
+    source: [Narrative]
     contract: {invariants: [login]}
 
 ## Acceptance Items
 
 acceptance_item_set:
   - id: auth.core
-` + promiseLine + `    description: Given X, When Y, Then Z.
+` + promiseLine + `    source: [Narrative]
+    description: Given X, When Y, Then Z.
     verification_type: testable
     verification_surface: api
     implementation_surface: src/auth.go

@@ -168,6 +168,7 @@ Test unit for promote testing.
 promises:
   - id: test_unit.core
     summary: Core contract.
+    source: [Narrative]
     contract: {invariants: [core]}
 
 ## Acceptance Items
@@ -175,6 +176,7 @@ promises:
 acceptance_item_set:
   - id: test.check
     promise: test_unit.core
+    source: [Narrative]
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -470,6 +472,7 @@ Test unit for promote testing.
 promises:
   - id: test_unit.core
     summary: Core contract.
+    source: [Narrative]
     contract: {invariants: [core]}
 
 ## Acceptance Items
@@ -477,6 +480,7 @@ promises:
 acceptance_item_set:
   - id: test.check
     promise: test_unit.core
+    source: [Narrative]
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -574,6 +578,7 @@ Test unit for promote testing.
 promises:
   - id: test_unit.core
     summary: Core contract.
+    source: [Narrative]
     contract: {invariants: [core]}
 
 ## Acceptance Items
@@ -581,6 +586,7 @@ promises:
 acceptance_item_set:
   - id: test.check
     promise: test_unit.core
+    source: [Narrative]
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -690,6 +696,7 @@ Prose.
 promises:
   - id: test_unit.core
     summary: Core contract.
+    source: [Narrative]
     contract: {invariants: [core]}
 
 ## Acceptance Items
@@ -697,6 +704,7 @@ promises:
 acceptance_item_set:
   - id: test.check
     promise: test_unit.core
+    source: [Narrative]
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal
@@ -852,6 +860,7 @@ Test unit for promote testing.
 promises:
   - id: test_unit.core
     summary: Core contract.
+    source: [Narrative]
     contract: {invariants: [core]}
 
 ## Acceptance Items
@@ -859,6 +868,7 @@ promises:
 acceptance_item_set:
   - id: test.check
     promise: test_unit.core
+    source: [Narrative]
     description: Given a check, When it runs, Then it passes.
     verification_type: testable
     verification_surface: internal

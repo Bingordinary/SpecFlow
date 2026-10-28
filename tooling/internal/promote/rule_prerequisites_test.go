@@ -201,10 +201,11 @@ func writePromotableUnit(t *testing.T, repoRoot, unit, ruleRefs string) {
 	}
 	spec := "---\nid: " + unit + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + unit + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
 		"  - id: " + unit + ".core\n" +
 		"    promise: " + unit + ".core\n" +
+		"    source: [Narrative]\n" +
 		"    description: Given a caller, When the behavior runs, Then it is accepted.\n" +
 		"    verification_type: testable\n" +
 		"    verification_surface: internal/demo\n" +

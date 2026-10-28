@@ -17,6 +17,8 @@ type acceptanceItemFields struct {
 	affectsAppendices     []string
 	affectsRules          []string
 	affectsProblems       []string
+	source                []string
+	sourceProblems        []string
 }
 
 // affectsSubfields is the closed set of `affects:` mapping keys the framework
@@ -53,6 +55,7 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 		item := acceptanceItemFields{id: region.ID, fields: map[string]string{"id": region.ID}}
 		fieldIndent := leadingSpaces(region.Text) + 2
 		inAffects := false
+		inSource := false
 		listField := ""
 		blockField := ""
 		fence := acceptanceFence{}
@@ -90,6 +93,7 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 			switch {
 			case indent == fieldIndent && trimmed != "":
 				inAffects = false
+				inSource = false
 				listField = ""
 				key, raw, ok := strings.Cut(trimmed, ":")
 				if !ok {
@@ -107,7 +111,32 @@ func parseAcceptanceItems(content string) []acceptanceItemFields {
 						item.fields[key] = ""
 					}
 				}
-				inAffects = key == "affects" && value == ""
+				switch {
+				case key == "affects" && value == "":
+					inAffects = true
+				case key == "source":
+					if value == "" {
+						inSource = true
+						listField = "source"
+					} else {
+						for _, entry := range parseInlineRefList(value) {
+							entry = strings.TrimSpace(strings.Trim(entry, `"'`))
+							if entry != "" {
+								item.source = append(item.source, entry)
+							}
+						}
+					}
+				}
+			case inSource && indent >= fieldIndent+2 && strings.HasPrefix(trimmed, "- "):
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+				value = strings.Trim(value, `"'`)
+				if value == "" {
+					item.sourceProblems = append(item.sourceProblems, "source contains an empty list entry")
+					continue
+				}
+				item.source = append(item.source, value)
+			case inSource && indent > fieldIndent && trimmed != "":
+				item.sourceProblems = append(item.sourceProblems, fmt.Sprintf("line %q inside source is not a list entry", trimmed))
 			case inAffects && indent >= fieldIndent+2 && strings.HasPrefix(trimmed, "- "):
 				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
 				if listField == "" {

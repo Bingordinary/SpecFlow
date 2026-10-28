@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -31,8 +33,8 @@ func writePromiseStateUnit(t *testing.T, repoRoot, unit, promiseID, dependsOn, c
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
+		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    source: [Narrative]\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -40,6 +42,31 @@ func writePromiseStateUnit(t *testing.T, repoRoot, unit, promiseID, dependsOn, c
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func promiseSourcePinsFor(t *testing.T, repoRoot, unit, layer string) []validationcache.PromiseSourcePin {
+	t.Helper()
+	specPath := filepath.Join(repoRoot, "docs/specs/units", layer, "unit_"+unit+".md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := specpaths.NormalizeText(string(data))
+	promises, issues := specvalidation.ParsePromises(content)
+	if len(issues) > 0 {
+		t.Fatal(strings.Join(issues, "; "))
+	}
+	var pins []validationcache.PromiseSourcePin
+	for _, promise := range promises {
+		for _, anchor := range promise.Source {
+			cid, ok := contenthash.NarrativeSourceCID(content, anchor)
+			if !ok {
+				t.Fatalf("source %q of %q does not resolve", anchor, promise.ID)
+			}
+			pins = append(pins, validationcache.PromiseSourcePin{ID: promise.ID, Anchor: anchor, CID: cid})
+		}
+	}
+	return pins
 }
 
 func promiseFingerprint(t *testing.T, repoRoot, unit, promiseID string) string {
@@ -74,8 +101,8 @@ func writeLayerPromiseUnit(t *testing.T, repoRoot, layer, unit, promiseID, depen
 	}
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
+		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    source: [Narrative]\n    contract: {invariants: [" + contractText + "]}\n" + depends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -130,10 +157,11 @@ func TestPromiseStatePublicationRequiresStableProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
-		Pins:     []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
+		Pins:       []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -177,10 +205,11 @@ func TestPromiseStateCLOSED(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
-		Pins:     []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
+		Pins:       []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -203,10 +232,11 @@ func TestPromiseStateREOPENED(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
-		Pins:     []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
+		Pins:       []validationcache.PromisePin{{ID: "auth.login_api", Fingerprint: authFP}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -242,9 +272,10 @@ func TestPromiseStateOPENMissingDependencyPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -274,9 +305,10 @@ func TestPromiseStateRejectsMislayeredRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "stable",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		Unit:       "web",
+		Layer:      "stable",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -300,9 +332,10 @@ func TestPromiseStateRejectsExtraDependencyPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
 		Pins: []validationcache.PromisePin{
 			{ID: "auth.login_api", Fingerprint: authFP},
 			{ID: "other.api", Fingerprint: otherFP},
@@ -328,9 +361,10 @@ func TestPromiseStateRejectsDuplicateDependencyPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     "web",
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		Unit:       "web",
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: webFP}},
+		SourcePins: promiseSourcePinsFor(t, root, "web", "candidate"),
 		Pins: []validationcache.PromisePin{
 			{ID: "auth.login_api", Fingerprint: authFP},
 			{ID: "auth.login_api", Fingerprint: authFP},
@@ -342,5 +376,108 @@ func TestPromiseStateRejectsDuplicateDependencyPin(t *testing.T) {
 	out := promiseStateText(t, root, "web", "candidate")
 	if !strings.Contains(out, "promise OPEN") || !strings.Contains(out, `duplicate dependency pin "auth.login_api"`) {
 		t.Fatalf("expected OPEN for a duplicate dependency pin, got:\n%s", out)
+	}
+}
+
+func TestPromiseStateSourcePinStalesOnNarrativeChange(t *testing.T) {
+	root := promiseStateRepo(t)
+	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
+	specPath := filepath.Join(root, "docs/specs/units/candidate/unit_web.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid, ok := contenthash.NarrativeSourceCID(specpaths.NormalizeText(string(data)), "Narrative")
+	if !ok {
+		t.Fatal("fixture source anchor must resolve")
+	}
+	statePath, err := validationcache.PromiseStatePath(root, "web", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
+		Unit:     "web",
+		Layer:    "candidate",
+		Promises: []validationcache.PromisePin{{ID: "web.session_api", Fingerprint: promiseFingerprint(t, root, "web", "web.session_api")}},
+		SourcePins: []validationcache.PromiseSourcePin{{
+			ID: "web.session_api", Anchor: "Narrative", CID: cid,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := computePromiseState(root, "web", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Closure != "CLOSED" {
+		t.Fatalf("recorded source pin must be fresh, got %s: %s", report.Closure, strings.Join(report.ClosureReasons, "; "))
+	}
+
+	edited := strings.Replace(string(data), "Narrative.\n", "Narrative changed.\n", 1)
+	if edited == string(data) {
+		t.Fatal("narrative edit did not apply")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err = computePromiseState(root, "web", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Closure != "REOPENED" {
+		t.Fatalf("a changed source block must reopen the promise state, got %s: %s", report.Closure, strings.Join(report.ClosureReasons, "; "))
+	}
+	if !strings.Contains(strings.Join(report.ClosureReasons, "; "), "source block changed") {
+		t.Fatalf("expected a source-block-changed reason, got %v", report.ClosureReasons)
+	}
+}
+
+func TestPromiseStateMissingSourceIsOpen(t *testing.T) {
+	root := promiseStateRepo(t)
+	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
+	specPath := filepath.Join(root, "docs/specs/units/candidate/unit_web.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "    source: [Narrative]\n", "", 1)
+	if edited == string(data) {
+		t.Fatal("source removal did not apply")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := computePromiseState(root, "web", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Closure != "OPEN" || !strings.Contains(strings.Join(report.ClosureReasons, "; "), "promise schema failed") {
+		t.Fatalf("a missing source must make the promise state OPEN, got %s: %v", report.Closure, report.ClosureReasons)
+	}
+}
+
+func TestPromiseStateMissingItemSourceIsOpen(t *testing.T) {
+	root := promiseStateRepo(t)
+	writePromiseStateUnit(t, root, "web", "web.session_api", "", "session")
+	specPath := filepath.Join(root, "docs/specs/units/candidate/unit_web.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data),
+		"    promise: web.session_api\n    source: [Narrative]\n    description:",
+		"    promise: web.session_api\n    description:", 1)
+	if edited == string(data) {
+		t.Fatal("item source removal did not apply")
+	}
+	if err := os.WriteFile(specPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := computePromiseState(root, "web", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Closure != "OPEN" || !strings.Contains(strings.Join(report.ClosureReasons, "; "), "acceptance item source check failed") {
+		t.Fatalf("a missing item source must make the promise state OPEN, got %s: %v", report.Closure, report.ClosureReasons)
 	}
 }

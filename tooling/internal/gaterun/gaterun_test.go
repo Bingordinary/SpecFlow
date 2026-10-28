@@ -56,8 +56,8 @@ func unitSpec(name, providerUnits, ruleRefs, implSurface, extra string) string {
 	}
 	return "---\nid: " + name + "\nrule_refs: " + ruleRefs + "\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n" + depends + "\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n" + depends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    source: [Narrative]\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + implSurface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 }
 
 func writeUnit(t *testing.T, repoRoot, layer, name, unitRefs, ruleRefs, implSurface, extra string) {
@@ -151,7 +151,7 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 
 func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	extra := "    affects:\n      files:\n        - docs/design.md\n  - id: auth.pending\n    promise: auth.core\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	extra := "    affects:\n      files:\n        - docs/design.md\n  - id: auth.pending\n    promise: auth.core\n    source: [Narrative]\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", extra)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 	writeFile(t, repoRoot, "src/sub/util.go", "package sub\n")
@@ -183,7 +183,7 @@ func TestOpenDerivesUnitCodeGateSurface(t *testing.T) {
 
 func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n### Narrative\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Promises\n\npromises:\n  - id: auth.core\n    summary: Core.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n### Narrative\n\n~~~yaml\nacceptance_item_set:\n  - id: fake.item\n    implementation_surface: fake\n~~~\n\n## Promises\n\npromises:\n  - id: auth.core\n    summary: Core.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: auth.core\n    promise: auth.core\n    source: [Narrative]\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
 
@@ -208,7 +208,7 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingCodeSurface(t *testing.T) {
 // written, with the item id and the reason.
 func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	pending := "  - id: auth.pending\n    promise: auth.core\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	pending := "  - id: auth.pending\n    promise: auth.core\n    source: [Narrative]\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "internal/demo/a.go; internal/demo/b.go", pending)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeFile(t, repoRoot, "internal/demo/b.go", "package demo\n")
@@ -281,7 +281,7 @@ func TestPlanVerifyRejectsSpecDocumentAffectsFiles(t *testing.T) {
 // the item's own indent instead of assuming the canonical column.
 func TestPlanVerifyReadsItemRelativeIndentSurface(t *testing.T) {
 	repoRoot := newRepo(t)
-	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: auth.core\n    summary: Core.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n    - id: auth.core\n      promise: auth.core\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
+	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: auth.core\n    summary: Core.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n    - id: auth.core\n      promise: auth.core\n      source: [Narrative]\n      description: Core.\n      verification_type: testable\n      verification_surface: api\n      implementation_surface: internal/demo/a.go\n      verification_method: test\n      pass_condition: Passes.\n      runnable: yes\n"
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", spec)
 	writeFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 

@@ -26,6 +26,8 @@ Login uses token-based authentication.
 promises:
   - id: auth.login_api
     summary: Login returns a token on success and 401 on invalid credentials.
+    source:
+      - "Authentication model"
     contract:
       operations:
         login:
@@ -43,6 +45,8 @@ promises:
 acceptance_item_set:
   - id: auth.login_success
     promise: auth.login_api
+    source:
+      - "Authentication model"
     description: Given valid credentials, when login is called, then 200 + token is returned.
     verification_type: testable
     verification_surface: api
@@ -433,6 +437,7 @@ Logger is the logging seam every unit writes through.
 promises:
   - id: logger.interface
     summary: Logger is the logging seam.
+    source: [Narrative]
     contract:
       operations:
         Logger.Debug: {signature: "Debug(msg string, args ...any)"}
@@ -445,6 +450,7 @@ promises:
 acceptance_item_set:
   - id: logger.debug
     promise: logger.interface
+    source: [Narrative]
     description: Given a logger, when Debug is called, then the record is written.
     verification_type: testable
     verification_surface: api
@@ -697,6 +703,7 @@ Passwords are hashed before storage.
 promises:
   - id: auth.secret_policy
     summary: Passwords are never stored in plaintext.
+    source: [Narrative]
     contract:
       invariants:
         - ` + text + `
@@ -706,6 +713,7 @@ promises:
 acceptance_item_set:
   - id: auth.secret
     promise: auth.secret_policy
+    source: [Narrative]
     description: Given a stored password, when read, then it is hashed.
     verification_type: inspectable
     verification_surface: api
@@ -738,5 +746,142 @@ func TestInvariantChangeIsFingerprinted(t *testing.T) {
 	invariantChanged := fingerprint(invariantSpec("hashed with salt"))
 	if base == invariantChanged {
 		t.Fatal("an invariant change must change the fingerprint")
+	}
+}
+
+func TestPromiseSourceRequired(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    contract:", 1)
+	result := CheckPromiseSchema(spec, "auth")
+	if result.Status != Fail || !strings.Contains(result.Details, "missing source") {
+		t.Fatalf("a promise without source must fail with a missing-source message, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestPromiseSourceRejectsSectionAndPromiseID(t *testing.T) {
+	for _, anchor := range []string{"Promises", "auth.login_api"} {
+		spec := strings.Replace(validPromiseSpec,
+			"    source:\n      - \"Authentication model\"\n    contract:",
+			"    source:\n      - \""+anchor+"\"\n    contract:", 1)
+		result := CheckPromiseSchema(spec, "auth")
+		if result.Status != Fail || !strings.Contains(result.Details, "does not resolve") {
+			t.Fatalf("source %q must be rejected as a non-narrative anchor, got %s: %s", anchor, result.Status, result.Details)
+		}
+	}
+}
+
+func TestPromiseSourceRejectsUnresolvedAndDuplicate(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    source:\n      - \"No Such Block\"\n    contract:", 1)
+	result := CheckPromiseSchema(spec, "auth")
+	if result.Status != Fail || !strings.Contains(result.Details, "does not resolve") {
+		t.Fatalf("an unresolved source must fail, got %s: %s", result.Status, result.Details)
+	}
+
+	spec = strings.Replace(validPromiseSpec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    source:\n      - \"Authentication model\"\n      - \"Authentication model\"\n    contract:", 1)
+	result = CheckPromiseSchema(spec, "auth")
+	if result.Status != Fail || !strings.Contains(result.Details, "duplicate source") {
+		t.Fatalf("a duplicate source must fail, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestPromiseSourceAllowsMultiple(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"### Authentication model\n\nLogin uses token-based authentication.",
+		"### Authentication model\n\nLogin uses token-based authentication.\n\n### Scope\n\nLogin covers the auth package.", 1)
+	spec = strings.Replace(spec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    source:\n      - \"Authentication model\"\n      - \"Scope\"\n    contract:", 1)
+	if result := CheckPromiseSchema(spec, "auth"); result.Status != Pass {
+		t.Fatalf("multiple source anchors must pass, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestAcceptanceItemSourceRequiredForContractItem(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    promise: auth.login_api\n    description:", 1)
+	result := CheckAcceptanceItemSchema(spec)
+	if result.Status != Fail || !strings.Contains(result.Details, "source") {
+		t.Fatalf("a contract item without source must fail, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestAcceptanceItemSourceResolves(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    promise: auth.login_api\n    source:\n      - \"Promises\"\n    description:", 1)
+	result := CheckAcceptanceItemSchema(spec)
+	if result.Status != Fail || !strings.Contains(result.Details, "does not resolve") {
+		t.Fatalf("an item source that is a ## section must fail, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestAcceptanceItemNonPromiseSourceOptional(t *testing.T) {
+	spec := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    non_promise: true\n    non_promise_reason: cleanup\n    description:", 1)
+	if result := CheckAcceptanceItemSchema(spec); result.Status != Pass {
+		t.Fatalf("a non-promise item may omit source, got %s: %s", result.Status, result.Details)
+	}
+}
+
+func TestSourceDoesNotChangePromiseFingerprint(t *testing.T) {
+	withSource, issues := ParsePromises(validPromiseSpec)
+	if len(issues) > 0 {
+		t.Fatal(strings.Join(issues, "; "))
+	}
+	withoutSource := strings.Replace(validPromiseSpec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    contract:", 1)
+	otherSource := strings.Replace(validPromiseSpec,
+		"    source:\n      - \"Authentication model\"\n    contract:",
+		"    source:\n      - \"Scope\"\n    contract:", 1)
+	base, err := PromiseFingerprint(withSource[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range []string{withoutSource, otherSource} {
+		promises, parseIssues := ParsePromises(spec)
+		if len(parseIssues) > 0 {
+			t.Fatal(strings.Join(parseIssues, "; "))
+		}
+		fingerprint, err := PromiseFingerprint(promises[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fingerprint != base {
+			t.Fatalf("source is provenance and must not change the contract fingerprint: %s != %s", fingerprint, base)
+		}
+	}
+}
+
+func TestAcceptanceItemSourcesCheck(t *testing.T) {
+	if result := CheckAcceptanceItemSources(validPromiseSpec); result.Status != Pass {
+		t.Fatalf("valid item source must pass, got %s: %s", result.Status, result.Details)
+	}
+	missing := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    promise: auth.login_api\n    description:", 1)
+	result := CheckAcceptanceItemSources(missing)
+	if result.Status != Fail || !strings.Contains(result.Details, "missing or empty required field source") {
+		t.Fatalf("a contract item without source must fail, got %s: %s", result.Status, result.Details)
+	}
+	unresolved := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    promise: auth.login_api\n    source:\n      - \"No Such Block\"\n    description:", 1)
+	result = CheckAcceptanceItemSources(unresolved)
+	if result.Status != Fail || !strings.Contains(result.Details, "does not resolve") {
+		t.Fatalf("an unresolved item source must fail, got %s: %s", result.Status, result.Details)
+	}
+	nonPromise := strings.Replace(validPromiseSpec,
+		"    promise: auth.login_api\n    source:\n      - \"Authentication model\"\n    description:",
+		"    non_promise: true\n    non_promise_reason: cleanup\n    description:", 1)
+	if result := CheckAcceptanceItemSources(nonPromise); result.Status != Pass {
+		t.Fatalf("a non-promise item may omit source, got %s: %s", result.Status, result.Details)
 	}
 }

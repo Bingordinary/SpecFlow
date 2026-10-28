@@ -24,6 +24,12 @@ finalize records `promise_state_<layer>.yaml`, which `fresh` uses for the
 `done:` column and the global `DONE` count. See
 `framework/core/promise_model.md`.
 
+Item sessions read the item's declared `source` blocks first: they are the
+narrative behavior the item proves. Source completeness is a validate check
+(5h for promises; 5a for items), not a design-judgment obligation: a design
+record's `Spec basis` may name a `##` section or a promise entry for context,
+and those are not `source` candidates.
+
 ### Run Orientation and Session Plumbing
 
 The trigger route in `framework/concepts.md` loads this file at verify time, not proactively. The judge of every key is an independent read-only subagent; the tooling derives the run's reviewer units from the uncovered coverage set — one per report kind and lens (one per reviewed file for verify quality) — and the main agent joins the units of one lens and kind into a session, splitting a session's key set only when a session declares it exceeds that session's capacity, generating each session's mission with `gate-mission` and recording each report with `gate-submit` (see `framework/verification_scope.md` §Coverage model → §Session capacity).

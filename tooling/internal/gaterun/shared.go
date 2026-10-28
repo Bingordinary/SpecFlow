@@ -724,6 +724,19 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		if err := addRegion(mainSpec, "region:acceptance_item:"+ck.Item+":"+contenthash.RegionCID(region.Text)); err != nil {
 			return judgments.Reference{}, err
 		}
+		// The item's source blocks are part of its evidence. A narrative
+		// block the item declares as its source is pinned separately from the
+		// item region, so a source-block edit invalidates the item judgment
+		// even when the item text itself is unchanged.
+		for _, anchor := range specvalidation.AcceptanceItemSourceAnchors(text, ck.Item) {
+			dep, ok := contenthash.NarrativeSourceDep(text, anchor)
+			if !ok {
+				return judgments.Reference{}, fmt.Errorf("acceptance item %q source %q does not resolve to a Design Narrative block", ck.Item, anchor)
+			}
+			if err := addRegion(mainSpec, dep); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
 		// The item's declared code surface is its own object too: a change to
 		// the implementation the item verifies invalidates the alignment
 		// judgment instead of carrying it silently

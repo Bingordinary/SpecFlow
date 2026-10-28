@@ -37,6 +37,7 @@ Narrative.
 promises:
   - id: auth.login_api
     summary: Login.
+    source: [Narrative]
     contract:
       operations:
         login:
@@ -44,6 +45,7 @@ promises:
             token: {type: string}
   - id: auth.session_api
     summary: Session.
+    source: [Narrative]
     contract: {invariants: [session]}
     depends_on: [web.login_api]
 
@@ -52,6 +54,7 @@ promises:
 acceptance_item_set:
   - id: auth.core
     promise: auth.login_api
+    source: [Narrative]
     description: Given X, When Y, Then Z.
     verification_type: testable
     verification_surface: api
@@ -80,7 +83,7 @@ acceptance_item_set:
 func writeNextProvider(t *testing.T, root, unit, promiseID string) {
 	t.Helper()
 	dir := filepath.Join(root, "docs/specs/units/candidate")
-	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Provider.\n    contract: {invariants: [provider]}\n"
+	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Provider.\n    source: [Narrative]\n    contract: {invariants: [provider]}\n"
 	if err := os.WriteFile(filepath.Join(dir, "unit_"+unit+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

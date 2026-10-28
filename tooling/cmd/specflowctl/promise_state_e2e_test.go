@@ -136,6 +136,9 @@ func TestPromiseStateDependencyPinAfterGates(t *testing.T) {
 	if state == nil || len(state.Pins) != 1 || state.Pins[0].ID != "auth.login_api" {
 		t.Fatalf("expected auth.login_api pin, got %+v", state)
 	}
+	if len(state.SourcePins) == 0 || state.SourcePins[0].Anchor != "Narrative" {
+		t.Fatalf("expected the source pin for the Narrative block, got %+v", state.SourcePins)
+	}
 
 	out := promiseStateText(t, root, "web", "candidate")
 	if !strings.Contains(out, "done    YES") || !strings.Contains(out, "auth.login_api  FRESH") {

@@ -40,6 +40,12 @@ truth: if it needs its own contract, dependencies, acceptance items, code
 scope, or independent verification, it is a unit, not an appendix. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
+
+Provenance is explicit: every promise, and every acceptance item that verifies
+a promise, declares `source:` with the heading text of the Design Narrative
+block it projects. `source` records where the contract comes from; it is not
+part of the contract fingerprint. A source block change makes the projection
+re-checkable without pretending the consumer contract changed.
 ==ATOM_END:promise_carrier_role==
 
 ## Rule

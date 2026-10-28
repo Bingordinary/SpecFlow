@@ -549,6 +549,28 @@ func preparePromiseState(absRoot string, run *gaterun.Run, result string, drifte
 	for _, id := range sortedKeys(own) {
 		state.Promises = append(state.Promises, validationcache.PromisePin{ID: id, Fingerprint: own[id]})
 	}
+	normalized := specpaths.NormalizeText(content)
+	for _, promise := range promises {
+		for _, anchor := range promise.Source {
+			cid, ok := contenthash.NarrativeSourceCID(normalized, anchor)
+			if !ok {
+				return nil, "", fmt.Errorf("promise state: source %q of promise %q does not resolve to a Design Narrative block", anchor, promise.ID)
+			}
+			if ownDrifted {
+				// The run judged the plan-time content, not the post-drift
+				// block. Record the same unrecoverable marker used for a
+				// drifted own promise fingerprint.
+				cid = salvagedFingerprint(cid)
+			}
+			state.SourcePins = append(state.SourcePins, validationcache.PromiseSourcePin{ID: promise.ID, Anchor: anchor, CID: cid})
+		}
+	}
+	sort.Slice(state.SourcePins, func(i, j int) bool {
+		if state.SourcePins[i].ID != state.SourcePins[j].ID {
+			return state.SourcePins[i].ID < state.SourcePins[j].ID
+		}
+		return state.SourcePins[i].Anchor < state.SourcePins[j].Anchor
+	})
 	pins := map[string]bool{}
 	for _, promise := range promises {
 		for _, dep := range promise.DependsOn {

@@ -22,6 +22,11 @@ type Promise struct {
 	Summary   string
 	Contract  map[string]any
 	DependsOn []string
+	// Source names the Design Narrative block(s) this promise projects. It is
+	// provenance, not contract content, so it is excluded from the promise
+	// fingerprint; source pins make a narrative-block change stale without
+	// pretending the contract itself changed.
+	Source []string
 	// Raw carries every top-level field so schema checks can reject
 	// verification or code fields without a second parser.
 	Raw map[string]any
@@ -50,6 +55,7 @@ var (
 		"summary":    true,
 		"contract":   true,
 		"depends_on": true,
+		"source":     true,
 	}
 	// promiseContractBlocks is the closed vocabulary of contract blocks. Each
 	// block states one kind of externally observable fact; a contract is a
@@ -233,6 +239,7 @@ func ParsePromises(content string) ([]Promise, []string) {
 			p.Contract = contract
 		}
 		p.DependsOn, issues = parsePromiseStringList(normalized["depends_on"], fmt.Sprintf("promise %q depends_on", p.ID), issues)
+		p.Source, issues = parsePromiseStringList(normalized["source"], fmt.Sprintf("promise %q source", p.ID), issues)
 		promises = append(promises, p)
 	}
 	return promises, issues
@@ -274,9 +281,55 @@ func parsePromiseStringList(raw any, label string, issues []string) ([]string, [
 	}
 }
 
+// PromiseSourceKey is the stable key for one promise-source pair in the
+// promise state record. It keeps the comparison independent of YAML list order.
+func PromiseSourceKey(promiseID, anchor string) string {
+	return promiseID + "\x00" + anchor
+}
+
+// AcceptanceItemSourceAnchors returns the source anchors an acceptance item
+// declares. The item's source pins are part of its verify judgment: a change
+// to the named narrative block makes the item's evidence stale even when the
+// item text itself is unchanged.
+func AcceptanceItemSourceAnchors(content, itemID string) []string {
+	content = specpaths.NormalizeText(content)
+	for _, item := range parseAcceptanceItems(content) {
+		if item.id == itemID {
+			return append([]string(nil), item.source...)
+		}
+	}
+	return nil
+}
+
+// PromiseSourceCIDs returns the current content identity of every promise
+// source block, keyed by PromiseSourceKey. Callers must handle promise parse
+// issues separately; a malformed promise list yields no source map rather than
+// a partial one.
+func PromiseSourceCIDs(content string) map[string]string {
+	content = specpaths.NormalizeText(content)
+	promises, issues := ParsePromises(content)
+	if len(issues) > 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, promise := range promises {
+		for _, anchor := range promise.Source {
+			anchor = strings.TrimSpace(anchor)
+			if anchor == "" {
+				continue
+			}
+			if cid, ok := contenthash.NarrativeSourceCID(content, anchor); ok {
+				out[PromiseSourceKey(promise.ID, anchor)] = cid
+			}
+		}
+	}
+	return out
+}
+
 // CheckPromiseSchema validates promise fields and the no-code/no-verification
 // boundary. Cross-promise resolution is owned by the dependency graph.
 func CheckPromiseSchema(content, unitName string) CheckResult {
+	content = specpaths.NormalizeText(content)
 	result := CheckResult{Name: "Promise schema", Status: Fail}
 	promises, issues := ParsePromises(content)
 	if len(issues) > 0 {
@@ -324,12 +377,31 @@ func CheckPromiseSchema(content, unitName string) CheckResult {
 		} else {
 			issues = append(issues, validateContractBlocks(label, p.Contract)...)
 		}
+		if len(p.Source) == 0 {
+			issues = append(issues, label+": missing source; add the Design Narrative block heading(s) this promise projects")
+		}
+		sourceSeen := map[string]bool{}
+		for _, anchor := range p.Source {
+			anchor = strings.TrimSpace(anchor)
+			if anchor == "" {
+				issues = append(issues, label+": source contains an empty entry")
+				continue
+			}
+			if sourceSeen[anchor] {
+				issues = append(issues, fmt.Sprintf("%s: duplicate source entry %q", label, anchor))
+				continue
+			}
+			sourceSeen[anchor] = true
+			if _, ok := contenthash.NarrativeSourceDep(content, anchor); !ok {
+				issues = append(issues, fmt.Sprintf("%s: source %q does not resolve to a unique ### or deeper Design Narrative block", label, anchor))
+			}
+		}
 		for field := range p.Raw {
 			switch {
 			case promiseForbiddenTopLevel[field]:
 				issues = append(issues, fmt.Sprintf("%s: top-level field %q is not allowed on a promise", label, field))
 			case !promiseAllowedTopLevel[field]:
-				issues = append(issues, fmt.Sprintf("%s: unknown top-level field %q; allowed fields are id, summary, contract, depends_on", label, field))
+				issues = append(issues, fmt.Sprintf("%s: unknown top-level field %q; allowed fields are id, summary, contract, depends_on, source", label, field))
 			}
 		}
 		depSeen := map[string]bool{}
@@ -431,6 +503,7 @@ func CheckPromiseSpec(content, unitName string) []CheckResult {
 	return []CheckResult{
 		CheckUnitSpecShape(content),
 		CheckPromiseSchema(content, unitName),
+		CheckAcceptanceItemSources(content),
 		CheckPromiseCoverage(content, unitName),
 	}
 }

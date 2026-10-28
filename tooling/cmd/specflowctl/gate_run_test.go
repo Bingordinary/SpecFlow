@@ -46,7 +46,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 	os.MkdirAll(dir, 0755)
 	path := filepath.Join(dir, "unit_"+name+".md")
 	var b strings.Builder
-	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    summary: Core contract.\n    contract: {invariants: [core]}", name)
+	promiseBlock := fmt.Sprintf("promises:\n  - id: %s.core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}", name)
 	if providerUnits != "" && !strings.EqualFold(providerUnits, "none") {
 		var ids []string
 		for _, unit := range strings.Split(providerUnits, ",") {
@@ -61,7 +61,7 @@ func grWriteSpecItems(t *testing.T, repoRoot, name, providerUnits, ruleRefs stri
 	}
 	fmt.Fprintf(&b, "---\nid: %s\nrule_refs: %s\n---\n\n# %s\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\n%s\n\n## Acceptance Items\n\nacceptance_item_set:\n", name, ruleRefs, name, promiseBlock)
 	for _, item := range items {
-		fmt.Fprintf(&b, "  - id: %s\n    promise: %s.core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item, name)
+		fmt.Fprintf(&b, "  - id: %s\n    promise: %s.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n", item, name)
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
 		t.Fatal(err)
@@ -76,9 +76,9 @@ func grWriteSpecSurface(t *testing.T, repoRoot, name, surface, extra string) str
 	t.Helper()
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
-		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
+		"  - id: " + name + ".core\n    promise: " + name + ".core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: " + surface + "\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n" + extra
 	return grWriteFile(t, repoRoot, "docs/specs/units/candidate/unit_"+name+".md", content)
 }
 
@@ -1901,7 +1901,7 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 	grFinalizeOK(t, repoRoot, fullID)
 
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
+	edited := strings.Replace(string(data), "    description: Given a caller, When the behavior runs, Then it is accepted.", "    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -3540,7 +3540,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
 	data, _ := os.ReadFile(specPath)
-	edited := strings.Replace(string(data), "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
+	edited := strings.Replace(string(data), "  - id: auth.login\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.login\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted. With an edit.", 1)
 	if edited == string(data) {
 		t.Fatal("item edit did not apply — fixture assumption broken")
 	}
@@ -3685,7 +3685,7 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3740,7 +3740,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.beta\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.beta\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.beta requirement")
 	}
@@ -3789,9 +3789,9 @@ func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	specPath := "docs/specs/units/candidate/unit_auth.md"
 	spec := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
-		"  - id: auth.core\n    promise: auth.core\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
+		"  - id: auth.core\n    promise: auth.core\n    source: [Narrative]\n    description: Core.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n    affects:\n      files:\n        - docs/notes/auth_contract.md\n      evidence_files:\n        - docs/notes/auth_evidence.md\n"
 	grWriteFile(t, repoRoot, specPath, spec)
 	grWriteFile(t, repoRoot, "docs/notes/auth_contract.md", "# Auth contract\n")
 	grWriteFile(t, repoRoot, "docs/notes/auth_evidence.md", "# Auth evidence\n")
@@ -4053,7 +4053,7 @@ func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}
@@ -4330,7 +4330,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
+	edited := strings.Replace(string(spec), "  - id: auth.two\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.", "  - id: auth.two\n    promise: auth.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted. With a revision.", 1)
 	if edited == string(spec) {
 		t.Fatal("failed to edit the auth.two spec region")
 	}

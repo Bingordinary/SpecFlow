@@ -2,6 +2,7 @@
 acceptance_item_set:
   - id: auth.login_success
     promise: auth.login_api
+    source: [Authentication model]
     description: Given valid credentials, when login is called, then 200 + token is returned.
     verification_type: testable
     verification_surface: api

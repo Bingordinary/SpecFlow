@@ -71,9 +71,9 @@ func TestUnitMissionIncludesTargetLayerApplicability(t *testing.T) {
 	const name = "logger"
 	spec := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
-		"  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+		"  - id: " + name + ".core\n    promise: " + name + ".core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := createCLITestRepo(t)

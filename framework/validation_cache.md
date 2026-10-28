@@ -389,7 +389,12 @@ alignment judgment silently. The
 region is the item's `- id:` line (outside a code fence) through the line
 before the next `- id:` line, or the end of the acceptance item set, with
 trailing blank lines excluded. The id is the locator; a missing marker, a
-missing id, or a duplicated id fails closed. Every other record input is
+missing id, or a duplicated id fails closed. A promise's or item's `source`
+field is part of its region, so editing `source` re-runs the record that pins
+the region. A promise's source blocks are recorded in the promise state's
+`source_pins`; an item's source blocks are pinned in the item judgment. Both
+use the existing `region:subsection` content identity, not a second anchor
+type. Every other record input is
 pinned by its own object: a public code judgment pins the reviewed file and
 the applicable rules whole-file (**not** the run's supplied evidence inputs:
 they stay readable but never define the record's dependencies, so neither an
@@ -765,12 +770,17 @@ A unit layer with the promise model records its contract state at:
 docs/specs/meta/validation/unit/<unit>/promise_state_<layer>.yaml
 ```
 
-The record contains the unit's own promise fingerprints and the provider
-promise fingerprints its verification depended on, in the layer's resolved
-provider scope (`framework/core/promise_model.md` §Layer resolution): a
-candidate record pins the current-layer contracts it read, a stable record
-pins the published stable contracts. A passing unit `verify`
-finalize writes it automatically. `promote` validates that the record is
+The record contains the unit's own promise fingerprints, the provider promise
+fingerprints its verification depended on, and the `source_pins` for each own
+promise: the Design Narrative block content identities the promise projected
+at verify time. Own and provider pins use the layer's resolved provider scope
+(`framework/core/promise_model.md` §Layer resolution): a candidate record pins
+the current-layer contracts it read, a stable record pins the published stable
+contracts. A source block change reopens the provider's own promise state and
+requires re-verification; it does not change the contract fingerprint or reopen
+consumers. A record without source pins is stale for a spec that declares
+sources and is rebuilt by a full verify — there is no migration path. A
+passing unit `verify` finalize writes it automatically. `promote` validates that the record is
 current and that every pinned provider promise is already published at the
 same fingerprint, then stages the stable record in the same publication
 transaction as the spec and baseline — a missing or stale record aborts the
@@ -779,8 +789,8 @@ the candidate layer, and whole-unit removal clears both layers. It is a durable
 record with the same lifecycle as the stable spec.
 
 `specflowctl fresh --unit <name>` reads the record. A unit is `DONE` when the record
-is present, its promise contract closure is `CLOSED`, and the layer's validate
-and verify caches are fresh. The record does not replace the gate caches: the
+is present, its source pins are current, its promise contract closure is
+`CLOSED`, and the layer's validate and verify caches are fresh. The record does not replace the gate caches: the
 caches remain the code-evidence source, now bound to provider promise
 fingerprints instead of provider whole-file content.
 See `framework/core/promise_model.md`.

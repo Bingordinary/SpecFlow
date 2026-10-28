@@ -15,7 +15,10 @@ Format compliance does not by itself prove handoff completeness.
 
 ==ATOM_BEGIN:promise_gate_requirement==
 A unit without `## Promises` is rejected by unit validate, gate-plan, and
-promote. The promise format is deployed; there is no second format.
+promote. A promise without `source`, or an acceptance item that verifies a
+promise without `source`, is rejected by the same checks: the projection must
+name the Design Narrative block it comes from. The promise format is deployed;
+there is no second format.
 ==ATOM_END:promise_gate_requirement==
 
 ## Promise Model (deployed format)
@@ -46,6 +49,7 @@ content of the last two sections.
 promises:
   - id: auth.login_api
     summary: Login returns a token on success and 401 on invalid credentials.
+    source: [Authentication model]
     contract:
       operations:
         login:
@@ -68,6 +72,7 @@ promises:
 acceptance_item_set:
   - id: auth.login_success
     promise: auth.login_api
+    source: [Authentication model]
     description: Given valid credentials, when login is called, then 200 + token is returned.
     verification_type: testable
     verification_surface: api
@@ -186,6 +191,12 @@ truth: if it needs its own contract, dependencies, acceptance items, code
 scope, or independent verification, it is a unit, not an appendix. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
+
+Provenance is explicit: every promise, and every acceptance item that verifies
+a promise, declares `source:` with the heading text of the Design Narrative
+block it projects. `source` records where the contract comes from; it is not
+part of the contract fingerprint. A source block change makes the projection
+re-checkable without pretending the consumer contract changed.
 ==ATOM_END:promise_carrier_role==
 
 Everything else in the unit (design narrative, body prose, appendices, background, motivation, design discussion) is not a formal behavior carrier.
@@ -193,6 +204,22 @@ Everything else in the unit (design narrative, body prose, appendices, backgroun
 **Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through a promise. `validate` Check 5h enforces the narrative-to-promise relation, and Check 5a applies the boundary to appendix contract content: internal implementation detail declared in the body or an appendix creates no coverage obligation.
 
 Contract statements must be declared in a promise (`validate` Check 5a/5h enforce the narrative and appendix boundaries; see §8). The cross-unit consistency check (`validate` Check 7) reads the dependency unit's promises through the consumer's `depends_on` edges; the run records the provider promise fingerprints, so a contract change is visible to the delta re-run.
+
+Each projection is explicit. A promise declares `source:` with the Design
+Narrative block heading(s) it projects; a contract-verifying acceptance item
+declares `source:` with the block it proves. The string is the heading text
+without `#` markers, exactly as a design report's `Spec basis` names a
+`###`-or-deeper narrative block. The
+promise stays the contract carrier and the item stays the verification
+carrier; `source` records where each came from, so a reviewer can check one
+block against one projection instead of searching the whole narrative. The
+provider's promise state records the source block content identities; a
+source-block edit reopens the provider's own state and requires
+re-verification, without reopening consumers unless the contract changes. A
+`non_promise` item may omit `source` because it projects no contract. When an
+acceptance item has multiple sources, prefer the YAML block-list form; the
+inline form is a comma-separated list, so a heading containing a comma must use
+the block form.
 
 It does not mean:
 
@@ -277,6 +304,7 @@ The acceptance section must include structured acceptance items; every contract-
 acceptance_item_set:
   - id: demo.core
     promise: demo.core
+    source: [Demo behavior]
     description: Given a demo input, When the demo behavior runs, Then it is accepted.
     verification_type: testable          # testable | inspectable | reviewable
     verification_surface: internal_flow
@@ -303,6 +331,7 @@ acceptance_item_set:
 |---|---|---|
 | `id` | yes | Unique identifier within the item set; used as primary key in process evidence |
 | `promise` | required for contract items | The unit-owned promise this item proves (for example `demo.core`). The item's `description` and `pass_condition` state the specific check, not the full promise contract. |
+| `source` | required for contract items | Design Narrative block heading(s) this item proves. One or more `###` or deeper heading texts, written exactly as `Spec basis` names them (without `#` markers). A `non_promise` item may omit it. |
 | `non_promise` | required for non-contract items | `true` for cleanup, migration, or one-off inspection items that do not verify a promise. Such an item also carries `non_promise_reason`. |
 | `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
@@ -609,14 +638,20 @@ A verify **design** conclusion pins the spec content it relied on, so the narrat
 
 1. **`##`-organized body:** all spec body content must live inside `##` heading sections. The frontmatter region may contain only the YAML frontmatter block, the `#` document title, and blank lines — any other content before the first `##` heading is stray prose (validate Check 1 fails the spec on it; restructure the spec so the region holds only the YAML block, the title, and blank lines).
 2. **Unique headings at every level:** heading texts must be unique within the file at all levels (`#` through `######`). A design record locates a narrative block by heading text and a duplicated text cannot be located unambiguously, so validate Check 7 fails a duplicated heading of any level.
-3. **`###`-organized Design Narrative:** every line of `## Design Narrative` must live inside a `###` or deeper block — the section heading may be followed only by heading lines, never by prose. A design record's anchors are the narrative block headings and the promise entry ids its report declares (`framework/verification_scope.md` §Verify scope), so prose sitting directly under the section heading would belong to no anchor and be silently uncovered; validate Check 7 fails it. Each `###` block should cover one decision, on the same cohesion reasoning as item 4.
+3. **`###`-organized Design Narrative:** every line of `## Design Narrative` must live inside a `###` or deeper block — the section heading may be followed only by heading lines, never by prose. A design record's anchors are the narrative block headings and the promise entry ids its report declares (`framework/verification_scope.md` §Verify scope), so prose sitting directly under the section heading would belong to no anchor and be silently uncovered; validate Check 7 fails it. Each `###` block should cover one decision, on the same cohesion reasoning as item 4. A promise's or acceptance item's `source` names one of these blocks by heading text; the block is the projection unit, so keep it cohesive enough that one block carries one contract subject.
 4. **One topic per section (cohesion):** each `##` section must cover one semantic topic, so an edit stays contained in one section. If editing any small part of a section tends to touch content across its whole span, the section is too coarse — split it. Cohesion keeps a recorded change set focused, which is what a delta re-run reasons about.
-5. **`###` and deeper headings** belong to their `##` section — they never terminate the acceptance item set — and they are the **anchor unit** for design judgments: a design record pins the `###` (or deeper) block it declares, so an edit to a sibling block does not re-run it. A block runs from its heading through the line before the next heading of the same or a shallower level. The shape rule in the Promise Model section defines where `###` is allowed. For region mechanics, a `##` heading ends the `acceptance_item_set`, so keep the item set inside one `##` section.
-6. **Naming stability:** headings are part of the region content — the acceptance item set's structural identity changes with any content inside it, so rename deliberately (a rename is a semantic signal, not a cosmetic edit). A narrative-block heading is also its own locator: renaming it makes every design record that declared it re-run, because its anchor no longer resolves.
+5. **`###` and deeper headings** belong to their `##` section — they never terminate the acceptance item set — and they are the **anchor unit** for design judgments and source projections: a design record pins the `###` (or deeper) block it declares, and a promise or item `source` names the same block, so an edit to a sibling block does not re-run it. A block runs from its heading through the line before the next heading of the same or a shallower level. The shape rule in the Promise Model section defines where `###` is allowed. For region mechanics, a `##` heading ends the `acceptance_item_set`, so keep the item set inside one `##` section.
+6. **Naming stability:** headings are part of the region content — the acceptance item set's structural identity changes with any content inside it, so rename deliberately (a rename is a semantic signal, not a cosmetic edit). A narrative-block heading is also its own locator: renaming it makes every design record that declared it re-run, and every promise or item that named it as `source` fail to resolve, because the anchor no longer exists.
 7. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
 8. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and support appendices need no section structure.
 9. **Reserved heading name:** `frontmatter` is a reserved spelling — it names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be located by section structure (validate Check 7 fails the reserved name). Choose a different heading text.
 10. **Fixed section order:** the three-section order and its structural rules are defined once by the Promise Model section (`framework/core/promise_model.md` §Unit spec shape). The acceptance item set remains the **last** content of the file — no heading of any level (`#` through `######`, not only `##`) and no narrative follows it (see §9 Document shape). Set-level content inside the item set is attributed to the last item's region (see §7).
+
+`source` introduces no second anchor type. A source value is the same heading
+text a `Spec basis` line uses; it resolves through the same `###`-or-deeper
+block locator. Do not add line numbers, generated slugs, or inline
+`contract:<id>` anchors: if a heading block is too coarse for a projection,
+split it into cohesive blocks first.
 
 A spec that fails the structure (no `##` heading, duplicated heading texts, the reserved `frontmatter` name, stray pre-heading content, Design Narrative prose outside every `###` block, or a section order that violates item 10) fails validate: Check 1 for the structural pre-pass, Check 7 for region locatability, and Check 15 for the three-section shape and order. The fix direction is restructuring the spec per this section.
 

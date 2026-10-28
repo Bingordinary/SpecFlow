@@ -463,10 +463,10 @@ func writeUnitItemsSpec(t *testing.T, repoRoot string, itemIDs ...string) string
 	}
 	content := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n"
 	for _, id := range itemIDs {
-		content += "  - id: " + id + "\n    promise: auth.core\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
+		content += "  - id: " + id + "\n    promise: auth.core\n    source: [Narrative]\n    description: " + id + ".\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: test\n    pass_condition: Passes.\n    runnable: yes\n"
 	}
 	if err := os.WriteFile(specPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)

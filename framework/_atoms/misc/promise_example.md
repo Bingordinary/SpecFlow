@@ -2,6 +2,7 @@
 promises:
   - id: auth.login_api
     summary: Login returns a token on success and 401 on invalid credentials.
+    source: [Authentication model]
     contract:
       operations:
         login:

@@ -1000,6 +1000,45 @@ func SpecAnchorDep(text, anchor string) (string, bool) {
 	return "", false
 }
 
+// NarrativeSourceDep resolves a promise or acceptance-item source anchor to
+// the region dependency string that pins the narrative block it projects. A
+// source anchor is a `###` or deeper heading inside `## Design Narrative`; a
+// `##` section, a promise id, or a heading outside the Design Narrative does
+// not resolve. Keeping this resolver separate from SpecAnchorDep lets source
+// declarations stay narrower than a design report's basis pins: a source
+// names the block a contract projects, not any block a reviewer happened to
+// read for context.
+func NarrativeSourceDep(text, anchor string) (string, bool) {
+	block, ok := narrativeSourceBlock(text, anchor)
+	if !ok {
+		return "", false
+	}
+	return "region:subsection:" + anchor + ":" + RegionCID(block.Text), true
+}
+
+// NarrativeSourceCID returns the content identity of the Design Narrative
+// block a source anchor names. It uses the same resolution rule as
+// NarrativeSourceDep: a `###` or deeper heading inside `## Design Narrative`.
+func NarrativeSourceCID(text, anchor string) (string, bool) {
+	block, ok := narrativeSourceBlock(text, anchor)
+	if !ok {
+		return "", false
+	}
+	return RegionCID(block.Text), true
+}
+
+func narrativeSourceBlock(text, anchor string) (NarrativeBlock, bool) {
+	block, ok := LocateNarrativeBlock(text, anchor)
+	if !ok {
+		return NarrativeBlock{}, false
+	}
+	section, ok := LocateEnclosingSectionRegion(text, anchor)
+	if !ok || section.Heading != "Design Narrative" {
+		return NarrativeBlock{}, false
+	}
+	return block, true
+}
+
 // DuplicateHeadings returns the heading texts that appear more than once in
 // the given normalized text — at any heading level, outside fenced code
 // blocks, in first-appearance order. Design records pin narrative blocks by

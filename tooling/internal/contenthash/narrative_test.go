@@ -196,6 +196,39 @@ func TestSpecAnchorDepSurvivesUnrelatedEdits(t *testing.T) {
 	}
 }
 
+func TestNarrativeSourceDepOnlyAcceptsDesignNarrativeBlocks(t *testing.T) {
+	cases := []string{"3.1H Memory", "3.1H.1 Budget", "3.2 Events"}
+	for _, anchor := range cases {
+		dep, ok := NarrativeSourceDep(narrativeSpec, anchor)
+		if !ok {
+			t.Fatalf("source anchor %q must resolve", anchor)
+		}
+		if !strings.HasPrefix(dep, "region:subsection:"+anchor+":") {
+			t.Fatalf("source anchor %q resolved to %q, want a subsection pin", anchor, dep)
+		}
+	}
+	for _, anchor := range []string{"Promises", "dep.events", "Testability / Acceptance Criteria", "no such anchor"} {
+		if _, ok := NarrativeSourceDep(narrativeSpec, anchor); ok {
+			t.Fatalf("source anchor %q must not resolve: a source is a Design Narrative block, not a section or promise id", anchor)
+		}
+	}
+}
+
+func TestNarrativeSourceDepHoldsUntilTheSourceBlockChanges(t *testing.T) {
+	dep, ok := NarrativeSourceDep(narrativeSpec, "3.2 Events")
+	if !ok {
+		t.Fatal("source anchor must resolve")
+	}
+	edited := strings.Replace(narrativeSpec, "Memory persists across runs.", "Memory persists across runs, edited.", 1)
+	if !DepsPresent(edited, []string{dep}) {
+		t.Fatal("an edit outside the source block must not invalidate it")
+	}
+	edited = strings.Replace(narrativeSpec, "Events are emitted on the run span.", "Events are emitted on the run span, edited.", 1)
+	if DepsPresent(edited, []string{dep}) {
+		t.Fatal("an edit inside the source block must invalidate it")
+	}
+}
+
 func TestPromiseRegionPinSurvivesReorderAndBlocksOnContractChange(t *testing.T) {
 	dep, ok := SpecAnchorDep(narrativeSpec, "dep.core")
 	if !ok {

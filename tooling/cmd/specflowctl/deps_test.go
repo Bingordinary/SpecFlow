@@ -374,8 +374,8 @@ func writePromiseDepsUnit(t *testing.T, repoRoot, layer, unit, promiseID, depend
 	}
 	content := "---\nid: " + unit + "\nrule_refs: " + ruleRefs + "\n---\n\n" +
 		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    contract: {invariants: [contract]}\n" + depends + "\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
+		"## Promises\n\npromises:\n  - id: " + promiseID + "\n    summary: Contract.\n    source: [Narrative]\n    contract: {invariants: [contract]}\n" + depends + "\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + unit + ".core\n    promise: " + promiseID + "\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -402,11 +402,11 @@ func writeTwoPromiseLayerUnit(t *testing.T, repoRoot, layer, unit, firstID, firs
 	content := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nNarrative.\n\n" +
 		"## Promises\n\npromises:\n" +
-		"  - id: " + firstID + "\n    summary: Contract.\n    contract: {invariants: [" + firstContract + "]}\n" + firstDepends +
-		"  - id: " + secondID + "\n    summary: Contract.\n    contract: {invariants: [" + secondContract + "]}\n" + secondDepends + "\n" +
+		"  - id: " + firstID + "\n    summary: Contract.\n    source: [Narrative]\n    contract: {invariants: [" + firstContract + "]}\n" + firstDepends +
+		"  - id: " + secondID + "\n    summary: Contract.\n    source: [Narrative]\n    contract: {invariants: [" + secondContract + "]}\n" + secondDepends + "\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
-		"  - id: " + unit + ".core\n    promise: " + firstID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n" +
-		"  - id: " + unit + ".model\n    promise: " + secondID + "\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
+		"  - id: " + unit + ".core\n    promise: " + firstID + "\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n" +
+		"  - id: " + unit + ".model\n    promise: " + secondID + "\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + unit + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	dir := filepath.Join(repoRoot, "docs/specs/units", layer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

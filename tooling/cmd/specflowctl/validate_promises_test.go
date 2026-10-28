@@ -25,6 +25,7 @@ Login uses token-based authentication.
 promises:
   - id: auth.login_api
     summary: Login returns a token on success and 401 on invalid credentials.
+    source: [Narrative]
     contract:
       operations:
         login:
@@ -40,6 +41,7 @@ promises:
 acceptance_item_set:
   - id: auth.login_success
     promise: auth.login_api
+    source: [Narrative]
     description: Given valid credentials, when login is called, then 200 + token is returned.
     verification_type: testable
     verification_surface: api
@@ -77,6 +79,7 @@ The logger is the logging seam every unit writes through.
 promises:
   - id: auth.logger_api
     summary: Logger is the logging seam.
+    source: [Narrative]
     contract:
       operations:
         Logger.Debug: {signature: "Debug(msg string, args ...any)"}
@@ -88,6 +91,7 @@ promises:
 acceptance_item_set:
   - id: auth.logger_debug
     promise: auth.logger_api
+    source: [Narrative]
     description: Given a logger, when Debug is called, then the record is written.
     verification_type: testable
     verification_surface: api
@@ -145,5 +149,38 @@ func TestValidatePromiseModelCLIMissingSpec(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if err := runValidate([]string{"promise-model", "--unit", "auth", "--repo-root", repoRoot}, &stdout, &stderr); err == nil {
 		t.Fatal("expected missing-spec error, got nil")
+	}
+}
+
+func TestValidatePromiseModelCLIRejectsMissingSource(t *testing.T) {
+	repoRoot := t.TempDir()
+	content := strings.Replace(promiseCLISpec, "    source: [Narrative]\n", "", 1)
+	writePromiseCLISpec(t, repoRoot, content)
+
+	var stdout, stderr bytes.Buffer
+	if err := runValidate([]string{"promise-model", "--unit", "auth", "--repo-root", repoRoot}, &stdout, &stderr); err == nil {
+		t.Fatalf("expected a missing-source failure, got nil\nstdout:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "missing source") {
+		t.Fatalf("expected the missing-source diagnostic, got:\n%s", stdout.String())
+	}
+}
+
+func TestValidatePromiseModelCLIRejectsItemMissingSource(t *testing.T) {
+	repoRoot := t.TempDir()
+	content := strings.Replace(promiseCLISpec,
+		"  - id: auth.login_success\n    promise: auth.login_api\n    source: [Narrative]\n",
+		"  - id: auth.login_success\n    promise: auth.login_api\n", 1)
+	if content == promiseCLISpec {
+		t.Fatal("item source removal did not apply")
+	}
+	writePromiseCLISpec(t, repoRoot, content)
+
+	var stdout, stderr bytes.Buffer
+	if err := runValidate([]string{"promise-model", "--unit", "auth", "--repo-root", repoRoot}, &stdout, &stderr); err == nil {
+		t.Fatalf("expected an item-source failure, got nil\nstdout:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Acceptance item sources") || !strings.Contains(stdout.String(), "missing or empty required field source") {
+		t.Fatalf("expected the item-source diagnostic, got:\n%s", stdout.String())
 	}
 }

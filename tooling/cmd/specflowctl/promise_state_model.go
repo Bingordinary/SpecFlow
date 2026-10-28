@@ -15,17 +15,21 @@ import (
 // promiseStateReport is the complete contract-and-evidence state of one unit
 // layer. It is rendered by the `fresh` detail view.
 type promiseStateReport struct {
-	Unit          string
-	Layer         string
-	Promises      []specvalidation.Promise
-	Own           map[string]string
-	Coverage      specvalidation.CheckResult
-	Graph         specvalidation.CheckResult
-	State         *validationcache.PromiseStateFile
-	StateRecorded bool
-	Current       map[string]string
-	CurrentIssues []string
-	PinStates     []validationcache.PromiseState
+	Unit           string
+	Layer          string
+	Promises       []specvalidation.Promise
+	Own            map[string]string
+	Schema         specvalidation.CheckResult
+	ItemSources    specvalidation.CheckResult
+	Coverage       specvalidation.CheckResult
+	Graph          specvalidation.CheckResult
+	State          *validationcache.PromiseStateFile
+	StateRecorded  bool
+	Current        map[string]string
+	CurrentIssues  []string
+	CurrentSources map[string]string
+	PinStates      []validationcache.PromiseState
+	SourceStates   []validationcache.PromiseState
 	// Publication compares the recorded dependency pins with the published
 	// stable contracts. A candidate may be DONE while it builds on another
 	// candidate (current-layer scope), but it is not promotable until every
@@ -87,9 +91,12 @@ func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stable
 		}
 		report.Own[promise.ID] = fingerprint
 	}
+	report.Schema = specvalidation.CheckPromiseSchema(content, unitName)
+	report.ItemSources = specvalidation.CheckAcceptanceItemSources(content)
 	report.Coverage = specvalidation.CheckPromiseCoverage(content, unitName)
 	report.Graph = graph.Check(unitName)
 	report.Current, report.CurrentIssues = graph.CurrentFingerprints()
+	report.CurrentSources = specvalidation.PromiseSourceCIDs(content)
 
 	statePath, err := validationcache.PromiseStatePath(absRoot, unitName, layer)
 	if err != nil {
@@ -104,6 +111,7 @@ func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stable
 	} else {
 		report.StateRecorded = true
 		report.PinStates = validationcache.ComparePromisePins(report.State.Pins, report.Current)
+		report.SourceStates = validationcache.ComparePromiseSources(report.State.SourcePins, report.CurrentSources)
 	}
 	// Publication is stricter than layer-local closure: a candidate may be
 	// DONE while it builds on another candidate, but promote requires every
@@ -116,7 +124,7 @@ func computePromiseStateWithGraph(absRoot, unitName, layer string, graph, stable
 		report.PublicationIssues = issues
 		report.Publication = validationcache.ComparePromisePublication(report.State.Pins, stable)
 	}
-	report.Closure, report.ClosureReasons = promiseClosure(report.State, report.StateRecorded, report.Unit, report.Layer, report.Promises, report.Own, report.Current, report.Coverage, report.Graph)
+	report.Closure, report.ClosureReasons = promiseClosure(report.State, report.StateRecorded, report.Unit, report.Layer, report.Promises, report.Own, report.Current, report.SourceStates, report.Schema, report.ItemSources, report.Coverage, report.Graph)
 
 	report.ValidateCheck, report.VerifyCheck, err = evidenceChecks(absRoot, unitName, layer, derivation)
 	if err != nil {

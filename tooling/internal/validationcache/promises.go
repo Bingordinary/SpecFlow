@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,15 +34,25 @@ type PromiseState struct {
 	Reason string        `yaml:"reason,omitempty"`
 }
 
+// PromiseSourcePin binds one promise source declaration to the exact
+// Design Narrative block the verification ran against. Source is provenance,
+// not contract content, so it is a separate pin from the contract fingerprint.
+type PromiseSourcePin struct {
+	ID     string `yaml:"id"`
+	Anchor string `yaml:"anchor"`
+	CID    string `yaml:"cid"`
+}
+
 // PromiseStateFile is the per-unit durable record written by a passing verify
 // finalize: the unit's own promise fingerprints plus the dependency promises
 // it was verified against. It is intentionally separate from the gate cache
 // parser; it is a small, durable state record.
 type PromiseStateFile struct {
-	Unit     string       `yaml:"unit"`
-	Layer    string       `yaml:"layer"`
-	Promises []PromisePin `yaml:"promises,omitempty"`
-	Pins     []PromisePin `yaml:"pins,omitempty"`
+	Unit       string             `yaml:"unit"`
+	Layer      string             `yaml:"layer"`
+	Promises   []PromisePin       `yaml:"promises,omitempty"`
+	Pins       []PromisePin       `yaml:"pins,omitempty"`
+	SourcePins []PromiseSourcePin `yaml:"source_pins,omitempty"`
 }
 
 // ComparePromisePublication compares recorded consumer pins with the published
@@ -104,6 +117,51 @@ func ComparePromisePins(pins []PromisePin, current map[string]string) []PromiseS
 	return states
 }
 
+// ComparePromiseSources compares recorded source-block pins with the current
+// source-block content identities. Unlike the contract fingerprint, a source
+// change does not reopen consumers; it makes the provider's own promise state
+// stale because the verification ran against a different narrative block.
+func ComparePromiseSources(recorded []PromiseSourcePin, current map[string]string) []PromiseState {
+	seen := map[string]bool{}
+	var states []PromiseState
+	for _, pin := range recorded {
+		key := specvalidation.PromiseSourceKey(pin.ID, pin.Anchor)
+		seen[key] = true
+		label := pin.ID + " source " + pin.Anchor
+		cid, ok := current[key]
+		switch {
+		case !ok:
+			states = append(states, PromiseState{
+				ID:     label,
+				Status: PromiseUnresolved,
+				Reason: "source block is missing from the current spec",
+			})
+		case cid != pin.CID:
+			states = append(states, PromiseState{
+				ID:     label,
+				Status: PromiseReopened,
+				Reason: "source block changed",
+			})
+		}
+	}
+	for key := range current {
+		if seen[key] {
+			continue
+		}
+		id, anchor, ok := strings.Cut(key, "\x00")
+		if !ok {
+			continue
+		}
+		states = append(states, PromiseState{
+			ID:     id + " source " + anchor,
+			Status: PromiseReopened,
+			Reason: "source block is not recorded",
+		})
+	}
+	sort.Slice(states, func(i, j int) bool { return states[i].ID < states[j].ID })
+	return states
+}
+
 // CheckPromiseStateIdentity validates the durable record's own identity and
 // list shape. A state file is a project record, so a copied or edited file can
 // name another unit or layer, or repeat a promise/pin entry. Both `fresh` and
@@ -120,21 +178,37 @@ func CheckPromiseStateIdentity(state *PromiseStateFile, unit, layer string) []st
 	if state.Layer != layer {
 		issues = append(issues, fmt.Sprintf("promise state layer is %q, expected %q", state.Layer, layer))
 	}
-	seen := map[string]bool{}
+	ownSeen := map[string]bool{}
 	for _, pin := range state.Promises {
-		if seen[pin.ID] {
+		if ownSeen[pin.ID] {
 			issues = append(issues, fmt.Sprintf("promise state records duplicate own promise %q", pin.ID))
 			continue
 		}
-		seen[pin.ID] = true
+		ownSeen[pin.ID] = true
 	}
-	seen = map[string]bool{}
+	seen := map[string]bool{}
 	for _, pin := range state.Pins {
 		if seen[pin.ID] {
 			issues = append(issues, fmt.Sprintf("promise state records duplicate dependency pin %q", pin.ID))
 			continue
 		}
 		seen[pin.ID] = true
+	}
+	seenSources := map[string]bool{}
+	for _, pin := range state.SourcePins {
+		if pin.ID == "" || pin.Anchor == "" || pin.CID == "" {
+			issues = append(issues, "promise state records an incomplete source pin")
+			continue
+		}
+		if !ownSeen[pin.ID] {
+			issues = append(issues, fmt.Sprintf("promise state source pin names unknown own promise %q", pin.ID))
+		}
+		key := specvalidation.PromiseSourceKey(pin.ID, pin.Anchor)
+		if seenSources[key] {
+			issues = append(issues, fmt.Sprintf("promise state records duplicate source pin %q for %q", pin.Anchor, pin.ID))
+			continue
+		}
+		seenSources[key] = true
 	}
 	return issues
 }

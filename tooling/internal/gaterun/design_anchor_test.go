@@ -24,9 +24,9 @@ func writeDesignAnchorUnit(t *testing.T, root string) string {
 		"## Design Narrative\n\n" +
 		"### Declared\n\nDeclared rationale.\n\n" +
 		"### Undeclared\n\nUndeclared rationale.\n\n" +
-		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
+		"## Promises\n\npromises:\n  - id: auth.core\n    summary: Core contract.\n    source: [Declared]\n    contract: {invariants: [core]}\n\n" +
 		"## Acceptance Items\n\nacceptance_item_set:\n" +
-		"  - id: auth.core\n    promise: auth.core\n    description: Given X, When Y, Then Z.\n" +
+		"  - id: auth.core\n    promise: auth.core\n    source: [Declared]\n    description: Given X, When Y, Then Z.\n" +
 		"    verification_type: testable\n    verification_surface: api\n    implementation_surface: src\n" +
 		"    verification_method: test.\n    pass_condition: Passes.\n    runnable: yes\n"
 	path := filepath.Join(dir, "unit_auth.md")

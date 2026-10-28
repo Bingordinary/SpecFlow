@@ -32,6 +32,8 @@ func writePromiseStateDetail(stdout io.Writer, report *promiseStateReport) {
 			fmt.Fprintf(stdout, "    %s  %s\n", id, report.Own[id])
 		}
 	}
+	fmt.Fprintf(stdout, "  schema: %s — %s\n", report.Schema.Status, report.Schema.Details)
+	fmt.Fprintf(stdout, "  item sources: %s — %s\n", report.ItemSources.Status, report.ItemSources.Details)
 	fmt.Fprintf(stdout, "  coverage: %s — %s\n", report.Coverage.Status, report.Coverage.Details)
 	fmt.Fprintf(stdout, "  graph: %s — %s\n", report.Graph.Status, report.Graph.Details)
 	if len(report.CurrentIssues) > 0 {
@@ -47,6 +49,16 @@ func writePromiseStateDetail(stdout io.Writer, report *promiseStateReport) {
 		fmt.Fprintln(stdout, "  pins:")
 		for _, entry := range report.PinStates {
 			fmt.Fprintf(stdout, "    %s  %s%s\n", entry.ID, entry.Status, promiseStateReason(entry.Reason))
+		}
+	}
+	if report.StateRecorded {
+		if len(report.SourceStates) == 0 {
+			fmt.Fprintln(stdout, "  sources: (none)")
+		} else {
+			fmt.Fprintln(stdout, "  sources:")
+			for _, entry := range report.SourceStates {
+				fmt.Fprintf(stdout, "    %s  %s%s\n", entry.ID, entry.Status, promiseStateReason(entry.Reason))
+			}
 		}
 	}
 	if report.Layer == "candidate" {
@@ -99,7 +111,7 @@ func evidenceChecks(repoRoot, unitName, layer string, derivation *gaterun.Deriva
 // code verification; the caller composes it with the gate caches. A layer with
 // no recorded state is OPEN even when it declares no promises: the state
 // record is what makes the contract version auditable.
-func promiseClosure(state *validationcache.PromiseStateFile, stateRecorded bool, unitName, layer string, promises []specvalidation.Promise, own, current map[string]string, coverage, graph specvalidation.CheckResult) (string, []string) {
+func promiseClosure(state *validationcache.PromiseStateFile, stateRecorded bool, unitName, layer string, promises []specvalidation.Promise, own, current map[string]string, sourceStates []validationcache.PromiseState, schema, itemSources, coverage, graph specvalidation.CheckResult) (string, []string) {
 	closure := "CLOSED"
 	var reasons []string
 	if !stateRecorded {
@@ -109,6 +121,14 @@ func promiseClosure(state *validationcache.PromiseStateFile, stateRecorded bool,
 	if identityIssues := validationcache.CheckPromiseStateIdentity(state, unitName, layer); len(identityIssues) > 0 {
 		closure = "OPEN"
 		reasons = append(reasons, identityIssues...)
+	}
+	if schema.Status != specvalidation.Pass {
+		closure = "OPEN"
+		reasons = append(reasons, "promise schema failed: "+schema.Details)
+	}
+	if itemSources.Status != specvalidation.Pass {
+		closure = "OPEN"
+		reasons = append(reasons, "acceptance item source check failed: "+itemSources.Details)
 	}
 	if coverage.Status != specvalidation.Pass {
 		closure = "OPEN"
@@ -164,6 +184,18 @@ func promiseClosure(state *validationcache.PromiseStateFile, stateRecorded bool,
 				closure = "REOPENED"
 			}
 			reasons = append(reasons, entry.ID+" is "+string(entry.Status))
+		}
+	}
+	for _, entry := range sourceStates {
+		if entry.Status != validationcache.PromiseFresh {
+			if closure != "OPEN" {
+				closure = "REOPENED"
+			}
+			reason := entry.ID + " is " + string(entry.Status)
+			if entry.Reason != "" {
+				reason += ": " + entry.Reason
+			}
+			reasons = append(reasons, reason)
 		}
 	}
 	return closure, reasons

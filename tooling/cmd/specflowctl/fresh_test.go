@@ -124,8 +124,8 @@ func writeUnitSpec(t *testing.T, repoRoot, name string) string {
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nProse.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    source: [Narrative]\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +141,10 @@ func writeRecordedPromiseState(t *testing.T, repoRoot, name string) {
 		t.Fatal(err)
 	}
 	if err := validationcache.WritePromiseStateFile(statePath, validationcache.PromiseStateFile{
-		Unit:     name,
-		Layer:    "candidate",
-		Promises: []validationcache.PromisePin{{ID: name + ".core", Fingerprint: promiseFingerprint(t, repoRoot, name, name+".core")}},
+		Unit:       name,
+		Layer:      "candidate",
+		Promises:   []validationcache.PromisePin{{ID: name + ".core", Fingerprint: promiseFingerprint(t, repoRoot, name, name+".core")}},
+		SourcePins: promiseSourcePinsFor(t, repoRoot, name, "candidate"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -842,8 +843,8 @@ func writeStableUnitSpec(t *testing.T, repoRoot, name string) string {
 	path := filepath.Join(dir, "unit_"+name+".md")
 	content := "---\nid: " + name + "\nrule_refs: none\n---\n\n# " + name + "\n\n" +
 		"## Design Narrative\n### Narrative\n\nStable fixture.\n\n" +
-		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n" +
-		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: test\n    pass_condition: ok\n    runnable: yes\n"
+		"## Promises\n\npromises:\n  - id: " + name + ".core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n" +
+		"## Acceptance Items\n\nacceptance_item_set:\n  - id: " + name + ".core\n    promise: " + name + ".core\n    source: [Narrative]\n    description: Given X, When Y, Then Z.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/" + name + ".go\n    verification_method: test\n    pass_condition: ok\n    runnable: yes\n"
 	grWriteFile(t, repoRoot, "src/"+name+".go", "package fixture\n")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)

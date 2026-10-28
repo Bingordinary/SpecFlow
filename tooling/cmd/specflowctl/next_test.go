@@ -51,6 +51,7 @@ Prose.
 promises:
   - id: demo.%[1]s
     summary: Contract.
+    source: [Narrative]
     contract: {invariants: [contract]}
     depends_on: [%[1]s_peer.api]
 
@@ -59,6 +60,7 @@ promises:
 acceptance_item_set:
   - id: demo.%[1]s
     promise: demo.%[1]s
+    source: [Narrative]
     implementation_surface: src/%[1]s.go
     affects:
       files:

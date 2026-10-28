@@ -48,6 +48,9 @@ func CheckAcceptanceItemSchema(content string) CheckResult {
 				issue("missing or empty required field " + key)
 			}
 		}
+		for _, problem := range acceptanceItemSourceIssues(content, item) {
+			issue(problem)
+		}
 		if value := item.fields["verification_type"]; value != "" && value != "testable" && value != "inspectable" && value != "reviewable" {
 			issue(fmt.Sprintf("invalid verification_type %q; must be testable, inspectable or reviewable", value))
 		}
@@ -78,6 +81,68 @@ func CheckAcceptanceItemSchema(content string) CheckResult {
 	result.Status = Pass
 	result.Details = fmt.Sprintf("%d item(s) found with required fields", len(items))
 	return result
+}
+
+// CheckAcceptanceItemSources validates the source projection of the
+// acceptance item set without re-running the rest of the item schema. The
+// promise-model path uses it so gate-plan, verify finalize, and
+// `validate promise-model` fail closed on a missing or unresolved item source
+// even though they do not run the full candidate schema.
+func CheckAcceptanceItemSources(content string) CheckResult {
+	content = specpaths.NormalizeText(content)
+	result := CheckResult{Name: "Acceptance item sources", Status: Fail}
+	items := parseAcceptanceItems(content)
+	if len(items) == 0 {
+		result.Status = Pass
+		result.Details = "no acceptance items declared"
+		return result
+	}
+	var issues []string
+	for _, item := range items {
+		for _, problem := range acceptanceItemSourceIssues(content, item) {
+			issues = append(issues, fmt.Sprintf("acceptance item %q: %s", item.id, problem))
+		}
+	}
+	if len(issues) > 0 {
+		result.Details = strings.Join(issues, "; ")
+		return result
+	}
+	result.Status = Pass
+	result.Details = fmt.Sprintf("%d item(s) have valid source projections", len(items))
+	return result
+}
+
+// acceptanceItemSourceIssues is the one source-projection rule shared by the
+// full item schema and the source-only promise-model check.
+func acceptanceItemSourceIssues(content string, item acceptanceItemFields) []string {
+	var issues []string
+	for _, problem := range item.sourceProblems {
+		issues = append(issues, problem)
+	}
+	// A contract item projects a narrative behavior, so its source is
+	// required. A non-promise item (cleanup, migration, one-off inspection)
+	// has no contract projection and may omit source; when it declares one,
+	// it is validated like any other source.
+	if strings.TrimSpace(item.fields["promise"]) != "" && len(item.source) == 0 {
+		issues = append(issues, "missing or empty required field source for a contract item")
+	}
+	sourceSeen := map[string]bool{}
+	for _, anchor := range item.source {
+		anchor = strings.TrimSpace(anchor)
+		if anchor == "" {
+			issues = append(issues, "source contains an empty entry")
+			continue
+		}
+		if sourceSeen[anchor] {
+			issues = append(issues, "duplicate source entry "+anchor)
+			continue
+		}
+		sourceSeen[anchor] = true
+		if _, ok := contenthash.NarrativeSourceDep(content, anchor); !ok {
+			issues = append(issues, fmt.Sprintf("source %q does not resolve to a unique ### or deeper Design Narrative block", anchor))
+		}
+	}
+	return issues
 }
 
 // featureSyntaxLine reports the first `.feature` keyword a description line

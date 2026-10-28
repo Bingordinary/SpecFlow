@@ -729,11 +729,13 @@ func createFullCandidate(t *testing.T, repoRoot, unitName string) {
 			"promises:\n"+
 			"  - id: "+unitName+".core\n"+
 			"    summary: Core contract.\n"+
+			"    source: [Fixture narrative]\n"+
 			"    contract: {invariants: [core]}\n\n"+
 			"## Acceptance Items\n\n"+
 			"acceptance_item_set:\n"+
 			"  - id: item_1\n"+
 			"    promise: "+unitName+".core\n"+
+			"    source: [Fixture narrative]\n"+
 			"    description: integration test item\n"+
 			"    verification_type: inspectable\n"+
 			"    verification_surface: docs/\n"+

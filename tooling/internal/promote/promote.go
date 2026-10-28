@@ -391,6 +391,11 @@ func checkPromiseStateForPromotion(repoRoot, unitName, content string, state *va
 		own[promise.ID] = fingerprint
 	}
 	issues = append(issues, compareRecordedPins("own promise", state.Promises, own, unitName)...)
+	for _, entry := range validationcache.ComparePromiseSources(state.SourcePins, specvalidation.PromiseSourceCIDs(content)) {
+		if entry.Status != validationcache.PromiseFresh {
+			issues = append(issues, fmt.Sprintf("promise source pin %s is %s: %s — run verify@%s", entry.ID, entry.Status, entry.Reason, unitName))
+		}
+	}
 
 	required := map[string]bool{}
 	for _, promise := range promises {
