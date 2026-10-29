@@ -175,6 +175,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		report = strings.Replace(report, pair[0], pair[1], 1)
 	}
 	report = strings.Replace(report, "[P1] <location> — <finding> (actionable|needs_decision)\n  problem: <problem>\n  evidence: <evidence>\n  impact: <impact>\n  fix: <repair>\n", "", 1)
+	report = strings.Replace(report, "  fact_anchor: <required for a P3 finding: the reproducible repository fact, comparison or governing reference that proves the discrepancy>\n", "", 1)
 	report = strings.Replace(report, "Finding affects: <finding_id> = <check_key>[,<check_key>...]", "", 1)
 	if strings.Contains(report, "<") {
 		t.Fatalf("unfilled report template:\n%s", report)

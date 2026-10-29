@@ -145,7 +145,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "Notice: %s\n", notice)
 	}
 	fmt.Fprintf(stdout, "Run state: %s\n", gaterun.StateRelPath(run.RunID))
-	fmt.Fprintf(stdout, "Next: take the tooling's computed key units from `specflowctl gate-status --run %s` (join the units of one lens and kind into a session — joining never widens the read surface), generate each session mission with `specflowctl gate-mission --run %s --keys <k1,k2,...> --format prompt`, send it to an independent reviewer, submit its report with `specflowctl gate-submit --run %s --session <id> --keys <k1,k2,...> --report PATH`. Follow gate-status: selected relationships or existing findings require `gate-mission --run %s --final` before finalization.\n", run.RunID, run.RunID, run.RunID, run.RunID)
+	fmt.Fprintf(stdout, "Next: take the tooling's computed key units from `specflowctl gate-status --run %s` (join the units of one lens and kind into a session — joining never widens the read surface), generate each session mission with `specflowctl gate-mission --run %s --keys <k1,k2,...> --format prompt`, send it to an independent reviewer, submit its report with `specflowctl gate-submit --run %s --session <id> --keys <k1,k2,...> --report PATH`. Follow gate-status: assigned relationships or blocking P0/P1 findings require `gate-mission --run %s --final` before finalization (verify: any finding).\n", run.RunID, run.RunID, run.RunID, run.RunID)
 	return nil
 }
 
@@ -205,9 +205,9 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (validate: change review —")
 	fmt.Fprintln(w, "the reviewer accepts the change set, names re-run keys, or escalates; verify:")
 	fmt.Fprintln(w, "the re-run set is derived from each conclusion's judgment-record pins),")
-	fmt.Fprintln(w, "repair (delta over a failure record: failed judgments, persisted")
-	fmt.Fprintln(w, "invalidations and failed relationships re-run unconditionally; validate")
-	fmt.Fprintln(w, "additionally reviews a changed set). In every delta/repair mode the current")
+	fmt.Fprintln(w, "repair (recovery over a failure record: failed judgments, persisted")
+	fmt.Fprintln(w, "invalidations and failed relationships re-run unconditionally; a validate")
+	fmt.Fprintln(w, "repair whose fix changed content also runs the change review). In every delta/repair mode the current")
 	fmt.Fprintln(w, "keys the baseline never declared are forced. --rerun explicitly forces a")
 	fmt.Fprintln(w, "check key (validate: 1-10; verify:")
 	fmt.Fprintln(w, "acceptance item id, code file path, or the unit:<unit> scan key) into the")

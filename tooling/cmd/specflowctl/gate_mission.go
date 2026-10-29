@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -24,6 +27,7 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 	keysPtr := fs.String("keys", "", "comma-separated coverage keys assigned to this session")
 	finalPtr := fs.Bool("final", false, "build the final cross synthesis mission instead of a coverage batch")
 	formatPtr := fs.String("format", "prompt", "output format: prompt | json")
+	outPtr := fs.String("out", "", "write the mission to this file instead of stdout (a path outside the repository, or under meta/gate_runs/<run>/)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -115,11 +119,49 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var buf bytes.Buffer
 	if *formatPtr == "json" {
-		return writeGateJSON(stdout, mission)
+		if err := writeGateJSON(&buf, mission); err != nil {
+			return err
+		}
+	} else {
+		writeGatePrompt(&buf, mission)
 	}
-	writeGatePrompt(stdout, mission)
-	return nil
+	// A mission file keeps the mission text out of the coordinator's context:
+	// the coordinator passes the reviewer the path, and the reviewer reads the
+	// file in full (framework/verification_scope.md §Coverage Model).
+	if out := strings.TrimSpace(*outPtr); out != "" {
+		absOut := mustAbs(out)
+		if err := validateMissionOutPath(absRoot, run.RunID, absOut); err != nil {
+			return err
+		}
+		if err := os.WriteFile(absOut, buf.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("write mission file: %w", err)
+		}
+		fmt.Fprintf(stdout, "mission written: %s (%d bytes, session %s)\n", absOut, buf.Len(), spec.SessionID)
+		return nil
+	}
+	_, err = stdout.Write(buf.Bytes())
+	return err
+}
+
+// validateMissionOutPath enforces the mission scratch-file location rule
+// (framework/verification_scope.md §Coverage Model): a mission file must not be
+// repository content, so it lives either outside the repository or inside the
+// run's own state directory meta/gate_runs/<run_id>/, which the orphan sweep
+// removes with the run.
+func validateMissionOutPath(repoRoot, runID, absOut string) error {
+	repoAbs := mustAbs(repoRoot)
+	rel, err := filepath.Rel(repoAbs, absOut)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil // outside the repository — allowed
+	}
+	relSlash := filepath.ToSlash(rel)
+	want := "meta/gate_runs/" + runID
+	if relSlash == want || strings.HasPrefix(relSlash, want+"/") {
+		return nil
+	}
+	return fmt.Errorf("--out inside the repository must stay under the run's own state directory %s/ — a mission file must not be repository content: %s", want, relSlash)
 }
 
 // splitKeys parses a comma-separated key list, trimming blanks.

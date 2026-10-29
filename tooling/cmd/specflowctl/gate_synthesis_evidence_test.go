@@ -173,7 +173,7 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	repair := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--inputs-file", grInputsManifest(t, proof))
 	run := mustLoadRun(t, root, repair)
 	if strings.Join(coverageKeysOf(run), ",") != "review,design" || strings.Join(run.Relationships, ",") != "design_constraints" {
-		t.Fatalf("repair must review the changed evidence and recheck the failed judgment and relationship: %+v", run)
+		t.Fatalf("a content-changing repair must review the change set, re-run the failed judgment group, and recheck the failed relationship: %+v", run)
 	}
 	grReviewAccept(t, root, repair)
 	grSubmitPlannedValidateSessions(t, root, repair, main)
@@ -182,6 +182,10 @@ func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
 	check, err := validationcache.CheckValidate(root, "auth")
 	if err != nil || !check.Fresh {
 		t.Fatalf("repaired synthesis must restore freshness: %+v %v", check, err)
+	}
+	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	if !strings.Contains(cache, "reviewed_change_set:") || !strings.Contains(cache, "review_result: accept") {
+		t.Fatalf("a content-changing repair must record its review in the cache:\n%s", cache)
 	}
 }
 

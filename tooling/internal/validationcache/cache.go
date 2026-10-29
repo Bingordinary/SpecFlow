@@ -853,6 +853,10 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 		if len(w.ReviewDeclined) > 0 {
 			fmt.Fprintf(&b, "review_declined: %q\n", strings.Join(w.ReviewDeclined, ", "))
 		}
+	} else if w.ReviewResult != "" {
+		// A validate repair run records the review's absence without a change
+		// set (framework/validation_cache.md §Format → Change-review record).
+		fmt.Fprintf(&b, "review_result: %s\n", w.ReviewResult)
 	}
 	if len(w.InvalidatedChecks) > 0 {
 		b.WriteString("invalidated_checks:\n")

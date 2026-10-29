@@ -147,12 +147,13 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		reports = append(reports, reportRef{spec: spec, result: state.Result, text: state.Report})
 	}
 
-	// A run with findings must carry an accepted final synthesis; a clean run
-	// finalizes directly. The final synthesis is the optional `cross` session.
+	// A run that requires a final synthesis must carry one; a clean run
+	// finalizes without it. The final synthesis is the optional `cross`
+	// session.
 	cross := crossReport(reports)
 	hasFindings := runHasInputFindings(run, reports)
-	if (hasFindings || len(run.Relationships) > 0) && cross == nil && run.TargetKind != gaterun.TargetKindRule {
-		return fmt.Errorf("gate-finalize rejected: the run has relationships to check or findings but no accepted final synthesis — generate it with `specflowctl gate-mission --run %s --final --format prompt`, then submit it with `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
+	if requiresFinalSynthesis(run, hasFindings, runHasBlockingFindings(run, reports)) && cross == nil {
+		return fmt.Errorf("gate-finalize rejected: the run requires a final synthesis but none is accepted — generate it with `specflowctl gate-mission --run %s --final --format prompt`, then submit it with `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
 	}
 
 	// Snapshot check — the closure of the time-of-check/time-of-use gap. On
@@ -326,6 +327,12 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		write.ReviewSession = run.Review.Session
 		write.ReviewRecheck = append([]string(nil), run.Review.Recheck...)
 		write.ReviewDeclined = declinedReviewCandidates(run.Review)
+	} else if run.Gate == gaterun.GateValidate && run.Mode == gaterun.ModeRepair {
+		// A content-free repair run schedules no change review: record the
+		// mechanical-floor scope so the audit trail states why no review
+		// precedes this cache (framework/verification_scope.md §Delta Runs →
+		// Repair runs).
+		write.ReviewResult = "skipped (repair — mechanical floor scope)"
 	}
 
 	// Re-resolve the complete input surface after evidence assembly and
@@ -698,6 +705,56 @@ func runHasInputFindings(run *gaterun.Run, reports []reportRef) bool {
 	return len(run.DeferredFindings) > 0
 }
 
+// runHasBlockingFindings reports whether the run carries a blocking P0/P1
+// finding (or a pending deferral, which the synthesis must dispose). A
+// validate run's non-blocking P2/P3 advisories do not require a final
+// synthesis (framework/severity_policy.md §11).
+func runHasBlockingFindings(run *gaterun.Run, reports []reportRef) bool {
+	blocking := func(findings []gaterun.Finding) bool {
+		for _, finding := range findings {
+			if finding.Severity == "P0" || finding.Severity == "P1" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, rep := range reports {
+		if rep.spec.Kind == gaterun.SessionKindCross {
+			continue
+		}
+		if blocking(resultFindings(rep.result)) {
+			return true
+		}
+	}
+	for i := range run.CarriedResults {
+		if blocking(resultFindings(&run.CarriedResults[i])) {
+			return true
+		}
+	}
+	return len(run.DeferredFindings) > 0
+}
+
+// requiresFinalSynthesis reports whether the run must carry an accepted final
+// synthesis before it can finalize. Any assigned relationship requires one.
+// Beyond that, a validate run (full, delta, or repair) requires one for
+// blocking P0/P1 findings — its P2/P3 findings are non-blocking advisories
+// presented directly (framework/severity_policy.md §11), and the synthesis is
+// also where Check 2 Step 1 / Check 5 extraction artifacts are re-verified
+// (framework/unit_validate_checklist.md §Extraction re-verification). Verify
+// requires one for any finding. Rule validate never synthesizes.
+func requiresFinalSynthesis(run *gaterun.Run, hasAnyFindings, hasBlockingFindings bool) bool {
+	if run.TargetKind == gaterun.TargetKindRule {
+		return false
+	}
+	if len(run.Relationships) > 0 {
+		return true
+	}
+	if run.Gate == gaterun.GateValidate {
+		return hasBlockingFindings
+	}
+	return hasAnyFindings
+}
+
 // updateDeferredLedger synchronizes the repository's deferred-findings ledger
 // with one finalized verify run. It (1) consumes the owner-side entries the run
 // disposed — every pending deferral loaded at plan time is an input finding the
@@ -858,10 +915,9 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 		}
 	} else {
 		// A clean run: coverage is closed by alignment/quality sessions and no
-		// final synthesis is required. No finding exists, so every status is
-		// derived from the sessions' verdicts plus the carried baseline
-		// statuses, and the mechanical synthesis digest covers the derived
-		// status map.
+		// final synthesis is required. Every status is derived from the
+		// sessions' verdicts plus the carried baseline statuses, and the
+		// mechanical synthesis digest covers the derived status map.
 		for i := range run.CarriedResults {
 			for key, status := range run.CarriedResults[i].EffectiveStatus {
 				out.EffectiveStatus[key] = status
@@ -872,13 +928,31 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 				out.EffectiveStatus[key] = statusForVerdict(verdict)
 			}
 		}
-		if runHasInputFindings(run, reports) || len(run.Relationships) > 0 {
+		if requiresFinalSynthesis(run, runHasInputFindings(run, reports), runHasBlockingFindings(run, reports)) {
 			return nil, errors.New("gate-finalize rejected: the run has findings but no accepted final synthesis")
+		}
+		findings := []gaterun.Finding{}
+		if run.Gate == gaterun.GateValidate {
+			// A validate run finalizes without a final synthesis when it has no
+			// assigned relationships and no blocking finding: its P2/P3
+			// advisories are the accepted sessions' own findings, retained
+			// verbatim. The findings feed the failure record, the advisory
+			// carry, and the counts.
+			for _, rep := range reports {
+				if rep.spec.Kind == gaterun.SessionKindCross {
+					continue
+				}
+				findings = append(findings, resultFindings(rep.result)...)
+			}
+			for i := range run.CarriedResults {
+				findings = append(findings, resultFindings(&run.CarriedResults[i])...)
+			}
+			out.Findings = findings
 		}
 		digestState, err := json.Marshal(struct {
 			LogicalStatus map[string]string `json:"logical_status"`
 			Findings      []gaterun.Finding `json:"findings"`
-		}{LogicalStatus: out.EffectiveStatus, Findings: []gaterun.Finding{}})
+		}{LogicalStatus: out.EffectiveStatus, Findings: findings})
 		if err != nil {
 			return nil, fmt.Errorf("encode clean synthesis state: %w", err)
 		}
@@ -908,9 +982,12 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 	if out.Counts[0]+out.Counts[1] > 0 {
 		out.Result = "fail"
 	}
-	if run.Gate == gaterun.GateValidate && out.Counts[2]+out.Counts[3] > 0 {
-		return nil, errors.New("validate synthesis contains P2/P3 findings; validate grades P0/P1 only")
+	if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule && out.Counts[2]+out.Counts[3] > 0 {
+		return nil, errors.New("rule validate grades findings P0/P1 only; P2/P3 adjudication belongs to unit validate")
 	}
+	// P2/P3 findings are non-blocking advisories for unit validate
+	// (framework/severity_policy.md §11): they are counted and recorded, and
+	// they never drive Result or blocking.
 	return out, nil
 }
 

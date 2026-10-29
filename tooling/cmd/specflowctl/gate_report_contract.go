@@ -434,7 +434,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		if gaterun.IsQualityKind(session.Kind) {
 			finding = ""
 		}
-		add("finding-block", "if findings are present, use the checklist's contiguous finding detail block", finding)
+		findingDescription := "if findings are present, use the checklist's contiguous finding detail block"
+		if session.Kind == gaterun.SessionKindChecks && run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit {
+			// Unit validate grades P0-P3, and a P3 is reportable only with a
+			// reproducible fact anchor (framework/severity_policy.md §10/§11.3).
+			finding += "\n  fact_anchor: <required for a P3 finding: the reproducible repository fact, comparison or governing reference that proves the discrepancy>"
+			findingDescription += "; a P3 finding additionally carries a non-empty fact_anchor line"
+		}
+		add("finding-block", findingDescription, finding)
 		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1

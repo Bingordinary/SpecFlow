@@ -192,7 +192,7 @@ Flows that currently define an execution position:
 2. `spec_flow_design_review` — procedure step 13 (`framework/spec_flow_design_review.md`)
 3. the `quality` lens of `verify` — the final synthesis (`framework/unit_verify_checklist.md` §Final synthesis, `framework/verification_scope.md` §Final synthesis)
 4. the `alignment` lens of `verify` — Step 7 analysis / final synthesis (`framework/unit_verify_checklist.md`)
-5. `validate` — P0 adjudications (P1 is the contract-decided default and is not re-graded) and advisory findings (Check 1 hygiene) (`framework/unit_validate_checklist.md`)
+5. `validate` (unit) — P0 adjudications (P1 is the contract-decided default for blocking findings and is not re-graded), the P2 corrosion-naming boundary and the P3 anchor boundary of §11, and advisory findings (Check 1 hygiene) (`framework/unit_validate_checklist.md`)
 6. `validate` (rule) — P0 adjudications (P1 is the contract-decided default and is not re-graded) (`framework/rule_validate_checklist.md`)
 7. scoped review — conclusion stage (`framework/governance/review_scope.md`)
 
@@ -209,6 +209,8 @@ Each severity implies an impact claim. The check verifies the claim against read
 | P2 | The impact is real but does not touch correctness | The issue truly does not affect correctness | Issue affects correctness → raise to P1 |
 | P3 | The issue does not materially harm maintainability | The issue truly does not affect maintainability | Issue materially harms maintainability → raise to P2 |
 
+For unit validate, §11 defines the impact vocabulary these boundaries operate on: correctness means spec decidability (no contradiction, no undefined reference, no unfalsifiable assertion, no open decision, intact traceability pins), and maintainability means the mechanism that keeps the spec decidable (single authoritative statements, promise/narrative boundaries, recorded rationale).
+
 ### 9.4 Evidence Rules
 
 1. **Raising requires positive evidence** — the checker must read concrete code or document content proving the impact is larger than the graded severity. "Possible" or "might" reasoning never raises.
@@ -221,7 +223,7 @@ Each severity implies an impact claim. The check verifies the claim against read
 
 #### Execution position and ordering
 
-1. **Execution position.** In a coverage gate run (`validate`, `verify`) the check is the independent final synthesis, which runs for assigned relationships or findings. Severity verification applies to retained, merged, or newly discovered relationship findings; a run with neither relationships nor findings skips the final session. Rule validate has no final synthesis: its single checks session assigns each finding's severity directly and no later step re-grades it. In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. Advisory findings that never enter the final synthesis — validate's Check 1 hygiene WARNING — are graded by the session executor that produced the check line (see `framework/unit_validate_checklist.md` §Present Findings).
+1. **Execution position.** In a coverage gate run (`validate`, `verify`) the check is the independent final synthesis, which runs for assigned relationships or findings — for unit validate, only blocking P0/P1 findings trigger it (its P2/P3 advisories are non-blocking), and this applies to full, delta, and repair runs alike. Severity verification applies to retained, merged, or newly discovered relationship findings; a run with neither relationships nor triggering findings skips the final session. Rule validate has no final synthesis: its single checks session assigns each finding's severity directly and no later step re-grades it. In `spec_flow_review`, `spec_flow_design_review`, and scoped review it is the reviewer or main agent that holds the flow's global context, as those flows' procedure files define. Advisory findings that never enter the final synthesis — validate's Check 1 hygiene WARNING — are graded by the session executor that produced the check line (see `framework/unit_validate_checklist.md` §Present Findings).
 2. The check runs after existence validation (the final synthesis, when it runs) and before the cache write or final output, so a raised severity determines blocking status and cache content.
 
 ---
@@ -397,3 +399,40 @@ Each finding contains:
 - `fact_anchor`: (required for P3) the reproducible repository fact, comparison or governing reference, violating location, and relationship that proves the P3 discrepancy
 - `ref`: (optional) anchor or line reference for tracking only — it carries no meaning the rest of the finding does not already state
 ==ATOM_END:spec_review_standard==
+
+---
+
+## 11. Unit-Validate Instantiation
+
+Unit validate grades findings on the shared P0-P3 scale. The scale meanings of §4 are fixed; this section instantiates them for spec documents. The harm a validate finding measures is one question: with the defect left in place, can the spec still be read with one meaning, executed deterministically, and invalidated reliably when its basis changes?
+
+### 11.1 Blocking findings (P0/P1) — contradiction or undecidability
+
+A finding is blocking when the spec stops being decidable or trustworthy:
+
+1. Two authoritative statements conflict (narrative × promise, promise × item, item × item, appendix × promise — the contradiction families of Checks 2, 5, 7, 10)
+2. An acceptance item or promise references behavior, fields, error codes, or error semantics no section or promise defines
+3. An assertion is unfalsifiable — no pass_condition can reveal a broken implementation (Check 5e)
+4. A §9 decision is open without a declared boundary (Check 2 Step 4); an undeclared §15.2 boundary (`needs_decision`) blocks the same way until the user decides
+5. A traceability pin points at a block that does not carry the behavior — an item's `source`, a promise's `source`, or any anchor the judgment relies on (the cache-invalidation and coverage chains go blind; the `fresh` suggestion line is a safety net, not a guarantee)
+
+P1 is the contract-decided default for blocking findings; a P0 grade requires the §9 boundary check.
+
+### 11.2 P2 — non-blocking debt (mechanism erosion)
+
+The spec stays decidable today, but the mechanism that keeps it decidable is eroding. The validate instances:
+
+1. The same statement carried more than once (§15.3 duplication) — a future edit must land in several places, and missing one reopens a contradiction-class finding
+2. A mechanism narration placed on the internal side of §15.2 (disposition 2) — it inflates coverage obligations and blurs the promise/narrative boundary the source-completeness scans rely on
+3. Change history or process traces kept in the unit's own content (§15.1 residue) — future readers and executors can mistake stale notes for current design
+4. A closed decision whose rationale is not recorded (Check 2 Step 2) — the decision binds, but future edits cannot re-derive why it holds
+
+**The corrosion must be named.** A P2 finding states which future judgment it corrodes — which future edit reopens which contradiction, or which review chain is blinded. A P2 that cannot name the corrosion is not parked: it is fixed now, or it is a P3.
+
+### 11.3 P3 — non-blocking polish (anchored only)
+
+A validate P3 states an objective, local, low-impact discrepancy and is reported only through the P3 reportability gate (§10 P3 Reportability Gate): a reproducible `fact_anchor` in one of the three proof shapes. An anchor that fails to establish a present discrepancy removes the finding rather than demoting it.
+
+### 11.4 Blocking consequences
+
+P0/P1 drive `Result: FAIL`, `Blocking promote: yes`, and `gate-invalidate`. P2/P3 never do: they are listed in the Findings section with full blocks, recorded in the validate cache with the check key they were raised under, carried with that check's judgment across delta/repair runs (`framework/validation_cache.md` §Advisory carry), and re-judged only when their owning check re-runs. `gate-invalidate` never targets a P2/P3 finding.

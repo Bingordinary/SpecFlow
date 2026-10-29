@@ -2650,7 +2650,9 @@ func TestGateRunSalvageRepairRecovery(t *testing.T) {
 		t.Fatalf("expected the delta plan to refuse the salvaged baseline, got %v", err)
 	}
 
-	// Repair re-runs exactly the invalidated groups and carries the rest.
+	// Repair re-runs exactly the invalidated groups and carries the rest. The
+	// moved dependency is a content change in the recorded surface, so the
+	// repair reviews it like a delta before carrying anything.
 	repairRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "repair")
 	run := mustLoadRun(t, repoRoot, repairRun)
 	if got := coverageKeysOf(run); strings.Join(got, ",") != "review,structural,dependencies" {

@@ -139,12 +139,18 @@ func TestGateRelationshipOnlyRepair(t *testing.T) {
 	repairID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
 	run := mustLoadRun(t, root, repairID)
 	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-		t.Fatalf("repair must review the changed evidence and recheck the failed relationship only: %+v", run)
+		t.Fatalf("a content-changing repair must review its change set before carrying any conclusion: %+v", run)
 	}
 	if strings.Join(run.Relationships, ",") != "coverage_scope" {
 		t.Fatalf("repair lost the failed relationship: %+v", run)
 	}
+	if view, err := gateRunSnapshot(root, run); err != nil || view.NextAction != "execute" {
+		t.Fatalf("the review must run before the relationship synthesis: %+v %v", view, err)
+	}
 	grReviewAccept(t, root, repairID)
+	if view, err := gateRunSnapshot(root, mustLoadRun(t, root, repairID)); err != nil || view.NextAction != "synthesize" {
+		t.Fatalf("a repair run with an assigned relationship must synthesize: %+v %v", view, err)
+	}
 	if _, err := grSubmitRaw(t, root, repairID, "cross", relationshipReport(t, root, repairID, evidence, "")); err != nil {
 		t.Fatal(err)
 	}

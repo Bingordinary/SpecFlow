@@ -303,6 +303,20 @@ func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Se
 		if fails == 0 && blocking > 0 {
 			return errors.New("a validate session with P0/P1 findings must report at least one FAIL verdict")
 		}
+		if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit {
+			for _, finding := range parsed.Findings {
+				if finding.Severity == "P3" && !factAnchorRe.MatchString(finding.Detail) {
+					return fmt.Errorf("validate P3 finding [%s] %s carries no non-empty fact_anchor detail line (framework/severity_policy.md §10/§11.3)", finding.Severity, finding.Text)
+				}
+			}
+		}
+		if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindRule {
+			for _, finding := range parsed.Findings {
+				if finding.Severity == "P2" || finding.Severity == "P3" {
+					return fmt.Errorf("rule validate grades findings P0/P1 only; P2/P3 adjudication belongs to unit validate")
+				}
+			}
+		}
 		for key, verdict := range parsed.Verdicts {
 			covered := false
 			for _, finding := range parsed.Findings {

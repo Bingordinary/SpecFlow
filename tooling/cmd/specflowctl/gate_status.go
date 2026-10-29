@@ -315,7 +315,7 @@ func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered 
 	if len(uncovered) > 0 {
 		return "execute"
 	}
-	if run.TargetKind != gaterun.TargetKindRule && (len(run.Relationships) > 0 || runHasFindings(run, states)) {
+	if gateRequiresSynthesis(run, states) {
 		for _, state := range states {
 			if state.SessionID == gaterun.CrossKey && state.Status == gaterun.SessionAccepted {
 				return "finalize"
@@ -324,6 +324,26 @@ func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered 
 		return "synthesize"
 	}
 	return "finalize"
+}
+
+// gateRequiresSynthesis reports whether the run still needs an accepted final
+// synthesis before finalizing, mirroring gate-finalize's requirement
+// (tooling/cmd/specflowctl/gate_finalize.go requiresFinalSynthesis). Any
+// assigned relationship requires one. A validate run (full, delta, or repair)
+// additionally requires one for blocking P0/P1 findings only — its P2/P3
+// advisories are non-blocking. Verify requires one for any finding. Rule runs
+// never synthesize.
+func gateRequiresSynthesis(run *gaterun.Run, states []*gaterun.SessionState) bool {
+	if run.TargetKind == gaterun.TargetKindRule {
+		return false
+	}
+	if len(run.Relationships) > 0 {
+		return true
+	}
+	if run.Gate == gaterun.GateValidate {
+		return statesHaveBlockingFindings(run, states)
+	}
+	return runHasFindings(run, states)
 }
 
 // runHasFindings reports whether any accepted non-final session produced a
@@ -346,6 +366,40 @@ func runHasFindings(run *gaterun.Run, states []*gaterun.SessionState) bool {
 			continue
 		}
 		if len(state.Result.Findings) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// runHasBlockingFindings reports whether the run carries a blocking P0/P1
+// finding (or a pending deferral). A validate run's P2/P3 advisories do not
+// require a final synthesis (framework/severity_policy.md §11).
+func statesHaveBlockingFindings(run *gaterun.Run, states []*gaterun.SessionState) bool {
+	blocking := func(findings []gaterun.Finding) bool {
+		for _, finding := range findings {
+			if finding.Severity == "P0" || finding.Severity == "P1" {
+				return true
+			}
+		}
+		return false
+	}
+	for i := range run.CarriedResults {
+		if blocking(resultFindings(&run.CarriedResults[i])) {
+			return true
+		}
+	}
+	if len(run.DeferredFindings) > 0 {
+		return true
+	}
+	for _, state := range states {
+		if state.Status != gaterun.SessionAccepted || state.Result == nil {
+			continue
+		}
+		if state.SessionID == gaterun.CrossKey {
+			continue
+		}
+		if blocking(state.Result.Findings) {
 			return true
 		}
 	}

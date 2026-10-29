@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
@@ -565,6 +566,20 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	if len(inconsistent) > 0 {
 		return nil, nil, nil, nil, fmt.Errorf("the baseline cache records evidence that contradicts itself for %s — the change cannot be localized; run the full command instead", strings.Join(inconsistent, ", "))
 	}
+	// A promise is the contract surface other units consume. A validate repair
+	// whose change set intersects the unit's `## Promises` region assigns every
+	// relationship in the gate's vocabulary, not only the baseline's standing
+	// set: the baseline may have declared none, and the intersection is a new
+	// scope decision (framework/verification_scope.md §Delta Runs → Repair
+	// runs). The user may still request relationships explicitly
+	// (run.Relationships already set).
+	promiseNotice := ""
+	if run.Mode == ModeRepair && len(run.Relationships) == 0 {
+		if hit, specPath := promiseRegionIntersects(d.root, run, report); hit {
+			addRelationships(run, RelationshipNames(run.Gate)...)
+			promiseNotice = fmt.Sprintf("change set intersects the `## Promises` region of %s — relationships assigned (%s) and the final synthesis required (repair rule)", specPath, strings.Join(run.Relationships, ", "))
+		}
+	}
 	fingerprint, err := report.Fingerprint()
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -679,9 +694,11 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	if run.Mode == ModeDelta && report.Empty() && len(rerunSet) == 0 && len(run.Relationships) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("cache is fresh — no changes to review")
 	}
-	// A delta run always reviews its change set; a repair run reviews the
-	// change set only when the fix changed content (otherwise the failed
-	// judgments re-run against unchanged evidence).
+	// A delta run always reviews its change set. A repair run reviews it when
+	// the fix changed content: a validate cache's conclusion is whole-file, so
+	// carrying it onto changed content without a review would claim a check the
+	// content never received. A content-free repair runs the mechanical floor
+	// and carries unchanged evidence.
 	needReview := run.Mode == ModeDelta || !report.Empty()
 	var coverage []CoverageKey
 	if needReview {
@@ -712,8 +729,13 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	var notices []string
 	if needReview {
 		notices = append(notices, fmt.Sprintf("change review: %d changed file(s) — the reviewer accepts, names re-run keys, or escalates", len(report.Entries)))
+	} else if run.Mode == ModeRepair {
+		notices = append(notices, "repair run — the change set is empty, so no change review runs; the mechanical floor re-runs and the remaining evidence carries")
 	} else {
 		notices = append(notices, "no content change — the failed judgments re-run and the remaining evidence carries mechanically")
+	}
+	if promiseNotice != "" {
+		notices = append(notices, promiseNotice)
 	}
 	notices = append(notices, recordNotices...)
 	if len(newEvidence) > 0 {
@@ -725,7 +747,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 	if len(retired) > 0 {
 		notices = append(notices, "baseline conclusions no longer in the current surface: "+strings.Join(retired, ", "))
 	}
-	if len(candidates) > 0 {
+	if needReview && len(candidates) > 0 {
 		notices = append(notices, "standing conclusions pending review: "+strings.Join(candidates, ", "))
 	}
 
@@ -748,6 +770,43 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 // change-report entries, which cannot be read.
 func reviewReadRefs(repoRoot string, run *Run) []string {
 	return InputSurface(repoRoot, run)
+}
+
+// promiseRegionIntersects reports whether the change set touches the unit's
+// `## Promises` region — the contract surface other units consume. A validate
+// repair run assigns the relationships (and with them the final synthesis)
+// exactly when this holds (framework/verification_scope.md §Delta Runs →
+// Repair runs). The judgment is mechanical: the recorded change spans against
+// the current `## Promises` section region, both measured on the normalized
+// spec text the change report was derived from. A spec whose main file the
+// report cannot localize, or a spec without a locatable `## Promises` region
+// (already rejected earlier by the promise-model plan precondition), reports
+// no intersection.
+func promiseRegionIntersects(repoRoot string, run *Run, report *validationcache.ChangeReport) (bool, string) {
+	if run.TargetKind != TargetKindUnit || run.Gate != GateValidate || len(run.OwnSpecFiles) == 0 {
+		return false, ""
+	}
+	specPath := run.OwnSpecFiles[0]
+	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(specPath)))
+	if err != nil {
+		return false, ""
+	}
+	section, ok := contenthash.LocateSectionRegion(specpaths.NormalizeText(string(raw)), "Promises")
+	if !ok {
+		return false, ""
+	}
+	want := filepath.ToSlash(filepath.Clean(specPath))
+	for _, entry := range report.Entries {
+		if filepath.ToSlash(filepath.Clean(entry.Path)) != want {
+			continue
+		}
+		for _, change := range entry.Changes {
+			if change.StartLine <= section.End && change.EndLine >= section.Start {
+				return true, specPath
+			}
+		}
+	}
+	return false, ""
 }
 
 // normalizeGateKey maps a caller-supplied key spelling to a current coverage

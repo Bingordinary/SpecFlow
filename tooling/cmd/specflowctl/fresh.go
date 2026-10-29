@@ -913,6 +913,8 @@ func freshDetail(summary *validationcache.CacheSummary) string {
 	}
 	if summary.ReviewChangeSet != "" {
 		detail += fmt.Sprintf(" · change review: %s (%s)", summary.ReviewResult, shortHash(summary.ReviewChangeSet))
+	} else if summary.ReviewResult != "" {
+		detail += fmt.Sprintf(" · review: %s", summary.ReviewResult)
 	}
 	return detail
 }
