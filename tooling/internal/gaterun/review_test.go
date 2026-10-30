@@ -114,10 +114,11 @@ func TestDeltaPlanLegacyEvidenceRefuses(t *testing.T) {
 	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "pass", false, "full")
 	appendToAuthSpec(t, repoRoot, "\nchanged\n")
 
-	// A baseline without the required chunk evidence is not current-format: it
-	// is treated as no baseline and delta planning directs the full command.
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "not in the current format") {
-		t.Fatalf("expected the not-current-format refusal, got %v", err)
+	// A baseline without the required chunk evidence lacks required recorded
+	// evidence: it is treated as no baseline and delta planning directs the
+	// full command.
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "unusable as a delta baseline") {
+		t.Fatalf("expected the unusable-baseline refusal, got %v", err)
 	}
 }
 
@@ -136,12 +137,12 @@ func TestDeltaPlanContradictoryEvidenceRefuses(t *testing.T) {
 	}
 }
 
-// TestFullPlanToleratesLegacyCache pins that a full run is not blocked by the
-// old-format cache it is meant to rebuild: a baseline without the required
-// chunk evidence is not current-format and degrades to no carried conclusions
-// and no change review, while the full coverage set runs. Delta still refuses
-// it, because only the full command rebuilds the cache.
-func TestFullPlanToleratesLegacyCache(t *testing.T) {
+// TestFullPlanToleratesUnusableCache pins that a full run is not blocked by the
+// cache it is meant to rebuild: a baseline without the required chunk evidence
+// lacks required recorded evidence and degrades to no carried conclusions and
+// no change review, while the full coverage set runs. Delta still refuses it,
+// because only the full command rebuilds the cache.
+func TestFullPlanToleratesUnusableCache(t *testing.T) {
 	repoRoot := newRepo(t)
 	entry := validateReviewBaseline(t, repoRoot)
 	entry.Chunks = nil
@@ -150,7 +151,7 @@ func TestFullPlanToleratesLegacyCache(t *testing.T) {
 
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
-		t.Fatalf("a full run must not be blocked by the old-format cache it rebuilds: %v", err)
+		t.Fatalf("a full run must not be blocked by the cache it rebuilds: %v", err)
 	}
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("an unusable baseline carries nothing, got %v", run.CarriedKeys)
@@ -168,7 +169,7 @@ func TestFullPlanToleratesLegacyCache(t *testing.T) {
 	}
 
 	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil {
-		t.Fatal("expected delta planning to still refuse the old-format cache")
+		t.Fatal("expected delta planning to still refuse the cache without the recorded chunk evidence")
 	}
 }
 

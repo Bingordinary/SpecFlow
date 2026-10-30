@@ -104,11 +104,3 @@ correct atom content. This should be run:
 4. `manifest.txt` is the **authoritative registry** of all atom → target mappings.
 5. The atom system is **layout-agnostic** — all paths in `manifest.txt` are repository-root relative.
 6. Atom markers are inert markdown — they do not affect rendering or execution.
-
-## Historical Managed Blocks
-
-The `==SPECFLOW:BEGIN==` / `==SPECFLOW:END==` managed block system was a legacy mechanism
-for synchronizing specFlow governance content into project entry files (`AGENTS.md`,
-`CLAUDE.md`, `GEMINI.md`). It has been replaced by the hook-based injection system
-(`framework/hooks.md`). All managed block parsing and synchronization tooling has been
-removed.

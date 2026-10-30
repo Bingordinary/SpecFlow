@@ -35,7 +35,7 @@ It is distinct from spec-aware code-quality review, which is the `quality` lens 
 It does not pass a review only because the required files were read or the required slices were visited.
 Each in-scope rule, file, slice, and cross-convergence path must satisfy the standards in this section.
 
-The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance migration closure`, `self-containment`, `tool-enforcement boundary`, `review scope completeness`, `atom system integrity`, `consumer-aware path validation`, `sub-agent prompt assembly validity`, and `protocol fingerprint integrity`.
+The fixed standards are `content validity`, `logical closure`, `process closure`, `command completeness`, `governance closure and ownership`, `contract drift`, `cross-convergence`, `supporting layer closure`, `agent operability`, `tooling boundary`, `project-instance format update closure`, `self-containment`, `tool-enforcement boundary`, `review scope completeness`, `atom system integrity`, `consumer-aware path validation`, `sub-agent prompt assembly validity`, and `protocol fingerprint integrity`.
 
 ### 2.1 Content Validity
 
@@ -50,6 +50,8 @@ Content is valid only when:
 4. examples and explanatory text do not direct an executor toward an action that conflicts with the formal rule
 5. each local rule changes at least one allowed action, forbidden action, stop condition, output, dependency order, writeback target, or resume path
 6. each rule can execute against the current repository structure or explicitly stops when the required repository object is absent
+
+**Current truth only.** Governance content states current truth. It must not carry change history: changelog or revision sections, removed-behavior narration ("X was removed", "there is no longer a Y", "previously Z"), design chronology ("the older design", "practice showed"), or migration/replacement guides. Change history belongs to version control. A rejected alternative may be recorded only as a current design constraint — the reason the current rule is shaped this way, written in the present tense — never as a narrative of what an earlier design did. A statement that a capability is absent is current truth when it changes today's response (for example, a command that must redirect the user); state the current surface, not the removal event. The test is functional: remove the time markers; a sentence that still changes a current action or explains a current constraint is rationale and stays; a sentence that does not is history and is removed. Migration and legacy guidance is governed separately by the No Migration Artifacts Rule: the framework states the current expected format, never a transformation recipe.
 
 If a statement is logically closed only because it rests on a wrong premise, wrong interface, wrong owner, wrong path, missing consumer, or impossible action, the affected slice must not be marked `passed`.
 
@@ -99,7 +101,7 @@ Each command must have clearly defined boundaries. The review must verify:
 
 1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and the promise model (each promise and its `depends_on`). Does NOT output process directives or "next step" instructions.
 
-2. **validate** (design-quality gate; historically described as design review): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
+2. **validate** (design-quality gate): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
 3. **verify** (normal-unit implementation-alignment and code-quality gate): given a unit name, checks implementation against the applicable candidate or stable spec using `framework/unit_verify_checklist.md`. Runs one gate with two lenses — `alignment` (spec-vs-code) and `quality` (spec-aware code quality). The alignment lens runs in item sessions (Steps 2, 3, 4, and 6 per acceptance item, with Step 7 for their mismatches) and one unit-level scan session per run (`unit:<unit>`, Steps 1 and 5, with Step 7 for its own mismatches). Outputs structured per-acceptance-item alignment results and, for mismatches, divergence analysis whose reconciliation direction is decided by the user, plus P0-P3 code-quality findings with code references. P0/P1 from either lens block normal-unit promote; P2/P3 are advisory. Rules use validate; deletion is an ordinary file edit with no gate.
 
@@ -154,7 +156,7 @@ Delivery-specific path references in hook-injected content are not contract drif
 Locally correct rules must still compose into one coherent governance baseline.
 
 The review must test cross-convergence wherever one rule area depends on another rule area.
-At minimum, cross-convergence covers commands, project-instance migration, truth writeback, rule governance, impact reconciliation, hooks, concepts.md, and tooling when those areas are in scope.
+At minimum, cross-convergence covers commands, project-instance format updates, truth writeback, rule governance, impact reconciliation, hooks, concepts.md, and tooling when those areas are in scope.
 
 If a narrowed review crosses a boundary whose owner slice is not included, the narrowed review must stop or explicitly remain non-baseline.
 It must not claim default governance-baseline `pass`.
@@ -181,7 +183,7 @@ If promote can leave a candidate file unpromoted while its stable counterpart is
 
 Governance files must be operable by a capable executor without prior `specFlow` knowledge.
 
-A narrowed review must include commands, project-instance migration, rule governance, hooks, concepts.md, and tooling contracts when the narrowed scope covers those areas.
+A narrowed review must include commands, project-instance format updates, rule governance, hooks, concepts.md, and tooling contracts when the narrowed scope covers those areas.
 
 Agent-operability review must cover execution clarity, content economy, formal rule voice, and self-containment under Section 2.11 — whether Agent-facing instruction files deliver essential phase instructions inline rather than through chain-linked reading.
 
@@ -231,25 +233,26 @@ A narrowed review must read and consume that policy whenever the narrowed scope 
 
 The tooling review must verify tooling necessity, allowed mechanical action surface, forbidden semantic judgment, freshness rules, and agreement between tooling source and tooling-governing documents.
 
-### 2.10 Project-Instance Migration Closure
+### 2.10 Project-Instance Format Update Closure
 
-Default full-scope `spec_flow_review` must review `spec_flow_update` as the owner of project-instance format migration after framework rule updates.
+Default full-scope `spec_flow_review` must review `spec_flow_update` as the owner of project-instance format updates after framework rule updates.
 
-The migration closure check verifies only whether the migration flow can safely update old project-instance files to the current framework shape.
-It does not review business truth correctness.
+The update closure check verifies only whether the update flow can detect a project-instance format change, state the current expected format, and apply it to the project's spec files under the update authorization.
+The framework supplies the current format documents and validators; the consumer's agent performs the spec-file update.
+It does not review business truth correctness and does not require a migration flow.
 
-The migration closure check must judge:
+The update closure check must judge:
 
 1. entry routing for `spec_flow_update`
-2. rejection of migration write authority for requests that do not explicitly invoke `spec_flow_update` or use the documented out-of-band `UPDATE.md` entry
-3. migration read surface and target surface
-4. mechanical writeback boundaries
+2. rejection of update write authority for requests that do not explicitly invoke `spec_flow_update` or use the documented out-of-band `UPDATE.md` entry
+3. update read surface and target surface — the framework diff and the current format documents; no old-format mapping
+4. mechanical writeback boundaries — the flow states the current expected state, applies it under the update authorization, and runs current validators; it supplies no format-specific conversion steps
 5. forbidden compatibility aliases, fallback logic, and business-truth rewriting
-6. spec path, filename, and layer-placement handling as checked by `framework/operations/update.md` Steps 3-4
-7. blocked-stop and output contracts for blocked migration
+6. current-format validation of project spec files, including path, filename, and layer placement
+7. blocked-stop and output contracts for a non-current project state
 8. agreement with tooling boundaries when existing tooling is used
 
-If migration can rewrite project files without a current rule-derived target, choose business meaning, or leave an invalidated downstream state without a legal next action, it is a `spec_flow_review` finding.
+If the update flow transforms project files without a current rule-derived target, supplies a step-by-step migration guide, chooses business meaning, or leaves an invalidated downstream state without a legal next action, it is a `spec_flow_review` finding.
 
 ### 2.11 Self-Containment
 
@@ -467,7 +470,7 @@ Default scope must explicitly cover:
 2. the rule-governance rule set — at minimum `rule_validate_checklist.md` and `rule_promote_workflow.md`
 3. the tooling execution contract set — at minimum `tooling_execution_policy.md`, `<tooling-root>/README.md`, and in-scope tooling source files
 4. the agent-operability standard — at minimum `concepts.md` (hook-injected bootstrap), the command packages it routes to (`commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`), rule-governance files, and review policy files
-5. the project-instance migration flow — at minimum `operations/update.md`
+5. the project-instance format-update flow — at minimum `operations/update.md`
 
 If any one of those five coverage sets is missing from a default-scope review, that review is not complete and must not issue `pass`.
 
@@ -495,7 +498,7 @@ Local slices review one owner area for internal closure, side effects, contract 
 3. `concept_and_command_policy`
    - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `operations/update.md`, and `guidance/*/SKILL.md`
    - verifies the four commands (next, validate, verify, promote) have defined input, output, and failure behavior per Section 2.4
-   - verifies project-instance migration routing and guidance entry behavior
+   - verifies project-instance format-update routing and guidance entry behavior
 4. `truth_and_implementation_gates`
    - reviews `spec_writing_guide.md`, `core/promise_model.md`, and `concepts.md`
    - verifies truth ownership, the deployed three-section promise format, promise/acceptance-item separation, and candidate entry rules
@@ -863,7 +866,7 @@ The output must report at least:
 10. the guidance-skill coverage result
 11. the impact-reconciliation coverage result
 12. the tooling coverage result
-13. the project-instance migration-flow result
+13. the project-instance format-update result
 14. the agent-operability result, including local slice results and path-walk result
 15. the supporting layer result:
    - promote paths reviewed for candidate-to-stable supporting file migration

@@ -92,7 +92,7 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		switch {
 		case !baseline.Exists:
 			if baseline.UnusableReason != "" {
-				return nil, nil, nil, nil, fmt.Errorf("the existing cache is not in the current format and cannot be used as a delta baseline: %s", baseline.UnusableReason)
+				return nil, nil, nil, nil, fmt.Errorf("the existing cache is unusable as a delta baseline: %s", baseline.UnusableReason)
 			}
 			if run.Target == TargetStable {
 				return nil, nil, nil, nil, noUsableBaselineError(run)
@@ -438,7 +438,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		switch {
 		case !baseline.Exists:
 			if baseline.UnusableReason != "" {
-				return nil, nil, nil, nil, fmt.Errorf("the existing cache is not in the current format and cannot be used as a delta baseline: %s", baseline.UnusableReason)
+				return nil, nil, nil, nil, fmt.Errorf("the existing cache is unusable as a delta baseline: %s", baseline.UnusableReason)
 			}
 			if run.Target == TargetStable {
 				return nil, nil, nil, nil, noUsableBaselineError(run)
@@ -543,7 +543,7 @@ func (d *Derivation) buildReviewPlan(run *Run) ([]CoverageKey, []string, []strin
 		}
 	}
 	// The target's own current files and the current logical read refs are
-	// required inputs even when the old cache never recorded them: a new
+	// required inputs even when the recorded cache never recorded them: a new
 	// appendix or a new stable global rule must reach the change review
 	// instead of being reported as "nothing changed".
 	for _, p := range run.OwnSpecFiles {

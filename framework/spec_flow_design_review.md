@@ -115,8 +115,8 @@ provider derivation, publication ordering) as one coherent design, not as
 separate optional features. Tooling execution and the mechanical reference checks
 are `spec_flow_review`'s surface, not this review's default scope.
 
-Project-instance migration design must be judged as part of `design_foundation`.
-The review must judge whether `spec_flow_update` solves the real framework-update migration problem without turning old-format compatibility into a permanent second path, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than project-instance format migration requires.
+Project-instance format-update design must be judged as part of `design_foundation`.
+The review must judge whether `spec_flow_update` solves the real framework-update problem without creating a permanent compatibility path for non-current formats, without hiding business-truth decisions inside mechanical updates, and without adding a heavier workflow than a project-instance format update requires.
 
 ## 4. Required Cross-Block Convergence Checks
 
@@ -380,7 +380,7 @@ The check must judge these abstract capabilities:
 5. `hard_stop_clarity`
    - unclear intent, state, owner, boundary, or conflicting rules force a stop instead of a guessed write or guessed route
 6. `owner_reachability`
-   - the bootstrap must expose first-level routes to spec workflow, migration, and rule-governance owners; meta-governance review remains reachable through project entry instructions and must not be duplicated into this router
+   - the bootstrap must expose first-level routes to spec workflow, framework update, and rule-governance owners; meta-governance review remains reachable through project entry instructions and must not be duplicated into this router
 7. `no_ad_hoc_flow_substitution`
    - the bootstrap must forbid replacing the standard triggers with custom reconciliation, audit, or gap-review flows
 8. `entry_robustness_probe`
@@ -400,7 +400,7 @@ The `entry_robustness_probe` must use abstract prompt families that test the hoo
 8. `targeted_gate_prompt` — verifies direct main-session execution without `gate-plan` or complete-cache publication
 9. `rule_promote_prompt` — verifies that rule promotion requires validate only and does not invent extra gates
 10. `read_only_design_prompt` — verifies that discussing design does not grant write authority
-11. `stable_exception_prompt` — verifies normal design uses promote while the `spec_flow_update` migration and whole-object deletion retain their narrow stable writes
+11. `stable_exception_prompt` — verifies normal design uses promote while the `spec_flow_update` update exception and whole-object deletion retain their narrow stable writes
 
 For each prompt family, the probe must record:
 

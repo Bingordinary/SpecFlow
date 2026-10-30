@@ -172,7 +172,7 @@ func requireGateTarget(gate, unitName, ruleID, target string, stderr io.Writer) 
 		return fmt.Errorf("invalid --target %q: must be candidate or stable", target)
 	}
 	if ruleID != "" && gate != "validate" {
-		return fmt.Errorf("rule targets support the validate gate only (rule verify has been removed) — got %q", gate)
+		return fmt.Errorf("rule targets support the validate gate only — got %q", gate)
 	}
 	return nil
 }

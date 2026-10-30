@@ -64,7 +64,7 @@ func TestPreparePromiseStateSkipsFailedAndOldFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state != nil {
-		t.Fatalf("old-format unit must not record promise state: %+v", state)
+		t.Fatalf("a non-current-format unit must not record promise state: %+v", state)
 	}
 }
 

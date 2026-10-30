@@ -4,7 +4,7 @@ A bounded task can run under a declared **operation scope**: a frozen change sco
 
 **When it applies.** Opening an operation is opt-in at the framework level. When the project's rules or the user's instruction place the current task under bounded scope, the agent MUST open an operation before editing (`specflowctl operation open`), and while an operation is open for the task, the rules below bind.
 
-**Out of scope.** `spec_flow_update` migration and retiring a whole unit or rule (a stable spec deletion) are the only flows that write stable spec paths, and each is authorized by its own procedure. Do not open an operation for them: the static write-zone policy rejects stable spec paths by design, so an operation would make a legal migration or deletion unclosable.
+**Out of scope.** `spec_flow_update` and retiring a whole unit or rule (a stable spec deletion) are the only flows that write stable spec paths, and each is authorized by its own procedure. Do not open an operation for them: the static write-zone policy rejects stable spec paths by design, so an operation would make a legal update or deletion unclosable.
 
 **Rules while an operation is open:**
 

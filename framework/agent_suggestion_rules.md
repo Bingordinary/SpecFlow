@@ -28,11 +28,11 @@ Before suggesting any action, communicate the current file state using concrete,
 | No candidate spec for the unit | "No candidate spec exists, meaning no design has been recorded yet" |
 | Validate cache fresh | "Validate has passed all checks, and the read files have not changed" |
 | Validate cache missing/stale | "Validate cache does not exist or is expired, needs re-checking" |
-| Validate cache INVALID | "Validate cache predates promise pinning — run a full `validate@{unit}`; delta/repair cannot recover it" |
+| Validate cache INVALID | "Validate cache lacks the promise-pin format marker or its `promise_pins` block — run a full `validate@{unit}`; delta/repair cannot recover it" |
 | Validate cache with P0/P1 findings | "Validate found {N} P0/P1 finding(s) — validate blocks promote until resolved" |
 | Verify cache fresh | "Verify has passed for all items, and the checked files have not changed" |
 | Verify cache missing/stale | "Verify cache does not exist or is expired, needs re-checking" |
-| Verify cache INVALID | "Verify cache predates promise pinning — run a full `verify@{unit}`; delta/repair cannot recover it" |
+| Verify cache INVALID | "Verify cache lacks the promise-pin format marker — run a full `verify@{unit}`; delta/repair cannot recover it" |
 | Verify cache with P0/P1 findings | "Verify found {N} P0/P1 finding(s) — verify blocks promote until resolved" |
 | Merged verify cache fresh (both lenses) | "Verify has passed — no P0 or P1 findings, and both the alignment and quality lenses are covered" |
 | Merged verify cache with P0/P1 findings | "Verify found {N} P0/P1 finding(s) — verify blocks promote until resolved" |

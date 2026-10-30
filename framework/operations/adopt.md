@@ -94,4 +94,4 @@ See `framework/unit_validate_checklist.md` Check 4.
 4. The agent tracks adoption progress in-session; no adoption state directory is created.
 
 
-Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.
+Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol binding.

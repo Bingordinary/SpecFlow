@@ -360,7 +360,7 @@ func TestLoadCarriedResultsRejectsOldJudgmentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := loadCarriedResults(repoRoot, &Run{Gate: GateValidate, TargetKind: TargetKindUnit, TargetName: "auth"}, []string{"1"}); err == nil || !strings.Contains(err.Error(), "run the full command") {
-		t.Fatalf("expected old schema to require a full run, got %v", err)
+		t.Fatalf("expected a non-current schema to require a full run, got %v", err)
 	}
 }
 

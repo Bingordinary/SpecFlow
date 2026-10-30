@@ -116,7 +116,7 @@ func blockedOrFullAdvice(category validationcache.CheckCategory, command, target
 		return fmt.Sprintf("Resolve the P0/P1 findings, then run `re%s@%s` to recover incrementally.", command, targetName)
 	}
 	if category == validationcache.CategoryInvalid {
-		return fmt.Sprintf("The cache predates promise pinning and is incompatible — run the full `%s@%s` command (delta/repair cannot use it).", command, targetName)
+		return fmt.Sprintf("The cache lacks the promise-pin format marker or its promise_pins block — run the full `%s@%s` command (delta/repair cannot use it).", command, targetName)
 	}
 	return fmt.Sprintf("Run `%s@%s` first, then retry promote.", command, targetName)
 }
@@ -252,7 +252,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 }
 
 func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
-	// Check validate cache freshness only (rule verify has been removed — see framework/verification_scope.md)
+	// Check validate cache freshness only (rule targets have no verify — see framework/verification_scope.md)
 	validateResult, err := validationcache.CheckRuleValidate(absRoot, ruleID)
 	if err != nil {
 		return fmt.Errorf("validate cache error: %w", err)

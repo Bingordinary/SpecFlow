@@ -426,8 +426,9 @@ func dedupeStrings(in []string) []string {
 // bidirectional chunk diff the gates use, and the detail names the changed
 // line spans. A recorded sequence may be empty — content that chunks to
 // nothing (an empty or newline-only file) — and is still diffed, so the
-// empty→content transition is localized. An entry without chunk evidence is
-// not current-format and is reported as drifted; a fresh run rewrites it.
+// empty→content transition is localized. An entry without chunk evidence
+// lacks required recorded evidence and is reported as drifted; a fresh run
+// rewrites it.
 func entryDrift(repoRoot, rel string, be entry) (string, bool) {
 	full := filepath.Join(repoRoot, filepath.FromSlash(rel))
 	text, err := contenthash.FileText(full)

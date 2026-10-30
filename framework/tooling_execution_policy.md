@@ -25,7 +25,7 @@ Path root rule:
 
 1. in `installed_project`, `<tooling-root>` is `specflow/tooling/`
 2. in `source_repo`, `<tooling-root>` is `tooling/`
-3. installed-project user examples may use `specflow/tooling/...`, but review and migration contracts must use `<tooling-root>/...`
+3. installed-project user examples may use `specflow/tooling/...`, but review and update contracts must use `<tooling-root>/...`
 
 Therefore:
 

@@ -916,7 +916,7 @@ acceptance_item_set:
 	if err := runPromote([]string{"--unit", "test_unit", "--repo-root", repoRoot}, &stdout, &stderr); err == nil {
 		t.Fatalf("expected promote to reject a single-lens verify cache, stdout:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "old or damaged review protocol") {
+	if !strings.Contains(stdout.String(), "does not carry the current review protocol") {
 		t.Fatalf("expected the lens-coverage rejection, got:\n%s", stdout.String())
 	}
 }

@@ -10,7 +10,7 @@ specFlow is a per-project installation — it lives in `./specflow/` alongside t
 
 ### Step 1: Record the current framework commit
 
-Run this from the project root (the directory containing `specflow/`). Record the current specFlow commit so the migration can diff what changed. Persist it under the project's ignored local-state tree so a later session can still read it:
+Run this from the project root (the directory containing `specflow/`). Record the current specFlow commit so the format update can diff what changed. Persist it under the project's ignored local-state tree so a later session can still read it:
 
 ```bash
 BASELINE_FILE="meta/.update-baseline"
@@ -62,7 +62,7 @@ specflow/tooling/scripts/pull_with_release.sh
 
 The baseline in `meta/.update-baseline` is already saved, so refreshing the checkout cannot lose the pre-update hash.
 
-### Step 3: Continue the framework migration
+### Step 3: Continue the framework update
 
 Read the freshly pulled `specflow/framework/operations/update.md` and execute it from **Step 2** through **Step 6**. That document's Step 2 reads the baseline from `meta/.update-baseline`, which Step 1 above saved. Do not repeat that document's Step 0 or Step 1 — the baseline is already recorded and the pull already ran in Step 2 above. If you are resuming in a new session, read the baseline file instead of recording the current HEAD.
 

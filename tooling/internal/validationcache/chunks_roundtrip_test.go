@@ -109,7 +109,7 @@ func TestCacheZeroChunkEvidenceRoundTrip(t *testing.T) {
 
 // TestCacheRejectsMissingChunkBlock pins the other side of the requirement: a
 // recorded evidence block whose list is empty is valid, but a missing block —
-// a legacy deps: cache, a partial write, corruption — is still rejected as not
+// a cache without the recorded block — a partial write or corruption — is still rejected as not
 // current-format.
 func TestCacheRejectsMissingChunkBlock(t *testing.T) {
 	cases := []struct {

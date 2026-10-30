@@ -16,7 +16,7 @@ This file is the cache-lifecycle command package named by the trigger routing ta
 ### Rule
 
 - `docs/specs/meta/validation/rule/{id}/validate_result.md`
-- (Rule verify cache has been removed — rule does not need verify)
+- (Rule targets have no verify cache — rule does not need verify)
 
 ## Format
 
@@ -85,14 +85,15 @@ spec's own `depends_on` edges is stale; a pin whose provider promise is missing
 or whose fingerprint moved is stale and the change report names the promise.
 `promise_pins` is required only on a pass cache. A failure record carries the
 format marker but no pin block: it is **BLOCKED** and is the repair baseline,
-so pin-set freshness is evaluated only for a passing validate cache.
+so pin-set freshness is evaluated only for a passing validate cache. A passing
+validate cache without its `promise_pins` block is `INVALID`: it cannot prove
+its provider contracts, so only the full command replaces it.
 
-There is no migration path. A unit cache without `pin_format` — including a
-valid cache written before this format, and any review-protocol record it
-binds — is **INVALID**: `fresh` reports it, `promote` rejects it, and
-`gate-plan --mode delta|repair` refuses it as a baseline. Only the full command
-replaces it. `judgments.RecordVersion` 4 is the matching record format; older
-judgment records are rejected when loaded.
+There is no migration path. A unit cache without `pin_format` lacks the
+promise-pin format marker: `fresh` reports it `INVALID`, `promote` rejects it,
+and `gate-plan --mode delta|repair` refuses it as a baseline. Only the full
+command replaces it. `judgments.RecordVersion` 4 is the current record format;
+a record in another version is rejected when loaded.
 
 The `GATE_JUDGMENTS` block is the machine-readable baseline for delta/repair synthesis. Schema version 5 for unit verify, and schema version 4 for other caches, records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, the checked relationship names and `relationship:<name>` statuses, the accepted synthesis digest, the synthesis's supplied-evidence pins (`synthesis_evidence`, unit verify), and (merged verify caches) the run's deferred findings. `gate-finalize` generates it; agents never edit it. The `findings` array carries only gate-driving findings — those owned by the unit or unassigned; findings deferred to another unit (quality ownership) are recorded in the optional `deferred_findings` array for audit and are never carried into a later run of this unit (routing lives in the deferred-findings ledger, see below). For rule validate delta/repair runs, `gate-finalize` combines the disjoint carried baseline judgments and re-run session judgments, so the rewritten block still contains all six logical check statuses; carried and current findings are de-duplicated by finding id. A check that appears in both sets rejects finalization as corrupted run state. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so the final synthesis sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every terminal retained finding that no accepted session report already contains — a carried judgment or a deferral routed in from another unit — into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
 
@@ -151,7 +152,7 @@ Each `files` entry records content evidence:
   judgment key that ran (its lens tag on merged verify caches) and, on failure
   records, its outcome `status` (see §Check markers).
 
-`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; on a validate cache, a `files` entry whose `hash` is absent or does not match current content is stale, while on a verify cache verification is conclusion-bound (the recorded `hash` is audit evidence). One exception is a **salvaged drift entry**: content that changed mid-run keeps its plan-time `hash` and records an empty `chunks` list, because the run judged those bytes and the current chunking cannot localize the change (see §Write Rules → Snapshot check). The current chunk evidence (`chunker` + `chunks`) is a required part of every `files` entry — the requirement is the recorded evidence block, not a non-empty list: content that normalizes to nothing (an empty or newline-only file) records `chunker` with an empty `chunks` list. A cache missing the block — the removed `deps:`-declaration format, a partial write, or corruption — is not a current-format cache. `fresh` and `promote` fail it closed as stale, and every reader treats it as no usable cache (no baseline, no judgments) and falls back to the full command. Fields the current format does not define (for example a leftover `deps:` line) are ignored, not treated as the end of the `files` block.
+`hash` and `chunks` are computed by the tooling at `gate-finalize` from the entry's current content and bound to the plan-time snapshot; on a validate cache, a `files` entry whose `hash` is absent or does not match current content is stale, while on a verify cache verification is conclusion-bound (the recorded `hash` is audit evidence). One exception is a **salvaged drift entry**: content that changed mid-run keeps its plan-time `hash` and records an empty `chunks` list, because the run judged those bytes and the current chunking cannot localize the change (see §Write Rules → Snapshot check). The current chunk evidence (`chunker` + `chunks`) is a required part of every `files` entry — the requirement is the recorded evidence block, not a non-empty list: content that normalizes to nothing (an empty or newline-only file) records `chunker` with an empty `chunks` list. A cache missing the block — a partial write or corruption — is missing required recorded evidence. `fresh` and `promote` fail it closed as `STALE`, and every reader treats it as no usable cache (no baseline, no judgments) and falls back to the full command. Fields the current format does not define are ignored, not treated as the end of the `files` block.
 
 `files` paths are resolved against the repository root. Dependency matching
 (staleness checks and baseline recording) uses the canonical repo-relative
@@ -341,16 +342,15 @@ pass cache) must not carry `invalidated_checks`.
   dependency claim.
 - **Merged verify coverage:** the merged verify gate requires a marker for
   every expected alignment and quality key of the current coverage set (see
-  §Merged verify cache). A cache carrying no markers is invalid for both
+  §Merged verify cache). A cache carrying no markers is rejected by both
   `fresh` and `promote` ("verify cache carries no per-check evidence").
 - **No compatibility shim:** the current chunk evidence (`chunker` + `chunks`)
   is recorded in every `files` entry; an empty `chunks` list is valid for
   content that chunks to nothing (an empty or newline-only file). A cache
-  without the recorded block (the removed `deps:`-declaration format, or any
-  pre-chunk-evidence cache) is not a current-format cache: `gate-plan` refuses
-  the delta/repair and directs a full run, `fresh` reports it as unusable, and
-  readers treat it as no baseline. Unknown fields the format does not define
-  are ignored.
+  without the recorded block (a partial write or corruption) is unusable as a
+  baseline: `gate-plan` refuses the delta/repair and directs a full run,
+  `fresh` reports it as unusable, and readers treat it as no baseline.
+  Unknown fields the format does not define are ignored.
 - Carried keys are recorded with a marker snapshotted at plan time (their lens
   and, on failure records, the `carried` status), so the published cache
   carries the same lens coverage the merged verify gate requires.
@@ -380,7 +380,7 @@ Logical references preserve the rule object's applicability semantics. `unit:{na
 
 ### Structural Region Dependencies (judgment records)
 
-Cache entries no longer carry region dependencies — cache freshness is
+Cache entries do not carry region dependencies; cache freshness is
 whole-file. Region dependencies survive in the **immutable judgment records**
 (see §Shared verify records). An acceptance-item judgment pins its own item
 region, `region:acceptance_item:<id>:<cid>`, so reordering items does not
@@ -561,7 +561,7 @@ conclusion binding):** a semantic dependency that no judgment record declares
 is invisible to conclusion-bound reuse; `fresh` and `gate-plan` report the
 recorded input-surface files that changed while no conclusion depends on them
 and suggest a full run (§Conclusion-bound verify freshness).
-A cache without the required chunk evidence is not current-format at all and
+A cache without the required chunk evidence is unusable as a baseline and
 requires a full run.
 
 **Known limit (execution shape):** the cache records the run's judgment and
@@ -730,7 +730,7 @@ A rule publication blocker does not stale or invalidate a passing cache. After p
 5. **Appendix cache check** — reads the validate cache and verifies every candidate appendix file is listed in the validate cache's file list. If any appendix on disk is missing from the cache's file list, the appendix was not validated and promote is rejected with guidance to run `validate@{unit}`.
 6. **Main file check** — the validate and verify cache file lists must include the main candidate spec file (`docs/specs/units/candidate/unit_{name}.md`), and the rule validate cache must include the candidate rule file (`docs/specs/rules/candidate/{rule_id}.md`). A cache whose file list omits the main file cannot prove that file was read during the run, so promote is rejected with guidance to re-run the corresponding check.
 
-`specflowctl promote --rule <id>` enforces cache freshness — reads the validate cache, rejects if missing or stale. Rule verify cache is no longer required (rule verify has been removed).
+`specflowctl promote --rule <id>` enforces cache freshness — reads the validate cache, rejects if missing or stale. Rule targets have no verify cache.
 
 ### Merged verify cache promote check (required gate)
 
@@ -768,9 +768,9 @@ diagnostic. See `framework/core/promise_model.md`.
 Fresh reports gate status and publication prerequisites otherwise. Deletion is
 an ordinary file edit with no command to preview.
 
-The gate vocabulary is `FRESH` / `STALE` / `INVALID` / `MISSING` / `BLOCKED` (a failure record — validate and verify with P0/P1) / `OK` (appendix). A failure record whose recorded evidence also changed reports `STALE` (stale-over-blocking precedence), with its findings named in the reason; a salvaged pass cache is `STALE` until repair. `INVALID` means the cache predates promise pinning and cannot be used at all: delta/repair cannot repair it; only the full command replaces it. Cache classification reuses the same checks as `specflowctl promote` (Staleness Detection above); rule publication uses its separate shared check. A fresh report and a promote run therefore agree on cache requirements and promise readiness: `READY FOR PROMOTE` also requires the promise state record, a `CLOSED` contract closure, and every pinned provider promise published in the stable layer at the same fingerprint, so a missing or stale promise state or an unpublished provider contract is visible before promote rejects it. Promote applies the same publication check. The detail view of a fresh cache shows its `basis` (`full`, `delta`, or `repair`) alongside mode, and for delta caches and content-changing repair caches the recorded review (`result`, `session`, change-set fingerprint); a content-free repair shows its skipped-review record — audit visibility, not a gate.
+The gate vocabulary is `FRESH` / `STALE` / `INVALID` / `MISSING` / `BLOCKED` (a failure record — validate and verify with P0/P1) / `OK` (appendix). A failure record whose recorded evidence also changed reports `STALE` (stale-over-blocking precedence), with its findings named in the reason; a salvaged pass cache is `STALE` until repair. `STALE` also covers a cache that lacks required recorded evidence (the chunk block, a validate cache's judging standard, or a merged verify cache's per-check entries): delta/repair cannot use such a baseline, so only the full command replaces it. `INVALID` means a unit cache lacks the promise-pin format marker — its `pin_format` is missing or different, or a passing validate cache has no `promise_pins` block: delta/repair cannot use it; only the full command replaces it. Cache classification reuses the same checks as `specflowctl promote` (Staleness Detection above); rule publication uses its separate shared check. A fresh report and a promote run therefore agree on cache requirements and promise readiness: `READY FOR PROMOTE` also requires the promise state record, a `CLOSED` contract closure, and every pinned provider promise published in the stable layer at the same fingerprint, so a missing or stale promise state or an unpublished provider contract is visible before promote rejects it. Promote applies the same publication check. The detail view of a fresh cache shows its `basis` (`full`, `delta`, or `repair`) alongside mode, and for delta caches and content-changing repair caches the recorded review (`result`, `session`, change-set fingerprint); a content-free repair shows its skipped-review record — audit visibility, not a gate.
 
-Stable confirmation states use the same vocabulary: `FRESH` means the stable-layer cache exists and its recorded content is unchanged; `STALE` means a recorded file changed (a rule or dependency contract for validate, code for verify), or validate is missing a current required input from its file list (a new stable global rule); `INVALID` means the cache predates promise pinning, so only the full confirmation command replaces it; `MISSING` means the stable confirmation was never run; `BLOCKED` means a failure record exists (a stable-only full-run FAIL or a stable delta-run FAIL — `result: fail` + `blocking: true`), recovered by the repair run (`basis: repair`); a failure record whose evidence also changed reports `STALE`, with its findings named in the reason; when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see `framework/verification_scope.md` §Stable-only Targets). The states are informational — they grant nothing and gate nothing.
+Stable confirmation states use the same vocabulary: `FRESH` means the stable-layer cache exists and its recorded content is unchanged; `STALE` means a recorded file changed (a rule or dependency contract for validate, code for verify), or validate is missing a current required input from its file list (a new stable global rule), or the cache lacks required recorded evidence (the chunk block, a validate cache's judging standard, or a merged verify cache's per-check entries); `INVALID` means a unit cache lacks the promise-pin format marker or, for a passing validate cache, its `promise_pins` block, so only the full confirmation command replaces it; `MISSING` means the stable confirmation was never run; `BLOCKED` means a failure record exists (a stable-only full-run FAIL or a stable delta-run FAIL — `result: fail` + `blocking: true`), recovered by the repair run (`basis: repair`); a failure record whose evidence also changed reports `STALE`, with its findings named in the reason; when the stable content itself can no longer hold against the changed dependency or rule, the record stays and forking reconciles it (see `framework/verification_scope.md` §Stable-only Targets). The states are informational — they grant nothing and gate nothing.
 
 `fresh` is strictly read-only: it never writes or deletes caches or baselines and never triggers validate/verify. Its purpose is operational visibility while iterating on multiple units that share files — a shared-code change invalidates every verify record depending on that file. A validate cache stales when a recorded own file's content changes, a pinned provider promise fingerprint moves, or a current required input is absent from its file list (a new own appendix or a newly published stable global rule); provider spec text covered by `promise_pins` is not a freshness input. A verify cache stales only when a conclusion's own pinned evidence changes; a recorded file that no conclusion depends on leaves the cache fresh, and `fresh` reports it separately (§Conclusion-bound verify freshness). For a stale gate, `fresh` prints the mechanically detected change set (the same recorded change report a validate delta review consumes; the plan may add newly supplied evidence inputs); a provider contract change appears there as a `promise <id>` entry, not as a provider file diff. Cross-unit and bound-rule dependencies recorded as logical references (`unit:{name}` / `unit:{name}:appendix:{file}` / `rule:b_rule_*`) stay fresh across a promote of the referenced target when the recorded content is unchanged. Global-rule dependencies (`rule:g_rule_*`) remain bound to stable truth, so candidate-global edits do not stale unit caches and stable-global edits do.
 
@@ -821,7 +821,7 @@ Promote records a **baseline**: a snapshot of the promoted target's code surface
 |---|---|
 | `VERIFIED` | A fresh stable verify cache exists — the code was recently confirmed to still conform. In the summary this surfaces as `verify: FRESH`; the drift column keeps reporting the mechanical surface comparison independently. |
 | `OK` | No verify cache; every surface file's whole-file hash matches the baseline. |
-| `CHANGED` | The surface differs from the baseline: a file's content changed, or files are missing or added (the report names them). A content change is localized to its changed line spans with the same ordered bidirectional chunk diff the gates use. A baseline entry without chunk evidence is not current-format: it is reported as `CHANGED` with `no chunk evidence recorded`, and the full stability run rewrites the baseline. The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
+| `CHANGED` | The surface differs from the baseline: a file's content changed, or files are missing or added (the report names them). A content change is localized to its changed line spans with the same ordered bidirectional chunk diff the gates use. A baseline entry without chunk evidence is unusable as a baseline: it is reported as `CHANGED` with `no chunk evidence recorded`, and the full stability run rewrites the baseline. The spec may have drifted; confirmation requires `verify@{unit}` against stable. |
 | `MISSING` | No baseline recorded (the target was promoted before baseline support). |
 
 The report states what it mechanically knows: `CHANGED` means "code changed since promote" and names the changed line spans — it never claims the spec is violated. Semantic confirmation is always a user-triggered `verify@{unit}` against the stable target (or `validate@{unit}` for the dependency/rule dimension).
@@ -853,7 +853,7 @@ When you need to read a cache file, use this ordered strategy:
 
 Unit verify uses `framework/shared_judgments.md`. Its structured block contains `records`, mapping every necessary task key to `{id, digest, slot, layer, source}`. Sources are executed, carried or reused. `slot` is the store directory the record lives in, so reading a binding opens the record directly instead of searching for it. Public, design, architecture and acceptance records are immutable JSON files under `docs/specs/meta/validation/judgments/<protocol>/<kind>/<unit>/<subject>/<spec context>/`. Other caches carry schema 4.
 
-Code dependencies use exact whole-file fingerprints on the conclusion's own object — the reviewed file plus the applicable rules — not the run's supplied evidence inputs, which stay readable but never define a record's dependencies, so neither an unrelated evidence edit nor a newly supplied evidence input re-runs the record. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated or old-protocol record is a concrete gate gap. Old verify caches require full verify and are never converted into public judgments.
+Code dependencies use exact whole-file fingerprints on the conclusion's own object — the reviewed file plus the applicable rules — not the run's supplied evidence inputs, which stay readable but never define a record's dependencies, so neither an unrelated evidence edit nor a newly supplied evidence input re-runs the record. Spec dependencies retain their region declarations. Fresh and promote check the complete record-reference chain and current required coverage. A damaged, missing, invalidated, or non-current-protocol record is a concrete gate gap; a cache that does not carry the current protocol's records is not a usable baseline — run full verify.
 
 Fork and promote rewrite only the current unit's layer bindings and unchanged own-spec paths. When a unit or rule is retired — its spec files deleted from both layers — the sweep reclaims its per-target cache, promise state and baseline records and drops the deferred findings it owned; the sweep never deletes shared judgment records. History cleanup runs inside gate-finalize: stale-protocol records unreachable from every current cache binding, current decision of the deployed standard, and open run — through the record-reference chain — are collected and reported; same-protocol history is retained. A record's standard is the first component of its slot, so collection decides staleness from where a record is filed and never from its body; a retired standard's current-decision pointer dies with its record.
 

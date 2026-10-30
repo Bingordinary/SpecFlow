@@ -472,7 +472,7 @@ func validateGateTarget(gate, targetKind, target string) error {
 	case TargetKindUnit:
 	case TargetKindRule:
 		if gate != GateValidate {
-			return fmt.Errorf("rule targets support the validate gate only (rule verify has been removed) — got %q", gate)
+			return fmt.Errorf("rule targets support the validate gate only — got %q", gate)
 		}
 	default:
 		return fmt.Errorf("invalid target kind %q: must be unit or rule", targetKind)
@@ -1050,7 +1050,7 @@ func Load(repoRoot, runID string) (*Run, error) {
 		return nil, fmt.Errorf("gate run %s has an invalid coverage set: %w", runID, err)
 	}
 	if run.Gate == GateVerify && run.SchemaVersion != 2 {
-		return nil, fmt.Errorf("old verify run uses a retired protocol; replan a full verify")
+		return nil, fmt.Errorf("verify run does not carry the current protocol; replan a full verify")
 	}
 	return run, nil
 }

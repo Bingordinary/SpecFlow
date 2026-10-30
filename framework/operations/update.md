@@ -1,8 +1,8 @@
 # spec_flow_update
 
-When the user says `spec_flow_update`, follow this procedure. It pulls the latest SpecFlow framework, detects structural changes in framework rules since the last update, and migrates project spec files to match.
+When the user says `spec_flow_update`, follow this procedure. It pulls the latest SpecFlow framework, detects structural changes in framework rules since the last update, and applies the current expected format to the project's spec files under the update authorization.
 
-Requests that do not explicitly invoke `spec_flow_update` carry no migration write authority — route them through normal editing instead.
+Requests that do not explicitly invoke `spec_flow_update` carry no update write authority — route them through normal editing instead.
 
 > If the platform adapter that injects the bootstrap is not loading — for example after a runtime breaking change — the agent cannot see the `spec_flow_update` trigger. The out-of-band recovery entry is the repository-root `UPDATE.md`: it records the same `meta/.update-baseline` and runs the Step 1 pull directly, then hands back to this procedure from Step 2.
 
@@ -92,61 +92,37 @@ Run this from the project root; the `-C` flag targets the `specflow/` repository
 git -C "$SPECFLOW_DIR" diff "$OLD_HASH"..HEAD -- framework/ templates/
 ```
 
-Read the diff output carefully. Extract every structural rule change that affects spec file format. Examples of what to look for:
+Read the diff output carefully. Extract every structural rule change that affects spec file format. The diff shows what changed; the current documents state what the expected state is. Do not infer a transformation from memory.
 
-- **Path/filename convention changes**: e.g. unit and rule files no longer use `s_`/`c_` prefix, appendix path rules changed
-- **Frontmatter field changes**: new required fields, removed fields, renamed fields, changed value format (e.g. `rule_refs` from `@version` suffixed to bare names)
-- **Reference format changes**: how `rule_refs` are written, what prefix/suffix is expected
-- **Structural rule changes**: new required sections, removed sections, changed validation rules (for example the three-section promise model: `## Design Narrative` → `## Promises` → `## Acceptance Items`, with dependency edges on the consumer promise's `depends_on`)
-- **Retired lifecycle mechanisms**: former `unbound_retention*` metadata or `status: retired` files that the current format no longer uses
+Inspect these categories:
 
-Do NOT guess or infer changes from memory. Read the actual `git diff` output.
+- **Path and filename conventions**
+- **Frontmatter fields and required values**
+- **Reference formats**
+- **Required sections and structural rules**
+- **Lifecycle and ownership rules**
 
-Also read the current `framework/spec_writing_guide.md` to understand the latest rules.
+Read the current format owners for every affected category: `framework/spec_writing_guide.md`, and for unit promise content `framework/core/promise_model.md`. These documents state the current format only; this flow supplies no conversion table or per-format migration recipe.
 
-### Step 3: Plan and execute migration
+### Step 3: Apply the current format
 
-Based on the changes detected in Step 2, plan migration operations for the project's spec files under `docs/specs/`. Common operation types:
+For each affected project spec file under `docs/specs/`, compare the file with the current format owners and apply the current format. This is the consumer agent's migration work: the framework supplies the target state, not a step-by-step transformation.
 
-| Operation | Example |
-|-----------|---------|
-| **Rename files** | `mv docs/specs/rules/stable/s_g_rule_foo.md docs/specs/rules/stable/g_rule_foo.md` |
-| **Update frontmatter** | Change a field value, add a missing required field, remove a deprecated field |
-| **Update references** | Bulk-replace old ref format in `rule_refs` across all spec files |
-| **Restructure directories** | Move files between directories when path rules change |
+1. **Identify affected files** — use `find` / `glob` to locate every file that needs the change.
+2. **Apply the current format** — use ordinary file editing under the update authorization.
+3. **Ask for business judgment** — if a change requires a business decision (for example "what value should this new frontmatter field have?"), present the affected files to the user and ask; do not invent business truth.
 
-Some structural changes carry a target format or lifecycle that one document owns. For those, do not reconstruct the format here: read the owner document's migration guidance, apply it to the detected change, and verify with the validator it names. Ownership routing for the current known cases:
-
-- the three-section unit promise format (`## Design Narrative` → `## Promises` → `## Acceptance Items`, with dependency edges on the consumer promise's `depends_on`) → `framework/core/promise_model.md` §Migrating to this format
-- the former rule retention metadata (`unbound_retention`, `unbound_retention_reason`, `unbound_retention_owner`) → move every useful retention rationale into the rule body prose, then delete the fields. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used
-- `status: retired` exit files → decide per file whether the responsibility has ended, then delete the file(s) directly (deletion is an ordinary file edit). Report unresolved intent instead of recreating the former promote-based exit logic
-- the former `specflowctl remove` flow → deletion is now an ordinary file edit; update local workflow notes that reference the command or `framework/removal_workflow.md`
-
-For each operation:
-
-1. **Identify affected files** — use `find` / `glob` to locate every file that needs the change
-2. **Apply the change** — use `mv`, `sed`, `grep` / agent file editing
-3. **Verify completeness** — check there are no remaining matches of the old pattern (e.g. `grep -r 'old_pattern' docs/specs/` should return nothing after migration)
-
-If multiple operations are needed, order them so later operations don't break earlier ones (e.g. rename files before updating internal references).
-
-If a change requires business judgment (e.g. "what value should this new frontmatter field have?"), present the affected files to the user and ask for input. Do not invent business truth.
-
-If no structural changes were detected in Step 2, report that no migration is needed and skip to Step 4.
+If no structural changes were detected in Step 2, report that no format update is needed and skip to Step 5.
 
 ### Step 4: Verify and report
 
-After migration, verify the files against the owner document of each detected change and against the spec-format contract `framework/spec_writing_guide.md`:
+Verify each affected file against the current format owners. Run the validator the owner names for every changed category; for the promise model, `specflowctl validate promise-model --unit <name> --layer candidate|stable` for every affected unit file in a layer. Compare each spec file's path, frontmatter, and section structure with `framework/spec_writing_guide.md` (unit main specs, rule files, and appendices). A field or mechanism the current format does not define is a failure.
 
-- For every change whose target format or lifecycle an owner document defines, run the verification that document's migration section names — for the promise-model migration, `specflowctl validate promise-model --unit <name> --layer candidate|stable` for every unit file in a layer.
-- Compare each spec file's path, frontmatter, and section structure against `framework/spec_writing_guide.md` (unit main specs, rule files, and appendices).
-- Confirm no retired field or mechanism named by an owner's migration section remains.
-
-Report each check as PASSED or FAILED with details. If any check fails and the cause is a missed migration, fix it. If the cause is unclear or requires business judgment, report it to the user.
+Report each check as PASSED or FAILED with details. If a check fails, the file is not in the current format; fix it under the update authorization or report the unresolved item to the user.
 
 ### Step 5: Impact classification
 
-After format verification, classify downstream impact on existing units:
+After the format update, classify downstream impact on existing units:
 
 1. Determine whether Step 2 detected structural changes involving **path ownership, object registration, or support-surface boundaries** — i.e. boundary changes that cannot be resolved from unit or rule frontmatter. (To detect: check whether the framework diff changes a path, filename, ownership, registration, or support-surface rule that governs `docs/specs/`, or whether any governance flow explicitly reports an unresolved boundary change. The diff covers `framework/` and `templates/`; it never contains the project’s `docs/specs/` tree itself.)
 2. If such boundary changes exist, run impact sync per `framework/governance/impact_sync.md` to perform consumer discovery and fallback reason classification for affected units.
@@ -158,10 +134,10 @@ Do not invent business truth during impact classification — if a fallback deci
 
 ### Step 6: Clear the update baseline
 
-After Step 4 and Step 5 both complete, run this from the project root to delete the baseline:
+After the format update and impact classification complete, run this from the project root to delete the baseline:
 
 ```bash
 rm -f meta/.update-baseline
 ```
 
-Delete it only when the update has finished. If migration or impact classification stopped for user input, keep the file so the next session resumes from the same pre-update hash.
+Delete it only when the update has finished. If the format update or impact classification stopped for user input, keep the file so the next session resumes from the same pre-update hash.

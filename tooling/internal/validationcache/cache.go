@@ -33,9 +33,12 @@ import (
 
 // CheckCategory classifies why a cache check passed or failed. It mirrors
 // the gate vocabulary of the freshness report: fresh (gate satisfied),
-// missing (no cache file), stale (delta/repair can recover the cache),
-// blocked (cache is valid but declares P0/P1 findings), invalid (cache
-// predates promise pinning and cannot be used at all — only a full run).
+// missing (no cache file), stale (the cache exists but cannot be reused
+// as-is — some stale states still support delta/repair, others lack required
+// recorded evidence and need a full run), blocked (cache is valid but
+// declares P0/P1 findings), invalid (a unit cache lacks the promise-pin
+// format marker — a missing or different pin_format, or a passing validate
+// cache without promise_pins — so only a full run can replace it).
 type CheckCategory string
 
 const (
@@ -48,7 +51,7 @@ const (
 
 // PromisePinFormat is the gate-cache format that binds provider contracts by
 // promise fingerprint instead of whole-file content. A unit cache without this
-// marker is incompatible: there is no delta/repair recovery, only a full run.
+// marker is INVALID: there is no delta/repair recovery, only a full run.
 const PromisePinFormat = "promise-v1"
 
 // CheckResult describes whether a cache file is fresh. Category records
@@ -110,14 +113,14 @@ type cacheFile struct {
 	ReviewRecheck   []string `yaml:"review_recheck,omitempty"`
 	ReviewDeclined  []string `yaml:"review_declined,omitempty"`
 	// PinFormat is the cache's contract-pinning format marker. Unit caches
-	// must carry PromisePinFormat; a cache without it predates promise
-	// pinning and is incompatible (see CategoryInvalid).
+	// must carry PromisePinFormat; a cache without it is INVALID (see
+	// CategoryInvalid).
 	PinFormat     string `yaml:"pin_format,omitempty"`
 	pinFormatSeen bool
 	// PromisePins records the provider promise contracts a unit validate run
 	// read. It replaces whole-file freshness for the provider spec entries.
 	// PromisePinsSet distinguishes "computed, no dependencies" from a cache
-	// written before the promise-pin format.
+	// that carries no promise-pin block.
 	PromisePins     []PromisePin
 	promisePinsSeen bool
 	Files           []cacheFileEntry
@@ -255,7 +258,7 @@ func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckR
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryInvalid,
-			Reason:   fmt.Sprintf("validate cache predates promise pinning — run `validate@%s` (full)", unitName),
+			Reason:   fmt.Sprintf("validate cache lacks the promise-pin format marker (missing pin_format) — run `validate@%s` (full)", unitName),
 		}, nil
 	}
 	if cache.Result != "pass" {
@@ -341,8 +344,8 @@ type ExpectedCheck struct {
 // that the cache records an alignment or quality check for every expected
 // key. A cache that covers only one lens cannot prove the merged gate ran.
 // A cache without per-check evidence fails closed: the merged cache format
-// requires per-check lens declarations, and there is no compatibility shim
-// for old caches. requireBothLenses additionally requires at least one check
+// requires per-check lens declarations, and there is no compatibility shim.
+// requireBothLenses additionally requires at least one check
 // of each lens section even when expected names no key (the coverage
 // derivation failed): an existing cache must still prove both lenses ran.
 //
@@ -373,10 +376,10 @@ func CheckVerifyMerged(repoRoot, unitName, target string, expected func() ([]Exp
 	}
 	cache, err := readCache(cachePath)
 	if err != nil {
-		// An existing but unusable verify cache (a removed format, a partial
-		// write, corruption) is not a usable gate result: fail it closed as
+		// An existing but unusable verify cache (a partial write or
+		// corruption) is not a usable gate result: fail it closed as
 		// STALE with the parse reason instead of failing the whole command.
-		return CheckResult{Fresh: false, Category: CategoryStale, Reason: fmt.Sprintf("verify cache is not in the current format: %v — run `verify@%s` again.", err, unitName)}, nil
+		return CheckResult{Fresh: false, Category: CategoryStale, Reason: fmt.Sprintf("verify cache cannot be read: %v — run `verify@%s` again.", err, unitName)}, nil
 	}
 	got := map[string]string{}
 	for _, entry := range cache.Files {
@@ -388,12 +391,11 @@ func CheckVerifyMerged(repoRoot, unitName, target string, expected func() ([]Exp
 		// No compatibility shim: a merged verify cache must carry per-check
 		// lens evidence. A cache without it cannot prove either lens ran and
 		// cannot be checked against the current coverage set, so both fresh
-		// and promote fail it closed — old caches are invalid, re-run
-		// `verify@{unit}`.
+		// and promote fail it closed — re-run `verify@{unit}`.
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
-			Reason:   fmt.Sprintf("verify cache carries no per-check evidence (no `checks` entries) — old caches are invalid; run `verify@%s` again.", unitName),
+			Reason:   fmt.Sprintf("verify cache carries no per-check evidence (no `checks` entries) — run `verify@%s` again.", unitName),
 		}, nil
 	}
 	if !base.Fresh {
@@ -1297,7 +1299,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 			return CheckResult{
 				Fresh:    false,
 				Category: CategoryInvalid,
-				Reason: fmt.Sprintf("%s cache predates promise pinning (pin_format %q, expected %q) — run `%s@%s` (full); delta/repair cannot use it",
+				Reason: fmt.Sprintf("%s cache lacks the promise-pin format marker (pin_format %q, expected %q) — run `%s@%s` (full); delta/repair cannot use it",
 					command, cache.PinFormat, PromisePinFormat, command, cache.Unit),
 			}, nil
 		}
@@ -1535,8 +1537,8 @@ type requiredValidateInput struct {
 // currentRequiredValidateInputs resolves the inputs a unit validate cache must
 // currently carry: the unit's own appendices in the cache's target layer and
 // every published stable global rule. Both are discovered from current
-// repository state, never from the old cache, so a newly added input cannot
-// be silently carried.
+// repository state, never from the recorded cache, so a newly added input
+// cannot be silently carried.
 func currentRequiredValidateInputs(repoRoot string, cache *cacheFile, layer string) ([]requiredValidateInput, error) {
 	appendices, err := specpaths.UnitAppendices(repoRoot, cache.Unit, layer)
 	if err != nil {
@@ -2090,14 +2092,13 @@ func parseCache(data []byte) (*cacheFile, error) {
 	// chunker intentionally produces no chunk for content that normalizes to
 	// nothing (an empty or newline-only file), so a recorded block whose list
 	// is empty is valid evidence — the requirement is the recorded block, not
-	// a non-empty list. A cache missing the block — the removed
-	// `deps:`-declaration format, a partial write, corruption — is rejected as
-	// not current-format. Callers that read an existing cache treat this as
-	// "no usable cache" and fall back to the full command; callers that
-	// validate a freshly rendered candidate fail hard.
+	// a non-empty list. A cache missing the block — a partial write,
+	// corruption — lacks required recorded evidence. Callers that read an
+	// existing cache treat this as "no usable cache" and fall back to the full
+	// command; callers that validate a freshly rendered candidate fail hard.
 	for _, e := range cache.Files {
 		if e.Chunker != contenthash.ChunkerVersion || !e.chunkEvidenceSeen {
-			return nil, fmt.Errorf("cache entry %q carries no comparable chunk evidence — the cache is not in the current format; run the full command to rebuild it", e.Path)
+			return nil, fmt.Errorf("cache entry %q carries no comparable chunk evidence", e.Path)
 		}
 	}
 
@@ -2512,10 +2513,10 @@ type GateBaseline struct {
 	Command string
 	Exists  bool
 	// UnusableReason explains why an existing cache file could not be read as
-	// a baseline — a removed format, a partial write, corruption. It is set
-	// while Exists stays false: callers treat it exactly like a missing cache
-	// and fall back to the full command. It is empty when the file is simply
-	// absent.
+	// a baseline — an unreadable or partial cache, or a missing promise-pin
+	// format marker. It is set while Exists stays false: callers treat it
+	// exactly like a missing cache and fall back to the full command. It is
+	// empty when the file is simply absent.
 	UnusableReason string
 	Mode           string
 	Basis          string
@@ -2544,9 +2545,10 @@ type BaselineCheck struct {
 
 // ReadGateBaseline reads the gate's cache file and returns its baseline view.
 // A missing cache returns Exists=false with no error. An existing but unusable
-// cache — a removed format, a partial write, corruption — also returns
-// Exists=false, with UnusableReason set: callers treat it exactly like a
-// missing baseline and fall back to the full command.
+// cache — unreadable content, a partial write, corruption, or a missing
+// promise-pin format marker — also returns Exists=false, with UnusableReason
+// set: callers treat it exactly like a missing baseline and fall back to the
+// full command.
 func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBaseline, error) {
 	cachePath, err := cacheFilePath(repoRoot, targetKind, targetName, command+"_result.md")
 	if err != nil {
@@ -2557,20 +2559,20 @@ func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBa
 	}
 	cache, err := readCache(cachePath)
 	if err != nil {
-		// An existing but unusable cache — a removed format, a partial write,
+		// An existing but unusable cache — unreadable content, a partial write,
 		// corruption — is not a usable baseline: degrade to "no baseline" and
 		// let the caller fall back to the full command, instead of failing
 		// the whole command. Unknown fields on a readable cache are ignored
 		// by the parser; only missing or malformed required content reaches
 		// this branch.
-		return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s is not in the current format: %v", relPath(repoRoot, cachePath), err)}, nil
+		return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s cannot be read as a baseline: %v", relPath(repoRoot, cachePath), err)}, nil
 	}
 	if targetKind == "unit" {
 		if cache.PinFormat != PromisePinFormat {
-			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s predates promise pinning — run the full command; delta/repair cannot use it", relPath(repoRoot, cachePath))}, nil
+			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s lacks the promise-pin format marker (pin_format %q, expected %q)", relPath(repoRoot, cachePath), cache.PinFormat, PromisePinFormat)}, nil
 		}
 		if command == "validate" && cache.Result == "pass" && !cache.promisePinsSeen {
-			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s has no promise_pins block — run the full validate", relPath(repoRoot, cachePath))}, nil
+			return &GateBaseline{UnusableReason: fmt.Sprintf("gate cache %s has no promise_pins block", relPath(repoRoot, cachePath))}, nil
 		}
 	}
 	baseline := &GateBaseline{Command: command,

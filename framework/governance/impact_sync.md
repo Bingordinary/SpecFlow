@@ -77,7 +77,7 @@ When `impact_sync` is triggered by a non-rule change, consumer discovery follows
 
 | Condition | Description | Next Action |
 |-----------|-------------|-------------|
-| **Normal completion** | Fallback routing applied to all affected units. Consumer discovery and fallback reason classification are complete. | Return control to the caller (`spec_flow_update` for non-rule migration scenarios). If the output declares `freshness_review_required: true`, the caller must execute the Freshness Review procedure below before fallback cleanup. |
+| **Normal completion** | Fallback routing applied to all affected units. Consumer discovery and fallback reason classification are complete. | Return control to the caller (`spec_flow_update` for non-rule format-update scenarios). If the output declares `freshness_review_required: true`, the caller must execute the Freshness Review procedure below before fallback cleanup. |
 | **No affected units** | Consumer discovery found zero affected units. | Close with no further action. Report `affected_candidate_units: none` / `affected_stable_units: none`. |
 
 ## Output Contract
@@ -105,7 +105,7 @@ Arming rule: `freshness_review_required` is set to `true` whenever `affected_can
    (rule targets: `specflowctl fresh --rule <id>`; a whole-scope report `specflowctl fresh --scope all` may replace per-target runs when the affected set is large.)
 2. Classify each affected unit by the reported gate statuses (FRESH / STALE / INVALID / MISSING / BLOCKED, per `framework/validation_cache.md` §Freshness Check):
    - **FRESH** — all applicable gates have current, non-blocking caches. The unit's truth is mechanically current; fallback cleanup may proceed for this unit.
-   - **STALE / INVALID / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache predates promise pinning and cannot be used as a baseline, the cache never ran, or a gate cache declares P0/P1 findings — a failure record). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
+   - **STALE / INVALID / MISSING / BLOCKED** — at least one applicable gate lacks current evidence (a declared dependency changed, the cache is unusable as a baseline, the cache never ran, or a gate cache declares P0/P1 findings — a failure record). The unit's truth cannot be confirmed current; fallback cleanup must not proceed for this unit until the affected gate is re-run and the cache is fresh.
 3. Report the classification per unit: `{unit}: {gate status} — cleanup allowed | cleanup blocked ({reason})`.
 
 **Boundaries:**
@@ -134,7 +134,7 @@ impact_sync operates independently of the governance-review run-state (`meta/gov
 - A governance-review slice (e.g., `process_and_impact_state`) may call impact_sync as part of its execution. The slice's findings and status are recorded in the run-state; the impact_sync outputs themselves remain ephemeral.
 - The two mechanisms serve different purposes: impact_sync maintains downstream truth freshness; governance-review run-state tracks mechanism-review progress. They do not share state.
 
-## Removed Scenario Lifecycle
+## Unsupported Scenario Requests
 
 Requests that use `scenario_*`, `scenario_advance:{id}`, or `object-type=scenario` are not impact-sync work.
-Stop and report that scenario lifecycle support has been removed.
+Stop and report that scenario requests are not supported.

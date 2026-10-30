@@ -693,7 +693,7 @@ func checkStableUnitGate(derivation *gaterun.Derivation, repoRoot, unitName, com
 		result, err = validationcache.CheckValidateStable(repoRoot, unitName)
 	case "verify":
 		// No compatibility: a stable confirmation cache must carry per-check
-		// evidence; an old cache without `checks` is invalid. When the stable
+		// evidence; a cache without `checks` is invalid. When the stable
 		// spec's coverage can be derived, its expected keys must be present.
 		result, err = checkStableUnitVerifyMerged(derivation, repoRoot, unitName)
 	default:
@@ -781,7 +781,7 @@ func checkUnitVerifyMerged(derivation *gaterun.Derivation, repoRoot, unitName, t
 
 // checkStableUnitVerifyMerged applies the no-compatibility requirement to a
 // stable-layer confirmation cache: the cache must carry per-check evidence
-// (an old cache without `checks` is invalid), and when the stable spec's
+// (a cache without `checks` is invalid), and when the stable spec's
 // coverage can be derived its expected keys must be present. The both-lens
 // requirement is the promote requirement and does not apply to a stable
 // confirmation.
@@ -857,17 +857,23 @@ func gatePassed(status gateStatus) bool {
 // supports a partial run: the same predicate the planner enforces
 // (gaterun.PartialRunBaselineError) is consulted before suggesting, so the
 // read-only report and gate-plan never disagree about whether the baseline
-// supports a partial run. When it does not — e.g. a cache whose structured
-// judgment state predates the current schema — the advice is the full
-// command and the status word stays STALE: the cache can still satisfy the
-// gate, only its partial-run baseline capability is gone (see
-// framework/verification_scope.md §Gate status vocabulary).
+// supports a partial run. When it does not — an unreadable cache, missing
+// required recorded evidence, or a stale judgment schema — the advice is the
+// full command with the actual reason, and the status word stays STALE: the
+// cache can still satisfy the gate, only its partial-run baseline capability
+// is gone (see framework/verification_scope.md §Gate status vocabulary).
 func gateAdvice(command, targetKind, repoRoot, targetName string, status gateStatus, repairOnly, failureRecord bool) string {
 	switch status {
 	case gateStale, gateBlocked:
 		baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, command)
-		if err != nil || gaterun.PartialRunBaselineError(baseline) != nil {
-			return fmt.Sprintf("-> required: %s@%s (full run — the baseline judgment state predates the current schema; delta/repair cannot use it)", command, targetName)
+		if err != nil {
+			return fmt.Sprintf("-> required: %s@%s (full run — the baseline cannot be read: %v; delta/repair cannot use it)", command, targetName, err)
+		}
+		if baseline.UnusableReason != "" {
+			return fmt.Sprintf("-> required: %s@%s (full run — %s)", command, targetName, baseline.UnusableReason)
+		}
+		if reason := gaterun.PartialRunBaselineError(baseline); reason != nil {
+			return fmt.Sprintf("-> required: %s@%s (full run — %v)", command, targetName, reason)
 		}
 		if status == gateBlocked || failureRecord {
 			return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
@@ -879,7 +885,7 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateInvalid:
-		return fmt.Sprintf("-> required: %s@%s (full run — the cache predates promise pinning; delta/repair cannot use it)", command, targetName)
+		return fmt.Sprintf("-> required: %s@%s (full run — the cache lacks the promise-pin format marker or its promise_pins block; delta/repair cannot use it)", command, targetName)
 	default:
 		return ""
 	}

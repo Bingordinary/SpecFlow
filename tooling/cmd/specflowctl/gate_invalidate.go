@@ -107,7 +107,7 @@ func validateGateInvalidateTarget(gate, unitName, ruleID, target string) error {
 		return errors.New("exactly one of --unit or --rule is required")
 	}
 	if ruleID != "" && gate != gaterun.GateValidate {
-		return fmt.Errorf("rule targets support the validate gate only (rule verify has been removed) — got %q", gate)
+		return fmt.Errorf("rule targets support the validate gate only — got %q", gate)
 	}
 	if target != gaterun.TargetCandidate && target != gaterun.TargetStable {
 		return fmt.Errorf("invalid --target %q: must be candidate or stable", target)

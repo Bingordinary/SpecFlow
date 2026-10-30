@@ -81,10 +81,10 @@ func TestSurfacesToleratesUnusableVerifyCache(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// An old-format verify cache (no chunk evidence): the unusable baseline
-	// must degrade to "no judgments", not fail the whole command.
-	legacy := "---\ncommand: verify\nunit: alpha\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_alpha.md\n    hash: sha256:00\n---\nbody\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(legacy), 0o644); err != nil {
+	// A verify cache without chunk evidence: the unusable baseline must
+	// degrade to "no judgments", not fail the whole command.
+	unusable := "---\ncommand: verify\nunit: alpha\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_alpha.md\n    hash: sha256:00\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(unusable), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

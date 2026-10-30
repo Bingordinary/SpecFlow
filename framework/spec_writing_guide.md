@@ -632,7 +632,7 @@ This rule does not apply to:
 
 ## 13. Section Regions
 
-The unit's own main spec must be section-splittable: the content is split by `##` headings — the frontmatter region (file head through the line before the first `##` heading) and one region per `##` heading. Section boundaries define where an `acceptance_item_set` ends (a `##` heading terminates the set); the three-section shape is enforced mechanically by validate Check 15, and region locatability by Check 7. Validation caches no longer declare section regions — cache freshness is whole-file for validate and conclusion-bound for verify (see `framework/validation_cache.md` §Format) — but the structure still keeps the spec machine-locatable and keeps edits contained for the delta re-run.
+The unit's own main spec must be section-splittable: the content is split by `##` headings — the frontmatter region (file head through the line before the first `##` heading) and one region per `##` heading. Section boundaries define where an `acceptance_item_set` ends (a `##` heading terminates the set); the three-section shape is enforced mechanically by validate Check 15, and region locatability by Check 7. Validation caches do not declare section regions; cache freshness is whole-file for validate and conclusion-bound for verify (see `framework/validation_cache.md` §Format). The structure still keeps the spec machine-locatable and keeps edits contained for the delta re-run.
 
 A verify **design** conclusion pins the spec content it relied on, so the narrative must be addressable at a finer grain than the section: the Design Narrative's own subsections are the anchor unit.
 

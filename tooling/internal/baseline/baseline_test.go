@@ -355,7 +355,7 @@ func TestWriteUnitBaseline_EmptyFileZeroChunks(t *testing.T) {
 }
 
 // TestCheckUnitBaseline_EntryWithoutChunkEvidenceIsStale pins the
-// current-format rule: an entry without chunk evidence is stale and reported
+// required-evidence rule: an entry without chunk evidence is stale and reported
 // as drifted, regardless of the stored whole-file hash.
 func TestCheckUnitBaseline_EntryWithoutChunkEvidenceIsStale(t *testing.T) {
 	repoRoot := setupRepo(t)

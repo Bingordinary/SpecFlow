@@ -447,12 +447,6 @@ func TestCheckValidateStale(t *testing.T) {
 	}
 }
 
-// TestCheckValidateRejectsLegacyDepsCache pins that a cache in the removed
-// `deps:`-declaration format — which lacks the required chunk evidence — is
-// rejected by the freshness chain that `fresh` and `promote` use, so only a
-// full run rebuilds it. The `deps:` lines themselves are ignored (unknown
-// fields are harmless); the missing chunk evidence is what makes the cache
-// not current-format.
 // TestCheckValidateRequiresCurrentJudgingStandard pins the validate standard
 // binding: a validate conclusion is reusable only under the checklist it was
 // judged by, so a cache that records no standard, or one the deployed checklist
@@ -551,7 +545,12 @@ func TestCheckValidateFailureRecordWithDependencyStaysBlocked(t *testing.T) {
 	}
 }
 
-func TestCheckValidateRejectsLegacyDepsCache(t *testing.T) {
+// TestCheckValidateRejectsCacheWithoutChunkEvidence pins that a cache without
+// the required chunk evidence is rejected by the freshness chain that `fresh`
+// and `promote` use, so only a full run rebuilds it. Unknown fields such as the
+// `deps:` lines are ignored; the missing chunk evidence is what makes the cache
+// unusable as a baseline.
+func TestCheckValidateRejectsCacheWithoutChunkEvidence(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -579,7 +578,7 @@ func TestCheckValidateRejectsLegacyDepsCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Fresh || result.Category != CategoryStale {
-		t.Fatalf("expected the deps-format cache to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+		t.Fatalf("expected the cache without chunk evidence to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
 	}
 	if !strings.Contains(result.Reason, "chunk evidence") {
 		t.Fatalf("expected the missing-chunk-evidence reason, got: %s", result.Reason)
@@ -587,15 +586,15 @@ func TestCheckValidateRejectsLegacyDepsCache(t *testing.T) {
 }
 
 // TestReadGateBaselineTreatsUnusableCacheAsAbsent pins that an existing cache
-// in the removed format (no chunk evidence) is not returned as a baseline: it
+// without the required chunk evidence is not returned as a baseline: it
 // degrades to Exists=false with a reason, so every reader falls back to the
 // full command instead of aborting.
 func TestReadGateBaselineTreatsUnusableCacheAsAbsent(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	legacy := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
-	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(legacy), 0644)
+	unusable := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
+	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(unusable), 0644)
 
 	baseline, err := ReadGateBaseline(repoRoot, "unit", "test", "validate")
 	if err != nil {
@@ -811,7 +810,7 @@ func TestReadCacheSummaryBasisDefault(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// A cache without a basis field (legacy full-run cache) reads back empty.
+	// A cache without a basis field reads back empty (a full-run cache omits it).
 	plainCache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(plainCache), 0644); err != nil {
 		t.Fatal(err)
@@ -1810,10 +1809,10 @@ func TestCheckVerifyMergedStaleBaseSkipsDerivation(t *testing.T) {
 	}
 }
 
-// TestCheckVerifyMergedLegacyCacheSkipsDerivation pins that the no-compat
-// legacy-cache rejection happens before the coverage derivation: an old cache
-// is STALE without paying for evidence discovery.
-func TestCheckVerifyMergedLegacyCacheSkipsDerivation(t *testing.T) {
+// TestCheckVerifyMergedCacheWithoutChecksSkipsDerivation pins that a cache
+// without per-check evidence is rejected before the coverage derivation: it is
+// STALE without paying for evidence discovery.
+func TestCheckVerifyMergedCacheWithoutChecksSkipsDerivation(t *testing.T) {
 	repoRoot := t.TempDir()
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
 	os.MkdirAll(candidateDir, 0755)
@@ -1848,13 +1847,13 @@ func TestCheckVerifyMergedLegacyCacheSkipsDerivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Fresh || result.Category != CategoryStale {
-		t.Fatalf("expected a legacy cache to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
+		t.Fatalf("expected a cache without checks to fail closed as STALE, got fresh=%t category=%s", result.Fresh, result.Category)
 	}
 	if !strings.Contains(result.Reason, "no per-check evidence") {
 		t.Fatalf("expected the no-compat reason, got: %s", result.Reason)
 	}
 	if derived {
-		t.Fatal("expected derivation to be skipped for a legacy cache")
+		t.Fatal("expected derivation to be skipped for a cache without checks")
 	}
 }
 

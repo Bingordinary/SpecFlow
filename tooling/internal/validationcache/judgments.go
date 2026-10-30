@@ -61,7 +61,7 @@ type ConclusionState struct {
 func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]ConclusionState, error) {
 	var state recordState
 	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil || state.SchemaVersion != RecordStateSchemaVerify {
-		return nil, fmt.Errorf("verify cache uses an old or damaged review protocol; run a full verify")
+		return nil, fmt.Errorf("verify cache does not carry the current review protocol; run a full verify")
 	}
 	if len(state.Records) == 0 {
 		return nil, fmt.Errorf("verify cache has no judgment references")
@@ -271,7 +271,7 @@ func uncoveredChangedFiles(repoRoot string, cache *cacheFile) ([]string, error) 
 // reused: the standard it was judged by is not the current one.
 func verifyStandard(root, targetKind string, cache *cacheFile) error {
 	if strings.TrimSpace(cache.Standard) == "" {
-		return fmt.Errorf("the cache records no judging standard (pre-binding format) — old caches are invalid")
+		return fmt.Errorf("the cache records no judging standard — it is unusable as a baseline; run the full command")
 	}
 	current, err := judgments.Protocol(root, "validate", targetKind)
 	if err != nil {

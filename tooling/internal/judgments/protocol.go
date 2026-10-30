@@ -129,7 +129,6 @@ var mechanismSections = map[string][]string{
 		"Task batching and record inputs",
 		"Immutable storage and task allocation",
 		"Cache, delta and release",
-		"Previous protocol",
 	},
 	"verification_scope.md": {
 		"Problem",
@@ -138,7 +137,7 @@ var mechanismSections = map[string][]string{
 		"Syntax",
 		"Validate",
 		"Verify",
-		"Rule (validate only, verify removed)",
+		"Rule (validate only)",
 		"Delta re-runs (re* instruction family)",
 		"Freshness check (read-only)",
 		"Dependency Analysis (read-only)",

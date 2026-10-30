@@ -108,6 +108,6 @@ Copy the following instruction to your agent:
 Use this whenever you update. It also works when a runtime breaking change stops the platform adapter from loading and the agent can no longer see specFlow triggers — the case where an in-session trigger like `spec_flow_update` is unavailable.
 
 
-Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol migration.
+Shared implementation files may be associated with multiple units. Unit verify reuses immutable public code judgments while keeping each unit's design and architecture decisions separate. Related stable acceptance requirements must remain ALIGNED before promote. See `framework/shared_judgments.md` for records, delta invalidation and protocol binding.
 
 Spec deletion is an ordinary file edit: delete the candidate file, and its stable file to retire a whole unit or rule. Promote mirrors the candidate file set into stable, so an appendix the candidate drops is removed on promote once it is declared with `--drop-appendix`.

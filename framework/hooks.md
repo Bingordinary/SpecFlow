@@ -34,7 +34,7 @@ The injected bootstrap (`framework/concepts.md`) must contain the content catego
 1. **Identity and purpose** — what SpecFlow is and that spec documents are the consensus protocol between the user and the agent.
 2. **State model** — file existence is state; stable/candidate layers; distinct truth roles without an automatic winner; reference priority outside verify; key terms.
 3. **Default editing mode** — read-only requests stay read-only; editing does not grant write permission; fork rules and the spec-first planning requirement (declare the candidate spec and appendices before code; state the Spec Impact Assessment when no spec change is needed).
-4. **HARD RULES** — read specs before discussing/changing a topic; gates are user-triggered; promote checks the target's applicable gates; quality gates do not edit truth; documented stable deletion/migration exceptions stay explicit; never decide divergence alone; stop when unclear; fork through `specflowctl`.
+4. **HARD RULES** — read specs before discussing/changing a topic; gates are user-triggered; promote checks the target's applicable gates; quality gates do not edit truth; documented stable deletion/update exceptions stay explicit; never decide divergence alone; stop when unclear; fork through `specflowctl`.
 5. **Trigger routing table** — one row per trigger or behaviorally identical trigger family, with exact syntax, first action, and full command-package paths. Routing row + listed packages (+ `gate-plan` output for full/delta/repair gates) must carry every instruction the step needs.
 6. **Infrastructure** — `specflowctl` location, framework path convention, and framework identity (installed repository commit and `tooling/fingerprint.txt`).
 

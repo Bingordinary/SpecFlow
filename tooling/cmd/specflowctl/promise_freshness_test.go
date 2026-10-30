@@ -200,9 +200,9 @@ func TestStableConsumerIgnoresCandidateProviderDraft(t *testing.T) {
 	}
 }
 
-// the promise-pin marker is INVALID, cannot be used as a delta/repair
-// baseline, and rejects promotion.
-func TestOldUnitCachesAreIncompatible(t *testing.T) {
+// the promise-pin marker is missing, so the cache is INVALID, cannot be used
+// as a delta/repair baseline, and rejects promotion.
+func TestUnitCachesWithoutCurrentFormatAreIncompatible(t *testing.T) {
 	root := createCLITestRepo(t)
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
 	specPath := filepath.Join(root, "docs/specs/units/candidate/unit_auth.md")
@@ -218,11 +218,11 @@ func TestOldUnitCachesAreIncompatible(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	legacyValidate := "---\ncommand: validate\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\n" +
+	incompleteValidate := "---\ncommand: validate\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\n" +
 		"standard: " + fixtureStandard(t, root, "unit") + "\ntimestamp: \"2026-06-30T10:00:00Z\"\n" +
 		"files:\n  - path: docs/specs/units/candidate/unit_auth.md\n    hash: sha256:" + computeHash(specPath) + "\n" +
 		cacheDeps(t, specPath) + "---\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(legacyValidate), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(incompleteValidate), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,24 +231,24 @@ func TestOldUnitCachesAreIncompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if check.Fresh || check.Category != validationcache.CategoryInvalid {
-		t.Fatalf("old validate cache must be INVALID, got %+v", check)
+		t.Fatalf("a validate cache without pin_format must be INVALID, got %+v", check)
 	}
 
 	var out, errOut bytes.Buffer
 	err = runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut)
-	if err == nil || !strings.Contains(out.String(), "predates promise pinning") {
-		t.Fatalf("promote must reject an old validate cache, err=%v\n%s", err, out.String())
+	if err == nil || !strings.Contains(out.String(), "lacks the promise-pin format marker") {
+		t.Fatalf("promote must reject a validate cache without the promise-pin marker, err=%v\n%s", err, out.String())
 	}
 
 	if _, err := grPlanRaw(root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil ||
-		!strings.Contains(err.Error(), "not in the current format") {
-		t.Fatalf("delta planning must refuse an old cache, got %v", err)
+		!strings.Contains(err.Error(), "unusable as a delta baseline") {
+		t.Fatalf("delta planning must refuse a cache without the promise-pin marker, got %v", err)
 	}
 
-	legacyVerify := "---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T10:00:00Z\"\n" +
+	incompleteVerify := "---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T10:00:00Z\"\n" +
 		"files:\n  - path: docs/specs/units/candidate/unit_auth.md\n    hash: sha256:" + computeHash(specPath) + "\n" +
 		cacheDeps(t, specPath) + "---\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(legacyVerify), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cacheDir, "verify_result.md"), []byte(incompleteVerify), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	verify, err := validationcache.CheckVerify(root, "auth")
@@ -256,6 +256,6 @@ func TestOldUnitCachesAreIncompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if verify.Fresh || verify.Category != validationcache.CategoryInvalid {
-		t.Fatalf("old verify cache must be INVALID, got %+v", verify)
+		t.Fatalf("a verify cache without pin_format must be INVALID, got %+v", verify)
 	}
 }

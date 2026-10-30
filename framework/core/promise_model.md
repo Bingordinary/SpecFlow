@@ -60,31 +60,9 @@ or appendix edit.
 The gates bind one contract format. A dual-format window would let a unit
 pass validate, gate-plan, and promote while carrying contract truth that no
 promise holds, so contract closure — the model's core guarantee — would not
-cover it. The migration is agent work, executed once per installed project
-through `spec_flow_update`, and the one-time cost is lowest while the
-installed base is small.
-
-## Migrating to this format
-
-`spec_flow_update` migrates an installed project when its framework diff reports the three-section unit shape or the contract-block format. Migrate **every unit file in each layer** (candidate and stable):
-
-1. Derive each promise's contract blocks from the unit's existing formal carrier — the acceptance item set and protocol appendices. A promise keeps the stable contract (API surface, exchanged formats, error codes, state machine transitions, timing, standing properties); the acceptance item keeps its code/test scope and references the promise it proves. The `kind` and `opaque_reason` fields are removed; map the old shape to blocks:
-
-   | Old `kind` | New `contract` |
-   |---|---|
-   | `request_response` | `operations: {<operation>: {inputs: <request>, outputs: <response>, errors: <errors>, timing: <mode>}}` |
-   | `event` | `occurrences: {<event name>: {payload: <payload>, delivery: <delivery>, ordering: <ordering>}}` |
-   | `data_schema` | `data: {<type name>: {fields: <fields>}}` |
-   | `state_machine` | `state_machine: {states: <states>, initial: <initial>, transitions: <transitions>}` |
-   | `opaque` | `invariants: [<text>]` when the text is a standing property; otherwise restructure the behavior the text describes into the matching structured blocks |
-
-   Name the operation, type, or event after the subject the old contract describes; the promise ID's last segment is a safe default. A `request_response` `timing: {mode: sync}` becomes `timing: sync`; if the old `request` is absent, omit `inputs`.
-2. Restructure the main spec into the three sections in order. `## Promises` and `## Acceptance Items` contain structured content only; move narrative subsections, including governance and alignment content, under `## Design Narrative`.
-3. Move `unit_refs` and `affects.dependencies` to the consumer promise's `depends_on`; remove both old fields. Add `promise:` to every contract-verifying item and `non_promise: true` plus `non_promise_reason` to every non-contract item. Add `source:` to every promise and contract-verifying item, naming the Design Narrative heading block it projects; an unresolvable source fails validate.
-4. Do not invent contract truth. When the old carrier does not establish a contract value (a missing error code, timing guarantee, or field shape), present the affected unit to the user and ask; the migration is agent work, and the deployed gates reject a unit without `## Promises`. A structural fact the old carrier establishes goes into its matching block; `invariants` is only for a standing property that has no structural shape. Do not add a converter or a compatibility path.
-5. A cache written before this format does not become `INVALID`: it stays readable, but it no longer matches the migrated truth. The unit's main spec content changed, every promise fingerprint changed, and the judging standard moved, so `fresh` reports those gates as `STALE`. `delta`/`repair` can still use the old cache as a baseline and re-run the affected checks; run `validate` and `verify` for every migrated unit, with a full run as the safe default after a layer-wide migration. `promote` rejects any gate that is not fresh.
-
-Verify each migrated unit with `specflowctl validate promise-model --unit <name> --layer candidate|stable` (see §Validation command); a valid unit declares at least one promise and covers every promise with an acceptance item.
+cover it. A project that does not yet carry this format moves its own specs
+under the `spec_flow_update` authorization; the framework supplies the current
+format, not a migration recipe.
 
 ## Unit spec shape
 
@@ -346,7 +324,7 @@ defines for acceptance items — a subject's error codes, boundary cases, and
 timing guarantees are its scenarios and stay inside one promise.
 
 Too coarse: a promise bundling several endpoints (one `auth.api` promise
-carrying login, token refresh, and session query) recreates the old
+carrying login, token refresh, and session query) recreates
 whole-file invalidation one level down — a change to one endpoint's error
 code reopens every consumer, including the consumer that depends only on the
 session query. Declare `auth.login_api`, `auth.token_refresh_api`, and
