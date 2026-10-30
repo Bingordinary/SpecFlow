@@ -9,17 +9,19 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/operation"
 )
 
-// runClean removes disposable local state on demand: run directories whose
-// target spec no longer exists or whose open state can no longer resume (a
-// retired protocol, an invalid shape, or planned evidence that no longer
-// resolves), run directories a terminal command concluded but did not remove
-// (crash leftovers and states written before terminal removal), shared task
-// files no surviving run references, consumed scratch input manifests under
-// meta/plan_inputs/, undeclared stray entries under meta/, and closed
-// operation states. The same sweep runs automatically after gate-plan and
-// after a successful promote or remove; clean additionally removes closed
-// operation states, whose lifecycle ends in the close command itself and
-// whose surviving files are migration leftovers.
+// runClean removes disposable state on demand: run directories whose target
+// spec no longer exists or whose open state can no longer resume (a retired
+// protocol, an invalid shape, or planned evidence that no longer resolves),
+// run directories a terminal command concluded but did not remove (crash
+// leftovers and states written before terminal removal), shared task files no
+// surviving run references, consumed scratch input manifests under
+// meta/plan_inputs/, undeclared stray entries under meta/, the durable
+// per-target records (validation caches, promise state, publication baseline)
+// of a target whose spec files are gone from both layers, the deferred
+// findings such a retired target owned, and closed operation states. The same
+// sweep runs automatically after gate-plan and after a successful promote;
+// clean additionally removes closed operation states, whose lifecycle ends in
+// the close command itself and whose surviving files are migration leftovers.
 func runClean(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -38,7 +40,7 @@ func runClean(args []string, stdout, stderr io.Writer) error {
 	if *dryRun {
 		fmt.Fprintln(stdout, "Preview only. Nothing deleted.")
 	} else {
-		fmt.Fprintln(stdout, "Cleanup complete. Disposable local state removed: orphaned runs, terminal leftovers, unreferenced tasks, consumed plan inputs, strays, and closed operations.")
+		fmt.Fprintln(stdout, "Cleanup complete. Disposable state removed: orphaned runs, terminal leftovers, unreferenced tasks, consumed plan inputs, strays, retired-target durable records, orphaned deferred findings, and closed operations.")
 	}
 	return nil
 }
@@ -90,6 +92,12 @@ func printCleanReport(stdout io.Writer, absRoot string, dryRun bool) error {
 	}
 	for _, name := range sweep.Strays {
 		fmt.Fprintf(stdout, "  Delete stray: %s\n", name)
+	}
+	for _, target := range sweep.Durable {
+		fmt.Fprintf(stdout, "  Delete durable state: %s %s\n", target.Kind, target.Name)
+	}
+	for _, unit := range sweep.Deferrals {
+		fmt.Fprintf(stdout, "  Drop deferred findings owned by: %s\n", unit)
 	}
 	for _, id := range sweptOperations {
 		fmt.Fprintf(stdout, "  Delete operation: %s\n", id)

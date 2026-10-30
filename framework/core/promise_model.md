@@ -507,8 +507,7 @@ A passing unit `verify` finalize records this file automatically. `promote`
 validates that the record is current and that every
 pinned provider promise is already published at the same contract; it stages
 the stable record in the same transaction as the spec, so a failure aborts the
-publication. `fork` copies the stable record to candidate, and whole-unit
-removal clears both layers.
+publication. `fork` copies the stable record to candidate.
 
 `fresh` is the single read-only view: its unit summaries include a `done:`
 column, and `fresh --unit <name>` reports the complete promise state: schema

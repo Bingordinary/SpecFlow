@@ -41,8 +41,8 @@ When a rule operation cannot proceed safely (ambiguous, combines multiple action
    - Creating new rule truth → write candidate rule (see `spec_writing_guide.md` §6.1)
    - Extracting unit-local truth → extract to rule (see `spec_writing_guide.md` §6.2)
    - Binding/unbinding a unit → edit unit `rule_refs` and body explanation (normal spec editing)
-   - Splitting/merging/renaming rules → manual multi-step change: create/update rule files (see `spec_writing_guide.md` §6.1), update and publish consumers, then explicitly remove replaced objects through `framework/removal_workflow.md`
-   - Removing a unit, rule, or appendix → decide the removal basis and follow `framework/removal_workflow.md`. Publish surviving referrers first; optional preview is `remove --dry-run`. No manual spec-file deletion or automatic rule cleanup.
+   - Splitting/merging/renaming rules → manual multi-step change: create/update rule files (see `spec_writing_guide.md` §6.1), update and publish consumers, then delete the replaced rule files
+   - Deleting a unit, rule, or appendix → deletion is an ordinary file edit: delete the candidate file (and the stable file to retire a whole unit or rule). Publish surviving referrers that drop the reference first. No removal command, no previews, no automatic rule cleanup.
 2. **Raise a clarification checkpoint** when the requested meaning is unclear — ask the user for specifics before proceeding
 3. **Raise a decision checkpoint** when the user must choose between two valid approaches
 4. **Raise a prerequisite checkpoint** when a legal upstream action must happen before the rule change (e.g., a consuming unit must be forked to candidate before its binding can change)

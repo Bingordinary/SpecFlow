@@ -904,11 +904,12 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 	if err := writeRun(repoRoot, run); err != nil {
 		return nil, err
 	}
-	// Every new plan is a cleanup point: runs of targets that no longer exist
-	// and shared task files no surviving run references are discarded. The
-	// sweep is best-effort — a plan is not failed by leftover local state.
+	// Every new plan is a cleanup point: runs of targets that no longer exist,
+	// shared task files no surviving run references, and the durable
+	// per-target records of retired targets are discarded. The sweep is
+	// best-effort — a plan is not failed by leftover state.
 	if _, err := SweepOrphanedState(repoRoot); err != nil {
-		run.Notices = append(run.Notices, "local-state cleanup failed: "+err.Error())
+		run.Notices = append(run.Notices, "orphaned-state cleanup failed: "+err.Error())
 		if werr := writeRun(repoRoot, run); werr != nil {
 			return nil, werr
 		}

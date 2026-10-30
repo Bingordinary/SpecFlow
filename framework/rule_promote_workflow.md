@@ -14,9 +14,9 @@ Agent runs this when the target is detected as a Rule via automatic type detecti
 
 Every publication requires consumer discovery and content-impact assessment, whether the rule is new or changes an existing stable rule. No publication automatically starts consumer gates or changes consumer truth.
 
-## Spec Removal
+## Rule Deletion
 
-Explicit rule removal follows `framework/removal_workflow.md`. Read the constraint and relevant code before deciding. Publish surviving referrers that drop the rule first, then remove the specified rule. Promote never deletes unbound rules.
+Retiring a rule is an ordinary file edit: delete its candidate file, and its stable file to retire it outright. There is no removal command and no deletion approval protocol. Read the constraint and relevant code before deciding; a rule may remain without consumers when it still has future value. Before deleting, publish surviving referrers that drop the rule, so the next `validate` of each affected unit does not report a dangling `rule_refs` entry. Rule promote only publishes the specified rule and never deletes unrelated rules.
 
 ## Workflow
 
@@ -43,7 +43,7 @@ The CLI tool performs:
 
 The cache projection preserves the published target's original rule-file evidence; no new content hashes or review verdicts are invented. On the normal path, consumer units are derived from current-layer unit `rule_refs` and are not recorded entries, so consumer-side edits do not enter the cache; a consumer unit the run added with `specflowctl gate-extend` stays recorded, so a later edit to it stales the projected cache like any other evidence. Evidence that no longer matches the published content goes stale through the normal dependency check and drives the delta re-run scope (see `framework/validation_cache.md` §Cache lifecycle).
 
-Rule removal uses `framework/removal_workflow.md`; rule and unit promote only publish their specified objects.
+Deleting a rule is an ordinary file edit; rule and unit promote only publish their specified objects.
 
 **PASS:** `specflowctl promote --rule <id>` exits with code 0, rule file copied, candidate cleaned up.
 **FAIL:** CLI returns non-zero exit — report the CLI output. Do not archive any files. Recommend re-running `validate@{rule}` before retrying. Do not attempt manual promotion.

@@ -107,4 +107,4 @@ Agent 只在你明确发出质量检查或完成信号后提出下一步，而�
 
 任何时候更新都用这条。当运行时破坏性变更导致平台适配器无法加载、agent 看不到 specFlow 触发词时，它同样可用——那正是 `spec_flow_update` 这类会话内触发词失效的场景。
 
-删除 unit、rule 和附录使用[统一删除流程](framework/removal_workflow.md)：agent 判断删除依据，`specflowctl remove` 检查引用并完成明确范围内的清理。可选预览使用 `remove --dry-run`。
+删除 unit、rule 和附录就是普通的文件编辑：删掉候选文件即可（整体退役时再删掉对应的稳定文件）。promote 会把候选文件集合镜像到稳定层，因此候选轮里删掉的附录会在用 `--drop-appendix` 显式声明后，随 promote 一并删除。

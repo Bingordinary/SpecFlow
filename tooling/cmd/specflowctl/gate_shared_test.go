@@ -428,7 +428,18 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	sharedFinish(t, root, order)
 	orderCache := grReadJudgmentBaseline(t, root, "unit", "order", "verify")
-	if err := runRemove([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
+	// Deletion is an ordinary file edit now: remove the unit's spec files and
+	// let `clean` sweep the orphaned local state. Accepted judgment records
+	// and shared history must survive.
+	for _, rel := range []string{
+		"docs/specs/units/candidate/unit_auth.md",
+		"docs/specs/units/stable/unit_auth.md",
+	} {
+		if err := os.Remove(filepath.Join(root, rel)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runClean([]string{"--repo-root", root}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	public := orderCache.Records["code:contracts.js"]

@@ -456,12 +456,11 @@ func FindRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 // file whose candidate has dropped the reference no longer counts: the
 // reference is semantically gone and only the stale stable file remains
 // (see spec_writing_guide.md §6.3), exposed by the stable confirmation
-// check instead of blocking removal. Unlike FindRuleConsumers, it uses the
+// check. Unlike FindRuleConsumers, it uses the
 // same explicit rule_refs semantics for every rule scope — a global rule's
 // default applicability to all units is not treated as a reference here, so
-// removal (which removes the rule file and thereby lifts the default
-// applicability) can be validated against the references that must actually
-// be cleaned up.
+// the references that must actually be cleaned up when a global rule is
+// deleted are reported as consumers.
 func FindExplicitRuleConsumers(repoRoot, ruleID string) ([]string, error) {
 	graph, err := unitgraph.Build(repoRoot, "all")
 	if err != nil {

@@ -118,7 +118,9 @@ Based on the changes detected in Step 2, plan migration operations for the proje
 Some structural changes carry a target format or lifecycle that one document owns. For those, do not reconstruct the format here: read the owner document's migration guidance, apply it to the detected change, and verify with the validator it names. Ownership routing for the current known cases:
 
 - the three-section unit promise format (`## Design Narrative` → `## Promises` → `## Acceptance Items`, with dependency edges on the consumer promise's `depends_on`) → `framework/core/promise_model.md` §Migrating to this format
-- the former retention metadata and `status: retired` exit files → `framework/removal_workflow.md` §Upgrade from the former exit mechanisms
+- the former rule retention metadata (`unbound_retention`, `unbound_retention_reason`, `unbound_retention_owner`) → move every useful retention rationale into the rule body prose, then delete the fields. A rule validate cache written by the former retention-based check set is not translatable; revalidate the rule against the current six-check checklist when it is next used
+- `status: retired` exit files → decide per file whether the responsibility has ended, then delete the file(s) directly (deletion is an ordinary file edit). Report unresolved intent instead of recreating the former promote-based exit logic
+- the former `specflowctl remove` flow → deletion is now an ordinary file edit; update local workflow notes that reference the command or `framework/removal_workflow.md`
 
 For each operation:
 

@@ -172,14 +172,25 @@ func restoreBackups(backups []backupEntry) error {
 	return errors.Join(errs...)
 }
 
-// Promote runs the promote flow for the given unit.
+// Promote runs the promote flow for the given unit. Publication is a mirror:
+// after it succeeds the unit's stable file set equals its candidate file set.
+// It copies the candidate main spec and appendices to stable and, when the
+// caller declares each drop via dropAppendices, removes the stable-owned
+// appendices the candidate round no longer carries — all in one transaction.
+// Deletion is still an ordinary candidate file edit, but because the mirror
+// infers deletion from the candidate's file set, promote refuses to delete
+// silently: every stable appendix that would be removed must be named in
+// dropAppendices, so an accidental or stale omission fails closed instead of
+// destroying accepted truth. There is no separate removal command or workflow.
+//
 // Steps:
 //  1. Check candidate spec exists
 //  2. Validate frontmatter fields
 //  3. Validate acceptance items
 //  4. Find candidate appendix files
-//  5. Copy candidate files to stable
-func Promote(repoRoot, unitName string) *Result {
+//  5. Mirror candidate files into stable (copy additions/changes; delete
+//     stable-owned files the candidate no longer carries, each declared)
+func Promote(repoRoot, unitName string, dropAppendices ...string) *Result {
 	r := &Result{Unit: unitName}
 
 	candidateSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
@@ -269,6 +280,57 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 
+	// Mirror publication: the unit's stable file set must equal its candidate
+	// file set. Resolve the candidate appendix names and the stable-owned
+	// appendices here so any stable appendix the candidate round dropped is
+	// deleted in the same transaction as the copies.
+	candidateAppendixNames := map[string]bool{}
+	for _, appendix := range appendixCopies {
+		candidateAppendixNames[filepath.Base(appendix.Destination)] = true
+	}
+	stableAppendices, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
+	if err != nil {
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to resolve stable appendices: %v", err))
+		return r
+	}
+
+	// The mirror infers deletion from the candidate's file set, so a missing
+	// stable appendix could be an intentional drop or a stale/incomplete
+	// candidate. Require every drop to be declared; an undeclared or unknown
+	// drop fails closed before any write.
+	declared := map[string]bool{}
+	for _, name := range dropAppendices {
+		declared[filepath.Base(name)] = true
+	}
+	dropNames := map[string]bool{}
+	var undeclared, unmatched []string
+	for _, appendix := range stableAppendices {
+		base := filepath.Base(appendix.Path)
+		if candidateAppendixNames[base] {
+			continue
+		}
+		dropNames[base] = true
+		if !declared[base] {
+			undeclared = append(undeclared, base)
+		}
+	}
+	for name := range declared {
+		if !dropNames[name] {
+			unmatched = append(unmatched, name)
+		}
+	}
+	sort.Strings(undeclared)
+	sort.Strings(unmatched)
+	if len(undeclared) > 0 {
+		r.Issues = append(r.Issues, fmt.Sprintf("candidate no longer carries stable appendix(es): %s — promote would delete them. Re-run with `--drop-appendix <file>` for each, or restore the file(s) in the candidate.", strings.Join(undeclared, ", ")))
+	}
+	if len(unmatched) > 0 {
+		r.Issues = append(r.Issues, fmt.Sprintf("--drop-appendix names no missing stable appendix: %s", strings.Join(unmatched, ", ")))
+	}
+	if len(r.Issues) > 0 {
+		return r
+	}
+
 	// Prepare every mandatory artifact before changing accepted truth.
 	baselinePath, baselineData, err := baseline.PrepareUnitBaseline(repoRoot, unitName, content)
 	if err != nil {
@@ -276,7 +338,7 @@ func Promote(repoRoot, unitName string) *Result {
 		return r
 	}
 	var staged []stagedCopy
-	var removals, publicationActions []string
+	var removals, stableRemovals, publicationActions []string
 	for _, appendix := range appendixCopies {
 		src := filepath.Join(repoRoot, filepath.FromSlash(appendix.Source))
 		dst := filepath.Join(repoRoot, filepath.FromSlash(appendix.Destination))
@@ -333,8 +395,18 @@ func Promote(repoRoot, unitName string) *Result {
 		publicationActions = append(publicationActions, "Promoted promise state to stable")
 	}
 
+	// Every stable-owned appendix the candidate round no longer carries is
+	// removed in the same commit, so stable mirrors candidate.
+	for _, appendix := range stableAppendices {
+		if candidateAppendixNames[filepath.Base(appendix.Path)] {
+			continue
+		}
+		stableRemovals = append(stableRemovals, filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
+		publicationActions = append(publicationActions, fmt.Sprintf("Removed stale stable appendix: %s", appendix.Path))
+	}
+
 	// Stable content, its baseline, and candidate removal share one commit.
-	if err := commitStaged(staged, removals...); err != nil {
+	if err := commitStaged(staged, append(removals, stableRemovals...)...); err != nil {
 		r.Issues = append(r.Issues, fmt.Sprintf("Failed to commit promote: %v", err))
 		return r
 	}

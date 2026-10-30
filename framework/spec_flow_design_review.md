@@ -112,7 +112,7 @@ items verify; appendices are explanatory), the promise granularity standard
 (one promise, one behavior subject — `core/promise_model.md` §Granularity),
 and the dependency lifecycle (cycles,
 provider derivation, publication ordering) as one coherent design, not as
-separate optional features. Tooling execution and removal reference integrity
+separate optional features. Tooling execution and the mechanical reference checks
 are `spec_flow_review`'s surface, not this review's default scope.
 
 Project-instance migration design must be judged as part of `design_foundation`.
@@ -400,7 +400,7 @@ The `entry_robustness_probe` must use abstract prompt families that test the hoo
 8. `targeted_gate_prompt` — verifies direct main-session execution without `gate-plan` or complete-cache publication
 9. `rule_promote_prompt` — verifies that rule promotion requires validate only and does not invent extra gates
 10. `read_only_design_prompt` — verifies that discussing design does not grant write authority
-11. `stable_exception_prompt` — verifies normal design uses promote while routed remove/update retain their narrow stable exceptions
+11. `stable_exception_prompt` — verifies normal design uses promote while the `spec_flow_update` migration and whole-object deletion retain their narrow stable writes
 
 For each prompt family, the probe must record:
 

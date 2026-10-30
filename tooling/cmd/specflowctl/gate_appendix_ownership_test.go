@@ -44,6 +44,79 @@ func ownershipCheckCandidate(t *testing.T, root, unit string) {
 	currentVerifyFixture(t, root, unit, "candidate", "")
 }
 
+// runCandidateGates runs the full candidate validate/verify gate set for a
+// unit without publishing it.
+func runCandidateGates(t *testing.T, root, name string) {
+	t.Helper()
+	runID := grPlan(t, root, "--gate", "validate", "--unit", name, "--target", "candidate")
+	run := mustLoadRun(t, root, runID)
+	for _, ck := range run.Coverage {
+		session, err := gaterun.BuildSessionSpec(root, run, []string{ck.Key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		scopes := map[string][]string{}
+		for _, key := range session.CheckKeys {
+			for _, path := range session.ReadRefs {
+				scopes[key] = append(scopes[key], path+": all")
+			}
+		}
+		grSubmitOK(t, root, runID, ck.Key, grValidateReport(session.CheckKeys, scopes))
+	}
+	grFinalizeOK(t, root, runID)
+	verify := grPlan(t, root, "--gate", "verify", "--unit", name, "--target", "candidate")
+	sharedFinish(t, root, verify)
+}
+
+// publishUnitThroughGates runs the full candidate validate/verify gate set and
+// publishes the unit to stable — the standard pre-promote fixture.
+func publishUnitThroughGates(t *testing.T, root, name string) {
+	t.Helper()
+	runCandidateGates(t, root, name)
+	var out, errOut bytes.Buffer
+	if err := runPromote([]string{"--repo-root", root, "--unit", name}, &out, &errOut); err != nil {
+		t.Fatalf("publish %s: %v\n%s", name, err, out.String())
+	}
+}
+
+func TestPromoteCLIRequiresDropDeclaration(t *testing.T) {
+	root, _, _ := sharedFixture(t)
+	// First round publishes the unit with an appendix, so stable owns it.
+	grWriteFile(t, root, "docs/specs/units/candidate/appendix/unit_auth_protocol.md", "---\nunit: auth\n---\n\n# Protocol\n")
+	publishUnitThroughGates(t, root, "auth")
+
+	// Second round forks the published unit and drops the appendix candidate-side.
+	var forkOut, forkErr bytes.Buffer
+	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &forkOut, &forkErr); err != nil {
+		t.Fatalf("fork: %v\n%s", err, forkOut.String())
+	}
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/appendix/unit_auth_protocol.md")); err != nil {
+		t.Fatal(err)
+	}
+	runCandidateGates(t, root, "auth")
+
+	var out, errOut bytes.Buffer
+	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err == nil {
+		t.Fatal("promote must fail without --drop-appendix")
+	}
+	if !strings.Contains(out.String(), "unit_auth_protocol.md") {
+		t.Fatalf("expected the dropped appendix to be named, got:\n%s", out.String())
+	}
+	stableAppendix := filepath.Join(root, "docs/specs/units/stable/appendix/unit_auth_protocol.md")
+	if _, err := os.Stat(stableAppendix); err != nil {
+		t.Fatalf("stable appendix must survive the refused promote: %v", err)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if err := runPromote([]string{"--repo-root", root, "--unit", "auth", "--drop-appendix", "unit_auth_protocol.md"}, &out, &errOut); err != nil {
+		t.Fatalf("promote with declaration: %v\n%s%s", err, out.String(), errOut.String())
+	}
+	if _, err := os.Stat(stableAppendix); !os.IsNotExist(err) {
+		t.Fatalf("declared drop must remove the stable appendix, got %v", err)
+	}
+}
+
 func ownershipPublish(t *testing.T, root, unit string) {
 	t.Helper()
 	ownershipCheckCandidate(t, root, unit)
@@ -134,7 +207,7 @@ func TestAppendixDestinationOwnershipAllowsNormalLifecycle(t *testing.T) {
 
 func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
 	root, _, _ := sharedFixture(t)
-	removalPublishUnit(t, root, "auth")
+	publishUnitThroughGates(t, root, "auth")
 	before, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
 	if err != nil || !before.Fresh {
 		t.Fatalf("initial auth cache: %+v %v", before, err)

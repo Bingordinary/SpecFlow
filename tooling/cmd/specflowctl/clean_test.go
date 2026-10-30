@@ -11,6 +11,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/operation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 func TestCleanDryRunAndApply(t *testing.T) {
@@ -229,17 +230,126 @@ func TestPlanSweepClearsConsumedInputManifest(t *testing.T) {
 	}
 }
 
-func TestRemoveSweepsOrphanedRun(t *testing.T) {
+func TestCleanSweepsOrphanedRun(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 
+	// Deleting the unit's spec files is an ordinary edit; `clean` reclaims the
+	// run whose target spec no longer exists.
+	if err := os.Remove(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_auth.md")); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
-	if err := runRemove([]string{"--repo-root", repoRoot, "--unit", "auth"}, &stdout, &stderr); err != nil {
-		t.Fatalf("remove: %v\n%s", err, stdout.String())
+	if err := runClean([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("clean: %v\n%s", err, stdout.String())
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "meta", "gate_runs", runID)); !os.IsNotExist(err) {
-		t.Fatal("run of the removed unit survived the removal sweep")
+		t.Fatal("orphaned run survived the clean sweep")
+	}
+}
+
+// A retired target's durable per-target records are reclaimed mechanically:
+// deleting the unit's spec files (an ordinary edit) leaves its validation
+// caches, promise state and publication baseline orphaned, and the sweep
+// removes them. A unit that still exists in one layer is never reclaimed.
+func TestCleanReclaimsRetiredTargetDurableState(t *testing.T) {
+	root, _, _ := sharedFixture(t)
+	publishUnitThroughGates(t, root, "auth")
+
+	baseline := filepath.Join(root, "docs/specs/meta/baseline/unit/auth.yaml")
+	cacheDir := filepath.Join(root, "docs/specs/meta/validation/unit/auth")
+	if _, err := os.Stat(baseline); err != nil {
+		t.Fatalf("fixture must publish a baseline: %v", err)
+	}
+	if _, err := os.Stat(cacheDir); err != nil {
+		t.Fatalf("fixture must publish a validation cache: %v", err)
+	}
+
+	// The unit still exists in the stable layer: a clean must reclaim nothing.
+	var stdout, stderr bytes.Buffer
+	if err := runClean([]string{"--repo-root", root}, &stdout, &stderr); err != nil {
+		t.Fatalf("clean: %v", err)
+	}
+	if strings.Contains(stdout.String(), "Delete durable state: unit auth") {
+		t.Fatalf("clean reclaimed a target that still exists:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(baseline); err != nil {
+		t.Fatalf("a live target's baseline must survive: %v", err)
+	}
+
+	// Retire the unit: neither layer carries it any more.
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/stable/unit_auth.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	if err := runClean([]string{"--repo-root", root, "--dry-run"}, &stdout, &stderr); err != nil {
+		t.Fatalf("clean --dry-run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Delete durable state: unit auth") {
+		t.Fatalf("dry run did not report the retired target's durable state:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(baseline); err != nil {
+		t.Fatal("dry run deleted the durable state")
+	}
+
+	stdout.Reset()
+	if err := runClean([]string{"--repo-root", root}, &stdout, &stderr); err != nil {
+		t.Fatalf("clean: %v", err)
+	}
+	if _, err := os.Stat(baseline); !os.IsNotExist(err) {
+		t.Fatal("clean left the retired target's baseline")
+	}
+	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
+		t.Fatal("clean left the retired target's validation cache")
+	}
+}
+
+// A deferred finding whose owner unit has been retired can never be disposed
+// by the run it is routed to, so the sweep drops it from the ledger. Entries
+// owned by a unit that still exists, and the shared judgment records, stay.
+func TestCleanDropsOrphanedDeferredFindings(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpec(t, root, "auth")
+	grWriteSpec(t, root, "order")
+
+	entry := func(id, owner, source string) validationcache.DeferredEntry {
+		return validationcache.DeferredEntry{
+			FindingID: id, OwnerUnit: owner, SourceUnit: source,
+			SourceRun: "20260101-000000-aaaaaa", Severity: "P2",
+			Text: "pending finding", Detail: "detail", SourceKey: "code:contracts.js",
+			EvidencePath: "contracts.js", Reason: "ownership evidence",
+		}
+	}
+	ledger := validationcache.DeferredLedger{Entries: []validationcache.DeferredEntry{
+		entry("orphan", "auth", "order"),
+		entry("live", "order", "auth"),
+	}}
+	if err := validationcache.WriteDeferredLedger(root, ledger); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/unit_auth.md")); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if err := runClean([]string{"--repo-root", root}, &stdout, &stderr); err != nil {
+		t.Fatalf("clean: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Drop deferred findings owned by: auth") {
+		t.Fatalf("clean did not report the orphaned deferral:\n%s", stdout.String())
+	}
+
+	after, err := validationcache.ReadDeferredLedger(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := after.PendingForUnit("auth"); len(got) != 0 {
+		t.Fatalf("orphaned deferral survived: %+v", got)
+	}
+	if got := after.PendingForUnit("order"); len(got) != 1 {
+		t.Fatalf("live deferral was dropped: %+v", got)
 	}
 }
 

@@ -37,9 +37,6 @@ var bootstrapGoldenTriggers = []string{
 	"fresh@candidate",
 	"fresh@stable",
 	"fresh@all",
-	"remove@{unit}",
-	"remove@{rule}",
-	"remove@{unit}:appendix:{filename.md}",
 	"deps@all",
 	"deps@{unit}",
 	"deps@{rule}",
@@ -209,9 +206,9 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 
 	requireText(t, text, "- unit: **fork/create → edit → validate → verify → promote**")
 	requireText(t, text, "- rule: **fork/create → edit → validate → promote**")
-	requireText(t, text, "- removal: **agent decision → structured-reference check → transactional deletion**")
+	requireText(t, text, "Deletion is an ordinary file edit")
 	requireText(t, text, "Read-only requests remain read-only")
-	requireText(t, text, "authorized spec removal (`framework/removal_workflow.md`) and exact `spec_flow_update` migration")
+	requireText(t, text, "a **mirror publication**: for the promoted unit the stable file set becomes the candidate file set")
 
 	assertRoute := func(trigger string, required, forbidden []string) {
 		t.Helper()

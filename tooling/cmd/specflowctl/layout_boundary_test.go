@@ -56,11 +56,12 @@ func TestLayoutAccessFailureStopsCommandBoundaries(t *testing.T) {
 				}
 
 				// Exercise the ordinary process entry from the project cwd: neither
-				// a missing nor an obsolete fingerprint may bypass removal checks.
+				// a missing nor an obsolete fingerprint may bypass the layout
+				// boundary before a write command runs.
 				for _, fingerprint := range []string{"", "obsolete-build"} {
 					toolingfreshness.BuildFingerprint = fingerprint
 					var stdout, stderr bytes.Buffer
-					err := run([]string{"remove", "--unit", "demo", "--layer", "candidate", "--repo-root", repoRoot}, &stdout, &stderr)
+					err := run([]string{"promote", "--unit", "demo", "--repo-root", repoRoot}, &stdout, &stderr)
 					assertLayoutAccessRejected(t, marker, err, &stdout)
 					actual, err := os.ReadFile(candidate)
 					if err != nil || string(actual) != content {

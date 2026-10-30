@@ -42,9 +42,6 @@ func TestTargetNameValidationAcrossCommands(t *testing.T) {
 		{name: "deps rule", args: func(root, v string) []string {
 			return []string{"--rule", v, "--repo-root", root}
 		}, run: runDeps},
-		{name: "remove", args: func(root, v string) []string {
-			return []string{"--rule", v, "--repo-root", root}
-		}, run: runRemove},
 		{name: "consumers", args: func(root, v string) []string {
 			return []string{"--rule", v, "--repo-root", root}
 		}, run: runConsumers},

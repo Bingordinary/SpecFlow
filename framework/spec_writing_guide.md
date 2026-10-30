@@ -155,7 +155,7 @@ Refs are bare unit or rule names; the ref resolves to the target's current conte
 
 The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
 
-Evidence has a defined lifecycle (see §8): adoption records observed behavior, redesigned domains remove their obsolete evidence sections, and the agent decides whether the final appendix should be deleted through `framework/removal_workflow.md`. Set `evidence_appendix_ref` to `none` when it no longer supports this unit. Zombie, orphan, and residual evidence are detected by validate Check 4 at default severity P1.
+Evidence has a defined lifecycle (see §8): adoption records observed behavior, redesigned domains remove their obsolete evidence sections, and the agent decides whether the final appendix should be deleted by deleting its candidate file (promote then drops the stable copy). Set `evidence_appendix_ref` to `none` when it no longer supports this unit. Zombie, orphan, and residual evidence are detected by validate Check 4 at default severity P1.
 
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
@@ -255,7 +255,7 @@ rule_scope: global|bound
 
 `promotion_owner_unit` is an optional documentation field. It may be present to indicate which unit owns the promotion decision, but it has no effect on tooling behavior.
 
-A rule may exist without formal consumers. Record useful retention rationale in its body; absence of consumers does not determine deletion. See `framework/removal_workflow.md`.
+A rule may exist without formal consumers. Record useful retention rationale in its body; absence of consumers does not determine deletion. Retiring a rule is an ordinary file edit.
 
 ### 6.1 Rule Creation
 
@@ -288,11 +288,11 @@ When extracting existing unit-local formal truth into a rule:
 Bound shared rule consumer discovery must use only current-layer unit frontmatter `rule_refs`.
 Rule files must not provide consumer truth. `bound_objects` is ignored as a consumer source.
 
-**Current-layer semantics:** consumer discovery resolves candidate first, stable fallback. This is impact analysis, not deletion approval. Removal checks both physical layers after the planned deletion; publish surviving objects that drop references before final removal. See `framework/removal_workflow.md`.
+**Current-layer semantics:** consumer discovery resolves candidate first, stable fallback. This is impact analysis, not deletion approval. When you delete a referenced object, publish the surviving objects that drop the reference, so their next `validate` does not report a dangling reference.
 
-### 6.4 Spec Removal
+### 6.4 Spec Deletion
 
-Units, bound and global rules, and appendices use `framework/removal_workflow.md`. The agent decides whether their responsibility or constraint ended, then specifies exact targets to `specflowctl remove`. No consumers is not a deletion reason. Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
+Units, bound and global rules, and appendices are deleted by deleting their files — there is no removal command and no deletion approval protocol. The agent decides whether a responsibility or constraint has ended; no consumers is not a deletion reason. Deleting an appendix is deleting its candidate file (promote then drops the stable copy); retiring a whole unit or rule is deleting its candidate and stable files. The affected unit's next `validate` reports any dangling structured reference. The tooling reclaims a retired target's durable records — its validation caches, promise state, publication baseline, and the deferred findings it owned — at the next sweep (`gate-plan`, a successful `promote`, or `specflowctl clean`), so deleting the spec files is the whole deletion: no manual meta cleanup is required (see `framework/validation_cache.md` §Run lifecycle). Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
 
 ## 7. Acceptance Criteria
 
@@ -491,7 +491,7 @@ Each unit appendix must:
 
 Before a unit fork or promote writes any file, the tooling resolves the complete appendix copy set and checks every existing destination's path and frontmatter ownership. The destination must belong to the same unit. A different owner, unreadable file, or missing/inconsistent ownership rejects the operation with the destination path before changing main specs, appendices, candidates, caches or baselines. The same ownership check applies to every appendix; it does not authorize another unit to replace an existing file.
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all appendix files. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk. After editing, explicitly delete an obsolete draft appendix using the candidate-only removal sequence in `framework/removal_workflow.md`.
+When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all appendix files. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk. After editing, delete an obsolete draft appendix by deleting its candidate file; promote removes the stable copy.
 
 All appendix files must use the `/appendix/` subdirectory under the layer directory:
 - Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
@@ -500,9 +500,9 @@ The candidate may have additional candidate appendices.
 
 **Body references:** The spec body references appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`), never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. See §12.
 
-### Spec Removal
+### Spec Deletion
 
-Follow `framework/removal_workflow.md` for unit, rule, and appendix deletion. Appendix replacement removes references in candidate, deletes the old candidate appendix with `--layer candidate`, normally checks and publishes the surviving unit, then explicitly deletes the old stable appendix. Whole-unit removal includes all owned appendices and does not require a publication cycle.
+Deletion is an ordinary file edit; there is no removal command. Appendix replacement removes the old appendix references in the candidate, deletes the old candidate appendix, then normally checks and promotes the surviving unit — promote drops the old stable appendix as a mirror, so no separate stable-layer step remains. Retiring a whole unit or rule is deleting its candidate and stable files.
 
 ### Evidence Appendix Lifecycle
 
@@ -512,7 +512,7 @@ The replacement path is incremental, matching how real projects replace old beha
 
 1. **Adoption round:** the appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
 2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (remove the evidence appendix from its `affects.appendices`, provide design rationale) and the corresponding appendix section is retired (deleted). Other domains keep their evidence references.
-3. **Final round:** after the agent confirms the evidence appendix is obsolete, remove its final references and use the candidate-then-stable appendix removal sequence in `framework/removal_workflow.md`.
+3. **Final round:** after the agent confirms the evidence appendix is obsolete, remove its final references and delete its candidate file (promote then drops the stable copy).
 
 Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
 
@@ -582,7 +582,7 @@ A Spec is not a post-hoc implementation journal (§15.1 Current truth only); it 
 1. **Planning Phase (Proposed Changes Mandate):** When an agent or engineer plans a feature, refactoring, or bug fix, any affected unit's candidate spec must be explicitly declared as a first-class change item before code files. If no candidate spec exists yet, running `specflowctl fork --unit <name>` (or creating the candidate spec) is a declared prerequisite. If the modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria, an explicit one-sentence Spec Impact Assessment must state that fact. Silence on spec impact is prohibited.
 2. **Execution Phase (Spec-First Order):** When implementing the approved plan, the candidate spec must be updated first (establishing new constraints, updated state flow, and acceptance criteria), and only then may implementation code and tests be written or modified to satisfy the spec.
 3. **Verification Phase:** The candidate spec's acceptance items form the verification baseline against which the implementation is verified (`verify@{unit}`).
-4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its appendix sections (per `framework/removal_workflow.md`; contract content left without a covering item is failed by `validate` Check 5a's appendix coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
+4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its appendix sections (delete the candidate appendix; contract content left without a covering item is failed by `validate` Check 5a's appendix coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
 
 An undeclared removal is not a candidate change: the round's declared scope owns it. The checks close the one-sided failure modes — an item removed while its design remains is failed by coverage extraction, a design removed while its item remains is failed by orphan detection — but a behavior both sides still carry is indistinguishable from an intended behavior, so retirement is a declared-change responsibility, not a document-diff check.
 

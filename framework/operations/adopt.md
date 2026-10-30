@@ -74,7 +74,7 @@ Other behavior domains keep their evidence references and continue to waive rati
 
 ### Removal (final round)
 
-When the agent confirms the final evidence appendix no longer supports any behavior, remove the last obsolete sections and its references, set `evidence_appendix_ref` to `none`, then follow the candidate-then-stable appendix sequence in `framework/removal_workflow.md`. This explicit removal prevents obsolete evidence from returning in later forks.
+When the agent confirms the final evidence appendix no longer supports any behavior, remove the last obsolete sections and its references, set `evidence_appendix_ref` to `none`, then delete the candidate appendix file (promote drops the stable copy). This prevents obsolete evidence from returning in later forks.
 
 ### Enforcement
 

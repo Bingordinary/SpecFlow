@@ -70,7 +70,6 @@ func TestInitCreatesValidRunState(t *testing.T) {
 		"framework/unit_validate_checklist.md",
 		"framework/unit_verify_checklist.md",
 		"framework/unit_promote_workflow.md",
-		"framework/removal_workflow.md",
 		"tooling/cmd/specflowctl/validate.go",
 	} {
 		if !containsString(truthSlice.InputFiles, input) {
@@ -1115,7 +1114,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"unit_validate_checklist.md",
 		"unit_verify_checklist.md",
 		"unit_promote_workflow.md",
-		"removal_workflow.md",
 		"core/promise_model.md",
 		"operations/issues.md",
 	}
@@ -1158,7 +1156,6 @@ func createReviewRunRepo(t *testing.T) string {
 		"tooling/internal/fork/fork.go",
 		"tooling/internal/gaterun/gaterun.go",
 		"tooling/internal/promote/promote.go",
-		"tooling/internal/removal/removal.go",
 		"tooling/internal/unitgraph/unitgraph.go",
 		"tooling/internal/specvalidation/specvalidation.go",
 		"tooling/internal/specvalidation/promises.go",

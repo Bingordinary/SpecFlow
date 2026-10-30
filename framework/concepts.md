@@ -6,13 +6,12 @@ Normal user-triggered paths:
 
 - unit: **fork/create → edit → validate → verify → promote**
 - rule: **fork/create → edit → validate → promote**
-- removal: **agent decision → structured-reference check → transactional deletion**
 
 ## State Model
 
-**File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms.
+**File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms. Deletion is an ordinary file edit: delete the candidate file (and, to retire a whole unit or rule, its stable file too). There is no separate removal command or workflow, and no deletion approval protocol.
 
-Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote except authorized spec removal (`framework/removal_workflow.md`) and exact `spec_flow_update` migration. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
+Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote — a **mirror publication**: for the promoted unit the stable file set becomes the candidate file set, so an appendix the candidate round dropped is removed on promote once it is declared with `--drop-appendix` — except exact `spec_flow_update` migration. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
 
 Code is observed behavior, candidate is proposed intent, stable is prior agreement. None wins automatically. During `verify`, present divergence and let the user decide.
 
@@ -49,7 +48,6 @@ Resolve mode, then read the target row and its required packages.
 | `reverify@{unit}` | Discover evidence for all items, including carried; delta/repair with `--inputs-file`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `promote@{target}` | `specflowctl resolve --target {target}`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
-| `remove@{unit}` / `remove@{rule}` / `remove@{unit}:appendix:{filename.md}` | Read `framework/removal_workflow.md`; resolve targets; run remove. |
 | `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |
 | `spec_flow_update` | Follow `framework/operations/update.md`; only its migration step may edit stable structure. |
 | `spec_flow_version` | Follow `framework/operations/version.md`. |
@@ -66,7 +64,7 @@ Project entry instructions, not this router, own meta-governance commands.
 
 **2. Gates are user-triggered; promote checks applicable gates.** Never promote without confirmation. Unit: validate+verify (the verify gate carries the alignment and quality lenses). Rule: validate. Never start/repeat any gate without its trigger. P0/P1 blocks promote (`framework/agent_suggestion_rules.md`, `framework/validation_cache.md`).
 
-**3. Gates do not edit truth.** `validate`/`verify` write cache only. Normal stable changes use promote. Authorized spec removal (`framework/removal_workflow.md`) and `spec_flow_update` own their documented exceptions. `next`, `deps`, `doctor`, and `init` are not gates.
+**3. Gates do not edit truth.** `validate`/`verify` write cache only. Normal stable changes use promote, a mirror publication. `spec_flow_update` owns its documented migration exception. `next`, `deps`, `doctor`, and `init` are not gates.
 
 **3a. Never resolve divergence yourself.** Follow `framework/unit_verify_checklist.md` Step 7, present the analysis, and wait for the user's decision. Do not silently choose code or spec.
 

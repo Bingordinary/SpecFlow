@@ -40,7 +40,7 @@ func checkFrontmatter(repoRoot, unitName string) CheckResult {
 func CheckUnitFrontmatter(content, unitName string) CheckResult {
 	fm := specpaths.ReadFrontmatterStringMap(content)
 	if status := fm["status"]; status != "" && status != "active" {
-		return CheckResult{Name: "Frontmatter completeness", Status: Fail, Details: "unit status must be active or absent; deletion uses specflowctl remove"}
+		return CheckResult{Name: "Frontmatter completeness", Status: Fail, Details: "unit status must be active or absent"}
 	}
 
 	required := []struct {

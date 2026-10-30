@@ -80,8 +80,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runFresh(args[1:], stdout, stderr)
 	case "resolve":
 		return runResolve(args[1:], stdout, stderr)
-	case "remove":
-		return runRemove(args[1:], stdout, stderr)
 	case "clean":
 		return runClean(args[1:], stdout, stderr)
 	case "gate-plan":
@@ -129,6 +127,11 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	unitPtr := fs.String("unit", "", "unit name")
 	ruleIDPtr := fs.String("rule", "", "rule id")
+	var dropAppendices []string
+	fs.Func("drop-appendix", "stable appendix file the candidate dropped (repeatable)", func(v string) error {
+		dropAppendices = append(dropAppendices, v)
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -151,12 +154,16 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "Flags:")
 		fmt.Fprintln(stderr, "  --unit NAME      Unit name to promote")
 		fmt.Fprintln(stderr, "  --rule ID        Rule id to promote")
+		fmt.Fprintln(stderr, "  --drop-appendix FILE  Declare a stable appendix the candidate dropped (repeatable; required before promote deletes it)")
 		fmt.Fprintln(stderr, "  --repo-root PATH Repository root path (default: .)")
 		return errors.New("missing --unit or --rule flag")
 	}
 
 	if unitName != "" && ruleID != "" {
 		return errors.New("--unit and --rule are mutually exclusive")
+	}
+	if ruleID != "" && len(dropAppendices) > 0 {
+		return errors.New("--drop-appendix applies only to --unit promote")
 	}
 
 	absRoot, err := filepath.Abs(*repoRootPtr)
@@ -228,7 +235,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	result := promote.Promote(absRoot, unitName)
+	result := promote.Promote(absRoot, unitName, dropAppendices...)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))
 	if err != nil {
 		return err
@@ -275,8 +282,9 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// sweepAfterLifecycle removes local state orphaned by a successful promote or
-// remove. Cleanup is best-effort: the primary transition already committed, so
+// sweepAfterLifecycle reclaims state orphaned by a successful promote: local
+// run state and the durable per-target records of any retired target.
+// Cleanup is best-effort: the primary transition already committed, so
 // a failure is reported and never fails the command.
 func sweepAfterLifecycle(absRoot string, stderr io.Writer) {
 	err := gaterun.WithMutation(absRoot, func() error {
@@ -284,7 +292,7 @@ func sweepAfterLifecycle(absRoot string, stderr io.Writer) {
 		return err
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "Warning: local-state cleanup failed: %v\n", err)
+		fmt.Fprintf(stderr, "Warning: orphaned-state cleanup failed: %v\n", err)
 	}
 }
 
@@ -568,7 +576,6 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  surfaces   Display code-surface associations, shared files, and per-unit judgments")
 	fmt.Fprintln(w, "  fresh      Report cache freshness for all candidates or a single target")
 	fmt.Fprintln(w, "  resolve    Classify a target text as unit, rule, ambiguous, or not found (read-only)")
-	fmt.Fprintln(w, "  remove     Remove explicitly selected units, rules, and appendices after structured-reference checks")
 	fmt.Fprintln(w, "  clean      Remove disposable local state (orphaned and terminal runs, unreferenced shared tasks, plan inputs, strays, closed operations)")
 	fmt.Fprintln(w, "  gate-plan  Fix the gate run's snapshot and compute its coverage set; --format json exposes progress")
 	fmt.Fprintln(w, "  gate-extend Add supplementary evidence inputs to an open gate run in place (keeps accepted sessions)")

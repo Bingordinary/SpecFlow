@@ -7,8 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/baseline"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/localstate"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 // SweptRun identifies one run directory removed (or removable) by the
@@ -21,19 +24,32 @@ type SweptRun struct {
 	Target     string
 }
 
+// SweptTarget identifies one durable per-target record group reclaimed (or
+// reclaimable) by the sweep: the validation cache directory and the
+// publication baseline of a unit or rule whose spec file no longer exists in
+// either layer.
+type SweptTarget struct {
+	Kind string // "unit" | "rule"
+	Name string
+}
+
 // SweepResult reports one cleanup pass: run directories that can no longer
 // describe a live target or a resumable open run, run directories preserved
 // under the retired audit policy (the migration path for states written
 // before terminal runs were removed at their terminal command), shared task
 // files no surviving run references, the consumed input manifests under
-// meta/plan_inputs/, and undeclared "stray" entries under meta/ that belong
-// to no governed local-state tree.
+// meta/plan_inputs/, undeclared "stray" entries under meta/ that belong to no
+// governed local-state tree, the durable per-target records of targets whose
+// spec file no longer exists in either layer (Durable), and the deferred
+// findings those retired targets owned (Deferrals).
 type SweepResult struct {
-	Runs   []SweptRun
-	Audits []SweptRun
-	Tasks  []string
-	Inputs []string
-	Strays []string
+	Runs      []SweptRun
+	Audits    []SweptRun
+	Tasks     []string
+	Inputs    []string
+	Strays    []string
+	Durable   []SweptTarget
+	Deferrals []string
 }
 
 // PlanSweep reports what SweepOrphanedState would remove without removing
@@ -64,14 +80,20 @@ func PlanSweep(repoRoot string) (SweepResult, error) {
 // Undeclared entries under meta/ are removed as strays: meta/ is the
 // framework-owned disposable tree, an entry outside the declared layout
 // belongs to no governed local-state tree, and the sweep is where it is
-// reclaimed. The durable truth stays in the committed caches and judgment
-// records; a removed task file is recreated on demand by the next plan, and a
-// removed manifest is recreated on demand by the next plan that needs one.
+// reclaimed. The same pass reclaims a retired target's durable per-target
+// records: deleting a unit or rule's spec files is an ordinary edit, so the
+// validation cache directory, the promise state records, and the publication
+// baseline of a target that no longer exists in either layer are reclaimed
+// here, and the deferred findings that target owned are dropped from the
+// ledger — shared judgment records are never touched by this sweep (their
+// history cleanup runs inside gate-finalize). A removed task file is
+// recreated on demand by the next plan, and a removed manifest is recreated
+// on demand by the next plan that needs one.
 // Every deletion target is resolved through the local-state boundary before
 // anything is deleted: a run, shared task, plan input directory, or meta/
 // entry that resolves outside its declared state root fails closed and the
 // sweep deletes nothing. Callers must hold the repository mutation lock
-// (WithMutation): Plan does, and promote/remove/clean wrap the call.
+// (WithMutation): Plan does, and promote/clean wrap the call.
 func SweepOrphanedState(repoRoot string) (SweepResult, error) {
 	result, err := collectSweep(repoRoot)
 	if err != nil {
@@ -113,7 +135,57 @@ func SweepOrphanedState(repoRoot string) (SweepResult, error) {
 			return result, err
 		}
 	}
+	for _, target := range result.Durable {
+		if err := sweepDurableTarget(repoRoot, target); err != nil {
+			return result, err
+		}
+	}
+	if len(result.Deferrals) > 0 {
+		if err := dropRetiredDeferrals(repoRoot); err != nil {
+			return result, err
+		}
+	}
 	return result, nil
+}
+
+// sweepDurableTarget removes one retired target's durable per-target records:
+// its validation cache directory (validate/verify caches and promise state)
+// and its publication baseline. The path is proven inside the durable tree
+// before anything is deleted; a target name was validated at collection time.
+func sweepDurableTarget(repoRoot string, target SweptTarget) error {
+	cacheRel := filepath.Join("docs/specs/meta/validation", target.Kind, target.Name)
+	canonical, err := repopath.Canonical(repoRoot, cacheRel)
+	if err != nil {
+		return fmt.Errorf("resolve durable cache root for %s %s: %w", target.Kind, target.Name, err)
+	}
+	if err := os.RemoveAll(filepath.Join(repoRoot, filepath.FromSlash(canonical))); err != nil {
+		return err
+	}
+	return baseline.RemoveBaseline(repoRoot, target.Kind, target.Name)
+}
+
+// dropRetiredDeferrals rewrites the deferred-findings ledger without the
+// entries whose owner unit no longer exists in either layer: such a finding
+// can never be disposed by the run it is routed to. Shared judgment records
+// are untouched, and the ledger file is removed when no entry remains.
+func dropRetiredDeferrals(repoRoot string) error {
+	ledger, err := validationcache.ReadDeferredLedger(repoRoot)
+	if err != nil {
+		return err
+	}
+	kept := make([]validationcache.DeferredEntry, 0, len(ledger.Entries))
+	changed := false
+	for _, entry := range ledger.Entries {
+		if targetSpecExists(repoRoot, "unit", entry.OwnerUnit) {
+			kept = append(kept, entry)
+			continue
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return validationcache.WriteDeferredLedger(repoRoot, validationcache.DeferredLedger{Entries: kept})
 }
 
 // sharedTasksDir resolves the shared task directory and proves it stays
@@ -294,7 +366,116 @@ func collectSweep(repoRoot string) (SweepResult, error) {
 		return result, err
 	}
 	result.Strays = strays
+
+	durable, deferrals, err := collectOrphanTargets(repoRoot)
+	if err != nil {
+		return result, err
+	}
+	result.Durable = durable
+	result.Deferrals = deferrals
 	return result, nil
+}
+
+// collectOrphanTargets lists the durable per-target state whose target no
+// longer exists in either spec layer. It reads the validation cache tree
+// (docs/specs/meta/validation/{unit,rule}/{name}) and the baseline tree
+// (docs/specs/meta/baseline/{unit,rule}/{name}.yaml). An entry whose name is
+// not a valid target name is left alone: unprovable state is never deleted.
+// Shared judgment records under docs/specs/meta/validation/judgments/ are
+// never listed — they are shared across units and are reclaimed by
+// gate-finalize's history cleanup, not by target deletion. It also lists the
+// deferred findings whose owner unit is gone, which can never be disposed.
+func collectOrphanTargets(repoRoot string) ([]SweptTarget, []string, error) {
+	seen := map[string]bool{}
+	var targets []SweptTarget
+	add := func(kind, name string) {
+		key := kind + ":" + name
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		targets = append(targets, SweptTarget{Kind: kind, Name: name})
+	}
+	for _, kind := range []string{"unit", "rule"} {
+		for _, tree := range []string{"validation", "baseline"} {
+			dir := "docs/specs/meta/" + tree + "/" + kind
+			canonical, err := repopath.Canonical(repoRoot, dir)
+			if err != nil {
+				return nil, nil, fmt.Errorf("resolve %s: %w", dir, err)
+			}
+			entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(canonical)))
+			if err != nil && !os.IsNotExist(err) {
+				return nil, nil, fmt.Errorf("read %s: %w", dir, err)
+			}
+			for _, entry := range entries {
+				name := entry.Name()
+				if tree == "baseline" {
+					if entry.IsDir() || !strings.HasSuffix(name, ".yaml") {
+						continue
+					}
+					name = strings.TrimSuffix(name, ".yaml")
+				} else if !entry.IsDir() {
+					continue
+				}
+				if specpaths.ValidateTargetName(kind, name) != nil {
+					continue
+				}
+				if targetSpecExists(repoRoot, kind, name) {
+					continue
+				}
+				add(kind, name)
+			}
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Kind != targets[j].Kind {
+			return targets[i].Kind < targets[j].Kind
+		}
+		return targets[i].Name < targets[j].Name
+	})
+
+	// A malformed ledger is unprovable state: the sweep never acts on it, so
+	// it is skipped here and surfaced by the gate that reads it (a verify plan
+	// rejects a malformed ledger), never silently rewritten.
+	ledger, err := validationcache.ReadDeferredLedger(repoRoot)
+	if err != nil {
+		return targets, nil, nil
+	}
+	dropped := map[string]bool{}
+	for _, entry := range ledger.Entries {
+		if targetSpecExists(repoRoot, "unit", entry.OwnerUnit) {
+			continue
+		}
+		dropped[entry.OwnerUnit] = true
+	}
+	var deferrals []string
+	for unit := range dropped {
+		deferrals = append(deferrals, unit)
+	}
+	sort.Strings(deferrals)
+	return targets, deferrals, nil
+}
+
+// targetSpecExists reports whether a unit or rule spec file exists in either
+// spec layer. A target is retired only when neither layer carries it: a
+// candidate-only unit mid-round or a stable-only unit between rounds still
+// exists.
+func targetSpecExists(repoRoot, kind, name string) bool {
+	if specpaths.ValidateTargetName(kind, name) != nil {
+		return false
+	}
+	for _, layer := range []string{"candidate", "stable"} {
+		var rel string
+		if kind == "unit" {
+			rel = "docs/specs/units/" + layer + "/unit_" + name + ".md"
+		} else {
+			rel = "docs/specs/rules/" + layer + "/" + name + ".md"
+		}
+		if fileExists(filepath.Join(repoRoot, filepath.FromSlash(rel))) {
+			return true
+		}
+	}
+	return false
 }
 
 // collectMetaStrays lists the undeclared entries directly under meta/ — the

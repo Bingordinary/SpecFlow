@@ -183,6 +183,127 @@ func TestPromoteUnitSuccess(t *testing.T) {
 	}
 }
 
+func TestPromoteMirrorsCandidateFileSet(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
+
+	// A stable-owned appendix the candidate round dropped must be removed by
+	// promote (mirror publication), not left orphaned.
+	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dropped := filepath.Join(stableAppendixDir, "unit_demo_old.md")
+	if err := os.WriteFile(dropped, []byte("---\nunit: demo\n---\n\n# Old\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo", "unit_demo_old.md")
+	if !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(dropped); !os.IsNotExist(err) {
+		t.Fatalf("stable appendix the candidate dropped must be removed, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stableAppendixDir, "unit_demo_extra.md")); err != nil {
+		t.Fatalf("candidate appendix must be mirrored to stable: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra.md")); !os.IsNotExist(err) {
+		t.Fatal("candidate appendix should be removed after promote")
+	}
+	found := false
+	for _, a := range result.Actions {
+		if strings.Contains(a, "Removed stale stable appendix") && strings.Contains(a, "unit_demo_old.md") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a stale-stable-appendix removal action, actions: %v", result.Actions)
+	}
+}
+
+func TestPromoteUpdatesSameNameStableAppendix(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
+
+	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(stableAppendixDir, "unit_demo_extra.md")
+	if err := os.WriteFile(path, []byte("---\nunit: demo\n---\n\n# Old extra\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if result := Promote(repoRoot, "demo"); !result.Passed {
+		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("stable appendix must survive as an overwrite: %v", err)
+	}
+	if !strings.Contains(string(got), "# Appendix") {
+		t.Fatalf("same-name stable appendix not overwritten by candidate: %s", got)
+	}
+}
+
+func TestPromoteRefusesUndeclaredDrop(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
+
+	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
+	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dropped := filepath.Join(stableAppendixDir, "unit_demo_old.md")
+	if err := os.WriteFile(dropped, []byte("---\nunit: demo\n---\n\n# Old\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Promote(repoRoot, "demo")
+	if result.Passed {
+		t.Fatal("promote must refuse a stable-appendix drop that was not declared")
+	}
+	found := false
+	for _, issue := range result.Issues {
+		if strings.Contains(issue, "unit_demo_old.md") && strings.Contains(issue, "--drop-appendix") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the undeclared drop to be named, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(dropped); err != nil {
+		t.Fatalf("refused promote must not delete the stable appendix: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")); err != nil {
+		t.Fatalf("refused promote must not touch the candidate: %v", err)
+	}
+}
+
+func TestPromoteRejectsUnknownDrop(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeCandidateUnit(t, repoRoot, "demo")
+	writeVerifyCache(t, repoRoot, "demo")
+
+	result := Promote(repoRoot, "demo", "unit_demo_ghost.md")
+	if result.Passed {
+		t.Fatal("promote must reject a declaration that matches no missing stable appendix")
+	}
+	found := false
+	for _, issue := range result.Issues {
+		if strings.Contains(issue, "unit_demo_ghost.md") && strings.Contains(issue, "no missing stable appendix") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the unmatched declaration to be reported, issues: %v", result.Issues)
+	}
+}
+
 func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
 	repoRoot := t.TempDir()
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -415,7 +536,7 @@ func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	// already gone (removed before this promote committed), while the stable
 	// unit still lists it in rule_refs and residual baseline/cache metadata
 	// remains. The promote must not fail on the missing rule — it degrades to
-	// residual metadata cleanup, the same path `specflowctl remove` takes.
+	// residual metadata cleanup.
 	stableUnitDir := filepath.Join(repoRoot, "docs/specs/units/stable")
 	if err := os.MkdirAll(stableUnitDir, 0755); err != nil {
 		t.Fatal(err)
