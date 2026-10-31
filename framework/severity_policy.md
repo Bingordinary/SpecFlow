@@ -415,6 +415,7 @@ A finding is blocking when the spec stops being decidable or trustworthy:
 3. An assertion is unfalsifiable — no pass_condition can reveal a broken implementation (Check 5e)
 4. A §9 decision is open without a declared boundary (Check 2 Step 4); an undeclared §15.2 boundary (`needs_decision`) blocks the same way until the user decides
 5. A traceability pin points at a block that does not carry the behavior — an item's `source`, a promise's `source`, or any anchor the judgment relies on (the cache-invalidation and coverage chains go blind; the `fresh` suggestion line is a safety net, not a guarantee)
+6. Implementation transcription carried by a narrative or appendix (§15.2 disposition 2, Check 2 Step 5) or by a promise carrier (§15.2 declaration-surface rule, Check 5h step 2) — appendix truth and promise content are verify's alignment targets (Step 7), so stale transcription there drives code restoration; stale narrative transcription makes the decision record lie, and every internal change re-taxes the narrative with a §15.1 sync obligation; internal content carried as contract makes consumers depend on internals
 
 P1 is the contract-decided default for blocking findings; a P0 grade requires the §9 boundary check.
 
@@ -423,9 +424,8 @@ P1 is the contract-decided default for blocking findings; a P0 grade requires th
 The spec stays decidable today, but the mechanism that keeps it decidable is eroding. The validate instances:
 
 1. The same statement carried more than once (§15.3 duplication) — a future edit must land in several places, and missing one reopens a contradiction-class finding
-2. A mechanism narration placed on the internal side of §15.2 (disposition 2) — it inflates coverage obligations and blurs the promise/narrative boundary the source-completeness scans rely on
-3. Change history or process traces kept in the unit's own content (§15.1 residue) — future readers and executors can mistake stale notes for current design
-4. A closed decision whose rationale is not recorded (Check 2 Step 2) — the decision binds, but future edits cannot re-derive why it holds
+2. Change history or process traces kept in the unit's own content (§15.1 residue) — future readers and executors can mistake stale notes for current design
+3. A closed decision whose rationale is not recorded (Check 2 Step 2) — the decision binds, but future edits cannot re-derive why it holds
 
 **The corrosion must be named.** A P2 finding states which future judgment it corrodes — which future edit reopens which contradiction, or which review chain is blinded. A P2 that cannot name the corrosion is not parked: it is fixed now, or it is a P3.
 

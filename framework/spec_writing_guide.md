@@ -192,6 +192,16 @@ scope, or independent verification, it is a unit, not an appendix. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
 
+A promise does not certify its own content: it names its readers — consumers
+that exist independently of the promise's own declaration. The named readers
+are the units already reached by its `depends_on` edges, or a public boundary
+outside the unit graph that the promise itself declares (a public package, a
+port, a host or adapter callback). Content whose own wording places it on the
+internal side (`framework/spec_writing_guide.md` §15.2) is not made observable
+by being carried in a promise — a promise cannot declare a reader for content
+its own wording calls internal; the narrative states that boundary as a design
+decision.
+
 Provenance is explicit: every promise, and every acceptance item that verifies
 a promise, declares `source:` with the heading text of the Design Narrative
 block it projects. `source` records where the contract comes from; it is not
@@ -544,34 +554,35 @@ If a decision is intentionally not made, the Spec must state that boundary and e
 
 ### Reader Contract
 
-A Spec's Design Narrative is written for human readers first; Promises and Acceptance Items are the execution contract that consumers and gates read. The Authoring Baseline above defines what must be made clear; this contract defines how a good Spec presents it — as a design narrative that serves four reader audiences, not as a mechanism inventory. A narrative answers "how it works and why"; an inventory only answers "what exists".
+A Spec's Design Narrative is written for human readers first; Promises and Acceptance Items are the execution contract that consumers and gates read. The Authoring Baseline above defines what must be decided; this contract defines how a good Spec presents it — as a **decision record**, not as a mechanism transcription. The narrative states what the code cannot say: why the design is what it is, which decisions are closed, where the boundaries are, and what internal policy holds with its reasons. Mechanism lives in code — code is executable, always current, and pinned by tests. Prose that transcribes mechanism creates a second source for the same facts, and §15.1 then taxes every code change with a narrative sync obligation whose omission makes the Spec lie.
+
+**Single-source rule.** A fact the code already expresses — an identifier, a structure, a call sequence, a layout — is never transcribed in prose. The narrative names such things only in role language at decision level ("state lives in the store behind the port, owned by the host"), not in implementation vocabulary ("the engine keeps a registry keyed by threadID"). The ownership test for each narrative sentence: after renaming every internal identifier, is the sentence still true? True → it is a decision, and it belongs in the narrative; false → it is transcription, and it belongs to the code.
 
 | Audience | What the reader must be able to take away |
 |---|---|
-| **Successor (no code access)** | Restate the full design after reading: how each mechanism works, how data flows, how steps sequence, where state is owned, what happens on failure, and why decisions were made — including alternatives rejected and their reasons. |
-| **Engineer** | Know how to implement without reading code: the entry point, what each normal-path step reads and writes, how boundaries are exposed, and the result shape. All design decisions are closed (the must-close list above). |
+| **Successor** | Reconstruct the design's decisions after reading: who owns each responsibility, where the boundaries are, how failure crosses them, what result shape is guaranteed, which internal policy holds and why, and which alternatives were rejected and why. The successor reads the code to learn mechanism; the narrative gives what code cannot state — decisions, reasons, boundaries. |
+| **Engineer** | Know that every design decision is closed so implementation never guesses: the responsibility owner, the entry point, where state lives, how boundary failures are exposed, the result shape, and the internal policy values with their reasons (the must-close list above). The engineer reads the code for the mechanism; the narrative guarantees no decision is left open. |
 | **Designer / product manager** | Understand the module's value and position: what problem it solves, its place in the system, its relation to neighboring modules, and what it does not do. This layer must not require code or runtime knowledge. |
 | **Acceptance items** | Acceptance items are the means of verifying that the design was implemented. They cover verifiable behavior contracts (written to the code's real capability), but they do not carry design expression. |
 
-**Information layers.** A well-formed Spec presents the unit in four layers, from general to specific:
+**Information layers.** A well-formed Spec presents the unit in three layers, from general to specific:
 
 1. **Value / function layer** — what problem the unit solves, its position in the system, its relationships, and its boundaries (serves the designer / product manager).
-2. **Design narrative layer** — mechanisms, data flow, sequencing, state ownership, failure behavior, and decision rationale including rejected alternatives (serves the successor).
-3. **Implementation guidance layer** — entry points, step-by-step read/write behavior, boundary exposure, and result shape, with all decisions closed (serves the engineer).
-4. **Promise and verification layers** — the stable contract (`## Promises`) and the acceptance items that prove it (`## Acceptance Items`), kept minimal and separate (see §7).
+2. **Decision narrative layer** — responsibility ownership, boundaries and non-goals, failure exposure at boundaries, internal policy with reasons, and decision rationale including rejected alternatives (serves the successor and the engineer). No mechanism transcription (§15.2).
+3. **Promise and verification layers** — the stable contract (`## Promises`) and the acceptance items that prove it (`## Acceptance Items`), kept minimal and separate (see §7).
 
 **Document shape (normative order — enforced by §13.10 and `validate` Check 15):** for a unit main Spec:
 
 ```text
-Design Narrative       → background/value, design narrative, boundaries, and
-                         implementation guidance, expressed as ### subsections
+Design Narrative       → background/value, decision records, and boundaries,
+                         expressed as ### subsections
 Promises               → the stable contract consumers read (see §Promise Model)
 Acceptance Items       → the items that prove each promise (see §7)
 ```
 
 Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-prefixed spec paths); design expression lives in the narrative and structured fields, while the promise block is the formal behavior carrier (see §4).
 
-**Ordering statements and the content boundary.** The required ordered-step account does not conflict with §15.2's exclusion of internal rendering order, prompt block layout, and internal section ordering: §15.2 decides whether an ordering statement may be stated, this contract decides whether the stated content is clear. See §15.2 "Ordering and layout against §9" for where the boundary falls.
+**Ordering statements and the content boundary.** The decision-closure obligation on ordered steps does not conflict with §15.2's exclusion of internal rendering order, prompt block layout, and internal section ordering: §15.2 decides whether an ordering statement may be stated, this contract decides whether the stated content is clear. See §15.2 "Ordering and layout against §9" for where the boundary falls.
 
 **Enforcement (validate Check 10).** This contract is enforced at validate time by the clarity check: one independent session reads the unit's complete spec — the main spec and every appendix — and reports what is unclear, underspecified, or internally contradictory. It judges directly whether the human-readable part states the design clearly enough for its readers to understand it without guessing, and whether any statement conflicts with another; there is no reconstruction step and no second session. An internal contradiction, an unclosed implementation-affecting decision, or a passage a reader cannot understand is a P0/P1 finding. A declarative unit (§14.4's type/contract units) satisfies the check by stating its shape clearly — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The check is defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition, not an upper bound on readability.
 
@@ -714,7 +725,11 @@ Declare paths relevant to the acceptance item. Whether each declaration actually
 
 This section is the single authoritative definition of what content belongs in a Spec at all. The validate checks that enforce it (unit: Check 1 — the §15.1 mechanical pre-pass, Check 2 Step 5, Check 5a, Check 5e, Check 5h, Check 7 step 8; rule: Check 6) cite this section and must not restate or redefine it. §14 governs who owns a truth across units; this section governs whether a piece of content belongs in a Spec in the first place — a unit's own internals are not exempt.
 
-**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** "Externally observable" is judged from the **declaration surface**, never from implementation files: content is externally observable when a **declared consumer** reads it, is bounded by it, or is affected by it. The declaration surface of a unit is its own promises (the `## Promises` block) together with the promises of every unit named by its promises' `depends_on` edges. The declaration surface of a rule is the units that consume it through `rule_refs`. A caller, dependent unit, or other consumer that no declaration names is not a declared consumer and cannot make content observable — the judgment is a claim about what the Spec declares, not about runtime behavior, and the runtime observation that would settle it (the implementation files) is outside the judgment surface. Content that no declared consumer reads, is bounded by, or is affected by is not established as observable by the Spec; §15.2 defines its disposition — prohibited outright when the subject is the unit's own design record or the content's own statement places it on the internal side, and an undeclared boundary requiring a decision otherwise.
+**The boundary:** a Spec states only content that is **currently true, externally observable, and not stated elsewhere.** "Externally observable" is judged from the **declaration surface**, never from implementation files: content is externally observable when a **declared consumer** reads it, is bounded by it, or is affected by it. The declaration surface of a unit is its own promises (the `## Promises` block) together with the promises of every unit named by its promises' `depends_on` edges. The declaration surface of a rule is the units that consume it through `rule_refs`. A caller, dependent unit, or other consumer that no declaration names is not a declared consumer and cannot make content observable — the judgment is a claim about what the Spec declares, not about runtime behavior, and the runtime observation that would settle it (the implementation files) is outside the judgment surface.
+
+**A promise does not certify its own content.** Content is made observable by a reader the declaration names, and a reader named by the same promise that carries the content is not such a reader — otherwise any internal fact written into a promise would declare its own consumer. A promise's content is externally observable only when the promise names a reader that exists independently of the promise's own declaration: a unit already reached by a `depends_on` edge, or a public boundary outside the unit graph that the promise itself declares (a public package, a port, a host or adapter callback). Content whose own wording places it on the internal side cannot be made observable by being carried in a promise — a promise cannot declare a reader for content its own wording calls internal; §15.2 defines its disposition, and the narrative states that boundary as a design decision.
+
+Content that no declared consumer reads, is bounded by, or is affected by is not established as observable by the Spec; §15.2 defines its disposition — prohibited outright when the subject is the unit's own design record or the content's own statement places it on the internal side, and an undeclared boundary requiring a decision otherwise.
 
 ### 15.1 Current truth only
 
@@ -731,16 +746,16 @@ Change history belongs to version control. When a behavior is retired, its narra
 
 The Spec states externally observable behavior: content a declared consumer reads to use this unit safely. The judgment is made from the declaration surface defined in §15, never from implementation files, so one document yields one verdict rather than one verdict per reading of the sentence.
 
-**Prohibited — internal implementation detail**, whether of this unit or of another unit:
+**Prohibited — implementation transcription**, whether of this unit or of another unit, in every carrier (narrative, promise, acceptance items):
 
 - internal type and struct definitions, internal field names and layouts
 - internal function or method names, internal call sequences and step orders
 - internal data structures and their operations
-- internal buffer sizes, queue capacities, and thresholds
-- internal retry/backoff values and internal timing
 - internal rendering order, prompt block layout, internal section ordering
 - internal module, package, or file layout; code file paths in narrative
 - language-level primitives (`sync.RWMutex`, `map[string]any`, channel primitives)
+
+**Internal policy values** (internal buffer sizes, queue capacities, thresholds, retry/backoff values, internal timing) are decisions, not transcription. Stated in the narrative **as a decision with its reason** ("compression triggers at 90% capacity, because below that the eviction tail starves the hot set"), they are legal design expression; the ownership test of §9 — still true after renaming every internal identifier — is the placement judgment. They are prohibited in a promise and in an acceptance item: neither carrier states internal policy, both state externally observable contract (§15 declaration surface; item subjects are judged by Check 5a step 9).
 
 **Prohibited — the unit's own design record:** content whose subject is the Spec document itself — its sections, headings, or field values, an appendix's layout, or any other property of the design record (for example "the unit's document contains six sections"). The Spec document's structure is a format constraint of this framework, enforced mechanically on the file (validate Check 15, §13), so it is never restated as an acceptance item. The boundary is the record, not the product: a document the unit produces for its consumers is the unit's output, and its observable properties are behavior stated under the categories below.
 
@@ -753,19 +768,19 @@ The Spec states externally observable behavior: content a declared consumer read
 - timing and consistency guarantees a declared consumer must respect (sync vs async, ordering, timeouts)
 - observable limits and configuration a declared consumer sets or is bounded by
 
-**Default dispositions.** The declaration surface decides each case, so no reviewer is asked for a negative existence claim:
-1. A declared consumer reads, is bounded by, or is affected by the content → externally observable; it belongs in the Spec.
-2. The statement itself places the content on the internal side — it matches a prohibited category above, or uses internal wording such as "internal", "engine-internal", "not exposed", "not open to the host" → prohibited on that wording alone, and no proof that no consumer can observe the value is required.
+**Default dispositions.** The declaration surface decides each case, so no reviewer is asked for a negative existence claim. The dispositions apply in a **fixed order**: disposition 2 is judged first, and a disposition-2 hit is final — disposition 1 cannot drop it.
+1. A declared consumer reads, is bounded by, or is affected by the content, and the content's own wording does not place it on the internal side (disposition 2) → externally observable; it belongs in the Spec. For content carried by a promise, the consumer must be a reader the promise names (§15 — a `depends_on` consumer, or the public boundary the promise declares).
+2. The statement itself places the content on the internal side — it matches an implementation-transcription category above, or uses internal wording such as "internal", "engine-internal", "not exposed", "not open to the host" → prohibited on that wording alone, and no proof that no consumer can observe the value is required. A declared consumer cannot lift this disposition, and a promise cannot declare a reader for content its own wording calls internal. A narrative internal-policy value stated as a decision with its reason does not hit this disposition (see Internal policy values above).
 3. The content states a concrete implementation value, name, layout, ordering, or mapping that fits no prohibited category, is tied to no declared consumer, and is declared on neither side → the boundary is **undeclared**. It is neither passed by default nor failed by inference: it is reported as a `needs_decision` — is this a contract whose consumer the Spec must declare, or an internal detail to retire? Design narrative that describes behavior without asserting such a concrete fact is design expression under §9 and raises no boundary question.
 
 §14.1's Ownership Law governs who may declare a contract anchor across units; it does not exempt a unit from this boundary for its own internals.
 
-**Ordering and layout against §9.** §9's Reader Contract requires the narrative to state how ordered steps connect, while the prohibited list above excludes internal rendering order, prompt block layout, and internal section ordering. The roles separate the two rules: §15.2 governs *what content may be stated*; §9 governs *whether the stated content is clear*. An ordering statement is permitted when it is the observable sequencing guarantee a declared consumer must respect — the ordering entry in the allowed list above — and prohibited when it specifies the internal layout, rendering, or section order through which this unit realizes that sequence. Where a unit's ordered output crosses to a declared consumer that is not a unit (a model reading the prompt, a host reading an event stream), the sequencing guarantee is contract content and is stated behaviorally; the internal block layout that produces it is not.
+**Ordering and layout against §9.** §9's decision closure requires the narrative to close how ordered steps connect, while the implementation-transcription list above excludes internal rendering order, prompt block layout, and internal section ordering. The roles separate the two rules: §15.2 governs *what content may be stated*; §9 governs *whether the stated content is clear*. An ordering statement is permitted when it is the observable sequencing guarantee a declared consumer must respect — the ordering entry in the allowed list above — and prohibited when it specifies the internal layout, rendering, or section order through which this unit realizes that sequence. Where a unit's ordered output crosses to a declared consumer that is not a unit (a model reading the prompt, a host reading an event stream), the sequencing guarantee is contract content and is stated behaviorally; the internal block layout that produces it is not.
 
 ### 15.3 Not stated elsewhere
 
 - **No test execution recipes and no test doubles.** `verification_method` states the method in one sentence (for example "Go test for demo behavior"). Step-by-step test plans, expected call sequences against stubs, and test-double names belong in the test code, not the Spec (see §14.2 Anti-Pattern C).
-- **Each statement is stated once.** The design narrative states how the unit works and why; the promise block states the stable contract consumers read; the acceptance item set states the specific checks that prove each promise. Mechanism narration inside a promise or acceptance item duplicates the design narrative and is removed — the promise keeps the normative contract, the item keeps the verifiable condition.
+- **Each statement is stated once.** The design narrative states the design decisions and their reasons (§9 decision record); the promise block states the stable contract consumers read; the acceptance item set states the specific checks that prove each promise. Mechanism transcription inside a promise or acceptance item is removed — the promise keeps the normative contract, the item keeps the verifiable condition; transcription in any carrier is a §15.2 violation, owned by Check 2 Step 5 (narrative and appendices), Check 5h step 2 (promise carriers), and Check 5a step 9 (item subjects).
 
 ### 15.4 Section order
 

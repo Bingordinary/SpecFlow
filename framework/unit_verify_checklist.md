@@ -445,7 +445,7 @@ Suppressed by spec (N):
 
 **Purpose:** Cross-reference every static structure declared in the spec body and appendices against the actual implementation code. This catches missing interfaces, wrong signatures, and inconsistent data definitions that acceptance items alone might miss.
 
-**Why this exists:** Acceptance items describe "what to verify" but the spec (body + appendices) describes "how it's built." If a protocol definition or data structure in the spec differs from what's implemented, verify must catch it — even if the acceptance items pass.
+**Why this exists:** Acceptance items describe "what to verify" but the spec's contract carriers (the promises' structured content) and appendix truth declare the structures the unit is built from. If a protocol definition or data structure declared there differs from what's implemented, verify must catch it — even if the acceptance items pass.
 
 **Execution steps:**
 
@@ -473,6 +473,8 @@ The **Match semantics** column defines the comparison protocol between spec and 
 
 - **Exact match**: Everything the spec declares must exist in code in exactly identical form. Any deviation (missing field, different signature) → MISMATCH, using the severity from the row.
 - **Subset match (spec ⊆ code)**: The spec describes the minimum contract for the declaration. Code must contain all spec-declared fields/values; extra code fields/values do not constitute a MISMATCH — record as a note. Match rule: spec ⊆ code.
+
+**Decision-record anchors.** The Design Narrative is a decision record (`framework/spec_writing_guide.md` §9): its blocks are matched on the behavior and decisions they state, never on identifier spelling. An internal identifier rename with unchanged behavior and decisions is not a MISMATCH — the narrative does not pin internal identifiers. If a narrative passage does transcribe an identifier or an internal structure, that transcription is a validate finding (Check 2 Step 5, per §15.2), not an alignment target: judge the behavior and decisions the passage states, and leave the transcription to validate. Structurally verifiable declarations are extracted from the contract carriers (the promises' structured content) and appendix truth per the table above.
 
 3. For each declaration found in the spec, locate the corresponding implementation. Use the **Match semantics** from the extraction table above to determine the correct outcome:
 
