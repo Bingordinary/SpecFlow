@@ -41,7 +41,7 @@ func TestDeltaItemEditDoesNotForceUnrelatedDesignKeys(t *testing.T) {
 	deltaRun := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
 	if grContainsString(coverageKeysOf(run), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(run))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(run))
 	}
 	if run.CoverageByKey("item:auth:auth.core") == nil {
 		t.Fatalf("the edited acceptance item must re-run, got %v", coverageKeysOf(run))
@@ -246,7 +246,7 @@ func TestDeltaItemEditCarriesUnchangedItems(t *testing.T) {
 	deltaRun := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
 	if grContainsString(coverageKeysOf(run), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(run))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(run))
 	}
 	if run.CoverageByKey("item:auth:auth.login") == nil {
 		t.Fatalf("the edited item must re-run, got %v", coverageKeysOf(run))
@@ -256,9 +256,6 @@ func TestDeltaItemEditCarriesUnchangedItems(t *testing.T) {
 	}
 	if !grContainsString(run.CarriedKeys, "item:auth:auth.logout") {
 		t.Fatalf("expected the untouched item among the carry candidates, got %v", run.CarriedKeys)
-	}
-	if run.Review != nil {
-		t.Fatal("a verify delta run records no review")
 	}
 }
 

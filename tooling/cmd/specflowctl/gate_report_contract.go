@@ -106,26 +106,6 @@ type gateReportContract struct {
 
 func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateReportContract {
 	c := gateReportContract{Format: "text", Verdicts: []reportVerdict{}, Requirements: []reportRequirement{}}
-	if session.Kind == gaterun.SessionKindDeltaReview {
-		c.Verdicts = append(c.Verdicts, reportVerdict{
-			Line:              "Review result",
-			Allowed:           []string{"accept", "recheck", "escalate-full"},
-			ReasonRequiredFor: []string{"accept", "recheck", "escalate-full"},
-		})
-		c.Requirements = append(c.Requirements, reportRequirement{
-			ID:          "review-result",
-			Description: "exactly one `Review result: accept|recheck|escalate-full` line with a reason",
-			When:        "always", MinCount: 1, MaxCount: 1,
-			Allowed: []string{"accept", "recheck", "escalate-full"},
-		})
-		c.Requirements = append(c.Requirements, reportRequirement{
-			ID:          "recheck-keys",
-			Description: "each Recheck key is written exactly as the mission prints it under \"Standing conclusions\" (a relationship key is `relationship:<name>`); the coverage-group id and the report's `check-{n}` label are not accepted",
-			When:        "if_recheck", MinCount: 0, MaxCount: -1,
-		})
-		c.Template = "Review result: <accept|recheck|escalate-full> — <reason>\nRecheck: <key>[, <key>...]   # required when the result is recheck; each key exactly as printed under \"Standing conclusions\"\n"
-		return c
-	}
 	var lines []string
 	codeKeys := map[string]bool{}
 	for _, key := range session.CheckKeys {

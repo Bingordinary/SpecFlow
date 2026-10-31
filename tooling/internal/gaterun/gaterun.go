@@ -56,9 +56,9 @@ const (
 	TargetCandidate = "candidate"
 	TargetStable    = "stable"
 
-	// Run modes: full runs the complete coverage set; delta plans a change
-	// review over the mechanically detected change set plus the mechanically
-	// forced keys; repair adds a failure record's failed and invalidated
+	// Run modes: full runs the complete coverage set; delta plans the
+	// mechanically derived partial scope plus the mechanically forced keys;
+	// repair (verify only) adds a failure record's failed and invalidated
 	// judgments to the forced set.
 	ModeFull   = "full"
 	ModeDelta  = "delta"
@@ -195,10 +195,9 @@ type SessionSpec struct {
 
 // Splittable reports whether the assigned key batch can be reduced into
 // smaller sessions of the same lens. A single-key batch is already
-// atomic — the unit-level scan, a lone item, the delta review key, or the
-// final cross synthesis — so the over-capacity recovery has no smaller batch
-// to produce and does not apply to it (see framework/verification_scope.md
-// §Session capacity).
+// atomic — the unit-level scan, a lone item, or the final cross synthesis — so
+// the over-capacity recovery has no smaller batch to produce and does not
+// apply to it (see framework/verification_scope.md §Session capacity).
 func (s *SessionSpec) Splittable() bool {
 	return len(s.Keys) > 1
 }
@@ -375,16 +374,6 @@ type Run struct {
 	Coverage       []CoverageKey                `json:"coverage"`
 	Relationships  []string                     `json:"relationships"`
 	CarriedResults []SessionResult              `json:"carried_results,omitempty"`
-
-	// Review-scoped runs (delta) carry the mechanically detected change set
-	// and the recorded review outcome. The change set decides nothing itself;
-	// the reviewer's recorded judgment does (see internal/gaterun/review.go).
-	ChangeReport   *validationcache.ChangeReport `json:"change_report,omitempty"`
-	ChangeSetFP    string                        `json:"change_set_fingerprint,omitempty"`
-	BaselineKeys   []string                      `json:"baseline_keys,omitempty"`
-	BaselineStatus map[string]string             `json:"baseline_status,omitempty"`
-	Review         *ReviewRecord                 `json:"review,omitempty"`
-	Escalated      bool                          `json:"escalated,omitempty"`
 
 	// DeferredFindings are the pending deferrals this run's unit must dispose,
 	// loaded from the deferred-findings ledger at plan time (verify unit runs;

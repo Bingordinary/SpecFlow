@@ -243,8 +243,8 @@ func prepareSharedChecks(root string, run *Run) error {
 		return err
 	}
 	// An explicit re-run must execute even when a valid public record already
-	// covers the file. A `--rerun` key or a conclusion the change review named
-	// is forced: reuse would silently satisfy it with the old conclusion and
+	// covers the file. A `--rerun` key is forced: reuse would silently satisfy
+	// it with the old conclusion and
 	// leave the recorded re-run unfulfilled, and the accepted shared task would
 	// re-materialize it as an accepted session (issue #80 review path). Forced
 	// public keys skip the reuse search and take their own task.
@@ -255,11 +255,6 @@ func prepareSharedChecks(root string, run *Run) error {
 	forced := map[string]bool{}
 	for _, raw := range run.RerunKeys {
 		if key, ok := normalizeGateKey(run, raw, currentSet); ok {
-			forced[key] = true
-		}
-	}
-	if run.Review != nil {
-		for _, key := range run.Review.Recheck {
 			forced[key] = true
 		}
 	}
@@ -674,7 +669,7 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	// declaration (the declaration layer was removed with the change-review
 	// model). A delta re-runs a key when its own object changed, or when the
 	// key now requires evidence the record never read; everything else is a
-	// carry decision — the validate change review, or the verify scope
+	// carry decision — the mechanical validate boundary, or the verify scope
 	// derivation.
 	mainSpec := mainSpecRef(run)
 	mainSpecText := func() (string, error) {

@@ -121,7 +121,7 @@ var mechanismSections = map[string][]string{
 		"Completion — Persist Gate Cache",
 		"Write cache (tooling finalize)",
 		"Stable-only mode",
-		"Delta re-run (revalidate@{rule})",
+		"No partial run for rules",
 	},
 	"shared_judgments.md": {
 		"Audience",
@@ -161,7 +161,7 @@ var mechanismSections = map[string][]string{
 		"Verify Synthesis Report Keys",
 		"Validate Synthesis Report Keys",
 		"Change detection",
-		"Review Session and Outcome Vocabulary",
+		"The validate delta boundary",
 		"Verify scope and the mechanical floor",
 		"Execution",
 		"Failure recovery",

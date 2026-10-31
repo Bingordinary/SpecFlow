@@ -505,8 +505,8 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 
 // writeChangeReportSections prints the mechanically detected change set for
 // every STALE gate — what changed and where. The report is cache-side and
-// read-only; the delta reviewer consumes the same change set when a re* run
-// is triggered. Gates that are not STALE print nothing.
+// read-only; the validate delta plan consumes the same change set when a re*
+// run is triggered. Gates that are not STALE print nothing.
 func writeChangeReportSections(stdout io.Writer, absRoot, targetKind, targetName string, statuses map[string]gateStatus) {
 	for _, cmd := range []string{"validate", "verify"} {
 		if statuses[cmd] != gateStale {
@@ -845,29 +845,25 @@ func gatePassed(status gateStatus) bool {
 	return status == gateFresh || status == gateOK
 }
 
-// gateAdvice renders the recovery suggestion for a non-fresh gate. A STALE
-// failure record and a BLOCKED one are recovered the same way: resolve the
-// P0/P1 findings, then run repair. A salvaged pass cache's STALE state is
-// recovered by repair because its pending invalidations make delta refuse the
-// baseline. A plain STALE pass cache is delta-recoverable. MISSING has no
-// usable baseline and needs the full command (see
-// framework/verification_scope.md §Delta Runs → Failure recovery).
-//
-// Every delta/repair suggestion is emitted only when the baseline actually
-// supports a partial run: the same predicate the planner enforces
-// (gaterun.PartialRunBaselineError) is consulted before suggesting, so the
-// read-only report and gate-plan never disagree about whether the baseline
-// supports a partial run. When it does not — an unreadable cache, missing
-// required recorded evidence, or a stale judgment schema — the advice is the
-// full command with the actual reason, and the status word stays STALE: the
-// cache can still satisfy the gate, only its partial-run baseline capability
-// is gone (see framework/verification_scope.md §Gate status vocabulary).
+// gateAdvice renders the recovery suggestion for a non-fresh gate. A rule has
+// no partial run, so its only recovery is the full validate confirmation run.
+// A unit validate cache recovers through `revalidate`, which derives the scope
+// mechanically (an external-only change re-runs the external group; anything
+// else covers the full scope). Verify keeps its delta/repair split. MISSING
+// and an unusable baseline have no partial-run path and need the full command.
 func gateAdvice(command, targetKind, repoRoot, targetName string, status gateStatus, repairOnly, failureRecord bool) string {
 	switch status {
 	case gateStale, gateBlocked:
+		if targetKind == "rule" {
+			recovery := validationcache.RecoveryCommand(command, targetKind, targetName, false)
+			if status == gateBlocked || failureRecord {
+				return fmt.Sprintf("-> resolve P0/P1, then run the full `%s` confirmation (rules have no partial run)", recovery)
+			}
+			return fmt.Sprintf("-> required: %s (the full confirmation run — rules have no partial run)", recovery)
+		}
 		baseline, err := validationcache.ReadGateBaseline(repoRoot, targetKind, targetName, command)
 		if err != nil {
-			return fmt.Sprintf("-> required: %s@%s (full run — the baseline cannot be read: %v; delta/repair cannot use it)", command, targetName, err)
+			return fmt.Sprintf("-> required: %s@%s (full run — the baseline cannot be read: %v; a partial run cannot carry its judgments)", command, targetName, err)
 		}
 		if baseline.UnusableReason != "" {
 			return fmt.Sprintf("-> required: %s@%s (full run — %s)", command, targetName, baseline.UnusableReason)
@@ -875,17 +871,20 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 		if reason := gaterun.PartialRunBaselineError(baseline); reason != nil {
 			return fmt.Sprintf("-> required: %s@%s (full run — %v)", command, targetName, reason)
 		}
+		if command == "validate" {
+			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope: external-only or full)", validationcache.RecoveryCommand(command, targetKind, targetName, false))
+		}
 		if status == gateBlocked || failureRecord {
-			return fmt.Sprintf("-> resolve P0/P1, then re%s@%s (repair recovery from the failure record)", command, targetName)
+			return fmt.Sprintf("-> resolve P0/P1, then %s (repair recovery from the failure record)", validationcache.RecoveryCommand(command, targetKind, targetName, true))
 		}
 		if repairOnly {
-			return fmt.Sprintf("-> suggestion: re%s@%s --mode repair (repair recovery from pending invalidations)", command, targetName)
+			return fmt.Sprintf("-> suggestion: %s (repair recovery from pending invalidations)", validationcache.RecoveryCommand(command, targetKind, targetName, true))
 		}
-		return fmt.Sprintf("-> suggestion: re%s@%s (delta recovery)", command, targetName)
+		return fmt.Sprintf("-> suggestion: %s (delta recovery)", validationcache.RecoveryCommand(command, targetKind, targetName, false))
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateInvalid:
-		return fmt.Sprintf("-> required: %s@%s (full run — the cache lacks the promise-pin format marker or its promise_pins block; delta/repair cannot use it)", command, targetName)
+		return fmt.Sprintf("-> required: %s@%s (full run — the cache lacks the promise-pin format marker or its promise_pins block; a partial run cannot carry its judgments)", command, targetName)
 	default:
 		return ""
 	}
@@ -893,7 +892,7 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 
 // appendixAdvice renders the recovery suggestion for the appendix gate. The
 // full validate run is required only when the validate cache itself is FRESH:
-// a delta re-run then stops early ("cache is fresh — no changes to review"),
+// a delta re-run then stops early ("cache is fresh — no changes"),
 // so it cannot pick up newly added appendices. When the validate
 // cache is not FRESH, the delta re-run (revalidate@) restores appendix
 // coverage instead — its rewrite carries a complete files list including
@@ -916,11 +915,6 @@ func freshDetail(summary *validationcache.CacheSummary) string {
 		summary.Result, summary.Mode, summary.FileCount, noneIfEmpty(summary.Timestamp))
 	if summary.Basis != "" {
 		detail += fmt.Sprintf(" · basis: %s", summary.Basis)
-	}
-	if summary.ReviewChangeSet != "" {
-		detail += fmt.Sprintf(" · change review: %s (%s)", summary.ReviewResult, shortHash(summary.ReviewChangeSet))
-	} else if summary.ReviewResult != "" {
-		detail += fmt.Sprintf(" · review: %s", summary.ReviewResult)
 	}
 	return detail
 }

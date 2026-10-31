@@ -693,7 +693,7 @@ func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	if !strings.Contains(output, "P0") {
 		t.Fatalf("expected P0 finding detail, got:\n%s", output)
 	}
-	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
 		t.Fatalf("expected repair-recovery advice for the blocked gate, got:\n%s", output)
 	}
 }
@@ -727,7 +727,7 @@ func TestFreshUnitDetailBlockedWithPendingInvalidation(t *testing.T) {
 	if !strings.Contains(output, "Pending invalidations will also re-run: item:user_auth:session.") {
 		t.Fatalf("expected the pending invalidation to be named, got:\n%s", output)
 	}
-	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
 		t.Fatalf("expected the resolve-then-repair advice, got:\n%s", output)
 	}
 }
@@ -791,8 +791,41 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	if !strings.Contains(output, "Verify is a failure record with 1 P0 and 0 P1 finding(s); resolve them before promoting") {
 		t.Fatalf("expected the failure-record findings to stay disclosed, got:\n%s", output)
 	}
-	if !strings.Contains(output, "-> resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
+	if !strings.Contains(output, "-> resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
 		t.Fatalf("expected resolve-then-repair advice, got:\n%s", output)
+	}
+}
+
+// TestFreshRuleStaleAdvisesFullConfirmation pins the rule recovery path: a rule
+// target has no partial run, so fresh must recommend the full confirmation run
+// instead of a revalidate command the planner rejects.
+func TestFreshRuleStaleAdvisesFullConfirmation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
+	var b strings.Builder
+	for c := 1; c <= 6; c++ {
+		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
+	}
+	for c := 1; c <= 6; c++ {
+		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
+	}
+	grSubmitOK(t, repoRoot, runID, "checks", b.String())
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use mTLS.\n")
+
+	output, err := freshRun(t, repoRoot, "--rule", "b_rule_http")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	if !strings.Contains(output, "-> required: validate@b_rule_http (the full confirmation run — rules have no partial run)") {
+		t.Fatalf("expected the full-confirmation advice, got:\n%s", output)
+	}
+	if strings.Contains(output, "revalidate@b_rule_http") {
+		t.Fatalf("a rule target must not be advised to run a partial run, got:\n%s", output)
 	}
 }
 
@@ -1267,7 +1300,7 @@ func TestFreshDeltaAdviceRequiresCurrentJudgmentSchema(t *testing.T) {
 	if !strings.Contains(out, "validate  STALE") {
 		t.Fatalf("expected validate STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "-> suggestion: revalidate@iter (delta recovery)") {
+	if !strings.Contains(out, "-> suggestion: revalidate@iter (the tool derives the scope: external-only or full)") {
 		t.Fatalf("expected delta recovery suggestion for a current-schema baseline, got:\n%s", out)
 	}
 

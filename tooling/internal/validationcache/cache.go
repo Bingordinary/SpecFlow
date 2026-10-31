@@ -11,8 +11,8 @@
 //
 // specflowctl promote reads both caches and re-hashes every listed file: any
 // content change stales the recorded evidence. The ordered chunk sequence
-// localizes the change for the delta review (gate-plan --mode delta/repair);
-// it never decides skip scope.
+// localizes the change for the mechanical delta plan (gate-plan --mode
+// delta/repair); it never decides skip scope.
 package validationcache
 
 import (
@@ -51,7 +51,8 @@ const (
 
 // PromisePinFormat is the gate-cache format that binds provider contracts by
 // promise fingerprint instead of whole-file content. A unit cache without this
-// marker is INVALID: there is no delta/repair recovery, only a full run.
+// marker is INVALID: no partial run may carry its judgments (a validate plan
+// covers the full scope; a verify run needs the full command).
 const PromisePinFormat = "promise-v1"
 
 // CheckResult describes whether a cache file is fresh. Category records
@@ -61,15 +62,39 @@ type CheckResult struct {
 	Fresh    bool
 	Category CheckCategory
 	Reason   string
-	// RepairOnly marks a STALE state whose only recovery is the repair run:
-	// the cache carries pending invalidations (a salvaged pass cache) or is a
-	// failure record (delta refuses a failure-record baseline). A plain STALE
-	// state is delta-recoverable.
+	// RepairOnly marks a STALE state whose only partial recovery is the verify
+	// repair run: the cache carries pending invalidations (a salvaged pass
+	// cache) or is a failure record. Validate has no repair mode — a unit
+	// validate STALE state recovers through `revalidate` (which derives the
+	// scope and covers the full scope for a salvaged or failed baseline), and a
+	// rule through the full confirmation run.
 	RepairOnly bool
 	// FailureRecord marks a cache whose result is `fail`. A BLOCKED failure
 	// record keeps its P0/P1 disclosure; a STALE failure record is recovered
-	// by resolving the findings and running repair, never delta.
+	// by resolving the findings and running the gate's recovery (a unit
+	// validate: the derived run covers the full scope; a rule validate: the
+	// full confirmation run; verify: the repair run).
 	FailureRecord bool
+}
+
+// RecoveryCommand renders the command that restores a non-fresh gate cache.
+// A rule target has no partial run — the rule file is the rule's own content —
+// so only the full validate confirmation run can restore its cache. A unit
+// validate cache recovers through revalidate: the planner derives the scope,
+// and a failure record or a salvaged pass cache yields a full-scope plan.
+// Verify recovers through reverify, with --mode repair when its only partial
+// recovery is the repair run.
+func RecoveryCommand(command, targetKind, targetName string, repairOnly bool) string {
+	if command == "validate" {
+		if targetKind == "rule" {
+			return "validate@" + targetName
+		}
+		return "revalidate@" + targetName
+	}
+	if repairOnly {
+		return "reverify@" + targetName + " --mode repair"
+	}
+	return "reverify@" + targetName
 }
 
 // cacheFile is the parsed representation of a cache file.
@@ -106,12 +131,6 @@ type cacheFile struct {
 	// invalid. It is separate from the historical per-check status map.
 	InvalidatedChecks []string `yaml:"invalidated_checks,omitempty"`
 	invalidatedSeen   bool     `yaml:"-"`
-	// Review fields record the delta review that accepted the change set.
-	ReviewChangeSet string   `yaml:"reviewed_change_set,omitempty"`
-	ReviewResult    string   `yaml:"review_result,omitempty"`
-	ReviewSession   string   `yaml:"review_session,omitempty"`
-	ReviewRecheck   []string `yaml:"review_recheck,omitempty"`
-	ReviewDeclined  []string `yaml:"review_declined,omitempty"`
 	// PinFormat is the cache's contract-pinning format marker. Unit caches
 	// must carry PromisePinFormat; a cache without it is INVALID (see
 	// CategoryInvalid).
@@ -536,9 +555,9 @@ func capitalize(s string) string {
 
 // failureRecordStaleReason adds the failure-record facts the raw staleness
 // chain cannot state: a stale failure record still has unresolved P0/P1
-// findings, and its recovery is resolve-then-repair, never a delta re-run.
-// Pending invalidations are named because repair re-runs them with the failed
-// judgments.
+// findings, and its recovery is resolve-then-recover (validate: the derived
+// run covers the full scope; verify: the repair run). Pending invalidations
+// are named because the recovery re-runs them with the failed judgments.
 func failureRecordStaleReason(staleReason, command string, cache *cacheFile) string {
 	note := fmt.Sprintf("%s is a failure record with %d P0 and %d P1 finding(s); resolve them before promoting",
 		capitalize(command), cache.P0Count, cache.P1Count)
@@ -610,16 +629,6 @@ type CacheWrite struct {
 	// failure record by gate-invalidate. A normal finalize leaves it empty,
 	// which clears every invalidation the completed plan re-ran.
 	InvalidatedChecks []string
-	// ReviewChangeSet/ReviewResult/ReviewSession/ReviewRecheck record the
-	// delta review that accepted this cache's change set (delta/repair runs
-	// only). They are the audit trail the promote boundary trusts.
-	// ReviewDeclined records the carry candidates the review declined to
-	// re-run (the offered candidate set minus ReviewRecheck).
-	ReviewChangeSet string
-	ReviewResult    string
-	ReviewSession   string
-	ReviewRecheck   []string
-	ReviewDeclined  []string
 	// Judgments is the machine-readable synthesis baseline JSON. It is stored
 	// in a marked comment block before the human-readable body.
 	Judgments string
@@ -845,21 +854,6 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 			}
 		}
 	}
-	if w.ReviewChangeSet != "" {
-		fmt.Fprintf(&b, "reviewed_change_set: %s\n", w.ReviewChangeSet)
-		fmt.Fprintf(&b, "review_result: %s\n", w.ReviewResult)
-		fmt.Fprintf(&b, "review_session: %s\n", w.ReviewSession)
-		if len(w.ReviewRecheck) > 0 {
-			fmt.Fprintf(&b, "review_recheck: %q\n", strings.Join(w.ReviewRecheck, ", "))
-		}
-		if len(w.ReviewDeclined) > 0 {
-			fmt.Fprintf(&b, "review_declined: %q\n", strings.Join(w.ReviewDeclined, ", "))
-		}
-	} else if w.ReviewResult != "" {
-		// A validate repair run records the review's absence without a change
-		// set (framework/validation_cache.md §Format → Change-review record).
-		fmt.Fprintf(&b, "review_result: %s\n", w.ReviewResult)
-	}
 	if len(w.InvalidatedChecks) > 0 {
 		b.WriteString("invalidated_checks:\n")
 		for _, key := range w.InvalidatedChecks {
@@ -919,10 +913,6 @@ type CacheSummary struct {
 	P3Count   int
 	Timestamp string
 	FileCount int
-	// ReviewChangeSet/ReviewResult carry the delta review summary (empty on
-	// full-run caches).
-	ReviewChangeSet string
-	ReviewResult    string
 }
 
 // ReadCacheSummary parses the given cache file (fileName is e.g.
@@ -938,21 +928,19 @@ func ReadCacheSummary(repoRoot, targetKind, targetName, fileName string) (*Cache
 		return nil, err
 	}
 	return &CacheSummary{
-		Command:         cache.Command,
-		Unit:            cache.Unit,
-		Mode:            cache.Mode,
-		Basis:           cache.Basis,
-		Result:          cache.Result,
-		Target:          cache.Target,
-		Blocking:        cache.Blocking,
-		P0Count:         cache.P0Count,
-		P1Count:         cache.P1Count,
-		P2Count:         cache.P2Count,
-		P3Count:         cache.P3Count,
-		Timestamp:       cache.Timestamp,
-		FileCount:       len(cache.Files),
-		ReviewChangeSet: cache.ReviewChangeSet,
-		ReviewResult:    cache.ReviewResult,
+		Command:   cache.Command,
+		Unit:      cache.Unit,
+		Mode:      cache.Mode,
+		Basis:     cache.Basis,
+		Result:    cache.Result,
+		Target:    cache.Target,
+		Blocking:  cache.Blocking,
+		P0Count:   cache.P0Count,
+		P1Count:   cache.P1Count,
+		P2Count:   cache.P2Count,
+		P3Count:   cache.P3Count,
+		Timestamp: cache.Timestamp,
+		FileCount: len(cache.Files),
 	}, nil
 }
 
@@ -1207,9 +1195,9 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 
 // fileFreshnessState classifies the freshness of one cache file entry
 // against the file's current content. Freshness is whole-file: any content
-// change stales the entry, and the delta change report localizes it for the
-// reviewer. There is no sub-file freshness: content-addressed regions never
-// decide skip scope.
+// change stales the entry, and the mechanical delta plan classifies the change
+// as own-content (full re-run) or external-only. There is no sub-file
+// freshness: content-addressed regions never decide skip scope.
 type fileFreshnessState int
 
 const (
@@ -1268,8 +1256,9 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 
 // checkCacheObject classifies one parsed cache and adds the failure-record
 // disclosure the raw freshness chain cannot see. A stale failure record keeps
-// its P0/P1 findings in the reason and is recoverable only by repair, because
-// delta/repair planning refuses a failure-record baseline for delta.
+// its P0/P1 findings in the reason; its recovery is the gate's recovery path
+// (a unit validate full-scope revalidate plan, a rule validate full
+// confirmation run, or verify's repair run).
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
 	result, err := classifyCache(repoRoot, targetKind, targetName, command, validResults, requiredMainFile, cache)
 	if err != nil {
@@ -1282,7 +1271,11 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 	if result.Category != CategoryStale {
 		return result, nil
 	}
-	result.RepairOnly = true
+	// A stale failure record's only partial recovery is verify's repair run.
+	// Validate has no repair mode: a unit's stale failure record recovers
+	// through revalidate (full-scope plan), and a rule's through the full
+	// confirmation run.
+	result.RepairOnly = command == "verify"
 	if cache.blockingSeen && cache.Blocking {
 		result.Reason = failureRecordStaleReason(result.Reason, command, cache)
 	}
@@ -1299,7 +1292,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 			return CheckResult{
 				Fresh:    false,
 				Category: CategoryInvalid,
-				Reason: fmt.Sprintf("%s cache lacks the promise-pin format marker (pin_format %q, expected %q) — run `%s@%s` (full); delta/repair cannot use it",
+				Reason: fmt.Sprintf("%s cache lacks the promise-pin format marker (pin_format %q, expected %q) — run `%s@%s` (full); a partial run cannot carry its judgments",
 					command, cache.PinFormat, PromisePinFormat, command, cache.Unit),
 			}, nil
 		}
@@ -1324,12 +1317,22 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 	// STALE when its own evidence changed), and the wrapper appends the
 	// pending keys to the reason.
 	if len(cache.InvalidatedChecks) > 0 && cache.Result == "pass" {
+		reason := fmt.Sprintf("%s cache carries pending invalidations (%s)", command, strings.Join(cache.InvalidatedChecks, ", "))
+		recovery := RecoveryCommand(command, targetKind, cache.Unit, true)
+		if command == "validate" {
+			if targetKind == "rule" {
+				reason += fmt.Sprintf(" — run `%s` (the full confirmation run; rules have no partial run)", recovery)
+			} else {
+				reason += fmt.Sprintf(" — run `%s` (the tool derives the scope; this baseline recovers with the full run)", recovery)
+			}
+		} else {
+			reason += fmt.Sprintf(" — run `%s`", recovery)
+		}
 		return CheckResult{
 			Fresh:      false,
 			Category:   CategoryStale,
-			RepairOnly: true,
-			Reason: fmt.Sprintf("%s cache carries pending invalidations (%s) — run `re%s@%s --mode repair`",
-				command, strings.Join(cache.InvalidatedChecks, ", "), command, cache.Unit),
+			RepairOnly: command == "verify",
+			Reason:     reason,
 		}, nil
 	}
 	if command == "verify" {
@@ -1382,20 +1385,6 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 			Fresh:    false,
 			Category: CategoryStale,
 			Reason:   fmt.Sprintf("%s cache result is %q, expected one of %v", command, cache.Result, validResults),
-		}, nil
-	}
-
-	// A validate delta pass cache exists because an independent reviewer
-	// accepted its change set; the review record is that acceptance's audit
-	// trail. A validate delta cache without one is a pre-review artifact —
-	// fail closed. Verify has no change review: its delta scope is derived
-	// mechanically from the conclusion records, so no review record exists to
-	// require.
-	if command != "verify" && cache.Result == "pass" && cache.Basis == "delta" && strings.TrimSpace(cache.ReviewChangeSet) == "" {
-		return CheckResult{
-			Fresh:    false,
-			Category: CategoryStale,
-			Reason:   fmt.Sprintf("%s cache is a delta result without a change-review record — run `%s@%s` again (review) or the full command", command, command, cache.Unit),
 		}, nil
 	}
 
@@ -1492,7 +1481,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 			return CheckResult{
 				Fresh:    false,
 				Category: CategoryStale,
-				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s@%s` to review the change set.", command, strings.Join(staleFiles, ", "), command, cache.Unit),
+				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s` to recover.", command, strings.Join(staleFiles, ", "), RecoveryCommand(command, targetKind, cache.Unit, false)),
 			}, nil
 		}
 		if res := checkPromisePinFreshness(repoRoot, targetKind, cache); res != nil {
@@ -1769,7 +1758,7 @@ func checkPromisePinFreshness(repoRoot, targetKind string, cache *cacheFile) *Ch
 		return &CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
-			Reason:   fmt.Sprintf("validate cache stale: provider promise %s. Run `validate@%s` to review the change set.", strings.Join(problems, ", "), cache.Unit),
+			Reason:   fmt.Sprintf("validate cache stale: provider promise %s. Run `revalidate@%s` to recover.", strings.Join(problems, ", "), cache.Unit),
 		}
 	}
 	return nil
@@ -2033,28 +2022,6 @@ func parseCache(data []byte) (*cacheFile, error) {
 				case "pin_format":
 					cache.PinFormat = value
 					cache.pinFormatSeen = true
-				case "reviewed_change_set":
-					cache.ReviewChangeSet = value
-				case "review_result":
-					cache.ReviewResult = value
-				case "review_session":
-					cache.ReviewSession = value
-				case "review_recheck":
-					for _, tok := range strings.Split(value, ",") {
-						key := strings.TrimSpace(tok)
-						if key == "" {
-							continue
-						}
-						cache.ReviewRecheck = append(cache.ReviewRecheck, key)
-					}
-				case "review_declined":
-					for _, tok := range strings.Split(value, ",") {
-						key := strings.TrimSpace(tok)
-						if key == "" {
-							continue
-						}
-						cache.ReviewDeclined = append(cache.ReviewDeclined, key)
-					}
 				}
 			}
 		}
@@ -2088,7 +2055,7 @@ func parseCache(data []byte) (*cacheFile, error) {
 	// is built on: every `files` entry records the chunk sequence
 	// (`chunker` + `chunks`) computed at write time. This is a required part
 	// of the format, not optional decoration: without it the entry cannot
-	// participate in the current freshness and change-review contract. The
+	// participate in the current freshness and delta contract. The
 	// chunker intentionally produces no chunk for content that normalizes to
 	// nothing (an empty or newline-only file), so a recorded block whose list
 	// is empty is valid evidence — the requirement is the recorded block, not
@@ -2293,11 +2260,6 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 		Timestamp: cache.Timestamp, GateRun: cache.GateRun,
 		Standard:          cache.Standard,
 		InvalidatedChecks: cache.InvalidatedChecks,
-		ReviewChangeSet:   cache.ReviewChangeSet,
-		ReviewResult:      cache.ReviewResult,
-		ReviewSession:     cache.ReviewSession,
-		ReviewRecheck:     append([]string(nil), cache.ReviewRecheck...),
-		ReviewDeclined:    append([]string(nil), cache.ReviewDeclined...),
 	}
 	// The candidate input surface may record the rule file under both its
 	// candidate path and its stable sibling; projecting the candidate path to
@@ -2507,8 +2469,9 @@ func resolveEntryPath(repoRoot, path string) string {
 }
 
 // GateBaseline is the read-only view of a gate's existing cache, used by
-// gate-plan to derive delta/repair session sets and by gate-finalize to merge
-// carried-over evidence. A missing cache is Exists=false.
+// gate-plan to derive partial-run session sets (validate delta and verify
+// delta/repair) and by gate-finalize to merge carried-over evidence. A missing
+// cache is Exists=false.
 type GateBaseline struct {
 	Command string
 	Exists  bool

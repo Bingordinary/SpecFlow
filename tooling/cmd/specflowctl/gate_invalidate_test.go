@@ -150,22 +150,14 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		t.Fatalf("gate-invalidate failed: %v (stderr=%s)", err, invalidateErr.String())
 	}
 
-	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	// The recovery plan is the full scope: the persisted invalidation is a
+	// state fact on the failure record, and the full run re-runs everything.
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, runID)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "structural,design" {
-		t.Fatalf("repair did not include persisted check 2's group: %s", got)
+	if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {
+		t.Fatalf("a failure-record baseline must recover with the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
 	}
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": {main + ": Description"},
-		"3": {main + ": Description"},
-		"6": {main + ": Description"},
-	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
-		"2": {main + ": Description"},
-		"4": {main + ": Description"},
-	}))
-	grSubmitClarity(t, repoRoot, runID, main)
-	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+	grSubmitValidateSessions(t, repoRoot, runID, main)
 	grFinalizeOK(t, repoRoot, runID)
 
 	baseline, err := validationcache.ReadGateBaseline(repoRoot, "unit", "auth", "validate")

@@ -34,10 +34,6 @@ type protocolChunk struct {
 // mission read rather than several full-document reads.
 func protocolSectionsFor(gate, targetKind, kind string, keys []string) ([]protocolSectionRef, error) {
 	switch {
-	case kind == gaterun.SessionKindDeltaReview:
-		return []protocolSectionRef{
-			{"verification_scope.md", 3, "The change review (validate)"},
-		}, nil
 	case kind == gaterun.SessionKindCross:
 		// The final synthesis runs for every gate that can produce findings
 		// or relationships (only a rule target never synthesizes), so its

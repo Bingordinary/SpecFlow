@@ -95,8 +95,7 @@ func TestGateStatusListingDegradesStaleRun(t *testing.T) {
 	}
 }
 
-// Issue #85: the "Next:" hint must print only commands that run. A delta run's
-// uncovered set mixes the delta_review key with check keys, and a verify run
+// Issue #85: the "Next:" hint must print only commands that run. A verify run
 // mixes item, unit, and quality kinds; one joined `gate-mission` command is
 // always rejected for mixing kinds, so the hint must emit one command per
 // runnable session — including the verify quality co-batch that keeps a design

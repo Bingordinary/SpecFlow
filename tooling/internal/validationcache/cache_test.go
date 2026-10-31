@@ -751,10 +751,10 @@ func TestCheckValidateDeltaBasis(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	// A delta-basis cache must carry its change-review record: the delta model
-	// exists because an independent reviewer accepted the change set. The
-	// basis itself never affects the mode check.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nreviewed_change_set: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nreview_result: accept\nreview_session: review\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed (incremental re-run).\n"
+	// A delta-basis cache carries no review record: its carried conclusions are
+	// justified by the recorded content, and the mechanical plan produces this
+	// basis only when that content was unchanged.
+	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed (incremental re-run).\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -764,20 +764,7 @@ func TestCheckValidateDeltaBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !result.Fresh {
-		t.Fatalf("expected a reviewed delta-basis cache to be fresh, got: %s", result.Reason)
-	}
-
-	// A delta cache without the review record is a pre-review artifact.
-	unreviewed := strings.Replace(cacheContent, "reviewed_change_set: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nreview_result: accept\nreview_session: review\n", "", 1)
-	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(unreviewed), 0644); err != nil {
-		t.Fatal(err)
-	}
-	result, err = CheckValidate(repoRoot, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Fresh || !strings.Contains(result.Reason, "change-review record") {
-		t.Fatalf("expected an unreviewed delta cache to fail closed, got: %s", result.Reason)
+		t.Fatalf("expected a delta-basis cache to be fresh, got: %s", result.Reason)
 	}
 }
 

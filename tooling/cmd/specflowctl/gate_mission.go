@@ -49,9 +49,6 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run can materialize a mission; plan a new run", run.RunID, run.Status)
 	}
-	if run.Escalated {
-		return escalatedRunError(run)
-	}
 	keys := []string{gaterun.CrossKey}
 	if !*finalPtr {
 		keys = splitKeys(*keysPtr)
@@ -66,12 +63,6 @@ func runGateMission(args []string, stdout, stderr io.Writer) error {
 		}
 		if current.Status != gaterun.StatusOpen {
 			return fmt.Errorf("gate run %s is %s", runID, current.Status)
-		}
-		// Recheck escalation under the lock: a review submission that returned
-		// escalate-full abandons the run, so no mission may be materialized or
-		// claimed for it even when the review landed after the pre-lock check.
-		if current.Escalated {
-			return escalatedRunError(current)
 		}
 		if _, err := gaterun.BuildSessionSpec(absRoot, current, keys); err != nil {
 			return err
@@ -265,8 +256,6 @@ type missionSession struct {
 	ReadInputs       []missionReadInput        `json:"read_inputs"`
 	DependsOn        []string                  `json:"depends_on"`
 	Context          []string                  `json:"context,omitempty"`
-	ChangeSet        []string                  `json:"change_set,omitempty"`
-	Standing         []string                  `json:"standing_conclusions,omitempty"`
 	Dependencies     []missionDependency       `json:"dependency_results"`
 	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
@@ -302,7 +291,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	}
 	protocol := ""
 	switch {
-	case spec.Kind == gaterun.SessionKindDeltaReview || spec.Kind == gaterun.SessionKindCross:
+	case spec.Kind == gaterun.SessionKindCross:
 		// These sessions do not judge by the gate checklist: their judging
 		// standard lives in verification_scope.md (the final synthesis also
 		// judges severity_policy.md, named per inlined section below).
@@ -345,31 +334,13 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	}
 	// The scope line advertises the layer resolution section when the session's
 	// inlined standard carries it: the validate checklist inlines it, and a
-	// session that judges by another document (delta review, final synthesis)
-	// does not. Deriving it from the inlined sections keeps the advertised
-	// scope aligned with the text the reviewer actually receives.
+	// session that judges by another document (the final synthesis) does not.
+	// Deriving it from the inlined sections keeps the advertised scope aligned
+	// with the text the reviewer actually receives.
 	for _, section := range sections {
 		if section.Heading == "Target-layer applicability" {
 			session.ProtocolScope = "Target-layer applicability and " + session.ProtocolScope
 			break
-		}
-	}
-	// A run with a review session (delta/repair, or a full run preserving
-	// standing relationship conclusions) shows every session the mechanically
-	// detected change set and the standing conclusions it must judge against.
-	if run.ChangeReport != nil {
-		for _, entry := range run.ChangeReport.Entries {
-			switch entry.Kind {
-			case "changed":
-				for _, c := range entry.Changes {
-					session.ChangeSet = append(session.ChangeSet, fmt.Sprintf("%s: %s lines %d-%d", entry.Path, c.Kind, c.StartLine, c.EndLine))
-				}
-			default:
-				session.ChangeSet = append(session.ChangeSet, entry.Path+": "+entry.Kind)
-			}
-		}
-		for _, key := range run.BaselineKeys {
-			session.Standing = append(session.Standing, key+": "+run.BaselineStatus[key])
 		}
 	}
 	if state.Status == gaterun.SessionRejected {
@@ -494,22 +465,6 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 
 	fmt.Fprintf(w, "Run: %s\nGate: %s\nTarget kind: %s\nTarget name: %s\nTarget layer: %s\nSession: %s\nKind: %s\nChecks: %s\nMode: %s\n", mission.RunID, mission.Gate, mission.TargetKind, mission.TargetName, mission.Target, p.SessionID, p.Kind, strings.Join(p.CheckKeys, ", "), mission.Mode)
 	fmt.Fprintf(w, "Spec source: %s\n", mission.SpecSource)
-	if len(p.ChangeSet) > 0 {
-		fmt.Fprintln(w, "Change set (mechanically detected; complete for the input surface):")
-		for _, line := range p.ChangeSet {
-			fmt.Fprintf(w, "  - %s\n", line)
-		}
-	}
-	if len(p.Standing) > 0 {
-		if p.Kind == gaterun.SessionKindDeltaReview {
-			fmt.Fprintln(w, "Standing conclusions (accepted) — these keys are the accepted `Recheck:` values, written exactly as shown:")
-		} else {
-			fmt.Fprintln(w, "Standing conclusions (accepted):")
-		}
-		for _, line := range p.Standing {
-			fmt.Fprintf(w, "  - %s\n", line)
-		}
-	}
 	if p.Kind == gaterun.SessionKindCross {
 		fmt.Fprintf(w, "Assigned relationships: %s\n", strings.Join(p.Relationships, ", "))
 	}
@@ -722,8 +677,6 @@ func missionTextFor(kind string) string {
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
 	case gaterun.SessionKindCross:
 		return "Check only the assigned relationships using current source and accepted/carried judgments. Do not repeat local checks. Dispose existing findings and raise severity conservatively on retain or merge — the tooling derives the effective status map from your dispositions and findings. An empty relationship scope means finding disposition only."
-	case gaterun.SessionKindDeltaReview:
-		return "Review the change set against the standing conclusions: accept them, name the keys that must re-run, or escalate to a full run. Produce no check verdicts; focus on the changed content but read any input-surface file you need for context."
 	}
 	return "Judge only the session's check keys and report evidence for each judgment."
 }
@@ -738,8 +691,6 @@ func protocolScopeFor(kind string, keys []string) string {
 		return "quality assessment of " + strings.Join(keys, ", ")
 	case gaterun.SessionKindCross:
 		return "cross synthesis"
-	case gaterun.SessionKindDeltaReview:
-		return "change review"
 	default:
 		return "checks " + strings.Join(keys, ", ")
 	}

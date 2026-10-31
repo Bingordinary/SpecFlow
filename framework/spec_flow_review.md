@@ -359,7 +359,7 @@ A sub-agent is a zero-context, one-shot worker: it has no conversation history a
 
 **Scope (scenario inventory):** the current framework's sub-agent scenarios are —
 
-1. validate (including the delta/repair change-review session, kind `delta_review`), verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
+1. validate (full and delta), verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
 2. verify Step 7 mismatch-analysis semantics — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
 3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
 
@@ -384,7 +384,6 @@ The reviewer must verify the scenario inventory is complete with a deterministic
    - Exercise C: a verify alignment MISMATCH mission (the item's divergence analysis)
    - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
    - Exercise E: a validate session mission (unit or rule target) and a final-synthesis mission after accepted dependencies
-   - Exercise F: a validate change-review mission (kind `delta_review`) from a delta plan
    - Each exercise uses a distinct fixture so a static example cannot confirm itself.
 3. **Escalation (optional)** — when a checkpoint is in doubt on a produced mission or prompt, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
 
@@ -406,7 +405,7 @@ Protocol fingerprint integrity requires all of the following:
 
 5. **Authoritative mechanical check** — running `go test ./internal/judgments/ -run Protocol` from `tooling/` is the authoritative check for items 2 and 3 (section resolution and uniqueness, subtree purity, and the retained judging markers). The command selects the `TestProtocol*` test family, so every test that verifies this standard must be named `TestProtocol...`; a fingerprint-integrity test under any other name is invisible to the command. Other deterministic scripts used during the review are not a substitute for it.
 
-6. **Binding coverage** — each gate binds the standard where its own reuse happens: a verify conclusion binds it per judgment record, and a validate conclusion binds it in the cache's `standard` field (`framework/validation_cache.md` §Format → Standard binding). The review must verify both directions fail closed: `fresh` and `promote` must reject a conclusion that records no standard, or one the deployed documents no longer reproduce, and a delta/repair run must carry nothing once the standard moved. A gate whose conclusions record no standard is such a case and must be reported.
+6. **Binding coverage** — each gate binds the standard where its own reuse happens: a verify conclusion binds it per judgment record, and a validate conclusion binds it in the cache's `standard` field (`framework/validation_cache.md` §Format → Standard binding). The review must verify both directions fail closed: `fresh` and `promote` must reject a conclusion that records no standard, or one the deployed documents no longer reproduce, and a partial run must carry nothing once the standard moved. A gate whose conclusions record no standard is such a case and must be reported.
 
 The review must check protocol fingerprint integrity whenever the in-scope governance surface includes the protocol documents or `tooling/internal/judgments/protocol.go`. A narrowed review must perform this check to the extent that its scope includes them; when the scope includes neither file, the fingerprint is outside that review's surface, and the review must say so instead of implying the standard was checked. Item 5 is not scope-dependent: `go test` runs from the repository's test suite, so the structural half of this standard is enforced even when a review's scope omits these files. A pass claim for any slice covering either surface must not ignore an applicable fingerprint failure.
 

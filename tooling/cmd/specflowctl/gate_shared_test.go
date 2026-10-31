@@ -51,10 +51,6 @@ func sharedFinish(t *testing.T, root, id string) {
 		if _, ok := covered[ck.Key]; ok {
 			continue
 		}
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			grSubmitOK(t, root, id, "review", "Review result: accept — shared fixture review\n")
-			continue
-		}
 		report := grDefaultQualityReport(run, ck)
 		if ck.Kind == gaterun.SessionKindUnit {
 			report = grVerifyUnitScanReport(ck.Key)

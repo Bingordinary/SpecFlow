@@ -145,7 +145,7 @@ func TestUnitValidateCoverageReadRefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"structural", "dependencies"} {
+	for _, key := range []string{"external"} {
 		spec, serr := BuildSessionSpec(repoRoot, run, []string{key})
 		if serr != nil {
 			t.Fatal(serr)
@@ -156,7 +156,7 @@ func TestUnitValidateCoverageReadRefs(t *testing.T) {
 			}
 		}
 	}
-	for _, key := range []string{"design", "acceptance"} {
+	for _, key := range []string{"document", "design", "acceptance"} {
 		spec, serr := BuildSessionSpec(repoRoot, run, []string{key})
 		if serr != nil {
 			t.Fatal(serr)
@@ -244,7 +244,7 @@ func TestUnitValidateExcludesUnrelatedPeers(t *testing.T) {
 			t.Fatalf("adding unrelated peers changed read surface entry %d: before=%+v after=%+v", i, before.Refs, after.Refs)
 		}
 	}
-	for _, key := range []string{"structural", "dependencies"} {
+	for _, key := range []string{"external"} {
 		spec, err := BuildSessionSpec(repoRoot, after, []string{key})
 		if err != nil {
 			t.Fatal(err)
@@ -270,12 +270,12 @@ func TestUnitValidateStructuralSessionCarriesUnresolvedReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := BuildSessionSpec(repoRoot, run, []string{"structural"})
+	spec, err := BuildSessionSpec(repoRoot, run, []string{"external"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !stringInSlice(spec.ReadRefs, "rule:b_rule_missing") {
-		t.Fatalf("structural session must expose the unresolved Check 4 reference, got %+v", spec.ReadRefs)
+		t.Fatalf("the external session must expose the unresolved Check 6 reference, got %+v", spec.ReadRefs)
 	}
 }
 
@@ -364,29 +364,6 @@ func TestLoadCarriedResultsRejectsOldJudgmentSchema(t *testing.T) {
 	}
 }
 
-func TestRepairWithoutStatusMapDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
-	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "delta")
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 {
-		t.Fatalf("expected a degraded full coverage set, got %v", coverageKeysOf(run))
-	}
-	if !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
-		t.Fatalf("expected a degradation notice, got %v", run.Notices)
-	}
-}
-
-// TestPlanCommandRendersRunnableTargets pins the single renderer behind every
-// tooling message that sends a coordinator to a new plan: a unit plan must
-// carry --relationships (gate-plan rejects it otherwise), and a rule plan must
-// not carry it.
 func TestPlanCommandRendersRunnableTargets(t *testing.T) {
 	unit := &Run{Gate: GateValidate, TargetKind: TargetKindUnit, TargetName: "auth", Target: TargetCandidate}
 	rule := &Run{Gate: GateValidate, TargetKind: TargetKindRule, TargetName: "frontmatter", Target: TargetCandidate}
@@ -417,16 +394,15 @@ func TestDeltaRequiresPassBaseline(t *testing.T) {
 
 	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
 	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "delta")
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "failure record") {
-		t.Fatalf("expected the failure-record guidance, got %v", err)
-	}
-	// Repair on a status-less record degrades to the full coverage set.
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.Coverage) != 5 || !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
-		t.Fatalf("expected the degraded repair plan, got %v / %v", coverageKeysOf(run), run.Notices)
+	if run.Mode != ModeFull || len(run.Coverage) != 4 {
+		t.Fatalf("a failure-record baseline must cover the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), `result is "fail"`) {
+		t.Fatalf("expected the failure-record notice, got %v", run.Notices)
 	}
 }
 
@@ -602,172 +578,6 @@ func TestBuildSessionSpecCoBatchesCodeAndDesign(t *testing.T) {
 	}
 }
 
-// TestDeltaRepairPartialStatusMapDegrades verifies the fail-closed repair path:
-// a failure record that declares a status for only some checks must not carry
-// the status-less ones over.
-func TestDeltaRepairPartialStatusMapDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		decl := validationcache.CheckEntry{Check: key}
-		if key == "1" {
-			decl.Status = "fail"
-		}
-		decls = append(decls, decl)
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	statuses := map[string]string{"1": "fail"}
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 {
-		t.Fatalf("expected a degraded full coverage set, got %v", coverageKeysOf(run))
-	}
-	notice := strings.Join(run.Notices, " ")
-	if !strings.Contains(notice, "incomplete per-check status map") || !strings.Contains(notice, "missing: 2, 3, 4, 5, 6, 7, 8, 9, 10") {
-		t.Fatalf("expected the incomplete-status degradation with the missing checks, got %v", run.Notices)
-	}
-}
-
-// TestDeltaRepairInvalidStatusValueDegrades verifies the fail-closed repair
-// path: a status value outside pass/fail/carried cannot say which judgments
-// failed, so nothing may be carried over.
-func TestDeltaRepairInvalidStatusValueDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "3" {
-			status = "bogus"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-		statuses[key] = status
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 {
-		t.Fatalf("expected a degraded full coverage set, got %v", coverageKeysOf(run))
-	}
-	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "invalid per-check status map") || !strings.Contains(notice, "3=bogus") {
-		t.Fatalf("expected the invalid-status degradation, got %v", run.Notices)
-	}
-}
-
-// TestDeltaRepairCarriedInFullRunRecordDegrades verifies that a full-run
-// failure record (`basis: full`) declaring `carried` is malformed state: a full
-// run re-executed every judgment, so the entry cannot be trusted and the plan
-// degrades to the full coverage set.
-func TestDeltaRepairCarriedInFullRunRecordDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "3" {
-			status = "carried"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-		statuses[key] = status
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "full", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 {
-		t.Fatalf("expected a degraded full coverage set, got %v", coverageKeysOf(run))
-	}
-	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "invalid per-check status map") || !strings.Contains(notice, "3=carried") {
-		t.Fatalf("expected the illegal-carried degradation, got %v", run.Notices)
-	}
-}
-
-// TestDeltaRepairStatusMapJudgmentMismatchDegrades verifies that a status map
-// and the record's structured judgment baseline must agree on the key set: a
-// disagreement cannot say which judgments failed.
-func TestDeltaRepairStatusMapJudgmentMismatchDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: "pass"})
-		statuses[key] = "pass"
-	}
-	delete(statuses, "3")
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 {
-		t.Fatalf("expected a degraded full coverage set, got %v", coverageKeysOf(run))
-	}
-	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "does not match its judgment baseline") || !strings.Contains(notice, "unmatched: 3") {
-		t.Fatalf("expected the key-set mismatch degradation, got %v", run.Notices)
-	}
-}
-
-// TestDeltaRepairCompleteStatusMapCarriesPassingGroups verifies the positive
-// repair path: a complete, valid status map keeps the incremental plan and
-// carries the passing groups over.
-func TestDeltaRepairCompleteStatusMapCarriesPassingGroups(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "1" {
-			status = "fail"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-		statuses[key] = status
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "structural" {
-		t.Fatalf("expected the failed group to re-run, got %s", got)
-	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "10,2,4,5,7,8,9" {
-		t.Fatalf("expected the passing groups carried over, got %v", run.CarriedKeys)
-	}
-	for _, notice := range run.Notices {
-		if strings.Contains(notice, "degradation") || strings.Contains(notice, "full scope") {
-			t.Fatalf("a complete status map must not degrade, got %v", run.Notices)
-		}
-	}
-}
-
-// TestValidateDeltaWithMovedStandardRerunsEverything pins the validate standard
-// binding at plan time: a baseline judged under a different checklist cannot be
-// carried, whatever the change review would have accepted.
 func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
@@ -798,7 +608,7 @@ func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "structural,design,acceptance,dependencies,clarity" {
+	if got := strings.Join(coverageKeysOf(run), ","); got != "document,design,acceptance,external" {
 		t.Fatalf("expected the full coverage set, got %s", got)
 	}
 	if len(run.CarriedKeys) != 0 {
@@ -813,82 +623,6 @@ func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
 	}
 }
 
-// TestDeltaRepairUsesPersistedTargetedInvalidation is the cross-session
-// regression: no caller supplies --rerun after the targeted finding. The
-// repair plan must read the persisted invalidation and exclude that judgment
-// from carry-over.
-func TestDeltaRepairUsesPersistedTargetedInvalidation(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "1" {
-			status = "fail"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-		statuses[key] = status
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	if _, err := InvalidateTargeted(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, []string{"2"}); err != nil {
-		t.Fatal(err)
-	}
-	// Simulated session boundary: the repair receives no transient --rerun key.
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "structural,design" {
-		t.Fatalf("persisted check 2 must add its design group, got %s", got)
-	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "10,5,7,8,9" {
-		t.Fatalf("invalidated judgment must not be carried, got %v", run.CarriedKeys)
-	}
-	if !strings.Contains(strings.Join(run.Notices, " "), "persisted invalidations: 2") {
-		t.Fatalf("plan did not disclose the persisted invalidation: %v", run.Notices)
-	}
-}
-
-func TestDeltaRepairUnknownPersistedInvalidationDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "1" {
-			status = "fail"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-		statuses[key] = status
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-	if _, err := InvalidateTargeted(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, []string{"removed-check"}); err != nil {
-		t.Fatal(err)
-	}
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(run.Coverage) != 5 || len(run.CarriedKeys) != 0 {
-		t.Fatalf("unknown invalidation must degrade to full scope, got %v / carried %v", coverageKeysOf(run), run.CarriedKeys)
-	}
-	if !strings.Contains(strings.Join(run.Notices, " "), `re-run judgment "removed-check" is not in the current coverage surface`) {
-		t.Fatalf("missing unknown-invalidation degradation notice: %v", run.Notices)
-	}
-}
-
-// TestVerifyRepairRemovedFailedKeyDegrades is the repair-key-invariant
-// regression for a failure record's failed key whose object left the coverage
-// surface. The key can neither re-run nor carry, so the plan must cover the
-// full scope and report the degradation instead of aborting the plan.
 func TestVerifyRepairRemovedFailedKeyDegrades(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnitItemsSpec(t, repoRoot, "auth.core")
@@ -914,36 +648,6 @@ func TestVerifyRepairRemovedFailedKeyDegrades(t *testing.T) {
 	}
 	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, "is not in the current coverage surface — the plan covers the full scope") {
 		t.Fatalf("missing the unmappable-failed-key degradation notice: %v", run.Notices)
-	}
-}
-
-// TestValidateRepairRemovedFailedCheckDegrades is the validate twin of
-// TestVerifyRepairRemovedFailedKeyDegrades: a failed check key that is no
-// longer a current coverage group must degrade to the full scope, not abort.
-func TestValidateRepairRemovedFailedCheckDegrades(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: "pass"})
-		statuses[key] = "pass"
-	}
-	decls = append(decls, validationcache.CheckEntry{Check: "removed-check", Status: "fail"})
-	statuses["removed-check"] = "fail"
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "fail", "delta", true, []validationcache.FileEntry{entry}, statuses)
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatalf("a failed check no longer in the surface must degrade, not abort the plan: %v", err)
-	}
-	if len(run.Coverage) != 5 || len(run.CarriedKeys) != 0 {
-		t.Fatalf("expected the full coverage set with nothing carried, got %v / carried %v", coverageKeysOf(run), run.CarriedKeys)
-	}
-	if notice := strings.Join(run.Notices, " "); !strings.Contains(notice, `re-run judgment "removed-check" is not in the current coverage surface — the plan covers the full scope`) {
-		t.Fatalf("missing the unmappable-failed-check degradation notice: %v", run.Notices)
 	}
 }
 
@@ -994,12 +698,12 @@ func TestPlanRejectsReservedCrossItemID(t *testing.T) {
 
 // TestDeltaStableMissingBaselineMessage verifies that a stable-only target
 // with no usable confirmation baseline gets the documented message (full
-// confirmation run or fork) in both delta and repair modes.
+// confirmation run or fork) in delta mode.
 func TestDeltaStableMissingBaselineMessage(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "stable", "auth", "none", "none", "src", "")
 
-	for _, mode := range []string{ModeDelta, ModeRepair} {
+	for _, mode := range []string{ModeDelta} {
 		_, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetStable, mode, nil, nil, nil, time.Now())
 		if err == nil {
 			t.Fatalf("%s: expected the no-baseline error", mode)
@@ -1010,10 +714,10 @@ func TestDeltaStableMissingBaselineMessage(t *testing.T) {
 	}
 }
 
-// TestDeltaPlanRefusesBaselineWithoutJudgments verifies that the derivation
-// refuses a partial run that must carry judgments when the baseline cache
-// has no structured judgment state.
-func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
+// TestDeltaPlanUpgradesBaselineWithoutJudgments verifies that a baseline with
+// no structured judgment state cannot localize anything, so the plan covers
+// the full scope instead of refusing.
+func TestDeltaPlanUpgradesBaselineWithoutJudgments(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
@@ -1051,8 +755,15 @@ func TestDeltaPlanRefusesBaselineWithoutJudgments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "no structured judgment state") {
-		t.Fatalf("expected the planner to refuse the baseline, got %v", err)
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeFull || len(run.Coverage) != 4 {
+		t.Fatalf("a baseline without judgment state must cover the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "judgment state is unusable") {
+		t.Fatalf("expected the unusable-judgment-state notice, got %v", run.Notices)
 	}
 }
 
@@ -1120,66 +831,12 @@ func TestRulePlanIncludesDirectoryInputEvidence(t *testing.T) {
 	}
 }
 
-// TestDeltaRepairQuotedStatusStillReruns pins the parser's single value form: a
-// failure record that spells a check status as `" fail "` (quotes plus
-// whitespace) is a valid `fail` for the closed-set validation, so the failed
-// judgment must enter the repair re-run set — never the carried set.
-func TestDeltaRepairQuotedStatusStillReruns(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		status := "pass"
-		if key == "1" {
-			status = "fail"
-		}
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: status})
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "delta")
-
-	// Rewrite the rendered failure record's check status into the
-	// quoted-with-whitespace spelling an external writer could produce.
-	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	content, err := os.ReadFile(cachePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	patched := strings.Replace(string(content), "status: fail", "status: \" fail \"", 1)
-	if patched == string(content) {
-		t.Fatal("expected one rendered `status: fail` line to patch")
-	}
-	if err := os.WriteFile(cachePath, []byte(patched), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "structural" {
-		t.Fatalf("expected the failed group to re-run, got %s", got)
-	}
-	for _, key := range run.CarriedKeys {
-		if key == "1" {
-			t.Fatalf("a failed judgment must never be carried over, got %v", run.CarriedKeys)
-		}
-	}
-	if notice := strings.Join(run.Notices, " "); strings.Contains(notice, "degrad") || strings.Contains(notice, "incomplete") {
-		t.Fatalf("a canonical `fail` status must not degrade the plan, got %v", run.Notices)
-	}
-}
-
-// TestSessionIDAndBatching pins the computed batching identity: a
-// single-key session keeps the key as its id and a batch gets a stable derived
-// id, and the read surface is the union of the batch's keys.
 func TestSessionIDAndBatching(t *testing.T) {
 	if got := SessionID([]string{"item:auth:auth.core"}); got != "item:auth:auth.core" {
 		t.Fatalf("single-key session id = %q, want the key", got)
 	}
-	batch := SessionID([]string{"design", "structural"})
-	if batch != SessionID([]string{"structural", "design"}) || !strings.HasPrefix(batch, "batch-") {
+	batch := SessionID([]string{"design", "document"})
+	if batch != SessionID([]string{"document", "design"}) || !strings.HasPrefix(batch, "batch-") {
 		t.Fatalf("batch session id must be order-independent and derived, got %q", batch)
 	}
 
@@ -1190,14 +847,14 @@ func TestSessionIDAndBatching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := BuildSessionSpec(repoRoot, run, []string{"structural", "design"})
+	spec, err := BuildSessionSpec(repoRoot, run, []string{"document", "design"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if spec.SessionID != batch {
 		t.Fatalf("spec id = %q, want %q", spec.SessionID, batch)
 	}
-	if strings.Join(spec.CheckKeys, ",") != "1,3,6,2,4" {
+	if strings.Join(spec.CheckKeys, ",") != "1,10,2,3,4" {
 		t.Fatalf("batched check keys = %v, want the union in coverage order", spec.CheckKeys)
 	}
 	if _, err := BuildSessionSpec(repoRoot, run, []string{"not-a-key"}); err == nil {
@@ -1211,18 +868,18 @@ func TestCoverageProgressClosure(t *testing.T) {
 	run := &Run{
 		RunID: "20260917-123456-a0b1c2",
 		Coverage: []CoverageKey{
-			{Key: "structural", Kind: SessionKindChecks},
+			{Key: "document", Kind: SessionKindChecks},
 			{Key: "design", Kind: SessionKindChecks},
 		},
 	}
 	states := []*SessionState{
-		{SessionID: "structural", Keys: []string{"structural"}, Status: SessionAccepted},
+		{SessionID: "document", Keys: []string{"document"}, Status: SessionAccepted},
 	}
 	covered, uncovered, err := CoverageProgress(run, states)
-	if err != nil || covered["structural"] != "structural" || strings.Join(uncovered, ",") != "design" {
+	if err != nil || covered["document"] != "document" || strings.Join(uncovered, ",") != "design" {
 		t.Fatalf("progress = %v / %v / %v", covered, uncovered, err)
 	}
-	states = append(states, &SessionState{SessionID: "batch-x", Keys: []string{"structural"}, Status: SessionAccepted})
+	states = append(states, &SessionState{SessionID: "batch-x", Keys: []string{"document"}, Status: SessionAccepted})
 	if _, _, err := CoverageProgress(run, states); err == nil {
 		t.Fatal("a key covered by two accepted sessions must be an error")
 	}
@@ -1230,24 +887,11 @@ func TestCoverageProgressClosure(t *testing.T) {
 
 // TestPartitionBatchesGroupsRunnableSessions pins issue #85's root fix: a hint
 // that batches uncovered keys must emit sessions the tool accepts and can
-// materialize. A delta run's delta_review key stays alone; a verify run's
-// alignment and quality keys never share a batch; and a file's quality
-// `code:<file>` key co-batches its unit's `design:<unit>:<file>` key — the
-// one-pass public+design composition whose design judgment is ready without a
-// separately accepted public record.
+// materialize. A verify run's alignment and quality keys never share a batch,
+// and a file's quality `code:<file>` key co-batches its unit's
+// `design:<unit>:<file>` key — the one-pass public+design composition whose
+// design judgment is ready without a separately accepted public record.
 func TestPartitionBatchesGroupsRunnableSessions(t *testing.T) {
-	delta := &Run{
-		RunID: "20261016-130829-d75442",
-		Coverage: []CoverageKey{
-			{Key: DeltaReviewKey, Kind: SessionKindDeltaReview},
-			{Key: "design", Kind: SessionKindChecks},
-			{Key: "clarity", Kind: SessionKindChecks},
-		},
-	}
-	if got, want := PartitionBatches(delta, []string{"review", "design", "clarity"}), [][]string{{DeltaReviewKey}, {"design", "clarity"}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("delta batches = %v, want %v", got, want)
-	}
-
 	verify := &Run{
 		RunID: "20261016-130829-d75443",
 		Coverage: []CoverageKey{

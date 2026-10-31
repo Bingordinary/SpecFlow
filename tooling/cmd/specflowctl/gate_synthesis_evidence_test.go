@@ -47,10 +47,10 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 	id := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, proof))
 	desc := main + ": Description"
 	accept := main + ": Testability / Acceptance Criteria"
-	grSubmitOK(t, root, id, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{"1": {main + ": frontmatter", desc}, "3": {accept}, "6": {accept}}))
-	grSubmitOK(t, root, id, "design", "2. Design soundness: FAIL — apparent contradiction\n4. Evidence-driven consistency: PASS — checked\n[P1] design — apparent contradiction (actionable)\n  problem: two design statements appear to disagree\n  evidence: both design statements\n  impact: implementation direction is unclear\n  fix: resolve the apparent contradiction\ncheck-2: "+desc+"\ncheck-4: "+desc+"\nFinding affects: "+grRunFindingID(id, "design", 1)+" = 2\n")
+	grSubmitOK(t, root, id, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{"1": {main + ": frontmatter", desc}, "3": {accept}, "6": {accept}}))
+	grSubmitOK(t, root, id, "design", "2. Design soundness: FAIL — apparent contradiction\n3. Scope integrity: PASS — checked\n4. Evidence-driven consistency: PASS — checked\n[P1] design — apparent contradiction (actionable)\n  problem: two design statements appear to disagree\n  evidence: both design statements\n  impact: implementation direction is unclear\n  fix: resolve the apparent contradiction\ncheck-2: "+desc+"\ncheck-4: "+desc+"\nFinding affects: "+grRunFindingID(id, "design", 1)+" = 2\n")
 	grSubmitOK(t, root, id, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {accept}}))
-	grSubmitOK(t, root, id, "dependencies", grDependenciesReport(map[string][]string{"7": {desc}, "8": {desc}}))
+	grSubmitOK(t, root, id, "external", grDependenciesReport(map[string][]string{"7": {desc}, "8": {desc}}))
 	grSubmitClarity(t, root, id, main)
 	grSubmitOK(t, root, id, "cross", "Cross-check: PASS — complete decision resolves the apparent contradiction\nFinding disposition: "+grRunFindingID(id, "design", 1)+" = suppressed — the decision evidence resolves the apparent contradiction\nEffective status: 2 = pass\nEffective status: cross = pass\ncross: "+proof+": all\n")
 	grFinalizeOK(t, root, id)
@@ -60,13 +60,6 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 	if err != nil || !check.Fresh {
 		t.Fatalf("unchanged suppression evidence must be fresh: %+v %v", check, err)
 	}
-
-	// An unrelated delta must carry the suppression's dependency with check 2.
-	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--rerun", "5", "--inputs-file", grInputsManifest(t, proof))
-	grReviewAccept(t, root, delta)
-	grSubmitPlannedValidateSessions(t, root, delta, main)
-	grFinalizeOK(t, root, delta)
-	assertSynthesisEvidenceRecorded(t, root, "validate", proof)
 
 	grWriteFile(t, root, proof, "The decision now confirms the design contradiction.\n")
 	check, err = validationcache.CheckValidate(root, "auth")
@@ -91,102 +84,6 @@ func TestValidateSuppressionEvidenceControlsFreshnessAndPromote(t *testing.T) {
 		t.Fatalf("rejected promotion created a stable unit: %v", err)
 	}
 
-	delta = grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--inputs-file", grInputsManifest(t, proof))
-	run := mustLoadRun(t, root, delta)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-		t.Fatalf("expected the review coverage only, got %s", got)
-	}
-	// Changed suppression evidence must re-run the design group only.
-	grReviewRecheck(t, root, delta, "2")
-	run = mustLoadRun(t, root, delta)
-	if len(run.Coverage) != 2 || run.Coverage[0].Key != "review" || run.Coverage[1].Key != "design" || len(run.Relationships) != 0 {
-		t.Fatalf("changed suppression evidence must rerun only design checks 2/4: %+v", run)
-	}
-	grSubmitOK(t, root, delta, "design", grValidateReport([]string{"2", "4"}, map[string][]string{"2": {desc, proof + ": all"}, "4": {desc}}))
-	grFinalizeOK(t, root, delta)
-	check, err = validationcache.CheckValidate(root, "auth")
-	if err != nil || !check.Fresh {
-		t.Fatalf("rechecked evidence must restore freshness: %+v %v", check, err)
-	}
-	out.Reset()
-	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err != nil {
-		t.Fatalf("promote rejected the rechecked evidence: %v %s", err, out.String())
-	}
-}
-
-func TestValidateSynthesisExtendsCarriedJudgmentEvidence(t *testing.T) {
-	root := createCLITestRepo(t)
-	main := grWriteSpec(t, root, "auth")
-	id := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitPlannedValidateSessions(t, root, id, main)
-	grFinalizeOK(t, root, id)
-	proof := "evidence/decision.md"
-	grWriteFile(t, root, proof, "The combined design violates the contract.\n")
-	contract := "evidence/contract.md"
-	grWriteFile(t, root, contract, "The contract requires a consistent combined design.\n")
-	delta := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "design_constraints", "--inputs-file", grInputsManifest(t, proof, contract))
-	if run := mustLoadRun(t, root, delta); strings.Join(coverageKeysOf(run), ",") != "review" || !stringInList(run.CarriedKeys, "2") {
-		t.Fatalf("relationship-only run must carry the local design judgment: %+v", run)
-	}
-	grReviewAccept(t, root, delta)
-	relationship := gaterun.RelationshipKey("design_constraints")
-	report := relationshipReport(t, root, delta, map[string]string{"design_constraints": contract}, "design_constraints")
-	report = strings.ReplaceAll(report, "Finding affects: "+delta+"/cross/F1 = "+relationship, "Finding affects: "+delta+"/cross/F1 = "+relationship+", 2")
-	report = strings.ReplaceAll(report, "Effective status: 2 = pass", "Effective status: 2 = fail")
-	report += "cross: " + proof + ": all\n"
-	grSubmitOK(t, root, delta, "cross", report)
-	grFinalizeOK(t, root, delta)
-	assertSynthesisEvidenceRecorded(t, root, "validate", proof)
-
-	// A finding that connects a new relationship and a carried local judgment
-	// must keep both sides' original evidence, not only the new cross input.
-	original, err := os.ReadFile(main)
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := strings.Replace(string(original), "\n## Design Narrative\n### Narrative\n", "\n## Design Narrative\n### Narrative\n\nRevised design details.\n", 1)
-	if err := os.WriteFile(main, []byte(changed), 0644); err != nil {
-		t.Fatal(err)
-	}
-	changeReport, rerr := validationcache.DeriveChangeReport(root, "unit", "auth", "validate")
-	if rerr != nil || changeReport.Empty() {
-		t.Fatalf("a recorded main-spec change must appear in the change report: %+v %v", changeReport, rerr)
-	}
-	if err := os.WriteFile(main, original, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	grWriteFile(t, root, proof, "The combined design now satisfies the contract.\n")
-	changeReport, rerr = validationcache.DeriveChangeReport(root, "unit", "auth", "validate")
-	if rerr != nil {
-		t.Fatal(err)
-	}
-	localized := false
-	for _, entry := range changeReport.Entries {
-		if gaterun.CanonicalDeclPath(root, entry.Path) == gaterun.CanonicalDeclPath(root, proof) {
-			localized = true
-		}
-	}
-	if !localized {
-		t.Fatalf("new synthesis evidence must appear in the change report: %+v", changeReport)
-	}
-	repair := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--inputs-file", grInputsManifest(t, proof))
-	run := mustLoadRun(t, root, repair)
-	if strings.Join(coverageKeysOf(run), ",") != "review,design" || strings.Join(run.Relationships, ",") != "design_constraints" {
-		t.Fatalf("a content-changing repair must review the change set, re-run the failed judgment group, and recheck the failed relationship: %+v", run)
-	}
-	grReviewAccept(t, root, repair)
-	grSubmitPlannedValidateSessions(t, root, repair, main)
-	grSubmitOK(t, root, repair, "cross", relationshipReport(t, root, repair, map[string]string{"design_constraints": proof}, ""))
-	grFinalizeOK(t, root, repair)
-	check, err := validationcache.CheckValidate(root, "auth")
-	if err != nil || !check.Fresh {
-		t.Fatalf("repaired synthesis must restore freshness: %+v %v", check, err)
-	}
-	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, "reviewed_change_set:") || !strings.Contains(cache, "review_result: accept") {
-		t.Fatalf("a content-changing repair must record its review in the cache:\n%s", cache)
-	}
 }
 
 func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
@@ -221,7 +118,7 @@ func TestVerifySuppressionExtendsCarriedItemEvidence(t *testing.T) {
 	grWriteFile(t, root, proof, "The full contract confirms the local mismatch.\n")
 	// The item record pins only its own spec object: a changed synthesis
 	// evidence file does not invalidate it mechanically — the recorded change
-	// set below is what the delta review judges.
+	// set below is what the delta plan judges.
 	if err := judgments.Check(root, binding.Reference, binding.Layer, fixtureVerifyProtocol(t, root)); err != nil {
 		t.Fatalf("the item record's own object is unchanged; it must stay valid: %v", err)
 	}

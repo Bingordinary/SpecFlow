@@ -108,15 +108,23 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 // blockedOrFullAdvice renders the promote-rejection guidance for a gate
-// cache that is not fresh: a BLOCKED failure record is recovered by the
-// delta re-run after the findings are resolved; any other non-fresh state
-// needs the full command.
-func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetName string) string {
+// cache that is not fresh: a BLOCKED failure record is recovered after the
+// findings are resolved (a unit validate through a full-scope revalidate plan,
+// a rule validate through the full confirmation run, verify through repair);
+// any other non-fresh state needs the full command.
+func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetKind, targetName string) string {
 	if category == validationcache.CategoryBlocked {
-		return fmt.Sprintf("Resolve the P0/P1 findings, then run `re%s@%s` to recover incrementally.", command, targetName)
+		recovery := validationcache.RecoveryCommand(command, targetKind, targetName, true)
+		if targetKind == "rule" {
+			return fmt.Sprintf("Resolve the P0/P1 findings, then run the full `%s` confirmation to recover.", recovery)
+		}
+		if command == "validate" {
+			return fmt.Sprintf("Resolve the P0/P1 findings, then run `%s` (the plan covers the full scope) to recover.", recovery)
+		}
+		return fmt.Sprintf("Resolve the P0/P1 findings, then run `%s` to recover.", recovery)
 	}
 	if category == validationcache.CategoryInvalid {
-		return fmt.Sprintf("The cache lacks the promise-pin format marker or its promise_pins block — run the full `%s@%s` command (delta/repair cannot use it).", command, targetName)
+		return fmt.Sprintf("The cache lacks the promise-pin format marker or its promise_pins block — run the full `%s@%s` command (a partial run cannot carry its judgments).", command, targetName)
 	}
 	return fmt.Sprintf("Run `%s@%s` first, then retry promote.", command, targetName)
 }
@@ -195,7 +203,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", unitName))
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", "unit", unitName))
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)
@@ -215,7 +223,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if !verifyResult.Fresh {
 		fmt.Fprintf(stdout, "Verify cache check: FAIL — %s\n", verifyResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(verifyResult.Category, "verify", unitName))
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(verifyResult.Category, "verify", "unit", unitName))
 		return errors.New("verify cache check failed")
 	}
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
@@ -260,7 +268,7 @@ func runRulePromote(absRoot, ruleID string, stdout, stderr io.Writer) error {
 	if !validateResult.Fresh {
 		fmt.Fprintf(stdout, "Validate cache check: FAIL — %s\n", validateResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", ruleID))
+		fmt.Fprintf(stdout, "%s\n", blockedOrFullAdvice(validateResult.Category, "validate", "rule", ruleID))
 		return errors.New("validate cache check failed")
 	}
 	fmt.Fprintf(stdout, "Validate cache: %s\n", validateResult.Reason)

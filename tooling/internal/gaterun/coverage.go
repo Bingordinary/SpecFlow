@@ -188,22 +188,23 @@ func PartialRunBaselineError(baseline *validationcache.GateBaseline) error {
 }
 
 // validateCheckGroups is the coverage decomposition of the unit validate
-// checklist: every one of the 10 checks belongs to exactly one group. The
-// mapping is part of the gate contract
-// (framework/verification_scope.md §Coverage model → Coverage keys) — the same
-// coverage set is computed for the same target every time. Clarity (Check 10)
-// is a normal single-session check: the session reads the unit spec and reports
-// what is unclear, underspecified, or internally contradictory.
+// checklist: every one of the 10 checks belongs to exactly one group, and each
+// group answers one question class about the spec. The mapping is part of the
+// gate contract (framework/verification_scope.md §Coverage model → Coverage
+// keys) — the same coverage set is computed for the same target every time.
+//
+// Only the external group reads dependency and rule refs. That property is the
+// mechanical delta boundary: a change confined to those refs re-runs this group
+// alone, while any change to the unit's own spec union re-runs the whole set.
 var validateCheckGroups = []struct {
 	GroupID string
 	Kind    string
 	Checks  []string
 }{
-	{"structural", SessionKindChecks, []string{"1", "3", "6"}},
-	{"design", SessionKindChecks, []string{"2", "4"}},
+	{"document", SessionKindChecks, []string{"1", ClarityCheck}},
+	{"design", SessionKindChecks, []string{"2", "3", "4"}},
 	{"acceptance", SessionKindChecks, []string{"5"}},
-	{"dependencies", SessionKindChecks, []string{"7", "8", "9"}},
-	{"clarity", SessionKindChecks, []string{ClarityCheck}},
+	{"external", SessionKindChecks, []string{"6", "7", "8", "9"}},
 }
 
 // ruleValidateChecks is the rule validate coverage key set (the 6 rule
@@ -317,9 +318,6 @@ func (d *Derivation) verifyCoverage(run *Run) ([]CoverageKey, error) {
 // owns: the group's check numbers (validate unit), the check number (rule),
 // or the key itself (verify item / quality file).
 func coverageReportKeys(run *Run, ck CoverageKey) []string {
-	if ck.Kind == SessionKindDeltaReview {
-		return []string{DeltaReviewKey}
-	}
 	switch classifyRun(run) {
 	case classUnitValidate:
 		return append([]string(nil), groupChecks(ck.Key)...)
@@ -381,20 +379,18 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		if run.ChangeSetFP != "" {
-			// Standing relationship conclusions await the validate change
-			// review; the full coverage set runs beside it. Verify has no
-			// change review: its standing relationships re-run directly (see
-			// planFullRunCarry).
-			full = append([]CoverageKey{{Key: DeltaReviewKey, Kind: SessionKindDeltaReview}}, full...)
-			notices = append(notices, "change review: the standing relationship conclusions await accept-or-recheck against the recorded change set")
-		}
 		if err := validateCoverage(run, full); err != nil {
 			return nil, nil, nil, nil, err
 		}
 		return full, carried, required, notices, nil
 	}
 	if run.Mode == ModeDelta || run.Mode == ModeRepair {
+		if run.Gate == GateValidate && run.TargetKind == TargetKindRule {
+			return nil, nil, nil, nil, fmt.Errorf("rule targets support the full validate run only — run %s", PlanCommand(run, ModeFull))
+		}
+		if run.Gate == GateValidate && run.Mode == ModeRepair {
+			return nil, nil, nil, nil, fmt.Errorf("validate has no repair mode — run %s", PlanCommand(run, ModeFull))
+		}
 		var (
 			coverage []CoverageKey
 			carried  []string
@@ -403,7 +399,7 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		if run.Gate == GateVerify {
 			coverage, carried, required, notices, err = d.buildMechanicalVerifyPlan(run)
 		} else {
-			coverage, carried, required, notices, err = d.buildReviewPlan(run)
+			coverage, carried, required, notices, err = d.buildDeltaPlan(run)
 		}
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -474,16 +470,12 @@ func validateCoverage(run *Run, coverage []CoverageKey) error {
 		seen[key] = true
 		switch ck.Kind {
 		case SessionKindChecks, SessionKindItem, SessionKindUnit, SessionKindDesign, SessionKindCode, SessionKindArchitecture:
-		case SessionKindDeltaReview:
-			if key != DeltaReviewKey {
-				return fmt.Errorf("delta review coverage key %q must be %q", key, DeltaReviewKey)
-			}
 		default:
 			return fmt.Errorf("coverage key %q has invalid kind %q", key, ck.Kind)
 		}
 		switch ck.Lens {
 		case "":
-			if ck.Kind != SessionKindDeltaReview && run.Gate == GateVerify && run.TargetKind == TargetKindUnit {
+			if run.Gate == GateVerify && run.TargetKind == TargetKindUnit {
 				return fmt.Errorf("coverage key %q has no lens — a verify key must be tagged alignment or quality", key)
 			}
 		case LensAlignment:
@@ -662,23 +654,6 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			ReadRefs:      crossReadRefs(repoRoot, run),
 			Relationships: append([]string(nil), run.Relationships...),
 			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
-		}, nil
-	}
-	if len(keys) == 1 && keys[0] == DeltaReviewKey {
-		if run.CoverageByKey(DeltaReviewKey) == nil {
-			return nil, fmt.Errorf("key %q is not part of run %s's coverage set", DeltaReviewKey, run.RunID)
-		}
-		return &SessionSpec{
-			SessionID: DeltaReviewKey,
-			Keys:      []string{DeltaReviewKey},
-			Kind:      SessionKindDeltaReview,
-			CheckKeys: []string{DeltaReviewKey},
-			ReadRefs:  reviewReadRefs(repoRoot, run),
-			Context: []string{
-				"Judge only whether the standing conclusions are affected by the change set. Produce no check verdicts.",
-				"Focus on the changed content, but read any input-surface file you need for context — a change can affect a conclusion anchored elsewhere.",
-				"When in doubt, name the re-run keys or escalate; accepting is the consequential call.",
-			},
 		}, nil
 	}
 	wanted := map[string]bool{}
@@ -935,9 +910,6 @@ func crossReadRefs(repoRoot string, run *Run) []string {
 func InputSurface(repoRoot string, run *Run) []string {
 	var out []string
 	for _, ck := range run.Coverage {
-		if ck.Kind == SessionKindDeltaReview {
-			continue
-		}
 		out = appendUnique(out, coverageReadRefs(repoRoot, run, ck)...)
 	}
 	out = appendUnique(out, crossReadRefs(repoRoot, run)...)
@@ -1041,20 +1013,20 @@ func sortedKeySet(keys map[string]bool) []string {
 }
 
 // unitValidateGroupReadRefs derives the exact group-local read surface for one
-// unit validate coverage group. Check 4 (structural) must resolve rule_refs to
-// verify that they exist, while the dependency group reads the provider units
-// named by promise depends_on for cross-unit judgments. The logical refs here
-// are the declared promise providers and rule_refs only — a unit validate
-// never carries unrelated peers (Check 9 is the mechanical
-// `specflowctl surfaces` audit and needs no peer spec read ref).
-// Validate is a spec-quality gate: every group reads only the unit's own spec
-// truth, the agent-declared shared inputs, and (structural/dependencies) the
+// unit validate coverage group. The external group reads the provider units
+// named by promise depends_on and the declared rule refs for its cross-unit
+// and constraint judgments. The logical refs here are the declared promise
+// providers and rule_refs only — a unit validate never carries unrelated peers
+// (Check 9 is the mechanical `specflowctl surfaces` audit and needs no peer
+// spec read ref).
+// Validate is a spec-quality gate: every group reads the unit's own spec truth
+// and the agent-declared shared inputs, and only the external group reads the
 // declared logical refs. No group receives code evidence — affects.files and
 // affects.evidence_files are verify inputs, never validate read refs.
 func unitValidateGroupReadRefs(repoRoot string, run *Run, groupID string) []string {
 	read := ownSpecPaths(repoRoot, run)
 	read = appendUnique(read, extraInputPaths(repoRoot, run)...)
-	if groupID == "structural" || groupID == "dependencies" {
+	if groupID == "external" {
 		read = appendUnique(read, dependencySpecRefs(run)...)
 	}
 	return append([]string(nil), read...)

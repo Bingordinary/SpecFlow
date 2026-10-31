@@ -240,9 +240,12 @@ func TestUnitCachesWithoutCurrentFormatAreIncompatible(t *testing.T) {
 		t.Fatalf("promote must reject a validate cache without the promise-pin marker, err=%v\n%s", err, out.String())
 	}
 
-	if _, err := grPlanRaw(root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil ||
-		!strings.Contains(err.Error(), "unusable as a delta baseline") {
-		t.Fatalf("delta planning must refuse a cache without the promise-pin marker, got %v", err)
+	deltaID, err := grPlanRaw(root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	if err != nil {
+		t.Fatalf("an unusable baseline must fall back to the full scope, got %v", err)
+	}
+	if run := mustLoadRun(t, root, deltaID); run.Mode != "full" {
+		t.Fatalf("an unusable baseline must cover the full scope, got mode %q", run.Mode)
 	}
 
 	incompleteVerify := "---\ncommand: verify\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\ntimestamp: \"2026-06-30T10:00:00Z\"\n" +

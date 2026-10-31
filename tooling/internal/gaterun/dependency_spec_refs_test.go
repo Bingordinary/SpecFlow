@@ -25,7 +25,7 @@ func TestCandidateValidateCarriesProviderStableComparisonSpec(t *testing.T) {
 			t.Fatalf("candidate validate plan missing %q: %+v", want, run.Refs)
 		}
 	}
-	for _, key := range []string{"structural", "dependencies"} {
+	for _, key := range []string{"external"} {
 		spec, err := BuildSessionSpec(repoRoot, run, []string{key})
 		if err != nil {
 			t.Fatal(err)
@@ -38,10 +38,10 @@ func TestCandidateValidateCarriesProviderStableComparisonSpec(t *testing.T) {
 	}
 }
 
-// dependencySpecRefs feeds the structural and dependency validate groups. A
-// candidate run's provider is a logical ref; a stable run's provider is a
-// physical stable spec. Both must reach the groups, and an unrelated derived
-// physical ref (the declared code surface) must not.
+// dependencySpecRefs feeds the external validate group. A candidate run's
+// provider is a logical ref; a stable run's provider is a physical stable
+// spec. Both must reach the group, and an unrelated derived physical ref (the
+// declared code surface) must not.
 func TestDependencySpecRefsIncludesCrossObjectSpecs(t *testing.T) {
 	run := &Run{
 		OwnSpecFiles: []string{"docs/specs/units/stable/unit_web.md"},
@@ -69,9 +69,9 @@ func TestDependencySpecRefsIncludesCrossObjectSpecs(t *testing.T) {
 		}
 	}
 
-	// The dependency group reads the stable provider spec; an unrelated group
+	// The external group reads the stable provider spec; an unrelated group
 	// (design) reads only the own spec and the declared surface.
-	for _, group := range []string{"structural", "dependencies"} {
+	for _, group := range []string{"external"} {
 		read := unitValidateGroupReadRefs("", run, group)
 		if !containsString(read, "docs/specs/units/stable/unit_auth.md") {
 			t.Fatalf("%s group read refs = %v, want the stable provider spec", group, read)

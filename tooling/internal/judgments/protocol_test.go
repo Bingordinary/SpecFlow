@@ -178,7 +178,6 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			// recorded conclusion.
 			document: "unit_verify_checklist.md",
 			mechanism: []string{
-				"- `Change review:` — **validate** delta/repair runs only",
 				"{gate}@{target} · {mode} · {layer}",
 			},
 			judging: []string{
@@ -206,7 +205,6 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 				"### Relationship vocabulary",
 				"#### Verify synthesis items",
 				"### Deferred findings",
-				"### The change review (validate)",
 				"## Principles",
 			},
 		},

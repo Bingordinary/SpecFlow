@@ -79,7 +79,7 @@ func TestGateRelationshipRunsWithoutLocalFindings(t *testing.T) {
 	}
 }
 
-func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
+func TestGateConsecutiveRelationshipDeltasAfterEvidenceChange(t *testing.T) {
 	root := createCLITestRepo(t)
 	main := grWriteSpec(t, root, "auth")
 	a, b := "evidence/design.md", "evidence/coverage.md"
@@ -96,34 +96,31 @@ func TestGateConsecutiveRelationshipOnlyDeltas(t *testing.T) {
 		grWriteFile(t, root, change.path, "changed relationship: "+change.name+"\n")
 		deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, a, b))
 		run := mustLoadRun(t, root, deltaID)
-		if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-			t.Fatalf("expected the review coverage only, got %s", got)
+		// An extra evidence input is part of the unit's own input surface, so
+		// the mechanical plan covers the full scope.
+		if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {
+			t.Fatalf("an extra-input change must cover the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
 		}
-		// The reviewer attributes the evidence change to the relationship.
-		grSubmitOK(t, root, deltaID, "review", "Review result: recheck — evidence changed\nRecheck: relationship:"+change.name+"\n")
-		updated := mustLoadRun(t, root, deltaID)
-		if strings.Join(updated.Relationships, ",") != change.name {
-			t.Fatalf("delta lost the rechecked relationship scope: %+v", updated)
+		if !stringInList(run.Relationships, change.name) {
+			t.Fatalf("the standing relationship conclusions must re-check, got %+v", run.Relationships)
 		}
-		if view, err := gateRunSnapshot(root, updated); err != nil || view.NextAction != "synthesize" {
-			t.Fatalf("relationship-only delta must synthesize: %+v %v", view, err)
-		}
+		grSubmitPlannedValidateSessions(t, root, deltaID, main)
 		if _, err := grSubmitRaw(t, root, deltaID, "cross", relationshipReport(t, root, deltaID, evidence, "")); err != nil {
 			t.Fatal(err)
 		}
 		grFinalizeOK(t, root, deltaID)
 		state := grReadJudgmentBaseline(t, root, "unit", "auth", "validate")
 		if len(state.Relationships) != 2 {
-			t.Fatalf("delta dropped a carried relationship: %+v", state)
+			t.Fatalf("recovery dropped a carried relationship: %+v", state)
 		}
 		check, err := validationcache.CheckWriteResult(root, "unit", "auth", "validate", "candidate")
 		if err != nil || !check.Fresh {
-			t.Fatalf("relationship-only delta did not publish a fresh complete cache: %+v %v", check, err)
+			t.Fatalf("relationship recovery did not publish a fresh complete cache: %+v %v", check, err)
 		}
 	}
 }
 
-func TestGateRelationshipOnlyRepair(t *testing.T) {
+func TestGateRelationshipFailureRecoversWithFullScope(t *testing.T) {
 	root := createCLITestRepo(t)
 	main := grWriteSpec(t, root, "auth")
 	path := "evidence/contract.md"
@@ -136,28 +133,22 @@ func TestGateRelationshipOnlyRepair(t *testing.T) {
 	}
 	grFinalizeOK(t, root, runID)
 	grWriteFile(t, root, path, "reconciled relationship\n")
-	repairID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
-	run := mustLoadRun(t, root, repairID)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-		t.Fatalf("a content-changing repair must review its change set before carrying any conclusion: %+v", run)
+	recoveryID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
+	run := mustLoadRun(t, root, recoveryID)
+	if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {
+		t.Fatalf("a failure record recovers with the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
 	}
 	if strings.Join(run.Relationships, ",") != "coverage_scope" {
-		t.Fatalf("repair lost the failed relationship: %+v", run)
+		t.Fatalf("recovery lost the failed relationship: %+v", run.Relationships)
 	}
-	if view, err := gateRunSnapshot(root, run); err != nil || view.NextAction != "execute" {
-		t.Fatalf("the review must run before the relationship synthesis: %+v %v", view, err)
-	}
-	grReviewAccept(t, root, repairID)
-	if view, err := gateRunSnapshot(root, mustLoadRun(t, root, repairID)); err != nil || view.NextAction != "synthesize" {
-		t.Fatalf("a repair run with an assigned relationship must synthesize: %+v %v", view, err)
-	}
-	if _, err := grSubmitRaw(t, root, repairID, "cross", relationshipReport(t, root, repairID, evidence, "")); err != nil {
+	grSubmitPlannedValidateSessions(t, root, recoveryID, main)
+	if _, err := grSubmitRaw(t, root, recoveryID, "cross", relationshipReport(t, root, recoveryID, evidence, "")); err != nil {
 		t.Fatal(err)
 	}
-	grFinalizeOK(t, root, repairID)
+	grFinalizeOK(t, root, recoveryID)
 	state := grReadJudgmentBaseline(t, root, "unit", "auth", "validate")
 	if len(state.Findings) != 0 || state.LogicalStatus[gaterun.RelationshipKey("coverage_scope")] != "pass" {
-		t.Fatalf("repaired relationship kept stale failure state: %+v", state)
+		t.Fatalf("recovered relationship kept stale failure state: %+v", state)
 	}
 }
 
@@ -207,13 +198,12 @@ func TestGateDeltaIntroducesRelationshipWithoutLocalChanges(t *testing.T) {
 	grFinalizeOK(t, root, runID)
 	deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "coverage_scope")
 	run := mustLoadRun(t, root, deltaID)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-		t.Fatalf("expected the review coverage only, got %s", got)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "" {
+		t.Fatalf("a relationship-only delta has no local coverage, got %s", got)
 	}
 	if strings.Join(run.Relationships, ",") != "coverage_scope" {
 		t.Fatalf("new relationship scope lost: %+v", run)
 	}
-	grReviewAccept(t, root, deltaID)
 	if _, err := grSubmitRaw(t, root, deltaID, "cross", relationshipReport(t, root, deltaID, map[string]string{"coverage_scope": main}, "")); err != nil {
 		t.Fatal(err)
 	}

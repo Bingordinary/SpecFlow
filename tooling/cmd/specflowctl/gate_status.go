@@ -126,18 +126,12 @@ func runGateStatus(args []string, stdout, stderr io.Writer) error {
 // longer resolve is audit debris, and the recovery point must stay able to
 // see the runs that do work.
 func staleRunView(run *gaterun.Run, err error) gateRunView {
-	// Escalation is recorded in run.json, so it survives an unreadable session
-	// state: an abandoned run reports the same terminal action even here.
-	nextAction := "none"
-	if run.Escalated {
-		nextAction = "abandon"
-	}
 	return gateRunView{
 		SchemaVersion: 3, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target,
-		Mode: run.Mode, Status: run.Status, Escalated: run.Escalated,
+		Mode: run.Mode, Status: run.Status,
 		Coverage: []gateCoverageView{}, Sessions: []gateSessionView{}, UncoveredKeys: []string{},
-		NextAction:        nextAction,
+		NextAction:        "none",
 		ReviewerBatches:   [][]string{},
 		SplitRequiredKeys: []string{},
 		CarriedKeys:       []string{},
@@ -229,8 +223,6 @@ func gateNextStep(run *gaterun.Run, states []*gaterun.SessionState, uncovered []
 		return hint
 	case "synthesize":
 		return fmt.Sprintf("relationships to check or findings to dispose — generate the final synthesis: `specflowctl gate-mission --run %s --final --format prompt`, then submit it: `specflowctl gate-submit --run %s --session cross --keys cross --report PATH`", run.RunID, run.RunID)
-	case "abandon":
-		return fmt.Sprintf("this run was escalated to a full run by the change review and is not finalizable — abandon it and start a full run: %s", gaterun.PlanCommand(run, gaterun.ModeFull))
 	case "none":
 		return "none — this run is audit-only"
 	}
@@ -294,23 +286,10 @@ func overCapacityKeys(run *gaterun.Run, states []*gaterun.SessionState, uncovere
 	return out
 }
 
-// escalatedRunError is the single fail-closed message for a command that must
-// not continue an escalated run: the change review handed the run off to a full
-// run, so the escalated run is terminal for new work.
-func escalatedRunError(run *gaterun.Run) error {
-	return fmt.Errorf("the change review escalated this run to a full run — start a full run instead: %s", gaterun.PlanCommand(run, gaterun.ModeFull))
-}
-
-// gateNextAction is shared by JSON status and every text next-step hint. The
-// escalated state is a terminal branch of the run lifecycle: a change review
-// that returned escalate-full abandons the run, so it outranks coverage
-// progress — no further mission, synthesis, or finalize is meaningful.
+// gateNextAction is shared by JSON status and every text next-step hint.
 func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered []string) string {
 	if run.Status != gaterun.StatusOpen {
 		return "none"
-	}
-	if run.Escalated {
-		return "abandon"
 	}
 	if len(uncovered) > 0 {
 		return "execute"
@@ -329,7 +308,7 @@ func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered 
 // gateRequiresSynthesis reports whether the run still needs an accepted final
 // synthesis before finalizing, mirroring gate-finalize's requirement
 // (tooling/cmd/specflowctl/gate_finalize.go requiresFinalSynthesis). Any
-// assigned relationship requires one. A validate run (full, delta, or repair)
+// assigned relationship requires one. A validate run (full or delta)
 // additionally requires one for blocking P0/P1 findings only — its P2/P3
 // advisories are non-blocking. Verify requires one for any finding. Rule runs
 // never synthesize.

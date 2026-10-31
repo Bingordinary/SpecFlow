@@ -1,7 +1,6 @@
 package validationcache
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ type ChangeReportEntry struct {
 // ChangeReport is the mechanically detected change set of one gate cache's
 // recorded input surface: what changed, disappeared, or was recorded with
 // evidence that contradicts itself since the cache was written. It is the sole
-// input to the delta reviewer's judgment; it decides nothing itself.
+// input to the validate delta plan's classification; it decides nothing itself.
 type ChangeReport struct {
 	Entries []ChangeReportEntry `json:"entries"`
 }
@@ -52,23 +51,9 @@ func (r *ChangeReport) Inconsistent() []string {
 	return out
 }
 
-// Fingerprint is the stable identity of this change set. A delta review
-// record binds to it: the same change set always produces the same value,
-// and any further content change produces a different one.
-func (r *ChangeReport) Fingerprint() (string, error) {
-	payload, err := json.Marshal(struct {
-		Chunker string              `json:"chunker"`
-		Entries []ChangeReportEntry `json:"entries"`
-	}{Chunker: contenthash.ChunkerVersion, Entries: r.Entries})
-	if err != nil {
-		return "", err
-	}
-	return contenthash.CID(payload), nil
-}
-
 // promiseEntryPath names the provider spec in repo-relative form for the
 // change report. It falls back to the layer ref when the file cannot be
-// resolved, so the entry still tells the reviewer which provider to read.
+// resolved, so the entry still tells the plan which provider to read.
 func promiseEntryPath(repoRoot, target, provider string) string {
 	abs := providerSubjectPath(repoRoot, target, provider)
 	if abs == "" {
@@ -159,7 +144,7 @@ func DeriveChangeReport(repoRoot, targetKind, targetName, command string) (*Chan
 	// A validate cache's current required inputs are discovered from current
 	// repository state, not from the recorded cache: a new own appendix or a newly
 	// published stable global rule is part of the change set as an added file,
-	// so a delta review sees it instead of "nothing changed" (the same
+	// so the delta plan sees it instead of "nothing changed" (the same
 	// discovery backs the cache's freshness check).
 	if command == "validate" && targetKind == "unit" && (cache.Target == "candidate" || cache.Target == "stable") {
 		recorded := map[string]bool{}

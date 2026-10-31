@@ -48,7 +48,7 @@ type gateOutcome struct {
 // run, content drift (a recorded input whose bytes, layer resolution, or
 // existence changed mid-run) is salvaged — the result is persisted with the
 // coverage keys whose read surface intersects the drift recorded as
-// invalidated, and repair re-runs them; a structural divergence (the surface
+// invalidated, and the gate's recovery plan re-runs them; a structural divergence (the surface
 // shape itself changed) still discards the run. Cache evidence is assembled
 // from the accepted declarations, while result, blocking, severity counts, and
 // statuses are derived from the accepted synthesis artifact.
@@ -88,9 +88,6 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run can be finalized; plan a new run", run.RunID, run.Status)
 	}
-	if run.Escalated {
-		return escalatedRunError(run)
-	}
 
 	states, err := gaterun.LoadSessionStates(absRoot, run)
 	if err != nil {
@@ -118,10 +115,6 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		return fmt.Errorf("gate-finalize rejected: coverage incomplete — uncovered key(s): %s%s\nSubmit them first: `specflowctl gate-mission --run %s --keys <keys> --format prompt`, then `specflowctl gate-submit --run %s --session <id> --keys <keys> --report PATH`",
 			strings.Join(uncovered, ", "), detail, run.RunID, run.RunID)
 	}
-	if run.HasReviewCoverage() && run.Review == nil {
-		return fmt.Errorf("gate-finalize rejected: the review session is covered but the run carries no review record — plan a new run")
-	}
-
 	var reports []reportRef
 	for _, state := range states {
 		if state.Status != gaterun.SessionAccepted {
@@ -321,19 +314,6 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if run.Gate == gaterun.GateValidate {
 		write.Standard = run.Protocol
 	}
-	if run.Review != nil {
-		write.ReviewChangeSet = run.Review.ChangeSet
-		write.ReviewResult = run.Review.Result
-		write.ReviewSession = run.Review.Session
-		write.ReviewRecheck = append([]string(nil), run.Review.Recheck...)
-		write.ReviewDeclined = declinedReviewCandidates(run.Review)
-	} else if run.Gate == gaterun.GateValidate && run.Mode == gaterun.ModeRepair {
-		// A content-free repair run schedules no change review: record the
-		// mechanical-floor scope so the audit trail states why no review
-		// precedes this cache (framework/verification_scope.md §Delta Runs →
-		// Repair runs).
-		write.ReviewResult = "skipped (repair — mechanical floor scope)"
-	}
 
 	// Re-resolve the complete input surface after evidence assembly and
 	// before rendering. A change after this comparison can only make the
@@ -420,7 +400,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if salvage != nil {
 		fmt.Fprintf(stdout, "Input drift since gate-plan: %s\n", salvage.noticeList())
 		fmt.Fprintf(stdout, "Salvaged: result persisted; invalidated check(s): %s\n", strings.Join(write.InvalidatedChecks, ", "))
-		fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeRepair))
+		if run.Gate == gaterun.GateValidate {
+			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeFull))
+		} else {
+			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeRepair))
+		}
 	}
 	switch check.Category {
 	case validationcache.CategoryStale:
@@ -736,7 +720,7 @@ func runHasBlockingFindings(run *gaterun.Run, reports []reportRef) bool {
 
 // requiresFinalSynthesis reports whether the run must carry an accepted final
 // synthesis before it can finalize. Any assigned relationship requires one.
-// Beyond that, a validate run (full, delta, or repair) requires one for
+// Beyond that, a validate run (full or delta) requires one for
 // blocking P0/P1 findings — its P2/P3 findings are non-blocking advisories
 // presented directly (framework/severity_policy.md §11), and the synthesis is
 // also where Check 2 Step 1 / Check 5 extraction artifacts are re-verified
@@ -991,23 +975,6 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 	return out, nil
 }
 
-// declinedReviewCandidates lists the carry candidates a review left out of
-// Recheck — the conclusions the review declined to re-run. The cache records
-// them so the scope decision is auditable beyond review_recheck.
-func declinedReviewCandidates(rev *gaterun.ReviewRecord) []string {
-	rechecked := map[string]bool{}
-	for _, key := range rev.Recheck {
-		rechecked[key] = true
-	}
-	var declined []string
-	for _, key := range rev.Candidates {
-		if !rechecked[key] {
-			declined = append(declined, key)
-		}
-	}
-	return declined
-}
-
 // statusForVerdict maps a session verdict token to the logical fail/pass
 // status the cache records.
 func statusForVerdict(verdict string) string {
@@ -1189,9 +1156,6 @@ func (s *runSalvage) affectedCoverageKeys(absRoot string, run *gaterun.Run) map[
 		return affected
 	}
 	for _, ck := range run.Coverage {
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			continue
-		}
 		for _, ref := range gaterun.CoverageReadRefs(absRoot, run, ck) {
 			if s.drift[gaterun.CanonicalDeclPath(absRoot, ref)] {
 				affected[ck.Key] = true
@@ -1327,9 +1291,6 @@ func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEn
 		return nil
 	}
 	for _, ck := range run.Coverage {
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			continue
-		}
 		for _, key := range run.ReportKeys(ck) {
 			ref := gaterun.TargetMainFile(run)
 			if ck.Kind == gaterun.SessionKindCode {
@@ -1382,9 +1343,6 @@ func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEn
 		entries = append(entries, a.entry)
 	}
 	for _, ck := range run.Coverage {
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			continue
-		}
 		for _, key := range run.ReportKeys(ck) {
 			if !seenKey[key] {
 				return nil, fmt.Errorf("coverage incomplete: check %q has no evidence in the assembled cache — plan a new run", key)
@@ -1503,12 +1461,13 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Writes the gate cache from the run's accepted session reports, after coverage")
 	fmt.Fprintln(w, "closure and snapshot checks: every coverage key must be covered by exactly one")
-	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for delta/repair), and the")
+	fmt.Fprintln(w, "accepted session (plus carried-over baseline evidence for partial runs), and the")
 	fmt.Fprintln(w, "input snapshot must still verify against gate-plan. On a full run, content drift")
 	fmt.Fprintln(w, "(a recorded input whose bytes changed mid-run) is salvaged: the result is")
 	fmt.Fprintln(w, "persisted with the coverage keys whose read set intersects the drift recorded as")
-	fmt.Fprintln(w, "invalidated (a recovery baseline; the gate's repair run — `revalidate` /")
-	fmt.Fprintln(w, "`reverify` with `--mode repair` — re-runs exactly those). A structural divergence")
+	fmt.Fprintln(w, "invalidated (a recovery baseline; a unit validate recovers with a full-scope")
+	fmt.Fprintln(w, "`revalidate`, a rule validate with the full confirmation run, and verify with")
+	fmt.Fprintln(w, "`reverify --mode repair`). A structural divergence")
 	fmt.Fprintln(w, "(the input surface itself changed) discards the run. A run that produced findings")
 	fmt.Fprintln(w, "must carry an accepted final synthesis (the optional")
 	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles one")

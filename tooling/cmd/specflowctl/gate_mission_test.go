@@ -85,7 +85,7 @@ func TestUnitMissionIncludesTargetLayerApplicability(t *testing.T) {
 			}
 			runID := grPlan(t, root, "--gate", "validate", "--unit", name, "--target", tc.target, "--relationships", "none")
 			var out, errOut bytes.Buffer
-			if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural,design,acceptance,dependencies,clarity", "--format", "prompt"}, &out, &errOut); err != nil {
+			if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "document,design,acceptance,external", "--format", "prompt"}, &out, &errOut); err != nil {
 				t.Fatalf("mission: %v (%s)", err, errOut.String())
 			}
 			for _, want := range []string{
@@ -114,16 +114,16 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &planned); err != nil {
 		t.Fatal(err)
 	}
-	if planned.SchemaVersion != 3 || planned.NextAction != "execute" || len(planned.UncoveredKeys) != 5 || strings.Contains(strings.Join(planned.UncoveredKeys, ","), "cross") {
+	if planned.SchemaVersion != 3 || planned.NextAction != "execute" || len(planned.UncoveredKeys) != 4 || strings.Contains(strings.Join(planned.UncoveredKeys, ","), "cross") {
 		t.Fatalf("wrong planned coverage: %+v", planned)
 	}
 	// The plan's next step is execute, so the JSON carries the tooling-computed
 	// default reviewer batches: one batch holding every still-uncovered
 	// validate check key, and no split-required keys.
-	if len(planned.ReviewerBatches) != 1 || len(planned.ReviewerBatches[0]) != 5 || len(planned.SplitRequiredKeys) != 0 || !strings.Contains(out.String(), `"reviewer_batches"`) {
+	if len(planned.ReviewerBatches) != 1 || len(planned.ReviewerBatches[0]) != 4 || len(planned.SplitRequiredKeys) != 0 || !strings.Contains(out.String(), `"reviewer_batches"`) {
 		t.Fatalf("plan JSON must expose the computed reviewer batches: %+v", planned)
 	}
-	if len(planned.Coverage) != 5 || planned.Coverage[0].CoveredBy != "" {
+	if len(planned.Coverage) != 4 || planned.Coverage[0].CoveredBy != "" {
 		t.Fatalf("wrong planned coverage detail: %+v", planned.Coverage)
 	}
 	if len(planned.DeferredFindings) != 0 || !strings.Contains(out.String(), `"deferred_findings": []`) {
@@ -137,14 +137,14 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if current.RunID != planned.RunID || len(current.UncoveredKeys) != 5 {
+	if current.RunID != planned.RunID || len(current.UncoveredKeys) != 4 {
 		t.Fatalf("wrong status: %+v", current)
 	}
 	if len(current.DeferredFindings) != 0 || !strings.Contains(status.String(), `"deferred_findings": []`) {
 		t.Fatalf("status must show an empty deferred findings array: %s", status.String())
 	}
 	var jsonOut, prompt bytes.Buffer
-	args := []string{"--repo-root", root, "--run", planned.RunID, "--keys", "structural"}
+	args := []string{"--repo-root", root, "--run", planned.RunID, "--keys", "document"}
 	if err := runGateMission(append(append([]string{}, args...), "--format", "json"), &jsonOut, &errOut); err != nil {
 		t.Fatal(err)
 	}
@@ -155,13 +155,13 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(jsonOut.Bytes(), &mission); err != nil {
 		t.Fatal(err)
 	}
-	if len(mission.Sessions) != 1 || mission.Sessions[0].ProtocolRef != "framework/unit_validate_checklist.md" || mission.Sessions[0].SessionID != "structural" {
+	if len(mission.Sessions) != 1 || mission.Sessions[0].ProtocolRef != "framework/unit_validate_checklist.md" || mission.Sessions[0].SessionID != "document" {
 		t.Fatalf("wrong mission: %+v", mission)
 	}
 	if mission.Sessions[0].LastRejection != "" || strings.Contains(jsonOut.String(), "last_rejection") || strings.Contains(prompt.String(), "Previous submission was rejected:") {
 		t.Fatalf("first-attempt mission carries retry feedback: %s", prompt.String())
 	}
-	for _, want := range []string{mission.RunID, mission.Sessions[0].ProtocolRef, "Checks: 1, 3, 6", "gate-submit"} {
+	for _, want := range []string{mission.RunID, mission.Sessions[0].ProtocolRef, "Checks: 1, 10", "gate-submit"} {
 		if !strings.Contains(prompt.String(), want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, prompt.String())
 		}
@@ -169,8 +169,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	report := mission.Sessions[0].ReportContract.Template
 	for _, pair := range [][2]string{
 		{"1. <check name>: <PASS|WARNING|FAIL> — <reason>", "1. Structural integrity: PASS — checked"},
-		{"3. <check name>: <PASS|WARNING|FAIL> — <reason>", "3. Scope integrity: PASS — checked"},
-		{"6. <check name>: <PASS|WARNING|FAIL> — <reason>", "6. Affects-source validity: PASS — checked"},
+		{"10. <check name>: <PASS|WARNING|FAIL> — <reason>", "10. Clarity: PASS — checked"},
 	} {
 		report = strings.Replace(report, pair[0], pair[1], 1)
 	}
@@ -180,12 +179,12 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if strings.Contains(report, "<") {
 		t.Fatalf("unfilled report template:\n%s", report)
 	}
-	invalid := strings.Replace(report, "3. Scope integrity: PASS — checked\n", "", 1)
-	if _, err := grSubmit(t, root, planned.RunID, "structural", invalid); err == nil || !strings.Contains(err.Error(), "check \"3\" has no verdict") {
+	invalid := strings.Replace(report, "10. Clarity: PASS — checked\n", "", 1)
+	if _, err := grSubmit(t, root, planned.RunID, "document", invalid); err == nil || !strings.Contains(err.Error(), "check \"10\" has no verdict") {
 		t.Fatalf("missing template field was not rejected: %v", err)
 	}
-	retry := missionJSON(t, root, planned.RunID, "structural")
-	if !strings.Contains(retry.Sessions[0].LastRejection, `check "3" has no verdict`) {
+	retry := missionJSON(t, root, planned.RunID, "document")
+	if !strings.Contains(retry.Sessions[0].LastRejection, `check "10" has no verdict`) {
 		t.Fatalf("retry mission lost rejection reason: %+v", retry.Sessions[0])
 	}
 	prompt.Reset()
@@ -196,11 +195,11 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 		t.Fatalf("retry prompt lost rejection reason: %s", prompt.String())
 	}
 	invalidAgain := strings.Replace(report, "1. Structural integrity: PASS — checked\n", "", 1)
-	if _, err := grSubmit(t, root, planned.RunID, "structural", invalidAgain); err == nil || !strings.Contains(err.Error(), "check \"1\" has no verdict") {
+	if _, err := grSubmit(t, root, planned.RunID, "document", invalidAgain); err == nil || !strings.Contains(err.Error(), "check \"1\" has no verdict") {
 		t.Fatalf("second invalid report was not rejected: %v", err)
 	}
-	retry = missionJSON(t, root, planned.RunID, "structural")
-	if !strings.Contains(retry.Sessions[0].LastRejection, `check "1" has no verdict`) || strings.Contains(retry.Sessions[0].LastRejection, `check "3" has no verdict`) {
+	retry = missionJSON(t, root, planned.RunID, "document")
+	if !strings.Contains(retry.Sessions[0].LastRejection, `check "1" has no verdict`) || strings.Contains(retry.Sessions[0].LastRejection, `check "10" has no verdict`) {
 		t.Fatalf("retry mission did not use latest rejection: %+v", retry.Sessions[0])
 	}
 	prompt.Reset()
@@ -217,10 +216,10 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(current.UncoveredKeys, ","), "structural") {
+	if !strings.Contains(strings.Join(current.UncoveredKeys, ","), "document") {
 		t.Fatalf("rejected session's key is not uncovered: %+v", current)
 	}
-	grSubmitOK(t, root, planned.RunID, "structural", report)
+	grSubmitOK(t, root, planned.RunID, "document", report)
 	status.Reset()
 	if err := runGateStatus([]string{"--repo-root", root, "--run", planned.RunID, "--format", "json"}, &status, &errOut); err != nil {
 		t.Fatal(err)
@@ -228,7 +227,7 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(status.Bytes(), &current); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.Join(current.UncoveredKeys, ","), "structural") {
+	if strings.Contains(strings.Join(current.UncoveredKeys, ","), "document") {
 		t.Fatalf("accepted session's key still uncovered: %+v", current)
 	}
 	if err := runGateMission(args, &prompt, &errOut); err == nil || !strings.Contains(err.Error(), "already covered") {
@@ -245,7 +244,7 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 	grWriteSpec(t, root, "auth")
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	var out, errOut bytes.Buffer
-	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "prompt"}, &out, &errOut); err != nil {
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "document", "--format", "prompt"}, &out, &errOut); err != nil {
 		t.Fatalf("mission: %v (%s)", err, errOut.String())
 	}
 	prompt := out.String()
@@ -254,8 +253,7 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 		"----- Inlined protocol from framework/unit_validate_checklist.md",
 		"## Target-layer applicability",
 		"## Check 1 — Structural integrity",
-		"## Check 3 — Scope integrity",
-		"## Check 6 — Affects-source validity",
+		"## Check 10 — Clarity",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks inlined protocol %q:\n%s", want, prompt)
@@ -265,7 +263,7 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 		t.Errorf("prompt still points the reviewer at the framework documents:\n%s", prompt)
 	}
 	var jsonOut bytes.Buffer
-	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "json"}, &jsonOut, &errOut); err != nil {
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "document", "--format", "json"}, &jsonOut, &errOut); err != nil {
 		t.Fatalf("mission json: %v (%s)", err, errOut.String())
 	}
 	var mission gateMission
@@ -273,8 +271,8 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	inline := mission.Sessions[0].ProtocolInline
-	if len(inline) != 8 {
-		t.Fatalf("got %d inlined sections, want 8 (target-layer applicability, prerequisite, execution rules, severity, section 15.2, checks 1/3/6): %+v", len(inline), inline)
+	if len(inline) != 7 {
+		t.Fatalf("got %d inlined sections, want 7 (target-layer applicability, prerequisite, execution rules, severity, section 15.2, checks 1/10): %+v", len(inline), inline)
 	}
 	for _, chunk := range inline {
 		if chunk.Content == "" {
@@ -296,14 +294,14 @@ func TestGateMissionValidateFinalSynthesis(t *testing.T) {
 	grWriteSpec(t, root, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, root, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, root, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Testability / Acceptance Criteria"},
 		"6": {main + ": Testability / Acceptance Criteria"},
 	}))
-	grSubmitOK(t, root, runID, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
+	grSubmitOK(t, root, runID, "design", "2. Design soundness: FAIL — contradiction\n3. Scope integrity: PASS — checked\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
 	grSubmitOK(t, root, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Testability / Acceptance Criteria"}}))
-	grSubmitOK(t, root, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, root, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -356,7 +354,7 @@ func TestGateMissionUsesInstalledFrameworkPath(t *testing.T) {
 	grWriteSpec(t, root, "auth")
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	var out, errOut bytes.Buffer
-	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "structural", "--format", "json"}, &out, &errOut); err != nil {
+	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "document", "--format", "json"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	var mission gateMission
@@ -461,7 +459,7 @@ func TestGateMissionGrantsReadOnlyFrameworkInspection(t *testing.T) {
 	prohibition := "do not modify files, run state-changing commands, or launch sub-agents"
 
 	validateRun := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	validateMission := missionJSON(t, root, validateRun, "dependencies")
+	validateMission := missionJSON(t, root, validateRun, "external")
 	validateConstraints := strings.Join(validateMission.Constraints, "\n")
 	if !strings.Contains(validateConstraints, grant) {
 		t.Fatalf("validate mission does not grant the read-only framework inspection subcommands: %v", validateMission.Constraints)

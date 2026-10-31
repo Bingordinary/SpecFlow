@@ -323,9 +323,9 @@ func TestGateValidateBatchRequiresExactFindingKeys(t *testing.T) {
 	grWriteSpec(t, root, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	report := "2. Design: FAIL — contradiction\n4. Consistency: PASS — checked\n" +
+	report := "2. Design: FAIL — contradiction\n3. Scope: PASS — checked\n4. Consistency: PASS — checked\n" +
 		"[P1] design — contradiction (actionable)\n  problem: inconsistent design\n  evidence: conflicting declarations\n  impact: ambiguous implementation\n  fix: reconcile them\n" +
-		"check-2: " + main + ": Description\ncheck-4: " + main + ": Description\n"
+		"check-2: " + main + ": Description\ncheck-3: " + main + ": Description\ncheck-4: " + main + ": Description\n"
 	id := grRunFindingID(runID, "design", 1)
 	for _, suffix := range []string{"", "Finding affects: " + id + " = 4\n", "Finding affects: " + id + " = 2,4\n", "Finding affects: " + id + " = 1\n"} {
 		if _, err := grSubmitRaw(t, root, runID, "design", report+suffix); err == nil {

@@ -61,15 +61,6 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if run.Status != gaterun.StatusOpen {
 		return fmt.Errorf("gate run %s is %s — only an open run accepts submissions; plan a new run", run.RunID, run.Status)
 	}
-	// An escalated run is abandon-only. The change review handed it off to a
-	// full run, so no report may land on it: accepting one would record a
-	// judgment — and, for a verify code key, publish public evidence and a
-	// shared-task pointer — inside a run that can never finalize. The guard runs
-	// before the key and terminal-session checks, so every submission is refused
-	// with the same fail-closed message the mission and finalize guards use.
-	if run.Escalated {
-		return escalatedRunError(run)
-	}
 	spec, err := gaterun.BuildSessionSpec(absRoot, run, keys)
 	if err != nil {
 		return err
@@ -210,14 +201,6 @@ func submitGateSession(absRoot, runID, sessionID string, keys []string, reportPa
 	if derr := validateSessionSemantics(absRoot, run, spec, parsed, report); derr != nil {
 		return reject(derr.Error())
 	}
-	if spec.Kind == gaterun.SessionKindDeltaReview {
-		if parsed.Review == nil {
-			return reject("delta review report carries no review record")
-		}
-		if aerr := gaterun.ApplyReviewLocked(absRoot, run, *parsed.Review); aerr != nil {
-			return reject(aerr.Error())
-		}
-	}
 
 	state.SessionID = sessionID
 	state.Keys = append([]string{}, keys...)
@@ -282,9 +265,6 @@ func normalizeDeclaredPaths(absRoot string, parsed *parsedReport) {
 }
 
 func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, report string) error {
-	if spec.Kind == gaterun.SessionKindDeltaReview {
-		return nil
-	}
 	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.SessionKindCross {
 		return errors.New("ownership records belong to the final synthesis")
 	}
@@ -376,9 +356,6 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 		expectedStatus[gaterun.RelationshipKey(name)] = true
 	}
 	for _, ck := range run.Coverage {
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			continue
-		}
 		for _, key := range run.ReportKeys(ck) {
 			expectedStatus[key] = true
 		}
@@ -690,7 +667,7 @@ func writeGateSubmitUsage(w io.Writer) {
 	fmt.Fprintln(w, "  specflowctl gate-submit --run RUN_ID --session SESSION_ID --keys K1,K2 --report PATH [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Records one reviewer session's report after mechanical validation: the run is")
-	fmt.Fprintln(w, "open and not escalated, the assigned keys belong to the run's coverage set and")
+	fmt.Fprintln(w, "open, the assigned keys belong to the run's coverage set and")
 	fmt.Fprintln(w, "are not already covered by an accepted session, the session id matches the keys,")
 	fmt.Fprintln(w, "its dependencies are resolved, and the report is structurally complete — every")
 	fmt.Fprintln(w, "assigned check key has exactly one verdict line with an allowed token and")
@@ -713,9 +690,6 @@ func writeGateSubmitUsage(w io.Writer) {
 }
 
 func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) error {
-	if spec.Kind == gaterun.SessionKindDeltaReview {
-		return nil
-	}
 	if run.Gate != gaterun.GateVerify {
 		return nil
 	}

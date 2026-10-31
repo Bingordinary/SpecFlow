@@ -35,7 +35,6 @@ type gateRunView struct {
 	Target            string                    `json:"target"`
 	Mode              string                    `json:"mode"`
 	Status            string                    `json:"status"`
-	Escalated         bool                      `json:"escalated,omitempty"`
 	Coverage          []gateCoverageView        `json:"coverage"`
 	Sessions          []gateSessionView         `json:"sessions"`
 	UncoveredKeys     []string                  `json:"uncovered_keys"`
@@ -66,7 +65,7 @@ func gateRunSnapshot(root string, run *gaterun.Run) (gateRunView, error) {
 	view := gateRunView{
 		SchemaVersion: 3, RunID: run.RunID, Gate: run.Gate,
 		TargetKind: run.TargetKind, TargetName: run.TargetName, Target: run.Target,
-		Mode: run.Mode, Status: run.Status, Escalated: run.Escalated,
+		Mode: run.Mode, Status: run.Status,
 		Coverage: []gateCoverageView{}, Sessions: []gateSessionView{}, UncoveredKeys: []string{},
 		ReviewerBatches:   [][]string{},
 		SplitRequiredKeys: []string{},

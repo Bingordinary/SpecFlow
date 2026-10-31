@@ -33,7 +33,6 @@ type parsedReport struct {
 	// (narrative-block headings and promise entry ids). The design record's
 	// spec pins are derived from them.
 	SpecBasis map[string][]string
-	Review    *gaterun.ReviewRecord
 }
 
 // itemMismatchTypeSet is the fixed MISMATCH type vocabulary of an item
@@ -62,8 +61,6 @@ var (
 	crossItemLineRe     = regexp.MustCompile(`^Cross item:\s*([a-z][a-z0-9_]*)\s*=\s*(PASS|FAIL)\s+[—-]\s+(\S.*)$`)
 	crossItemFindingRe  = regexp.MustCompile(`^Cross item finding:\s*([a-z][a-z0-9_]*)\s*=\s*(\S+)\s*$`)
 	crossSummaryRe      = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Cross-check:[ \t]*(\d+)[ \t]*/[ \t]*(\d+)[ \t]+(PASS|FAIL)[ \t]+[—-][ \t]+(\S[^\n]*)$`)
-	reviewResultRe      = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Review result:[ \t]*(accept|recheck|escalate-full)[ \t]*[—-][ \t]*(\S[^\n]*)$`)
-	reviewRecheckRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Recheck:[ \t]*(\S[^\n]*)$`)
 )
 
 // parseSessionReport validates one session report against its planned session:
@@ -71,43 +68,11 @@ var (
 // blocking verdicts carry a reason. The tooling records evidence from the
 // run's input surface — the report declares no dependency scope. See
 // framework/verification_scope.md §Coverage Model → Session report contract.
-// parseDeltaReviewReport parses the delta review session contract: one
-// `Review result:` line with a reason, plus a `Recheck:` key list when the
-// result is recheck. The review produces no check verdicts.
-func parseDeltaReviewReport(spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
-	out := &parsedReport{Verdicts: map[string]string{}}
-	results := reviewResultRe.FindAllStringSubmatch(report, -1)
-	if len(results) != 1 {
-		return nil, fmt.Errorf("delta review report must carry exactly one `Review result: accept|recheck|escalate-full` line with a reason")
-	}
-	result := results[0][1]
-	reason := strings.TrimSpace(results[0][2])
-	var recheck []string
-	if result == "recheck" {
-		lines := reviewRecheckRe.FindAllStringSubmatch(report, -1)
-		if len(lines) != 1 {
-			return nil, fmt.Errorf("a recheck review must carry exactly one `Recheck: key[, key...]` line")
-		}
-		for _, tok := range strings.Split(lines[0][1], ",") {
-			key := strings.TrimSpace(tok)
-			if key == "" {
-				return nil, fmt.Errorf("the recheck key list carries an empty key")
-			}
-			recheck = append(recheck, key)
-		}
-	}
-	out.Review = &gaterun.ReviewRecord{Result: result, Recheck: recheck, Reason: reason, Session: spec.SessionID}
-	return out, nil
-}
-
 func parseSessionReport(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, report string) (*parsedReport, error) {
 	if strings.TrimSpace(report) == "" {
 		return nil, fmt.Errorf("empty report")
 	}
 	report = strings.ReplaceAll(report, "\r\n", "\n")
-	if spec.Kind == gaterun.SessionKindDeltaReview {
-		return parseDeltaReviewReport(spec, report)
-	}
 	if gaterun.IsQualityKind(spec.Kind) {
 		return parseQualitySessionReport(absRoot, run, spec, report)
 	}

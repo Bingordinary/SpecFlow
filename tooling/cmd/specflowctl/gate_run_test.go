@@ -162,7 +162,7 @@ var grFrameworkFixtureSections = map[string][]struct {
 		{2, "Step 7 — First-principles divergence analysis"},
 	},
 	"verification_scope.md": {
-		{3, "The change review (validate)"},
+		{3, "The validate delta boundary"},
 		{3, "Final synthesis"},
 		{3, "Relationship vocabulary"},
 	},
@@ -454,18 +454,6 @@ func grSubmitOK(t *testing.T, repoRoot, runID, sessionID, report string) string 
 	return out
 }
 
-// grReviewAccept submits an accepting delta review for an open review run.
-func grReviewAccept(t *testing.T, repoRoot, runID string) {
-	t.Helper()
-	grSubmitOK(t, repoRoot, runID, "review", "Review result: accept — test review\n")
-}
-
-// grReviewRecheck submits a delta review that names the given re-run keys.
-func grReviewRecheck(t *testing.T, repoRoot, runID string, keys ...string) {
-	t.Helper()
-	grSubmitOK(t, repoRoot, runID, "review", "Review result: recheck — test review\nRecheck: "+strings.Join(keys, ", ")+"\n")
-}
-
 // grSubmitKeys submits one session report for an explicit coverage key batch.
 func grSubmitKeys(t *testing.T, repoRoot, runID string, keys []string, report string) string {
 	t.Helper()
@@ -579,7 +567,14 @@ func grDependenciesReport(scopes map[string][]string) string {
 			scopes["9"] = lines
 		}
 	}
-	return grValidateReport([]string{"7", "8", "9"}, scopes)
+	if _, ok := scopes["6"]; !ok {
+		if lines, ok := scopes["8"]; ok {
+			scopes["6"] = lines
+		} else if lines, ok := scopes["7"]; ok {
+			scopes["6"] = lines
+		}
+	}
+	return grValidateReport([]string{"6", "7", "8", "9"}, scopes)
 }
 
 // grCrossReport builds a cross-check session report.
@@ -788,54 +783,57 @@ func grClarityReport(specPath, verdict string) string {
 	return fmt.Sprintf("10. Clarity: %s — %s\n\ncheck-10: %s: Description\n", verdict, "clarity fixture judgment", specPath)
 }
 
-// grSubmitClarity submits the clarity group's single check-10 session when the
-// run carries the coverage key and it is not already accepted. Runs without it
-// (verify, rule validate) are skipped, so the helper is safe to call before any
-// cross submission.
+// grSubmitClarity submits the document group's session (checks 1 and 10) when
+// the run carries the coverage key and it is not already accepted. Runs
+// without it (verify, rule validate) are skipped, so the helper is safe to call
+// before any cross submission.
 func grSubmitClarity(t *testing.T, repoRoot, runID, specPath string) {
 	t.Helper()
 	run, err := gaterun.Load(repoRoot, runID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.CoverageByKey("clarity") == nil {
+	if run.CoverageByKey("document") == nil {
 		return
 	}
-	state, err := grLoadSessionState(repoRoot, run, "clarity")
+	state, err := grLoadSessionState(repoRoot, run, "document")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Status == gaterun.SessionAccepted {
 		return
 	}
-	grSubmitOK(t, repoRoot, runID, "clarity", grClarityReport(specPath, "PASS"))
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+		"1":                  {specPath + ": all"},
+		gaterun.ClarityCheck: {specPath + ": all"},
+	}))
 }
 
-// grSubmitValidateSessions submits the full 7-session validate plan for a
-// spec. extraScopes are appended to the structural session's scope lines
+// grSubmitValidateSessions submits the four-group validate plan for a spec.
+// extraScopes are appended to the document session's check-1 scope lines
 // (e.g. appendix declarations).
 func grSubmitValidateSessions(t *testing.T, repoRoot, runID, specPath string, extraScopes ...string) {
 	t.Helper()
 	desc := specPath + ": Description"
 	accept := specPath + ": Acceptance Items"
 	front := specPath + ": frontmatter"
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": append([]string{front, desc}, extraScopes...),
-		"3": {accept},
-		"6": {accept},
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+		"1":                  append([]string{front, desc}, extraScopes...),
+		gaterun.ClarityCheck: {specPath + ": all"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {desc},
+		"3": {accept},
 		"4": {desc},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
+		"6": {accept},
 		"7": {desc},
 		"8": {desc},
 	}))
-	grSubmitClarity(t, repoRoot, runID, specPath)
 	run := mustLoadRun(t, repoRoot, runID)
 	states, err := gaterun.LoadSessionStates(repoRoot, run)
 	if err != nil {
@@ -860,31 +858,27 @@ func grSubmitPlannedValidateSessions(t *testing.T, repoRoot, runID, specPath str
 	accept := specPath + ": Acceptance Items"
 	front := specPath + ": frontmatter"
 	reports := map[string]string{
-		"structural": grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-			"1": {front, desc},
-			"3": {accept},
-			"6": {accept},
+		"document": grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+			"1":                  {front, desc},
+			gaterun.ClarityCheck: {specPath + ": all"},
 		}),
-		"design": grValidateReport([]string{"2", "4"}, map[string][]string{
+		"design": grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 			"2": {desc},
+			"3": {accept},
 			"4": {desc},
 		}),
 		"acceptance": grValidateReport([]string{"5"}, map[string][]string{
 			"5": {accept},
 		}),
-		"dependencies": grDependenciesReport(map[string][]string{
+		"external": grDependenciesReport(map[string][]string{
+			"6": {accept},
 			"7": {desc},
 			"8": {desc},
 		}),
 	}
 	for _, ck := range run.Coverage {
-		switch ck.Key {
-		case "clarity":
-			grSubmitClarity(t, repoRoot, runID, specPath)
-		default:
-			if report, ok := reports[ck.Key]; ok {
-				grSubmitOK(t, repoRoot, runID, ck.Key, report)
-			}
+		if report, ok := reports[ck.Key]; ok {
+			grSubmitOK(t, repoRoot, runID, ck.Key, report)
 		}
 	}
 }
@@ -985,22 +979,22 @@ func TestGatePlanValidateUnitPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Mode != "full" || len(run.Coverage) != 5 {
-		t.Fatalf("expected a 5-key full coverage set, got mode %q with %d keys", run.Mode, len(run.Coverage))
+	if run.Mode != "full" || len(run.Coverage) != 4 {
+		t.Fatalf("expected a 4-key full coverage set, got mode %q with %d keys", run.Mode, len(run.Coverage))
 	}
-	wantIDs := []string{"structural", "design", "acceptance", "dependencies", "clarity"}
+	wantIDs := []string{"document", "design", "acceptance", "external"}
 	if got := strings.Join(coverageKeysOf(run), ","); got != strings.Join(wantIDs, ",") {
 		t.Fatalf("expected coverage keys %v, got %s", wantIDs, got)
 	}
-	if got := strings.Join(run.ReportKeys(*run.CoverageByKey("structural")), ","); got != "1,3,6" {
-		t.Fatalf("expected structural checks 1,3,6, got %s", got)
+	if got := strings.Join(run.ReportKeys(*run.CoverageByKey("document")), ","); got != "1,10" {
+		t.Fatalf("expected document checks 1,10, got %s", got)
 	}
-	clarity, err := grBuildSessionSpec(repoRoot, run, []string{"clarity"})
+	document, err := grBuildSessionSpec(repoRoot, run, []string{"document"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(clarity.CheckKeys, ",") != "10" {
-		t.Fatalf("the clarity session must own check 10, got %+v", clarity)
+	if strings.Join(document.CheckKeys, ",") != "1,10" {
+		t.Fatalf("the document session must own checks 1 and 10, got %+v", document)
 	}
 	if run.CoverageByKey("cross") != nil {
 		t.Fatal("the final synthesis must not be a coverage key")
@@ -1011,8 +1005,9 @@ func TestGatePlanValidateUnitPlan(t *testing.T) {
 }
 
 // TestValidateClarityGroupIsNormalCheck pins D8: the clarity group is a single
-// normal checks session that owns check 10, reads the unit spec, and obeys the
-// standard verdict/finding contract (a FAIL needs a P0/P1 finding).
+// normal checks session that owns check 10 with check 1, reads the unit spec,
+// and obeys the standard verdict/finding contract (a FAIL needs a P0/P1
+// finding).
 func TestValidateClarityGroupIsNormalCheck(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
@@ -1020,38 +1015,38 @@ func TestValidateClarityGroupIsNormalCheck(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 
-	spec := grRunSpec(t, repoRoot, runID, "clarity")
-	if strings.Join(spec.CheckKeys, ",") != "10" {
-		t.Fatalf("clarity session checks = %v, want 10", spec.CheckKeys)
+	spec := grRunSpec(t, repoRoot, runID, "document")
+	if strings.Join(spec.CheckKeys, ",") != "1,10" {
+		t.Fatalf("document session checks = %v, want 1,10", spec.CheckKeys)
 	}
 	if !grContainsString(spec.ReadRefs, main) {
-		t.Fatalf("clarity session must read the unit main spec, got %v", spec.ReadRefs)
+		t.Fatalf("document session must read the unit main spec, got %v", spec.ReadRefs)
 	}
 
-	noFinding := "10. Clarity: FAIL — ambiguous\n\ncheck-10: " + main + ": Description\n"
-	if _, err := grSubmit(t, repoRoot, runID, "clarity", noFinding); err == nil || !strings.Contains(err.Error(), "requires at least one P0/P1 finding") {
+	noFinding := "1. Structural integrity: PASS — checked\n10. Clarity: FAIL — ambiguous\n\ncheck-1: " + main + ": all\ncheck-10: " + main + ": Description\n"
+	if _, err := grSubmit(t, repoRoot, runID, "document", noFinding); err == nil || !strings.Contains(err.Error(), "requires at least one P0/P1 finding") {
 		t.Fatalf("expected a clarity FAIL without a finding to be rejected, got %v", err)
 	}
-	withFinding := "10. Clarity: FAIL — ambiguous\n\n[P1] clarity — the spec is ambiguous (actionable)\n\ncheck-10: " + main + ": Description\n"
-	grSubmitOK(t, repoRoot, runID, "clarity", withFinding)
+	withFinding := "1. Structural integrity: PASS — checked\n10. Clarity: FAIL — ambiguous\n\n[P1] clarity — the spec is ambiguous (actionable)\nFinding affects: " + grRunFindingID(runID, "document", 1) + " = 10\n\ncheck-1: " + main + ": all\ncheck-10: " + main + ": Description\n"
+	grSubmitOK(t, repoRoot, runID, "document", withFinding)
 }
 
-func TestGateMissionStructuralContextIncludesUnresolvedLogicalReference(t *testing.T) {
+func TestGateMissionExternalContextIncludesUnresolvedLogicalReference(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
 	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_missing")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	structural := grRunSpec(t, repoRoot, runID, "structural")
-	if !grContainsString(structural.ReadRefs, "rule:b_rule_missing") {
-		t.Fatalf("structural session must retain the unresolved Check 4 reference, got %+v", structural)
+	external := grRunSpec(t, repoRoot, runID, "external")
+	if !grContainsString(external.ReadRefs, "rule:b_rule_missing") {
+		t.Fatalf("external session must retain the unresolved Check 6 reference, got %+v", external)
 	}
 	if design := grRunSpec(t, repoRoot, runID, "design"); grContainsString(design.ReadRefs, "rule:b_rule_missing") {
 		t.Fatalf("design session must not receive the unrelated logical reference, got %+v", design)
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", "structural"}, &stdout, &stderr); err != nil {
+	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", runID, "--keys", "external"}, &stdout, &stderr); err != nil {
 		t.Fatalf("gate-mission failed: %v (stderr=%s)", err, strings.TrimSpace(stderr.String()))
 	}
 	if !strings.Contains(stdout.String(), "  - rule:b_rule_missing\n") {
@@ -1289,17 +1284,17 @@ func TestGateRunRecordsWholeFileEvidence(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 	main := "docs/specs/units/candidate/unit_auth.md"
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": all"},
 		"3": {main + ": all"},
 		"6": {main + ": all"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": all"},
 		"4": {main + ": all"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": all"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {main + ": all"},
 		"8": {main + ": all"},
 	}))
@@ -1374,19 +1369,19 @@ func TestGateRunLogicalReference(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
 	main := "docs/specs/units/candidate/unit_self.md"
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Acceptance Items"},
 		"8": {main + ": Description"},
 	}))
@@ -1428,19 +1423,19 @@ func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 	}
 
 	main := filepath.ToSlash(strings.TrimPrefix(mainPath, repoRoot+string(filepath.Separator)))
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {main + ": frontmatter"},
 		"8": {"rule:g_rule_http: all"},
 	}))
@@ -1801,7 +1796,7 @@ func TestGateFindingsRequireResolutionLabel(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_auth.md"
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	noLabel := "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction\n\ncheck-2: " + main + ": Description\ncheck-4: " + main + ": Description\n"
+	noLabel := "2. Design soundness: FAIL — contradiction\n3. Scope integrity: PASS — checked\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction\n\ncheck-2: " + main + ": Description\ncheck-4: " + main + ": Description\n"
 	if _, err := grSubmit(t, repoRoot, runID, "design", noLabel); err == nil || !strings.Contains(err.Error(), "carries no resolution label") {
 		t.Fatalf("expected the missing-label rejection, got %v", err)
 	}
@@ -1915,7 +1910,7 @@ func TestVerifyItemBindsOnlyItsOwnResultInDelta(t *testing.T) {
 		t.Fatalf("expected the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
 	}
 	if grContainsString(coverageKeysOf(deltaRun), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(deltaRun))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(deltaRun))
 	}
 	// The item edit re-runs the edited item and the judgments that pin the
 	// whole spec; the per-file design judgment and the private code record
@@ -2030,14 +2025,14 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 	grFinalizeOK(t, repoRoot, seedRun, "--result", "pass")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
+	grSubmitOK(t, repoRoot, runID, "design", "2. Design soundness: FAIL — contradiction\n3. Scope integrity: PASS — checked\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(runID, "design", 1)))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2074,29 +2069,28 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGateStatus(t, freshOut, "validate", "BLOCKED")
-	if !strings.Contains(freshOut, "revalidate@auth (repair recovery from the failure record)") {
+	if !strings.Contains(freshOut, "revalidate@auth (the tool derives the scope: external-only or full)") {
 		t.Fatalf("expected the repair advice, got:\n%s", freshOut)
 	}
 }
 
-// TestGateRunValidateFullFailRepairFlow: a candidate validate full FAIL is the
-// failure-recovery baseline — the delta mode refuses it, the repair plan
-// re-runs the failed session plus cross and carries the passed checks over, and
-// the repaired cache is promote-consumable with basis: repair.
-func TestGateRunValidateFullFailRepairFlow(t *testing.T) {
+// TestGateRunValidateFullFailRecoveryFlow: a candidate validate full FAIL is
+// the failure-recovery baseline — the derived run covers the full scope and
+// writes a full-basis pass cache.
+func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, fullRun, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, fullRun, "design", "2. Design soundness: FAIL — contradiction\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(fullRun, "design", 1)))
+	grSubmitOK(t, repoRoot, fullRun, "design", "2. Design soundness: FAIL — contradiction\n3. Scope integrity: PASS — checked\n4. Evidence-driven vs design-driven consistency: PASS — ok\n\n[P1] design — contradiction (actionable)\n\ncheck-2: "+main+": Description\ncheck-4: "+main+": Description\n"+fmt.Sprintf("Finding affects: %s = 2\n", grRunFindingID(fullRun, "design", 1)))
 	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}}))
-	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, fullRun, "external", grDependenciesReport(map[string][]string{
 		"7": {main + ": Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2104,36 +2098,32 @@ func TestGateRunValidateFullFailRepairFlow(t *testing.T) {
 	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "fail", "--p0-count", "1")
 
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "--mode repair") {
-		t.Fatalf("expected the delta-mode refusal on a failure baseline, got %v", err)
+	// A failure record recovers with the derived run, which covers the full
+	// scope.
+	recoveryRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	recovery := mustLoadRun(t, repoRoot, recoveryRun)
+	if recovery.Mode != gaterun.ModeFull || len(recovery.Coverage) != 4 {
+		t.Fatalf("a failure record must recover with the full scope, got mode %q / %v", recovery.Mode, coverageKeysOf(recovery))
 	}
-	repairRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair")
-	run := mustLoadRun(t, repoRoot, repairRun)
-	if got := strings.Join(coverageKeysOf(run), ","); got != "design" {
-		t.Fatalf("expected the failed design group, got %v", got)
+	if len(recovery.CarriedKeys) != 0 {
+		t.Fatalf("a full-scope recovery carries nothing, got %v", recovery.CarriedKeys)
 	}
-	if got := strings.Join(run.CarriedKeys, ","); got != "1,10,3,5,6,7,8,9" {
-		t.Fatalf("expected the passed checks carried over, got %v", got)
+	if !strings.Contains(strings.Join(recovery.Notices, " "), `result is "fail"`) {
+		t.Fatalf("expected the failure-record notice, got %v", recovery.Notices)
 	}
-
-	grSubmitOK(t, repoRoot, repairRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
-		"2": {main + ": Description"},
-		"4": {main + ": Description"},
-	}))
-	grSubmitClarity(t, repoRoot, repairRun, main)
-	grSubmitOK(t, repoRoot, repairRun, "cross", grCrossReport(main, "Description"))
-	grFinalizeOK(t, repoRoot, repairRun, "--result", "pass")
+	grSubmitValidateSessions(t, repoRoot, recoveryRun, main)
+	grFinalizeOK(t, repoRoot, recoveryRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, "basis: repair") || !strings.Contains(cache, `check: "2"`) {
-		t.Fatalf("expected a repair cache carrying the passed checks, got:\n%s", cache)
+	if !strings.Contains(cache, "basis: full") || !strings.Contains(cache, `check: "2"`) {
+		t.Fatalf("expected a full-basis recovery cache, got:\n%s", cache)
 	}
 	res, err := validationcache.CheckValidate(repoRoot, "auth")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Fresh {
-		t.Fatalf("expected the repair cache to be fresh, got: %s", res.Reason)
+		t.Fatalf("expected the recovery cache to be fresh, got: %s", res.Reason)
 	}
 }
 
@@ -2148,16 +2138,16 @@ func TestGateSubmitValidation(t *testing.T) {
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
 
 	// Empty report.
-	if _, err := grSubmit(t, repoRoot, runID, "structural", ""); err == nil || !strings.Contains(err.Error(), "empty report") {
+	if _, err := grSubmit(t, repoRoot, runID, "document", ""); err == nil || !strings.Contains(err.Error(), "empty report") {
 		t.Fatalf("expected an empty-report rejection, got %v", err)
 	}
 	// Missing verdict line.
-	if _, err := grSubmit(t, repoRoot, runID, "structural", "check-1: "+main+": Description\n"); err == nil || !strings.Contains(err.Error(), "no verdict line") {
+	if _, err := grSubmit(t, repoRoot, runID, "document", "check-1: "+main+": Description\n"); err == nil || !strings.Contains(err.Error(), "no verdict line") {
 		t.Fatalf("expected a missing-verdict rejection, got %v", err)
 	}
 	// A FAIL verdict with no P0/P1 finding is inconsistent.
-	failWithoutFinding := "1. Structural integrity: FAIL — broken\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n"
-	if _, err := grSubmit(t, repoRoot, runID, "structural", failWithoutFinding); err == nil || !strings.Contains(err.Error(), "P0/P1 finding") {
+	failWithoutFinding := "1. Structural integrity: FAIL — broken\n10. Clarity: PASS — ok\n"
+	if _, err := grSubmit(t, repoRoot, runID, "document", failWithoutFinding); err == nil || !strings.Contains(err.Error(), "P0/P1 finding") {
 		t.Fatalf("expected a FAIL-without-finding rejection, got %v", err)
 	}
 	// A report with no dependency declarations is valid: reports carry no
@@ -2166,7 +2156,7 @@ func TestGateSubmitValidation(t *testing.T) {
 	// The rejected attempts are recorded; a valid submission is accepted and
 	// terminal.
 	grSubmitValidateSessions(t, repoRoot, runID, main)
-	state, err := grLoadSessionState(repoRoot, mustLoadRun(t, repoRoot, runID), "structural")
+	state, err := grLoadSessionState(repoRoot, mustLoadRun(t, repoRoot, runID), "document")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2176,7 +2166,7 @@ func TestGateSubmitValidation(t *testing.T) {
 	if state.Status != gaterun.SessionAccepted {
 		t.Fatalf("expected the structural session accepted, got %q", state.Status)
 	}
-	if _, err := grSubmit(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	if _, err := grSubmit(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
@@ -2554,19 +2544,19 @@ func TestGateRunSalvagesLogicalRefLayerMove(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_self.md"
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2591,16 +2581,16 @@ func TestGateRunSalvagesLogicalRefLayerMove(t *testing.T) {
 	if !strings.Contains(out, "Input drift since gate-plan: unit:auth") {
 		t.Fatalf("expected the salvage notice to name the moved ref, got:\n%s", out)
 	}
-	if !strings.Contains(out, "invalidated check(s): 1, 3, 6, 7, 8, 9") {
-		t.Fatalf("expected exactly the groups that read unit:auth invalidated, got:\n%s", out)
+	if !strings.Contains(out, "invalidated check(s): 6, 7, 8, 9") {
+		t.Fatalf("expected exactly the external group that reads unit:auth invalidated, got:\n%s", out)
 	}
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
-	for _, key := range []string{`"1"`, `"6"`, `"7"`, `"9"`} {
+	for _, key := range []string{`"6"`, `"7"`, `"8"`, `"9"`} {
 		if !strings.Contains(cache, "  - "+key) {
 			t.Fatalf("expected %s in invalidated_checks, got:\n%s", key, cache)
 		}
 	}
-	for _, key := range []string{`"2"`, `"5"`, `"10"`} {
+	for _, key := range []string{`"1"`, `"2"`, `"3"`, `"4"`, `"5"`, `"10"`} {
 		if strings.Contains(cache, "  - "+key+"\n") {
 			t.Fatalf("unaffected check %s must not be invalidated, got:\n%s", key, cache)
 		}
@@ -2617,19 +2607,19 @@ func TestGateRunSalvageRepairRecovery(t *testing.T) {
 	// A full run finishes executing while a parallel session promotes the
 	// dependency unit: the logical ref unit:auth moves layers mid-run.
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: Description"},
 		"8": {main + ": Description"},
 	}))
@@ -2645,29 +2635,22 @@ func TestGateRunSalvageRepairRecovery(t *testing.T) {
 
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 
-	// Delta cannot offer invalidated judgments as carry candidates.
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "pending invalidations") {
-		t.Fatalf("expected the delta plan to refuse the salvaged baseline, got %v", err)
+	// The salvaged baseline's pending invalidations make the delta plan cover
+	// the full scope.
+	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, repoRoot, deltaRun)
+	if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {
+		t.Fatalf("a salvaged baseline recovers with the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
 	}
-
-	// Repair re-runs exactly the invalidated groups and carries the rest. The
-	// moved dependency is a content change in the recorded surface, so the
-	// repair reviews it like a delta before carrying anything.
-	repairRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "repair")
-	run := mustLoadRun(t, repoRoot, repairRun)
-	if got := coverageKeysOf(run); strings.Join(got, ",") != "review,structural,dependencies" {
-		t.Fatalf("expected the review plus the invalidated groups, got %v", got)
+	if !strings.Contains(strings.Join(run.Notices, " "), "pending invalidations") {
+		t.Fatalf("expected the pending-invalidation notice, got %v", run.Notices)
 	}
-	if strings.Join(run.CarriedKeys, ",") != "10,2,4,5" {
-		t.Fatalf("expected the unaffected checks carried, got %v", run.CarriedKeys)
-	}
-	grReviewAccept(t, repoRoot, repairRun)
-	grSubmitPlannedValidateSessions(t, repoRoot, repairRun, main)
-	grFinalizeOK(t, repoRoot, repairRun, "--result", "pass")
+	grSubmitPlannedValidateSessions(t, repoRoot, deltaRun, main)
+	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
-	if !strings.Contains(cache, "basis: repair") || strings.Contains(cache, "invalidated_checks:") {
-		t.Fatalf("expected the repair cache to clear the invalidations, got:\n%s", cache)
+	if !strings.Contains(cache, "basis: full") || strings.Contains(cache, "invalidated_checks:") {
+		t.Fatalf("expected the full recovery cache to clear the invalidations, got:\n%s", cache)
 	}
 	if !strings.Contains(cache, `check: "2"`) {
 		t.Fatalf("expected the carried check 2 evidence, got:\n%s", cache)
@@ -2677,8 +2660,9 @@ func TestGateRunSalvageRepairRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !res.Fresh {
-		t.Fatalf("expected the repair cache to be fresh, got: %s", res.Reason)
+		t.Fatalf("expected the recovery cache to be fresh, got: %s", res.Reason)
 	}
+
 }
 
 func TestGateRunSalvagedDriftStalesEvidence(t *testing.T) {
@@ -2817,90 +2801,38 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	grSubmitValidateSessions(t, repoRoot, fullRun, main)
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
 
-	// Editing the Description section stales the checks that declared it.
+	// Editing the unit's own spec is a whole-document change: the mechanical
+	// plan covers the full scope and records the run as a full run.
 	data, _ := os.ReadFile(specPath)
 	os.WriteFile(specPath, []byte(strings.Replace(string(data), "Prose.", "Prose. Edited.", 1)), 0644)
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
-	if got := coverageKeysOf(run); strings.Join(got, ",") != "review" {
-		t.Fatalf("expected the review coverage only, got %v", got)
+	if run.Mode != gaterun.ModeFull {
+		t.Fatalf("an own-content change must cover the full scope, got mode %q", run.Mode)
 	}
-	if len(run.CarriedKeys) != 10 || !containsString(run.CarriedKeys, "5") {
-		t.Fatalf("expected every standing check as a carry candidate, got %v", run.CarriedKeys)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "document,design,acceptance,external" {
+		t.Fatalf("expected the four coverage groups, got %s", got)
 	}
-	if run.ChangeSetFP == "" {
-		t.Fatal("expected the change-set fingerprint on the run")
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("a full-scope plan carries nothing, got %v", run.CarriedKeys)
 	}
-	reviewMission := missionJSON(t, repoRoot, deltaRun, "review")
-	if reviewMission.Mode != "delta" || strings.Join(reviewMission.Sessions[0].CheckKeys, ",") != "review" {
-		t.Fatalf("expected a delta review mission, got %+v", reviewMission)
+	if !strings.Contains(strings.Join(run.Notices, " "), "own spec content changed") {
+		t.Fatalf("expected the own-content notice, got %v", run.Notices)
 	}
-	if len(reviewMission.Sessions[0].ChangeSet) == 0 || len(reviewMission.Sessions[0].Standing) == 0 {
-		t.Fatalf("review mission must carry the change set and standing conclusions: %+v", reviewMission.Sessions[0])
-	}
-	// The review contract declares the accepted Recheck vocabulary and the
-	// mission prints it beside the standing conclusions, so the reviewer never
-	// has to guess the spelling.
-	if !strings.Contains(reviewMission.Sessions[0].ReportContract.Template, `each key exactly as printed under "Standing conclusions"`) {
-		t.Fatalf("review report template must declare the Recheck vocabulary: %s", reviewMission.Sessions[0].ReportContract.Template)
-	}
-	vocabReq := false
-	for _, rule := range reviewMission.Sessions[0].ReportContract.Requirements {
-		if rule.ID == "recheck-keys" {
-			vocabReq = true
-		}
-	}
-	if !vocabReq {
-		t.Fatal("review report contract must carry a recheck-keys requirement")
-	}
-	var reviewPrompt, reviewErr bytes.Buffer
-	if err := runGateMission([]string{"--repo-root", repoRoot, "--run", deltaRun, "--keys", "review", "--format", "prompt"}, &reviewPrompt, &reviewErr); err != nil {
-		t.Fatalf("review prompt: %v (%s)", err, reviewErr.String())
-	}
-	if !strings.Contains(reviewPrompt.String(), "these keys are the accepted `Recheck:` values") {
-		t.Fatalf("review prompt must mark the standing conclusions as the Recheck keys:\n%s", reviewPrompt.String())
-	}
-
-	// Carried sessions cannot be submitted: they are not part of the plan.
-	if _, err := grSubmit(t, repoRoot, deltaRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {main + ": Acceptance Items"}})); err == nil || !strings.Contains(err.Error(), "not part of") {
-		t.Fatalf("expected the carried session to be absent from the plan, got %v", err)
-	}
-
-	// The reviewer names one check per affected group; each group re-runs.
-	grReviewRecheck(t, repoRoot, deltaRun, "1", "2", "7", "10")
-	grSubmitOK(t, repoRoot, deltaRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
-		"1": {main + ": Description"},
-		"3": {main + ": Acceptance Items"},
-		"6": {main + ": Acceptance Items"},
-	}))
-	grSubmitOK(t, repoRoot, deltaRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
-		"2": {main + ": Description"},
-		"4": {main + ": Description"},
-	}))
-	grSubmitOK(t, repoRoot, deltaRun, "dependencies", grDependenciesReport(map[string][]string{
-		"7": {main + ": Description"},
-		"8": {main + ": Description"},
-	}))
-	grSubmitClarity(t, repoRoot, deltaRun, main)
+	grSubmitValidateSessions(t, repoRoot, deltaRun, main)
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, "basis: delta") {
-		t.Fatalf("expected basis: delta, got:\n%s", cache)
-	}
-	if !strings.Contains(cache, "reviewed_change_set:") || !strings.Contains(cache, "review_result: recheck") {
-		t.Fatalf("expected the review record in the cache, got:\n%s", cache)
-	}
-	if !strings.Contains(cache, `check: "5"`) {
-		t.Fatalf("expected the carried check 5 evidence, got:\n%s", cache)
+	if !strings.Contains(cache, "basis: full") {
+		t.Fatalf("expected basis: full, got:\n%s", cache)
 	}
 	res, err := validationcache.CheckValidate(repoRoot, "auth")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Fresh {
-		t.Fatalf("expected the delta cache to be fresh, got: %s", res.Reason)
+		t.Fatalf("expected the rewritten cache to be fresh, got: %s", res.Reason)
 	}
 
 	// A delta plan with nothing changed is refused.
@@ -2909,11 +2841,32 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	}
 }
 
-// TestGateRunPeerEditDoesNotStaleValidateCache pins the one-way dependency
-// direction (issue #68): a unit validate reads only its declared promise providers and
-// rule_refs, never unrelated peers — Check 9 is the mechanical
-// `specflowctl surfaces` audit. A peer's surface-declaration edit must not
-// stale the target's validate cache or force a delta re-run.
+func TestGateRunDeltaNewAppendixCoversFullScope(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grEnableMissionLayout(t, repoRoot)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+
+	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, fullRun, main)
+	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
+
+	appendix := "docs/specs/units/candidate/appendix/unit_auth_notes.md"
+	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n## Extra\n\nMore.\n")
+
+	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, repoRoot, deltaRun)
+	if run.Mode != gaterun.ModeFull {
+		t.Fatalf("a new own appendix is own content and must cover the full scope, got %q", run.Mode)
+	}
+	if len(run.Coverage) != 4 {
+		t.Fatalf("expected the four coverage groups, got %v", coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), appendix) {
+		t.Fatalf("expected the changed appendix in the notice, got %v", run.Notices)
+	}
+}
+
 func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
@@ -2924,19 +2877,19 @@ func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	accept := main + ": Acceptance Items"
 
 	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, fullRun, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, fullRun, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": frontmatter", desc},
 		"3": {accept},
 		"6": {accept},
 	}))
-	grSubmitOK(t, repoRoot, fullRun, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, fullRun, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {desc},
 		"4": {desc},
 	}))
 	grSubmitOK(t, repoRoot, fullRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
 	}))
-	grSubmitOK(t, repoRoot, fullRun, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, fullRun, "external", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
 		"9": {accept},
@@ -2975,106 +2928,6 @@ func TestGateRunPeerEditDoesNotStaleValidateCache(t *testing.T) {
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
 		t.Fatalf("expected the freshness refusal after an unrelated peer edit, got %v", err)
 	}
-}
-
-// TestGateRunDeltaPlanAddsNewAppendixOnce pins that a new appendix that makes
-// the validate cache stale reaches the delta review exactly once: the change
-// report is produced from the same current-required-input discovery fresh uses,
-// and the plan does not add a duplicate entry.
-func TestGateRunDeltaPlanAddsNewAppendixOnce(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	grEnableMissionLayout(t, repoRoot)
-	grWriteSpec(t, repoRoot, "auth")
-	main := "docs/specs/units/candidate/unit_auth.md"
-
-	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidateSessions(t, repoRoot, fullRun, main)
-	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
-
-	appendix := "docs/specs/units/candidate/appendix/unit_auth_notes.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n## Extra\n\nMore.\n")
-
-	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	run := mustLoadRun(t, repoRoot, deltaRun)
-	added := 0
-	for _, entry := range run.ChangeReport.Entries {
-		if entry.Kind != "added" {
-			continue
-		}
-		added++
-		if entry.Path != appendix {
-			t.Fatalf("unexpected added entry %q", entry.Path)
-		}
-	}
-	if added != 1 {
-		t.Fatalf("the new appendix must appear once in the change set, got %d: %+v", added, run.ChangeReport.Entries)
-	}
-	mission := missionJSON(t, repoRoot, deltaRun, "review")
-	count := 0
-	for _, line := range mission.Sessions[0].ChangeSet {
-		if strings.Contains(line, appendix) {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("the review mission must carry the new appendix once, got %d: %v", count, mission.Sessions[0].ChangeSet)
-	}
-}
-
-func TestGateRunRuleConsecutivePartialDeltasKeepCompleteJudgments(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
-	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
-	grWriteSpecWithRefs(t, repoRoot, "auth", "none", "b_rule_http")
-
-	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
-	fullScopes := map[string][]string{}
-	for c := 1; c <= 6; c++ {
-		key := fmt.Sprint(c)
-		fullScopes[key] = []string{rulePath + ": Constraint"}
-	}
-	grSubmitOK(t, repoRoot, fullRun, "checks", grValidateReport([]string{"1", "2", "3", "4", "5", "6"}, fullScopes))
-	grFinalizeOK(t, repoRoot, fullRun)
-
-	runDelta := func(oldText, newText string) {
-		t.Helper()
-		ruleAbs := filepath.Join(repoRoot, filepath.FromSlash(rulePath))
-		data, err := os.ReadFile(ruleAbs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(ruleAbs, []byte(strings.Replace(string(data), oldText, newText, 1)), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "delta")
-		run := mustLoadRun(t, repoRoot, deltaRun)
-		if got := strings.Join(coverageKeysOf(run), ","); got != "review" {
-			t.Fatalf("expected the review coverage only, got %s", got)
-		}
-		grReviewRecheck(t, repoRoot, deltaRun, "4")
-		run = mustLoadRun(t, repoRoot, deltaRun)
-		if got := strings.Join(run.CarriedKeys, ","); got != "1,2,3,5,6" {
-			t.Fatalf("unexpected carried checks: %s", got)
-		}
-		grSubmitKeys(t, repoRoot, deltaRun, []string{"4"}, grValidateReport([]string{"4"}, map[string][]string{
-			"4": {rulePath + ": Constraint"},
-		}))
-		grFinalizeOK(t, repoRoot, deltaRun)
-
-		state := grReadJudgmentBaseline(t, repoRoot, gaterun.TargetKindRule, "b_rule_http", gaterun.GateValidate)
-		if len(state.LogicalStatus) != 6 {
-			t.Fatalf("expected a complete 6-check judgment baseline after delta, got %v", state.LogicalStatus)
-		}
-		for c := 1; c <= 6; c++ {
-			if state.LogicalStatus[fmt.Sprint(c)] != "pass" {
-				t.Fatalf("expected check %d status pass after delta, got %q", c, state.LogicalStatus[fmt.Sprint(c)])
-			}
-		}
-	}
-
-	runDelta("Must use TLS.", "Must use TLS everywhere.")
-	runDelta("Must use TLS everywhere.", "Must use TLS everywhere, always.")
 }
 
 func TestRuleOutcomeRejectsCarriedRerunOverlap(t *testing.T) {
@@ -3130,7 +2983,7 @@ func TestRuleOutcomeDeduplicatesCarriedFindings(t *testing.T) {
 	}
 }
 
-func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
+func TestValidateFailureRecordRecoversWithFullRun(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
@@ -3148,14 +3001,13 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// An own-content change covers the full scope; the design group fails.
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	// The reviewer re-runs the design group; its check 2 will fail.
-	grReviewRecheck(t, repoRoot, deltaRun, "2")
 	run := mustLoadRun(t, repoRoot, deltaRun)
+	if run.Mode != gaterun.ModeFull {
+		t.Fatalf("expected the full scope, got mode %q", run.Mode)
+	}
 	for _, ck := range run.Coverage {
-		if ck.Kind == gaterun.SessionKindDeltaReview {
-			continue
-		}
 		checks := run.ReportKeys(ck)
 		scopes := map[string][]string{}
 		for _, key := range checks {
@@ -3173,11 +3025,15 @@ func TestCandidateValidateDeltaFailPreservesRecoveryRecord(t *testing.T) {
 	grFinalizeOK(t, repoRoot, deltaRun)
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, "result: fail") || !strings.Contains(cache, "basis: delta") || !strings.Contains(cache, "blocking: true") {
-		t.Fatalf("expected candidate validate delta FAIL to write a recovery record, got:\n%s", cache)
+	if !strings.Contains(cache, "result: fail") || !strings.Contains(cache, "basis: full") || !strings.Contains(cache, "blocking: true") {
+		t.Fatalf("expected a full-run failure record, got:\n%s", cache)
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err != nil {
-		t.Fatalf("expected the preserved record to support repair planning, got %v", err)
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "no repair mode") {
+		t.Fatalf("expected validate repair to be rejected, got %v", err)
+	}
+	// The full run is the recovery path.
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "full"); err != nil {
+		t.Fatalf("expected the full recovery plan, got %v", err)
 	}
 }
 
@@ -3237,7 +3093,7 @@ func TestGateStatusReportsProgress(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
@@ -3247,7 +3103,7 @@ func TestGateStatusReportsProgress(t *testing.T) {
 	if err := runGateStatus([]string{"--repo-root", repoRoot}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), runID) || !strings.Contains(stdout.String(), "coverage 1/5 covered") || !strings.Contains(stdout.String(), "1 session(s) (1 accepted, 0 pending, 0 rejected, 0 over capacity)") {
+	if !strings.Contains(stdout.String(), runID) || !strings.Contains(stdout.String(), "coverage 1/4 covered") || !strings.Contains(stdout.String(), "1 session(s) (1 accepted, 0 pending, 0 rejected, 0 over capacity)") {
 		t.Fatalf("unexpected status listing:\n%s", stdout.String())
 	}
 
@@ -3431,7 +3287,7 @@ func TestGateRunOverlappingLogicalInputIsAvailableToEverySession(t *testing.T) {
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--inputs-file", grInputsManifest(t, "unit:auth"))
 	run := mustLoadRun(t, repoRoot, runID)
-	for _, key := range []string{"structural", "design", "acceptance", "dependencies"} {
+	for _, key := range []string{"document", "design", "acceptance", "external"} {
 		spec := grRunSpec(t, repoRoot, runID, key)
 		if !containsString(spec.ReadRefs, "unit:auth") {
 			t.Fatalf("explicit logical input must be available to %s, got %+v", key, spec.ReadRefs)
@@ -3535,7 +3391,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Whole-file cache freshness flags the reorder as a content change: the
-	// delta review judges what it means (the item records above survive it).
+	// delta plan judges what it means (the item records above survive it).
 	if res.Fresh {
 		t.Fatalf("expected the reorder to be detected as a whole-file content change")
 	}
@@ -3559,7 +3415,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 		t.Fatalf("expected the invalidated item in coverage, got %v", coverageKeysOf(run))
 	}
 	if grContainsString(coverageKeysOf(run), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(run))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(run))
 	}
 	if !grContainsString(run.CarriedKeys, "item:auth:auth.logout") {
 		t.Fatalf("expected auth.logout carried over, got %v", run.CarriedKeys)
@@ -3618,19 +3474,19 @@ func TestGateRunLogicalRefItemRegionLayerMove(t *testing.T) {
 	main := "docs/specs/units/candidate/unit_self.md"
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {main + ": frontmatter", main + ": Description"},
 		"3": {main + ": Acceptance Items"},
 		"6": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {main + ": Description"},
 		"4": {main + ": Description"},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {main + ": Acceptance Items"},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {"unit:auth: acceptance_item:auth.core"},
 		"8": {main + ": Description"},
 	}))
@@ -3698,7 +3554,7 @@ func TestCrossNewFindingCoexistsWithCarriedFinding(t *testing.T) {
 		t.Fatalf("expected the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
 	}
 	if grContainsString(coverageKeysOf(deltaRun), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(deltaRun))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(deltaRun))
 	}
 	// auth.beta re-runs; alpha and its finding are carried.
 	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
@@ -3753,7 +3609,7 @@ func TestDeltaFinalizeUsesCarriedEvidenceSnapshot(t *testing.T) {
 		t.Fatalf("expected the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
 	}
 	if grContainsString(coverageKeysOf(deltaRun), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(deltaRun))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(deltaRun))
 	}
 	// Only auth.beta re-runs; alpha is carried with its snapshot.
 	if !grContainsString(deltaRun.CarriedKeys, "auth.alpha") || !grContainsString(coverageKeysOf(deltaRun), "item:auth:auth.beta") {
@@ -3800,7 +3656,7 @@ func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	for _, key := range []string{"structural", "design", "acceptance"} {
+	for _, key := range []string{"document", "design", "acceptance"} {
 		session := grRunSpec(t, repoRoot, runID, key)
 		for _, ref := range session.ReadRefs {
 			switch {
@@ -3812,11 +3668,10 @@ func TestValidateSessionExcludesAffectsFiles(t *testing.T) {
 		}
 	}
 
-	report := "1. Structural integrity: PASS — ok\n3. Scope integrity: PASS — ok\n6. Affects-source validity: PASS — ok\n\n" +
+	report := "1. Structural integrity: PASS — ok\n10. Clarity: PASS — ok\n\n" +
 		"check-1: " + specPath + ": Description\n" +
-		"check-3: " + specPath + ": Description\n" +
-		"check-6: " + specPath + ": Description\n"
-	grSubmitOK(t, repoRoot, runID, "structural", report)
+		"check-10: " + specPath + ": Description\n"
+	grSubmitOK(t, repoRoot, runID, "document", report)
 }
 
 // TestFinalizeDiscardsRunWhenInputSurfaceUnresolvable verifies the divergence
@@ -3858,19 +3713,19 @@ func TestGateSubmitNormalizesDeclarationPaths(t *testing.T) {
 	desc := "./" + main + ": Description"
 	accept := "./" + main + ": Acceptance Items"
 	front := "./" + main + ": frontmatter"
-	grSubmitOK(t, repoRoot, runID, "structural", grValidateReport([]string{"1", "3", "6"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1": {front, desc, main + ": Description"},
 		"3": {accept},
 		"6": {accept},
 	}))
-	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "4"}, map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {desc},
 		"4": {desc},
 	}))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
 	}))
-	grSubmitOK(t, repoRoot, runID, "dependencies", grDependenciesReport(map[string][]string{
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"7": {desc},
 		"8": {desc},
 	}))
@@ -4069,7 +3924,7 @@ func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 		t.Fatalf("expected the region-invalidated item in coverage, got %v", coverageKeysOf(run))
 	}
 	if grContainsString(coverageKeysOf(run), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(run))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(run))
 	}
 	if grContainsString(coverageKeysOf(run), "item:auth:auth.one") {
 		t.Fatalf("auth.one's own object is unchanged — it must carry, got %v", coverageKeysOf(run))
@@ -4249,8 +4104,60 @@ func TestGateRunRuleValidateCandidateFailWritesFailureRecord(t *testing.T) {
 			t.Fatalf("expected %q in the failure record, got:\n%s", want, cache)
 		}
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "repair"); err != nil {
-		t.Fatalf("expected the failure record to support repair planning, got %v", err)
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "no repair mode") {
+		t.Fatalf("expected rule repair to be rejected, got %v", err)
+	}
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "full"); err != nil {
+		t.Fatalf("expected the failure record to support the full recovery run, got %v", err)
+	}
+}
+
+// TestPromoteRuleBlockedAdvisesFullConfirmation pins the rule recovery path on
+// the promote surface: a BLOCKED rule cache recovers with the full
+// confirmation run, never with a partial run the planner rejects.
+func TestPromoteRuleBlockedAdvisesFullConfirmation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	rulePath := "docs/specs/rules/candidate/b_rule_http.md"
+	grWriteFile(t, repoRoot, rulePath, "---\nid: b_rule_http\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate")
+	var b strings.Builder
+	for c := 1; c <= 6; c++ {
+		if c == 6 {
+			fmt.Fprintf(&b, "6. %s: FAIL — rule body contradicts the declared constraint\n", grCheckNames["6"])
+			continue
+		}
+		fmt.Fprintf(&b, "%d. %s: PASS — checked\n", c, grCheckNames[fmt.Sprint(c)])
+	}
+	for c := 1; c <= 6; c++ {
+		fmt.Fprintf(&b, "check-%d: %s: Constraint\n", c, rulePath)
+	}
+	fmt.Fprintf(&b, "[P0] %s:5 — rule body contradicts the declared constraint (needs_decision)\n", rulePath)
+	fmt.Fprintf(&b, "Finding affects: %s = 6\n", grRunFindingID(runID, gaterun.SessionID(grSessionKeys(mustLoadRun(t, repoRoot, runID), "checks")), 1))
+	grSubmitOK(t, repoRoot, runID, "checks", b.String())
+	grFinalizeOK(t, repoRoot, runID, "--result", "fail", "--p0-count", "0", "--p1-count", "1")
+
+	freshOut, err := freshRun(t, repoRoot, "--rule", "b_rule_http")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	if !strings.Contains(freshOut, "-> resolve P0/P1, then run the full `validate@b_rule_http` confirmation (rules have no partial run)") {
+		t.Fatalf("expected the full-confirmation recovery advice, got:\n%s", freshOut)
+	}
+	if strings.Contains(freshOut, "revalidate@b_rule_http") {
+		t.Fatalf("a rule target must not be advised to run a partial run, got:\n%s", freshOut)
+	}
+
+	var stdout, stderr strings.Builder
+	err = runPromote([]string{"--rule", "b_rule_http", "--repo-root", repoRoot}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected promote to reject the blocked rule cache")
+	}
+	if !strings.Contains(stdout.String(), "then run the full `validate@b_rule_http` confirmation to recover") {
+		t.Fatalf("expected the full-confirmation advice, got:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "revalidate@b_rule_http") {
+		t.Fatalf("a rule target must not be advised to run a partial run, got:\n%s", stdout.String())
 	}
 }
 
@@ -4345,7 +4252,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 		t.Fatalf("expected the invalidated item in coverage, got %v", coverageKeysOf(deltaRun))
 	}
 	if grContainsString(coverageKeysOf(deltaRun), "review") {
-		t.Fatalf("a verify delta plan has no change review, got %v", coverageKeysOf(deltaRun))
+		t.Fatalf("a verify delta plan has no review key, got %v", coverageKeysOf(deltaRun))
 	}
 	// auth.two re-runs mechanically; auth.one keeps its evidence.
 	if !grContainsString(deltaRun.CarriedKeys, "auth.one") {
@@ -4383,44 +4290,6 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 // delta run that carries a baseline judgment and produces no finding finalizes
 // without a final synthesis, and its judgment baseline must still record the
 // carried key's status so a later partial delta can carry it forward.
-func TestCleanDeltaKeepsCarriedJudgmentStatus(t *testing.T) {
-	repoRoot := createCLITestRepo(t)
-	specPath := grWriteSpec(t, repoRoot, "auth")
-	main := "docs/specs/units/candidate/unit_auth.md"
-
-	fullRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidateSessions(t, repoRoot, fullRun, main)
-	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
-
-	edit, err := os.ReadFile(specPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	edited := strings.Replace(string(edit), "Prose.", "Prose. Edited.", 1)
-	if edited == string(edit) {
-		t.Fatal("fixture assumption broken: Description edit did not apply")
-	}
-	if err := os.WriteFile(specPath, []byte(edited), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
-	run := mustLoadRun(t, repoRoot, deltaRun)
-	if !grContainsString(run.CarriedKeys, "5") {
-		t.Fatalf("expected check 5 as a carry candidate, got %v", run.CarriedKeys)
-	}
-	// The reviewer re-runs every group except acceptance.
-	grReviewRecheck(t, repoRoot, deltaRun, "1", "2", "7", "10")
-	// No finding is produced, so no final synthesis is required.
-	grSubmitPlannedValidateSessions(t, repoRoot, deltaRun, main)
-	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
-
-	state := grReadJudgmentBaseline(t, repoRoot, gaterun.TargetKindUnit, "auth", gaterun.GateValidate)
-	if state.LogicalStatus["5"] != "pass" {
-		t.Fatalf("clean delta must record the carried key status, got %v", state.LogicalStatus)
-	}
-}
-
 func grReadyVerifyCross(t *testing.T) (string, string, string) {
 	t.Helper()
 	root := createCLITestRepo(t)
@@ -4638,10 +4507,10 @@ func TestValidateCrossFailedItemHasBlockingFinding(t *testing.T) {
 		id     string
 		checks []string
 	}{
-		{"structural", []string{"1", "3", "6"}},
-		{"design", []string{"2", "4"}},
+		{"document", []string{"1", "10"}},
+		{"design", []string{"2", "3", "4"}},
 		{"acceptance", []string{"5"}},
-		{"dependencies", []string{"7", "8", "9"}},
+		{"external", []string{"6", "7", "8", "9"}},
 	} {
 		scopes := make(map[string][]string)
 		for _, check := range session.checks {
@@ -5000,8 +4869,8 @@ func TestGateSubmitOverCapacityReleasesSharedClaimForSplit(t *testing.T) {
 
 // TestGateSubmitOverCapacityRequiresSplittableBatch: the over-capacity
 // declaration is the recovery signal for a batch that can be reduced. A
-// single-key batch — the unit-level scan, a lone item, the delta review key,
-// or the final cross synthesis — is atomic and has no smaller batch, so the
+// single-key batch — the unit-level scan, a lone item, or the final cross
+// synthesis — is atomic and has no smaller batch, so the
 // mission does not offer the declaration and gate-submit rejects its text as a
 // defective report instead of recording an unrecoverable terminal session.
 func TestGateSubmitOverCapacityRequiresSplittableBatch(t *testing.T) {
