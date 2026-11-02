@@ -102,7 +102,7 @@ func TestGateQualityBatchKeepsPerFileResults(t *testing.T) {
 	if err != nil || check.Fresh || check.Category != validationcache.CategoryBlocked {
 		t.Fatalf("fresh/promote must reject the failed file: %+v err=%v", check, err)
 	}
-	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	if got := mustLoadRun(t, root, repair).Coverage; len(got) != 1 || got[0].Key != keys[0] {
 		t.Fatalf("repair must recheck only the failed file, got %+v", got)
 	}
@@ -135,7 +135,7 @@ func TestGateAlignmentBatchSuppressionKeepsOtherItemPassing(t *testing.T) {
 	if baseline.LogicalStatus["item:auth:auth.b"] != "pass" {
 		t.Fatalf("suppressed mismatch still fails auth.b: %v", baseline.LogicalStatus)
 	}
-	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	if got := mustLoadRun(t, root, repair).Coverage; len(got) != 1 || got[0].Key != "item:auth:auth.a" {
 		t.Fatalf("repair must recheck only auth.a, got %+v", got)
 	}

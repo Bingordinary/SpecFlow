@@ -636,9 +636,12 @@ func TestVerifyRepairRemovedFailedKeyDegrades(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now())
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatalf("a failed key no longer in the surface must degrade, not abort the plan: %v", err)
+	}
+	if run.Mode != ModeRepair {
+		t.Fatalf("a failure-record baseline must derive the repair, got mode %q", run.Mode)
 	}
 	if got := strings.Join(coverageKeysOf(run), ","); got != "item:auth:auth.core,unit:auth,code:src/main.go,design:auth:src/main.go,architecture:auth" {
 		t.Fatalf("expected the full current coverage set, got %s", got)

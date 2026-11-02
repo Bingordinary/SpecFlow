@@ -114,7 +114,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 // any other non-fresh state needs the full command.
 func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetKind, targetName string) string {
 	if category == validationcache.CategoryBlocked {
-		recovery := validationcache.RecoveryCommand(command, targetKind, targetName, true)
+		recovery := validationcache.RecoveryCommand(command, targetKind, targetName)
 		if targetKind == "rule" {
 			return fmt.Sprintf("Resolve the P0/P1 findings, then run the full `%s` confirmation to recover.", recovery)
 		}

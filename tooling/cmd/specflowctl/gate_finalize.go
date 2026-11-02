@@ -403,7 +403,7 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		if run.Gate == gaterun.GateValidate {
 			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeFull))
 		} else {
-			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeRepair))
+			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeDelta))
 		}
 	}
 	switch check.Category {
@@ -1467,7 +1467,7 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "persisted with the coverage keys whose read set intersects the drift recorded as")
 	fmt.Fprintln(w, "invalidated (a recovery baseline; a unit validate recovers with a full-scope")
 	fmt.Fprintln(w, "`revalidate`, a rule validate with the full confirmation run, and verify with")
-	fmt.Fprintln(w, "`reverify --mode repair`). A structural divergence")
+	fmt.Fprintln(w, "`reverify`). A structural divergence")
 	fmt.Fprintln(w, "(the input surface itself changed) discards the run. A run that produced findings")
 	fmt.Fprintln(w, "must carry an accepted final synthesis (the optional")
 	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles one")

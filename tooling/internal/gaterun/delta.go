@@ -39,8 +39,11 @@ func addRelationships(run *Run, names ...string) {
 	run.Relationships = dedupeSorted(run.Relationships)
 }
 
-// buildMechanicalVerifyPlan plans a verify delta/repair run without a change
-// review. The re-run set is derived mechanically from the conclusion records:
+// buildMechanicalVerifyPlan plans a verify delta run without a change
+// review. The incremental mode is derived inside the planner: a failure-record
+// baseline or a salvaged pass cache upgrades the plan to a repair, which
+// re-runs the failed and invalidated judgments unconditionally. The re-run set
+// is derived mechanically from the conclusion records:
 // a conclusion re-runs exactly when its own pinned evidence no longer holds,
 // its review protocol moved, it is explicitly invalidated, the evidence its key
 // currently requires is no longer inside the evidence the record read, or it
@@ -63,37 +66,33 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 	// list, so it is a valid repair baseline even though it is not a failure
 	// record.
 	salvagedBaseline := baseline.Exists && baseline.Result == "pass" && len(baseline.InvalidatedChecks) > 0
-	switch run.Mode {
-	case ModeDelta:
-		switch {
-		case !baseline.Exists:
-			if baseline.UnusableReason != "" {
-				return nil, nil, nil, nil, fmt.Errorf("the existing cache is unusable as a delta baseline: %s", baseline.UnusableReason)
-			}
-			if run.Target == TargetStable {
-				return nil, nil, nil, nil, noUsableBaselineError(run)
-			}
-			return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
-		case baseline.Mode != "full":
-			return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
-		case len(baseline.InvalidatedChecks) > 0:
-			return nil, nil, nil, nil, fmt.Errorf("baseline cache carries pending invalidations (%s) — run `--mode repair` to re-run them, or the full command instead", strings.Join(baseline.InvalidatedChecks, ", "))
-		case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:
-			return nil, nil, nil, nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
-		case baseline.Result == "fail":
-			return nil, nil, nil, nil, fmt.Errorf("baseline is a failure record — use `--mode repair` after resolving the findings")
-		case baseline.Result != "pass":
-			return nil, nil, nil, nil, fmt.Errorf("baseline cache result is %q, expected pass — run the full command instead", baseline.Result)
+	// The incremental mode is a pure function of the baseline state, so the
+	// planner derives it instead of taking it from the command line: a clean
+	// pass baseline plans a delta (re-run the conclusions whose own pins no
+	// longer hold), and a failure record or a salvaged pass cache plans a
+	// repair (re-run the failed and invalidated judgments unconditionally).
+	// Every other baseline shape is no incremental baseline at all — the plan
+	// refuses and directs the full command (framework/verification_scope.md
+	// §Delta Runs → Failure recovery).
+	switch {
+	case !baseline.Exists:
+		if baseline.UnusableReason != "" {
+			return nil, nil, nil, nil, fmt.Errorf("the existing cache is unusable as an incremental baseline: %s", baseline.UnusableReason)
 		}
-	case ModeRepair:
-		if !baseline.Exists && run.Target == TargetStable {
+		if run.Target == TargetStable {
 			return nil, nil, nil, nil, noUsableBaselineError(run)
 		}
-		if !salvagedBaseline && (!baseline.Exists || baseline.Result != "fail" || !baseline.Blocking) {
-			return nil, nil, nil, nil, fmt.Errorf("--mode repair requires a failure-record baseline (result: fail, blocking: true) or a salvaged pass cache with pending invalidations — none found; run the full command instead")
-		}
-	default:
-		return nil, nil, nil, nil, fmt.Errorf("verify planning requires --mode delta or --mode repair")
+		return nil, nil, nil, nil, fmt.Errorf("no baseline cache for this target — run the full command instead: %s", PlanCommand(run, ModeFull))
+	case baseline.Mode != "full":
+		return nil, nil, nil, nil, fmt.Errorf("baseline cache mode is %q, expected full — run the full command instead", baseline.Mode)
+	case strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking:
+		return nil, nil, nil, nil, fmt.Errorf("baseline cache declarations conflict (result: %q, blocking: %t) — run the full command instead", baseline.Result, baseline.Blocking)
+	case baseline.Result == "fail":
+		run.Mode = ModeRepair
+	case salvagedBaseline:
+		run.Mode = ModeRepair
+	case baseline.Result != "pass":
+		return nil, nil, nil, nil, fmt.Errorf("baseline cache result is %q, expected pass — run the full command instead", baseline.Result)
 	}
 	state, err := validatedJudgmentState(baseline)
 	if err != nil {

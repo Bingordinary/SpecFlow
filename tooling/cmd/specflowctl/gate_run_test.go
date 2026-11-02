@@ -1748,7 +1748,7 @@ func TestGateCrossFailureForcesDerivedFailure(t *testing.T) {
 	if !strings.Contains(cache, "result: fail") || !strings.Contains(cache, "blocking: true") || !strings.Contains(cache, "p1_count: 1") {
 		t.Fatalf("expected cross failure to force a blocking derived result, got:\n%s", cache)
 	}
-	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	repair := mustLoadRun(t, repoRoot, repairID)
 	if got := strings.Join(coverageKeysOf(repair), ","); got != "item:auth:auth.login" {
 		t.Fatalf("expected the cross finding's affected key to drive repair scope, got %s", got)
@@ -2738,7 +2738,7 @@ func TestGateRunSalvagesRemovedSurfaceFile(t *testing.T) {
 	if res.Fresh || res.Category != validationcache.CategoryStale {
 		t.Fatalf("expected the salvaged cache to be stale, got fresh=%t category=%s", res.Fresh, res.Category)
 	}
-	if !strings.Contains(res.Reason, "pending invalidations") || !strings.Contains(res.Reason, "reverify@auth --mode repair") {
+	if !strings.Contains(res.Reason, "pending invalidations") || !strings.Contains(res.Reason, "reverify@auth") {
 		t.Fatalf("expected the verify-gate recovery command in the reason, got: %s", res.Reason)
 	}
 
@@ -2746,7 +2746,7 @@ func TestGateRunSalvagesRemovedSurfaceFile(t *testing.T) {
 	if err := runFresh([]string{"--repo-root", repoRoot, "--unit", "auth"}, &freshOut, &freshErr); err != nil {
 		t.Fatalf("fresh: %v (%s)", err, freshErr.String())
 	}
-	if !strings.Contains(freshOut.String(), "reverify@auth --mode repair (repair recovery from pending invalidations)") {
+	if !strings.Contains(freshOut.String(), "reverify@auth (repair recovery from pending invalidations)") {
 		t.Fatalf("expected the repair recovery suggestion, got:\n%s", freshOut.String())
 	}
 }
@@ -3028,8 +3028,8 @@ func TestValidateFailureRecordRecoversWithFullRun(t *testing.T) {
 	if !strings.Contains(cache, "result: fail") || !strings.Contains(cache, "basis: full") || !strings.Contains(cache, "blocking: true") {
 		t.Fatalf("expected a full-run failure record, got:\n%s", cache)
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "no repair mode") {
-		t.Fatalf("expected validate repair to be rejected, got %v", err)
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "must be full or delta") {
+		t.Fatalf("expected the repair value to be rejected, got %v", err)
 	}
 	// The full run is the recovery path.
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "full"); err != nil {
@@ -3050,7 +3050,7 @@ func TestGateRunRepairFlow(t *testing.T) {
 	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "fail", "--p0-count", "1")
 
-	repairRun := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repairRun := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, repairRun)
 	if got := coverageKeysOf(run); strings.Join(got, ",") != "item:auth:auth.login" {
 		t.Fatalf("expected the failed item, got %v", got)
@@ -3132,7 +3132,7 @@ func TestGateRunUsageErrors(t *testing.T) {
 		{"missing gate", []string{"--unit", "auth", "--target", "candidate"}, "must be validate or verify"},
 		{"missing target", []string{"--gate", "validate", "--unit", "auth"}, "candidate or stable"},
 		{"mutually exclusive", []string{"--gate", "validate", "--unit", "auth", "--rule", "b_rule_http", "--target", "candidate"}, "mutually exclusive"},
-		{"invalid mode", []string{"--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "nope"}, "full, delta, or repair"},
+		{"invalid mode", []string{"--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "nope"}, "full or delta"},
 		{"traversal rule name", []string{"--gate", "validate", "--rule", "../../../tmp/evil", "--target", "candidate"}, "is invalid"},
 		{"traversal unit name", []string{"--gate", "validate", "--unit", "../../auth", "--target", "candidate"}, "is invalid"},
 	}
@@ -4104,8 +4104,8 @@ func TestGateRunRuleValidateCandidateFailWritesFailureRecord(t *testing.T) {
 			t.Fatalf("expected %q in the failure record, got:\n%s", want, cache)
 		}
 	}
-	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "no repair mode") {
-		t.Fatalf("expected rule repair to be rejected, got %v", err)
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "must be full or delta") {
+		t.Fatalf("expected the repair value to be rejected, got %v", err)
 	}
 	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--rule", "b_rule_http", "--target", "candidate", "--mode", "full"); err != nil {
 		t.Fatalf("expected the failure record to support the full recovery run, got %v", err)
@@ -4200,7 +4200,7 @@ func TestGateRepairDegradesOnConflictingStatusMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, repairID)
 	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "item:auth:auth.two=conflicting") {
 		t.Fatalf("expected a conflicting status map to degrade the plan, got notices %v", run.Notices)
@@ -4275,7 +4275,7 @@ func TestGateRepairDegradesOnCarriedStatusInFullRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair")
+	repairID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, repairID)
 	if !grNoticeContains(run.Notices, "invalid per-check status map") || !grNoticeContains(run.Notices, "auth.one=carried") {
 		t.Fatalf("expected a carried status in a full record to degrade the plan, got notices %v", run.Notices)

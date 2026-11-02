@@ -57,9 +57,11 @@ const (
 	TargetStable    = "stable"
 
 	// Run modes: full runs the complete coverage set; delta plans the
-	// mechanically derived partial scope plus the mechanically forced keys;
-	// repair (verify only) adds a failure record's failed and invalidated
-	// judgments to the forced set.
+	// mechanically derived partial scope plus the mechanically forced keys.
+	// full and delta are the only entry modes; repair is a derived internal
+	// state, never a command-line value — the verify incremental entry derives
+	// it from a failure-record or salvaged baseline, and finalize records it
+	// as the cache's `basis: repair`.
 	ModeFull   = "full"
 	ModeDelta  = "delta"
 	ModeRepair = "repair"
@@ -922,12 +924,12 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 		return nil, err
 	}
 	switch mode {
-	case ModeFull, ModeDelta, ModeRepair:
+	case ModeFull, ModeDelta:
 	default:
-		return nil, fmt.Errorf("invalid mode %q: must be full, delta, or repair", mode)
+		return nil, fmt.Errorf("invalid mode %q: must be full or delta", mode)
 	}
 	if mode == ModeFull && len(rerunKeys) > 0 {
-		return nil, fmt.Errorf("--rerun applies to --mode delta or --mode repair only (a full run already covers every check)")
+		return nil, fmt.Errorf("--rerun applies to delta runs only (a full run already covers every check)")
 	}
 	refs, surfaces, err := d.derive(gate, targetKind, targetName, target)
 	if err != nil {

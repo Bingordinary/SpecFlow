@@ -384,32 +384,29 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		}
 		return full, carried, required, notices, nil
 	}
-	if run.Mode == ModeDelta || run.Mode == ModeRepair {
-		if run.Gate == GateValidate && run.TargetKind == TargetKindRule {
-			return nil, nil, nil, nil, fmt.Errorf("rule targets support the full validate run only — run %s", PlanCommand(run, ModeFull))
-		}
-		if run.Gate == GateValidate && run.Mode == ModeRepair {
-			return nil, nil, nil, nil, fmt.Errorf("validate has no repair mode — run %s", PlanCommand(run, ModeFull))
-		}
-		var (
-			coverage []CoverageKey
-			carried  []string
-			notices  []string
-		)
-		if run.Gate == GateVerify {
-			coverage, carried, required, notices, err = d.buildMechanicalVerifyPlan(run)
-		} else {
-			coverage, carried, required, notices, err = d.buildDeltaPlan(run)
-		}
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		if err := validateCoverage(run, coverage); err != nil {
-			return nil, nil, nil, nil, err
-		}
-		return coverage, carried, required, notices, nil
+	// The incremental entry: the planner derives the run's substance from the
+	// baseline state — verify: delta or repair; validate: external-only or the
+	// full scope — never from a command-line flag.
+	if run.Gate == GateValidate && run.TargetKind == TargetKindRule {
+		return nil, nil, nil, nil, fmt.Errorf("rule targets support the full validate run only — run %s", PlanCommand(run, ModeFull))
 	}
-	return nil, nil, nil, nil, fmt.Errorf("unsupported run mode %q", run.Mode)
+	var (
+		coverage []CoverageKey
+		carried  []string
+		notices  []string
+	)
+	if run.Gate == GateVerify {
+		coverage, carried, required, notices, err = d.buildMechanicalVerifyPlan(run)
+	} else {
+		coverage, carried, required, notices, err = d.buildDeltaPlan(run)
+	}
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if err := validateCoverage(run, coverage); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return coverage, carried, required, notices, nil
 }
 
 // filterCoverage keeps the coverage keys whose key is in want, preserving the
@@ -1279,6 +1276,11 @@ func gateTargetFlags(run *Run) string {
 // to a new plan renders through this, so a printed command is always runnable
 // instead of being rejected by gate-plan's own flag contract.
 func PlanCommand(run *Run, mode string) string {
+	if mode == ModeRepair {
+		// repair is a derived state, not a command-line value: every printed
+		// command must be runnable, so the incremental entry renders instead.
+		mode = ModeDelta
+	}
 	relationships := ""
 	if run.TargetKind != TargetKindRule {
 		relationships = " --relationships <names|none>"

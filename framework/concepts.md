@@ -45,7 +45,7 @@ Resolve mode, then read the target row and its required packages.
 | `verify@{unit}:{keyword}` | Run targeted check directly; read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `verify@{rule}` | no verify; report `validate@{rule}`. Read `framework/verification_scope.md`. |
 | `revalidate@{unit}` | `specflowctl resolve --target {target}`; unit-only delta (external-only, else full scope). Read `framework/verification_scope.md` and `framework/unit_validate_checklist.md`. |
-| `reverify@{unit}` | Discover evidence for all items, including carried; delta/repair with `--inputs-file`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
+| `reverify@{unit}` | Discover evidence for all items, including carried; delta run with `--inputs-file`. Read `framework/verification_scope.md`, `framework/unit_verify_checklist.md` and `framework/shared_judgments.md`. |
 | `promote@{target}` | `specflowctl resolve --target {target}`; confirm intent; read `framework/unit_promote_workflow.md` or `framework/rule_promote_workflow.md`; check applicable gates only. |
 | `fresh@{target}` / `fresh@candidate` / `fresh@stable` / `fresh@all` | For `{target}`, resolve via `framework/commands.md`; run read-only `specflowctl fresh`; use `framework/validation_cache.md`. |
 | `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |

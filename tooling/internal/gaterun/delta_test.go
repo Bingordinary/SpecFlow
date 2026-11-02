@@ -322,13 +322,13 @@ func TestRuleDeltaRejected(t *testing.T) {
 	}
 }
 
-// TestValidateRepairRejected pins that validate has no repair mode: a failure
-// record or a salvaged cache recovers through the derived run, which covers the
-// full scope.
-func TestValidateRepairRejected(t *testing.T) {
+// TestRepairIsNotAnEntryMode pins that repair is a derived state, never an
+// entry mode: the incremental entry is delta for both gates, and the verify
+// planner derives the repair from a failure-record or salvaged baseline.
+func TestRepairIsNotAnEntryMode(t *testing.T) {
 	repoRoot := newRepo(t)
 	validateDeltaBaseline(t, repoRoot)
-	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "no repair mode") {
-		t.Fatalf("expected the validate-repair refusal, got %v", err)
+	if _, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeRepair, nil, nil, nil, time.Now()); err == nil || !strings.Contains(err.Error(), "must be full or delta") {
+		t.Fatalf("expected the entry-mode refusal, got %v", err)
 	}
 }

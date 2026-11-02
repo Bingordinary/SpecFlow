@@ -244,7 +244,7 @@ func TestGateVerifyRelationshipOnlyRepairPreservesBothLenses(t *testing.T) {
 		t.Fatal(err)
 	}
 	grFinalizeOK(t, root, runID)
-	repairID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none")
+	repairID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none")
 	run := mustLoadRun(t, root, repairID)
 	if len(run.Coverage) != 0 || strings.Join(run.Relationships, ",") != "data_definition_drift" {
 		t.Fatalf("verify repair repeated local work or skipped failed relationship: %+v", run)
@@ -279,7 +279,7 @@ func TestGateFullFailureWithCarriedRelationshipKeepsRepairSmall(t *testing.T) {
 	grSubmitOK(t, root, second, code, bad)
 	grSubmitOK(t, root, second, "cross", "Cross-check: PASS — finding disposition only\ncross: "+code+": all\n")
 	grFinalizeOK(t, root, second)
-	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none")
+	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none")
 	run := mustLoadRun(t, root, repair)
 	// Only the failed design key re-runs locally; the synthesis must run again
 	// over the new local result, so the baseline relationship is re-checked
@@ -374,7 +374,7 @@ func TestGateRepairDegradedFullScopeKeepsRelationshipScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "repair", "--relationships", "none")
+	repair := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none")
 	run := mustLoadRun(t, root, repair)
 	if !grNoticeContains(run.Notices, "invalid per-check status map") {
 		t.Fatalf("expected the status map to degrade the plan, got %v", run.Notices)

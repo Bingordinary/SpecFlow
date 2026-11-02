@@ -33,7 +33,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 	unitPtr := fs.String("unit", "", "unit name")
 	ruleIDPtr := fs.String("rule", "", "rule id")
 	targetPtr := fs.String("target", "", "layer checked: candidate | stable")
-	modePtr := fs.String("mode", "full", "run mode: full | delta | repair")
+	modePtr := fs.String("mode", "full", "run mode: full | delta")
 	formatPtr := fs.String("format", "text", "output format: text | json")
 	relationshipsPtr := fs.String("relationships", "", "relationships touched by this change: comma-separated names, or none (required for full unit runs)")
 	var inputsFile string
@@ -47,7 +47,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		return nil
 	})
 	rerunPtr := repeatedString{}
-	fs.Var(&rerunPtr, "rerun", "delta/repair only: force a check key into the re-run set (repeatable)")
+	fs.Var(&rerunPtr, "rerun", "delta runs only: force a check key into the re-run set (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -65,13 +65,10 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	switch mode {
-	case gaterun.ModeFull, gaterun.ModeDelta, gaterun.ModeRepair:
+	case gaterun.ModeFull, gaterun.ModeDelta:
 	default:
 		writeGatePlanUsage(stderr)
-		return fmt.Errorf("invalid --mode %q: must be full, delta, or repair", mode)
-	}
-	if mode == gaterun.ModeRepair && gate == "validate" {
-		return errors.New("validate has no repair mode — run the full validate command instead")
+		return fmt.Errorf("invalid --mode %q: must be full or delta (repair is derived, not chosen: a delta plan over a failure record or a salvaged pass cache plans the repair)", mode)
 	}
 	if mode == gaterun.ModeDelta && gate == "validate" && ruleID != "" {
 		return fmt.Errorf("rule targets support the full validate run only — run validate@%s", ruleID)
@@ -185,7 +182,7 @@ func requireGateTarget(gate, unitName, ruleID, target string, stderr io.Writer) 
 
 func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME | --rule ID) --target candidate|stable [--relationships NAMES|none] [--mode full|delta|repair] [--inputs-file PATH] [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl gate-plan --gate validate|verify (--unit NAME | --rule ID) --target candidate|stable [--relationships NAMES|none] [--mode full|delta] [--inputs-file PATH] [--rerun CHECK_KEY]... [--format text|json] [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Fixes the immutable input snapshot and computes the coverage set for a")
 	fmt.Fprintln(w, "quality-gate run before any executor reads input. The tooling resolves the")
@@ -208,21 +205,24 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "plan is fixed. A cited path outside the citing session's read refs is rejected by")
 	fmt.Fprintln(w, "gate-submit.")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (validate: the tool derives the")
-	fmt.Fprintln(w, "scope from the recorded hashes — an external-only change re-runs the external")
-	fmt.Fprintln(w, "group; any change it cannot attribute to a derived external ref (own spec")
-	fmt.Fprintln(w, "content, or a baseline input this plan does not declare) covers the full scope;")
-	fmt.Fprintln(w, "verify: the")
-	fmt.Fprintln(w, "re-run set is derived from each conclusion's judgment-record pins),")
-	fmt.Fprintln(w, "repair (verify only: recovery over a failure record — failed judgments and")
-	fmt.Fprintln(w, "persisted invalidations re-run unconditionally; validate recovery is the")
-	fmt.Fprintln(w, "full-scope validate plan).")
-	fmt.Fprintln(w, "In every delta mode, and in verify repair, the current")
+	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (the incremental entry: the")
+	fmt.Fprintln(w, "planner derives the run's substance from the baseline state, never from a")
+	fmt.Fprintln(w, "flag. validate: the tool derives the scope from the recorded hashes — an")
+	fmt.Fprintln(w, "external-only change re-runs the external group; any change it cannot")
+	fmt.Fprintln(w, "attribute to a derived external ref (own spec content, or a baseline input")
+	fmt.Fprintln(w, "this plan does not declare) covers the full scope. verify: the re-run set")
+	fmt.Fprintln(w, "is derived from each conclusion's judgment-record pins, and a failure")
+	fmt.Fprintln(w, "record or a salvaged pass cache upgrades the plan to a repair — failed")
+	fmt.Fprintln(w, "judgments and persisted invalidations re-run unconditionally; validate")
+	fmt.Fprintln(w, "recovery is the full-scope validate plan). The derived mode is printed")
+	fmt.Fprintln(w, "with the plan and recorded as the cache's basis.")
+	fmt.Fprintln(w, "In every delta run the current")
 	fmt.Fprintln(w, "keys the baseline never declared are forced. --rerun explicitly forces a")
 	fmt.Fprintln(w, "check key (validate: 1-10; verify:")
 	fmt.Fprintln(w, "acceptance item id, code file path, or the unit:<unit> scan key) into the")
 	fmt.Fprintln(w, "partial-run set. Targeted")
-	fmt.Fprintln(w, "P0/P1 findings are persisted by gate-invalidate and included in verify repair automatically;")
+	fmt.Fprintln(w, "P0/P1 findings are persisted by gate-invalidate and included in a derived")
+	fmt.Fprintln(w, "verify repair automatically;")
 	fmt.Fprintln(w, "they do not rely on --rerun.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "A verify plan's coverage set is the union of the alignment lens (the acceptance")
@@ -244,14 +244,16 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --unit NAME      Unit name (mutually exclusive with --rule)")
 	fmt.Fprintln(w, "  --rule ID        Rule id (validate only)")
 	fmt.Fprintln(w, "  --target T       candidate | stable (required; stable = stable-only target)")
-	fmt.Fprintln(w, "  --mode M         full | delta | repair (default: full)")
+	fmt.Fprintln(w, "  --mode M         full | delta (default: full). Repair is a derived state, not a")
+	fmt.Fprintln(w, "                   command-line value: a delta plan over a failure record or a")
+	fmt.Fprintln(w, "                   salvaged pass cache plans the repair and records `basis: repair`")
 	fmt.Fprintln(w, "  --inputs-file PATH  input manifest: one extra read input per line — a path, a")
 	fmt.Fprintln(w, "                   directory, or a logical reference (unit:{name} /")
 	fmt.Fprintln(w, "                   unit:{name}:appendix:{file} / rule:{id}); the file must not be")
 	fmt.Fprintln(w, "                   a repository-content file")
-	fmt.Fprintln(w, "  --rerun KEY      delta/repair only: explicit additional re-run override; repeatable")
+	fmt.Fprintln(w, "  --rerun KEY      delta runs only: explicit additional re-run override; repeatable")
 	fmt.Fprintln(w, "  --relationships NAMES|none  required for full unit runs: relationships touched by the current change;")
-	fmt.Fprintln(w, "                   optional for delta runs (and verify repair)")
+	fmt.Fprintln(w, "                   optional for delta runs")
 	fmt.Fprintln(w, "                   validate: design_constraints, coverage_scope, cross_unit_cohesion")
 	fmt.Fprintln(w, "                   verify: contract_consistency, data_definition_drift, state_machine_coherence,")
 	fmt.Fprintln(w, "                   error_code_conflict, cross_reference_integrity")

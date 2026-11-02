@@ -80,19 +80,16 @@ type CheckResult struct {
 // RecoveryCommand renders the command that restores a non-fresh gate cache.
 // A rule target has no partial run — the rule file is the rule's own content —
 // so only the full validate confirmation run can restore its cache. A unit
-// validate cache recovers through revalidate: the planner derives the scope,
-// and a failure record or a salvaged pass cache yields a full-scope plan.
-// Verify recovers through reverify, with --mode repair when its only partial
-// recovery is the repair run.
-func RecoveryCommand(command, targetKind, targetName string, repairOnly bool) string {
+// validate cache recovers through revalidate, and verify through reverify:
+// the planner derives the scope from the baseline state (a failure record or
+// a salvaged pass cache yields a repair plan), so the suggestion names the
+// user trigger word only.
+func RecoveryCommand(command, targetKind, targetName string) string {
 	if command == "validate" {
 		if targetKind == "rule" {
 			return "validate@" + targetName
 		}
 		return "revalidate@" + targetName
-	}
-	if repairOnly {
-		return "reverify@" + targetName + " --mode repair"
 	}
 	return "reverify@" + targetName
 }
@@ -1318,7 +1315,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 	// pending keys to the reason.
 	if len(cache.InvalidatedChecks) > 0 && cache.Result == "pass" {
 		reason := fmt.Sprintf("%s cache carries pending invalidations (%s)", command, strings.Join(cache.InvalidatedChecks, ", "))
-		recovery := RecoveryCommand(command, targetKind, cache.Unit, true)
+		recovery := RecoveryCommand(command, targetKind, cache.Unit)
 		if command == "validate" {
 			if targetKind == "rule" {
 				reason += fmt.Sprintf(" — run `%s` (the full confirmation run; rules have no partial run)", recovery)
@@ -1481,7 +1478,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 			return CheckResult{
 				Fresh:    false,
 				Category: CategoryStale,
-				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s` to recover.", command, strings.Join(staleFiles, ", "), RecoveryCommand(command, targetKind, cache.Unit, false)),
+				Reason:   fmt.Sprintf("%s cache stale: content changed in %s. Run `%s` to recover.", command, strings.Join(staleFiles, ", "), RecoveryCommand(command, targetKind, cache.Unit)),
 			}, nil
 		}
 		if res := checkPromisePinFreshness(repoRoot, targetKind, cache); res != nil {

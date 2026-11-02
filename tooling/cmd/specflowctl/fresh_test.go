@@ -693,7 +693,7 @@ func TestFreshUnitDetailBlockedVerify(t *testing.T) {
 	if !strings.Contains(output, "P0") {
 		t.Fatalf("expected P0 finding detail, got:\n%s", output)
 	}
-	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
 		t.Fatalf("expected repair-recovery advice for the blocked gate, got:\n%s", output)
 	}
 }
@@ -727,7 +727,7 @@ func TestFreshUnitDetailBlockedWithPendingInvalidation(t *testing.T) {
 	if !strings.Contains(output, "Pending invalidations will also re-run: item:user_auth:session.") {
 		t.Fatalf("expected the pending invalidation to be named, got:\n%s", output)
 	}
-	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
+	if !strings.Contains(output, "resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
 		t.Fatalf("expected the resolve-then-repair advice, got:\n%s", output)
 	}
 }
@@ -791,7 +791,7 @@ func TestFreshUnitDetailStaleBlockedVerify(t *testing.T) {
 	if !strings.Contains(output, "Verify is a failure record with 1 P0 and 0 P1 finding(s); resolve them before promoting") {
 		t.Fatalf("expected the failure-record findings to stay disclosed, got:\n%s", output)
 	}
-	if !strings.Contains(output, "-> resolve P0/P1, then reverify@user_auth --mode repair (repair recovery from the failure record)") {
+	if !strings.Contains(output, "-> resolve P0/P1, then reverify@user_auth (repair recovery from the failure record)") {
 		t.Fatalf("expected resolve-then-repair advice, got:\n%s", output)
 	}
 }

@@ -215,8 +215,9 @@ func dropCacheFileEntry(t *testing.T, repoRoot, rel, path string) {
 	}
 }
 
-// TestE2EValidateRepairAndRuleDeltaRejected pins the command surface: validate
-// has no repair mode, and a rule target has no partial run.
+// TestE2EValidateRepairAndRuleDeltaRejected pins the command surface: repair
+// is not an entry mode (the planner derives it), and a rule target has no
+// partial run.
 func TestE2EValidateRepairAndRuleDeltaRejected(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
@@ -228,8 +229,8 @@ func TestE2EValidateRepairAndRuleDeltaRejected(t *testing.T) {
 	grSubmitValidateSessions(t, root, fullID, main)
 	grFinalizeOK(t, root, fullID)
 
-	if _, err := grPlanRaw(root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "no repair mode") {
-		t.Fatalf("expected validate repair to be rejected, got %v", err)
+	if _, err := grPlanRaw(root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "repair"); err == nil || !strings.Contains(err.Error(), "must be full or delta") {
+		t.Fatalf("expected the repair value to be rejected, got %v", err)
 	}
 	if _, err := grPlanRaw(root, "--gate", "validate", "--rule", "b_rule_auth", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "full validate run only") {
 		t.Fatalf("expected a rule delta to be rejected, got %v", err)

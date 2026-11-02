@@ -849,13 +849,16 @@ func gatePassed(status gateStatus) bool {
 // no partial run, so its only recovery is the full validate confirmation run.
 // A unit validate cache recovers through `revalidate`, which derives the scope
 // mechanically (an external-only change re-runs the external group; anything
-// else covers the full scope). Verify keeps its delta/repair split. MISSING
-// and an unusable baseline have no partial-run path and need the full command.
+// else covers the full scope). A verify cache recovers through `reverify`: the
+// planner derives delta or repair from the baseline state, so the suggestion
+// names the trigger word and states the derived mode as diagnostic text.
+// MISSING and an unusable baseline have no partial-run path and need the full
+// command.
 func gateAdvice(command, targetKind, repoRoot, targetName string, status gateStatus, repairOnly, failureRecord bool) string {
 	switch status {
 	case gateStale, gateBlocked:
 		if targetKind == "rule" {
-			recovery := validationcache.RecoveryCommand(command, targetKind, targetName, false)
+			recovery := validationcache.RecoveryCommand(command, targetKind, targetName)
 			if status == gateBlocked || failureRecord {
 				return fmt.Sprintf("-> resolve P0/P1, then run the full `%s` confirmation (rules have no partial run)", recovery)
 			}
@@ -872,15 +875,15 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 			return fmt.Sprintf("-> required: %s@%s (full run — %v)", command, targetName, reason)
 		}
 		if command == "validate" {
-			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope: external-only or full)", validationcache.RecoveryCommand(command, targetKind, targetName, false))
+			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope: external-only or full)", validationcache.RecoveryCommand(command, targetKind, targetName))
 		}
 		if status == gateBlocked || failureRecord {
-			return fmt.Sprintf("-> resolve P0/P1, then %s (repair recovery from the failure record)", validationcache.RecoveryCommand(command, targetKind, targetName, true))
+			return fmt.Sprintf("-> resolve P0/P1, then %s (repair recovery from the failure record)", validationcache.RecoveryCommand(command, targetKind, targetName))
 		}
 		if repairOnly {
-			return fmt.Sprintf("-> suggestion: %s (repair recovery from pending invalidations)", validationcache.RecoveryCommand(command, targetKind, targetName, true))
+			return fmt.Sprintf("-> suggestion: %s (repair recovery from pending invalidations)", validationcache.RecoveryCommand(command, targetKind, targetName))
 		}
-		return fmt.Sprintf("-> suggestion: %s (delta recovery)", validationcache.RecoveryCommand(command, targetKind, targetName, false))
+		return fmt.Sprintf("-> suggestion: %s (delta recovery)", validationcache.RecoveryCommand(command, targetKind, targetName))
 	case gateMissing:
 		return fmt.Sprintf("-> required: %s@%s (full run - no delta baseline)", command, targetName)
 	case gateInvalid:
