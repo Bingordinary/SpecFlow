@@ -808,6 +808,14 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 				observations[f.ID] = f
 			}
 		}
+		// A public observation owns its finding block: the block is published
+		// in the code block (or in the carried public record), and the design
+		// block records the observation once through its disposition. Snapshot
+		// this report's design findings before the retain path appends to them,
+		// so a finding that restates an observation is rejected here instead of
+		// being stored as a second copy of the same defect and left for
+		// synthesis to merge (issue #112).
+		designFindings := append([]gaterun.Finding(nil), parsed.Findings...)
 		seen := map[string]bool{}
 		for _, d := range parsed.ObservationDispositions {
 			f, ok := observations[d.FindingID]
@@ -815,6 +823,11 @@ func validateReviewDependencies(root string, run *gaterun.Run, spec *gaterun.Ses
 				return fmt.Errorf("invalid or duplicate public observation disposition %s", d.FindingID)
 			}
 			seen[d.FindingID] = true
+			for _, existing := range designFindings {
+				if existing.SourceKey == f.SourceKey && findingStatement(existing.Text) == findingStatement(f.Text) {
+					return fmt.Errorf("design finding %s restates public observation %s — a design block disposes a public observation and never re-authors its finding block; keep that finding block in the block that published the observation and put only new design findings in the design block", existing.ID, d.FindingID)
+				}
+			}
 			if d.Action == "retained" {
 				// A retained observation is a new finding for this unit.
 				// Continue the report-order counter so its id never reuses

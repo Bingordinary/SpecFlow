@@ -85,6 +85,60 @@ func finishDesignInputRun(t *testing.T, root, id, main, code string) {
 	}
 }
 
+// TestGateDesignRejectsRestatedCarriedObservation pins the ownership rule for a
+// public observation's finding block when the design session consumes a carried
+// public record: the observation keeps its finding block in that record, and
+// the design block records it once through its disposition (issue #112).
+func TestGateDesignRejectsRestatedCarriedObservation(t *testing.T) {
+	root := createCLITestRepo(t)
+	grWriteSpec(t, root, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, root, id, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	run := mustLoadRun(t, root, id)
+	codeKey := grSessionKeys(run, "code:src/auth.go")[0]
+	designKey := grSessionKeys(run, "design:auth:src/auth.go")[0]
+	finding := "[P2] src/auth.go:1 — token shape may discard caller identity (actionable)\n" +
+		"  problem: the token shape differs between callers\n" +
+		"  evidence: caller requires token\n" +
+		"  impact: login may fail\n" +
+		"  fix: reconcile the contract\n"
+	public := grWriteFile(t, t.TempDir(), "public.md", "File: "+codeKey+"\nconclusion: FACTS\nfacts: token shape may discard caller identity\n"+finding)
+	var out, errOut bytes.Buffer
+	if err := runGateSubmit([]string{"--repo-root", root, "--run", id, "--session", gaterun.SessionID([]string{codeKey}), "--keys", codeKey, "--report", public}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	publicState, err := grLoadSessionState(root, run, codeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publicState.Result.Observations) != 1 {
+		t.Fatalf("public record must publish the observation: %+v", publicState.Result.Observations)
+	}
+	obsID := publicState.Result.Observations[0].ID
+
+	report := "File: " + designKey + "\n" +
+		"conclusion: unacceptable — the retained observation blocks the design\n" +
+		"spec_requirements: token behavior required by the auth design\n" +
+		"Spec basis: Narrative\nSpec basis: Promises\n" +
+		"gate_findings: [P1] token shape\n" +
+		"Observation disposition: " + obsID + " = retained — the unit design cannot accept the discarded identity\n" +
+		finding
+	path := grWriteFile(t, t.TempDir(), "design.md", report)
+	out.Reset()
+	errOut.Reset()
+	err = runGateSubmit([]string{"--repo-root", root, "--run", id, "--session", gaterun.SessionID([]string{designKey}), "--keys", designKey, "--report", path}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("a design finding that restates a carried public observation must be rejected: %s", out.String())
+	}
+	if !strings.Contains(err.Error(), "restates public observation "+obsID) {
+		t.Fatalf("rejection must name the restated observation %s, got: %v", obsID, err)
+	}
+}
+
 func TestGateDesignMissionUsesAssignedPublicRecords(t *testing.T) {
 	for _, batchDesign := range []bool{false, true} {
 		t.Run(fmt.Sprintf("batch_design=%t", batchDesign), func(t *testing.T) {

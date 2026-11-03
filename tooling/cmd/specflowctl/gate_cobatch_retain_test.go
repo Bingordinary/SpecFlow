@@ -1,11 +1,71 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 )
+
+// TestGateRunCoBatchedRejectsRestatedObservation pins the ownership rule for a
+// public observation's finding block: the design block records the observation
+// once through its `Observation disposition`, so re-authoring the same
+// statement as a design finding is rejected instead of stored as a second copy
+// of one defect for final synthesis to merge (issue #112).
+func TestGateRunCoBatchedRejectsRestatedObservation(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	grWriteSpec(t, repoRoot, "auth")
+	main := "docs/specs/units/candidate/unit_auth.md"
+	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+	grSubmitOK(t, repoRoot, runID, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codeKey := grSessionKeys(run, "code:src/auth.go")[0]
+	designKey := grSessionKeys(run, "design:auth:src/auth.go")[0]
+	sessionID := gaterun.SessionID([]string{codeKey, designKey})
+	obsID := fmt.Sprintf("%s/%s/F1", runID, sessionID)
+	finding := "[P2] src/auth.go:1 — token shape may discard caller identity (actionable)\n" +
+		"  problem: the token shape differs between callers\n" +
+		"  evidence: caller requires token\n" +
+		"  impact: login may fail\n" +
+		"  fix: reconcile the contract\n"
+	report := "File: " + codeKey + "\n" +
+		"conclusion: FACTS\n" +
+		"facts: token shape may discard caller identity\n" +
+		finding +
+		"\n" +
+		"File: " + designKey + "\n" +
+		"conclusion: unacceptable — the retained observation blocks the design\n" +
+		"spec_requirements: token behavior required by the auth design\n" +
+		"Spec basis: Narrative\nSpec basis: Promises\n" +
+		"gate_findings: [P1] token shape\n" +
+		"Observation disposition: " + obsID + " = retained — the unit design cannot accept the discarded identity\n" +
+		finding
+	path := grWriteFile(t, t.TempDir(), "report.md", report)
+
+	var stdout, stderr bytes.Buffer
+	err = runGateSubmit([]string{"--repo-root", repoRoot, "--run", runID, "--session", sessionID, "--keys", codeKey + "," + designKey, "--report", path}, &stdout, &stderr)
+	if err == nil {
+		t.Fatalf("a design finding that restates a public observation must be rejected: %s", stdout.String())
+	}
+	if !strings.Contains(err.Error(), "restates public observation "+obsID) {
+		t.Fatalf("rejection must name the restated observation %s, got: %v", obsID, err)
+	}
+	state, err := grLoadSessionState(repoRoot, run, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != gaterun.SessionRejected {
+		t.Fatalf("rejected report must be recorded as a rejected attempt, got %q", state.Status)
+	}
+}
 
 // TestGateRunCoBatchedRetainedObservation pins the co-batched design retain
 // path: a retained public observation must become this unit's own design

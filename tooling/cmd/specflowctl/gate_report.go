@@ -381,6 +381,14 @@ type extractedFinding struct {
 	detail   string
 }
 
+// findingStatement returns the finding's entry line without its trailing
+// resolution label, so the same statement published as a public observation and
+// repeated as a design finding compares equal: the label states how to resolve
+// the finding, not which problem it is.
+func findingStatement(text string) string {
+	return strings.TrimSpace(resolutionLabelRe.ReplaceAllString(strings.TrimSpace(text), ""))
+}
+
 // extractFindings captures the canonical finding line and its contiguous
 // indented detail lines. Dependency declarations and later report sections
 // are deliberately excluded, so the stored detail can be rendered on its own

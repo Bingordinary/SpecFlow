@@ -197,14 +197,15 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			lines = append(lines,
 				"gate_findings: none | [P0|P1] {finding};",
 				"  # gate_findings accepts only `none` or one or more [P0|P1] {finding} entries separated by `;`.",
-				"  # A retained P2/P3 observation is recorded by its own finding block plus its Observation disposition, never here.")
+				"  # A retained P2/P3 observation enters the result through its Observation disposition",
+				"  # alone, never here; the design block never repeats the observation's finding block.")
 			if kind == gaterun.SessionKindArchitecture {
 				lines = append(lines, "Suppressed by spec (0):")
 			}
 			lines = append(lines,
 				"  # a finding block is written inside this block, after the lines above and before the",
 				"  # next "+prefix+"line; its id is the finding's report-order id:",
-				"  #   [P2] <location> — <retained observation or new finding> (actionable)",
+				"  #   [P2] <location> — <new design finding> (actionable)",
 				"  #     problem: <problem>",
 				"  #     evidence: <evidence>",
 				"  #     impact: <impact>",
@@ -357,14 +358,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].When = "if_p3_finding"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
-		add("design-finding-placement", "a design finding block is written inside the File: design:<unit>:<file> block of the file it judges, after that block's gate_findings: line and before the next File: line; a finding whose location names another file this session judges is rejected, because a finding binds to the File: block it appears in — a finding listed after the last file block binds to the last file's key", "")
+		add("design-finding-placement", "a design finding block is written inside the File: design:<unit>:<file> block of the file it judges, after that block's gate_findings: line and before the next File: line; it states a newly raised design problem — a design finding that restates a public observation is rejected, because the observation is recorded once through its Observation disposition and its finding block stays in the block that published it; a finding whose location names another file this session judges is rejected, because a finding binds to the File: block it appears in — a finding listed after the last file block binds to the last file's key", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
 	}
 	if len(codeKeys) > 0 {
 		add("public-facts", "one non-empty facts assessment per assigned file; the tooling records each check's own public evidence surface (its coverage key's read refs) as its dependency", "")
-		add("public-finding-placement", "a public potential finding is a finding block written inside its own File: code:<file> block, after facts: and before the next File: line; observations never appear in a design block", "")
+		add("public-finding-placement", "a public potential finding is a finding block written inside its own File: code:<file> block, after facts: and before the next File: line; a public observation's finding block never appears in a design block", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1
