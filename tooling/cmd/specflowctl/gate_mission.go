@@ -259,10 +259,13 @@ type missionSession struct {
 	Dependencies     []missionDependency       `json:"dependency_results"`
 	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
-	ProtocolRef      string                    `json:"protocol_ref"`
-	ProtocolScope    string                    `json:"protocol_scope"`
-	ProtocolInline   []protocolChunk           `json:"protocol_inline"`
-	ReportContract   gateReportContract        `json:"report_contract"`
+	// BaselineFindings are the failure record's findings this session must
+	// dispose (unit validate recovery runs only).
+	BaselineFindings []gaterun.Finding  `json:"baseline_findings,omitempty"`
+	ProtocolRef      string             `json:"protocol_ref"`
+	ProtocolScope    string             `json:"protocol_scope"`
+	ProtocolInline   []protocolChunk    `json:"protocol_inline"`
+	ReportContract   gateReportContract `json:"report_contract"`
 }
 
 type gateMission struct {
@@ -316,6 +319,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		Dependencies:     []missionDependency{},
 		CarriedResults:   []missionDependency{},
 		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForSession(run, spec)...),
+		BaselineFindings: gaterun.BaselineFindingsForSession(run, spec),
 		ProtocolRef:      specflowlayout.Relative(layout.FrameworkRoot, protocol),
 		ProtocolScope:    protocolScopeFor(spec.Kind, spec.CheckKeys),
 		ReportContract:   reportContractFor(run, spec),
@@ -359,7 +363,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	if spec.Kind == gaterun.SessionKindCross {
 		glossary = append(glossary,
 			missionTerm{"carried judgments", "baseline judgments preserved without re-execution in a delta or repair run", framework + "/verification_scope.md §Delta Runs"},
-			missionTerm{"finding disposition", "cross decision to retain, suppress, or merge each input finding", framework + "/verification_scope.md §Session report contract"},
+			missionTerm{"finding disposition", "cross decision to retain, suppress, merge, or evidence-backed regrade each input finding", framework + "/verification_scope.md §Session report contract"},
 			missionTerm{"effective status", "cross result for every logical check and cross itself", framework + "/verification_scope.md §Session report contract"},
 		)
 		if len(crossItemsFor(run)) > 0 {
@@ -368,6 +372,9 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	}
 	if len(session.DeferredFindings) > 0 {
 		glossary = append(glossary, missionTerm{"deferred finding", "a finding routed from another unit for this verify run to dispose (quality ownership)", framework + "/verification_scope.md §Deferred findings"})
+	}
+	if len(session.BaselineFindings) > 0 {
+		glossary = append(glossary, missionTerm{"baseline finding", "a finding from the failure record this run recovers; dispose each one fixed, not fixed, or superseded", framework + "/verification_scope.md §Delta Runs → Failure recovery"})
 	}
 	if spec.Kind == gaterun.SessionKindCross {
 		// The optional final synthesis consumes every accepted session's
@@ -438,6 +445,9 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	if run.Gate == gaterun.GateVerify && (spec.Kind == gaterun.SessionKindItem || spec.Kind == gaterun.SessionKindUnit || spec.Kind == gaterun.SessionKindCode) {
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
+	if len(session.BaselineFindings) > 0 {
+		constraints = append(constraints, "dispose every baseline finding listed below with a `Baseline finding:` line — `not fixed` means the defect is present in the current content, so the owning check reports FAIL and the finding stays blocking with its baseline grade; the full-scope review still runs unchanged")
+	}
 	schema := 3
 	if run.Gate == gaterun.GateVerify {
 		schema = 4
@@ -505,6 +515,15 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		for _, entry := range p.DeferredFindings {
 			data, _ := json.MarshalIndent(entry, "    ", "  ")
 			fmt.Fprintf(w, "  - %s\n", data)
+		}
+	}
+	if len(p.BaselineFindings) > 0 {
+		fmt.Fprintln(w, "Baseline findings (from the failure record this run recovers; dispose each with a `Baseline finding:` line):")
+		for _, finding := range p.BaselineFindings {
+			fmt.Fprintf(w, "  - %s [%s] %s\n", finding.ID, finding.Severity, finding.Text)
+			for _, line := range strings.Split(finding.Detail, "\n") {
+				fmt.Fprintf(w, "      %s\n", line)
+			}
 		}
 	}
 	fmt.Fprintln(w, "Constraints:")
@@ -676,7 +695,7 @@ func missionTextFor(kind string) string {
 	case gaterun.SessionKindDesign:
 		return "Review the named implementation file against the unit spec and report its assessment and findings."
 	case gaterun.SessionKindCross:
-		return "Check only the assigned relationships using current source and accepted/carried judgments. Do not repeat local checks. Dispose existing findings and raise severity conservatively on retain or merge — the tooling derives the effective status map from your dispositions and findings. An empty relationship scope means finding disposition only."
+		return "Check only the assigned relationships using current source and accepted/carried judgments. Do not repeat local checks. Dispose existing findings — retain, suppress, merge, or regrade a finding downward with quoted evidence when its impact claim does not hold at the assigned grade (a P0 finding is never regraded) — and raise severity conservatively on retain or merge; the tooling derives the effective status map from your dispositions and findings. An empty relationship scope means finding disposition only."
 	}
 	return "Judge only the session's check keys and report evidence for each judgment."
 }

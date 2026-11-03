@@ -26,9 +26,13 @@ type parsedReport struct {
 	EffectiveStatus    map[string]string
 	QualityConclusions map[string]string
 	Dispositions       []gaterun.FindingDisposition
-	Ownerships         []gaterun.FindingOwnership
-	Analysis           map[string]string
-	FileGateFindings   map[string]string // file key -> gate_findings content
+	// BaselineDispositions is a validate check session's disposition of each
+	// injected baseline finding (framework/verification_scope.md §Delta Runs
+	// → Failure recovery).
+	BaselineDispositions []gaterun.FindingDisposition
+	Ownerships           []gaterun.FindingOwnership
+	Analysis             map[string]string
+	FileGateFindings     map[string]string // file key -> gate_findings content
 	// SpecBasis records, per design key, the spec anchors the block declared
 	// (narrative-block headings and promise entry ids). The design record's
 	// spec pins are derived from them.
@@ -55,6 +59,7 @@ var (
 	gateFindingsEntryRe = regexp.MustCompile(`^\[(?:P0|P1)\][ \t]+\S`)
 	reasonCharRe        = regexp.MustCompile(`[\p{L}\p{N}]`)
 	dispositionRe       = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding disposition:\s*(\S+)\s*=\s*(` + strings.Join(crossDispositions, "|") + `)(?:\s*->\s*(\S+))?(?:\s+[—-]\s+(.+))?\s*$`)
+	baselineRe          = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Baseline finding:\s*(\S+)\s*=\s*(fixed|not fixed|superseded)(?:\s+[—-]\s+(.+))?\s*$`)
 	findingAffectsRe    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding affects:\s*(\S+)\s*=\s*(.+?)\s*$`)
 	ownershipRe         = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:\s*(\S+)\s*=\s*owned_by\s+(\S+)\s+[—-]\s+evidence:\s*(.+?)\s*;\s*reason:\s*(.+?)\s*$`)
 	ownershipLineRe     = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*Finding ownership:`)
@@ -145,6 +150,18 @@ func parseSessionReport(absRoot string, run *gaterun.Run, spec *gaterun.SessionS
 	if spec.Kind == gaterun.SessionKindChecks {
 		if err := parseFindingAffects(report, out); err != nil {
 			return nil, err
+		}
+		seenBaseline := map[string]bool{}
+		for _, m := range baselineRe.FindAllStringSubmatch(report, -1) {
+			id := strings.TrimSpace(m[1])
+			if seenBaseline[id] {
+				return nil, fmt.Errorf("report disposes baseline finding %q more than once", id)
+			}
+			seenBaseline[id] = true
+			if strings.TrimSpace(m[3]) == "" {
+				return nil, fmt.Errorf("baseline finding disposition %q (%s) requires evidence — what the current content shows at the finding's location", id, m[2])
+			}
+			out.BaselineDispositions = append(out.BaselineDispositions, gaterun.FindingDisposition{FindingID: id, Action: m[2], Reason: strings.TrimSpace(m[3])})
 		}
 		for i := range out.Findings {
 			finding := &out.Findings[i]
@@ -720,11 +737,16 @@ func parseCrossSynthesis(report string, out *parsedReport) error {
 		}
 		seen[id] = true
 		d := gaterun.FindingDisposition{FindingID: id, Action: action, TargetID: strings.TrimSpace(m[3]), Reason: strings.TrimSpace(m[4])}
-		if (action == "suppressed" || action == "merged") && d.Reason == "" {
+		if (action == "suppressed" || action == "merged" || action == "regraded") && d.Reason == "" {
 			return fmt.Errorf("finding disposition %q (%s) requires a reason", id, action)
 		}
 		if action == "merged" && d.TargetID == "" {
 			return fmt.Errorf("finding disposition %q (merged) requires a target id", id)
+		}
+		if action == "regraded" {
+			if _, ok := severityRank(d.TargetID); !ok {
+				return fmt.Errorf("finding disposition %q (regraded) requires a target grade: `= regraded -> {P1|P2|P3} — {evidence-backed reason}`", id)
+			}
 		}
 		out.Dispositions = append(out.Dispositions, d)
 	}

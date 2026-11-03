@@ -809,6 +809,26 @@ func grSubmitClarity(t *testing.T, repoRoot, runID, specPath string) {
 	}))
 }
 
+// grBaselineLines returns the `Baseline finding:` disposition lines the run's
+// injected baseline findings require for one session (all `fixed` — the
+// default well-formed recovery), or "" when the run injects nothing for it.
+func grBaselineLines(t *testing.T, repoRoot, runID, sessionID string) string {
+	t.Helper()
+	run := mustLoadRun(t, repoRoot, runID)
+	if run.CoverageByKey(sessionID) == nil {
+		return ""
+	}
+	spec, err := gaterun.BuildSessionSpec(repoRoot, run, []string{sessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, finding := range gaterun.BaselineFindingsForSession(run, spec) {
+		fmt.Fprintf(&b, "Baseline finding: %s = fixed — resolved in the current content\n", finding.ID)
+	}
+	return b.String()
+}
+
 // grSubmitValidateSessions submits the four-group validate plan for a spec.
 // extraScopes are appended to the document session's check-1 scope lines
 // (e.g. appendix declarations).
@@ -820,20 +840,20 @@ func grSubmitValidateSessions(t *testing.T, repoRoot, runID, specPath string, ex
 	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
 		"1":                  append([]string{front, desc}, extraScopes...),
 		gaterun.ClarityCheck: {specPath + ": all"},
-	}))
+	})+grBaselineLines(t, repoRoot, runID, "document"))
 	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
 		"2": {desc},
 		"3": {accept},
 		"4": {desc},
-	}))
+	})+grBaselineLines(t, repoRoot, runID, "design"))
 	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
 		"5": {accept},
-	}))
+	})+grBaselineLines(t, repoRoot, runID, "acceptance"))
 	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
 		"6": {accept},
 		"7": {desc},
 		"8": {desc},
-	}))
+	})+grBaselineLines(t, repoRoot, runID, "external"))
 	run := mustLoadRun(t, repoRoot, runID)
 	states, err := gaterun.LoadSessionStates(repoRoot, run)
 	if err != nil {
@@ -1830,6 +1850,58 @@ func TestResolveCrossFindingsRaisesSeverityOnMerge(t *testing.T) {
 	}
 }
 
+// TestResolveCrossFindingsRegradeLowersWithEvidence pins the evidence-backed
+// regrade: the final synthesis may lower a retained finding's grade through a
+// `regraded` disposition — the detail prefix follows the lowered grade, a
+// merge group still takes the most severe effective grade among its members,
+// and the mechanical envelope (strictly lower, never on a P0) rejects
+// everything else (framework/severity_policy.md §9.4).
+func TestResolveCrossFindingsRegradeLowersWithEvidence(t *testing.T) {
+	input := []gaterun.Finding{
+		{ID: "p/F1", Severity: "P1", Text: "misplaced", Detail: "[P1] misplaced — issue", SourceKey: "5h"},
+	}
+	got, err := resolveCrossFindings(input, nil, []gaterun.FindingDisposition{
+		{FindingID: "p/F1", Action: "regraded", TargetID: "P2", Reason: "the promise states the same fields completely — placement only"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Severity != "P2" || !strings.HasPrefix(got[0].Detail, "[P2]") {
+		t.Fatalf("expected the regraded finding at P2 with the rewritten prefix, got %+v", got)
+	}
+
+	// A merged group keeps its most severe effective grade: the regraded P2
+	// contributes P2, the merged P1 member keeps the group at P1.
+	group := append(append([]gaterun.Finding(nil), input...),
+		gaterun.Finding{ID: "p/F0", Severity: "P1", Text: "high", Detail: "[P1] high — issue", SourceKey: "5h"})
+	got, err = resolveCrossFindings(group, nil, []gaterun.FindingDisposition{
+		{FindingID: "p/F0", Action: "merged", TargetID: "p/F1"},
+		{FindingID: "p/F1", Action: "regraded", TargetID: "P2", Reason: "placement only"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Severity != "P1" {
+		t.Fatalf("expected the merged group to stay at its most severe effective grade P1, got %+v", got)
+	}
+
+	for _, bad := range []gaterun.FindingDisposition{
+		{FindingID: "p/F1", Action: "regraded", TargetID: "P1", Reason: "same grade"},
+		{FindingID: "p/F1", Action: "regraded", TargetID: "P0", Reason: "higher grade"},
+		{FindingID: "p/F1", Action: "regraded", TargetID: "banana", Reason: "not a grade"},
+	} {
+		if _, err := resolveCrossFindings(input, nil, []gaterun.FindingDisposition{bad}); err == nil {
+			t.Fatalf("expected the invalid regrade %+v to be rejected", bad)
+		}
+	}
+	p0 := []gaterun.Finding{{ID: "p/P0", Severity: "P0", Text: "ceiling", Detail: "[P0] ceiling — issue", SourceKey: "1"}}
+	if _, err := resolveCrossFindings(p0, nil, []gaterun.FindingDisposition{
+		{FindingID: "p/P0", Action: "regraded", TargetID: "P1", Reason: "the ceiling is never regraded"},
+	}); err == nil {
+		t.Fatal("expected a P0 regrade to be rejected")
+	}
+}
+
 // TestGateVerifyMismatchFindingIsSelfContained pins the merged verify-item
 // contract: a MISMATCH session composes one run-scoped finding whose detail
 // carries the shared finding block (problem, evidence, impact, fix, root cause,
@@ -2099,7 +2171,7 @@ func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "fail", "--p0-count", "1")
 
 	// A failure record recovers with the derived run, which covers the full
-	// scope.
+	// scope and injects the record's local P0/P1 findings for disposition.
 	recoveryRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	recovery := mustLoadRun(t, repoRoot, recoveryRun)
 	if recovery.Mode != gaterun.ModeFull || len(recovery.Coverage) != 4 {
@@ -2111,8 +2183,55 @@ func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 	if !strings.Contains(strings.Join(recovery.Notices, " "), `result is "fail"`) {
 		t.Fatalf("expected the failure-record notice, got %v", recovery.Notices)
 	}
-	grSubmitValidateSessions(t, repoRoot, recoveryRun, main)
-	grFinalizeOK(t, repoRoot, recoveryRun, "--result", "pass")
+	baselineID := grReadJudgmentBaseline(t, repoRoot, "unit", "auth", "validate").Findings[0].ID
+	if len(recovery.BaselineFindings) != 1 || recovery.BaselineFindings[0].ID != baselineID {
+		t.Fatalf("expected the failure record's local P0/P1 finding injected, got %v", recovery.BaselineFindings)
+	}
+	if !strings.Contains(strings.Join(recovery.Notices, " "), "injected into the re-run sessions") {
+		t.Fatalf("expected the injection notice, got %v", recovery.Notices)
+	}
+
+	// The recovery re-runs every check. A session disposing the finding
+	// `not fixed` keeps the defect blocking under its baseline grade — no
+	// session-authored finding is needed, the owning check reports FAIL — and
+	// the written failure record carries the finding under its original id.
+	notFixedReport := "2. Design soundness: FAIL — contradiction persists\n" +
+		"3. Scope integrity: PASS — checked\n" +
+		"4. Evidence-driven vs design-driven consistency: PASS — ok\n" +
+		"\ncheck-2: " + main + ": Description\ncheck-4: " + main + ": Description\n" +
+		"Baseline finding: " + baselineID + " = not fixed — the contradiction is still in the narrative\n"
+	grSubmitOK(t, repoRoot, recoveryRun, "design", notFixedReport)
+	grSubmitOK(t, repoRoot, recoveryRun, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+		"1":                  {main + ": frontmatter", main + ": Description"},
+		gaterun.ClarityCheck: {main + ": all"},
+	})+grBaselineLines(t, repoRoot, recoveryRun, "document"))
+	grSubmitOK(t, repoRoot, recoveryRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
+		"5": {main + ": Acceptance Items"},
+	})+grBaselineLines(t, repoRoot, recoveryRun, "acceptance"))
+	grSubmitOK(t, repoRoot, recoveryRun, "external", grDependenciesReport(map[string][]string{
+		"7": {main + ": Description"},
+		"8": {main + ": Description"},
+	})+grBaselineLines(t, repoRoot, recoveryRun, "external"))
+	grSubmitOK(t, repoRoot, recoveryRun, "cross", grCrossReport(main, "Description"))
+	grFinalizeOK(t, repoRoot, recoveryRun, "--result", "fail", "--p1-count", "1")
+
+	record := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	for _, want := range []string{"result: fail", baselineID, "baseline_dispositions"} {
+		if !strings.Contains(record, want) {
+			t.Fatalf("expected the failure record to carry %q, got:\n%s", want, record)
+		}
+	}
+
+	// The next recovery plan re-injects the unresolved finding.
+	nextRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	next := mustLoadRun(t, repoRoot, nextRun)
+	if len(next.BaselineFindings) != 1 || next.BaselineFindings[0].ID != baselineID {
+		t.Fatalf("expected the unresolved finding re-injected, got %v", next.BaselineFindings)
+	}
+
+	// Disposing it `fixed` recovers the full-basis pass cache.
+	grSubmitValidateSessions(t, repoRoot, nextRun, main)
+	grFinalizeOK(t, repoRoot, nextRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
 	if !strings.Contains(cache, "basis: full") || !strings.Contains(cache, `check: "2"`) {

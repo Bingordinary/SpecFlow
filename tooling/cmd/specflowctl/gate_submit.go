@@ -264,6 +264,42 @@ func normalizeDeclaredPaths(absRoot string, parsed *parsedReport) {
 	}
 }
 
+// checkBaselineDispositions validates a validate check session's dispositions
+// of the baseline findings the plan injected for it: every injected finding is
+// disposed exactly once, no disposition names an unknown finding. It returns
+// the logical keys the `not fixed` dispositions block — the checks a defect is
+// still present under.
+func checkBaselineDispositions(run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport) (map[string]bool, error) {
+	expected := gaterun.BaselineFindingsForSession(run, spec)
+	byID := make(map[string]gaterun.Finding, len(expected))
+	for _, finding := range expected {
+		byID[finding.ID] = finding
+	}
+	notFixed := map[string]bool{}
+	seen := map[string]bool{}
+	for _, disposition := range parsed.BaselineDispositions {
+		finding, ok := byID[disposition.FindingID]
+		if !ok {
+			return nil, fmt.Errorf("baseline finding disposition names unknown finding %q — dispose exactly the findings the mission's Baseline findings section lists", disposition.FindingID)
+		}
+		if seen[disposition.FindingID] {
+			return nil, fmt.Errorf("baseline finding %q is disposed more than once", disposition.FindingID)
+		}
+		seen[disposition.FindingID] = true
+		if disposition.Action == "not fixed" {
+			for _, key := range gaterun.BaselineFindingKeys(finding) {
+				notFixed[key] = true
+			}
+		}
+	}
+	for _, finding := range expected {
+		if !seen[finding.ID] {
+			return nil, fmt.Errorf("report does not dispose baseline finding %q — add `Baseline finding: %s = fixed | not fixed | superseded — <evidence>`", finding.ID, finding.ID)
+		}
+	}
+	return notFixed, nil
+}
+
 func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.SessionSpec, parsed *parsedReport, report string) error {
 	if len(parsed.Ownerships) > 0 && spec.Kind != gaterun.SessionKindCross {
 		return errors.New("ownership records belong to the final synthesis")
@@ -275,12 +311,25 @@ func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Se
 		// composes those findings mechanically; nothing extra is required
 		// here.
 	case gaterun.SessionKindChecks:
+		// Injected baseline findings must each be disposed exactly once with
+		// evidence, before the verdict-consistency rules run: a `not fixed`
+		// disposition is the session's own blocking material for the finding's
+		// check keys, so those keys must report FAIL — the defect is present
+		// in the current content (framework/verification_scope.md §Delta Runs
+		// → Failure recovery).
+		notFixed, err := checkBaselineDispositions(run, spec, parsed)
+		if err != nil {
+			return err
+		}
 		fails := verdictCount(parsed.Verdicts, "FAIL")
 		blocking := blockingFindingCount(parsed.Findings)
-		if fails > 0 && blocking == 0 {
+		if fails > 0 && blocking == 0 && len(notFixed) == 0 {
 			return errors.New("a validate FAIL verdict requires at least one P0/P1 finding in the same session")
 		}
-		if fails == 0 && blocking > 0 {
+		if fails == 0 && (blocking > 0 || len(notFixed) > 0) {
+			if len(notFixed) > 0 {
+				return errors.New("a session disposing a baseline finding as `not fixed` must report a FAIL verdict for the check it blocks — the defect is present in the current content")
+			}
 			return errors.New("a validate session with P0/P1 findings must report at least one FAIL verdict")
 		}
 		if run.Gate == gaterun.GateValidate && run.TargetKind == gaterun.TargetKindUnit {
@@ -303,6 +352,9 @@ func validateSessionSemantics(absRoot string, run *gaterun.Run, spec *gaterun.Se
 				if (finding.Severity == "P0" || finding.Severity == "P1") && findingKeySet(finding)[key] {
 					covered = true
 				}
+			}
+			if !covered {
+				covered = notFixed[key]
 			}
 			if (verdict == "FAIL") != covered {
 				return fmt.Errorf("validate check %q verdict must match its own P0/P1 findings", key)
@@ -380,6 +432,30 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 	for _, deferred := range run.DeferredFindings {
 		inputFindings = append(inputFindings, deferred.Finding)
 	}
+	// A `not fixed` baseline disposition is blocking material the final
+	// synthesis never sees — the finding keeps its baseline grade and bypasses
+	// re-disposition — but its check keys must still derive `fail`, or the
+	// stored status map would claim pass over a defect the run just confirmed
+	// present.
+	baselineNotFixed := map[string]bool{}
+	for _, state := range states {
+		if state.SessionID == gaterun.CrossKey || state.Status != gaterun.SessionAccepted || state.Result == nil {
+			continue
+		}
+		for _, disposition := range state.Result.BaselineDispositions {
+			if disposition.Action != "not fixed" {
+				continue
+			}
+			for _, finding := range run.BaselineFindings {
+				if finding.ID != disposition.FindingID {
+					continue
+				}
+				for _, key := range gaterun.BaselineFindingKeys(finding) {
+					baselineNotFixed[key] = true
+				}
+			}
+		}
+	}
 
 	retained, err := resolveCrossFindings(inputFindings, parsed.Findings, parsed.Dispositions)
 	if err != nil {
@@ -435,6 +511,11 @@ func validateCrossSynthesis(absRoot string, run *gaterun.Run, spec *gaterun.Sess
 			if gateDriving(finding, run.TargetName) {
 				wantStatus[key] = "fail"
 			}
+		}
+	}
+	for key := range baselineNotFixed {
+		if expectedStatus[key] {
+			wantStatus[key] = "fail"
 		}
 	}
 	for name, verdict := range parsed.CrossItems {
@@ -612,6 +693,7 @@ func sessionResult(spec *gaterun.SessionSpec, parsed *parsedReport, digest strin
 		EffectiveStatus:         parsed.EffectiveStatus,
 		QualityConclusions:      parsed.QualityConclusions,
 		Dispositions:            parsed.Dispositions,
+		BaselineDispositions:    parsed.BaselineDispositions,
 		Ownerships:              parsed.Ownerships,
 		Analysis:                parsed.Analysis,
 		SpecBasis:               parsed.SpecBasis,

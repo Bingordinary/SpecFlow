@@ -168,7 +168,7 @@ This file does not:
 
 ### 9.1 Purpose
 
-Severity is assigned by the session that raises a finding. This check verifies the assigned grade's implied impact claim against the global context before it takes effect (before cache write or final output), so a grading that only looks right inside the local review surface cannot silently pass. When the final synthesis retains or merges findings, it may raise a retained finding's canonical severity conservatively — never lower it; the raised value is canonical.
+Severity is assigned by the session that raises a finding. This check verifies the assigned grade's implied impact claim against the global context before it takes effect (before cache write or final output), so a grading that only looks right inside the local review surface cannot silently pass. When the final synthesis retains or merges findings, it may raise a retained finding's canonical severity conservatively, and it may lower a retained finding's grade only through an evidence-backed regrade (§9.4) — never on disagreement alone; the value the synthesis fixes is canonical, and a P0 grade is never created or removed by a regrade.
 
 This check answers one question per finding:
 
@@ -192,7 +192,7 @@ Flows that currently define an execution position:
 2. `spec_flow_design_review` — procedure step 13 (`framework/spec_flow_design_review.md`)
 3. the `quality` lens of `verify` — the final synthesis (`framework/unit_verify_checklist.md` §Final synthesis, `framework/verification_scope.md` §Final synthesis)
 4. the `alignment` lens of `verify` — Step 7 analysis / final synthesis (`framework/unit_verify_checklist.md`)
-5. `validate` (unit) — P0 adjudications (P1 is the contract-decided default for blocking findings and is not re-graded), the P2 corrosion-naming boundary and the P3 anchor boundary of §11, and advisory findings (Check 1 hygiene) (`framework/unit_validate_checklist.md`)
+5. `validate` (unit) — P0 adjudications (P1 is the raising session's default for blocking findings; under §9.4's evidence rules the synthesis never lowers a finding that is genuinely in a §11.1 blocking family — a false positive is suppressed instead — and may regrade it only when the blocking-family premise fails on re-read, i.e. the issue is actually a §11.5 structural or §11.2 erosion class per §9.3's too-high boundary), the deterministic §11.5 structural mappings (contract-decided, not re-graded), the P2 corrosion-naming boundary and the P3 anchor boundary of §11, and advisory findings (Check 1 hygiene) (`framework/unit_validate_checklist.md`)
 6. `validate` (rule) — P0 adjudications (P1 is the contract-decided default and is not re-graded) (`framework/rule_validate_checklist.md`)
 7. scoped review — conclusion stage (`framework/governance/review_scope.md`)
 
@@ -202,24 +202,25 @@ The list is a record of current wiring, not the coverage definition.
 
 Each severity implies an impact claim. The check verifies the claim against read evidence:
 
-| Severity | Implied impact claim | What to verify from the global context | The grade is too low when |
-|---|---|---|---|
-| P0 | The impact is determinable from code structure alone; no runtime data or inference is needed | The impact does not depend on runtime conditions; no protective path in the read target invalidates it | — (P0 is the ceiling) |
-| P1 | The impact inevitably surfaces over time and threatens downstream work beyond the reviewed surface | The impact reaches real consumers or dependent units; the affected gate outcome is at risk | Impact reaches outside the reviewed surface and breaks an externally meaningful result → raise to P0 |
-| P2 | The impact is real but does not touch correctness | The issue truly does not affect correctness | Issue affects correctness → raise to P1 |
-| P3 | The issue does not materially harm maintainability | The issue truly does not affect maintainability | Issue materially harms maintainability → raise to P2 |
+| Severity | Implied impact claim | What to verify from the global context | The grade is too low when | The grade is too high when |
+|---|---|---|---|---|
+| P0 | The impact is determinable from code structure alone; no runtime data or inference is needed | The impact does not depend on runtime conditions; no protective path in the read target invalidates it | — (P0 is the ceiling) | — (P0 is never created or removed by a regrade) |
+| P1 | The impact inevitably surfaces over time and threatens downstream work beyond the reviewed surface | The impact reaches real consumers or dependent units; the affected gate outcome is at risk | Impact reaches outside the reviewed surface and breaks an externally meaningful result → raise to P0 | The impact claim does not hold: the contract stays decidable and the issue is one of the §11.5 structural or §11.2 erosion classes, or no consumer beyond the reviewed surface is affected → regrade to P2 |
+| P2 | The impact is real but does not touch correctness | The issue truly does not affect correctness | Issue affects correctness → raise to P1 | The issue is an anchored, local, low-impact discrepancy that does not materially erode maintainability → regrade to P3 |
+| P3 | The issue does not materially harm maintainability | The issue truly does not affect maintainability | Issue materially harms maintainability → raise to P2 | — (P3 is the floor) |
 
 For unit validate, §11 defines the impact vocabulary these boundaries operate on: correctness means spec decidability (no contradiction, no undefined reference, no unfalsifiable assertion, no open decision, intact traceability pins), and maintainability means the mechanism that keeps the spec decidable (single authoritative statements, promise/narrative boundaries, recorded rationale).
 
 ### 9.4 Evidence Rules
 
 1. **Raising requires positive evidence** — the checker must read concrete code or document content proving the impact is larger than the graded severity. "Possible" or "might" reasoning never raises.
-2. **No evidence → keep the severity assigned by the raising session.** The check does not re-guess the grade.
+2. **Lowering (regrade) requires positive evidence of the same standard** — the checker must read the concrete content proving the assigned grade's impact claim does not hold (for unit validate: the finding's contract impact stays fully decidable per §11). "Possible" or "might" reasoning never lowers. A finding in a §11.1 blocking family — the families §11.1 enumerates: contradiction, undefined referenced behavior, unfalsifiable assertion, open decision, a traceability pin pointing at a block that does not carry the behavior, or implementation transcription — is never lowered: a reviewer who believes such a finding is a false positive suppresses it instead. A P0 finding is never regraded.
+3. **No evidence → keep the severity assigned by the raising session.** The check does not re-guess the grade.
 
 ### 9.5 Execution Rules
 
 1. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
-2. Severity is a semantic judgment; tooling does not participate (see `tooling_execution_policy.md`).
+2. Severity is a semantic judgment; the tooling participates only in the regrade's mechanical envelope — it accepts a regrade disposition only when the target grade is a valid P0-P3 value strictly below the assigned grade and the finding is not P0 (see `framework/verification_scope.md` §Session report contract) — and never in the judgment whether the evidence supports the grade (see `tooling_execution_policy.md`).
 
 #### Execution position and ordering
 
@@ -417,7 +418,7 @@ A finding is blocking when the spec stops being decidable or trustworthy:
 5. A traceability pin points at a block that does not carry the behavior — an item's `source`, a promise's `source`, or any anchor the judgment relies on (the cache-invalidation and coverage chains go blind; the `fresh` suggestion line is a safety net, not a guarantee)
 6. Implementation transcription carried by a narrative or appendix (§15.2 disposition 2, Check 2 Step 5) or by a promise carrier (§15.2 declaration-surface rule, Check 5h step 2) — appendix truth and promise content are verify's alignment targets (Step 7), so stale transcription there drives code restoration; stale narrative transcription makes the decision record lie, and every internal change re-taxes the narrative with a §15.1 sync obligation; internal content carried as contract makes consumers depend on internals
 
-P1 is the contract-decided default for blocking findings; a P0 grade requires the §9 boundary check.
+P1 is the raising session's default for blocking findings; a P0 grade requires the §9 boundary check. The structural defect classes of §11.5 are contract-decided per class and are not re-graded.
 
 ### 11.2 P2 — non-blocking debt (mechanism erosion)
 
@@ -436,3 +437,17 @@ A validate P3 states an objective, local, low-impact discrepancy and is reported
 ### 11.4 Blocking consequences
 
 P0/P1 drive `Result: FAIL`, `Blocking promote: yes`, and `gate-invalidate`. P2/P3 never do: they are listed in the Findings section with full blocks, recorded in the validate cache with the check key they were raised under, carried with that check's judgment across delta runs and verify repair runs (`framework/validation_cache.md` §Advisory carry), and re-judged only when their owning check re-runs. `gate-invalidate` never targets a P2/P3 finding.
+
+### 11.5 Deterministic structural grading
+
+The structural defect classes below are contract-decided per class — the grade follows the class, and the final synthesis does not re-grade it (§9.2). A class entry assumes the defect's information stays completely readable where it sits; when the placement or free-text shape instead leaves a contract element undecidable, the finding falls into the §11.1 family it belongs to and grades from there:
+
+| Defect class | Grade |
+|---|---|
+| A finding in a §11.1 blocking family — contradiction, undefined referenced behavior, unfalsifiable assertion, open decision, implementation transcription (§11.1 items 1, 2, 3, 4, and 6; item 5 is the traceability-pin row below) | P1 |
+| An item's or promise's `source` — or any traceability pin the judgment relies on — pointing at a block that does not carry the behavior (§11.1 item 5: the cache-invalidation and coverage chains go blind) | P1 |
+| A structural fact placed in the wrong promise block (e.g. an event stated in `invariants`) while the same information stays completely readable inside the promise — the fact escapes the comparable block vocabulary (the §11.2 erosion), but nothing is undecidable | P2 (the check reports WARNING, not FAIL) |
+| A type-alias inconsistency a reader can resolve from context | P2 |
+| A type-alias inconsistency that leaves a contract field undecidable (the §11.1 item-2 family) | P1 |
+| A missing dependency edge whose referenced symbol still resolves | P2 |
+| A mispointed prose reference or appendix section number (§11.3 — through the P3 reportability gate) | P3 |

@@ -187,6 +187,53 @@ func PartialRunBaselineError(baseline *validationcache.GateBaseline) error {
 	return err
 }
 
+// BaselineFindingKeys lists the logical keys a finding binds to, sorted and
+// deduplicated (the finding's source key plus its declared affected keys).
+func BaselineFindingKeys(finding Finding) []string {
+	seen := map[string]bool{}
+	var keys []string
+	appendKey := func(key string) {
+		if key == "" || key == CrossKey || seen[key] {
+			return
+		}
+		seen[key] = true
+		keys = append(keys, key)
+	}
+	appendKey(finding.SourceKey)
+	for _, key := range finding.AffectedKeys {
+		appendKey(key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// BaselineFindingsForSession routes a unit validate run's injected baseline
+// findings to the check session that owns each finding: the session judging
+// the finding's keys. A raised validate finding's keys never span two groups
+// (gate-submit validates Finding affects against the authoring session's own
+// keys), so the first coverage entry sharing a key is the only owner. Findings
+// whose keys no scheduled session shares belong to nobody — gate-finalize
+// fails closed on them instead of dropping them silently.
+func BaselineFindingsForSession(run *Run, spec *SessionSpec) []Finding {
+	if run.Gate != GateValidate || run.TargetKind != TargetKindUnit || spec.Kind != SessionKindChecks || len(run.BaselineFindings) == 0 {
+		return nil
+	}
+	specKeys := map[string]bool{}
+	for _, key := range spec.CheckKeys {
+		specKeys[key] = true
+	}
+	var out []Finding
+	for _, finding := range run.BaselineFindings {
+		for _, key := range BaselineFindingKeys(finding) {
+			if specKeys[key] {
+				out = append(out, finding)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // validateCheckGroups is the coverage decomposition of the unit validate
 // checklist: every one of the 10 checks belongs to exactly one group, and each
 // group answers one question class about the spec. The mapping is part of the

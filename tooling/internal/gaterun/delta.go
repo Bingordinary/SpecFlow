@@ -29,6 +29,30 @@ func standingRelationships(state JudgmentBaseline) []string {
 	return append([]string(nil), state.Relationships...)
 }
 
+// blockingBaselineFindings returns the findings of a baseline judgment state
+// that the recovering run's check sessions must dispose: the P0/P1 findings
+// bound to at least one local check key. A relationship-only finding (a cross
+// finding) is not injected — the full-scope plan re-assigns the baseline's
+// standing relationships, so the re-run relationship conclusions re-derive
+// their defects. P2/P3 advisories are not injected either: they are re-judged
+// naturally when their owning check re-runs
+// (framework/validation_cache.md §Advisory carry).
+func blockingBaselineFindings(state JudgmentBaseline) []Finding {
+	var out []Finding
+	for _, finding := range state.Findings {
+		if finding.Severity != "P0" && finding.Severity != "P1" {
+			continue
+		}
+		for _, key := range BaselineFindingKeys(finding) {
+			if !IsRelationshipKey(key) {
+				out = append(out, finding)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // addRelationships merges names into the run's relationship scope. The caller
 // keeps run.Relationships within the gate's vocabulary; validation runs again
 // after the plan is built.
@@ -525,7 +549,19 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 		return upgrade(fmt.Sprintf("baseline cache declarations conflict (result: %q, blocking: %t)", baseline.Result, baseline.Blocking), standing)
 	}
 	if baseline.Result != "pass" {
-		return upgrade(fmt.Sprintf("baseline cache result is %q, expected pass", baseline.Result), standing)
+		// The scope rule is unchanged: a failure record is not a usable delta
+		// baseline, so the plan covers the full scope. The record's P0/P1
+		// findings travel with the plan instead — every re-run check session
+		// receives the findings its check keys own and must dispose each one,
+		// so the recovery verifies the fixes instead of re-discovering them
+		// from zero (framework/verification_scope.md §Delta Runs → Failure
+		// recovery).
+		run.BaselineFindings = blockingBaselineFindings(state)
+		notice := fmt.Sprintf("baseline cache result is %q, expected pass", baseline.Result)
+		if len(run.BaselineFindings) > 0 {
+			notice += fmt.Sprintf(" — the failure record's %d P0/P1 finding(s) are injected into the re-run sessions for disposition", len(run.BaselineFindings))
+		}
+		return upgrade(notice+" — the plan covers the full scope", standing)
 	}
 	if reason, moved := validateStandardMoved(run, baseline); moved {
 		return upgrade(reason, standing)

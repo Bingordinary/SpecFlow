@@ -35,7 +35,7 @@ var analysisRootCauses = []string{"incomplete", "stale", "shadow_spec", "diverge
 var analysisDirections = []string{"spec_gap", "code_gap", "needs_design", "blocked"}
 var analysisConfidences = []string{"high", "medium", "low"}
 var severityLevels = []string{"P0", "P1", "P2", "P3"}
-var crossDispositions = []string{"retained", "suppressed", "merged"}
+var crossDispositions = []string{"retained", "suppressed", "merged", "regraded"}
 var verifyCrossItems = gaterun.RelationshipNames(gaterun.GateVerify)
 var validateCrossItems = gaterun.RelationshipNames(gaterun.GateValidate)
 
@@ -247,6 +247,14 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].Allowed = unitAcceptanceAllowed(sub)
 		}
 	}
+	if baseline := gaterun.BaselineFindingsForSession(run, session); len(baseline) > 0 {
+		add("baseline-disposition", "exactly one `Baseline finding:` line per injected baseline finding, each with evidence — dispose every finding the mission's Baseline findings section lists; a `not fixed` disposition requires the owning check's FAIL verdict, and the finding keeps its baseline grade and stays blocking", "Baseline finding: <baseline_finding_id> = <fixed|not fixed|superseded> — <evidence>")
+		c.Requirements[len(c.Requirements)-1].When = "if_baseline_findings"
+		c.Requirements[len(c.Requirements)-1].MinCount = len(baseline)
+		c.Requirements[len(c.Requirements)-1].MaxCount = len(baseline)
+		c.Requirements[len(c.Requirements)-1].CountBasis = "per_baseline_finding"
+		c.Requirements[len(c.Requirements)-1].Allowed = []string{"fixed", "not fixed", "superseded"}
+	}
 	if gaterun.IsItemKind(session.Kind) {
 		add("mismatch-type", "MISMATCH requires one of: "+strings.Join(itemMismatchTypes, ", ")+"; when several are retained the verdict-line type names the primary one and each finding block carries its own root cause and severity", "")
 		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
@@ -385,7 +393,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			c.Requirements[len(c.Requirements)-1].MaxCount = -1
 			c.Requirements[len(c.Requirements)-1].CountBasis = "failed_cross_items"
 		}
-		add("cross-dispositions", "dispose every input finding once", "Finding disposition: <finding_id> = <retained|suppressed|merged> [reason or merge target]")
+		add("cross-dispositions", "dispose every input finding once — retained, suppressed, merged, or regraded with a target grade strictly below the assigned one (never on a P0)", "Finding disposition: <finding_id> = <retained|suppressed|merged|regraded -> {P1|P2|P3}> [reason or merge target]")
 		c.Requirements[len(c.Requirements)-1].CountBasis = "input_findings"
 		c.Requirements[len(c.Requirements)-1].MinCount = 0
 		c.Requirements[len(c.Requirements)-1].MaxCount = -1

@@ -226,6 +226,12 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		case "retained":
 			resolved[id] = id
 			return id, nil
+		case "regraded":
+			if err := validateRegrade(inputByID[id], disposition); err != nil {
+				return "", err
+			}
+			resolved[id] = id
+			return id, nil
 		case "suppressed":
 			resolved[id] = ""
 			return "", nil
@@ -256,8 +262,9 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 
 	groupKeys := map[string]map[string]bool{}
 	// groupSeverity records the canonical severity of each terminal retained
-	// group: the most severe grade among the findings retained or merged into
-	// it (conservative — disagreement raises, never lowers).
+	// group: the most severe effective grade among the findings retained,
+	// regraded, or merged into it (conservative — disagreement raises, never
+	// lowers; a regraded finding contributes its lowered grade).
 	groupSeverity := map[string]string{}
 	raiseSeverity := func(id, severity string) {
 		current, ok := groupSeverity[id]
@@ -270,6 +277,15 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		if !currentOK || (newOK && newRank < currentRank) {
 			groupSeverity[id] = severity
 		}
+	}
+	// effectiveSeverity is the grade a finding contributes to its group: the
+	// regraded grade for an evidence-backed regrade, the assigned grade
+	// otherwise.
+	effectiveSeverity := func(id string) string {
+		if disposition := dispositionByID[id]; disposition.Action == "regraded" {
+			return disposition.TargetID
+		}
+		return inputByID[id].Severity
 	}
 	for _, id := range inputOrder {
 		terminal, err := resolve(id)
@@ -285,7 +301,7 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		for key := range findingKeySet(inputByID[id]) {
 			groupKeys[terminal][key] = true
 		}
-		raiseSeverity(terminal, inputByID[id].Severity)
+		raiseSeverity(terminal, effectiveSeverity(id))
 	}
 	for _, id := range crossOrder {
 		if groupKeys[id] == nil {
@@ -299,10 +315,15 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 
 	var out []gaterun.Finding
 	for _, id := range inputOrder {
-		if dispositionByID[id].Action != "retained" {
+		disposition := dispositionByID[id]
+		if disposition.Action != "retained" && disposition.Action != "regraded" {
 			continue
 		}
-		finding := withRaisedSeverity(inputByID[id], groupSeverity[id])
+		finding := inputByID[id]
+		if disposition.Action == "regraded" {
+			finding = finding.WithSeverity(disposition.TargetID)
+		}
+		finding = withRaisedSeverity(finding, groupSeverity[id])
 		finding.AffectedKeys = sortedFindingKeys(groupKeys[id], finding.SourceKey)
 		out = append(out, finding)
 	}
@@ -312,6 +333,28 @@ func resolveCrossFindings(input, cross []gaterun.Finding, dispositions []gaterun
 		out = append(out, finding)
 	}
 	return out, nil
+}
+
+// validateRegrade checks the mechanical envelope of an evidence-backed regrade
+// disposition: the target grade is a valid P0-P3 value strictly below the
+// assigned grade, and a P0 finding is never regraded (P0 is the ceiling in
+// both directions). Whether the evidence supports the lower grade is the
+// synthesis reviewer's semantic judgment, bounded by
+// framework/severity_policy.md §9.4 — the tooling enforces only this envelope.
+func validateRegrade(finding gaterun.Finding, disposition gaterun.FindingDisposition) error {
+	target := strings.TrimSpace(disposition.TargetID)
+	if _, ok := severityRank(target); !ok {
+		return fmt.Errorf("finding %q regrade target %q is not a P0-P3 grade", finding.ID, target)
+	}
+	if finding.Severity == "P0" {
+		return fmt.Errorf("finding %q is P0 — P0 is the severity ceiling and cannot be regraded", finding.ID)
+	}
+	targetRank, _ := severityRank(target)
+	assignedRank, _ := severityRank(finding.Severity)
+	if targetRank <= assignedRank {
+		return fmt.Errorf("finding %q regrade %s -> %s does not lower the grade — raising needs no regrade disposition", finding.ID, finding.Severity, target)
+	}
+	return nil
 }
 
 // withRaisedSeverity applies the canonical (conservatively raised) severity of

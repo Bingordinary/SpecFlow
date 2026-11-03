@@ -221,6 +221,30 @@ type Finding struct {
 	OwnedBy string `json:"owned_by,omitempty"`
 }
 
+// WithSeverity sets a validated P0-P3 grade in either direction, rewriting the
+// stored detail's leading [Px] prefix (and a `Severity:` detail line) so the
+// human-readable block and the machine severity agree. The canonical value may
+// come from the final synthesis's evidence-backed regrade
+// (framework/severity_policy.md §9.4); the original reviewer report stays
+// unchanged as evidence of the submitted assessment.
+func (finding Finding) WithSeverity(severity string) Finding {
+	if severity == "" || severity == finding.Severity {
+		return finding
+	}
+	previous := finding.Severity
+	finding.Severity = severity
+	lines := strings.Split(finding.Detail, "\n")
+	lines[0] = strings.Replace(lines[0], "["+previous+"]", "["+severity+"]", 1)
+	for i, line := range lines {
+		label, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if ok && strings.EqualFold(label, "Severity") && strings.EqualFold(strings.TrimSpace(value), previous) {
+			lines[i] = line[:strings.IndexByte(line, ':')+1] + " " + severity
+		}
+	}
+	finding.Detail = strings.Join(lines, "\n")
+	return finding
+}
+
 // WithMinimumSeverity raises a validated P0-P3 grade without lowering it.
 // The canonical detail follows the grade; the original reviewer report stays
 // unchanged as evidence of the submitted assessment.
@@ -228,18 +252,7 @@ func (finding Finding) WithMinimumSeverity(minimum string) Finding {
 	if minimum == "" || minimum >= finding.Severity {
 		return finding
 	}
-	previous := finding.Severity
-	finding.Severity = minimum
-	lines := strings.Split(finding.Detail, "\n")
-	lines[0] = strings.Replace(lines[0], "["+previous+"]", "["+minimum+"]", 1)
-	for i, line := range lines {
-		label, value, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if ok && strings.EqualFold(label, "Severity") && strings.EqualFold(strings.TrimSpace(value), previous) {
-			lines[i] = line[:strings.IndexByte(line, ':')+1] + " " + minimum
-		}
-	}
-	finding.Detail = strings.Join(lines, "\n")
-	return finding
+	return finding.WithSeverity(minimum)
 }
 
 // FindingOwnership is the cross synthesis's evidence-backed ownership record
@@ -265,13 +278,19 @@ type FindingDisposition struct {
 // gate-finalize consume this structure, never a coordinator-supplied
 // restatement of the result.
 type SessionResult struct {
-	SessionID               string               `json:"session_id"`
-	Kind                    string               `json:"kind"`
-	Verdicts                map[string]string    `json:"verdicts,omitempty"`
-	Findings                []Finding            `json:"findings,omitempty"`
-	EffectiveStatus         map[string]string    `json:"effective_status,omitempty"`
-	QualityConclusions      map[string]string    `json:"quality_conclusions,omitempty"`
-	Dispositions            []FindingDisposition `json:"dispositions,omitempty"`
+	SessionID          string               `json:"session_id"`
+	Kind               string               `json:"kind"`
+	Verdicts           map[string]string    `json:"verdicts,omitempty"`
+	Findings           []Finding            `json:"findings,omitempty"`
+	EffectiveStatus    map[string]string    `json:"effective_status,omitempty"`
+	QualityConclusions map[string]string    `json:"quality_conclusions,omitempty"`
+	Dispositions       []FindingDisposition `json:"dispositions,omitempty"`
+	// BaselineDispositions records the check session's disposition of each
+	// injected baseline finding (fixed | not fixed | superseded) with its
+	// evidence. Only unit validate check sessions carry them; gate-finalize
+	// retains the not-fixed findings and writes the dispositions into the
+	// cache's GATE_JUDGMENTS for audit.
+	BaselineDispositions    []FindingDisposition `json:"baseline_dispositions,omitempty"`
 	Ownerships              []FindingOwnership   `json:"ownerships,omitempty"`
 	Analysis                map[string]string    `json:"analysis,omitempty"`
 	ReportDigest            string               `json:"report_digest"`
@@ -310,6 +329,12 @@ type JudgmentBaseline struct {
 	// deferred-findings ledger, and a later run of this unit must not re-dispose
 	// them (see framework/validation_cache.md §Format → Deferred-findings ledger).
 	DeferredFindings []Finding `json:"deferred_findings,omitempty"`
+	// BaselineDispositions records how the recovering run disposed the failure
+	// record's injected findings: audit state for the written cache, not carry
+	// state — the not-fixed findings themselves are retained in Findings with
+	// their baseline grades, so the next recovery plan re-injects them
+	// (framework/verification_scope.md §Delta Runs → Failure recovery).
+	BaselineDispositions []FindingDisposition `json:"baseline_dispositions,omitempty"`
 }
 
 // DeferredFinding is one pending verify finding routed to this run's unit by
@@ -376,6 +401,15 @@ type Run struct {
 	Coverage       []CoverageKey                `json:"coverage"`
 	Relationships  []string                     `json:"relationships"`
 	CarriedResults []SessionResult              `json:"carried_results,omitempty"`
+
+	// BaselineFindings are the P0/P1 findings of the failure record this run
+	// recovers, loaded at plan time. Every re-run check session receives the
+	// findings its check keys own and must dispose each one
+	// (fixed | not fixed | superseded); gate-finalize retains the not-fixed
+	// findings with their baseline grades. The scope rule is unchanged — a
+	// failure record still plans the full scope (see
+	// framework/verification_scope.md §Delta Runs → Failure recovery).
+	BaselineFindings []Finding `json:"baseline_findings,omitempty"`
 
 	// DeferredFindings are the pending deferrals this run's unit must dispose,
 	// loaded from the deferred-findings ledger at plan time (verify unit runs;

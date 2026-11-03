@@ -38,6 +38,9 @@ type gateOutcome struct {
 	EffectiveStatus    map[string]string
 	QualityConclusions map[string]string
 	SynthesisDigest    string
+	// BaselineDispositions records how the recovering run disposed the
+	// injected baseline findings; written into GATE_JUDGMENTS for audit.
+	BaselineDispositions []gaterun.FindingDisposition
 }
 
 // runGateFinalize writes the gate cache from the run's accepted session
@@ -252,14 +255,15 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		synthesisPins = gaterun.SynthesisEvidencePins(absRoot, run, cross.text)
 	}
 	judgmentData, err := json.Marshal(gaterun.JudgmentBaseline{
-		SchemaVersion:     schema,
-		Records:           run.Records,
-		Relationships:     run.AllRelationships(),
-		LogicalStatus:     outcome.EffectiveStatus,
-		Findings:          outcome.Findings,
-		SynthesisDigest:   outcome.SynthesisDigest,
-		SynthesisEvidence: synthesisPins,
-		DeferredFindings:  outcome.DeferredFindings,
+		SchemaVersion:        schema,
+		Records:              run.Records,
+		Relationships:        run.AllRelationships(),
+		LogicalStatus:        outcome.EffectiveStatus,
+		Findings:             outcome.Findings,
+		SynthesisDigest:      outcome.SynthesisDigest,
+		SynthesisEvidence:    synthesisPins,
+		DeferredFindings:     outcome.DeferredFindings,
+		BaselineDispositions: outcome.BaselineDispositions,
 	})
 	if err != nil {
 		return fmt.Errorf("encode judgment baseline: %w", err)
@@ -942,6 +946,13 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 		}
 		out.SynthesisDigest = reportDigest(string(digestState))
 	}
+	// Injected baseline findings the recovering run disposed `not fixed` are
+	// retained with their baseline grades — the recovery verified each fix;
+	// whatever is not fixed keeps driving the gate. Fail closed when an
+	// injected finding was never disposed.
+	if err := mergeBaselineFindings(run, reports, out); err != nil {
+		return nil, err
+	}
 	// A zero-finding run must emit the documented array shape in the
 	// GATE_JUDGMENTS block, not JSON null: the block is the machine-readable
 	// delta/repair baseline and its schema example records `"findings":[]`
@@ -973,6 +984,53 @@ func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, err
 	// (framework/severity_policy.md §11): they are counted and recorded, and
 	// they never drive Result or blocking.
 	return out, nil
+}
+
+// mergeBaselineFindings appends the run's not-fixed baseline findings to the
+// canonical outcome and records every baseline disposition for the cache's
+// audit block. A disposition naming an unknown finding, or an injected finding
+// no accepted session disposed, rejects the finalize — fail closed instead of
+// letting a confirmed-present defect vanish.
+func mergeBaselineFindings(run *gaterun.Run, reports []reportRef, out *gateOutcome) error {
+	if run.Gate != gaterun.GateValidate || len(run.BaselineFindings) == 0 {
+		return nil
+	}
+	byID := make(map[string]gaterun.Finding, len(run.BaselineFindings))
+	for _, finding := range run.BaselineFindings {
+		byID[finding.ID] = finding
+	}
+	retained := map[string]bool{}
+	for _, finding := range out.Findings {
+		retained[finding.ID] = true
+	}
+	disposed := map[string]bool{}
+	for _, rep := range reports {
+		if rep.result == nil {
+			continue
+		}
+		for _, disposition := range rep.result.BaselineDispositions {
+			finding, ok := byID[disposition.FindingID]
+			if !ok {
+				return fmt.Errorf("gate-finalize rejected: baseline finding disposition names unknown finding %q", disposition.FindingID)
+			}
+			out.BaselineDispositions = append(out.BaselineDispositions, disposition)
+			disposed[disposition.FindingID] = true
+			if disposition.Action != "not fixed" {
+				continue
+			}
+			if retained[finding.ID] {
+				return fmt.Errorf("gate-finalize rejected: baseline finding %q is retained more than once", finding.ID)
+			}
+			out.Findings = append(out.Findings, finding)
+			retained[finding.ID] = true
+		}
+	}
+	for _, finding := range run.BaselineFindings {
+		if !disposed[finding.ID] {
+			return fmt.Errorf("gate-finalize rejected: injected baseline finding %q was never disposed — the owning check session must disposition it", finding.ID)
+		}
+	}
+	return nil
 }
 
 // statusForVerdict maps a session verdict token to the logical fail/pass
