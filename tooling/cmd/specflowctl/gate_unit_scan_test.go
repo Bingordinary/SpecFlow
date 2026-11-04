@@ -182,3 +182,49 @@ func TestUnitScanMismatchRequiresAFindingBlock(t *testing.T) {
 		t.Fatalf("a MISMATCH without a finding block must be rejected, got %v", err)
 	}
 }
+
+// TestAlignmentTemplateHasNoHeaderlessFragment pins the alignment template
+// invariant: the emitted template is exactly the per-key bodies, so no
+// headerless field line follows the per-key blocks. A requirement's example
+// belongs to the "Required report lines and values" listing, never to the
+// template body. The mandatory unit-scan lines are rendered once, in key
+// context.
+func TestAlignmentTemplateHasNoHeaderlessFragment(t *testing.T) {
+	root := createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	grWriteSpecItems(t, root, "auth", "none", "none", []string{"auth.a", "auth.b"})
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+	runID := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
+
+	// Lines the pre-fix code appended after the per-key blocks, with no key
+	// header of their own.
+	fragments := []string{
+		"evidence: <value>",
+		"deterministic: <true|false>",
+		"Part A: <value>",
+		"  Problem: <value>",
+		"  Impact: <value>",
+		"  Suggested direction: <value>",
+	}
+	item := missionJSON(t, root, runID, "item:auth:auth.a,item:auth:auth.b").Sessions[0].ReportContract.Template
+	if got := strings.Count(item, "item:auth:auth.a:"); got != 1 {
+		t.Fatalf("item template must render one block per key, got %d blocks for auth.a:\n%s", got, item)
+	}
+	for _, fragment := range fragments {
+		if strings.Contains(item, "\n"+fragment+"\n") {
+			t.Errorf("item template carries a headerless fragment %q:\n%s", fragment, item)
+		}
+	}
+
+	unit := missionJSON(t, root, runID, "unit:auth").Sessions[0].ReportContract.Template
+	for _, class := range unitScanClasses {
+		if got := strings.Count(unit, "declarations."+class+": checked=<n> — <result>"); got != 1 {
+			t.Errorf("unit template must render declarations.%s exactly once, got %d:\n%s", class, got, unit)
+		}
+	}
+	for _, fragment := range fragments {
+		if strings.Contains(unit, "\n"+fragment+"\n") {
+			t.Errorf("unit template carries a headerless fragment %q:\n%s", fragment, unit)
+		}
+	}
+}
