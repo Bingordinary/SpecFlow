@@ -21,6 +21,7 @@ func TestVerifyItemJudgmentPinsSourceBlock(t *testing.T) {
 	spec := `---
 id: web
 rule_refs: none
+non_behavior_blocks: [Other]
 ---
 
 # web

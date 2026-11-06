@@ -424,7 +424,7 @@ func validateAllowedPath(repoRoot string, target Target, entry AllowedPath) erro
 
 func matchesTargetSpecPath(target Target, rel string) bool {
 	// The family predicate is the single-level candidate-file definition
-	// (open.go isCandidateSpecPath): it rejects nested paths under appendix/,
+	// (open.go isCandidateSpecPath): it rejects nested paths under evidence/,
 	// so a persisted state file cannot widen the spec surface with a deeper
 	// directory. The name binding below then keeps the entry tied to the
 	// target's own spec objects.
@@ -438,9 +438,8 @@ func matchesTargetSpecPath(target Target, rel string) bool {
 		switch dir {
 		case specpaths.CandidateDir:
 			return stem == "unit_"+target.Name
-		case specpaths.CandidateAppendixDir:
-			prefix := "unit_" + target.Name + "_"
-			return strings.HasPrefix(stem, prefix) && len(stem) > len(prefix)
+		case specpaths.CandidateEvidenceDir:
+			return stem == "unit_"+target.Name
 		default:
 			return false
 		}

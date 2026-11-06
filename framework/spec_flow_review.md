@@ -99,7 +99,7 @@ If a command is missing a required output, has undefined behavior for failure ca
 
 Each command must have clearly defined boundaries. The review must verify:
 
-1. **next**: given a unit name, outputs the unit's candidate and stable spec files, appendix files, rule references, and the promise model (each promise and its `depends_on`). Does NOT output process directives or "next step" instructions.
+1. **next**: given a unit name, outputs the unit's candidate and stable spec files, evidence records, rule references, and the promise model (each promise and its `depends_on`). Does NOT output process directives or "next step" instructions.
 
 2. **validate** (design-quality gate): given a unit or rule name, reviews candidate spec quality. Outputs a structured result per the current unit or rule validate checklist (`framework/unit_validate_checklist.md` / `framework/rule_validate_checklist.md`). It does not stop editing by itself, but applicable promotion requires PASS.
 
@@ -110,7 +110,7 @@ Each command must have clearly defined boundaries. The review must verify:
    b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns version promotion and consumer migration.
    c. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
-   The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.evidence_files` and `affects.appendices` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
+   The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.evidence_files` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
 
 Each command must have:
 1. a defined input (what parameters it accepts)
@@ -168,12 +168,12 @@ Durable supporting truth must remain layer-correct across the promote path.
 For this review, supporting truth includes:
 
 1. stable and candidate main Spec files
-2. stable and candidate appendix files
+2. stable and candidate evidence records
 3. Rule refs and Rule files consumed by current-layer Specs
 
 Layer closure requires:
 
-1. promote must copy all candidate main Spec files and appendix files to the stable layer
+1. promote must copy all candidate main Spec files and evidence records to the stable layer
 2. stable layer must not depend on candidate layer files
 3. candidate layer may reference stable layer files (baseline for comparison)
 

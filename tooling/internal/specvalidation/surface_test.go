@@ -428,16 +428,16 @@ func TestCheckAffectsFiles_OutsideRepositoryFails(t *testing.T) {
 // TestCheckImplementationSurfaces_SpecDocumentFails pins the issue-#88
 // invariant: implementation_surface declares an implementation code surface, so
 // a spec document is rejected even though it resolves — the unit's own main
-// spec, its own appendix, any rule spec, and a spec directory alike.
+// spec, its own evidence record, any rule spec, and a spec directory alike.
 func TestCheckImplementationSurfaces_SpecDocumentFails(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "docs/specs/units/stable/unit_agent.md", "# agent\n")
-	writeSurfaceFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_agent_flows.md", "# flows\n")
+	writeSurfaceFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_agent.md", "# flows\n")
 	writeSurfaceFile(t, repoRoot, "docs/specs/rules/stable/g_rule_scope.md", "# rule\n")
 
 	problems := CheckImplementationSurfaces(repoRoot, surfaceSpec(
 		"docs/specs/units/stable/unit_agent.md",
-		"docs/specs/units/candidate/appendix/unit_agent_flows.md",
+		"docs/specs/units/candidate/evidence/unit_agent.md",
 		"docs/specs/rules/stable/g_rule_scope.md",
 		"docs/specs/units/stable",
 	))
@@ -514,22 +514,6 @@ func TestCheckAnchors_SpecDocumentImplementationSurfaceFails(t *testing.T) {
 	}
 	if !strings.Contains(result.Details, "item_1") || !strings.Contains(result.Details, "names a spec document") {
 		t.Fatalf("expected item id and reason in details, got %s", result.Details)
-	}
-}
-
-// TestCheckAnchors_OwnAppendixReferencePasses pins the legal self-reference the
-// issue-#88 rule must not touch: affects.appendices naming the unit's own
-// appendix is a spec-object reference, not an implementation surface.
-func TestCheckAnchors_OwnAppendixReferencePasses(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
-	writeSurfaceFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_flows.md", "# flows\n")
-	writeCandidate(t, repoRoot, "test_unit", surfaceSpec("internal/demo/a.go")+
-		"    affects:\n      appendices:\n        - unit_test_unit_flows\n")
-
-	result := checkAnchors(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for an own-appendix reference, got %s: %s", result.Status, result.Details)
 	}
 }
 

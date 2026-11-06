@@ -212,6 +212,7 @@ func layeredFrameworkFiles(repoRoot string, frameworkRoot string) ([]string, err
 		result = append(result, files...)
 	}
 	for _, nonMdFile := range []string{
+		joinPath(frameworkRoot, "unit_validate_checks.yaml"),
 		joinPath(frameworkRoot, "_atoms/manifest.txt"),
 		joinPath(frameworkRoot, "_atoms/generate.sh"),
 		joinPath(frameworkRoot, "_atoms/verify.sh"),

@@ -26,7 +26,7 @@ func runNext(args []string, stdout, stderr io.Writer) error {
 	if unitName == "" {
 		fmt.Fprintln(stderr, "Usage: specflowctl next --unit <name>")
 		fmt.Fprintln(stderr, "")
-		fmt.Fprintln(stderr, "Discovers the unit's spec files, appendices, rules, and related units.")
+		fmt.Fprintln(stderr, "Discovers the unit's spec files, evidence record, rules, and related units.")
 		fmt.Fprintln(stderr, "No lifecycle state is read or advanced — file existence is state.")
 		fmt.Fprintln(stderr, "")
 		fmt.Fprintln(stderr, "Flags:")

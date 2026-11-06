@@ -183,7 +183,11 @@ type checkEntry struct {
 // delta re-run's failure record) is rejected as blocking by the gate
 // freshness chain.
 func CheckValidate(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	result, err := checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
+	if err != nil || !result.Fresh {
+		return result, err
+	}
+	return checkValidateObjectClosure(repoRoot, unitName, specpaths.CandidateUnitSpecFileRef(unitName))
 }
 
 // CheckVerify reads and validates the verify cache for the given unit.
@@ -213,15 +217,19 @@ func CheckVerifyStable(repoRoot, unitName string) (CheckResult, error) {
 // check points at the candidate spec). The fresh stable report consumes it
 // as the stable content's dependency/rule confirmation state.
 func CheckValidateStable(repoRoot, unitName string) (CheckResult, error) {
-	return checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+	result, err := checkCache(repoRoot, "unit", unitName, "validate", "validate_result.md", []string{"pass", "fail"}, fmt.Sprintf("docs/specs/units/stable/unit_%s.md", unitName))
+	if err != nil || !result.Fresh {
+		return result, err
+	}
+	return checkValidateObjectClosure(repoRoot, unitName, specpaths.StableUnitSpecFileRef(unitName))
 }
 
-// CheckAppendicesInCache verifies that every candidate appendix for
-// the given unit is listed in the validate_result.md cache file. This is a
-// mechanical promote gate — it ensures the agent included all appendix files
-// in the validation run. If an appendix exists on disk but is missing from
-// the cache's files list, the agent skipped it.
-func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
+// CheckEvidenceInCache verifies that the unit's candidate evidence record is
+// listed in the validate_result.md cache file. This is a mechanical promote
+// gate — it ensures the agent included the evidence record in the validation
+// run. If the record exists on disk but is missing from the cache's files
+// list, the agent skipped it.
+func CheckEvidenceInCache(repoRoot, unitName string) (CheckResult, error) {
 	// 1. Read validate cache
 	cachePath, err := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
 	if err != nil {
@@ -242,12 +250,12 @@ func CheckAppendicesInCache(repoRoot, unitName string) (CheckResult, error) {
 			Reason:   fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err),
 		}, nil
 	}
-	return checkAppendicesInCache(repoRoot, unitName, cache)
+	return checkEvidenceInCache(repoRoot, unitName, cache)
 }
 
-// CheckAppendicesInRenderedCache applies the appendix coverage gate to a
+// CheckEvidenceInRenderedCache applies the evidence coverage gate to a
 // rendered cache candidate before it is published to the canonical path.
-func CheckAppendicesInRenderedCache(repoRoot, unitName string, content []byte) (CheckResult, error) {
+func CheckEvidenceInRenderedCache(repoRoot, unitName string, content []byte) (CheckResult, error) {
 	cache, err := parseCache(content)
 	if err != nil {
 		return CheckResult{
@@ -256,10 +264,10 @@ func CheckAppendicesInRenderedCache(repoRoot, unitName string, content []byte) (
 			Reason:   fmt.Sprintf("cannot read rendered validate cache: %v", err),
 		}, nil
 	}
-	return checkAppendicesInCache(repoRoot, unitName, cache)
+	return checkEvidenceInCache(repoRoot, unitName, cache)
 }
 
-func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckResult, error) {
+func checkEvidenceInCache(repoRoot, unitName string, cache *cacheFile) (CheckResult, error) {
 	if err := specpaths.ValidateTargetName("unit", unitName); err != nil {
 		return CheckResult{}, err
 	}
@@ -291,37 +299,37 @@ func checkAppendicesInCache(repoRoot, unitName string, cache *cacheFile) (CheckR
 		cachedPaths[filepath.ToSlash(entry.Path)] = true
 	}
 
-	// 3. Resolve this unit's candidate appendices by declared ownership.
-	matches, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+	// 3. Resolve this unit's candidate evidence record.
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "candidate")
 	if err != nil {
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
-			Reason:   fmt.Sprintf("cannot resolve appendix ownership: %v — promote rejected", err),
+			Reason:   fmt.Sprintf("cannot resolve evidence record ownership: %v — promote rejected", err),
+		}, nil
+	}
+	if record == nil {
+		return CheckResult{
+			Fresh:    true,
+			Category: CategoryFresh,
+			Reason:   "no evidence record to cover",
 		}, nil
 	}
 
-	// 4. Check each candidate appendix.
-	var missing []string
-	for _, m := range matches {
-		if !cachedPaths[m.Path] {
-			missing = append(missing, m.Path)
-		}
-	}
-
-	if len(missing) > 0 {
+	// 4. Check the candidate evidence record.
+	if !cachedPaths[record.Path] {
 		return CheckResult{
 			Fresh:    false,
 			Category: CategoryStale,
-			Reason: fmt.Sprintf("appendix file(s) not included in validation: %s. Run `validate@%s` again.",
-				strings.Join(missing, ", "), unitName),
+			Reason: fmt.Sprintf("evidence record not included in validation: %s. Run `validate@%s` again.",
+				record.Path, unitName),
 		}, nil
 	}
 
 	return CheckResult{
 		Fresh:    true,
 		Category: CategoryFresh,
-		Reason:   fmt.Sprintf("all %d appendix file(s) are included in validate cache", len(matches)),
+		Reason:   fmt.Sprintf("evidence record is included in validate cache: %s", record.Path),
 	}, nil
 }
 
@@ -1192,9 +1200,9 @@ func DeleteRuleCache(repoRoot, ruleID, command string) error {
 
 // fileFreshnessState classifies the freshness of one cache file entry
 // against the file's current content. Freshness is whole-file: any content
-// change stales the entry, and the mechanical delta plan classifies the change
-// as own-content (full re-run) or external-only. There is no sub-file
-// freshness: content-addressed regions never decide skip scope.
+// change stales the entry, and the mechanical delta plan re-runs the objects
+// whose read set covers the changed content. There is no sub-file freshness:
+// content-addressed regions never decide skip scope.
 type fileFreshnessState int
 
 const (
@@ -1419,7 +1427,7 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 	}
 
 	// A validate cache is bound to the input surface it judged. A new own
-	// appendix or a new stable global rule is a required input that the old
+	// evidence record or a new stable global rule is a required input that the old
 	// cache never recorded, so the cache cannot stay fresh — otherwise a unit
 	// could be promoted after a new global constraint landed without Check 8
 	// ever reading it. Verify has per-conclusion evidence requirements for the
@@ -1445,8 +1453,9 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 	if command != "verify" {
 		// Re-check every listed file against its recorded whole-file hash.
 		// Provider specs are governed by promise_pins instead: their narrative,
-		// acceptance items, and appendices are not the consumer's contract, so
-		// only a provider promise fingerprint change may stale this cache.
+		// acceptance items, and evidence record are not the consumer's
+		// contract, so only a provider promise fingerprint change may stale
+		// this cache.
 		providerSubjects := promiseProviderSubjectPaths(repoRoot, cache)
 		var staleFiles []string
 		var missingFiles []string
@@ -1513,28 +1522,29 @@ func classifyCache(repoRoot, targetKind, targetName, command string, validResult
 
 // requiredValidateInput is one input the current repository state requires a
 // unit validate cache to carry. Entry is the spelling a cache entry uses
-// (a repository-relative appendix path, or rule:<id> for a stable global
-// rule); Abs is the resolved absolute path used for membership comparison.
+// (a repository-relative evidence-record path, or rule:<id> for a stable
+// global rule); Abs is the resolved absolute path used for membership
+// comparison.
 type requiredValidateInput struct {
 	Entry string
 	Abs   string
 }
 
 // currentRequiredValidateInputs resolves the inputs a unit validate cache must
-// currently carry: the unit's own appendices in the cache's target layer and
-// every published stable global rule. Both are discovered from current
+// currently carry: the unit's own evidence record in the cache's target layer
+// and every published stable global rule. Both are discovered from current
 // repository state, never from the recorded cache, so a newly added input
 // cannot be silently carried.
 func currentRequiredValidateInputs(repoRoot string, cache *cacheFile, layer string) ([]requiredValidateInput, error) {
-	appendices, err := specpaths.UnitAppendices(repoRoot, cache.Unit, layer)
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, cache.Unit, layer)
 	if err != nil {
-		return nil, fmt.Errorf("resolve current appendix input surface: %w", err)
+		return nil, fmt.Errorf("resolve current evidence-record input surface: %w", err)
 	}
 	var out []requiredValidateInput
-	for _, appendix := range appendices {
+	if record != nil {
 		out = append(out, requiredValidateInput{
-			Entry: appendix.Path,
-			Abs:   filepath.Clean(resolvePath(repoRoot, appendix.Path)),
+			Entry: record.Path,
+			Abs:   filepath.Clean(resolvePath(repoRoot, record.Path)),
 		})
 	}
 	globalRules, err := currentStableGlobalRuleIDs(repoRoot)
@@ -1666,7 +1676,7 @@ func providerSpecRef(target, provider string) string {
 // checkPromisePinFreshness compares a validate cache's recorded provider
 // promise fingerprints with the current layer's contracts. A fingerprint
 // change is the only provider-side change that reopens a consumer; the
-// provider's narrative, acceptance items, tests, and appendices are excluded.
+// provider's narrative, acceptance items, tests, and evidence record are excluded.
 func checkPromisePinFreshness(repoRoot, targetKind string, cache *cacheFile) *CheckResult {
 	if targetKind != "unit" {
 		return nil
@@ -2084,7 +2094,7 @@ type InheritReport struct {
 
 // InheritStableCaches converts the unit's stable confirmation caches
 // (target: stable) into candidate caches for a forked round. Fork copies the
-// stable spec and appendices verbatim, so the confirmation conclusions carry
+// stable spec and evidence record verbatim, so the confirmation conclusions carry
 // over: a gate cache with `result: pass` and `blocking: false` is rewritten —
 // `target: stable` → `target: candidate` and physical paths under
 // `docs/specs/units/stable/` → `docs/specs/units/candidate/` — and stays valid
@@ -2094,13 +2104,13 @@ type InheritReport struct {
 // starts those gates from scratch. Rule forks do not inherit: a rule's cache
 // declares the rule file whole, so a forked round always re-runs in full.
 func InheritStableCaches(repoRoot, unitName string) (*InheritReport, error) {
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
+	var owned []string
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "stable")
 	if err != nil {
 		return nil, err
 	}
-	var owned []string
-	for _, appendix := range appendices {
-		owned = append(owned, appendix.Path)
+	if record != nil {
+		owned = append(owned, record.Path)
 	}
 	report := &InheritReport{Unit: unitName}
 	for _, cmd := range []string{"validate", "verify"} {
@@ -2173,12 +2183,12 @@ type PromoteCachesToStableReport struct {
 func RewriteCachesToStable(repoRoot, targetKind, targetName string) (*PromoteCachesToStableReport, error) {
 	var owned []string
 	if targetKind == "unit" {
-		appendices, err := specpaths.UnitAppendices(repoRoot, targetName, "stable")
+		record, err := specpaths.UnitEvidenceRecord(repoRoot, targetName, "stable")
 		if err != nil {
 			return nil, err
 		}
-		for _, appendix := range appendices {
-			owned = append(owned, strings.Replace(appendix.Path, "docs/specs/units/stable/", "docs/specs/units/candidate/", 1))
+		if record != nil {
+			owned = append(owned, strings.Replace(record.Path, "docs/specs/units/stable/", "docs/specs/units/candidate/", 1))
 		}
 	}
 	var commands []string
@@ -2322,7 +2332,7 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 // Logical references (`unit:` / `rule:`) are untouched — they resolve by name
 // to the current layer. Only the frontmatter (between the two `---` delimiters)
 // is edited; the body is preserved verbatim. Returns whether anything changed.
-func rewriteLayerFrontmatter(content string, fromLayer, toLayer string, appendices []string) (string, bool) {
+func rewriteLayerFrontmatter(content string, fromLayer, toLayer string, owned []string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
 		return content, false
@@ -2352,7 +2362,7 @@ func rewriteLayerFrontmatter(content string, fromLayer, toLayer string, appendic
 			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			lines[i] = leading + "target: " + toLayer
 			changed = true
-		case strings.HasPrefix(trimmed, "- path: docs/specs/units/"+fromLayer+"/") && ownLayerPath(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")), unit, fromLayer, appendices):
+		case strings.HasPrefix(trimmed, "- path: docs/specs/units/"+fromLayer+"/") && ownLayerPath(strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")), unit, fromLayer, owned):
 			leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			newPath := "docs/specs/units/" + toLayer + "/" + strings.TrimPrefix(
 				strings.TrimSpace(strings.TrimPrefix(trimmed, "- path:")),
@@ -2381,15 +2391,15 @@ func rewriteLayerFrontmatter(content string, fromLayer, toLayer string, appendic
 // rewriteCacheLayer rewrites a stable confirmation cache into its candidate
 // form: `target: stable` → `target: candidate`, moving this unit's own spec
 // paths while preserving peer evidence bindings.
-func rewriteCacheLayer(content string, appendices []string) (string, bool) {
-	return rewriteLayerFrontmatter(content, "stable", "candidate", appendices)
+func rewriteCacheLayer(content string, owned []string) (string, bool) {
+	return rewriteLayerFrontmatter(content, "stable", "candidate", owned)
 }
 
 // rewriteCacheLayerToStable rewrites a candidate gate cache into its stable
 // confirmation form: `target: candidate` → `target: stable`, moving this
 // target's own spec paths while preserving peer evidence bindings.
-func rewriteCacheLayerToStable(content string, appendices []string) (string, bool) {
-	return rewriteLayerFrontmatter(content, "candidate", "stable", appendices)
+func rewriteCacheLayerToStable(content string, owned []string) (string, bool) {
+	return rewriteLayerFrontmatter(content, "candidate", "stable", owned)
 }
 
 // fileHash computes the SHA-256 hash of a file's normalized content.
@@ -2442,20 +2452,17 @@ func resolvePath(repoRoot, filePath string) string {
 }
 
 // resolveEntryPath resolves a cache file entry to an absolute file path.
-// Logical unit/appendix and bound-rule references resolve to the current-layer
-// file (candidate first, stable fallback), so promotion does not stale caches
-// whose dependency content is unchanged. Logical global-rule references
-// resolve stable-only because candidate globals are unpublished. Physical
-// paths resolve directly. Returns "" when a logical reference resolves to no
-// applicable file.
+// Logical unit/evidence-record and bound-rule references resolve to the
+// current-layer file (candidate first, stable fallback), so promotion does not
+// stale caches whose dependency content is unchanged. Logical global-rule
+// references resolve stable-only because candidate globals are unpublished.
+// Physical paths resolve directly. Returns "" when a logical reference
+// resolves to no applicable file.
 func resolveEntryPath(repoRoot, path string) string {
 	if strings.HasPrefix(path, "unit:") {
 		rest := strings.TrimPrefix(path, "unit:")
-		if _, appendix, found := strings.Cut(rest, ":appendix:"); found {
-			// The unit name is contextual: the appendix is resolved by its
-			// full file base name (unit_{unit}_{name}), which is unique
-			// across units by the naming convention.
-			return specpaths.ResolveUnitAppendix(repoRoot, appendix)
+		if unit, found := strings.CutSuffix(rest, ":evidence"); found {
+			return specpaths.ResolveEvidenceRecord(repoRoot, unit)
 		}
 		return specpaths.ResolveUnitFile(repoRoot, rest)
 	}
@@ -2636,7 +2643,7 @@ func CacheJudgmentReferences(repoRoot string) ([]judgments.Reference, error) {
 	return refs, nil
 }
 
-func ownLayerPath(p, unit, layer string, appendices []string) bool {
-	_, ok := judgments.OwnSuffix(p, unit, layer, appendices)
+func ownLayerPath(p, unit, layer string, owned []string) bool {
+	_, ok := judgments.OwnSuffix(p, unit, layer, owned)
 	return ok
 }

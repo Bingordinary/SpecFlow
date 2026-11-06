@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,8 +13,58 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
+
+// withValidateCatalog appends the per-object catalog a fresh unit validate
+// cache must carry. The catalog is the coverage record; no per-object verdict
+// is stored.
+func withValidateCatalog(t *testing.T, repoRoot, unit, cache string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_"+unit+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := validatekeys.Parse(unit, string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceBase := ""
+	var evidenceSections []validatekeys.EvidenceSection
+	recordPath := filepath.Join(repoRoot, "docs/specs/units/candidate", "evidence", "unit_"+unit+".md")
+	if recordData, rerr := os.ReadFile(recordPath); rerr == nil {
+		base := "unit_" + unit
+		evidenceBase = base
+		parsed, perr := validatekeys.ParseEvidenceRecord(base, string(recordData), graph)
+		if perr != nil {
+			t.Fatal(perr)
+		}
+		evidenceSections = parsed
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+	block, err := json.Marshal(struct {
+		SchemaVersion   int                `json:"schema_version"`
+		LogicalStatus   map[string]string  `json:"logical_status"`
+		Findings        []any              `json:"findings"`
+		SynthesisDigest string             `json:"synthesis_digest"`
+		ValidateObjects []validatekeys.Key `json:"validate_objects"`
+	}{
+		SchemaVersion:   validationcache.RecordStateSchemaValidate,
+		LogicalStatus:   map[string]string{},
+		Findings:        []any{},
+		SynthesisDigest: "sha256:fixture",
+		ValidateObjects: catalog,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cache + "\n<!-- GATE_JUDGMENTS_BEGIN\n" + string(block) + "\nGATE_JUDGMENTS_END -->\n"
+}
 
 // writeMergedVerifyCache writes a merged verify cache for the promote
 // fixtures: an alignment check on the main spec file and a quality check on
@@ -190,24 +241,30 @@ acceptance_item_set:
 		t.Fatal(err)
 	}
 
-	// Create a candidate appendix file
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	// Create a candidate evidence record
+	evidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendixContent := `---
+	evidenceContent := `---
 unit: test_unit
 ---
-Appendix content for test.
+
+## test_unit.core — observed
+
+Keys:
+  - item:test.check
+
+Observed behavior for test.
 `
-	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
-	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+	evidencePath := filepath.Join(evidenceDir, "unit_test_unit.md")
+	if err := os.WriteFile(evidencePath, []byte(evidenceContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
-	appendixHash := computeHash(appendixPath)
+	evidenceHash := computeHash(evidencePath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 
@@ -223,11 +280,12 @@ promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/evidence/unit_test_unit.md
     hash: sha256:%s
 %s---
 Validate passed.
-`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), evidenceHash, cacheDeps(t, evidencePath))
+	validateCache = withValidateCatalog(t, repoRoot, "test_unit", validateCache)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -294,17 +352,17 @@ Validate passed.
 		t.Fatalf("unexpected error checking candidate spec: %v", statErr)
 	}
 
-	// Verify candidate appendix was removed after promote
-	if _, statErr := os.Stat(appendixPath); statErr == nil {
-		t.Fatal("candidate appendix should be removed after promote, but still exists")
+	// Verify candidate evidence record was removed after promote
+	if _, statErr := os.Stat(evidencePath); statErr == nil {
+		t.Fatal("candidate evidence record should be removed after promote, but still exists")
 	} else if !os.IsNotExist(statErr) {
-		t.Fatalf("unexpected error checking candidate appendix: %v", statErr)
+		t.Fatalf("unexpected error checking candidate evidence record: %v", statErr)
 	}
 
-	// Verify stable appendix was created after promote
-	stableAppendixPath := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/unit_test_unit_helper.md")
-	if _, err := os.Stat(stableAppendixPath); os.IsNotExist(err) {
-		t.Fatal("stable appendix was not created after promote")
+	// Verify stable evidence record was created after promote
+	stableEvidencePath := filepath.Join(repoRoot, "docs/specs/units/stable/evidence/unit_test_unit.md")
+	if _, err := os.Stat(stableEvidencePath); os.IsNotExist(err) {
+		t.Fatal("stable evidence record was not created after promote")
 	}
 
 	// Verify the stable copy is a verbatim copy of the candidate content —
@@ -317,12 +375,12 @@ Validate passed.
 		t.Fatalf("stable spec content missing, got:\n%s", string(stableContent))
 	}
 
-	stableAppendixContent, err := os.ReadFile(stableAppendixPath)
+	stableEvidenceContent, err := os.ReadFile(stableEvidencePath)
 	if err != nil {
-		t.Fatalf("failed to read stable appendix: %v", err)
+		t.Fatalf("failed to read stable evidence record: %v", err)
 	}
-	if !strings.Contains(string(stableAppendixContent), "unit: test_unit") {
-		t.Fatalf("stable appendix content missing, got:\n%s", string(stableAppendixContent))
+	if !strings.Contains(string(stableEvidenceContent), "unit: test_unit") {
+		t.Fatalf("stable evidence record content missing, got:\n%s", string(stableEvidenceContent))
 	}
 }
 
@@ -358,14 +416,20 @@ Test unit for fork testing.
 		t.Fatal(err)
 	}
 
-	appendixDir := filepath.Join(stableDir, "appendix")
-	os.MkdirAll(appendixDir, 0755)
-	appendixContent := `---
+	evidenceDir := filepath.Join(stableDir, "evidence")
+	os.MkdirAll(evidenceDir, 0755)
+	evidenceContent := `---
 unit: test_unit
 ---
-Appendix for test.
+
+## test.check — observed
+
+Keys:
+  - item:test.check
+
+Observed behavior for test.
 `
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_helper.md"), []byte(appendixContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(evidenceDir, "unit_test_unit.md"), []byte(evidenceContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -382,8 +446,8 @@ Appendix for test.
 	if !strings.Contains(output, "Forked:") {
 		t.Fatalf("expected forked action, got %s", output)
 	}
-	if !strings.Contains(output, "Forked appendix") {
-		t.Fatalf("expected appendix forked action, got %s", output)
+	if !strings.Contains(output, "Forked evidence record") {
+		t.Fatalf("expected evidence-record forked action, got %s", output)
 	}
 
 	candidateSpec := filepath.Join(repoRoot, "docs/specs/units/candidate/unit_test_unit.md")
@@ -399,9 +463,9 @@ Appendix for test.
 		t.Fatalf("expected the candidate to be a verbatim copy of the stable spec, got:\n%s", string(candidateData))
 	}
 
-	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
-	if _, err := os.Stat(candidateAppendix); os.IsNotExist(err) {
-		t.Fatal("candidate appendix was not created after fork")
+	candidateEvidence := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence/unit_test_unit.md")
+	if _, err := os.Stat(candidateEvidence); os.IsNotExist(err) {
+		t.Fatal("candidate evidence record was not created after fork")
 	}
 
 	stableSpec := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
@@ -494,24 +558,30 @@ acceptance_item_set:
 		t.Fatal(err)
 	}
 
-	// Create a candidate appendix file
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	// Create a candidate evidence record
+	evidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendixContent := `---
+	evidenceContent := `---
 unit: test_unit
 ---
-Appendix content for test.
+
+## test_unit.core — observed
+
+Keys:
+  - item:test.check
+
+Observed behavior for test.
 `
-	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
-	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+	evidencePath := filepath.Join(evidenceDir, "unit_test_unit.md")
+	if err := os.WriteFile(evidencePath, []byte(evidenceContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
-	appendixHash := computeHash(appendixPath)
+	evidenceHash := computeHash(evidencePath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 
@@ -527,11 +597,12 @@ promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/evidence/unit_test_unit.md
     hash: sha256:%s
 %s---
 Validate passed.
-`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), evidenceHash, cacheDeps(t, evidencePath))
+	validateCache = withValidateCatalog(t, repoRoot, "test_unit", validateCache)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -600,24 +671,30 @@ acceptance_item_set:
 		t.Fatal(err)
 	}
 
-	// Create a candidate appendix file
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	// Create a candidate evidence record
+	evidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendixContent := `---
+	evidenceContent := `---
 unit: test_unit
 ---
-Appendix content for test.
+
+## test_unit.core — observed
+
+Keys:
+  - item:test.check
+
+Observed behavior for test.
 `
-	appendixPath := filepath.Join(appendixDir, "unit_test_unit_helper.md")
-	if err := os.WriteFile(appendixPath, []byte(appendixContent), 0644); err != nil {
+	evidencePath := filepath.Join(evidenceDir, "unit_test_unit.md")
+	if err := os.WriteFile(evidencePath, []byte(evidenceContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create validate cache with correct hashes
 	specHash := computeHash(specPath)
-	appendixHash := computeHash(appendixPath)
+	evidenceHash := computeHash(evidencePath)
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test_unit")
 	os.MkdirAll(cacheDir, 0755)
 
@@ -633,11 +710,12 @@ promise_pins: []
 files:
   - path: docs/specs/units/candidate/unit_test_unit.md
     hash: sha256:%s
-%s  - path: docs/specs/units/candidate/appendix/unit_test_unit_helper.md
+%s  - path: docs/specs/units/candidate/evidence/unit_test_unit.md
     hash: sha256:%s
 %s---
 Validate passed.
-`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), appendixHash, cacheDeps(t, appendixPath))
+`, fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath), evidenceHash, cacheDeps(t, evidencePath))
+	validateCache = withValidateCatalog(t, repoRoot, "test_unit", validateCache)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -890,6 +968,7 @@ acceptance_item_set:
 	os.MkdirAll(cacheDir, 0755)
 	specHash := computeHash(specPath)
 	validateCache := fmt.Sprintf("---\ncommand: validate\nunit: test_unit\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nstandard: %s\npin_format: promise-v1\npromise_pins: []\nfiles:\n  - path: docs/specs/units/candidate/unit_test_unit.md\n    hash: sha256:%s\n%s---\n", fixtureStandard(t, repoRoot, "unit"), specHash, cacheDeps(t, specPath))
+	validateCache = withValidateCatalog(t, repoRoot, "test_unit", validateCache)
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644); err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specflowlayout"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 )
 
 // runGateMission materializes the read-only reviewer mission for an
@@ -246,16 +247,20 @@ type missionReadInput struct {
 }
 
 type missionSession struct {
-	SessionID        string                    `json:"session_id"`
-	Kind             string                    `json:"kind"`
-	Mission          string                    `json:"mission"`
-	LastRejection    string                    `json:"last_rejection,omitempty"`
-	CheckKeys        []string                  `json:"check_keys"`
-	Relationships    []string                  `json:"relationships"`
-	ReadRefs         []string                  `json:"read_refs"`
-	ReadInputs       []missionReadInput        `json:"read_inputs"`
-	DependsOn        []string                  `json:"depends_on"`
-	Context          []string                  `json:"context,omitempty"`
+	SessionID     string             `json:"session_id"`
+	Kind          string             `json:"kind"`
+	Mission       string             `json:"mission"`
+	LastRejection string             `json:"last_rejection,omitempty"`
+	CheckKeys     []string           `json:"check_keys"`
+	Relationships []string           `json:"relationships"`
+	ReadRefs      []string           `json:"read_refs"`
+	ReadInputs    []missionReadInput `json:"read_inputs"`
+	DependsOn     []string           `json:"depends_on"`
+	Context       []string           `json:"context,omitempty"`
+	// ValidateObjects is the per-object judgment batch for a unit validate
+	// delta check session. Each key is one object this session judges; the
+	// report carries the check verdict and findings, not a per-object table.
+	ValidateObjects  []validatekeys.Key        `json:"validate_objects,omitempty"`
 	Dependencies     []missionDependency       `json:"dependency_results"`
 	CarriedResults   []missionDependency       `json:"carried_results"`
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
@@ -308,6 +313,10 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	default:
 		return gateMission{}, fmt.Errorf("unsupported gate %q", run.Gate)
 	}
+	var sessionObjects []validatekeys.Key
+	if run.Mode == gaterun.ModeDelta {
+		sessionObjects = append([]validatekeys.Key{}, spec.ValidateObjects...)
+	}
 	session := missionSession{
 		SessionID: spec.SessionID, Kind: spec.Kind, Mission: missionTextFor(spec.Kind),
 		CheckKeys:        append([]string{}, spec.CheckKeys...),
@@ -316,6 +325,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		ReadInputs:       missionInputs(run, spec),
 		DependsOn:        append([]string{}, spec.DependsOn...),
 		Context:          append([]string{}, spec.Context...),
+		ValidateObjects:  sessionObjects,
 		Dependencies:     []missionDependency{},
 		CarriedResults:   []missionDependency{},
 		DeferredFindings: append([]gaterun.DeferredFinding{}, deferredFindingsForSession(run, spec)...),
@@ -491,6 +501,14 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 			fmt.Fprintf(w, " -> %s", input.Resolved)
 		}
 		fmt.Fprintln(w)
+	}
+	if len(p.ValidateObjects) > 0 && mission.Mode == gaterun.ModeDelta {
+		fmt.Fprintln(w, "Assigned objects for this delta session (judge these; the rest of the group carries):")
+		for _, object := range p.ValidateObjects {
+			fmt.Fprintf(w, "  - %s (check %s)\n", object.ID, object.Check)
+			fmt.Fprintf(w, "    reads: %s\n", strings.Join(object.Reads, ", "))
+		}
+		fmt.Fprintln(w, "The report carries the check verdict and findings only; no per-object verdict table is required.")
 	}
 	if len(p.Context) > 0 {
 		fmt.Fprintln(w, "Session context (plan-time facts; state these verbatim where the report contract requires):")

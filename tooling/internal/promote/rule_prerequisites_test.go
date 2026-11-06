@@ -57,14 +57,14 @@ func TestUnitRulePrerequisitesPublication(t *testing.T) {
 			}
 			if tc.block {
 				before := prerequisiteFiles(t, root)
-				result := Promote(root, "consumer")
+				result := Promote(root, "consumer", false)
 				if result.Passed || !strings.Contains(strings.Join(result.Issues, " "), "b_rule_http") {
 					t.Fatalf("direct promote must reject unpublished rules: %+v", result)
 				}
 				if after := prerequisiteFiles(t, root); !reflect.DeepEqual(before, after) {
 					t.Fatal("rejected promote changed files")
 				}
-			} else if result := Promote(root, "consumer"); !result.Passed {
+			} else if result := Promote(root, "consumer", false); !result.Passed {
 				t.Fatalf("published rule should allow promote: %+v", result)
 			}
 		})
@@ -144,7 +144,7 @@ func TestUnitRulePrerequisitesReadErrors(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), path) {
 				t.Fatalf("expected error naming %s, got %v", path, err)
 			}
-			if result := Promote(root, "consumer"); result.Passed {
+			if result := Promote(root, "consumer", false); result.Passed {
 				t.Fatal("direct promote must stop on read errors")
 			}
 			if after := prerequisiteFiles(t, root); !reflect.DeepEqual(before, after) {
@@ -154,18 +154,18 @@ func TestUnitRulePrerequisitesReadErrors(t *testing.T) {
 	}
 }
 
-func TestRulePublicationBlockerReturnsBeforeAppendixStaging(t *testing.T) {
+func TestRulePublicationBlockerReturnsBeforeEvidenceStaging(t *testing.T) {
 	root := t.TempDir()
 	writeCandidateUnit(t, root, "consumer")
 	writePromotableUnit(t, root, "consumer", "b_rule_unpublished")
 	writeVerifyCache(t, root, "consumer")
 	writePrerequisiteFile(t, root, specpaths.RuleCandidateFileRef("b_rule_unpublished"), "unpublished constraint\n")
 	before := prerequisiteFiles(t, root)
-	if result := Promote(root, "consumer"); result.Passed {
+	if result := Promote(root, "consumer", false); result.Passed {
 		t.Fatal("unpublished rule did not block direct promote")
 	}
 	if after := prerequisiteFiles(t, root); !reflect.DeepEqual(before, after) {
-		t.Fatal("blocked direct promote staged appendix files")
+		t.Fatal("blocked direct promote staged evidence files")
 	}
 	if _, err := os.Stat(filepath.Join(root, specpaths.StableDir)); !os.IsNotExist(err) {
 		t.Fatalf("blocked direct promote created the stable directory: %v", err)

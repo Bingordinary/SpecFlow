@@ -351,7 +351,7 @@ func TestCheckAnchors_FileBlockFollowedByNextItemPass(t *testing.T) {
 	}
 }
 
-func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
+func TestCheckAnchors_FileBlockFollowedByRulesSubBlockPass(t *testing.T) {
 	repoRoot := newRepo(t)
 	srcDir := filepath.Join(repoRoot, "src")
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
@@ -360,8 +360,8 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(srcDir, "handler.go"), []byte("package main\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// The files block is followed by a block-form appendices sub-block; its
-	// 8-space "- evidence.md" entries must not be collected as anchor files.
+	// The files block is followed by a rules sub-block; its "- b_rule_x" entry
+	// must not be collected as an anchor file.
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nrule_refs: none\n---\n"+
 			"acceptance_item_set:\n"+
@@ -376,17 +376,30 @@ func TestCheckAnchors_FileBlockFollowedByBlockFormSubBlockPass(t *testing.T) {
 			"    affects:\n"+
 			"      files:\n"+
 			"        - src/handler.go\n"+
-			"      appendices:\n"+
-			"        - unit_test_unit_evidence.md\n")
+			"      rules:\n"+
+			"        - b_rule_x\n")
 	result := checkAnchors(repoRoot, "test_unit")
 	if result.Status != Pass {
-		t.Fatalf("expected PASS for files block followed by block-form appendices, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected PASS for files block followed by rules, got %s: %s", result.Status, result.Details)
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Check 4: Reference integrity
 // ---------------------------------------------------------------------------
+
+func writeEvidenceRecord(t *testing.T, repoRoot, unitName, frontmatter string) {
+	t.Helper()
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\n" + frontmatter + "\n---\n"
+	path := filepath.Join(dir, "unit_"+unitName+".md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCheckReferences_PassNone(t *testing.T) {
 	repoRoot := newRepo(t)
@@ -408,181 +421,35 @@ func TestCheckReferences_MissingRuleRefFail(t *testing.T) {
 	}
 }
 
-func TestCheckReferences_ActiveAppendixRefPass(t *testing.T) {
-	repoRoot := newRepo(t)
-	// An affects.appendices entry pointing at an active appendix is legal.
-	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: test_unit\n")
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nrule_refs: none\n"+
-			"evidence_appendix_ref: unit_test_unit_api.md\n---\n")
-	result := checkReferences(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for ref to active appendix, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestExtractAffectsAppendices(t *testing.T) {
-	block := "---\nid: demo\n---\n" +
-		"acceptance_item_set:\n" +
-		"  - id: item_1\n" +
-		"    description: test\n" +
-		"    affects:\n" +
-		"      appendices:\n" +
-		"        - unit_demo_evidence.md\n" +
-		"      rules: []\n"
-
-	cases := []struct {
-		name    string
-		content string
-		want    []string
-	}{
-		{
-			name:    "block form",
-			content: block,
-			want:    []string{"unit_demo_evidence.md"},
-		},
-		{
-			name: "inline empty list",
-			content: "---\nid: demo\n---\n" +
-				"acceptance_item_set:\n" +
-				"  - id: item_1\n" +
-				"    affects:\n" +
-				"      appendices: []\n",
-			want: nil,
-		},
-		{
-			name: "inline flow list",
-			content: "---\nid: demo\n---\n" +
-				"acceptance_item_set:\n" +
-				"  - id: item_1\n" +
-				"    affects:\n" +
-				"      appendices: [unit_demo_evidence.md, unit_demo_api.md]\n",
-			want: []string{"unit_demo_evidence.md", "unit_demo_api.md"},
-		},
-		{
-			name: "inline flow list with quotes",
-			content: "---\nid: demo\n---\n" +
-				"acceptance_item_set:\n" +
-				"  - id: item_1\n" +
-				"    affects:\n" +
-				"      appendices: [\"unit_demo_evidence.md\"]\n",
-			want: []string{"unit_demo_evidence.md"},
-		},
-		{
-			name: "single value without brackets",
-			content: "---\nid: demo\n---\n" +
-				"acceptance_item_set:\n" +
-				"  - id: item_1\n" +
-				"    affects:\n" +
-				"      appendices: unit_demo_evidence.md\n",
-			want: []string{"unit_demo_evidence.md"},
-		},
-		{
-			name: "appendices outside acceptance block ignored",
-			content: "---\nid: demo\n---\n" +
-				"appendices:\n" +
-				"  - unit_demo_evidence.md\n",
-			want: nil,
-		},
-		{
-			name: "affects outside acceptance block ignored",
-			content: "---\nid: demo\n---\n" +
-				"acceptance_item_set:\n" +
-				"  - id: item_1\n" +
-				"    description: test\n" +
-				"\n" +
-				"## Design\n" +
-				"See affects.appendices: [unit_demo_evidence.md]\n",
-			want: nil,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ExtractAffectsAppendices(tc.content)
-			if len(got) != len(tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Fatalf("got %v, want %v", got, tc.want)
-				}
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Check 5: Appendix files
-// ---------------------------------------------------------------------------
-
-func writeAppendix(t *testing.T, repoRoot, unitName, appendixName, frontmatter string) {
-	t.Helper()
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	content := "---\n" + frontmatter + "\n---\n"
-	path := filepath.Join(appendixDir, "unit_"+unitName+"_"+appendixName+".md")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCheckAppendices_NoAppendicesPass(t *testing.T) {
+func TestCheckEvidenceRecord_NoRecordPass(t *testing.T) {
 	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
-	result := checkAppendices(repoRoot, "test_unit")
+	result := checkEvidenceRecord(repoRoot, "test_unit")
 	if result.Status != Pass {
-		t.Fatalf("expected PASS for no appendices, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected PASS for no evidence record, got %s: %s", result.Status, result.Details)
 	}
 }
 
-func TestCheckAppendices_CorrectFrontmatterPass(t *testing.T) {
+func TestCheckEvidenceRecord_CorrectFrontmatterPass(t *testing.T) {
 	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: test_unit\n")
-	result := checkAppendices(repoRoot, "test_unit")
+	writeEvidenceRecord(t, repoRoot, "test_unit", "unit: test_unit\n")
+	result := checkEvidenceRecord(repoRoot, "test_unit")
 	if result.Status != Pass {
 		t.Fatalf("expected PASS for correct frontmatter, got %s: %s", result.Status, result.Details)
 	}
 }
 
-func TestCheckAppendices_WrongUnitFail(t *testing.T) {
+func TestCheckEvidenceRecord_WrongUnitFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "api",
-		"unit: wrong_unit\n")
-	result := checkAppendices(repoRoot, "test_unit")
+	writeEvidenceRecord(t, repoRoot, "test_unit", "unit: wrong_unit\n")
+	result := checkEvidenceRecord(repoRoot, "test_unit")
 	if result.Status != Fail {
 		t.Fatalf("expected FAIL for wrong unit, got %s: %s", result.Status, result.Details)
 	}
 	if !strings.Contains(result.Details, "unit") {
 		t.Fatalf("expected error about unit mismatch, got: %s", result.Details)
-	}
-}
-
-func TestCheckAppendices_ReadsEveryAppendix(t *testing.T) {
-	repoRoot := newRepo(t)
-	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: test_unit\n")
-	result := checkAppendices(repoRoot, "test_unit")
-	if result.Status != Pass {
-		t.Fatalf("expected PASS for a well-formed appendix, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckAppendices_RejectsBadFrontmatter(t *testing.T) {
-	repoRoot := newRepo(t)
-	createMinimalCandidate(t, repoRoot, "test_unit")
-	writeAppendix(t, repoRoot, "test_unit", "old",
-		"unit: wrong_unit\n")
-	result := checkAppendices(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for a wrong-unit appendix, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -634,14 +501,14 @@ func TestCheckLayerPaths_RelativeUnitPathFail(t *testing.T) {
 	}
 }
 
-func TestCheckLayerPaths_RelativeAppendixPathFail(t *testing.T) {
+func TestCheckLayerPaths_RelativeEvidencePathFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nrule_refs: none\n---\n"+
-			"# Body\n\nClaims structure: candidate/appendix/unit_auth_account_token_claims.md\n")
+			"# Body\n\nClaims structure: candidate/evidence/unit_auth.md\n")
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatalf("expected FAIL for relative candidate appendix path, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected FAIL for relative candidate evidence path, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -670,39 +537,21 @@ func TestCheckLayerPaths_StablePathNotChecked(t *testing.T) {
 	}
 }
 
-func TestCheckLayerPaths_AppendixFail(t *testing.T) {
+func TestCheckLayerPaths_EvidenceRecordFail(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nrule_refs: none\n---\n")
-	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
-	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_extra.md"), []byte(appendix), 0644); err != nil {
+	record := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
+	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit.md"), []byte(record), 0644); err != nil {
 		t.Fatal(err)
 	}
 	result := checkLayerPaths(repoRoot, "test_unit")
 	if result.Status != Fail {
-		t.Fatalf("expected FAIL for appendix body reference, got %s: %s", result.Status, result.Details)
-	}
-}
-
-func TestCheckLayerPaths_ScansEveryAppendix(t *testing.T) {
-	repoRoot := newRepo(t)
-	writeCandidate(t, repoRoot, "test_unit",
-		"---\nid: test_unit\nrule_refs: none\n---\n")
-	dir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	appendix := "---\nunit: test_unit\n---\n\nReferences candidate/unit_auth.md.\n"
-	if err := os.WriteFile(filepath.Join(dir, "unit_test_unit_notes.md"), []byte(appendix), 0644); err != nil {
-		t.Fatal(err)
-	}
-	result := checkLayerPaths(repoRoot, "test_unit")
-	if result.Status != Fail {
-		t.Fatalf("expected FAIL for a candidate-layer path in an appendix, got %s: %s", result.Status, result.Details)
+		t.Fatalf("expected FAIL for evidence-record body reference, got %s: %s", result.Status, result.Details)
 	}
 }
 
@@ -758,8 +607,16 @@ func TestValidateCandidate_IntegrationPass(t *testing.T) {
 		}
 		t.Fatal("expected PASS for valid full candidate")
 	}
-	if len(result.Checks) != 15 {
-		t.Fatalf("expected 15 checks, got %d", len(result.Checks))
+	if len(result.Checks) != 17 {
+		t.Fatalf("expected 17 checks, got %d", len(result.Checks))
+	}
+	// The printed check number is positional, so the append order must match
+	// the documented numbering: 16 narrative coverage, 17 evidence keys.
+	if got := result.Checks[15].Name; got != "Narrative coverage" {
+		t.Fatalf("check 16 = %q, want Narrative coverage", got)
+	}
+	if got := result.Checks[16].Name; got != "Evidence keys" {
+		t.Fatalf("check 17 = %q, want Evidence keys", got)
 	}
 }
 
@@ -1041,5 +898,40 @@ func TestCheckAnchors_MissingEvidenceFileFails(t *testing.T) {
 	result := checkAnchors(repoRoot, "test_unit")
 	if result.Status != Fail || !strings.Contains(result.Details, "affects.evidence_files") {
 		t.Fatalf("expected FAIL naming affects.evidence_files, got %s: %s", result.Status, result.Details)
+	}
+}
+
+// TestValidateCandidateReportsNarrativeCoverageAsCheck16Only pins the check
+// boundary: narrative coverage is its own Check 16, never folded into the
+// promise-model bundle (Check 15). One unsourced narrative block must fail
+// exactly one check.
+func TestValidateCandidateReportsNarrativeCoverageAsCheck16Only(t *testing.T) {
+	repoRoot := newRepo(t)
+	createFullCandidate(t, repoRoot, "test_unit")
+	path := specPath(repoRoot, "test_unit")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), "\n## Promises", "\n### Background\n\nWhy the unit exists.\n\n## Promises", 1)
+	if updated == string(data) {
+		t.Fatal("narrative block insertion did not apply")
+	}
+	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := ValidateCandidate(repoRoot, "test_unit")
+	var failed []string
+	for _, check := range result.Checks {
+		if check.Status == Fail {
+			failed = append(failed, check.Name)
+		}
+		if check.Name == "Promise model" && check.Status != Pass {
+			t.Fatalf("the promise-model bundle must not enforce narrative coverage: %s", check.Details)
+		}
+	}
+	if len(failed) != 1 || failed[0] != "Narrative coverage" {
+		t.Fatalf("expected only Narrative coverage to fail, got %v", failed)
 	}
 }

@@ -20,7 +20,7 @@ func writeDesignAnchorUnit(t *testing.T, root string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nid: auth\nrule_refs: none\n---\n\n# auth\n\n" +
+	content := "---\nid: auth\nrule_refs: none\nnon_behavior_blocks: [Undeclared]\n---\n\n# auth\n\n" +
 		"## Design Narrative\n\n" +
 		"### Declared\n\nDeclared rationale.\n\n" +
 		"### Undeclared\n\nUndeclared rationale.\n\n" +

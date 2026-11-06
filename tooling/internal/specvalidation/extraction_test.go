@@ -22,8 +22,6 @@ acceptance_item_set:
     affects:
       files:
         - internal/demo/handler.go
-      appendices:
-        - unit_demo_evidence.md
   - id: demo.aux
     description: Aux behavior.
     verification_type: auto

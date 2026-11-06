@@ -18,7 +18,7 @@ import (
 // name its records and is refused rather than half-read.
 const (
 	RecordStateSchemaVerify   = 5
-	RecordStateSchemaValidate = 4
+	RecordStateSchemaValidate = 5
 )
 
 type recordState struct {

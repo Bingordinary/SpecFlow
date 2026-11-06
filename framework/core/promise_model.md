@@ -21,11 +21,12 @@ states what the unit offers; an acceptance item states how the unit proves a
 promise; the design narrative states why the unit is designed that way.
 
 Consumers read provider promises; they do not read provider acceptance items,
-appendices, or code to learn the contract. A contract statement that no
-promise carries is invalid, and an appendix that introduces normative contract
-content outside a promise is a finding. An appendix is explanatory support
-truth: if it needs its own contract, dependencies, acceptance items, code
-scope, or independent verification, it is a unit, not an appendix. A promise
+the evidence record, or code to learn the contract. A contract statement that
+no promise carries is invalid, and an evidence record that introduces
+normative contract content outside a promise is a finding. The evidence record
+records observed behavior that supports acceptance items: if a responsibility
+needs its own contract, dependencies, acceptance items, code scope, or
+independent verification, it is a unit, not an evidence record. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
 
@@ -63,7 +64,7 @@ Consumers depend on promises, not on units, files, acceptance items, or code.
 Contract closure compares promise fingerprints, and the validate and verify
 gate caches bind the same fingerprints: a consumer's cache is invalidated by a
 provider contract change, not by a provider narrative, acceptance-item, test,
-or appendix edit.
+or evidence-record edit.
 
 ### Why there is no second format
 
@@ -119,8 +120,8 @@ Rules: exactly one of each section; no other `##` section is allowed; no
 acceptance item set is the last content of the spec.
 ==ATOM_END:promise_unit_shape==
 
-Appendices and rules do not use this shape. An appendix remains subordinate
-support truth owned by one unit; a rule keeps its own format.
+Evidence records and rules do not use this shape. An evidence record remains
+subordinate support truth owned by one unit; a rule keeps its own format.
 
 ## Promise block
 
@@ -552,7 +553,7 @@ edges against published stable providers.
 | Code inside an item's scope | Open (verify) | Unchanged |
 | Test/evidence | Open (verify) | Unchanged |
 | Acceptance item split/merge | Open (verify) | Unchanged |
-| Appendix | Open (validate + verify) | Unchanged |
+| Evidence record | Open (validate + verify) | Unchanged |
 | Narrative | Open (validate + verify) | Unchanged |
 | Promise source | Open (validate + verify); provider promise state REOPENED | Unchanged |
 | Promise contract | Open (validate + verify) | Reopened |
@@ -570,21 +571,21 @@ still does not change the contract fingerprint or reopen consumers.
 The Consumers column is enforced by both gate caches. A unit validate cache
 records a `promise_pins` block of the provider promise fingerprints it read;
 a verify conclusion pins the same fingerprints instead of the provider spec
-text. A provider narrative, acceptance-item, test, or appendix edit is not a
-contract change and leaves the consumer's caches FRESH. A promise contract
+text. A provider narrative, acceptance-item, test, or evidence-record edit is
+not a contract change and leaves the consumer's caches FRESH. A promise contract
 change is reported as a promise-level change entry and reopens the consumer's
 caches.
 
-## Appendix role
+## Evidence-record role
 
-An appendix remains subordinate support truth for one unit:
+An evidence record remains subordinate support truth for one unit:
 
-- path: `docs/specs/units/<layer>/appendix/unit_<unit>_<name>.md`;
+- path: `docs/specs/units/<layer>/evidence/unit_<unit>.md` — one record per unit;
 - frontmatter: `unit` required;
-- no required section structure;
+- every `##` section carries a `Keys:` block with exactly one `item:<acceptance-item-id>` key; the content below it is observed behavior prose, one section per evidence-driven item;
 - no acceptance items and no independent lifecycle;
-- explanatory detail, examples, and evidence only.
+- support truth only: observed behavior that supports acceptance items.
 
 The carrier rule above applies: normative contracts belong to the main spec's
-promise blocks. An appendix that needs its own contract, dependencies,
+promise blocks. An evidence record that needs its own contract, dependencies,
 acceptance items, code scope, or independent verification is a unit.

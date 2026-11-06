@@ -25,7 +25,7 @@ import (
 
 var (
 	sourcePathRe    = regexp.MustCompile(`[A-Za-z0-9_./-]+\.(?:go|ts|tsx|js|jsx|py|java|rs|cs|rb|php|kt|swift|c|h|cpp|hpp)\b`)
-	structuredKeyRe = regexp.MustCompile(`^\s*(?:implementation_surface|verification_surface|affects(?:\.[a-z_]+)*|files|appendices|dependencies|runnable|not_runnable_reason)\s*:`)
+	structuredKeyRe = regexp.MustCompile(`^\s*(?:implementation_surface|verification_surface|affects(?:\.[a-z_]+)*|files|dependencies|runnable|not_runnable_reason)\s*:`)
 )
 
 // CheckProsePathHygiene reports (WARNING — advisory, never blocks) source-code
@@ -387,7 +387,7 @@ func scanNonFenced(content string, re *regexp.Regexp) []string {
 }
 
 // ------------------------------------------------------------
-// Wiring: scan the main spec and every appendix
+// Wiring: scan the main spec and the evidence record
 // ------------------------------------------------------------
 
 func checkContentScan(repoRoot, unitName, name string, scan func(content string) CheckResult) CheckResult {
@@ -404,21 +404,21 @@ func checkContentScan(repoRoot, unitName, name string, scan func(content string)
 	if result.Status == Warn {
 		warns = append(warns, result.Details)
 	}
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "candidate")
 	if err != nil {
 		return CheckResult{Name: name, Status: Fail, Details: err.Error()}
 	}
-	for _, appendix := range appendices {
-		appendixData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
+	if record != nil {
+		recordData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(record.Path)))
 		if err != nil {
 			return CheckResult{Name: name, Status: Fail, Details: err.Error()}
 		}
-		appendixResult := scan(string(appendixData))
-		if appendixResult.Status == Fail {
-			return appendixResult
+		recordResult := scan(string(recordData))
+		if recordResult.Status == Fail {
+			return recordResult
 		}
-		if appendixResult.Status == Warn {
-			warns = append(warns, fmt.Sprintf("%s: %s", appendix.Path, appendixResult.Details))
+		if recordResult.Status == Warn {
+			warns = append(warns, fmt.Sprintf("%s: %s", record.Path, recordResult.Details))
 		}
 	}
 	if len(warns) > 0 {
@@ -436,8 +436,8 @@ func checkEnvironmentAgnosticism(repoRoot, unitName string) CheckResult {
 }
 
 // checkMainSpecScan runs a scan against the unit's main spec only. The section
-// structure rules of guide §13 apply to the unit's own main spec; appendix
-// files are contract files and carry no section structure.
+// structure rules of guide §13 apply to the unit's own main spec; the evidence
+// record is a support record and carries no section structure.
 func checkMainSpecScan(repoRoot, unitName, name string, scan func(content string) CheckResult) CheckResult {
 	path := specPath(repoRoot, unitName)
 	data, err := os.ReadFile(path)

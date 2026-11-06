@@ -22,12 +22,12 @@ func SpecContext(root, unit, layer string) (string, error) {
 	}
 	dir := "docs/specs/units/" + layer
 	paths := []string{filepath.Join(root, filepath.FromSlash(dir), "unit_"+unit+".md")}
-	appendices, err := specpaths.UnitAppendices(root, unit, layer)
+	record, err := specpaths.UnitEvidenceRecord(root, unit, layer)
 	if err != nil {
 		return "", err
 	}
-	for _, appendix := range appendices {
-		paths = append(paths, filepath.Join(root, filepath.FromSlash(appendix.Path)))
+	if record != nil {
+		paths = append(paths, filepath.Join(root, filepath.FromSlash(record.Path)))
 	}
 	var entries []string
 	for _, path := range paths {

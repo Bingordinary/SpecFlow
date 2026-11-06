@@ -27,7 +27,7 @@ import (
 //	MISSING cache file does not exist (never run, or run failed and cache deleted)
 //	BLOCKED cache exists but declares blocking findings (a failure record —
 //	        validate/verify P0/P1)
-//	OK      appendix gate: every appendix is covered by the validate cache
+//	OK      evidence gate: the evidence record is covered by the validate cache
 type gateStatus string
 
 const (
@@ -338,7 +338,7 @@ func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, 
 
 	vStatus, _, _, _ := checkUnitGate(derivation, repoRoot, unitName, "validate")
 	vfStatus, _, _, _ := checkUnitGate(derivation, repoRoot, unitName, "verify")
-	aStatus, _ := checkAppendixGate(repoRoot, unitName)
+	aStatus, _ := checkEvidenceGate(repoRoot, unitName)
 
 	ruleStatus := "OK"
 	if len(rules.Blockers) > 0 {
@@ -346,7 +346,7 @@ func unitSummaryLine(derivation *gaterun.Derivation, repoRoot, unitName string, 
 	}
 	promiseReady, _ := promiseReadiness(promiseReport, promiseErr)
 	ready := gatePassed(vStatus) && gatePassed(vfStatus) && gatePassed(aStatus) && len(rules.Blockers) == 0 && promiseReady
-	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  appendix: %-4s  rules: %-7s  done: %-9s  READY: %t",
+	return fmt.Sprintf("%-13s  validate: %-8s  verify: %-8s  evidence: %-4s  rules: %-7s  done: %-9s  READY: %t",
 		unitName, vStatus, vfStatus, aStatus, ruleStatus, promiseDoneLabel(promiseReport, promiseErr), ready), ready
 }
 
@@ -467,12 +467,12 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	}
 	writeDeferredFindingsNote(stdout, absRoot, unitName)
 
-	aStatus, aDetail := checkAppendixGate(absRoot, unitName)
+	aStatus, aDetail := checkEvidenceGate(absRoot, unitName)
 	if aStatus != gateOK {
 		nonFresh++
 	}
-	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "appendix", aStatus, aDetail)
-	if advice := appendixAdvice(aStatus, vStatus, unitName); advice != "" {
+	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "evidence", aStatus, aDetail)
+	if advice := evidenceAdvice(aStatus, vStatus, unitName); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
 
@@ -803,8 +803,8 @@ func checkRuleGate(repoRoot, ruleID string) (gateStatus, string, bool, bool) {
 	return classifyGate(result), result.Reason, result.RepairOnly, result.FailureRecord
 }
 
-func checkAppendixGate(repoRoot, unitName string) (gateStatus, string) {
-	result, err := validationcache.CheckAppendicesInCache(repoRoot, unitName)
+func checkEvidenceGate(repoRoot, unitName string) (gateStatus, string) {
+	result, err := validationcache.CheckEvidenceInCache(repoRoot, unitName)
 	if err != nil {
 		return gateStale, fmt.Sprintf("gate check error: %v", err)
 	}
@@ -848,8 +848,9 @@ func gatePassed(status gateStatus) bool {
 // gateAdvice renders the recovery suggestion for a non-fresh gate. A rule has
 // no partial run, so its only recovery is the full validate confirmation run.
 // A unit validate cache recovers through `revalidate`, which derives the scope
-// mechanically (an external-only change re-runs the external group; anything
-// else covers the full scope). A verify cache recovers through `reverify`: the
+// mechanically from the per-object catalog and read sets (a group re-runs when
+// any of its objects re-runs; the plan upgrades to full when the delta is not
+// cheaper). A verify cache recovers through `reverify`: the
 // planner derives delta or repair from the baseline state, so the suggestion
 // names the trigger word and states the derived mode as diagnostic text.
 // MISSING and an unusable baseline have no partial-run path and need the full
@@ -875,7 +876,7 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 			return fmt.Sprintf("-> required: %s@%s (full run — %v)", command, targetName, reason)
 		}
 		if command == "validate" {
-			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope: external-only or full)", validationcache.RecoveryCommand(command, targetKind, targetName))
+			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope from the per-object catalog; it upgrades to full when the delta is not cheaper)", validationcache.RecoveryCommand(command, targetKind, targetName))
 		}
 		if status == gateBlocked || failureRecord {
 			return fmt.Sprintf("-> resolve P0/P1, then %s (repair recovery from the failure record)", validationcache.RecoveryCommand(command, targetKind, targetName))
@@ -893,18 +894,18 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 	}
 }
 
-// appendixAdvice renders the recovery suggestion for the appendix gate. The
+// evidenceAdvice renders the recovery suggestion for the evidence gate. The
 // full validate run is required only when the validate cache itself is FRESH:
 // a delta re-run then stops early ("cache is fresh — no changes"),
-// so it cannot pick up newly added appendices. When the validate
-// cache is not FRESH, the delta re-run (revalidate@) restores appendix
+// so it cannot pick up a newly added evidence record. When the validate
+// cache is not FRESH, the delta re-run (revalidate@) restores evidence
 // coverage instead — its rewrite carries a complete files list including
-// every appendix (see framework/verification_scope.md §Delta Runs →
-// Execution). An appendix MISSING state always implies validate MISSING,
+// the evidence record (see framework/verification_scope.md §Delta Runs →
+// Execution). An evidence MISSING state always implies validate MISSING,
 // whose own advice line already demands the full run.
-func appendixAdvice(status, validateStatus gateStatus, unitName string) string {
+func evidenceAdvice(status, validateStatus gateStatus, unitName string) string {
 	if status == gateStale && validateStatus == gateFresh {
-		return fmt.Sprintf("-> required: validate@%s (full run - appendix coverage)", unitName)
+		return fmt.Sprintf("-> required: validate@%s (full run - evidence coverage)", unitName)
 	}
 	return ""
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -229,6 +231,34 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	if err := os.WriteFile(filepath.Join(dir, command+"_result.md"), []byte(sb.String()), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if command == "validate" {
+		target := "candidate"
+		if strings.Contains(extraFrontmatter, "target: stable") {
+			target = "stable"
+		}
+		specPath := filepath.Join(repoRoot, "docs/specs/units", target, "unit_"+name+".md")
+		appendGateJudgments(t, repoRoot, name, "validate", validateJudgmentsForSpec(t, specPath, name))
+	}
+}
+
+// stripGateJudgments removes any GATE_JUDGMENTS block from a hand-written unit
+// cache, simulating a legacy cache written before the per-object baseline.
+func stripGateJudgments(t *testing.T, repoRoot, name, command string) {
+	t.Helper()
+	path := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", name, command+"_result.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if start := strings.Index(text, "<!-- GATE_JUDGMENTS_BEGIN"); start >= 0 {
+		if end := strings.Index(text[start:], "GATE_JUDGMENTS_END -->"); end >= 0 {
+			text = text[:start] + text[start+end+len("GATE_JUDGMENTS_END -->"):]
+		}
+	}
+	if err := os.WriteFile(path, []byte(strings.TrimRight(text, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // appendGateJudgments embeds a GATE_JUDGMENTS block in a hand-written unit
@@ -237,12 +267,21 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 func appendGateJudgments(t *testing.T, repoRoot, name, command, judgments string) {
 	t.Helper()
 	path := filepath.Join(repoRoot, "docs/specs/meta/validation/unit", name, command+"_result.md")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	fmt.Fprintf(f, "\n<!-- GATE_JUDGMENTS_BEGIN\n%s\nGATE_JUDGMENTS_END -->", judgments)
+	text := string(data)
+	if start := strings.Index(text, "<!-- GATE_JUDGMENTS_BEGIN"); start >= 0 {
+		if end := strings.Index(text[start:], "GATE_JUDGMENTS_END -->"); end >= 0 {
+			text = text[:start] + text[start+end+len("GATE_JUDGMENTS_END -->"):]
+		}
+	}
+	text = strings.TrimRight(text, "\n")
+	text += fmt.Sprintf("\n\n<!-- GATE_JUDGMENTS_BEGIN\n%s\nGATE_JUDGMENTS_END -->\n", judgments)
+	if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // withPromiseFormat fills the unit-cache format fields a fixture write needs:
@@ -259,6 +298,35 @@ func withPromiseFormat(t *testing.T, root, unit, layer string, w validationcache
 	data, err := os.ReadFile(filepath.Join(root, "docs/specs/units", layer, "unit_"+unit+".md"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.TrimSpace(w.Judgments) == "" {
+		if graph, err := validatekeys.Parse(unit, string(data)); err == nil {
+			contract, cerr := validatekeys.DefaultContract()
+			if cerr != nil {
+				t.Fatal(cerr)
+			}
+			evidenceBase := ""
+			var evidenceSections []validatekeys.EvidenceSection
+			recordRel := "docs/specs/units/" + layer + "/evidence/unit_" + unit + ".md"
+			if recordData, rerr := os.ReadFile(filepath.Join(root, filepath.FromSlash(recordRel))); rerr == nil {
+				base := "unit_" + unit
+				evidenceBase = base
+				parsed, perr := validatekeys.ParseEvidenceRecord(base, string(recordData), graph)
+				if perr != nil {
+					t.Fatal(perr)
+				}
+				evidenceSections = parsed
+			}
+			catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+			encoded, err := json.Marshal(struct {
+				SchemaVersion   int                `json:"schema_version"`
+				ValidateObjects []validatekeys.Key `json:"validate_objects"`
+			}{SchemaVersion: validationcache.RecordStateSchemaValidate, ValidateObjects: catalog})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Judgments = string(encoded)
+		}
 	}
 	ids := specvalidation.PromiseDependencyIDs(string(data))
 	if len(ids) == 0 {
@@ -469,8 +537,8 @@ func TestFreshUnitDetailAllFresh(t *testing.T) {
 	for _, gate := range []string{"validate", "verify"} {
 		assertGateStatus(t, output, gate, "FRESH")
 	}
-	if !strings.Contains(output, "appendix  OK") {
-		t.Fatalf("expected appendix OK, got:\n%s", output)
+	if !strings.Contains(output, "evidence  OK") {
+		t.Fatalf("expected evidence OK, got:\n%s", output)
 	}
 	if !strings.Contains(output, "2026-06-30T10:00:00Z") {
 		t.Fatalf("expected cache timestamp in output:\n%s", output)
@@ -1221,6 +1289,7 @@ func TestFreshStableDetailStaleEvidence(t *testing.T) {
 
 	writeUnitCache(t, repoRoot, "settled", "validate", "target: stable\n",
 		[]cacheFileSpec{{path: "docs/specs/units/stable/unit_settled.md", hash: specHash}})
+	stripGateJudgments(t, repoRoot, "settled", "validate")
 
 	// The stable spec changes after the confirmation run -> its recorded
 	// whole-file hash no longer matches -> validate: STALE with a derivable
@@ -1251,6 +1320,7 @@ func TestFreshCandidateDetailAdvice(t *testing.T) {
 
 	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
 		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
+	stripGateJudgments(t, repoRoot, "iter", "validate")
 
 	// Fresh validate, but verify never ran -> MISSING advice.
 	out, err := freshRun(t, repoRoot, "--unit", "iter")
@@ -1300,7 +1370,7 @@ func TestFreshDeltaAdviceRequiresCurrentJudgmentSchema(t *testing.T) {
 	if !strings.Contains(out, "validate  STALE") {
 		t.Fatalf("expected validate STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "-> suggestion: revalidate@iter (the tool derives the scope: external-only or full)") {
+	if !strings.Contains(out, "-> suggestion: revalidate@iter (the tool derives the scope from the per-object catalog; it upgrades to full when the delta is not cheaper)") {
 		t.Fatalf("expected delta recovery suggestion for a current-schema baseline, got:\n%s", out)
 	}
 
@@ -1324,10 +1394,10 @@ func TestFreshDeltaAdviceRequiresCurrentJudgmentSchema(t *testing.T) {
 	}
 }
 
-// TestFreshNewAppendixStalesValidate verifies a newly added appendix is a
+// TestFreshNewEvidenceRecordStalesValidate verifies a newly added evidence record is a
 // current required input: a validate cache that never recorded it is
-// STALE, not FRESH, and the appendix gate is STALE too.
-func TestFreshNewAppendixStalesValidate(t *testing.T) {
+// STALE, not FRESH, and the evidence gate is STALE too.
+func TestFreshNewEvidenceRecordStalesValidate(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
@@ -1335,11 +1405,11 @@ func TestFreshNewAppendixStalesValidate(t *testing.T) {
 	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
 		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
 
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	evidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nunit: iter\n---\n## Extra\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(evidenceDir, "unit_iter.md"), []byte("---\nunit: iter\n---\n\n## iter.core — observed\n\nKeys:\n  - item:iter.core\n\nObserved.\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1348,41 +1418,42 @@ func TestFreshNewAppendixStalesValidate(t *testing.T) {
 		t.Fatalf("fresh --unit iter: %v", err)
 	}
 	if !strings.Contains(out, "validate  STALE") || !strings.Contains(out, "current required input") {
-		t.Fatalf("expected validate STALE for the new appendix, got:\n%s", out)
+		t.Fatalf("expected validate STALE for the new evidence record, got:\n%s", out)
 	}
-	if !strings.Contains(out, "appendix  STALE") {
-		t.Fatalf("expected appendix STALE, got:\n%s", out)
+	if !strings.Contains(out, "evidence  STALE") {
+		t.Fatalf("expected evidence STALE, got:\n%s", out)
 	}
-	if !strings.Contains(out, "CHANGE REPORT (validate):") || !strings.Contains(out, "unit_iter_b.md: added") {
-		t.Fatalf("expected the new appendix in the change report, got:\n%s", out)
+	if !strings.Contains(out, "CHANGE REPORT (validate):") || !strings.Contains(out, "unit_iter.md: added") {
+		t.Fatalf("expected the new evidence record in the change report, got:\n%s", out)
 	}
 	if strings.Contains(out, "no changes detected in the recorded input surface") {
 		t.Fatalf("fresh must not report no changes for a required input it calls stale:\n%s", out)
 	}
 }
 
-// TestFreshAppendixAdviceSuppressedWhenValidateStale verifies the appendix
+// TestFreshEvidenceAdviceSuppressedWhenValidateStale verifies the evidence
 // advice is suppressed when the validate cache is STALE: only the validate
-// gate's own recovery advice is printed. A delta re-run restores appendix
+// gate's own recovery advice is printed. A delta re-run restores evidence
 // coverage through its complete files list, so no separate full-run demand
-// for the appendix is added on top.
-func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
+// for the evidence record is added on top.
+func TestFreshEvidenceAdviceSuppressedWhenValidateStale(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "iter")
 	specHash := computeHash(specPath)
 
 	writeUnitCache(t, repoRoot, "iter", "validate", "target: candidate\n",
 		[]cacheFileSpec{{path: "docs/specs/units/candidate/unit_iter.md", hash: specHash}})
+	stripGateJudgments(t, repoRoot, "iter", "validate")
 
-	appendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	evidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_iter_b.md"), []byte("---\nunit: iter\n---\n## Extra\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(evidenceDir, "unit_iter.md"), []byte("---\nunit: iter\n---\n\n## iter.core — observed\n\nKeys:\n  - item:iter.core\n\nObserved.\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// The spec also changes -> validate STALE alongside the appendix STALE.
+	// The spec also changes -> validate STALE alongside the evidence STALE.
 	appendToFile(t, specPath, "# appended\n")
 
 	out, err := freshRun(t, repoRoot, "--unit", "iter")
@@ -1395,8 +1466,8 @@ func TestFreshAppendixAdviceSuppressedWhenValidateStale(t *testing.T) {
 	if !strings.Contains(out, "-> required: validate@iter (full run — baseline cache has no structured judgment state") {
 		t.Fatalf("expected full-run advice for a judgment-less baseline, got:\n%s", out)
 	}
-	if strings.Contains(out, "full run - appendix coverage") {
-		t.Fatalf("appendix full-run advice must be suppressed when validate is STALE, got:\n%s", out)
+	if strings.Contains(out, "full run - evidence coverage") {
+		t.Fatalf("evidence full-run advice must be suppressed when validate is STALE, got:\n%s", out)
 	}
 }
 

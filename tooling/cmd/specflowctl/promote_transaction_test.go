@@ -161,13 +161,13 @@ func TestPromoteTransactionFailureAndRetry(t *testing.T) {
 				name := "publication"
 				candidate := "docs/specs/units/candidate/unit_publication.md"
 				stable := "docs/specs/units/stable/unit_publication.md"
-				cleanupDir := "docs/specs/units/candidate/appendix"
+				cleanupDir := "docs/specs/units/candidate/evidence"
 				if kind == "unit" {
-					appendix := cleanupDir + "/unit_publication_extra.md"
-					grWriteFile(t, root, appendix, "---\nunit: publication\n---\nNew appendix.\n")
-					writePublicationUnit(t, root, name, "none", []string{appendix})
+					evidence := cleanupDir + "/unit_publication.md"
+					grWriteFile(t, root, evidence, "---\nunit: publication\n---\n\n## publication.core — observed\n\nKeys:\n  - item:publication.core\n\nNew observation.\n")
+					writePublicationUnit(t, root, name, "none", []string{evidence})
 					grWriteFile(t, root, stable, "---\nid: publication\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: publication.core\n    summary: Core contract.\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: publication.core\n    promise: publication.core\n    description: Core.\n    verification_type: inspectable\n    verification_surface: api\n    implementation_surface: src\n    verification_method: inspect.\n    pass_condition: Passes.\n    runnable: yes\n")
-					grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_publication_extra.md", "---\nunit: publication\n---\nold accepted appendix\n")
+					grWriteFile(t, root, "docs/specs/units/stable/evidence/unit_publication.md", "---\nunit: publication\n---\n\n## publication.core — observed\n\nKeys:\n  - item:publication.core\n\nold accepted observation\n")
 				} else {
 					name = "b_rule_publication"
 					candidate = "docs/specs/rules/candidate/" + name + ".md"

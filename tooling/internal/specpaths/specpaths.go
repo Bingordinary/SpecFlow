@@ -46,8 +46,8 @@ const (
 	ModulesRootDir       = SpecRootDir + "/units"
 	CandidateDir         = ModulesRootDir + "/candidate"
 	StableDir            = ModulesRootDir + "/stable"
-	CandidateAppendixDir = CandidateDir + "/appendix"
-	StableAppendixDir    = StableDir + "/appendix"
+	CandidateEvidenceDir = CandidateDir + "/evidence"
+	StableEvidenceDir    = StableDir + "/evidence"
 
 	RuleModulesRootDir = SpecRootDir + "/rules"
 	RuleCandidateDir   = RuleModulesRootDir + "/candidate"
@@ -56,10 +56,10 @@ const (
 
 // IsSpecDocumentPath reports whether a canonical repository-relative path lies
 // inside the spec tree. Every path under the tree is a spec document — a unit
-// or rule spec, an appendix, or a meta record — and a spec document is a
-// reference object, never an implementation code file: a unit's implementation
-// surface and affects.files take code paths, and spec documents are referenced
-// through affects.evidence_files or affects.appendices
+// or rule spec, an evidence record, or a meta record — and a spec document is
+// a reference object, never an implementation code file: a unit's
+// implementation surface and affects.files take code paths, and spec documents
+// are referenced through affects.evidence_files
 // (framework/spec_writing_guide.md §7, §12).
 func IsSpecDocumentPath(canonical string) bool {
 	return canonical == SpecRootDir || strings.HasPrefix(canonical, SpecRootDir+"/")
@@ -102,30 +102,11 @@ func ResolveUnitFile(repoRoot, unit string) string {
 	return ""
 }
 
-// ResolveUnitAppendix resolves a unit appendix logical reference to the
-// current-layer appendix file (candidate first, stable fallback). appendix is
-// the full file base name without extension (e.g. "unit_auth_account_token_claims").
-// It returns "" when the appendix exists in no layer. Cache dependency entries
-// for cross-unit reads of a dependency unit's protocol appendices use logical
-// references (`unit:<name>:appendix:<file>`), so a promote of the referenced
-// unit does not stale caches that depended on its (unchanged) appendix content.
-func ResolveUnitAppendix(repoRoot, appendix string) string {
-	for _, dir := range []string{CandidateAppendixDir, StableAppendixDir} {
-		p := filepath.Join(repoRoot, filepath.FromSlash(dir), appendix+".md")
-		if _, err := os.Stat(p); err == nil {
-			return filepath.ToSlash(p)
-		}
-	}
-	return ""
-}
-
 // LogicalUnitRefForPath maps a unit spec file's physical path to the logical
 // reference that carries it: docs/specs/units/<layer>/unit_<name>.md is
-// carried as unit:<name>, and docs/specs/units/<layer>/appendix/<file>.md as
-// unit:<owner>:appendix:<file base>, with the owner read from the appendix
-// frontmatter (a filename prefix alone is ambiguous when units share a
-// prefix). It returns ok=false for any other path, an invalid target name, or
-// an appendix whose declared ownership is missing or inconsistent, so callers
+// carried as unit:<name>, and
+// docs/specs/units/<layer>/evidence/unit_<unit>.md as unit:<unit>:evidence.
+// It returns ok=false for any other path or an invalid target name, so callers
 // keep a spelling they cannot map instead of guessing a reference.
 func LogicalUnitRefForPath(root, p string) (string, bool) {
 	p = filepath.ToSlash(strings.TrimSpace(p))
@@ -141,28 +122,16 @@ func LogicalUnitRefForPath(root, p string) (string, bool) {
 			}
 			return "unit:" + name, true
 		}
-		base, ok := strings.CutPrefix(rest, "appendix/")
-		if !ok || strings.Contains(base, "/") || !strings.HasSuffix(base, ".md") {
+		rest, ok = strings.CutPrefix(rest, "evidence/")
+		if !ok || strings.Contains(rest, "/") || !strings.HasSuffix(rest, ".md") {
 			return "", false
 		}
-		base = strings.TrimSuffix(base, ".md")
-		if base == "" {
+		base := strings.TrimSuffix(rest, ".md")
+		name, ok := strings.CutPrefix(base, "unit_")
+		if !ok || name == "" || ValidateTargetName("unit", name) != nil {
 			return "", false
 		}
-		path := layerDir + "/appendix/" + base + ".md"
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-		if err != nil {
-			return "", false
-		}
-		fields, _, err := ParseFrontmatterFields(string(data))
-		if err != nil {
-			return "", false
-		}
-		owner, err := appendixOwner(path, fields)
-		if err != nil {
-			return "", false
-		}
-		return "unit:" + owner + ":appendix:" + base, true
+		return "unit:" + name + ":evidence", true
 	}
 	return "", false
 }
@@ -186,8 +155,4 @@ func ResolveRuleFile(repoRoot, ruleID string) string {
 		}
 	}
 	return ""
-}
-
-func CandidateAppendixGlob(unit string) string {
-	return fmt.Sprintf("%s/unit_%s_*.md", CandidateAppendixDir, unit)
 }

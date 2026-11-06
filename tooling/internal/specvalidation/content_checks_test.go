@@ -75,22 +75,22 @@ func TestCheckFrontmatterRegionPurity(t *testing.T) {
 	}
 }
 
-func TestCheckContentScanCoversAppendices(t *testing.T) {
+func TestCheckContentScanCoversEvidenceRecord(t *testing.T) {
 	repoRoot := newRepo(t)
 	createFullCandidate(t, repoRoot, "scan_unit")
-	// An appendix with a narrative environment-specific path fails
+	// An evidence record with a narrative environment-specific path fails
 	// the scan even when the main spec is clean.
-	appendix := "docs/specs/units/candidate/appendix/unit_scan_unit_proto.md"
-	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs/units/candidate/appendix"), 0755); err != nil {
+	record := "docs/specs/units/candidate/evidence/unit_scan_unit.md"
+	if err := os.MkdirAll(filepath.Join(repoRoot, "docs/specs/units/candidate/evidence"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repoRoot, appendix), []byte("---\nunit: scan_unit\n---\n\n# Protocol\n\nThe endpoint binds to /Users/dev/socket.\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoRoot, record), []byte("---\nunit: scan_unit\n---\n\n# Observed\n\nThe endpoint binds to /Users/dev/socket.\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	result := checkEnvironmentAgnosticism(repoRoot, "scan_unit")
 	if result.Status != Fail {
-		t.Fatalf("appendix narrative path = %v, want FAIL", result)
+		t.Fatalf("evidence-record narrative path = %v, want FAIL", result)
 	}
 }
 

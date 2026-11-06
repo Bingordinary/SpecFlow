@@ -47,14 +47,14 @@ func Fork(repoRoot, unitName string) *Result {
 		return r
 	}
 
-	appendixCopies, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "stable")
+	evidenceCopy, err := specpaths.PlanEvidenceRecordCopy(repoRoot, unitName, "stable")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r
 	}
 
-	for _, appendix := range appendixCopies {
-		r.Actions = append(r.Actions, fmt.Sprintf("Found appendix: %s", appendix.Source))
+	if evidenceCopy != nil {
+		r.Actions = append(r.Actions, fmt.Sprintf("Found evidence record: %s", evidenceCopy.Source))
 	}
 
 	if err := fileops.CopyFile(stableSpecPath, candidateSpecPath); err != nil {
@@ -64,15 +64,15 @@ func Fork(repoRoot, unitName string) *Result {
 	}
 	r.Actions = append(r.Actions, fmt.Sprintf("Forked: %s -> %s", stableSpec, candidateSpec))
 
-	for _, appendix := range appendixCopies {
-		src := filepath.Join(repoRoot, filepath.FromSlash(appendix.Source))
-		dst := filepath.Join(repoRoot, filepath.FromSlash(appendix.Destination))
+	if evidenceCopy != nil {
+		src := filepath.Join(repoRoot, filepath.FromSlash(evidenceCopy.Source))
+		dst := filepath.Join(repoRoot, filepath.FromSlash(evidenceCopy.Destination))
 		if err := fileops.CopyFile(src, dst); err != nil {
-			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy appendix: %v", err))
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to copy evidence record: %v", err))
 			r.Passed = false
 			return r
 		}
-		r.Actions = append(r.Actions, fmt.Sprintf("Forked appendix: %s", appendix.Destination))
+		r.Actions = append(r.Actions, fmt.Sprintf("Forked evidence record: %s", evidenceCopy.Destination))
 	}
 
 	// Inherit the stable confirmation caches: fork copies the stable content

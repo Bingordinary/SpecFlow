@@ -1,6 +1,6 @@
 // Package promote validates candidate specs and archives them to stable.
 // The tooling validates only deterministic format constraints (frontmatter fields,
-// per-item acceptance schema, appendix file paths). Semantic validation
+// per-item acceptance schema, evidence record path). Semantic validation
 // (reference integrity, cross-unit consistency, acceptance completeness) is
 // delegated to the validate subagent and is outside the promote tooling scope.
 package promote
@@ -174,23 +174,24 @@ func restoreBackups(backups []backupEntry) error {
 
 // Promote runs the promote flow for the given unit. Publication is a mirror:
 // after it succeeds the unit's stable file set equals its candidate file set.
-// It copies the candidate main spec and appendices to stable and, when the
-// caller declares each drop via dropAppendices, removes the stable-owned
-// appendices the candidate round no longer carries — all in one transaction.
-// Deletion is still an ordinary candidate file edit, but because the mirror
-// infers deletion from the candidate's file set, promote refuses to delete
-// silently: every stable appendix that would be removed must be named in
-// dropAppendices, so an accidental or stale omission fails closed instead of
-// destroying accepted truth. There is no separate removal command or workflow.
+// It copies the candidate main spec and evidence record to stable and, when
+// the caller declares the drop via dropEvidence, removes the stable-owned
+// evidence record the candidate round no longer carries — all in one
+// transaction. Deletion is still an ordinary candidate file edit, but because
+// the mirror infers deletion from the candidate's file set, promote refuses
+// to delete silently: a stable evidence record that would be removed must be
+// declared with dropEvidence, so an accidental or stale omission fails closed
+// instead of destroying accepted truth. There is no separate removal command
+// or workflow.
 //
 // Steps:
 //  1. Check candidate spec exists
 //  2. Validate frontmatter fields
 //  3. Validate acceptance items
-//  4. Find candidate appendix files
+//  4. Resolve the candidate evidence record
 //  5. Mirror candidate files into stable (copy additions/changes; delete
-//     stable-owned files the candidate no longer carries, each declared)
-func Promote(repoRoot, unitName string, dropAppendices ...string) *Result {
+//     stable-owned files the candidate no longer carries, declared)
+func Promote(repoRoot, unitName string, dropEvidence bool) *Result {
 	r := &Result{Unit: unitName}
 
 	candidateSpec := filepath.Join(repoRoot, fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName))
@@ -274,58 +275,37 @@ func Promote(repoRoot, unitName string, dropAppendices ...string) *Result {
 		return r
 	}
 
-	appendixCopies, err := specpaths.PlanUnitAppendixCopies(repoRoot, unitName, "candidate")
+	evidenceCopy, err := specpaths.PlanEvidenceRecordCopy(repoRoot, unitName, "candidate")
 	if err != nil {
 		r.Issues = append(r.Issues, err.Error())
 		return r
 	}
 
 	// Mirror publication: the unit's stable file set must equal its candidate
-	// file set. Resolve the candidate appendix names and the stable-owned
-	// appendices here so any stable appendix the candidate round dropped is
-	// deleted in the same transaction as the copies.
-	candidateAppendixNames := map[string]bool{}
-	for _, appendix := range appendixCopies {
-		candidateAppendixNames[filepath.Base(appendix.Destination)] = true
-	}
-	stableAppendices, err := specpaths.UnitAppendices(repoRoot, unitName, "stable")
+	// file set. Resolve the candidate evidence record and the stable-owned
+	// record here so a stable record the candidate round dropped is deleted
+	// in the same transaction as the copy.
+	candidateHasEvidence := evidenceCopy != nil
+	stableRecord, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "stable")
 	if err != nil {
-		r.Issues = append(r.Issues, fmt.Sprintf("Failed to resolve stable appendices: %v", err))
+		r.Issues = append(r.Issues, fmt.Sprintf("Failed to resolve stable evidence record: %v", err))
 		return r
+	}
+	stableEvidencePath := ""
+	if stableRecord != nil {
+		stableEvidencePath = stableRecord.Path
 	}
 
 	// The mirror infers deletion from the candidate's file set, so a missing
-	// stable appendix could be an intentional drop or a stale/incomplete
-	// candidate. Require every drop to be declared; an undeclared or unknown
-	// drop fails closed before any write.
-	declared := map[string]bool{}
-	for _, name := range dropAppendices {
-		declared[filepath.Base(name)] = true
+	// stable record could be an intentional drop or a stale/incomplete
+	// candidate. Require the drop to be declared; an undeclared or unmatched
+	// declaration fails closed before any write.
+	dropExpected := stableEvidencePath != "" && !candidateHasEvidence
+	if dropExpected && !dropEvidence {
+		r.Issues = append(r.Issues, fmt.Sprintf("candidate no longer carries the stable evidence record: %s — promote would delete it. Re-run with `--drop-evidence`, or restore the record in the candidate.", filepath.Base(stableEvidencePath)))
 	}
-	dropNames := map[string]bool{}
-	var undeclared, unmatched []string
-	for _, appendix := range stableAppendices {
-		base := filepath.Base(appendix.Path)
-		if candidateAppendixNames[base] {
-			continue
-		}
-		dropNames[base] = true
-		if !declared[base] {
-			undeclared = append(undeclared, base)
-		}
-	}
-	for name := range declared {
-		if !dropNames[name] {
-			unmatched = append(unmatched, name)
-		}
-	}
-	sort.Strings(undeclared)
-	sort.Strings(unmatched)
-	if len(undeclared) > 0 {
-		r.Issues = append(r.Issues, fmt.Sprintf("candidate no longer carries stable appendix(es): %s — promote would delete them. Re-run with `--drop-appendix <file>` for each, or restore the file(s) in the candidate.", strings.Join(undeclared, ", ")))
-	}
-	if len(unmatched) > 0 {
-		r.Issues = append(r.Issues, fmt.Sprintf("--drop-appendix names no missing stable appendix: %s", strings.Join(unmatched, ", ")))
+	if dropEvidence && !dropExpected {
+		r.Issues = append(r.Issues, "--drop-evidence names no missing stable evidence record")
 	}
 	if len(r.Issues) > 0 {
 		return r
@@ -339,19 +319,19 @@ func Promote(repoRoot, unitName string, dropAppendices ...string) *Result {
 	}
 	var staged []stagedCopy
 	var removals, stableRemovals, publicationActions []string
-	for _, appendix := range appendixCopies {
-		src := filepath.Join(repoRoot, filepath.FromSlash(appendix.Source))
-		dst := filepath.Join(repoRoot, filepath.FromSlash(appendix.Destination))
+	if evidenceCopy != nil {
+		src := filepath.Join(repoRoot, filepath.FromSlash(evidenceCopy.Source))
+		dst := filepath.Join(repoRoot, filepath.FromSlash(evidenceCopy.Destination))
 		tmp, err := stageCopy(src, dst)
 		if err != nil {
 			cleanupStaged(staged)
-			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage appendix: %v", err))
+			r.Issues = append(r.Issues, fmt.Sprintf("Failed to stage evidence record: %v", err))
 			return r
 		}
 		staged = append(staged, stagedCopy{tmp: tmp, dst: dst})
 		removals = append(removals, src)
 		rel, _ := filepath.Rel(repoRoot, dst)
-		publicationActions = append(publicationActions, fmt.Sprintf("Promoted appendix: %s", rel))
+		publicationActions = append(publicationActions, fmt.Sprintf("Promoted evidence record: %s", rel))
 	}
 	tmpSpec, err := stageCopy(candidateSpec, stableSpec)
 	if err != nil {
@@ -395,14 +375,11 @@ func Promote(repoRoot, unitName string, dropAppendices ...string) *Result {
 		publicationActions = append(publicationActions, "Promoted promise state to stable")
 	}
 
-	// Every stable-owned appendix the candidate round no longer carries is
+	// A stable-owned evidence record the candidate round no longer carries is
 	// removed in the same commit, so stable mirrors candidate.
-	for _, appendix := range stableAppendices {
-		if candidateAppendixNames[filepath.Base(appendix.Path)] {
-			continue
-		}
-		stableRemovals = append(stableRemovals, filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
-		publicationActions = append(publicationActions, fmt.Sprintf("Removed stale stable appendix: %s", appendix.Path))
+	if dropExpected {
+		stableRemovals = append(stableRemovals, filepath.Join(repoRoot, filepath.FromSlash(stableEvidencePath)))
+		publicationActions = append(publicationActions, fmt.Sprintf("Removed stale stable evidence record: %s", stableEvidencePath))
 	}
 
 	// Stable content, its baseline, and candidate removal share one commit.

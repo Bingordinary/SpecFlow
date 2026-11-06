@@ -5,7 +5,7 @@
 //  2. Acceptance items format (required fields, Gherkin-style descriptions for testable items, .feature syntax rejected)
 //  3. Anchor integrity (affects.files and affects.evidence_files paths exist; implementation_surface values resolve to real code; implementation_surface and affects.files reject a spec-document value)
 //  4. Reference integrity (rule_refs files exist)
-//  5. Appendix files exist
+//  5. Evidence record (existence and ownership of the unit's single record)
 //  6. Body layer-path check (candidate-layer spec paths)
 //  7. Region locatability (section and acceptance item regions are splittable and locatable)
 //  8. Surface associations (declarations resolve; file sharing is allowed)
@@ -16,6 +16,10 @@
 //  13. Test doubles (test-double names in the spec — WARNING, guide §15.3)
 //  14. verification_method shape (one-sentence method — guide §15.3)
 //  15. Promise model (three-section shape, promise schema, coverage, and promise graph)
+//  16. Narrative coverage (direct-content narrative blocks are sourced by a
+//     promise/item source or declared non_behavior_blocks)
+//  17. Evidence keys (every evidence-record `##` section declares exactly one
+//     resolving `item:` key, and the removed affects.appendices field is rejected)
 package specvalidation
 
 import (
@@ -60,7 +64,7 @@ type Result struct {
 	Checks []CheckResult
 }
 
-// ValidateCandidate runs all 15 checks on the given unit's candidate spec.
+// ValidateCandidate runs all 17 checks on the given unit's candidate spec.
 func ValidateCandidate(repoRoot, unitName string) *Result {
 	r := &Result{Unit: unitName}
 
@@ -68,7 +72,7 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkAcceptanceItems(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkAnchors(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkReferences(repoRoot, unitName))
-	r.Checks = append(r.Checks, checkAppendices(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkEvidenceRecord(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkLayerPaths(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkRegionLocatability(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkSurfaceAssociations(repoRoot, unitName))
@@ -79,6 +83,8 @@ func ValidateCandidate(repoRoot, unitName string) *Result {
 	r.Checks = append(r.Checks, checkTestDoubles(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkVerificationMethodShape(repoRoot, unitName))
 	r.Checks = append(r.Checks, checkPromiseModel(repoRoot, unitName))
+	r.Checks = append(r.Checks, checkNarrativeCoverage(repoRoot, unitName))
+	r.Checks = append(r.Checks, CheckEvidenceKeys(repoRoot, unitName))
 
 	r.Passed = true
 	for _, c := range r.Checks {

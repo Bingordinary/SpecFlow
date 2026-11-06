@@ -184,3 +184,23 @@ func TestValidatePromiseModelCLIRejectsItemMissingSource(t *testing.T) {
 		t.Fatalf("expected the item-source diagnostic, got:\n%s", stdout.String())
 	}
 }
+
+// TestValidatePromiseModelCLIIgnoresNarrativeCoverage pins the command
+// contract: `validate promise-model` covers Check 15 only. Narrative coverage
+// is Check 16 and is enforced by `validate candidate`, never by this command.
+func TestValidatePromiseModelCLIIgnoresNarrativeCoverage(t *testing.T) {
+	repoRoot := t.TempDir()
+	content := strings.Replace(promiseCLISpec, "\n## Promises", "\n### Background\n\nWhy the module exists.\n\n## Promises", 1)
+	if content == promiseCLISpec {
+		t.Fatal("narrative block insertion did not apply")
+	}
+	writePromiseCLISpec(t, repoRoot, content)
+
+	var stdout, stderr bytes.Buffer
+	if err := runValidate([]string{"promise-model", "--unit", "auth", "--repo-root", repoRoot}, &stdout, &stderr); err != nil {
+		t.Fatalf("promise-model must not enforce narrative coverage, got: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Validate result: PASS") {
+		t.Fatalf("expected PASS output, got:\n%s", stdout.String())
+	}
+}

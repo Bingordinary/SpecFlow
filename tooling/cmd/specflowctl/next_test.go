@@ -204,23 +204,26 @@ func denyNextDiscoveryAccess(t *testing.T, path string, directory bool) {
 	}
 }
 
-func TestNextRejectsAppendixDirectoryErrors(t *testing.T) {
+func TestNextRejectsEvidenceRecordErrors(t *testing.T) {
 	for _, layer := range []string{"candidate", "stable"} {
-		for _, failure := range []string{"permission", "not a directory"} {
+		for _, failure := range []string{"permission", "directory"} {
 			t.Run(layer+"/"+failure, func(t *testing.T) {
 				root := createCLITestRepo(t)
 				grWriteFile(t, root, "docs/specs/units/candidate/unit_demo.md", nextDiscoverySpec("new"))
-				ref := "docs/specs/units/" + layer + "/appendix"
+				ref := "docs/specs/units/" + layer + "/evidence/unit_demo.md"
 				if failure == "permission" {
-					grWriteFile(t, root, ref+"/unit_demo_extra.md", "---\nunit: demo\n---\nExtra design.\n")
-					denyNextDiscoveryAccess(t, filepath.Join(root, filepath.FromSlash(ref)), true)
+					grWriteFile(t, root, ref, "---\nunit: demo\n---\n")
+					denyNextDiscoveryAccess(t, filepath.Join(root, filepath.FromSlash(ref)), false)
 				} else {
-					grWriteFile(t, root, ref, "not a directory\n")
+					// A directory where the record file must be fails the read.
+					if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(ref)), 0755); err != nil {
+						t.Fatal(err)
+					}
 				}
 				var stdout, stderr bytes.Buffer
 				err := runNext([]string{"--unit", "demo", "--repo-root", root}, &stdout, &stderr)
 				if err == nil || !strings.Contains(err.Error(), ref) || stdout.Len() != 0 {
-					t.Fatalf("expected appendix discovery failure naming %s without metadata, got %v; stdout=%s", ref, err, stdout.String())
+					t.Fatalf("expected evidence-record discovery failure naming %s without metadata, got %v; stdout=%s", ref, err, stdout.String())
 				}
 			})
 		}

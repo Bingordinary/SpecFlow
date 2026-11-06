@@ -14,6 +14,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/testsupport"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -62,9 +63,70 @@ func promiseCacheFormat(t *testing.T, root, unit, command, result string) (strin
 	return validationcache.PromisePinFormat, pins, true
 }
 
+// validateObjectBaseline derives the per-object catalog from the fixture unit
+// spec. The catalog is the coverage record; no per-object verdict is stored.
+func validateObjectBaseline(t *testing.T, repoRoot, unit string) []validatekeys.Key {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs/specs/units/candidate", "unit_"+unit+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := validatekeys.Parse(unit, string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidenceBase string
+	var evidenceSections []validatekeys.EvidenceSection
+	recordPath := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence", "unit_"+unit+".md")
+	if recordData, err := os.ReadFile(recordPath); err == nil {
+		base := "unit_" + unit
+		evidenceBase = base
+		parsed, err := validatekeys.ParseEvidenceRecord(base, string(recordData), graph)
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidenceSections = parsed
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+}
+
+// filePresenceForKeys records whether each `file:` read resolves, matching the
+// baseline finalize writes.
+func filePresenceForKeys(t *testing.T, repoRoot string, keys []validatekeys.Key) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, key := range keys {
+		for _, read := range key.Reads {
+			if !strings.HasPrefix(read, "file:") {
+				continue
+			}
+			path := strings.TrimPrefix(read, "file:")
+			info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(path)))
+			out[path] = err == nil && !info.IsDir()
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // writeValidateBaseline writes a validate cache for unit auth with the given
 // result/blocking and per-check behaviour.
 func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationcache.FileEntry, result string, blocking bool, basis string) {
+	t.Helper()
+	writeValidateBaselineFor(t, repoRoot, "auth", entries, result, blocking, basis)
+}
+
+// writeValidateBaselineFor writes a validate cache for the named unit. Findings
+// are the baseline's recorded findings (a pass cache carries P2/P3 advisories).
+func writeValidateBaselineFor(t *testing.T, repoRoot, unit string, entries []validationcache.FileEntry, result string, blocking bool, basis string, findings ...Finding) {
 	t.Helper()
 	statuses := map[string]string{}
 	for _, entry := range entries {
@@ -76,14 +138,15 @@ func writeValidateBaseline(t *testing.T, repoRoot string, entries []validationca
 			statuses[check.Check] = status
 		}
 	}
-	judgments, err := json.Marshal(JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaValidate, LogicalStatus: statuses, SynthesisDigest: "sha256:test"})
+	catalog := validateObjectBaseline(t, repoRoot, unit)
+	judgments, err := json.Marshal(JudgmentBaseline{SchemaVersion: validationcache.RecordStateSchemaValidate, LogicalStatus: statuses, Findings: findings, SynthesisDigest: "sha256:test", ValidateObjects: catalog, FilePresence: filePresenceForKeys(t, repoRoot, catalog)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pinFormat, pins, pinsSet := promiseCacheFormat(t, repoRoot, "auth", GateValidate, result)
-	_, err = validationcache.WriteCache(repoRoot, "unit", "auth", validationcache.CacheWrite{
+	pinFormat, pins, pinsSet := promiseCacheFormat(t, repoRoot, unit, GateValidate, result)
+	_, err = validationcache.WriteCache(repoRoot, "unit", unit, validationcache.CacheWrite{
 		Command:        "validate",
-		Unit:           "auth",
+		Unit:           unit,
 		Mode:           "full",
 		Basis:          basis,
 		Result:         result,
@@ -508,6 +571,74 @@ func TestVerifyCoverageUnionsLenses(t *testing.T) {
 		if got[key] != lens {
 			t.Fatalf("coverage key %q lens = %q, want %q (coverage %v)", key, got[key], lens, got)
 		}
+	}
+}
+
+// TestPlanDerivesValidateObjectCatalog pins the per-object catalog a unit
+// validate plan records. The catalog is derived from the spec's existing
+// item/promise/source fields, not from a new map.
+func TestPlanDerivesValidateObjectCatalog(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core", "auth.aux")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(run.ValidateObjects) == 0 {
+		t.Fatal("expected a per-object validate catalog")
+	}
+	found := false
+	for _, object := range run.ValidateObjects {
+		if object.ID == "item:auth.core:substance" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("catalog does not contain item:auth.core:substance: %+v", run.ValidateObjects)
+	}
+}
+
+// TestValidateSessionCarriesObjectBatch pins the object batch a validate
+// check session receives. The acceptance group owns the item and promise
+// judgments; the document group owns structure/clarity.
+func TestValidateSessionCarriesObjectBatch(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptance, err := BuildSessionSpec(repoRoot, run, []string{"acceptance"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(acceptance.ValidateObjects) == 0 {
+		t.Fatal("acceptance session has no per-object batch")
+	}
+	foundItem := false
+	for _, object := range acceptance.ValidateObjects {
+		if object.ID == "item:auth.core:substance" {
+			foundItem = true
+		}
+	}
+	if !foundItem {
+		t.Fatalf("acceptance session does not carry item:auth.core:substance: %+v", acceptance.ValidateObjects)
+	}
+	document, err := BuildSessionSpec(repoRoot, run, []string{"document"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundSection := false
+	for _, object := range document.ValidateObjects {
+		if strings.HasPrefix(object.ID, "section:Narrative:") {
+			foundSection = true
+		}
+	}
+	if !foundSection {
+		t.Fatalf("document session does not carry section keys: %+v", document.ValidateObjects)
 	}
 }
 
@@ -1141,12 +1272,12 @@ func TestExtendRejectsUnresolvedLogicalInput(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_auth_claims.md", "---\nunit: auth\n---\n\n# Claims\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_auth.md", "---\nunit: auth\n---\n\n# Evidence\n")
 	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Extend(repoRoot, run.RunID, []string{"unit:auth:appendix:unit_auth_claims.md"}, time.Now()); err == nil || !strings.Contains(err.Error(), "unit:auth:appendix:unit_auth_claims.md") {
+	if _, err := Extend(repoRoot, run.RunID, []string{"unit:auth:evidence.md"}, time.Now()); err == nil || !strings.Contains(err.Error(), "unit:auth:evidence.md") {
 		t.Fatalf("expected the unresolved logical input to be rejected, got %v", err)
 	}
 	reloaded, err := Load(repoRoot, run.RunID)
@@ -1159,12 +1290,12 @@ func TestExtendRejectsUnresolvedLogicalInput(t *testing.T) {
 	if last := len(reloaded.Notices) - 1; last >= 0 && strings.Contains(reloaded.Notices[last], "evidence extended") {
 		t.Fatalf("rejected extension recorded an extension notice: %v", reloaded.Notices)
 	}
-	extended, err := Extend(repoRoot, run.RunID, []string{"unit:auth:appendix:unit_auth_claims"}, time.Now())
+	extended, err := Extend(repoRoot, run.RunID, []string{"unit:auth:evidence"}, time.Now())
 	if err != nil {
 		t.Fatalf("the correctly spelled supplement must still extend the run: %v", err)
 	}
-	if _, ok := refByRef(extended, "unit:auth:appendix:unit_auth_claims"); !ok {
-		t.Fatalf("corrected appendix ref not added: %+v", extended.Refs)
+	if _, ok := refByRef(extended, "unit:auth:evidence"); !ok {
+		t.Fatalf("corrected evidence ref not added: %+v", extended.Refs)
 	}
 }
 

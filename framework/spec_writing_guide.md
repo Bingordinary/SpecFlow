@@ -129,7 +129,7 @@ Unit cuts should map explicitly onto the project's structure instead of existing
 2. **Do not force responsibility cuts onto technical layering.** When the project structure is organized by technical layer (e.g. controller/service), either refactor the structure first or accept cross-directory units. Forcing responsibility-based cuts onto a non-responsibility structure produces mappings that are unreadable to humans and expensive to repair later.
 3. **Extract cross-cutting constraints as rules.** Constraint-type content (protocols, component contracts) that spans responsibilities should be extracted as shared rules (see §Rule Extraction) instead of being repeated in every unit document. The adoption flow's structure-review step surfaces this option at cut time (see `framework/operations/adopt.md` Step 2). Shared constraints and file associations are defined by §14.4 File Associations and Shared Agreements.
 4. The framework does not force any specific organization: unit cuts are a decision made together with the user, recorded explicitly, and revisited when the structure changes.
-5. **Keep a unit to one responsibility; split when it stops being one.** Behavior that shares no design center with the unit — no shared state, no contract the unit and the behavior jointly define, no shared actor journey — is a separate responsibility: create a new unit for it instead of extending the current one. A unit that bundles independent responsibilities gates, evolves, and promotes them together with no shared reason, and inflates every gate run over it. Splitting the unit is the only remedy that reduces what a gate run and a promote decision carry — appendices stay inside the same unit's validation union, so moving content into them changes layering and dependency granularity, not governance weight. Constraints shared between the split parts — protocols and component contracts included — are extracted as rules (item 3), not left as hidden coupling inside one unit. Shared implementation may be associated with several units; reuse public code judgments and keep spec-related judgments separate — see §14.4 File Associations and Shared Agreements. `validate` Check 3 reports a bundled unit as a split candidate (WARNING; see `framework/unit_validate_checklist.md` Check 3 step 6).
+5. **Keep a unit to one responsibility; split when it stops being one.** Behavior that shares no design center with the unit — no shared state, no contract the unit and the behavior jointly define, no shared actor journey — is a separate responsibility: create a new unit for it instead of extending the current one. A unit that bundles independent responsibilities gates, evolves, and promotes them together with no shared reason, and inflates every gate run over it. Splitting the unit is the only remedy that reduces what a gate run and a promote decision carry — the evidence record stays inside the same unit's validation union, so moving content into it changes layering and dependency granularity, not governance weight. Constraints shared between the split parts — protocols and component contracts included — are extracted as rules (item 3), not left as hidden coupling inside one unit. Shared implementation may be associated with several units; reuse public code judgments and keep spec-related judgments separate — see §14.4 File Associations and Shared Agreements. `validate` Check 3 reports a bundled unit as a split candidate (WARNING; see `framework/unit_validate_checklist.md` Check 3 step 6).
 
 ## 3. Unit Frontmatter
 
@@ -151,11 +151,10 @@ rule_refs:
 
 Refs are bare unit or rule names; the ref resolves to the target's current content.
 
-`evidence_appendix_ref` is an optional frontmatter field referencing an evidence appendix file (e.g., `unit_auth_evidence.md`). When present, it records observed implementation behavior that supports the candidate's design decisions. When absent or `none`, the candidate is treated as design-driven (new concept, replacement, or pure design change). The referenced appendix must contain directly readable behavioral truth — not only background, motivation, or patch notes.
+A unit carries observed implementation behavior in a single **evidence record**: `docs/specs/units/<layer>/evidence/unit_<unit>.md`. The record's presence is its declaration — there is no main-spec index field. The record must contain directly readable behavioral truth — not only background, motivation, or patch notes.
+The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when the evidence record has a `##` section keyed `item:<item-id>`; the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items with no evidence section are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
 
-The field is the unit-level entry point declaring that the unit has an evidence appendix. The waiver granularity is the acceptance item, not the unit: an acceptance item is evidence-driven when its `affects.appendices` references the evidence appendix, and the design-rationale review is waived for that item only (see `framework/unit_validate_checklist.md` Check 2 Step 2). Items that do not reference the evidence appendix are design-driven and receive full rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected during incremental replacement.
-
-Evidence has a defined lifecycle (see §8): adoption records observed behavior, redesigned domains remove their obsolete evidence sections, and the agent decides whether the final appendix should be deleted by deleting its candidate file (promote then drops the stable copy). Set `evidence_appendix_ref` to `none` when it no longer supports this unit. Zombie, orphan, and residual evidence are detected by validate Check 4 at default severity P1.
+Evidence has a defined lifecycle (see §8): adoption records observed behavior, redesigned domains remove their obsolete evidence sections, and the agent decides whether the record is obsolete by deleting its candidate file (promote then drops the stable copy, declared with `--drop-evidence`). Zombie, orphan, and residual evidence are detected by validate Check 4 at default severity P1.
 
 `rule_exceptions` is an optional frontmatter field recording this unit's approved deviations from rules that apply to it. Format:
 
@@ -184,11 +183,12 @@ states what the unit offers; an acceptance item states how the unit proves a
 promise; the design narrative states why the unit is designed that way.
 
 Consumers read provider promises; they do not read provider acceptance items,
-appendices, or code to learn the contract. A contract statement that no
-promise carries is invalid, and an appendix that introduces normative contract
-content outside a promise is a finding. An appendix is explanatory support
-truth: if it needs its own contract, dependencies, acceptance items, code
-scope, or independent verification, it is a unit, not an appendix. A promise
+the evidence record, or code to learn the contract. A contract statement that
+no promise carries is invalid, and an evidence record that introduces
+normative contract content outside a promise is a finding. The evidence record
+records observed behavior that supports acceptance items: if a responsibility
+needs its own contract, dependencies, acceptance items, code scope, or
+independent verification, it is a unit, not an evidence record. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
 
@@ -209,11 +209,11 @@ part of the contract fingerprint. A source block change makes the projection
 re-checkable without pretending the consumer contract changed.
 ==ATOM_END:promise_carrier_role==
 
-Everything else in the unit (design narrative, body prose, appendices, background, motivation, design discussion) is not a formal behavior carrier.
+Everything else in the unit (design narrative, body prose, the evidence record, background, motivation, design discussion) is not a formal behavior carrier.
 
-**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through a promise. `validate` Check 5h enforces the narrative-to-promise relation, and Check 5a applies the boundary to appendix contract content: internal implementation detail declared in the body or an appendix creates no coverage obligation.
+**Contract statement definition:** A contract statement declares the unit's externally-observable behavior — behavior a declared consumer must read to use this unit safely: the API surface (endpoints, parameters, status codes), exchanged data formats (field/type/enum names), error codes, protocol names and formats, and timing/consistency guarantees (sync vs async, ordering, timeouts, TTL values a declared consumer must respect). The **external-visibility boundary** — which content is externally observable and which is internal design expression — is defined once, by §15.2; a statement on the internal side of that boundary is not a contract statement even when it states concrete values, because no declared consumer reads it through a promise. `validate` Check 5h enforces the narrative-to-promise relation, and Check 5a applies the boundary to evidence-record contract content: internal implementation detail declared in the body or the evidence record creates no coverage obligation.
 
-Contract statements must be declared in a promise (`validate` Check 5a/5h enforce the narrative and appendix boundaries; see §8). The cross-unit consistency check (`validate` Check 7) reads the dependency unit's promises through the consumer's `depends_on` edges; the run records the provider promise fingerprints, so a contract change is visible to the delta re-run.
+Contract statements must be declared in a promise (`validate` Check 5a/5h enforce the narrative and evidence-record boundaries; see §8). The cross-unit consistency check (`validate` Check 7) reads the dependency unit's promises through the consumer's `depends_on` edges; the run records the provider promise fingerprints, so a contract change is visible to the delta re-run.
 
 Each projection is explicit. A promise declares `source:` with the Design
 Narrative block heading(s) it projects; a contract-verifying acceptance item
@@ -302,7 +302,7 @@ Rule files must not provide consumer truth. `bound_objects` is ignored as a cons
 
 ### 6.4 Spec Deletion
 
-Units, bound and global rules, and appendices are deleted by deleting their files — there is no removal command and no deletion approval protocol. The agent decides whether a responsibility or constraint has ended; no consumers is not a deletion reason. Deleting an appendix is deleting its candidate file (promote then drops the stable copy); retiring a whole unit or rule is deleting its candidate and stable files. The affected unit's next `validate` reports any dangling structured reference. The tooling reclaims a retired target's durable records — its validation caches, promise state, publication baseline, and the deferred findings it owned — at the next sweep (`gate-plan`, a successful `promote`, or `specflowctl clean`), so deleting the spec files is the whole deletion: no manual meta cleanup is required (see `framework/validation_cache.md` §Run lifecycle). Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
+Units, bound and global rules, and evidence records are deleted by deleting their files — there is no removal command and no deletion approval protocol. The agent decides whether a responsibility or constraint has ended; no consumers is not a deletion reason. Deleting an evidence record is deleting its candidate file (promote then drops the stable copy, declared with `--drop-evidence`); retiring a whole unit or rule is deleting its candidate and stable files. The affected unit's next `validate` reports any dangling structured reference. The tooling reclaims a retired target's durable records — its validation caches, promise state, publication baseline, and the deferred findings it owned — at the next sweep (`gate-plan`, a successful `promote`, or `specflowctl clean`), so deleting the spec files is the whole deletion: no manual meta cleanup is required (see `framework/validation_cache.md` §Run lifecycle). Normal promote retains rules even when a unit drops them, and fresh reports check status without recommending deletions.
 
 ## 7. Acceptance Criteria
 
@@ -329,7 +329,6 @@ acceptance_item_set:
         - internal/demo/handler.go
       evidence_files:
         - internal/demo/handler_test.go
-      appendices: []
       rules: []
 ```
 
@@ -346,7 +345,7 @@ acceptance_item_set:
 | `description` | yes | Description of the acceptance item's behavior. For `testable` items, must use Gherkin-style Given/When/Then scenarios (see [§Gherkin-style Description Convention](#gherkin-style-description-convention)). For non-testable items, plain language is acceptable. |
 | `verification_type` | yes | How this item is verified: `testable` (automated test), `inspectable` (file/artifact inspection), `reviewable` (human review) |
 | `verification_surface` | yes | Where verification is targeted (e.g. `internal_flow`, `api`, `ui`) |
-| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. A spec document is not an implementation code surface: a value inside the spec tree (`docs/specs/` — a unit or rule spec, an appendix, or a meta record) is rejected by the same Check 3 and verify planning, whether or not it resolves; reference a spec document through `affects.evidence_files` or `affects.appendices` instead, and declare a contract dependency on the consumer promise's `depends_on` (§12). Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
+| `implementation_surface` | yes | Implementation code surface path: a single repository-relative file or directory. A directory expands to its repository-content files — the files Git tracks plus untracked files that are not ignored; ignored dependencies and build output are not part of the surface. During design-first rounds the value may be the placeholder `<pending>` (the path is not yet known); it must be replaced with the real path before verify — verify reports any leftover `<pending>` as a MISMATCH. The value is a literal anchor: it is matched against the working tree exactly as written, and semicolon-separated lists and wildcard patterns are not interpreted — declare one path per item and list additional files in `affects.files`. A non-`<pending>` value must resolve to at least one real file; `specflowctl validate` Check 3 and verify planning reject a value that does not. A spec document is not an implementation code surface: a value inside the spec tree (`docs/specs/` — a unit or rule spec, an evidence record, or a meta record) is rejected by the same Check 3 and verify planning, whether or not it resolves; reference a spec document through `affects.evidence_files` instead, and declare a contract dependency on the consumer promise's `depends_on` (§12). Files participating in this unit behavior may be shared (see §14.4 File Associations and Shared Agreements) |
 | `verification_method` | yes | The verification method in one sentence (e.g. "Go test for demo behavior"). No step-by-step test plan and no test-double names — see §15.3 |
 | `pass_condition` | yes | What constitutes a pass |
 | `runnable` | yes | `yes` or `no` |
@@ -355,7 +354,6 @@ acceptance_item_set:
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
 | `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Like `implementation_surface`, the field declares implementation code — a spec document is not a valid entry (see the `implementation_surface` row). Files may be shared; behavior dependencies are expressed through the consumer promise's `depends_on`, never through file overlap (see §14.4 File Associations and Shared Agreements) |
 | `affects.evidence_files` | recommended | Read-only verification evidence files (typically tests or code owned by another unit) cited to back this item's judgment. They join the run snapshot and the item session's read refs, but they never define implementation participation, quality coverage keys, or operation write scope. Each cited file must exist and must actually carry the behavior or assertion the item claims — the alignment judgment verifies the citation (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check). The cited file's own quality belongs to its owner's gates |
-| `affects.appendices` | recommended | Appendix names that must be checked |
 | `affects.rules` | recommended | Rule names that must be respected |
 
 When `verification_type` is `inspectable`, the `evidence_requirements` should specify what inspection evidence is needed (e.g. `old_code_deleted`, `no_remaining_refs`).
@@ -484,47 +482,64 @@ The item is falsifiable (a broken login fails it) but carries zero contract elem
 
 The item carries concrete elements (status codes, error code, token format, expiry bound) that make the promise verifiable against code.
 
-## 8. Appendix Files
+## 8. Evidence Record
 
-Appendix files are support truth for one unit.
+An evidence record is support truth for one unit: the observed implementation behavior behind the acceptance items it supports. It does not replace the unit main Spec.
 
-They do not replace the unit main Spec.
+Evidence-record ownership is derived from the deterministic path and the record's frontmatter, not from a main-Spec index.
 
-Appendix ownership is derived from the appendix path and appendix frontmatter, not from a main-Spec index.
+**Contract content belongs to a promise:** the carrier rule in §4 applies. API contracts, data type definitions, error codes, and state machine transitions declared in the record are normative contract content and must be moved into a promise in the main spec's `## Promises` section, scoped to externally-observable content per §15.2's external-visibility boundary. `validate` Check 5a reports evidence-record contract content that has no promise carrier, and Check 5h reports narrative contract statements that no promise carries. Internal implementation detail declared in the record is design expression and creates no coverage obligation.
 
-**Contract content belongs to a promise:** the carrier rule in §4 applies. API contracts, data type definitions, error codes, and state machine transitions declared in an appendix are normative contract content and must be moved into a promise in the main spec's `## Promises` section, scoped to externally-observable content per §15.2's external-visibility boundary. `validate` Check 5a reports appendix contract content that has no promise carrier, and Check 5h reports narrative contract statements that no promise carries. Internal implementation detail declared in an appendix is design expression and creates no coverage obligation.
-
-Each unit appendix must:
+Each unit evidence record must:
 
 1. use the current path shape for its layer and unit id
 2. declare `unit: {unit}` in frontmatter
+3. contain at least one `##` section; an emptied record fails mechanically and must be deleted
 
-Before a unit fork or promote writes any file, the tooling resolves the complete appendix copy set and checks every existing destination's path and frontmatter ownership. The destination must belong to the same unit. A different owner, unreadable file, or missing/inconsistent ownership rejects the operation with the destination path before changing main specs, appendices, candidates, caches or baselines. The same ownership check applies to every appendix; it does not authorize another unit to replace an existing file.
+Before a unit fork or promote writes any file, the tooling resolves the unit's evidence record and checks the destination's path and frontmatter ownership. The destination must belong to the same unit. A different owner, unreadable file, or missing/inconsistent ownership rejects the operation with the destination path before changing main specs, evidence records, candidates, caches or baselines. The ownership check does not authorize another unit to replace an existing file.
 
-When a stable unit with appendix files is forked to candidate, every stable appendix `unit_{unit}_{name}.md` must have a corresponding candidate appendix `unit_{unit}_{name}.md`. The `specflowctl fork --unit <name>` command handles this automatically — it copies all appendix files. Always use `specflowctl fork` for this operation; manual copy leaves appendix omission risk. After editing, delete an obsolete draft appendix by deleting its candidate file; promote removes the stable copy.
+The `specflowctl fork --unit <name>` command copies the record automatically. Always use `specflowctl fork` for this operation; manual copy leaves omission risk. After editing, delete an obsolete draft record by deleting its candidate file; promote removes the stable copy.
 
-All appendix files must use the `/appendix/` subdirectory under the layer directory:
-- Candidate: `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md`
-- Stable: `docs/specs/units/stable/appendix/unit_{unit}_{name}.md`
-The candidate may have additional candidate appendices.
+A unit carries at most one evidence record, at a deterministic path:
+- Candidate: `docs/specs/units/candidate/evidence/unit_{unit}.md`
+- Stable: `docs/specs/units/stable/evidence/unit_{unit}.md`
 
-**Body references:** The spec body references appendix files and other specs by concept name or file name (e.g. `unit_auth_account_token_claims`), never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. See §12.
+**Body references:** The spec body references other specs by concept name or file name, never by layer-prefixed path. Candidate paths break after promote (candidate files are deleted) and stable paths point to the prior-consensus layer during an active candidate round. The evidence record is located by its deterministic path, so the body never spells it; the item keys are the binding. See §12.
 
 ### Spec Deletion
 
-Deletion is an ordinary file edit; there is no removal command. Appendix replacement removes the old appendix references in the candidate, deletes the old candidate appendix, then normally checks and promotes the surviving unit — promote drops the old stable appendix as a mirror, so no separate stable-layer step remains. Retiring a whole unit or rule is deleting its candidate and stable files.
+Deletion is an ordinary file edit; there is no removal command. Deleting a unit's evidence record is deleting its candidate file — promote drops the old stable copy as a mirror, declared with `--drop-evidence`, so no separate stable-layer step remains. Retiring a whole unit or rule is deleting its candidate and stable files.
 
-### Evidence Appendix Lifecycle
+### Evidence sections and Keys
 
-Evidence appendices are transitional artifacts created by the adoption flow for existing-code onboarding (`framework/operations/adopt.md`). They record observed implementation behavior per behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
+Every evidence-record `##` section declares its bound acceptance item in a `Keys:` block immediately after the heading:
+
+```markdown
+## AUTH-AC-001 — Login flow
+
+Keys:
+  - item:AUTH-AC-001
+
+observed behavior...
+```
+
+The vocabulary is closed: exactly one `item:<acceptance-item-id>` key per section, and exactly one section per evidence-driven item.
+
+`Keys:` must be the first non-blank content after the heading. A missing or unknown key, a duplicate key within one section, a second key, or a key that does not resolve fails `gate-plan`/`validate keys` (and mechanical `validate candidate` Check 17). The content below `Keys:` may be prose; `###` subsections are content of the parent `##` section.
+
+### Evidence Lifecycle
+
+Evidence records are transitional artifacts created by the adoption flow for existing-code onboarding (`framework/operations/adopt.md`). They record observed implementation behavior per behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec. Each behavior-domain section is a `##` heading plus a `Keys:` block with exactly one `item:<id>` key; the key binds the record section to the item and, through the item's `source`, to its Design Narrative block.
 
 The replacement path is incremental, matching how real projects replace old behavior:
 
-1. **Adoption round:** the appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
-2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (remove the evidence appendix from its `affects.appendices`, provide design rationale) and the corresponding appendix section is retired (deleted). Other domains keep their evidence references.
-3. **Final round:** after the agent confirms the evidence appendix is obsolete, remove its final references and delete its candidate file (promote then drops the stable copy).
+1. **Adoption round:** the record covers all behavior domains; every evidence-driven acceptance item has a `##` section keyed `item:<item-id>`.
+2. **Incremental replacement:** when a behavior domain is redesigned in a later iteration, the corresponding acceptance item is converted to design-driven (delete its evidence section, provide design rationale); other domains keep their evidence sections.
+3. **Final round:** after the agent confirms the record is obsolete, delete its candidate file (promote then drops the stable copy, declared with `--drop-evidence`).
 
-Zombie (item references the appendix with no corresponding section), orphan (appendix section with no corresponding item), and residual (evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1.
+Zombie (an item meant to be evidence-driven with no keyed section), orphan (a section whose `item:` key does not resolve), and residual (an evidence-driven item whose domain has been redesigned) states are detected by `validate` Check 4 and reported at default severity P1. The unknown-key and role errors are mechanical; the content correspondence is Check 4's judgment.
+
+The record states the current rule or design as directly readable truth: observed behavior, not only background, motivation, principles, or patch notes (`validate` Check 6).
 
 ## 9. Authoring Baseline
 
@@ -584,7 +599,7 @@ Narrative prose follows §12 Prose Content Rules (no code file paths, no layer-p
 
 **Ordering statements and the content boundary.** The decision-closure obligation on ordered steps does not conflict with §15.2's exclusion of internal rendering order, prompt block layout, and internal section ordering: §15.2 decides whether an ordering statement may be stated, this contract decides whether the stated content is clear. See §15.2 "Ordering and layout against §9" for where the boundary falls.
 
-**Enforcement (validate Check 10).** This contract is enforced at validate time by the clarity check: one independent session reads the unit's complete spec — the main spec and every appendix — and reports what is unclear, underspecified, or internally contradictory. It judges directly whether the human-readable part states the design clearly enough for its readers to understand it without guessing, and whether any statement conflicts with another; there is no reconstruction step and no second session. An internal contradiction, an unclosed implementation-affecting decision, or a passage a reader cannot understand is a P0/P1 finding. A declarative unit (§14.4's type/contract units) satisfies the check by stating its shape clearly — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The check is defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition, not an upper bound on readability.
+**Enforcement (validate Check 10).** This contract is enforced at validate time by the clarity check: one independent session reads the unit's complete spec — the main spec and its evidence record — and reports what is unclear, underspecified, or internally contradictory. It judges directly whether the human-readable part states the design clearly enough for its readers to understand it without guessing, and whether any statement conflicts with another; there is no reconstruction step and no second session. An internal contradiction, an unclosed implementation-affecting decision, or a passage a reader cannot understand is a P0/P1 finding. A declarative unit (§14.4's type/contract units) satisfies the check by stating its shape clearly — the public surface and whom it serves, the form of things crossing the boundary, what is frozen, what breaks when changed — not by pretending to have a runtime flow. The check is defined by `framework/unit_validate_checklist.md` Check 10; passing it is a necessary condition, not an upper bound on readability.
 
 ### Spec-First Planning and Execution Lifecycle
 
@@ -593,13 +608,9 @@ A Spec is not a post-hoc implementation journal (§15.1 Current truth only); it 
 1. **Planning Phase (Proposed Changes Mandate):** When an agent or engineer plans a feature, refactoring, or bug fix, any affected unit's candidate spec must be explicitly declared as a first-class change item before code files. If no candidate spec exists yet, running `specflowctl fork --unit <name>` (or creating the candidate spec) is a declared prerequisite. If the modification is evaluated as a pure internal refactor or performance fix with no changes to external contracts, state transitions, rule constraints, or acceptance criteria, an explicit one-sentence Spec Impact Assessment must state that fact. Silence on spec impact is prohibited.
 2. **Execution Phase (Spec-First Order):** When implementing the approved plan, the candidate spec must be updated first (establishing new constraints, updated state flow, and acceptance criteria), and only then may implementation code and tests be written or modified to satisfy the spec.
 3. **Verification Phase:** The candidate spec's acceptance items form the verification baseline against which the implementation is verified (`verify@{unit}`).
-4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its appendix sections (delete the candidate appendix; contract content left without a covering item is failed by `validate` Check 5a's appendix coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
+4. **Cleanup obligation (behavior retirement):** When a candidate round retires or replaces a designed behavior, the same round retires the content that carried it: its acceptance items (an item left behind is the orphan state — `validate` Check 5a fails it), its evidence sections (delete the candidate evidence record or the retired section; contract content left without a covering item is failed by `validate` Check 5a's coverage), and the narrative that described the retired behavior's operation. The candidate is current truth, not an accumulation of prior rounds; decision rationale that explains the replacement — including the rejected alternative — is legitimate design expression and stays.
 
 An undeclared removal is not a candidate change: the round's declared scope owns it. The checks close the one-sided failure modes — an item removed while its design remains is failed by coverage extraction, a design removed while its item remains is failed by orphan detection — but a behavior both sides still carry is indistinguishable from an intended behavior, so retirement is a declared-change responsibility, not a document-diff check.
-
-### Appendix Handoff
-
-Appendix files may carry detailed truth for one unit but do not weaken the handoff baseline. An appendix used as implementation truth must not contain only background, motivation, principles, or patch notes — it must state the current rule or design as directly readable truth.
 
 ## 10. Rule Scope Resolution
 
@@ -634,12 +645,12 @@ This rule does not apply to:
 
 All code file path references must be expressed exclusively through the structured fields `implementation_surface`, `affects.files`, and `affects.evidence_files` in the acceptance item set.
 
-Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, or the relative forms `candidate/`, `stable/`) — in prose or in code-block examples. Unlike code file paths, layer-prefixed spec paths break or mispoint in any context: candidate files are deleted on promote, and stable paths point to the prior-consensus layer during an active candidate round. Reference appendix files and other specs by concept name or file name instead (e.g. `unit_auth_account_token_claims`) — appendix file names do not encode layer, so the reference stays valid before and after promote.
+Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/units/candidate/`, `docs/specs/units/stable/`, `docs/specs/rules/candidate/`, `docs/specs/rules/stable/`, or the relative forms `candidate/`, `stable/`) — in prose or in code-block examples. Unlike code file paths, layer-prefixed spec paths break or mispoint in any context: candidate files are deleted on promote, and stable paths point to the prior-consensus layer during an active candidate round. Reference other specs by concept name or file name instead (e.g. `unit_auth`) — these names do not encode layer, so the reference stays valid before and after promote.
 
 This rule does not apply to:
-- Path-valued structured fields that may reference a spec document (`affects.evidence_files`, `affects.appendices`) — when one of these fields references a spec document by path, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid.
+- Path-valued structured fields that may reference a spec document (`affects.evidence_files`) — when this field references a spec document by path, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid.
 
-`implementation_surface` and `affects.files` are **not** in this exemption. They declare implementation code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as implementation would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `affects.evidence_files` or `affects.appendices` instead; contract dependencies use the promise's `depends_on`.
+`implementation_surface` and `affects.files` are **not** in this exemption. They declare implementation code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as implementation would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `affects.evidence_files` instead; contract dependencies use the promise's `depends_on`.
 
 ## 13. Section Regions
 
@@ -654,9 +665,10 @@ A verify **design** conclusion pins the spec content it relied on, so the narrat
 5. **`###` and deeper headings** belong to their `##` section — they never terminate the acceptance item set — and they are the **anchor unit** for design judgments and source projections: a design record pins the `###` (or deeper) block it declares, and a promise or item `source` names the same block, so an edit to a sibling block does not re-run it. A block runs from its heading through the line before the next heading of the same or a shallower level. The shape rule in the Promise Model section defines where `###` is allowed. For region mechanics, a `##` heading ends the `acceptance_item_set`, so keep the item set inside one `##` section.
 6. **Naming stability:** headings are part of the region content — the acceptance item set's structural identity changes with any content inside it, so rename deliberately (a rename is a semantic signal, not a cosmetic edit). A narrative-block heading is also its own locator: renaming it makes every design record that declared it re-run, and every promise or item that named it as `source` fail to resolve, because the anchor no longer exists.
 7. **Fenced code blocks are content:** `##`-like lines inside ``` or ~~~ fences are not headings — the region mechanism never splits on them, and a fenced `acceptance_item_set:` example never starts the acceptance region. Writing examples that show headings or item sets inside fences is fully legal. A fence cannot cross a `##` heading: close the fence before the next real heading, or the fence's closing line is consumed by the section.
-8. **Scope:** this rule applies to the unit's own main spec. Appendix files, rule files, and support appendices need no section structure.
+8. **Scope:** this rule applies to the unit's own main spec. Evidence records and rule files need no section structure.
 9. **Reserved heading name:** `frontmatter` is a reserved spelling — it names the pre-heading region (heading `""`), so a real `## frontmatter` section cannot be located by section structure (validate Check 7 fails the reserved name). Choose a different heading text.
 10. **Fixed section order:** the three-section order and its structural rules are defined once by the Promise Model section (`framework/core/promise_model.md` §Unit spec shape). The acceptance item set remains the **last** content of the file — no heading of any level (`#` through `######`, not only `##`) and no narrative follows it (see §9 Document shape). Set-level content inside the item set is attributed to the last item's region (see §7).
+11. **Narrative block ownership:** every **direct-content** block under `## Design Narrative` (a `###`-or-deeper heading that carries prose, a table, or a code block of its own, not merely child headings) is one of two things: a formal behavior description that a promise or acceptance item projects, or design expression. A behavior block must be named by at least one `promise.source` or `item.source`. A design-expression block (context, motivation, terminology, architecture, rationale, examples, rule alignment) must be declared in the frontmatter `non_behavior_blocks` list; the block itself carries the reason, and Check 2/5a judges whether the classification is honest. A container heading with only child headings carries no content of its own and is exempt. `validate` Check 16 fails an unclassified direct-content block. Ancestor source coverage is inherited (a `source` naming a `###` block covers its deeper children); `non_behavior_blocks` is exact — a parent declaration never silently classifies a child behavior as non-behavior.
 
 `source` introduces no second anchor type. A source value is the same heading
 text a `Spec basis` line uses; it resolves through the same `###`-or-deeper
@@ -678,7 +690,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
    - *Allowed*: The owner unit defines its public HTTP route (`/api/v1/sessions`), return status codes (`201 Created`, `401 Unauthorized`), caller-facing limits (`maxLoops = 20` on a run request, `tokenExpiry = 3600s` on an issued token), and exported serialization keys (`session_id`).
    - *Forbidden*: Non-owner units declaring or duplicating these definitions as private constants or independent tables. An owner declaring an internal value — an internal buffer size, an internal retry count, an internal loop cap — is over-specification under §15.2, not a contract anchor.
 
-2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** — the promises exported by collaborating units. A provider's acceptance items and appendices are not its contract.
+2. **Visibility Law (Anti-Shadowing Law)**: Cross-unit contract assertions must anchor strictly to **formal behavior carriers** — the promises exported by collaborating units. A provider's acceptance items and evidence record are not its contract.
    - *Allowed*: Referencing exported contract constants (e.g. `contracts.SpanAttr*`), standard protocol events (`DELEGATE_TASK_REQUESTED`), or describing behaviorally what must be exchanged.
    - *Forbidden (Shadow Specifications)*: Non-owner units enumerating internal, volatile, or unexported parameter names/fields of collaborating units.
 
@@ -757,7 +769,7 @@ The Spec states externally observable behavior: content a declared consumer read
 
 **Internal policy values** (internal buffer sizes, queue capacities, thresholds, retry/backoff values, internal timing) are decisions, not transcription. Stated in the narrative **as a decision with its reason** ("compression triggers at 90% capacity, because below that the eviction tail starves the hot set"), they are legal design expression; the ownership test of §9 — still true after renaming every internal identifier — is the placement judgment. They are prohibited in a promise and in an acceptance item: neither carrier states internal policy, both state externally observable contract (§15 declaration surface; item subjects are judged by Check 5a step 9).
 
-**Prohibited — the unit's own design record:** content whose subject is the Spec document itself — its sections, headings, or field values, an appendix's layout, or any other property of the design record (for example "the unit's document contains six sections"). The Spec document's structure is a format constraint of this framework, enforced mechanically on the file (validate Check 15, §13), so it is never restated as an acceptance item. The boundary is the record, not the product: a document the unit produces for its consumers is the unit's output, and its observable properties are behavior stated under the categories below.
+**Prohibited — the unit's own design record:** content whose subject is the Spec document itself — its sections, headings, or field values, the evidence record's layout, or any other property of the design record (for example "the unit's document contains six sections"). The Spec document's structure is a format constraint of this framework, enforced mechanically on the file (validate Check 15, §13), so it is never restated as an acceptance item. The boundary is the record, not the product: a document the unit produces for its consumers is the unit's output, and its observable properties are behavior stated under the categories below.
 
 **Allowed — externally observable:**
 
@@ -780,7 +792,7 @@ The Spec states externally observable behavior: content a declared consumer read
 ### 15.3 Not stated elsewhere
 
 - **No test execution recipes and no test doubles.** `verification_method` states the method in one sentence (for example "Go test for demo behavior"). Step-by-step test plans, expected call sequences against stubs, and test-double names belong in the test code, not the Spec (see §14.2 Anti-Pattern C).
-- **Each statement is stated once.** The design narrative states the design decisions and their reasons (§9 decision record); the promise block states the stable contract consumers read; the acceptance item set states the specific checks that prove each promise. Mechanism transcription inside a promise or acceptance item is removed — the promise keeps the normative contract, the item keeps the verifiable condition; transcription in any carrier is a §15.2 violation, owned by Check 2 Step 5 (narrative and appendices), Check 5h step 2 (promise carriers), and Check 5a step 9 (item subjects).
+- **Each statement is stated once.** The design narrative states the design decisions and their reasons (§9 decision record); the promise block states the stable contract consumers read; the acceptance item set states the specific checks that prove each promise. Mechanism transcription inside a promise or acceptance item is removed — the promise keeps the normative contract, the item keeps the verifiable condition; transcription in any carrier is a §15.2 violation, owned by Check 2 Step 5 (narrative and the evidence record), Check 5h step 2 (promise carriers), and Check 5a step 9 (item subjects).
 
 ### 15.4 Section order
 

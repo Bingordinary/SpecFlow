@@ -135,11 +135,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	repoRootPtr := fs.String("repo-root", ".", "repository root")
 	unitPtr := fs.String("unit", "", "unit name")
 	ruleIDPtr := fs.String("rule", "", "rule id")
-	var dropAppendices []string
-	fs.Func("drop-appendix", "stable appendix file the candidate dropped (repeatable)", func(v string) error {
-		dropAppendices = append(dropAppendices, v)
-		return nil
-	})
+	dropEvidence := fs.Bool("drop-evidence", false, "declare that the candidate dropped the stable evidence record (required before promote deletes it)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -162,7 +158,7 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "Flags:")
 		fmt.Fprintln(stderr, "  --unit NAME      Unit name to promote")
 		fmt.Fprintln(stderr, "  --rule ID        Rule id to promote")
-		fmt.Fprintln(stderr, "  --drop-appendix FILE  Declare a stable appendix the candidate dropped (repeatable; required before promote deletes it)")
+		fmt.Fprintln(stderr, "  --drop-evidence  Declare that the candidate dropped the stable evidence record (required before promote deletes it)")
 		fmt.Fprintln(stderr, "  --repo-root PATH Repository root path (default: .)")
 		return errors.New("missing --unit or --rule flag")
 	}
@@ -170,8 +166,8 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	if unitName != "" && ruleID != "" {
 		return errors.New("--unit and --rule are mutually exclusive")
 	}
-	if ruleID != "" && len(dropAppendices) > 0 {
-		return errors.New("--drop-appendix applies only to --unit promote")
+	if ruleID != "" && *dropEvidence {
+		return errors.New("--drop-evidence applies only to --unit promote")
 	}
 
 	absRoot, err := filepath.Abs(*repoRootPtr)
@@ -229,21 +225,21 @@ func runPromote(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Verify cache: %s\n", verifyResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	// Check appendix files are included in validate cache
-	appendixResult, err := validationcache.CheckAppendicesInCache(absRoot, unitName)
+	// Check the evidence record is included in validate cache
+	evidenceResult, err := validationcache.CheckEvidenceInCache(absRoot, unitName)
 	if err != nil {
-		return fmt.Errorf("appendix cache check error: %w", err)
+		return fmt.Errorf("evidence cache check error: %w", err)
 	}
-	if !appendixResult.Fresh {
-		fmt.Fprintf(stdout, "Appendix cache check: FAIL — %s\n", appendixResult.Reason)
+	if !evidenceResult.Fresh {
+		fmt.Fprintf(stdout, "Evidence cache check: FAIL — %s\n", evidenceResult.Reason)
 		fmt.Fprintln(stdout, "")
-		fmt.Fprintf(stdout, "One or more appendix files were not validated. Run `validate@%s` first.\n", unitName)
-		return errors.New("appendix validation check failed")
+		fmt.Fprintf(stdout, "The evidence record was not validated. Run `validate@%s` first.\n", unitName)
+		return errors.New("evidence validation check failed")
 	}
-	fmt.Fprintf(stdout, "Appendix cache: %s\n", appendixResult.Reason)
+	fmt.Fprintf(stdout, "Evidence cache: %s\n", evidenceResult.Reason)
 	fmt.Fprintln(stdout, "")
 
-	result := promote.Promote(absRoot, unitName, dropAppendices...)
+	result := promote.Promote(absRoot, unitName, *dropEvidence)
 	_, err = fmt.Fprint(stdout, promote.FormatResult(result))
 	if err != nil {
 		return err
@@ -571,7 +567,7 @@ func writeRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  specflowctl <command> [subcommand] [flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
-	fmt.Fprintln(w, "  fork       Fork a stable spec/rule (and appendices) to candidate layer")
+	fmt.Fprintln(w, "  fork       Fork a stable spec/rule (and evidence record) to candidate layer")
 	fmt.Fprintln(w, "  init       Install specFlow framework files and platform hooks")
 	fmt.Fprintln(w, "  doctor     Check installed specFlow structure")
 	fmt.Fprintln(w, "  build-release Build platform binaries into <tooling-root>/bin")

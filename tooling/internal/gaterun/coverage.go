@@ -15,6 +15,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulerefs"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -234,24 +235,19 @@ func BaselineFindingsForSession(run *Run, spec *SessionSpec) []Finding {
 	return out
 }
 
-// validateCheckGroups is the coverage decomposition of the unit validate
-// checklist: every one of the 10 checks belongs to exactly one group, and each
-// group answers one question class about the spec. The mapping is part of the
-// gate contract (framework/verification_scope.md §Coverage model → Coverage
-// keys) — the same coverage set is computed for the same target every time.
-//
-// Only the external group reads dependency and rule refs. That property is the
-// mechanical delta boundary: a change confined to those refs re-runs this group
-// alone, while any change to the unit's own spec union re-runs the whole set.
-var validateCheckGroups = []struct {
-	GroupID string
-	Kind    string
-	Checks  []string
-}{
-	{"document", SessionKindChecks, []string{"1", ClarityCheck}},
-	{"design", SessionKindChecks, []string{"2", "3", "4"}},
-	{"acceptance", SessionKindChecks, []string{"5"}},
-	{"external", SessionKindChecks, []string{"6", "7", "8", "9"}},
+// unitValidateContract returns the embedded validate contract. It is a
+// build-time asset; a load failure is a release defect, not project state.
+func unitValidateContract() *validatekeys.Contract {
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		panic("load unit validate contract: " + err.Error())
+	}
+	return contract
+}
+
+// unitValidateGroups is the coverage decomposition declared by the contract.
+func unitValidateGroups() []validatekeys.Group {
+	return validatekeys.GroupsFor(unitValidateContract())
 }
 
 // ruleValidateChecks is the rule validate coverage key set (the 6 rule
@@ -265,14 +261,7 @@ func RuleValidateChecks() []string {
 
 // validateGroupForCheck maps a unit validate check key to its coverage group.
 func validateGroupForCheck(check string) (string, bool) {
-	for _, group := range validateCheckGroups {
-		for _, c := range group.Checks {
-			if c == check {
-				return group.GroupID, true
-			}
-		}
-	}
-	return "", false
+	return validatekeys.GroupForCheck(unitValidateContract(), check)
 }
 
 // runClass is the coverage classification of a run: rule validate, unit
@@ -328,8 +317,8 @@ func (d *Derivation) computeCoverage(run *Run) ([]CoverageKey, error) {
 		return coverage, nil
 	case classUnitValidate:
 		var coverage []CoverageKey
-		for _, group := range validateCheckGroups {
-			coverage = append(coverage, CoverageKey{Key: group.GroupID, Kind: group.Kind})
+		for _, group := range unitValidateGroups() {
+			coverage = append(coverage, CoverageKey{Key: group.ID, Kind: SessionKindChecks})
 		}
 		return coverage, nil
 	case classUnitVerify:
@@ -432,8 +421,8 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		return full, carried, required, notices, nil
 	}
 	// The incremental entry: the planner derives the run's substance from the
-	// baseline state — verify: delta or repair; validate: external-only or the
-	// full scope — never from a command-line flag.
+	// baseline state — verify: delta or repair; validate: the per-object delta
+	// or the full scope — never from a command-line flag.
 	if run.Gate == GateValidate && run.TargetKind == TargetKindRule {
 		return nil, nil, nil, nil, fmt.Errorf("rule targets support the full validate run only — run %s", PlanCommand(run, ModeFull))
 	}
@@ -568,8 +557,8 @@ func validatePlannedVerify(run *Run) error {
 }
 
 // targetLayerSpecRef resolves a target's own main file — a unit main spec or a
-// rule file — in the given layer (candidate or stable). Appendices are
-// separate files; callers that need the whole own-spec surface add them.
+// rule file — in the given layer (candidate or stable). The evidence record is
+// a separate file; callers that need the whole own-spec surface add it.
 func targetLayerSpecRef(targetKind, targetName, target string) string {
 	if targetKind == TargetKindRule {
 		if target == TargetCandidate {
@@ -584,15 +573,15 @@ func targetLayerSpecRef(targetKind, targetName, target string) string {
 }
 
 // mainSpecRef resolves the target's own main file — the unit main spec or the
-// rule file — in the run's target layer (candidate or stable). Appendices are
-// separate files; callers that need the whole own-spec surface add them.
+// rule file — in the run's target layer (candidate or stable). The evidence
+// record is a separate file; callers that need the whole own-spec surface add it.
 func mainSpecRef(run *Run) string {
 	return targetLayerSpecRef(run.TargetKind, run.TargetName, run.Target)
 }
 
 // requiredFiles lists the target's own main file — the file the assembled
-// cache evidence must cover (unit main spec; rule file). Appendices are
-// covered by the appendix gate, not by this list.
+// cache evidence must cover (unit main spec; rule file). The evidence record is
+// covered by the evidence gate, not by this list.
 func requiredFiles(run *Run) []string {
 	return []string{mainSpecRef(run)}
 }
@@ -691,13 +680,14 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			return nil, fmt.Errorf("rule validate has no final synthesis session")
 		}
 		return &SessionSpec{
-			SessionID:     CrossKey,
-			Keys:          []string{CrossKey},
-			Kind:          SessionKindCross,
-			CheckKeys:     []string{CrossKey},
-			ReadRefs:      crossReadRefs(repoRoot, run),
-			Relationships: append([]string(nil), run.Relationships...),
-			Context:       []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
+			SessionID:       CrossKey,
+			Keys:            []string{CrossKey},
+			Kind:            SessionKindCross,
+			CheckKeys:       []string{CrossKey},
+			ReadRefs:        crossReadRefs(repoRoot, run),
+			Relationships:   append([]string(nil), run.Relationships...),
+			ValidateObjects: validateObjectsForGroup(run, "cross"),
+			Context:         []string{"Check only the assigned relationships against current source and accepted/carried judgments. Do not repeat local checks. The tooling derives every effective status from your dispositions and findings. If no relationships are assigned, only dispose existing findings."},
 		}, nil
 	}
 	wanted := map[string]bool{}
@@ -739,12 +729,51 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		kind = SessionKindDesign
 	}
 	spec := &SessionSpec{SessionID: SessionID(keys), Keys: keys, Kind: kind}
+	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit {
+		for _, key := range keys {
+			ck := run.CoverageByKey(key)
+			if ck == nil {
+				continue
+			}
+			spec.ValidateObjects = append(spec.ValidateObjects, validateObjectsForGroup(run, ck.Key)...)
+		}
+		if run.Mode == ModeDelta {
+			spec.Context = append(spec.Context, "This is an object-level delta session: judge only the assigned objects. Objects not listed are carried from the baseline and are not part of this mission.")
+		}
+	}
 	for _, ck := range run.Coverage {
 		if !wanted[ck.Key] {
 			continue
 		}
 		spec.CheckKeys = appendUnique(spec.CheckKeys, coverageReportKeys(run, ck)...)
 		spec.ReadRefs = appendUnique(spec.ReadRefs, coverageReadRefs(repoRoot, run, ck)...)
+	}
+	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit && run.Mode == ModeDelta {
+		// A delta session judges only its assigned objects. A check whose
+		// objects all carried is not part of this mission: its status comes
+		// from the carried baseline result. A check with no catalog object is
+		// still judged by the group session directly.
+		objectCheck := map[string]string{}
+		checkHasObject := map[string]bool{}
+		for _, object := range run.ValidateObjects {
+			check := object.Check
+			objectCheck[object.ID] = check
+			checkHasObject[check] = true
+		}
+		rerunChecks := map[string]bool{}
+		for _, key := range run.RerunObjects {
+			if check := objectCheck[key]; check != "" {
+				rerunChecks[check] = true
+			}
+		}
+		var kept []string
+		for _, key := range spec.CheckKeys {
+			if checkHasObject[key] && !rerunChecks[key] {
+				continue
+			}
+			kept = append(kept, key)
+		}
+		spec.CheckKeys = kept
 	}
 	if kind == SessionKindDesign {
 		states, err := LoadSessionStates(repoRoot, run)
@@ -988,10 +1017,10 @@ func coverageKeysForRerun(run *Run, effective map[string]bool) []string {
 		return sortedKeySet(local)
 	case classUnitValidate:
 		selected := map[string]bool{}
-		for _, group := range validateCheckGroups {
+		for _, group := range unitValidateGroups() {
 			for _, c := range group.Checks {
 				if effective[c] {
-					selected[group.GroupID] = true
+					selected[group.ID] = true
 					break
 				}
 			}
@@ -1013,7 +1042,7 @@ func (d *Derivation) currentGateKeys(run *Run) ([]string, error) {
 	case classUnitValidate:
 		seen := map[string]bool{}
 		var keys []string
-		for _, group := range validateCheckGroups {
+		for _, group := range unitValidateGroups() {
 			for _, check := range group.Checks {
 				if seen[check] {
 					continue
@@ -1039,8 +1068,8 @@ func (d *Derivation) currentGateKeys(run *Run) ([]string, error) {
 
 // groupChecks returns one validate coverage group's check keys.
 func groupChecks(groupID string) []string {
-	for _, group := range validateCheckGroups {
-		if group.GroupID == groupID {
+	for _, group := range unitValidateGroups() {
+		if group.ID == groupID {
 			return group.Checks
 		}
 	}
@@ -1099,7 +1128,7 @@ func affectsEvidencePaths(run *Run) []string {
 	return out
 }
 
-// ownSpecPaths lists the target's own spec files (unit main spec + appendices
+// ownSpecPaths lists the target's own spec files (unit main spec + evidence record
 // in the target layer; the rule file).
 func ownSpecPaths(repoRoot string, run *Run) []string {
 	return append([]string(nil), run.OwnSpecFiles...)
@@ -1159,7 +1188,7 @@ func allRefNames(run *Run) []string {
 // SynthesisEvidencePins pins the supplied evidence the accepted final
 // synthesis actually cited. The report is the citation record: a physical
 // evidence input or a logical reference it names (rule:{id}, unit:{name},
-// unit:{name}:appendix:{file}) is part of the synthesis's own object, so a
+// unit:{name}:evidence) is part of the synthesis's own object, so a
 // change to its resolved content re-runs the synthesis instead of carrying the
 // relationship conclusions silently. The logical spelling is pinned as
 // spelled; readers resolve it with judgments.ResolveEvidencePath, so a layer
@@ -1229,8 +1258,8 @@ func extraInputPaths(root string, run *Run) []string {
 
 // extraInputEntry maps one expanded evidence input to its carried form: a
 // spec object's physical path becomes its logical reference — a rule file to
-// rule:<id>, a unit main spec or appendix to unit:<name> /
-// unit:<name>:appendix:<file> — so a layer move does not dangle the evidence
+// rule:<id>, a unit main spec or evidence record to unit:<name> /
+// unit:<name>:evidence — so a layer move does not dangle the evidence
 // the run recorded for it.
 func extraInputEntry(root, p string) string {
 	if ref, ok := LogicalRuleRefForPath(p); ok {
@@ -1423,4 +1452,40 @@ func stubScanNotice(repoRoot string, run *Run) string {
 		more = fmt.Sprintf(" … and %d more", len(hits)-limit)
 	}
 	return fmt.Sprintf("stub scan: %d candidate hit(s) over the declared code surface — classify each during the sequence review (verify Step 6); a RELEVANT stub is a MISMATCH: %s%s", len(hits), strings.Join(rendered, " | "), more)
+}
+
+// validateObjectsForGroup returns the per-object keys assigned to one
+// validate coverage group. The mapping follows the existing check grouping:
+// document (1, 10, 16), design (2, 3, 4), acceptance (5), external (6-9).
+// Global keys are assigned explicitly: the final synthesis belongs to the
+// cross session, goal/interaction judgments to design, and graph/coherence to
+// document.
+func validateObjectsForGroup(run *Run, group string) []validatekeys.Key {
+	if run.Gate != GateValidate || run.TargetKind != TargetKindUnit {
+		return nil
+	}
+	rerun := map[string]bool{}
+	if run.Mode == ModeDelta {
+		for _, key := range run.RerunObjects {
+			rerun[key] = true
+		}
+	}
+	var out []validatekeys.Key
+	for _, object := range run.ValidateObjects {
+		if run.Mode == ModeDelta && !rerun[object.ID] {
+			continue
+		}
+		if validateObjectGroup(object) == group {
+			out = append(out, object)
+		}
+	}
+	return out
+}
+
+func validateObjectGroup(object validatekeys.Key) string {
+	group, ok := validateGroupForCheck(object.Check)
+	if !ok {
+		return ""
+	}
+	return group
 }

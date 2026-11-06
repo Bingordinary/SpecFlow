@@ -43,6 +43,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
@@ -190,6 +191,10 @@ type SessionSpec struct {
 	DependsOn     []string `json:"depends_on,omitempty"`
 	ReadRefs      []string `json:"read_refs,omitempty"`
 	Relationships []string `json:"relationships,omitempty"`
+	// ValidateObjects is the per-object judgment batch assigned to a unit
+	// validate check session. It is empty for verify sessions and for rule
+	// validate (rule targets carry no per-object catalog).
+	ValidateObjects []validatekeys.Key `json:"validate_objects,omitempty"`
 	// Context carries report-kind-specific plan-time facts a mission must
 	// state verbatim.
 	Context []string `json:"context,omitempty"`
@@ -313,12 +318,23 @@ type EvidencePin struct {
 // JudgmentBaseline is the cache-embedded semantic state used to materialize
 // carried judgments for a delta/repair run.
 type JudgmentBaseline struct {
-	SchemaVersion   int                          `json:"schema_version"`
-	Records         map[string]judgments.Binding `json:"records,omitempty"`
-	LogicalStatus   map[string]string            `json:"logical_status"`
-	Findings        []Finding                    `json:"findings"`
-	SynthesisDigest string                       `json:"synthesis_digest"`
-	Relationships   []string                     `json:"relationships"`
+	SchemaVersion int                          `json:"schema_version"`
+	Records       map[string]judgments.Binding `json:"records,omitempty"`
+	LogicalStatus map[string]string            `json:"logical_status"`
+	Findings      []Finding                    `json:"findings"`
+	// ValidateObjects is the per-object catalog the gate judged. Each key's
+	// read set is the dependency surface a delta run compares before carrying
+	// the object's judgment. The catalog is the coverage record: a check
+	// verdict covers every object it declares, so no separate per-object
+	// verdict is stored.
+	ValidateObjects []validatekeys.Key `json:"validate_objects,omitempty"`
+	// FilePresence records whether every declared `affects.files` path
+	// existed when the baseline was judged. Check 6 and Check 9 read file
+	// existence, so an add/remove must invalidate their objects even when the
+	// unit spec itself did not move.
+	FilePresence    map[string]bool `json:"file_presence,omitempty"`
+	SynthesisDigest string          `json:"synthesis_digest"`
+	Relationships   []string        `json:"relationships"`
 	// SynthesisEvidence pins the evidence the final synthesis read but that no
 	// individual conclusion owns: the run's supplied evidence inputs. A change
 	// to any of them re-runs the synthesis — and with it the unit's
@@ -379,28 +395,37 @@ type SessionState struct {
 // the coverage set that must be judged, and the run mode. It carries no
 // sessions: sessions are created under the tooling's computed key batches.
 type Run struct {
-	RunID          string                       `json:"run_id"`
-	SchemaVersion  int                          `json:"schema_version,omitempty"`
-	Protocol       string                       `json:"protocol,omitempty"`
-	Records        map[string]judgments.Binding `json:"records,omitempty"`
-	Gate           string                       `json:"gate"`
-	TargetKind     string                       `json:"target_kind"`
-	TargetName     string                       `json:"target_name"`
-	Target         string                       `json:"target"`
-	CreatedAt      string                       `json:"created_at"`
-	Status         string                       `json:"status"`
-	Mode           string                       `json:"mode"`
-	Refs           []Ref                        `json:"refs"`
-	Surfaces       []Surface                    `json:"surfaces"`
-	ExtraInputs    []string                     `json:"extra_inputs,omitempty"`
-	RequiredFiles  []string                     `json:"required_files,omitempty"`
-	OwnSpecFiles   []string                     `json:"own_spec_files,omitempty"`
-	CarriedKeys    []string                     `json:"carried_keys,omitempty"`
-	CarriedLenses  map[string]string            `json:"carried_lenses,omitempty"`
-	RerunKeys      []string                     `json:"rerun_keys,omitempty"`
-	Coverage       []CoverageKey                `json:"coverage"`
-	Relationships  []string                     `json:"relationships"`
-	CarriedResults []SessionResult              `json:"carried_results,omitempty"`
+	RunID         string                       `json:"run_id"`
+	SchemaVersion int                          `json:"schema_version,omitempty"`
+	Protocol      string                       `json:"protocol,omitempty"`
+	Records       map[string]judgments.Binding `json:"records,omitempty"`
+	Gate          string                       `json:"gate"`
+	TargetKind    string                       `json:"target_kind"`
+	TargetName    string                       `json:"target_name"`
+	Target        string                       `json:"target"`
+	CreatedAt     string                       `json:"created_at"`
+	Status        string                       `json:"status"`
+	Mode          string                       `json:"mode"`
+	Refs          []Ref                        `json:"refs"`
+	Surfaces      []Surface                    `json:"surfaces"`
+	ExtraInputs   []string                     `json:"extra_inputs,omitempty"`
+	RequiredFiles []string                     `json:"required_files,omitempty"`
+	OwnSpecFiles  []string                     `json:"own_spec_files,omitempty"`
+	CarriedKeys   []string                     `json:"carried_keys,omitempty"`
+	CarriedLenses map[string]string            `json:"carried_lenses,omitempty"`
+	RerunKeys     []string                     `json:"rerun_keys,omitempty"`
+	Coverage      []CoverageKey                `json:"coverage"`
+	// ValidateObjects is the per-object judgment catalog derived from the
+	// unit spec's fields. It is the audit/delta decomposition of the validate
+	// check groups: each key carries the exact read set its judgment depends
+	// on. It is fixed at plan time and never rewritten by a session.
+	ValidateObjects []validatekeys.Key `json:"validate_objects,omitempty"`
+	// RerunObjects is the delta plan's object-level re-run set. A group
+	// session receives only these objects; every other object in the group is
+	// carried from the baseline catalog.
+	RerunObjects   []string        `json:"rerun_objects,omitempty"`
+	Relationships  []string        `json:"relationships"`
+	CarriedResults []SessionResult `json:"carried_results,omitempty"`
 
 	// BaselineFindings are the P0/P1 findings of the failure record this run
 	// recovers, loaded at plan time. Every re-run check session receives the
@@ -636,7 +661,7 @@ func (d *Derivation) appendRunInputs(run *Run, inputs []string) ([]string, error
 				// undeclarable) by each consumer.
 				canonical = ref
 			} else if ref, ok := specpaths.LogicalUnitRefForPath(repoRoot, canonical); ok {
-				// A unit spec or appendix is carried by its logical
+				// A unit spec or evidence record is carried by its logical
 				// reference for the same reason: the recorded evidence must
 				// survive the file's layer move (a promote), or the run's
 				// own recorded pins would dangle against a path the move
@@ -664,7 +689,7 @@ func (d *Derivation) appendRunInputs(run *Run, inputs []string) ([]string, error
 				// run: a whole accepted round discarded where a rejected
 				// input costs one command, and extend cannot remove the
 				// entry once it is in the snapshot.
-				return nil, fmt.Errorf("input %q resolves to no file — units and bound rules resolve current-layer (candidate first, stable fallback), global rules stable-only; an appendix reference is the full appendix file base name without .md (e.g. unit:auth:appendix:unit_auth_account_token_claims)", canonical)
+				return nil, fmt.Errorf("input %q resolves to no file — units and bound rules resolve current-layer (candidate first, stable fallback), global rules stable-only; a unit evidence reference is spelled unit:{name}:evidence", canonical)
 			}
 			run.Refs = append(run.Refs, entry)
 			continue
@@ -989,14 +1014,73 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 	}
 	run.OwnSpecFiles = []string{mainSpecRef(run)}
 	if targetKind == TargetKindUnit {
-		appendices, err := unitAppendices(repoRoot, targetName, target)
+		evidenceFiles, err := unitEvidenceRecordPath(repoRoot, targetName, target)
 		if err != nil {
 			return nil, err
 		}
-		run.OwnSpecFiles = append(run.OwnSpecFiles, appendices...)
+		run.OwnSpecFiles = append(run.OwnSpecFiles, evidenceFiles...)
 	}
 	if _, err := d.appendRunInputs(run, extraInputs); err != nil {
 		return nil, err
+	}
+	// The per-object validate catalog is derived from the spec graph, the
+	// run's rule references, and the embedded check contract. It is built
+	// after the input manifest joins the snapshot so a manifest-supplied rule
+	// is cataloged like a derived one. An unparseable graph or an unresolved
+	// source anchor fails the plan before any run state is written: a catalog
+	// built over an ambiguous graph would carry the wrong read sets.
+	if gate == GateValidate && targetKind == TargetKindUnit {
+		mainSpec := run.OwnSpecFiles[0]
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(mainSpec)))
+		if err != nil {
+			return nil, fmt.Errorf("read validate spec %s: %w", mainSpec, err)
+		}
+		graph, err := validatekeys.Parse(targetName, string(data))
+		if err != nil {
+			return nil, fmt.Errorf("derive validate key catalog: %w", err)
+		}
+		if len(graph.UnresolvedRefs) > 0 {
+			return nil, fmt.Errorf("validate key catalog has unresolved refs: %s", strings.Join(graph.UnresolvedRefs, ", "))
+		}
+		contract, err := validatekeys.DefaultContract()
+		if err != nil {
+			return nil, fmt.Errorf("load validate check contract: %w", err)
+		}
+		var ruleIDs []string
+		for _, ref := range run.Refs {
+			if strings.HasPrefix(ref.Ref, "rule:") {
+				ruleIDs = append(ruleIDs, strings.TrimPrefix(ref.Ref, "rule:"))
+			}
+		}
+		var evidenceBase string
+		var evidenceSections []validatekeys.EvidenceSection
+		for _, path := range run.OwnSpecFiles {
+			clean := filepath.ToSlash(path)
+			if !strings.Contains(clean, "/evidence/") {
+				continue
+			}
+			base := strings.TrimSuffix(filepath.Base(clean), ".md")
+			if base == "" {
+				continue
+			}
+			evidenceBase = base
+			data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))
+			if err != nil {
+				return nil, fmt.Errorf("read evidence record %s: %w", path, err)
+			}
+			sections, err := validatekeys.ParseEvidenceRecord(base, string(data), graph)
+			if err != nil {
+				return nil, fmt.Errorf("evidence record: %w", err)
+			}
+			evidenceSections = sections
+		}
+		catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{
+			Unit:             targetName,
+			Rules:            ruleIDs,
+			EvidenceBase:     evidenceBase,
+			EvidenceSections: evidenceSections,
+		}, contract)
+		run.ValidateObjects = catalog.Keys
 	}
 	if gate == GateVerify {
 		if err := d.addReviewInputs(run); err != nil {
@@ -1519,7 +1603,7 @@ func (d *Derivation) derive(gate, targetKind, targetName, target string) ([]Ref,
 
 // appendUnitProviderRefs adds a provider unit's main spec to a gate read
 // surface. The provider set is derived from promise depends_on by
-// specvalidation.PromiseProviderUnits. Provider appendices are not added: they
+// specvalidation.PromiseProviderUnits. Provider evidence records are not added: they
 // are explanatory support truth, not contract, so a consumer does not read
 // them and their edits cannot stale the consumer's gate.
 //
@@ -1555,12 +1639,12 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 	}
 	var refs []Ref
 	refs = append(refs, physicalRef(repoRoot, unitMain, SourceDerived))
-	appendices, err := unitAppendices(repoRoot, unitName, target)
+	evidenceFiles, err := unitEvidenceRecordPath(repoRoot, unitName, target)
 	if err != nil {
 		return nil, err
 	}
-	for _, appendix := range appendices {
-		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
+	for _, evidenceFile := range evidenceFiles {
+		refs = append(refs, physicalRef(repoRoot, evidenceFile, SourceDerived))
 	}
 	for _, provider := range specvalidation.PromiseProviderUnits(content) {
 		if provider == unitName {
@@ -1636,12 +1720,12 @@ func (d *Derivation) deriveUnitCodeGate(unitName, target string) ([]Ref, []Surfa
 	}
 	var refs []Ref
 	refs = append(refs, physicalRef(repoRoot, unitMain, SourceDerived))
-	appendices, err := unitAppendices(repoRoot, unitName, target)
+	evidenceFiles, err := unitEvidenceRecordPath(repoRoot, unitName, target)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, appendix := range appendices {
-		refs = append(refs, physicalRef(repoRoot, appendix, SourceDerived))
+	for _, evidenceFile := range evidenceFiles {
+		refs = append(refs, physicalRef(repoRoot, evidenceFile, SourceDerived))
 	}
 	for _, provider := range specvalidation.PromiseProviderUnits(content) {
 		if provider == unitName {
@@ -1790,17 +1874,17 @@ func (d *Derivation) resolveSurface(surface Surface) (Surface, error) {
 	return surface, nil
 }
 
-// unitAppendices lists a unit's appendix files in one layer.
-func unitAppendices(repoRoot, unitName, layer string) ([]string, error) {
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, layer)
+// unitEvidenceRecordPath lists the unit's evidence record in one layer: a
+// one-element slice when the record exists, nil when it does not.
+func unitEvidenceRecordPath(repoRoot, unitName, layer string) ([]string, error) {
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, layer)
 	if err != nil {
 		return nil, err
 	}
-	var out []string
-	for _, appendix := range appendices {
-		out = append(out, appendix.Path)
+	if record == nil {
+		return nil, nil
 	}
-	return out, nil
+	return []string{record.Path}, nil
 }
 
 // globalRuleIDs lists the active global rule (g_rule_*) ids from the stable
@@ -1840,42 +1924,19 @@ func physicalRef(repoRoot, rel, source string) Ref {
 	return ref
 }
 
-// logicalAppendixRef maps an own appendix path to the logical reference form
-// the cache records for it. The main spec has no logical self-reference and
-// returns "".
-func logicalAppendixRef(run *Run, path string) string {
+// logicalEvidenceRef maps the own evidence-record path to the logical
+// reference form the cache records for it. The main spec has no logical
+// self-reference and returns "".
+func logicalEvidenceRef(run *Run, path string) string {
 	clean := filepath.ToSlash(path)
-	if !strings.Contains(clean, "/appendix/") {
+	if !strings.Contains(clean, "/evidence/") {
 		return ""
 	}
-	base := strings.TrimSuffix(filepath.Base(clean), ".md")
-	return "unit:" + run.TargetName + ":appendix:" + base
+	return "unit:" + run.TargetName + ":evidence"
 }
 
 func logicalUnitRef(repoRoot, unitName, source string) Ref {
 	return refreshRef(repoRoot, Ref{Ref: "unit:" + unitName, Source: source})
-}
-
-// logicalUnitAppendixRefs builds the logical refs of a unit's protocol
-// appendices: every appendix base name present in either layer, resolved
-// current-layer.
-func logicalUnitAppendixRefs(repoRoot, unitName string) ([]Ref, error) {
-	var bases []string
-	for _, layer := range []string{TargetCandidate, TargetStable} {
-		appendices, err := unitAppendices(repoRoot, unitName, layer)
-		if err != nil {
-			return nil, err
-		}
-		for _, file := range appendices {
-			base := strings.TrimSuffix(filepath.Base(file), ".md")
-			bases = append(bases, base)
-		}
-	}
-	var refs []Ref
-	for _, base := range dedupeSorted(bases) {
-		refs = append(refs, refreshRef(repoRoot, Ref{Ref: "unit:" + unitName + ":appendix:" + base, Source: SourceDerived}))
-	}
-	return refs, nil
 }
 
 // logicalRuleRef builds a rule logical ref (`rule:{id}`).
@@ -1936,8 +1997,8 @@ func refreshRef(repoRoot string, ref Ref) Ref {
 func resolveLogical(repoRoot, ref string) string {
 	var abs string
 	if rest, found := strings.CutPrefix(ref, "unit:"); found {
-		if _, appendix, isAppendix := strings.Cut(rest, ":appendix:"); isAppendix {
-			abs = specpaths.ResolveUnitAppendix(repoRoot, appendix)
+		if unit, isEvidence := strings.CutSuffix(rest, ":evidence"); isEvidence {
+			abs = specpaths.ResolveEvidenceRecord(repoRoot, unit)
 		} else {
 			abs = specpaths.ResolveUnitFile(repoRoot, rest)
 		}

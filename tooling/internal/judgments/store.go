@@ -21,7 +21,11 @@ import (
 )
 
 const Directory = "docs/specs/meta/validation/judgments"
-const ProtocolVersion = "verify-7-quality-conclusions-owned-appendices"
+
+// ProtocolVersion names the verify review protocol. Bump it when the protocol's
+// read surface or judgment steps change: records filed under another protocol
+// are not current and a verify run must recreate them.
+const ProtocolVersion = "verify-8-quality-conclusions-owned-evidence"
 const RecordVersion = 4
 const Code = "code"
 const Design = "design"
@@ -526,7 +530,7 @@ func InputPath(d Dependency, unit, layer string) string {
 	if !d.Own {
 		return d.Path
 	}
-	if strings.HasPrefix(d.Path, "/appendix/") {
+	if strings.HasPrefix(d.Path, "/evidence/") {
 		return "docs/specs/units/" + layer + d.Path
 	}
 	return "docs/specs/units/" + layer + "/unit_" + unit + d.Path
@@ -534,7 +538,7 @@ func InputPath(d Dependency, unit, layer string) string {
 
 // ResolveEvidencePath resolves one recorded evidence path — a physical
 // repository path or a logical reference (rule:{id},
-// unit:{name}, unit:{name}:appendix:{file}) — to its canonical
+// unit:{name}, unit:{name}:evidence) — to its canonical
 // repository-relative path. It is the single resolution rule every reader of
 // recorded evidence shares, so the same evidence cannot be pinned under one
 // spelling and checked under another.
@@ -550,8 +554,8 @@ func ResolveEvidencePath(root, path string) (string, error) {
 	case strings.HasPrefix(path, "unit:"):
 		rest := strings.TrimPrefix(path, "unit:")
 		var resolved string
-		if _, appendix, ok := strings.Cut(rest, ":appendix:"); ok {
-			resolved = specpaths.ResolveUnitAppendix(root, appendix)
+		if unit, ok := strings.CutSuffix(rest, ":evidence"); ok {
+			resolved = specpaths.ResolveEvidenceRecord(root, unit)
 		} else {
 			resolved = specpaths.ResolveUnitFile(root, rest)
 		}
@@ -825,7 +829,7 @@ func SameInputs(a, b []string) bool {
 	return strings.Join(a, "\n") == strings.Join(b, "\n")
 }
 
-func OwnSuffix(p, unit, layer string, appendices []string) (string, bool) {
+func OwnSuffix(p, unit, layer string, owned []string) (string, bool) {
 	if unit == "" {
 		return "", false
 	}
@@ -833,9 +837,9 @@ func OwnSuffix(p, unit, layer string, appendices []string) (string, bool) {
 	if p == prefix+".md" {
 		return strings.TrimPrefix(p, prefix), true
 	}
-	for _, appendix := range appendices {
-		if p == appendix {
-			return "/appendix/" + filepath.Base(p), true
+	for _, ownedPath := range owned {
+		if p == ownedPath {
+			return "/evidence/" + filepath.Base(p), true
 		}
 	}
 	return "", false
@@ -855,9 +859,9 @@ func CoversInputs(actual, required []string) bool {
 }
 
 // inputSpelling maps one evidence path to the spelling a record's own input
-// list uses: a file this unit owns (its main spec or one of its appendices)
-// becomes own:<suffix>; another unit's spec or appendix becomes the logical
-// reference that carries it (unit:<name> / unit:<owner>:appendix:<file>), so
+// list uses: a file this unit owns (its main spec or its evidence record)
+// becomes own:<suffix>; another unit's spec or evidence record becomes the
+// logical reference that carries it (unit:<name> / unit:<name>:evidence), so
 // the same evidence keeps one spelling across layers even though the read
 // surface names the layer it reads; every other entry keeps its path or
 // logical spelling.
@@ -871,21 +875,20 @@ func inputSpelling(root, p, unit, layer string, owned []string) string {
 	return p
 }
 
-// normalizeOwnInputs resolves this unit's appendix paths, the ownership list
-// inputSpelling needs.
+// normalizeOwnInputs resolves this unit's evidence-record path — the ownership
+// list inputSpelling needs.
 func normalizeOwnInputs(root, unit, layer string) ([]string, error) {
 	if unit == "" {
 		return nil, nil
 	}
-	appendices, err := specpaths.UnitAppendices(root, unit, layer)
+	record, err := specpaths.UnitEvidenceRecord(root, unit, layer)
 	if err != nil {
 		return nil, err
 	}
-	owned := make([]string, 0, len(appendices))
-	for _, appendix := range appendices {
-		owned = append(owned, appendix.Path)
+	if record == nil {
+		return nil, nil
 	}
-	return owned, nil
+	return []string{record.Path}, nil
 }
 
 // NormalizeInputs rewrites an evidence list into the recorded judgment-input

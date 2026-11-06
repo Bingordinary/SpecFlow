@@ -12,15 +12,18 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-func ownershipCandidate(t *testing.T, root, unit string, names ...string) {
+// evidenceRecordFor renders a unit's single evidence record: one observed
+// behavior section keyed to the unit's acceptance item.
+func evidenceRecordFor(unit, item string) string {
+	return "---\nunit: " + unit + "\n---\n\n# Evidence\n\n## " + item + " — observed behavior\n\nKeys:\n  - item:" + item + "\n\nObserved " + unit + " behavior.\n"
+}
+
+func ownershipCandidate(t *testing.T, root, unit string) {
 	t.Helper()
 	code := "src/" + unit + ".go"
 	grWriteFile(t, root, code, "package demo\n")
 	grWriteSpecSurface(t, root, unit, code, "")
-	for _, name := range names {
-		grWriteFile(t, root, "docs/specs/units/candidate/appendix/"+name,
-			"---\nunit: "+unit+"\n---\n\n# Design notes\nProposed "+unit+" design.\n")
-	}
+	grWriteFile(t, root, "docs/specs/units/candidate/evidence/unit_"+unit+".md", evidenceRecordFor(unit, unit+".core"))
 }
 
 func ownershipCheckCandidate(t *testing.T, root, unit string) {
@@ -81,39 +84,111 @@ func publishUnitThroughGates(t *testing.T, root, name string) {
 
 func TestPromoteCLIRequiresDropDeclaration(t *testing.T) {
 	root, _, _ := sharedFixture(t)
-	// First round publishes the unit with an appendix, so stable owns it.
-	grWriteFile(t, root, "docs/specs/units/candidate/appendix/unit_auth_protocol.md", "---\nunit: auth\n---\n\n# Protocol\n")
+	// First round publishes the unit with an evidence record, so stable owns it.
+	grWriteFile(t, root, "docs/specs/units/candidate/evidence/unit_auth.md", evidenceRecordFor("auth", "auth.core"))
 	publishUnitThroughGates(t, root, "auth")
 
-	// Second round forks the published unit and drops the appendix candidate-side.
+	// Second round forks the published unit and drops the record candidate-side.
 	var forkOut, forkErr bytes.Buffer
 	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &forkOut, &forkErr); err != nil {
 		t.Fatalf("fork: %v\n%s", err, forkOut.String())
 	}
-	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/appendix/unit_auth_protocol.md")); err != nil {
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/evidence/unit_auth.md")); err != nil {
 		t.Fatal(err)
 	}
 	runCandidateGates(t, root, "auth")
 
 	var out, errOut bytes.Buffer
 	if err := runPromote([]string{"--repo-root", root, "--unit", "auth"}, &out, &errOut); err == nil {
-		t.Fatal("promote must fail without --drop-appendix")
+		t.Fatal("promote must fail without --drop-evidence")
 	}
-	if !strings.Contains(out.String(), "unit_auth_protocol.md") {
-		t.Fatalf("expected the dropped appendix to be named, got:\n%s", out.String())
+	if !strings.Contains(out.String(), "unit_auth.md") {
+		t.Fatalf("expected the dropped evidence record to be named, got:\n%s", out.String())
 	}
-	stableAppendix := filepath.Join(root, "docs/specs/units/stable/appendix/unit_auth_protocol.md")
-	if _, err := os.Stat(stableAppendix); err != nil {
-		t.Fatalf("stable appendix must survive the refused promote: %v", err)
+	stableRecord := filepath.Join(root, "docs/specs/units/stable/evidence/unit_auth.md")
+	if _, err := os.Stat(stableRecord); err != nil {
+		t.Fatalf("stable evidence record must survive the refused promote: %v", err)
 	}
 
 	out.Reset()
 	errOut.Reset()
-	if err := runPromote([]string{"--repo-root", root, "--unit", "auth", "--drop-appendix", "unit_auth_protocol.md"}, &out, &errOut); err != nil {
+	if err := runPromote([]string{"--repo-root", root, "--unit", "auth", "--drop-evidence"}, &out, &errOut); err != nil {
 		t.Fatalf("promote with declaration: %v\n%s%s", err, out.String(), errOut.String())
 	}
-	if _, err := os.Stat(stableAppendix); !os.IsNotExist(err) {
-		t.Fatalf("declared drop must remove the stable appendix, got %v", err)
+	if _, err := os.Stat(stableRecord); !os.IsNotExist(err) {
+		t.Fatalf("declared drop must remove the stable evidence record, got %v", err)
+	}
+}
+
+// TestEvidenceOwnershipRejectsForeignFrontmatterWithoutWrites pins the dual
+// ownership form: the deterministic file at the unit's evidence path must
+// declare the same unit in its frontmatter.
+func TestEvidenceOwnershipRejectsForeignFrontmatterWithoutWrites(t *testing.T) {
+	for _, operation := range []string{"promote", "fork"} {
+		t.Run(operation, func(t *testing.T) {
+			root := createCLITestRepo(t)
+			grEnableMissionLayout(t, root)
+			grWriteFile(t, root, "contracts.js", "export function response(token) { return {token}; }\n")
+			ownershipCandidate(t, root, "auth")
+			foreign := evidenceRecordFor("auth_account", "auth.core")
+			var destination string
+			if operation == "promote" {
+				// The candidate record is valid and the candidate gates are
+				// fresh; the foreign owner sits at the stable destination this
+				// round would overwrite.
+				ownershipCheckCandidate(t, root, "auth")
+				destination = "docs/specs/units/stable/evidence/unit_auth.md"
+				grWriteFile(t, root, destination, foreign)
+			} else {
+				// A published unit is forked onto a foreign-owned candidate
+				// destination at its own deterministic evidence path.
+				ownershipPublish(t, root, "auth")
+				destination = "docs/specs/units/candidate/evidence/unit_auth.md"
+				grWriteFile(t, root, destination, foreign)
+			}
+			before := publicationFiles(t, root)
+			var out string
+			var err error
+			if operation == "promote" {
+				out, err = publicationPromote(t, root, "unit", "auth")
+			} else {
+				var stdout, stderr bytes.Buffer
+				err = runFork([]string{"--repo-root", root, "--unit", "auth"}, &stdout, &stderr)
+				out = stdout.String() + stderr.String()
+			}
+			if err == nil {
+				t.Errorf("%s accepted a foreign-owned evidence record:\n%s", operation, out)
+			} else if !strings.Contains(out, destination) {
+				t.Errorf("failure did not identify the record path: %v\n%s", err, out)
+			}
+			if after := publicationFiles(t, root); !reflect.DeepEqual(before, after) {
+				t.Error("ownership rejection changed files: main specs, evidence records, caches, baselines and candidates must stay unchanged")
+			}
+		})
+	}
+}
+
+func TestEvidenceOwnershipAllowsNormalLifecycle(t *testing.T) {
+	root := createCLITestRepo(t)
+	ownershipCandidate(t, root, "auth")
+	ownershipPublish(t, root, "auth")
+	var out, stderr bytes.Buffer
+	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &out, &stderr); err != nil {
+		t.Fatal(err, out.String())
+	}
+	// Repeat the fork with a surviving same-owner record but no candidate main.
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/unit_auth.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &out, &stderr); err != nil {
+		t.Fatal(err, out.String())
+	}
+	updated := evidenceRecordFor("auth", "auth.core") + "\nUpdated auth observation.\n"
+	grWriteFile(t, root, "docs/specs/units/candidate/evidence/unit_auth.md", updated)
+	ownershipPublish(t, root, "auth")
+	if got, err := os.ReadFile(filepath.Join(root, "docs/specs/units/stable/evidence/unit_auth.md")); err != nil || string(got) != updated {
+		t.Fatalf("same-owner replacement failed: %v", err)
 	}
 }
 
@@ -125,87 +200,7 @@ func ownershipPublish(t *testing.T, root, unit string) {
 	}
 }
 
-func TestAppendixDestinationOwnershipRejectsWithoutWrites(t *testing.T) {
-	const collision = "unit_auth_account_token.md"
-	const first = "unit_auth_a_first.md"
-	for _, operation := range []string{"promote", "fork"} {
-		t.Run(operation, func(t *testing.T) {
-			root := createCLITestRepo(t)
-			layer := "stable"
-			if operation == "promote" {
-				ownershipCandidate(t, root, "auth_account", collision)
-				ownershipPublish(t, root, "auth_account")
-				ownershipCandidate(t, root, "auth", first, collision)
-			} else {
-				ownershipCandidate(t, root, "auth", first, collision)
-				ownershipPublish(t, root, "auth")
-				ownershipCandidate(t, root, "auth_account", collision)
-				layer = "candidate"
-			}
-			destination := "docs/specs/units/" + layer + "/appendix/" + collision
-			grWriteFile(t, root, destination, "---\nunit: auth_account\n---\nPeer design.\n")
-			if operation == "promote" {
-				ownershipCheckCandidate(t, root, "auth")
-			}
-			before := publicationFiles(t, root)
-			var out string
-			var err error
-			if operation == "promote" {
-				out, err = publicationPromote(t, root, "unit", "auth")
-			} else {
-				var stdout, stderr bytes.Buffer
-				err = runFork([]string{"--repo-root", root, "--unit", "auth"}, &stdout, &stderr)
-				out = stdout.String()
-			}
-			if err == nil {
-				t.Errorf("%s accepted a foreign-owned destination:\n%s", operation, out)
-			} else if !strings.Contains(out, destination) || !strings.Contains(out, "auth_account") {
-				t.Errorf("failure did not identify the destination and owner: %v\n%s", err, out)
-			}
-			if after := publicationFiles(t, root); !reflect.DeepEqual(before, after) {
-				t.Error("ownership rejection changed files: main specs, earlier appendices, caches, baselines and candidates must stay unchanged")
-			}
-		})
-	}
-}
-
-func TestAppendixDestinationOwnershipAllowsNormalLifecycle(t *testing.T) {
-	root := createCLITestRepo(t)
-	const peer = "unit_auth_account_token.md"
-	const own = "unit_auth_protocol.md"
-	ownershipCandidate(t, root, "auth_account", peer)
-	ownershipPublish(t, root, "auth_account")
-	ownershipCandidate(t, root, "auth", own)
-	ownershipPublish(t, root, "auth")
-	peerPath := filepath.Join(root, "docs/specs/units/stable/appendix", peer)
-	peerBefore, err := os.ReadFile(peerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out, stderr bytes.Buffer
-	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &out, &stderr); err != nil {
-		t.Fatal(err, out.String())
-	}
-	// Repeat the fork with a surviving same-owner appendix but no candidate main.
-	if err := os.Remove(filepath.Join(root, "docs/specs/units/candidate/unit_auth.md")); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := runFork([]string{"--repo-root", root, "--unit", "auth"}, &out, &stderr); err != nil {
-		t.Fatal(err, out.String())
-	}
-	updated := "---\nunit: auth\n---\nUpdated auth design.\n"
-	grWriteFile(t, root, "docs/specs/units/candidate/appendix/"+own, updated)
-	ownershipPublish(t, root, "auth")
-	if got, err := os.ReadFile(filepath.Join(root, "docs/specs/units/stable/appendix", own)); err != nil || string(got) != updated {
-		t.Fatalf("same-owner replacement failed: %v", err)
-	}
-	if got, err := os.ReadFile(peerPath); err != nil || string(got) != string(peerBefore) {
-		t.Fatalf("ordinary lifecycle changed peer content: %v", err)
-	}
-}
-
-func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
+func TestUnrelatedUnitEvidenceKeepsPublishedUnitFresh(t *testing.T) {
 	root, _, _ := sharedFixture(t)
 	publishUnitThroughGates(t, root, "auth")
 	before, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
@@ -217,21 +212,21 @@ func TestUnrelatedPrefixAppendixKeepsPublishedUnitFresh(t *testing.T) {
 	if err := os.Rename(peer, filepath.Join(root, "docs/specs/units/stable/unit_auth_extra.md")); err != nil {
 		t.Fatal(err)
 	}
-	grWriteFile(t, root, "docs/specs/units/stable/appendix/unit_auth_extra_protocol.md", "---\nunit: auth_extra\n---\n\n# Independent design\nNo auth dependency.\n")
+	grWriteFile(t, root, "docs/specs/units/stable/evidence/unit_auth_extra.md", evidenceRecordFor("auth_extra", "auth_extra.core"))
 	after, err := checkStableUnitVerifyMerged(freshDerivation(t, root), root, "auth")
 	if err != nil || !after.Fresh {
-		t.Fatalf("unrelated unit appendix made auth stale: %+v %v", after, err)
+		t.Fatalf("unrelated unit evidence record made auth stale: %+v %v", after, err)
 	}
 }
 
-func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
+func TestEvidenceOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 	root, main, _ := sharedFixture(t)
-	own := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	peer := "docs/specs/units/stable/appendix/unit_auth_extra_protocol.md"
+	own := "docs/specs/units/candidate/evidence/unit_auth.md"
+	peer := "docs/specs/units/stable/evidence/unit_auth_extra.md"
 	peerCandidate := strings.Replace(peer, "/stable/", "/candidate/", 1)
-	grWriteFile(t, root, own, "---\nunit: auth\n---\n## Notes\nAuth explanation.\n")
-	peerContent := "---\nunit: auth_extra\n---\n## Notes\nPeer explanation.\n"
-	peerRef := "unit:auth_extra:appendix:unit_auth_extra_protocol"
+	grWriteFile(t, root, own, evidenceRecordFor("auth", "auth.core"))
+	peerContent := evidenceRecordFor("auth_extra", "auth_extra.core")
+	peerRef := "unit:auth_extra:evidence"
 	grWriteFile(t, root, peer, peerContent)
 	grWriteFile(t, root, peerCandidate, peerContent)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, peerRef))
@@ -274,15 +269,15 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 		t.Fatal("promoted unit's candidate run survived the cleanup sweep")
 	}
 	if _, err := os.Stat(filepath.Join(root, own)); !os.IsNotExist(err) {
-		t.Fatal("promoted own appendix remained in candidate")
+		t.Fatal("promoted own evidence record remained in candidate")
 	}
 	if content, err := os.ReadFile(filepath.Join(root, peerCandidate)); err != nil || string(content) != peerContent {
-		t.Fatal("promote changed the peer candidate appendix")
+		t.Fatal("promote changed the peer candidate evidence record")
 	}
 	assertFresh := func(layer string) {
 		t.Helper()
 		if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", layer); err != nil || !check.Fresh {
-			t.Fatalf("exact appendix bindings lost freshness in %s: %+v %v", layer, check, err)
+			t.Fatalf("exact evidence bindings lost freshness in %s: %+v %v", layer, check, err)
 		}
 	}
 	assertFresh("stable")
@@ -296,11 +291,11 @@ func TestAppendixOwnershipSurvivesGatePromoteAndFork(t *testing.T) {
 		t.Fatalf("fork: %v %s", err, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, peerCandidate)); !os.IsNotExist(err) {
-		t.Fatal("fork copied the peer appendix into candidate")
+		t.Fatal("fork copied the peer evidence record into candidate")
 	}
 	assertFresh("candidate")
-	grWriteFile(t, root, own, "---\nunit: auth\n---\n## Notes\nChanged auth explanation.\n")
+	grWriteFile(t, root, own, evidenceRecordFor("auth", "auth.core")+"\nChanged auth observation.\n")
 	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "auth", "candidate"); err != nil || check.Fresh {
-		t.Fatalf("changed own appendix failed to invalidate the judgment: %+v %v", check, err)
+		t.Fatalf("changed own evidence record failed to invalidate the judgment: %+v %v", check, err)
 	}
 }

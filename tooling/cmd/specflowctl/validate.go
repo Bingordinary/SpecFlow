@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/rulevalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/writezone"
 )
 
@@ -44,6 +46,8 @@ func runValidate(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("write denied: %s", result.Reason)
 		}
 		return nil
+	case "keys":
+		return runValidateKeys(args[1:], stdout, stderr)
 	case "candidate-frontmatter":
 		fmt.Fprintln(stderr, "DEPRECATED: 'validate candidate-frontmatter' has been replaced by 'validate candidate', which is a superset.")
 		// Delegate to candidate logic after deprecation notice.
@@ -172,11 +176,99 @@ func writeValidateWriteResult(stdout io.Writer, result validateResult) {
 	fmt.Fprintf(stdout, "path: %s\n", noneIfEmpty(result.Path))
 }
 
+// runValidateKeys is a read-only diagnostic: it prints the per-object
+// judgment catalog derived from the spec's existing structured fields. It
+// does not run any gate, write state, or judge the spec.
+func runValidateKeys(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("validate keys", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	repoRoot := fs.String("repo-root", ".", "repository root")
+	unitNamePtr := fs.String("unit", "", "unit name")
+	layerPtr := fs.String("layer", "candidate", "spec layer: candidate | stable")
+	format := fs.String("format", "text", "output format: text | json")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	unitName, err := requireTargetName("unit", *unitNamePtr)
+	if err != nil {
+		return err
+	}
+	if unitName == "" {
+		writeValidateUsage(stderr)
+		return errors.New("unit is required")
+	}
+	layer := strings.TrimSpace(strings.ToLower(*layerPtr))
+	if layer != "candidate" && layer != "stable" {
+		return fmt.Errorf("invalid layer %q; expected candidate or stable", layer)
+	}
+	absRoot := mustAbs(*repoRoot)
+	relPath := specpaths.CandidateUnitSpecFileRef(unitName)
+	if layer == "stable" {
+		relPath = specpaths.StableUnitSpecFileRef(unitName)
+	}
+	data, err := os.ReadFile(filepath.Join(absRoot, filepath.FromSlash(relPath)))
+	if err != nil {
+		return fmt.Errorf("read %s: %w", relPath, err)
+	}
+	graph, err := validatekeys.Parse(unitName, string(data))
+	if err != nil {
+		return fmt.Errorf("parse key graph: %w", err)
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		return fmt.Errorf("load validate check contract: %w", err)
+	}
+	record, err := specpaths.UnitEvidenceRecord(absRoot, unitName, layer)
+	if err != nil {
+		return fmt.Errorf("read evidence record: %w", err)
+	}
+	var evidenceBase string
+	var evidenceSections []validatekeys.EvidenceSection
+	if record != nil {
+		evidenceBase = strings.TrimSuffix(filepath.Base(record.Path), ".md")
+		path := record.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(absRoot, filepath.FromSlash(path))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read evidence record: %w", err)
+		}
+		sections, err := validatekeys.ParseEvidenceRecord(evidenceBase, string(data), graph)
+		if err != nil {
+			return fmt.Errorf("evidence record: %w", err)
+		}
+		evidenceSections = sections
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract)
+	switch strings.TrimSpace(strings.ToLower(*format)) {
+	case "json":
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(catalog)
+	case "text":
+		fmt.Fprintf(stdout, "Unit: %s\nItems: %d\nPromises: %d\nSections: %d\nKeys: %d\n", catalog.Unit, catalog.Items, catalog.Promises, catalog.Sections, len(catalog.Keys))
+		if len(graph.UnresolvedRefs) > 0 {
+			fmt.Fprintf(stderr, "Unresolved refs (%d):\n", len(graph.UnresolvedRefs))
+			for _, ref := range graph.UnresolvedRefs {
+				fmt.Fprintf(stderr, "  - %s\n", ref)
+			}
+		}
+		for _, key := range catalog.Keys {
+			fmt.Fprintf(stdout, "- [%s] %s (check %s)\n  reads: %s\n", key.Family, key.ID, key.Check, strings.Join(key.Reads, ", "))
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid format %q; expected text or json", *format)
+	}
+}
+
 func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  specflowctl validate write --path PATH [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl validate candidate --unit UNIT [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl validate promise-model --unit UNIT [--layer candidate|stable] [--repo-root PATH]")
+	fmt.Fprintln(w, "  specflowctl validate keys --unit UNIT [--layer candidate|stable] [--format text|json] [--repo-root PATH]")
 	fmt.Fprintln(w, "  specflowctl validate rule --id RULE_ID [--repo-root PATH]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate write checks if a file path is in an allowed write zone.")
@@ -186,7 +278,7 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  2. Acceptance items format (required fields; testable items need a Given/When/Then description)")
 	fmt.Fprintln(w, "  3. Anchor integrity (affects.files and affects.evidence_files paths exist; implementation_surface values resolve; implementation_surface and affects.files reject a spec-document value)")
 	fmt.Fprintln(w, "  4. Reference integrity (rule_refs)")
-	fmt.Fprintln(w, "  5. Appendix files")
+	fmt.Fprintln(w, "  5. Evidence record (existence and ownership of the unit's single record)")
 	fmt.Fprintln(w, "  6. Body layer-path check (candidate-layer spec paths)")
 	fmt.Fprintln(w, "  7. Region locatability (section and acceptance item regions resolve unambiguously)")
 	fmt.Fprintln(w, "  8. Surface associations (declared files resolve; file sharing is allowed)")
@@ -197,6 +289,8 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, " 13. Test doubles (test-double names in the spec — WARNING)")
 	fmt.Fprintln(w, " 14. verification_method shape (one-sentence method)")
 	fmt.Fprintln(w, " 15. Promise model (shape, schema, coverage, graph; a unit without `## Promises` fails)")
+	fmt.Fprintln(w, " 16. Narrative coverage (direct-content narrative blocks are sourced or declared non-behavior)")
+	fmt.Fprintln(w, " 17. Evidence keys (every evidence-record `##` section declares exactly one resolving `item:` key)")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate promise-model checks the three-section promise format:")
 	fmt.Fprintln(w, "  1. Unit spec shape (Design Narrative, Promises, Acceptance Items)")
@@ -204,6 +298,9 @@ func writeValidateUsage(w io.Writer) {
 	fmt.Fprintln(w, "  3. Promise coverage (every promise covered; every contract item references a promise)")
 	fmt.Fprintln(w, "  4. Promise graph (depends_on resolves; no duplicate ids, promise cycles,")
 	fmt.Fprintln(w, "     or unit dependency cycles)")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Validate keys prints the per-object judgment catalog derived from the spec's")
+	fmt.Fprintln(w, "existing fields. It is read-only: no gate runs and no state is written.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Validate rule runs mechanical checks on a candidate rule:")
 	fmt.Fprintln(w, "  1. Frontmatter completeness")

@@ -223,7 +223,7 @@ func TestValidateCheckSectionCoversSubChecks(t *testing.T) {
 
 // TestUnitValidateChecklistIsLayerAware locks the stable-only unit
 // confirmation fix onto the real checklist: the inlined Prerequisite resolves
-// the main spec and appendices from the planned layer, Check 1's mechanical
+// the main spec and evidence record from the planned layer, Check 1's mechanical
 // pre-pass is candidate-only, and Check 8's promise-model command is
 // layer-parameterized, so a stable-only reviewer is not told to read a
 // candidate path or run a command that cannot succeed.
@@ -258,7 +258,7 @@ func TestUnitValidateChecklistIsLayerAware(t *testing.T) {
 
 // TestUnitVerifyChecklistIsLayerAware locks the stable-only verify fix onto
 // the real checklist: the inlined Prerequisite resolves the main spec and
-// appendices from the planned layer, and the layer section tells a stable-only
+// evidence record from the planned layer, and the layer section tells a stable-only
 // reviewer this is a drift confirmation that does not enter divergence
 // resolution.
 func TestUnitVerifyChecklistIsLayerAware(t *testing.T) {

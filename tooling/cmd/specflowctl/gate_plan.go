@@ -133,6 +133,14 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		}
 		fmt.Fprintln(stdout, line)
 	}
+	if len(run.ValidateObjects) > 0 {
+		counts := map[string]int{}
+		for _, object := range run.ValidateObjects {
+			counts[string(object.Family)]++
+		}
+		fmt.Fprintf(stdout, "Validate objects: %d (item %d, promise %d, section %d, external %d, global %d)\n",
+			len(run.ValidateObjects), counts["item"], counts["promise"], counts["section"], counts["external"], counts["global"])
+	}
 	if len(run.CarriedKeys) > 0 {
 		fmt.Fprintf(stdout, "Carried over: %s\n", strings.Join(run.CarriedKeys, ", "))
 	}
@@ -207,10 +215,16 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Modes: full (the complete coverage set), delta (the incremental entry: the")
 	fmt.Fprintln(w, "planner derives the run's substance from the baseline state, never from a")
-	fmt.Fprintln(w, "flag. validate: the tool derives the scope from the recorded hashes — an")
-	fmt.Fprintln(w, "external-only change re-runs the external group; any change it cannot")
-	fmt.Fprintln(w, "attribute to a derived external ref (own spec content, or a baseline input")
-	fmt.Fprintln(w, "this plan does not declare) covers the full scope. verify: the re-run set")
+	fmt.Fprintln(w, "flag. validate: the tool derives the scope from the per-object catalog —")
+	fmt.Fprintln(w, "an object re-runs when it is not in the baseline catalog, its read set changed, or")
+	fmt.Fprintln(w, "a read ref's region changed; a group is selected when any of its objects")
+	fmt.Fprintln(w, "re-runs, but its session receives only the re-run objects and every other")
+	fmt.Fprintln(w, "object carries. Every evidence-record `##` section declares a `Keys:` block")
+	fmt.Fprintln(w, "with exactly one `item:` key.")
+	fmt.Fprintln(w, "A failure record, salvaged cache, moved standard, unusable")
+	fmt.Fprintln(w, "baseline, unrecorded current input, or an input the plan cannot attribute to")
+	fmt.Fprintln(w, "the unit's own spec union covers the full scope, and the plan upgrades to")
+	fmt.Fprintln(w, "full when the estimated delta cost is not lower. verify: the re-run set")
 	fmt.Fprintln(w, "is derived from each conclusion's judgment-record pins, and a failure")
 	fmt.Fprintln(w, "record or a salvaged pass cache upgrades the plan to a repair — failed")
 	fmt.Fprintln(w, "judgments and persisted invalidations re-run unconditionally; validate")
@@ -249,7 +263,7 @@ func writeGatePlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "                   salvaged pass cache plans the repair and records `basis: repair`")
 	fmt.Fprintln(w, "  --inputs-file PATH  input manifest: one extra read input per line — a path, a")
 	fmt.Fprintln(w, "                   directory, or a logical reference (unit:{name} /")
-	fmt.Fprintln(w, "                   unit:{name}:appendix:{file} / rule:{id}); the file must not be")
+	fmt.Fprintln(w, "                   unit:{name}:evidence / rule:{id}); the file must not be")
 	fmt.Fprintln(w, "                   a repository-content file")
 	fmt.Fprintln(w, "  --rerun KEY      delta runs only: explicit additional re-run override; repeatable")
 	fmt.Fprintln(w, "  --relationships NAMES|none  required for full unit runs: relationships touched by the current change;")

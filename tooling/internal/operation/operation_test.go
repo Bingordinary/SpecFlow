@@ -186,8 +186,8 @@ func contains(list []string, value string) bool {
 func TestOpenDerivesUnitScope(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	specPath := writeUnitSpec(t, repoRoot, "demo", "internal/demo", []string{"docs/design.md"})
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "---\nunit: demo\n---\n# Flows\n")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md", "---\nunit: demo_extra\n---\n# Peer flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_demo.md", "---\nunit: demo\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_demo_extra.md", "---\nunit: demo_extra\n---\n# Peer flows\n")
 	commitAll(t, repoRoot, "fixture")
 
 	op := mustOpen(t, repoRoot, OpenOptions{
@@ -211,12 +211,12 @@ func TestOpenDerivesUnitScope(t *testing.T) {
 	if entry := allowedEntry(t, op, specPath); entry.Source != SourceSpecFile {
 		t.Fatalf("spec source = %q, want %q", entry.Source, SourceSpecFile)
 	}
-	if entry := allowedEntry(t, op, "docs/specs/units/candidate/appendix/unit_demo_flows.md"); entry.Source != SourceSpecFile {
-		t.Fatalf("appendix source = %q, want %q", entry.Source, SourceSpecFile)
+	if entry := allowedEntry(t, op, "docs/specs/units/candidate/evidence/unit_demo.md"); entry.Source != SourceSpecFile {
+		t.Fatalf("evidence source = %q, want %q", entry.Source, SourceSpecFile)
 	}
 	for _, entry := range op.AllowedPaths {
-		if entry.Path == "docs/specs/units/candidate/appendix/unit_demo_extra_flows.md" {
-			t.Fatal("operation granted write scope to a prefix-sharing peer appendix")
+		if entry.Path == "docs/specs/units/candidate/evidence/unit_demo_extra.md" {
+			t.Fatal("operation granted write scope to a peer unit's evidence record")
 		}
 	}
 	if entry := allowedEntry(t, op, "internal/demo"); entry.Source != SourceImplSurface {
@@ -250,12 +250,12 @@ func TestOpenIgnoresFencedAcceptanceSetWhenDerivingScope(t *testing.T) {
 func TestOpenStableOnlyTargetScopesCandidateForkPaths(t *testing.T) {
 	repoRoot := newGitRepo(t)
 	writeFile(t, repoRoot, "docs/specs/units/stable/unit_demo.md", unitSpecContent("demo", "internal/demo", nil))
-	writeFile(t, repoRoot, "docs/specs/units/stable/appendix/unit_demo_flows.md", "---\nunit: demo\n---\n# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/stable/evidence/unit_demo.md", "---\nunit: demo\n---\n# Flows\n")
 	commitAll(t, repoRoot, "fixture")
 
 	op := mustOpen(t, repoRoot, OpenOptions{Unit: "demo"})
 	allowedEntry(t, op, "docs/specs/units/candidate/unit_demo.md")
-	allowedEntry(t, op, "docs/specs/units/candidate/appendix/unit_demo_flows.md")
+	allowedEntry(t, op, "docs/specs/units/candidate/evidence/unit_demo.md")
 	allowedEntry(t, op, "internal/demo")
 	for _, entry := range op.AllowedPaths {
 		if strings.Contains(entry.Path, "/stable/") {
@@ -266,7 +266,7 @@ func TestOpenStableOnlyTargetScopesCandidateForkPaths(t *testing.T) {
 	// The standard flow: fork (candidate files appear), edit the candidate
 	// spec, change code — everything is already in scope.
 	writeFile(t, repoRoot, "docs/specs/units/candidate/unit_demo.md", "# demo\n\nForked.\n")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_demo_flows.md", "# Flows\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_demo.md", "# Flows\n")
 	writeFile(t, repoRoot, "internal/demo/new.go", "package demo\n")
 	report := mustCheck(t, repoRoot, op.OperationID)
 	if report.Result != "PASS" {
@@ -379,7 +379,7 @@ func TestOpenRejectsInvalidDeclarations(t *testing.T) {
 		{
 			name:    "required spec is ordinary code",
 			opts:    OpenOptions{Unit: "demo", RequireSpec: []string{"internal/demo/service.go"}},
-			wantErr: "not a candidate unit spec, unit appendix, or rule spec",
+			wantErr: "not a candidate unit spec, unit evidence record, or rule spec",
 		},
 	}
 
@@ -961,16 +961,16 @@ func TestLoadRejectsSemanticallyMalformedState(t *testing.T) {
 		{name: "non-canonical allowed path", mutate: func(state map[string]any) {
 			state["allowed_paths"].([]any)[0].(map[string]any)["path"] = "src/../src/a.go"
 		}},
-		{name: "nested spec:file appendix path", want: "does not match target", mutate: func(state map[string]any) {
+		{name: "nested spec:file evidence path", want: "does not match target", mutate: func(state map[string]any) {
 			// A spec:file entry must be the target's own spec file: a nested
-			// path under the appendix directory is not the target's spec
+			// path under the evidence directory is not the target's spec
 			// surface and fails closed at load time.
 			for _, raw := range state["allowed_paths"].([]any) {
 				entry := raw.(map[string]any)
 				if entry["source"] != "spec:file" {
 					continue
 				}
-				entry["path"] = "docs/specs/units/candidate/appendix/unit_demo_sub/deep/x.md"
+				entry["path"] = "docs/specs/units/candidate/evidence/unit_demo_sub/deep/x.md"
 				return
 			}
 		}},
@@ -1205,7 +1205,7 @@ func TestUpdateRejectsOrdinaryCodeAsRequiredSpec(t *testing.T) {
 		RequireSpec:    []string{"internal/demo/service.go"},
 		HasRequireSpec: true,
 	}, testNow())
-	if err == nil || !strings.Contains(err.Error(), "not a candidate unit spec, unit appendix, or rule spec") {
+	if err == nil || !strings.Contains(err.Error(), "not a candidate unit spec, unit evidence record, or rule spec") {
 		t.Fatalf("expected ordinary code to be rejected as --require-spec, got %v", err)
 	}
 }

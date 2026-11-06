@@ -600,12 +600,12 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	inputs := coverageReadRefs(root, run, ck)
 	var owned []string
 	if unit != "" {
-		appendices, err := specpaths.UnitAppendices(root, unit, layer)
+		record, err := specpaths.UnitEvidenceRecord(root, unit, layer)
 		if err != nil {
 			return judgments.Reference{}, err
 		}
-		for _, appendix := range appendices {
-			owned = append(owned, appendix.Path)
+		if record != nil {
+			owned = append(owned, record.Path)
 		}
 	}
 	copyResult := *result
@@ -714,9 +714,9 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	}
 	// addPromisePins records the provider contracts this conclusion read as
 	// promise fingerprints, not whole files. A provider narrative, acceptance
-	// item, test, or appendix change is not a contract change and must not
-	// invalidate the consumer; only a contract change reopens it. The caller
-	// supplies the exact dependency set: the unit-level scan uses every
+	// item, test, or evidence-record change is not a contract change and must
+	// not invalidate the consumer; only a contract change reopens it. The
+	// caller supplies the exact dependency set: the unit-level scan uses every
 	// promise edge, while an item pins only the promise it verifies.
 	addPromisePins := func(ids []string) error {
 		scope := specvalidation.PromiseScopeForLayer(run.Target)
@@ -838,16 +838,16 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 				return judgments.Reference{}, err
 			}
 		}
-		// The unit's own appendices are part of its recorded truth. The
-		// unit-level conclusions read them, so a changed appendix re-runs them
-		// instead of carrying silently — the conclusion pins what it read, not
-		// merely what the run happened to list.
-		appendices, err := specpaths.UnitAppendices(root, unit, layer)
+		// The unit's own evidence record is part of its recorded truth. The
+		// unit-level conclusions read it, so a changed evidence record re-runs
+		// them instead of carrying silently — the conclusion pins what it
+		// read, not merely what the run happened to list.
+		record, err := specpaths.UnitEvidenceRecord(root, unit, layer)
 		if err != nil {
 			return judgments.Reference{}, err
 		}
-		for _, appendix := range appendices {
-			if err := addWholeFile(appendix.Path); err != nil {
+		if record != nil {
+			if err := addWholeFile(record.Path); err != nil {
 				return judgments.Reference{}, err
 			}
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,8 +11,53 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
+
+// validateJudgmentsForSpec builds the per-object catalog a fresh validate
+// cache must carry.
+func validateJudgmentsForSpec(t *testing.T, specPath, unitName string) string {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := validatekeys.Parse(unitName, string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	layer := "candidate"
+	if strings.Contains(filepath.ToSlash(specPath), "/stable/") {
+		layer = "stable"
+	}
+	root := strings.Split(filepath.ToSlash(specPath), "/docs/specs/")[0]
+	evidenceBase := ""
+	var evidenceSections []validatekeys.EvidenceSection
+	recordPath := filepath.Join(root, "docs/specs/units", layer, "evidence", "unit_"+unitName+".md")
+	if recordData, rerr := os.ReadFile(recordPath); rerr == nil {
+		base := "unit_" + unitName
+		evidenceBase = base
+		parsed, perr := validatekeys.ParseEvidenceRecord(base, string(recordData), graph)
+		if perr != nil {
+			t.Fatal(perr)
+		}
+		evidenceSections = parsed
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+	out, err := json.Marshal(struct {
+		SchemaVersion   int                `json:"schema_version"`
+		ValidateObjects []validatekeys.Key `json:"validate_objects"`
+	}{SchemaVersion: validationcache.RecordStateSchemaValidate, ValidateObjects: catalog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
 
 func publicationRuleText(id, scope, constraint string) string {
 	return fmt.Sprintf("---\nrule_id: %s\nrule_scope: %s\n---\n%s\n", id, scope, constraint)
@@ -40,6 +86,7 @@ func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs 
 	}
 	if _, err := validationcache.WriteCache(root, "unit", name, withPromiseFormat(t, root, name, "candidate", validationcache.CacheWrite{
 		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: validateEntries,
+		Judgments: validateJudgmentsForSpec(t, specPath, name),
 	})); err != nil {
 		t.Fatal(err)
 	}

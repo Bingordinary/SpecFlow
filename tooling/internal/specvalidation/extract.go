@@ -14,7 +14,6 @@ type acceptanceItemFields struct {
 	implementationSurface string
 	affectsFiles          []string
 	affectsEvidenceFiles  []string
-	affectsAppendices     []string
 	affectsRules          []string
 	affectsProblems       []string
 	source                []string
@@ -28,7 +27,6 @@ type acceptanceItemFields struct {
 var affectsSubfields = map[string]bool{
 	"files":          true,
 	"evidence_files": true,
-	"appendices":     true,
 	"rules":          true,
 }
 
@@ -220,8 +218,6 @@ func appendAffects(item *acceptanceItemFields, key, value string) {
 		item.affectsFiles = append(item.affectsFiles, value)
 	case "evidence_files":
 		item.affectsEvidenceFiles = append(item.affectsEvidenceFiles, value)
-	case "appendices":
-		item.affectsAppendices = append(item.affectsAppendices, value)
 	case "rules":
 		item.affectsRules = append(item.affectsRules, value)
 	}

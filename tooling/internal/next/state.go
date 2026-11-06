@@ -19,7 +19,7 @@ type UnitInfo struct {
 	CandidateSpec          string
 	HasStable              bool
 	StableSpec             string
-	Appendices             []string
+	EvidenceRecord         []string
 	RuleRefs               []string
 	ImplementationSurfaces []string
 	AffectsFiles           []string
@@ -74,12 +74,12 @@ func DiscoverUnit(repoRoot, unitName string) (*UnitInfo, error) {
 	}
 
 	for _, layer := range []string{"candidate", "stable"} {
-		appendices, err := specpaths.UnitAppendices(repoRoot, unitName, layer)
+		record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, layer)
 		if err != nil {
 			return nil, err
 		}
-		for _, appendix := range appendices {
-			info.Appendices = append(info.Appendices, appendix.Path)
+		if record != nil {
+			info.EvidenceRecord = append(info.EvidenceRecord, record.Path)
 		}
 	}
 
@@ -158,9 +158,9 @@ func FormatInfo(info *UnitInfo) string {
 		buf.WriteString("(no design recorded)\n")
 	}
 
-	if len(info.Appendices) > 0 {
-		buf.WriteString("Appendices:\n")
-		for _, a := range info.Appendices {
+	if len(info.EvidenceRecord) > 0 {
+		buf.WriteString("Evidence record:\n")
+		for _, a := range info.EvidenceRecord {
 			fmt.Fprintf(&buf, "  - %s\n", a)
 		}
 	}

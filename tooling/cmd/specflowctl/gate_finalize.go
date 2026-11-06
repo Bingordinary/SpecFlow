@@ -260,6 +260,8 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		Relationships:        run.AllRelationships(),
 		LogicalStatus:        outcome.EffectiveStatus,
 		Findings:             outcome.Findings,
+		ValidateObjects:      run.ValidateObjects,
+		FilePresence:         validateFilePresence(absRoot, run),
 		SynthesisDigest:      outcome.SynthesisDigest,
 		SynthesisEvidence:    synthesisPins,
 		DeferredFindings:     outcome.DeferredFindings,
@@ -373,12 +375,12 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	}
 
 	if run.Gate == "validate" && run.TargetKind == "unit" && run.Target == "candidate" && result == "pass" {
-		appendixResult, aerr := validationcache.CheckAppendicesInRenderedCache(absRoot, run.TargetName, rendered)
+		evidenceResult, aerr := validationcache.CheckEvidenceInRenderedCache(absRoot, run.TargetName, rendered)
 		if aerr != nil {
-			return fmt.Errorf("appendix coverage check failed: %v — the candidate cache was not published", aerr)
+			return fmt.Errorf("evidence coverage check failed: %v — the candidate cache was not published", aerr)
 		}
-		if !appendixResult.Fresh {
-			return fmt.Errorf("gate-finalize rejected: %s — the candidate cache was not published", appendixResult.Reason)
+		if !evidenceResult.Fresh {
+			return fmt.Errorf("gate-finalize rejected: %s — the candidate cache was not published", evidenceResult.Reason)
 		}
 	}
 
@@ -889,6 +891,34 @@ func validateConsumedDigests(absRoot string, run *gaterun.Run, spec *gaterun.Ses
 		}
 	}
 	return nil
+}
+
+// validateFilePresence records, for every `file:` ref the validate catalog
+// declares, whether the path existed at finalize. Check 6 and Check 9 read
+// file existence; a later add/remove must invalidate those objects even when
+// the unit spec itself is unchanged.
+func validateFilePresence(absRoot string, run *gaterun.Run) map[string]bool {
+	if run.Gate != gaterun.GateValidate || run.TargetKind != gaterun.TargetKindUnit {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, object := range run.ValidateObjects {
+		for _, read := range object.Reads {
+			if !strings.HasPrefix(read, "file:") {
+				continue
+			}
+			path := strings.TrimPrefix(read, "file:")
+			if path == "" {
+				continue
+			}
+			info, err := os.Stat(filepath.Join(absRoot, filepath.FromSlash(path)))
+			out[path] = err == nil && !info.IsDir()
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func deriveGateOutcome(run *gaterun.Run, reports []reportRef) (*gateOutcome, error) {
@@ -1533,7 +1563,7 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "sequence), attaches each check's lens and failure status, derives the")
 	fmt.Fprintln(w, "failure-record status map mechanically, then re-reads and runs the gate's own")
 	fmt.Fprintln(w, "freshness chain (pass → FRESH, failure record → BLOCKED, salvage → STALE;")
-	fmt.Fprintln(w, "validate@ additionally checks appendix coverage). Result, blocking, severity")
+	fmt.Fprintln(w, "validate@ additionally checks evidence coverage). Result, blocking, severity")
 	fmt.Fprintln(w, "counts, and failure statuses are derived from accepted artifacts.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")

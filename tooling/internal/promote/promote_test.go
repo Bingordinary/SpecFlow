@@ -81,8 +81,8 @@ func minimalUnitSpec(unit string, ruleRefs []string) string {
 func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	t.Helper()
 	candDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
-	appendixDir := filepath.Join(candDir, "appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	evidenceDir := filepath.Join(candDir, "evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	spec := "---\nid: " + unit + "\nrule_refs: none\n---\n\n# " + unit + "\n\n" +
@@ -92,8 +92,8 @@ func writeCandidateUnit(t *testing.T, repoRoot, unit string) {
 	if err := os.WriteFile(filepath.Join(candDir, "unit_"+unit+".md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
-	appendix := "---\nunit: " + unit + "\n---\n\n# Appendix\n"
-	if err := os.WriteFile(filepath.Join(appendixDir, "unit_"+unit+"_extra.md"), []byte(appendix), 0644); err != nil {
+	record := "---\nunit: " + unit + "\n---\n\n# Evidence\n\n## " + unit + ".core — observed\n\nKeys:\n  - item:" + unit + ".core\n\nObserved " + unit + " behavior.\n"
+	if err := os.WriteFile(filepath.Join(evidenceDir, "unit_"+unit+".md"), []byte(record), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writePromiseState(t, repoRoot, unit, "candidate")
@@ -125,7 +125,7 @@ func TestPromoteUnitSuccess(t *testing.T) {
 		t.Fatalf("candidate spec stat failed: %v", err)
 	}
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -150,9 +150,9 @@ func TestPromoteUnitSuccess(t *testing.T) {
 		t.Fatalf("stable spec permissions mismatch: got %v, want %v", got, want)
 	}
 
-	stableAppendix := filepath.Join(repoRoot, "docs/specs/units/stable/appendix/unit_demo_extra.md")
-	if _, err := os.Stat(stableAppendix); err != nil {
-		t.Fatalf("stable appendix missing: %v", err)
+	stableEvidence := filepath.Join(repoRoot, "docs/specs/units/stable/evidence/unit_demo.md")
+	if _, err := os.Stat(stableEvidence); err != nil {
+		t.Fatalf("stable evidence record missing: %v", err)
 	}
 
 	stableState, err := validationcache.PromiseStatePath(repoRoot, "demo", "stable")
@@ -175,7 +175,7 @@ func TestPromoteUnitSuccess(t *testing.T) {
 	}
 
 	// No staged temp files may remain after a successful promote.
-	for _, dir := range []string{"docs/specs/units/stable", "docs/specs/units/stable/appendix"} {
+	for _, dir := range []string{"docs/specs/units/stable", "docs/specs/units/stable/evidence"} {
 		leftover, _ := filepath.Glob(filepath.Join(repoRoot, dir, ".sf-tmp-*"))
 		if len(leftover) > 0 {
 			t.Fatalf("staged temp files left behind under %s: %v", dir, leftover)
@@ -188,64 +188,30 @@ func TestPromoteMirrorsCandidateFileSet(t *testing.T) {
 	writeCandidateUnit(t, repoRoot, "demo")
 	writeVerifyCache(t, repoRoot, "demo")
 
-	// A stable-owned appendix the candidate round dropped must be removed by
-	// promote (mirror publication), not left orphaned.
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+	// A stable-owned evidence record is overwritten by the candidate round
+	// (mirror publication), not merged or left with stale content.
+	stableEvidenceDir := filepath.Join(repoRoot, "docs/specs/units/stable/evidence")
+	if err := os.MkdirAll(stableEvidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dropped := filepath.Join(stableAppendixDir, "unit_demo_old.md")
-	if err := os.WriteFile(dropped, []byte("---\nunit: demo\n---\n\n# Old\n"), 0644); err != nil {
+	stableRecord := filepath.Join(stableEvidenceDir, "unit_demo.md")
+	if err := os.WriteFile(stableRecord, []byte("---\nunit: demo\n---\n\n# Old\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	result := Promote(repoRoot, "demo", "unit_demo_old.md")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
-	if _, err := os.Stat(dropped); !os.IsNotExist(err) {
-		t.Fatalf("stable appendix the candidate dropped must be removed, got %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(stableAppendixDir, "unit_demo_extra.md")); err != nil {
-		t.Fatalf("candidate appendix must be mirrored to stable: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_demo_extra.md")); !os.IsNotExist(err) {
-		t.Fatal("candidate appendix should be removed after promote")
-	}
-	found := false
-	for _, a := range result.Actions {
-		if strings.Contains(a, "Removed stale stable appendix") && strings.Contains(a, "unit_demo_old.md") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected a stale-stable-appendix removal action, actions: %v", result.Actions)
-	}
-}
-
-func TestPromoteUpdatesSameNameStableAppendix(t *testing.T) {
-	repoRoot := t.TempDir()
-	writeCandidateUnit(t, repoRoot, "demo")
-	writeVerifyCache(t, repoRoot, "demo")
-
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(stableAppendixDir, "unit_demo_extra.md")
-	if err := os.WriteFile(path, []byte("---\nunit: demo\n---\n\n# Old extra\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if result := Promote(repoRoot, "demo"); !result.Passed {
-		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
-	}
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(stableRecord)
 	if err != nil {
-		t.Fatalf("stable appendix must survive as an overwrite: %v", err)
+		t.Fatalf("stable evidence record missing: %v", err)
 	}
-	if !strings.Contains(string(got), "# Appendix") {
-		t.Fatalf("same-name stable appendix not overwritten by candidate: %s", got)
+	if !strings.Contains(string(got), "# Evidence") {
+		t.Fatalf("stable evidence record not overwritten by candidate: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/evidence/unit_demo.md")); !os.IsNotExist(err) {
+		t.Fatal("candidate evidence record should be removed after promote")
 	}
 }
 
@@ -254,22 +220,25 @@ func TestPromoteRefusesUndeclaredDrop(t *testing.T) {
 	writeCandidateUnit(t, repoRoot, "demo")
 	writeVerifyCache(t, repoRoot, "demo")
 
-	stableAppendixDir := filepath.Join(repoRoot, "docs/specs/units/stable/appendix")
-	if err := os.MkdirAll(stableAppendixDir, 0755); err != nil {
+	stableEvidenceDir := filepath.Join(repoRoot, "docs/specs/units/stable/evidence")
+	if err := os.MkdirAll(stableEvidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dropped := filepath.Join(stableAppendixDir, "unit_demo_old.md")
-	if err := os.WriteFile(dropped, []byte("---\nunit: demo\n---\n\n# Old\n"), 0644); err != nil {
+	dropped := filepath.Join(stableEvidenceDir, "unit_demo.md")
+	if err := os.WriteFile(dropped, []byte("---\nunit: demo\n---\n\n# Evidence\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repoRoot, "docs/specs/units/candidate/evidence/unit_demo.md")); err != nil {
 		t.Fatal(err)
 	}
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if result.Passed {
-		t.Fatal("promote must refuse a stable-appendix drop that was not declared")
+		t.Fatal("promote must refuse a stable evidence-record drop that was not declared")
 	}
 	found := false
 	for _, issue := range result.Issues {
-		if strings.Contains(issue, "unit_demo_old.md") && strings.Contains(issue, "--drop-appendix") {
+		if strings.Contains(issue, "unit_demo.md") && strings.Contains(issue, "--drop-evidence") {
 			found = true
 		}
 	}
@@ -277,10 +246,19 @@ func TestPromoteRefusesUndeclaredDrop(t *testing.T) {
 		t.Fatalf("expected the undeclared drop to be named, issues: %v", result.Issues)
 	}
 	if _, err := os.Stat(dropped); err != nil {
-		t.Fatalf("refused promote must not delete the stable appendix: %v", err)
+		t.Fatalf("refused promote must not delete the stable evidence record: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_demo.md")); err != nil {
 		t.Fatalf("refused promote must not touch the candidate: %v", err)
+	}
+
+	// The declaration removes the stable record in the same publication.
+	result = Promote(repoRoot, "demo", true)
+	if !result.Passed {
+		t.Fatalf("declared drop must pass, issues: %v", result.Issues)
+	}
+	if _, err := os.Stat(dropped); !os.IsNotExist(err) {
+		t.Fatalf("declared drop must remove the stable evidence record, got %v", err)
 	}
 }
 
@@ -289,13 +267,13 @@ func TestPromoteRejectsUnknownDrop(t *testing.T) {
 	writeCandidateUnit(t, repoRoot, "demo")
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo", "unit_demo_ghost.md")
+	result := Promote(repoRoot, "demo", true)
 	if result.Passed {
-		t.Fatal("promote must reject a declaration that matches no missing stable appendix")
+		t.Fatal("promote must reject a declaration that matches no missing stable evidence record")
 	}
 	found := false
 	for _, issue := range result.Issues {
-		if strings.Contains(issue, "unit_demo_ghost.md") && strings.Contains(issue, "no missing stable appendix") {
+		if strings.Contains(issue, "no missing stable evidence record") {
 			found = true
 		}
 	}
@@ -310,16 +288,16 @@ func TestPromoteUnitBodyRelativeLayerPathWarning(t *testing.T) {
 	if err := os.MkdirAll(candDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/appendix/unit_demo_extra.md\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
+	spec := "---\nid: demo\nrule_refs: none\n---\n\n# demo\n\nClaims structure: candidate/evidence/unit_demo.md\n\n## Design Narrative\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: demo.core\n    summary: Core contract.\n    source: [Narrative]\n    contract: {invariants: [core]}\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: demo.core\n    promise: demo.core\n    source: [Narrative]\n    description: Given a caller, When the behavior runs, Then it is accepted.\n    verification_type: testable\n    verification_surface: internal_flow\n    implementation_surface: internal/demo\n    verification_method: Go test\n    pass_condition: passes.\n    runnable: yes\n"
 	if err := os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(spec), 0644); err != nil {
 		t.Fatal(err)
 	}
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	found := false
 	for _, a := range result.Actions {
-		if strings.Contains(a, "WARNING: body contains candidate-layer path references") && strings.Contains(a, "candidate/appendix/unit_demo_extra.md") {
+		if strings.Contains(a, "WARNING: body contains candidate-layer path references") && strings.Contains(a, "candidate/evidence/unit_demo.md") {
 			found = true
 		}
 	}
@@ -340,7 +318,7 @@ func TestPromoteUnitBodyAbsoluteLayerPathWarning(t *testing.T) {
 	}
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	found := false
 	for _, a := range result.Actions {
 		if strings.Contains(a, "WARNING: body contains candidate-layer path references") && strings.Contains(a, "docs/specs/units/candidate/") {
@@ -364,7 +342,7 @@ func TestPromoteUnitBodyCodePathNoWarning(t *testing.T) {
 	}
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	for _, a := range result.Actions {
 		if strings.Contains(a, "WARNING: body contains candidate-layer path references") {
 			t.Fatalf("unexpected layer-path WARNING for code path, actions: %v", result.Actions)
@@ -381,10 +359,10 @@ func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 	writeVerifyCache(t, repoRoot, "demo")
 
 	// Pre-create the directory tree, then make the stable dir read-only so
-	// the main-spec staging fails after the appendix was already staged.
+	// the main-spec staging fails after the evidence record was already staged.
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
-	appendixDir := filepath.Join(stableDir, "appendix")
-	if err := os.MkdirAll(appendixDir, 0755); err != nil {
+	evidenceDir := filepath.Join(stableDir, "evidence")
+	if err := os.MkdirAll(evidenceDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(stableDir, 0555); err != nil {
@@ -392,13 +370,13 @@ func TestPromoteUnitStageFailureCleansUp(t *testing.T) {
 	}
 	defer os.Chmod(stableDir, 0755)
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if result.Passed {
 		t.Fatal("expected promote to fail when staging the main spec fails")
 	}
 
 	os.Chmod(stableDir, 0755)
-	leftover, _ := filepath.Glob(filepath.Join(appendixDir, ".sf-tmp-*"))
+	leftover, _ := filepath.Glob(filepath.Join(evidenceDir, ".sf-tmp-*"))
 	if len(leftover) > 0 {
 		t.Fatalf("staged temp files left behind after failure: %v", leftover)
 	}
@@ -514,7 +492,7 @@ func TestPromoteUnitDroppedRuleRefIsRetained(t *testing.T) {
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -563,7 +541,7 @@ func TestPromoteUnitDroppedRuleRefAlreadyRemoved(t *testing.T) {
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass with the rule already removed, issues: %v", result.Issues)
 	}
@@ -603,7 +581,7 @@ func TestPromoteUnitDroppedRuleRefWithRetentionReasonIsRetained(t *testing.T) {
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -643,7 +621,7 @@ func TestPromoteUnitDroppedRuleRefStillConsumedNotRemoved(t *testing.T) {
 	os.WriteFile(filepath.Join(otherUnitDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -679,7 +657,7 @@ func TestPromoteUnitDroppedGlobalRuleNotAutoRemoved(t *testing.T) {
 	os.WriteFile(filepath.Join(candDir, "unit_demo.md"), []byte(candidate), 0644)
 	writeVerifyCache(t, repoRoot, "demo")
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -987,14 +965,14 @@ func TestPromoteUnitCandidateRemovalFailure(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeCandidateUnit(t, repoRoot, "demo")
 
-	candAppendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
+	candEvidenceDir := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence")
 	writeVerifyCache(t, repoRoot, "demo")
-	if err := os.Chmod(candAppendixDir, 0555); err != nil {
+	if err := os.Chmod(candEvidenceDir, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(candAppendixDir, 0755)
+	defer os.Chmod(candEvidenceDir, 0755)
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if result.Passed {
 		t.Fatal("expected promote to fail when candidate cleanup fails")
 	}
@@ -1013,8 +991,8 @@ func TestPromoteUnitCandidateRemovalFailure(t *testing.T) {
 		t.Fatal("candidate spec must survive a cleanup failure so promote is re-runnable")
 	}
 
-	os.Chmod(candAppendixDir, 0755)
-	result2 := Promote(repoRoot, "demo")
+	os.Chmod(candEvidenceDir, 0755)
+	result2 := Promote(repoRoot, "demo", false)
 	if !result2.Passed {
 		t.Fatalf("expected re-run promote to pass, issues: %v", result2.Issues)
 	}
@@ -1097,7 +1075,7 @@ func TestPromoteUnit_WritesBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := Promote(repoRoot, "demo")
+	result := Promote(repoRoot, "demo", false)
 	if !result.Passed {
 		t.Fatalf("expected promote to pass, issues: %v", result.Issues)
 	}
@@ -1255,7 +1233,7 @@ func TestPromoteRejectsCandidateOnlyProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := Promote(repoRoot, "web")
+	result := Promote(repoRoot, "web", false)
 	if result.Passed {
 		t.Fatalf("expected promote to reject a candidate-only provider")
 	}

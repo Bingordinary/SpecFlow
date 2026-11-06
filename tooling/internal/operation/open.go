@@ -193,16 +193,16 @@ func deriveAllowedPaths(repoRoot, unit, rule string, allow []string) ([]AllowedP
 }
 
 // unitSpecEntries resolves a unit target's spec-derived scope: the candidate
-// spec file and its candidate appendix files, the acceptance items'
+// spec file and its candidate evidence record, the acceptance items'
 // implementation_surface values, and the affects.files values.
 //
 // When only a stable spec exists, the scope carries the deterministic
 // candidate paths (the fork targets: the candidate main spec plus the
-// candidate equivalents of the stable appendices) instead of the
-// never-writable stable files — the fork is the standard first step of a spec
-// change (HARD RULE 5), and its output must already be in scope. The
-// spec-declared surfaces are read from the stable spec in that case (they are
-// the current design intent until the fork).
+// candidate evidence record) instead of the never-writable stable files — the
+// fork is the standard first step of a spec change (HARD RULE 5), and its
+// output must already be in scope. The spec-declared surfaces are read from
+// the stable spec in that case (they are the current design intent until the
+// fork).
 func unitSpecEntries(repoRoot, unit string) ([]AllowedPath, error) {
 	candidate := specpaths.CandidateUnitSpecFileRef(unit)
 	stable := specpaths.StableUnitSpecFileRef(unit)
@@ -216,22 +216,22 @@ func unitSpecEntries(repoRoot, unit string) ([]AllowedPath, error) {
 	specPath := candidate
 	if candidateExists {
 		entries = append(entries, AllowedPath{Path: candidate, Source: SourceSpecFile})
-		appendices, err := appendixFiles(repoRoot, unit, "candidate")
+		evidence, err := evidenceRecordFile(repoRoot, unit, "candidate")
 		if err != nil {
 			return nil, err
 		}
-		for _, appendix := range appendices {
-			entries = append(entries, AllowedPath{Path: appendix, Source: SourceSpecFile})
+		if evidence != "" {
+			entries = append(entries, AllowedPath{Path: evidence, Source: SourceSpecFile})
 		}
 	} else {
 		specPath = stable
 		entries = append(entries, AllowedPath{Path: candidate, Source: SourceSpecFile})
-		appendices, err := appendixFiles(repoRoot, unit, "stable")
+		evidence, err := evidenceRecordFile(repoRoot, unit, "stable")
 		if err != nil {
 			return nil, err
 		}
-		for _, appendix := range appendices {
-			entries = append(entries, AllowedPath{Path: candidateAppendixPath(appendix), Source: SourceSpecFile})
+		if evidence != "" {
+			entries = append(entries, AllowedPath{Path: specpaths.CandidateEvidenceRecordRef(unit), Source: SourceSpecFile})
 		}
 	}
 
@@ -284,24 +284,17 @@ func ruleSpecEntry(repoRoot, ruleID string) (AllowedPath, error) {
 	return AllowedPath{Path: candidate, Source: SourceSpecFile}, nil
 }
 
-// candidateAppendixPath maps a stable appendix path to its candidate
-// equivalent; the fork target preserves the appendix base name.
-func candidateAppendixPath(stableAppendix string) string {
-	return filepath.ToSlash(filepath.Join(specpaths.CandidateAppendixDir, filepath.Base(stableAppendix)))
-}
-
-// appendixFiles lists a unit's appendix files in one layer.
-func appendixFiles(repoRoot, unit, layer string) ([]string, error) {
-	appendices, err := specpaths.UnitAppendices(repoRoot, unit, layer)
+// evidenceRecordFile returns a unit's evidence-record path in one layer as a
+// repository-relative spelling, or "" when the unit has no record there.
+func evidenceRecordFile(repoRoot, unit, layer string) (string, error) {
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unit, layer)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	var out []string
-	for _, appendix := range appendices {
-		out = append(out, appendix.Path)
+	if record == nil {
+		return "", nil
 	}
-	sort.Strings(out)
-	return out, nil
+	return record.Path, nil
 }
 
 // canonicalSpecPath normalizes a spec-declared path. Empty values and the
@@ -368,7 +361,7 @@ func canonicalRequiredSpecPaths(repoRoot string, paths []string) ([]string, erro
 	}
 	for _, rel := range canonical {
 		if !isCandidateSpecPath(rel) {
-			return nil, fmt.Errorf("--require-spec path %q is not a candidate unit spec, unit appendix, or rule spec", rel)
+			return nil, fmt.Errorf("--require-spec path %q is not a candidate unit spec, unit evidence record, or rule spec", rel)
 		}
 		if info, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(rel))); statErr == nil && info.IsDir() {
 			return nil, fmt.Errorf("--require-spec path %q is a directory, not a candidate spec file", rel)
@@ -387,10 +380,8 @@ func isCandidateSpecPath(rel string) bool {
 	switch dir {
 	case specpaths.CandidateDir:
 		return strings.HasPrefix(stem, "unit_") && len(strings.TrimPrefix(stem, "unit_")) > 0
-	case specpaths.CandidateAppendixDir:
-		rest := strings.TrimPrefix(stem, "unit_")
-		split := strings.LastIndex(rest, "_")
-		return strings.HasPrefix(stem, "unit_") && split > 0 && split < len(rest)-1
+	case specpaths.CandidateEvidenceDir:
+		return strings.HasPrefix(stem, "unit_") && len(strings.TrimPrefix(stem, "unit_")) > 0
 	case specpaths.RuleCandidateDir:
 		for _, prefix := range []string{"g_rule_", "b_rule_"} {
 			if strings.HasPrefix(stem, prefix) && len(strings.TrimPrefix(stem, prefix)) > 0 {

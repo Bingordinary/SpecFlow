@@ -1,0 +1,142 @@
+version: 1
+
+# Machine-readable structure of the unit validate gate. The judgment standard
+# remains in framework/unit_validate_checklist.md; this file only declares
+# which checks exist, which coverage group each belongs to, and which objects
+# and read sets each check produces. Keep the two files aligned; a test fails
+# if a check is missing from either side.
+
+groups:
+  - id: document
+    checks: ["1", "10"]
+  - id: design
+    checks: ["2", "3", "4"]
+  - id: acceptance
+    checks: ["5"]
+  - id: external
+    checks: ["6", "7", "8", "9"]
+
+checks:
+  - id: "1"
+    group: document
+    units:
+      - kind: section
+        level: 2
+        suffix: structure
+        reads: [section]
+      - kind: evidence
+        suffix: structure
+        reads: [evidence, unit]
+      - kind: global
+        key: global:graph
+        reads: [all_sections, all_items, all_promises, unit]
+
+  - id: "10"
+    group: document
+    units:
+      - kind: section
+        level: 2
+        suffix: clarity
+        reads: [section, evidence_sections_for_items_sourced_by_section]
+      - kind: evidence
+        suffix: clarity
+        reads: [evidence, unit]
+      - kind: global
+        key: global:narrative-coherence
+        reads: [all_sections, all_items, all_promises, unit]
+
+  - id: "2"
+    group: design
+    units:
+      - kind: section
+        level: 3
+        suffix: design
+        reads: [section, items_sourced_by_section, promises_sourced_by_section, evidence_sections_for_items_sourced_by_section]
+      - kind: global
+        key: global:goal-means
+        reads: [all_sections, all_items, all_promises, unit, evidence]
+      - kind: global
+        key: global:cross-behavior-interactions
+        reads: [all_sections, all_items, all_promises, unit, evidence]
+
+  - id: "3"
+    group: design
+    units:
+      - kind: global
+        key: global:scope
+        reads: [all_sections, all_items, all_promises, unit, evidence]
+
+  - id: "4"
+    group: design
+    units:
+      - kind: item
+        suffix: evidence
+        when: has_evidence_section
+        reads: [item, evidence_section, sources]
+
+  - id: "5"
+    group: acceptance
+    units:
+      - kind: item
+        suffix: substance
+        reads: [item]
+      - kind: item
+        suffix: promise
+        when: has_promise
+        reads: [item, promise]
+      - kind: item
+        suffix: source
+        when: has_sources
+        reads: [item, sources]
+      - kind: contradiction
+        reads: [item, item]
+      - kind: promise
+        suffix: contract
+        reads: [promise, sources]
+      - kind: promise
+        suffix: source
+        reads: [promise, sources]
+      - kind: promise
+        suffix: coverage
+        reads: [promise, items_for_promise]
+      - kind: global
+        key: global:acceptance-coverage
+        reads: [all_sections, all_items, all_promises, unit, evidence]
+
+  - id: "6"
+    group: external
+    units:
+      - kind: item
+        suffix: affects
+        reads: [item, affects]
+      - kind: evidence
+        suffix: references
+        reads: [evidence, unit]
+
+  - id: "7"
+    group: external
+    units:
+      - kind: provider_pair
+        reads: [promise, provider, sources]
+
+  - id: "8"
+    group: external
+    units:
+      - kind: rule_section
+        level: 2
+        reads: [rule, section]
+      - kind: rule_evidence
+        reads: [rule, evidence, unit]
+      - kind: global
+        key: global:rule-interactions
+        when: has_rules
+        reads: [all_rules, unit]
+
+  - id: "9"
+    group: external
+    units:
+      - kind: file
+        reads: [file, file_items]
+      - kind: global
+        key: global:surface-associations
+        reads: [all_items, all_files]

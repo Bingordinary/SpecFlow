@@ -831,7 +831,7 @@ func grBaselineLines(t *testing.T, repoRoot, runID, sessionID string) string {
 
 // grSubmitValidateSessions submits the four-group validate plan for a spec.
 // extraScopes are appended to the document session's check-1 scope lines
-// (e.g. appendix declarations).
+// (e.g. evidence-record declarations).
 func grSubmitValidateSessions(t *testing.T, repoRoot, runID, specPath string, extraScopes ...string) {
 	t.Helper()
 	desc := specPath + ": Description"
@@ -2141,7 +2141,7 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGateStatus(t, freshOut, "validate", "BLOCKED")
-	if !strings.Contains(freshOut, "revalidate@auth (the tool derives the scope: external-only or full)") {
+	if !strings.Contains(freshOut, "revalidate@auth (the tool derives the scope from the per-object catalog; it upgrades to full when the delta is not cheaper)") {
 		t.Fatalf("expected the repair advice, got:\n%s", freshOut)
 	}
 }
@@ -2414,24 +2414,24 @@ func mustLoadRun(t *testing.T, repoRoot, runID string) *gaterun.Run {
 // Coverage and publication
 // ------------------------------------------------------------
 
-func TestGateRunAppendixCoverage(t *testing.T) {
+func TestGateRunEvidenceCoverage(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
-	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nPOST /login.\n")
+	evidence := "docs/specs/units/candidate/evidence/unit_auth.md"
+	grWriteFile(t, repoRoot, evidence, "---\nunit: auth\n---\n\n## auth.core — observed\n\nKeys:\n  - item:auth.core\n\nPOST /login.\n")
 
-	// The structural session declares the protocol appendix as evidence, so
-	// the appendix reaches the validated surface.
+	// The structural session declares the evidence record as evidence, so
+	// the record reaches the validated surface.
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidateSessions(t, repoRoot, runID, main, appendix+": all")
+	grSubmitValidateSessions(t, repoRoot, runID, main, evidence+": all")
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
 	res, err := validationcache.CheckValidate(repoRoot, "auth")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Fresh {
-		t.Fatalf("expected FRESH with the carrier appendix, got: %s", res.Reason)
+		t.Fatalf("expected FRESH with the evidence record, got: %s", res.Reason)
 	}
 
 	// A rejected finalize must not destroy or rewrite the last valid
@@ -2463,7 +2463,7 @@ func TestGateRunAppendixCoverage(t *testing.T) {
 
 	// A valid later candidate replaces the canonical cache.
 	runID = grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidateSessions(t, repoRoot, runID, main, appendix+": all")
+	grSubmitValidateSessions(t, repoRoot, runID, main, evidence+": all")
 	grFinalizeOK(t, repoRoot, runID, "--result", "pass", "--timestamp", "2026-09-17T12:34:56Z")
 	replaced, err := os.ReadFile(cachePath)
 	if err != nil {
@@ -2508,8 +2508,8 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	specPath := grWriteSpec(t, repoRoot, "auth")
 	main := "docs/specs/units/candidate/unit_auth.md"
-	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n")
+	evidence := "docs/specs/units/candidate/evidence/unit_auth.md"
+	grWriteFile(t, repoRoot, evidence, "---\nunit: auth\n---\n\n## auth.core — observed\n\nKeys:\n  - item:auth.core\n\nprotocol details\n")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 	grWriteFile(t, repoRoot, "tests/auth_test.go", "package tests\n")
 
@@ -2518,7 +2518,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 	// or an extra input), so every key is invalidated.
 	verifySortedKeys := "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.core,unit:auth"
 	// validateSortedKeys lists every unit validate report key: every group
-	// reads the unit's own spec files, so a spec or appendix edit invalidates
+	// reads the unit's own spec files, so a spec or evidence-record edit invalidates
 	// all of them.
 	validateSortedKeys := "1,10,2,3,4,5,6,7,8,9"
 
@@ -2536,7 +2536,7 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 			name: "modified spec",
 			plan: []string{"--gate", "validate", "--unit", "auth", "--target", "candidate"},
 			sessions: func(runID string) {
-				grSubmitValidateSessions(t, repoRoot, runID, main, appendix+": all")
+				grSubmitValidateSessions(t, repoRoot, runID, main, evidence+": all")
 			},
 			mutate: func() {
 				data, _ := os.ReadFile(specPath)
@@ -2546,13 +2546,13 @@ func TestGateRunSnapshotDivergences(t *testing.T) {
 			invalidated: validateSortedKeys,
 		},
 		{
-			name: "modified appendix",
+			name: "modified evidence record",
 			plan: []string{"--gate", "validate", "--unit", "auth", "--target", "candidate"},
 			sessions: func(runID string) {
-				grSubmitValidateSessions(t, repoRoot, runID, main, appendix+": all")
+				grSubmitValidateSessions(t, repoRoot, runID, main, evidence+": all")
 			},
 			mutate: func() {
-				grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nPOST /login.\n")
+				grWriteFile(t, repoRoot, evidence, "---\nunit: auth\n---\n\n## auth.core — observed\n\nKeys:\n  - item:auth.core\n\nPOST /login.\n")
 			},
 			salvage:     true,
 			invalidated: validateSortedKeys,
@@ -2936,8 +2936,8 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("a full-scope plan carries nothing, got %v", run.CarriedKeys)
 	}
-	if !strings.Contains(strings.Join(run.Notices, " "), "own spec content changed") {
-		t.Fatalf("expected the own-content notice, got %v", run.Notices)
+	if !strings.Contains(strings.Join(run.Notices, " "), "every object has changed") {
+		t.Fatalf("expected the full-scope notice, got %v", run.Notices)
 	}
 	grSubmitValidateSessions(t, repoRoot, deltaRun, main)
 	grFinalizeOK(t, repoRoot, deltaRun, "--result", "pass")
@@ -2960,7 +2960,7 @@ func TestGateRunDeltaFlow(t *testing.T) {
 	}
 }
 
-func TestGateRunDeltaNewAppendixCoversFullScope(t *testing.T) {
+func TestGateRunDeltaNewEvidenceRecordCoversFullScope(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grEnableMissionLayout(t, repoRoot)
 	grWriteSpec(t, repoRoot, "auth")
@@ -2970,19 +2970,19 @@ func TestGateRunDeltaNewAppendixCoversFullScope(t *testing.T) {
 	grSubmitValidateSessions(t, repoRoot, fullRun, main)
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "pass")
 
-	appendix := "docs/specs/units/candidate/appendix/unit_auth_notes.md"
-	grWriteFile(t, repoRoot, appendix, "---\nunit: auth\n---\n\n## Extra\n\nMore.\n")
+	evidence := "docs/specs/units/candidate/evidence/unit_auth.md"
+	grWriteFile(t, repoRoot, evidence, "---\nunit: auth\n---\n\n## auth.core — observed\n\nKeys:\n  - item:auth.core\n\nMore.\n")
 
 	deltaRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, deltaRun)
 	if run.Mode != gaterun.ModeFull {
-		t.Fatalf("a new own appendix is own content and must cover the full scope, got %q", run.Mode)
+		t.Fatalf("a new own evidence record is own content and must cover the full scope, got %q", run.Mode)
 	}
 	if len(run.Coverage) != 4 {
 		t.Fatalf("expected the four coverage groups, got %v", coverageKeysOf(run))
 	}
-	if !strings.Contains(strings.Join(run.Notices, " "), appendix) {
-		t.Fatalf("expected the changed appendix in the notice, got %v", run.Notices)
+	if !strings.Contains(strings.Join(run.Notices, " "), evidence) {
+		t.Fatalf("expected the changed evidence record in the notice, got %v", run.Notices)
 	}
 }
 
@@ -4131,7 +4131,7 @@ func TestGatePlanRejectsEscapingLogicalInput(t *testing.T) {
 }
 
 // TestGatePlanRejectsUnresolvedLogicalInput verifies that a logical input-
-// manifest entry that resolves to no file — the issue's appendix spelled with
+// manifest entry that resolves to no file — an evidence reference spelled with
 // its .md suffix — is rejected at plan time with the expected spelling, before
 // run state is written, instead of surviving until finalize's evidence
 // assembly discards a fully executed run.
@@ -4140,8 +4140,8 @@ func TestGatePlanRejectsUnresolvedLogicalInput(t *testing.T) {
 	grWriteSpec(t, repoRoot, "auth")
 	grWriteFile(t, repoRoot, "src/auth.go", "package auth\n")
 
-	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "unit:auth:appendix:unit_auth_claims.md"))
-	if err == nil || !strings.Contains(err.Error(), "resolves to no file") || !strings.Contains(err.Error(), "unit_auth_claims.md") {
+	_, err := grPlanRaw(repoRoot, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--inputs-file", grInputsManifest(t, "unit:auth:evidence.md"))
+	if err == nil || !strings.Contains(err.Error(), "resolves to no file") || !strings.Contains(err.Error(), "unit:auth:evidence.md") {
 		t.Fatalf("expected the unresolved logical input to be rejected at plan time, got %v", err)
 	}
 	entries, err := os.ReadDir(filepath.Join(repoRoot, "meta/gate_runs"))

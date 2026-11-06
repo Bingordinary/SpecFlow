@@ -108,7 +108,7 @@ from `depends_on`, and the command surface's declared rejection of units
 without `## Promises` must be coherent across `core/promise_model.md`,
 `spec_writing_guide.md`, `concepts.md`, and `commands.md`. The review must also
 judge the carrier boundary (promise block carries the contract; acceptance
-items verify; appendices are explanatory), the promise granularity standard
+items verify; the evidence record is explanatory), the promise granularity standard
 (one promise, one behavior subject — `core/promise_model.md` §Granularity),
 and the dependency lifecycle (cycles,
 provider derivation, publication ordering) as one coherent design, not as

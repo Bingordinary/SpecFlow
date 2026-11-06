@@ -64,7 +64,7 @@ func TestResolveRuleFileUsesApplicabilityLayer(t *testing.T) {
 	}
 }
 
-// LogicalUnitRefForPath is the inverse of the unit/appendix resolvers: a
+// LogicalUnitRefForPath is the inverse of the unit/evidence resolvers: a
 // physical spec path must map to the one logical spelling the run's evidence
 // carries, so a layer move cannot dangle it.
 func TestLogicalUnitRefForPath(t *testing.T) {
@@ -81,13 +81,13 @@ func TestLogicalUnitRefForPath(t *testing.T) {
 	}
 	write(t, "docs/specs/units/candidate/unit_dep.md", "---\nid: dep\nrule_refs: none\n---\n")
 	write(t, "docs/specs/units/stable/unit_dep.md", "---\nid: dep\nrule_refs: none\n---\n")
-	write(t, "docs/specs/units/candidate/appendix/unit_dep_protocol.md", "---\nunit: dep\n---\n\nProse.\n")
-	write(t, "docs/specs/units/candidate/appendix/unit_dep_bad.md", "---\nunit: other\n---\n\nProse.\n")
+	write(t, "docs/specs/units/candidate/evidence/unit_dep.md", "---\nunit: dep\n---\n\nProse.\n")
 
 	ok := []struct{ path, want string }{
 		{"docs/specs/units/candidate/unit_dep.md", "unit:dep"},
 		{"docs/specs/units/stable/unit_dep.md", "unit:dep"},
-		{"docs/specs/units/candidate/appendix/unit_dep_protocol.md", "unit:dep:appendix:unit_dep_protocol"},
+		{"docs/specs/units/candidate/evidence/unit_dep.md", "unit:dep:evidence"},
+		{"docs/specs/units/stable/evidence/unit_dep.md", "unit:dep:evidence"},
 	}
 	for _, tc := range ok {
 		got, mapped := LogicalUnitRefForPath(repoRoot, tc.path)
@@ -102,8 +102,9 @@ func TestLogicalUnitRefForPath(t *testing.T) {
 		"docs/specs/units/other/unit_dep.md",
 		"docs/specs/units/candidate/unit_.md",
 		"docs/specs/units/candidate/unit_dep.txt",
-		"docs/specs/units/candidate/appendix/unit_dep_bad.md",
-		"docs/specs/units/candidate/appendix/missing.md",
+		"docs/specs/units/candidate/evidence/unit_.md",
+		"docs/specs/units/candidate/evidence/missing.md",
+		"docs/specs/units/candidate/evidence/nested/unit_dep.md",
 		"docs/specs/rules/candidate/b_rule_x.md",
 	}
 	for _, p := range notMapped {
@@ -117,7 +118,7 @@ func TestIsSpecDocumentPath(t *testing.T) {
 	specPaths := []string{
 		SpecRootDir,
 		"docs/specs/units/stable/unit_agent.md",
-		"docs/specs/units/candidate/appendix/unit_agent_flows.md",
+		"docs/specs/units/candidate/evidence/unit_agent.md",
 		"docs/specs/rules/stable/g_rule_scope.md",
 		"docs/specs/meta/validation/unit/agent/verify_result.md",
 	}

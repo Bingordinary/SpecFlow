@@ -85,33 +85,34 @@ func TestE2EMechanicalDeltaLifecycle(t *testing.T) {
 	}
 }
 
-// TestE2EDeletedOwnAppendixForcesFullScope pins the own-content boundary:
-// deleting an appendix removes it from run.OwnSpecFiles, but its baseline
-// entry still belongs to the unit's own spec union. The delta plan must cover
-// the full scope instead of classifying the removal as an external ref.
-func TestE2EDeletedOwnAppendixForcesFullScope(t *testing.T) {
+// TestE2EDeletedOwnEvidenceForcesFullScope pins the own-content boundary:
+// deleting the evidence record removes it from run.OwnSpecFiles, but its
+// baseline entry still belongs to the unit's own spec union. The delta plan
+// must cover the full scope instead of classifying the removal as an external
+// ref.
+func TestE2EDeletedOwnEvidenceForcesFullScope(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
 	grWriteSpecItems(t, root, "auth", "none", "none", []string{"auth.core"})
 	main := "docs/specs/units/candidate/unit_auth.md"
-	appendix := "docs/specs/units/candidate/appendix/unit_auth_protocol.md"
-	grWriteFile(t, root, appendix, "---\nunit: auth\n---\n\n# Protocol\n\nExtra protocol.\n")
+	evidence := "docs/specs/units/candidate/evidence/unit_auth.md"
+	grWriteFile(t, root, evidence, "---\nunit: auth\n---\n\n## auth.core — observed\n\nKeys:\n  - item:auth.core\n\nExtra observation.\n")
 
 	fullID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate")
-	grSubmitValidateSessions(t, root, fullID, main, appendix+": all")
+	grSubmitValidateSessions(t, root, fullID, main, evidence+": all")
 	grFinalizeOK(t, root, fullID)
 
-	if err := os.Remove(filepath.Join(root, appendix)); err != nil {
+	if err := os.Remove(filepath.Join(root, evidence)); err != nil {
 		t.Fatal(err)
 	}
 
 	deltaID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, root, deltaID)
 	if run.Mode != gaterun.ModeFull {
-		t.Fatalf("a deleted own appendix must force the full scope, got mode %q", run.Mode)
+		t.Fatalf("a deleted own evidence record must force the full scope, got mode %q", run.Mode)
 	}
 	if got := strings.Join(coverageKeysOf(run), ","); got != "document,design,acceptance,external" {
-		t.Fatalf("deleted-appendix coverage = %s, want the four groups", got)
+		t.Fatalf("deleted-evidence coverage = %s, want the four groups", got)
 	}
 	if len(run.CarriedKeys) != 0 {
 		t.Fatalf("a full-scope plan carries nothing, got %v", run.CarriedKeys)

@@ -22,15 +22,15 @@ Stable spec content.
 `
 	os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableContent), 0644)
 
-	appendixDir := filepath.Join(stableDir, "appendix")
-	os.MkdirAll(appendixDir, 0755)
-	appendixContent := `---
+	evidenceDir := filepath.Join(stableDir, "evidence")
+	os.MkdirAll(evidenceDir, 0755)
+	evidenceContent := `---
 unit: test_unit
 ---
-Appendix content.
+Observed behavior.
 `
-	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_helper.md"), []byte(appendixContent), 0644)
-	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_extra_protocol.md"), []byte("---\nunit: test_unit_extra\n---\nPeer content.\n"), 0644)
+	os.WriteFile(filepath.Join(evidenceDir, "unit_test_unit.md"), []byte(evidenceContent), 0644)
+	os.WriteFile(filepath.Join(evidenceDir, "unit_test_unit_extra.md"), []byte("---\nunit: test_unit_extra\n---\nPeer content.\n"), 0644)
 
 	result := Fork(repoRoot, "test_unit")
 	if !result.Passed {
@@ -50,12 +50,12 @@ Appendix content.
 		t.Fatalf("expected the candidate to be a verbatim copy of the stable spec, got:\n%s", string(data))
 	}
 
-	candidateAppendix := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix/unit_test_unit_helper.md")
-	if _, err := os.Stat(candidateAppendix); os.IsNotExist(err) {
-		t.Fatal("candidate appendix was not created")
+	candidateEvidence := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence/unit_test_unit.md")
+	if _, err := os.Stat(candidateEvidence); os.IsNotExist(err) {
+		t.Fatal("candidate evidence record was not created")
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(candidateAppendix), "unit_test_unit_extra_protocol.md")); !os.IsNotExist(err) {
-		t.Fatal("fork copied another unit's prefix-sharing appendix")
+	if _, err := os.Stat(filepath.Join(filepath.Dir(candidateEvidence), "unit_test_unit_extra.md")); !os.IsNotExist(err) {
+		t.Fatal("fork copied another unit's evidence record")
 	}
 
 	stableSpec := filepath.Join(repoRoot, "docs/specs/units/stable/unit_test_unit.md")
@@ -109,7 +109,7 @@ func TestForkUnitCandidateExists(t *testing.T) {
 	}
 }
 
-func TestForkUnitCopiesEveryAppendix(t *testing.T) {
+func TestForkUnitCopiesEvidenceRecord(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	stableDir := filepath.Join(repoRoot, "docs/specs/units/stable")
@@ -121,23 +121,23 @@ rule_refs: none
 `
 	os.WriteFile(filepath.Join(stableDir, "unit_test_unit.md"), []byte(stableContent), 0644)
 
-	appendixDir := filepath.Join(stableDir, "appendix")
-	os.MkdirAll(appendixDir, 0755)
-
-	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_active.md"), []byte("---\nunit: test_unit\n---\nActive\n"), 0644)
-	os.WriteFile(filepath.Join(appendixDir, "unit_test_unit_notes.md"), []byte("---\nunit: test_unit\n---\nNotes\n"), 0644)
+	evidenceDir := filepath.Join(stableDir, "evidence")
+	os.MkdirAll(evidenceDir, 0755)
+	recordContent := "---\nunit: test_unit\n---\n\n## test.check — observed\n\nKeys:\n  - item:test.check\n\nObserved.\n"
+	os.WriteFile(filepath.Join(evidenceDir, "unit_test_unit.md"), []byte(recordContent), 0644)
 
 	result := Fork(repoRoot, "test_unit")
 	if !result.Passed {
 		t.Fatalf("expected PASSED: %v", result.Issues)
 	}
 
-	candidateAppendixDir := filepath.Join(repoRoot, "docs/specs/units/candidate/appendix")
-	if _, err := os.Stat(filepath.Join(candidateAppendixDir, "unit_test_unit_active.md")); os.IsNotExist(err) {
-		t.Fatal("active appendix should have been forked")
+	candidateEvidence := filepath.Join(repoRoot, "docs/specs/units/candidate/evidence/unit_test_unit.md")
+	got, err := os.ReadFile(candidateEvidence)
+	if err != nil {
+		t.Fatal("evidence record should have been forked")
 	}
-	if _, err := os.Stat(filepath.Join(candidateAppendixDir, "unit_test_unit_notes.md")); os.IsNotExist(err) {
-		t.Fatal("notes appendix should have been forked")
+	if string(got) != recordContent {
+		t.Fatalf("forked evidence record is not a verbatim copy:\n%s", got)
 	}
 }
 

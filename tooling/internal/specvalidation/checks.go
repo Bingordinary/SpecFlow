@@ -214,18 +214,6 @@ func checkReferences(repoRoot, unitName string) CheckResult {
 	return CheckResult{Name: "Reference integrity", Status: Pass}
 }
 
-// ExtractAffectsAppendices extracts appendix file names referenced by
-// affects.appendices entries inside the acceptance_item_set block. Both YAML
-// list forms are recognized: the block form (`appendices:` followed by
-// indented `- name` lines) and the inline flow form (`appendices: [a.md]`).
-func ExtractAffectsAppendices(content string) []string {
-	var refs []string
-	for _, item := range parseAcceptanceItems(content) {
-		refs = append(refs, item.affectsAppendices...)
-	}
-	return refs
-}
-
 // parseInlineRefList splits an inline YAML flow list value (`[a.md, "b.md"]`)
 // into its items. A value without brackets is treated as a single item so
 // that unexpected forms fail towards the mechanical check rather than
@@ -249,35 +237,30 @@ func parseInlineRefList(value string) []string {
 }
 
 // ------------------------------------------------------------
-// Check 5: Appendix files exist
+// Check 5: Evidence record
 // ------------------------------------------------------------
-func checkAppendices(repoRoot, unitName string) CheckResult {
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+func checkEvidenceRecord(repoRoot, unitName string) CheckResult {
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "candidate")
 	if err != nil {
 		return CheckResult{
-			Name:    "Appendix files",
+			Name:    "Evidence record",
 			Status:  Fail,
 			Details: err.Error(),
 		}
 	}
 
-	if len(appendices) == 0 {
+	if record == nil {
 		return CheckResult{
-			Name:    "Appendix files",
+			Name:    "Evidence record",
 			Status:  Pass,
-			Details: "no appendix files (optional)",
+			Details: "no evidence record (optional)",
 		}
 	}
 
-	var relPaths []string
-	for _, appendix := range appendices {
-		relPaths = append(relPaths, appendix.Path)
-	}
-
 	return CheckResult{
-		Name:    "Appendix files",
+		Name:    "Evidence record",
 		Status:  Pass,
-		Details: fmt.Sprintf("%d appendix file(s): %s", len(appendices), strings.Join(relPaths, ", ")),
+		Details: fmt.Sprintf("evidence record: %s", record.Path),
 	}
 }
 
@@ -288,7 +271,7 @@ func checkAppendices(repoRoot, unitName string) CheckResult {
 // Candidate-layer spec paths are invalid anywhere in the spec body:
 // the candidate layer is deleted on promote, so every such reference
 // breaks. Relative-form matches are restricted to spec file naming
-// (candidate/(appendix/)?(unit_|g_rule_|b_rule_)) so code paths like
+// (candidate/(evidence/)?(unit_|g_rule_|b_rule_)) so code paths like
 // src/candidate/ are not misreported. Stable-layer paths are not
 // checked here: they are legal in structured fields (spec document
 // references must point to stable), which a string-level check
@@ -298,7 +281,7 @@ var (
 		"docs/specs/units/candidate/",
 		"docs/specs/rules/candidate/",
 	}
-	layerRelPattern = regexp.MustCompile(`candidate/(?:appendix/)?(?:unit_|g_rule_|b_rule_)[A-Za-z0-9_]+\.md`)
+	layerRelPattern = regexp.MustCompile(`candidate/(?:evidence/)?(?:unit_|g_rule_|b_rule_)[A-Za-z0-9_]+\.md`)
 )
 
 // FindCandidateLayerPathRefs returns the candidate-layer spec path
@@ -344,21 +327,21 @@ func checkLayerPaths(repoRoot, unitName string) CheckResult {
 			Details: fmt.Sprintf("cannot read candidate spec: %v", err),
 		}
 	}
-	// body and in its appendices have no post-promote target and are not
-	// Check 6 entirely, including its appendices).
+	// body and in its evidence record have no post-promote target and are not
+	// Check 6 entirely, including its evidence record).
 
 	scanContent(fmt.Sprintf("docs/specs/units/candidate/unit_%s.md", unitName), string(data))
 
-	appendices, err := specpaths.UnitAppendices(repoRoot, unitName, "candidate")
+	record, err := specpaths.UnitEvidenceRecord(repoRoot, unitName, "candidate")
 	if err != nil {
 		return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}
 	}
-	for _, appendix := range appendices {
-		appendixData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(appendix.Path)))
+	if record != nil {
+		recordData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(record.Path)))
 		if err != nil {
 			return CheckResult{Name: "Body layer-path check", Status: Fail, Details: err.Error()}
 		}
-		scanContent(appendix.Path, string(appendixData))
+		scanContent(record.Path, string(recordData))
 	}
 
 	if len(hits) > 0 {

@@ -420,14 +420,14 @@ func TestEvidenceInputsCanonicalizeAcrossLayers(t *testing.T) {
 	}
 	write("docs/specs/units/candidate/unit_trace.md", "---\nid: trace\nrule_refs: none\n---\n")
 	write("docs/specs/units/stable/unit_logger.md", "---\nid: logger\nrule_refs: none\n---\n")
-	write("docs/specs/units/candidate/appendix/unit_trace_protocol.md", "---\nunit: trace\n---\n")
-	write("docs/specs/units/candidate/appendix/unit_logger_protocol.md", "---\nunit: logger\n---\n")
+	write("docs/specs/units/candidate/evidence/unit_trace.md", "---\nunit: trace\n---\n")
+	write("docs/specs/units/candidate/evidence/unit_logger.md", "---\nunit: logger\n---\n")
 
 	got, err := NormalizeInputs(root, "trace", "candidate", []string{
 		"docs/specs/units/candidate/unit_trace.md",
-		"docs/specs/units/candidate/appendix/unit_trace_protocol.md",
+		"docs/specs/units/candidate/evidence/unit_trace.md",
 		"docs/specs/units/stable/unit_logger.md",
-		"docs/specs/units/candidate/appendix/unit_logger_protocol.md",
+		"docs/specs/units/candidate/evidence/unit_logger.md",
 		"unit:logger",
 		"src/trace.go",
 	})
@@ -436,11 +436,11 @@ func TestEvidenceInputsCanonicalizeAcrossLayers(t *testing.T) {
 	}
 	want := []string{
 		"own:.md",
-		"own:/appendix/unit_trace_protocol.md",
+		"own:/evidence/unit_trace.md",
 		"src/trace.go",
 		"unit:logger",
 		"unit:logger",
-		"unit:logger:appendix:unit_logger_protocol",
+		"unit:logger:evidence",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("normalized inputs = %q, want %q", got, want)

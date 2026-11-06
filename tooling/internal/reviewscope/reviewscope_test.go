@@ -24,6 +24,9 @@ func TestCollectDefaultSpecFlowScopeSupportsSourceRepoLayout(t *testing.T) {
 		t.Fatalf("deleted flat command owner must stay outside source scope, got %+v", scope.FrameworkGuidelineFiles)
 	}
 
+	if !containsString(scope.FrameworkGuidelineFiles, "framework/unit_validate_checks.yaml") {
+		t.Fatalf("expected the machine-readable validate contract in scope, got %+v", scope.FrameworkGuidelineFiles)
+	}
 	if !containsString(scope.ToolingSourceFiles, "tooling/go.mod") {
 		t.Fatalf("expected local tooling source, got %+v", scope.ToolingSourceFiles)
 	}
@@ -84,6 +87,7 @@ func writeSourceScopeRepo(t *testing.T, repoRoot string) {
 		"framework/operations/operation_scope.md",
 		"framework/tooling_execution_policy.md",
 		"framework/severity_policy.md",
+		"framework/unit_validate_checks.yaml",
 		"framework/guidance/using-specflow-guidance/SKILL.md",
 		"framework/guidance/project-framing/SKILL.md",
 		"framework/guidance/scope-cutting/SKILL.md",

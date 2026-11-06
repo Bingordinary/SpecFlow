@@ -219,7 +219,7 @@ For unit validate, §11 defines the impact vocabulary these boundaries operate o
 
 ### 9.5 Execution Rules
 
-1. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or appendix the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
+1. For each finding, the checker must read at least one target file beyond the surface the finding was graded on (caller, callee, consumer, dependent unit, or governing document). For document-judged findings (e.g. validate advisory findings), the beyond-surface read is the section or evidence record the finding's impact claim depends on. Re-reasoning from already-read context does not count as a check.
 2. Severity is a semantic judgment; the tooling participates only in the regrade's mechanical envelope — it accepts a regrade disposition only when the target grade is a valid P0-P3 value strictly below the assigned grade and the finding is not P0 (see `framework/verification_scope.md` §Session report contract) — and never in the judgment whether the evidence supports the grade (see `tooling_execution_policy.md`).
 
 #### Execution position and ordering
@@ -411,12 +411,12 @@ Unit validate grades findings on the shared P0-P3 scale. The scale meanings of �
 
 A finding is blocking when the spec stops being decidable or trustworthy:
 
-1. Two authoritative statements conflict (narrative × promise, promise × item, item × item, appendix × promise — the contradiction families of Checks 2, 5, 7, 10)
+1. Two authoritative statements conflict (narrative × promise, promise × item, item × item, evidence record × promise — the contradiction families of Checks 2, 5, 7, 10)
 2. An acceptance item or promise references behavior, fields, error codes, or error semantics no section or promise defines
 3. An assertion is unfalsifiable — no pass_condition can reveal a broken implementation (Check 5e)
 4. A §9 decision is open without a declared boundary (Check 2 Step 4); an undeclared §15.2 boundary (`needs_decision`) blocks the same way until the user decides
 5. A traceability pin points at a block that does not carry the behavior — an item's `source`, a promise's `source`, or any anchor the judgment relies on (the cache-invalidation and coverage chains go blind; the `fresh` suggestion line is a safety net, not a guarantee)
-6. Implementation transcription carried by a narrative or appendix (§15.2 disposition 2, Check 2 Step 5) or by a promise carrier (§15.2 declaration-surface rule, Check 5h step 2) — appendix truth and promise content are verify's alignment targets (Step 7), so stale transcription there drives code restoration; stale narrative transcription makes the decision record lie, and every internal change re-taxes the narrative with a §15.1 sync obligation; internal content carried as contract makes consumers depend on internals
+6. Implementation transcription carried by a narrative or the evidence record (§15.2 disposition 2, Check 2 Step 5) or by a promise carrier (§15.2 declaration-surface rule, Check 5h step 2) — evidence-record truth and promise content are verify's alignment targets (Step 7), so stale transcription there drives code restoration; stale narrative transcription makes the decision record lie, and every internal change re-taxes the narrative with a §15.1 sync obligation; internal content carried as contract makes consumers depend on internals
 
 P1 is the raising session's default for blocking findings; a P0 grade requires the §9 boundary check. The structural defect classes of §11.5 are contract-decided per class and are not re-graded.
 
@@ -450,4 +450,4 @@ The structural defect classes below are contract-decided per class — the grade
 | A type-alias inconsistency a reader can resolve from context | P2 |
 | A type-alias inconsistency that leaves a contract field undecidable (the §11.1 item-2 family) | P1 |
 | A missing dependency edge whose referenced symbol still resolves | P2 |
-| A mispointed prose reference or appendix section number (§11.3 — through the P3 reportability gate) | P3 |
+| A mispointed prose reference or evidence section reference (§11.3 — through the P3 reportability gate) | P3 |

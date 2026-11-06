@@ -17,10 +17,10 @@ A unit owns behavior truth, implementation planning, implementation work, and ve
 
 Unit truth lives in:
 
-| Layer | Main Spec | Appendix |
+| Layer | Main Spec | Evidence Record |
 |---|---|---|
-| stable | `docs/specs/units/stable/unit_{unit}.md` | `docs/specs/units/stable/appendix/unit_{unit}_{name}.md` |
-| candidate | `docs/specs/units/candidate/unit_{unit}.md` | `docs/specs/units/candidate/appendix/unit_{unit}_{name}.md` |
+| stable | `docs/specs/units/stable/unit_{unit}.md` | `docs/specs/units/stable/evidence/unit_{unit}.md` |
+| candidate | `docs/specs/units/candidate/unit_{unit}.md` | `docs/specs/units/candidate/evidence/unit_{unit}.md` |
 
 Unit frontmatter records identity and `rule_refs` — the layer is encoded by the file path (see `framework/spec_writing_guide.md` §3).
 
@@ -33,11 +33,12 @@ states what the unit offers; an acceptance item states how the unit proves a
 promise; the design narrative states why the unit is designed that way.
 
 Consumers read provider promises; they do not read provider acceptance items,
-appendices, or code to learn the contract. A contract statement that no
-promise carries is invalid, and an appendix that introduces normative contract
-content outside a promise is a finding. An appendix is explanatory support
-truth: if it needs its own contract, dependencies, acceptance items, code
-scope, or independent verification, it is a unit, not an appendix. A promise
+the evidence record, or code to learn the contract. A contract statement that
+no promise carries is invalid, and an evidence record that introduces
+normative contract content outside a promise is a finding. The evidence record
+records observed behavior that supports acceptance items: if a responsibility
+needs its own contract, dependencies, acceptance items, code scope, or
+independent verification, it is a unit, not an evidence record. A promise
 has its own ID and fingerprint but is not a separate formal object family: it
 has no independent lifecycle.
 

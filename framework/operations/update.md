@@ -116,7 +116,7 @@ If no structural changes were detected in Step 2, report that no format update i
 
 ### Step 4: Verify and report
 
-Verify each affected file against the current format owners. Run the validator the owner names for every changed category; for the promise model, `specflowctl validate promise-model --unit <name> --layer candidate|stable` for every affected unit file in a layer. Compare each spec file's path, frontmatter, and section structure with `framework/spec_writing_guide.md` (unit main specs, rule files, and appendices). A field or mechanism the current format does not define is a failure.
+Verify each affected file against the current format owners. Run the validator the owner names for every changed category; for the promise model, `specflowctl validate promise-model --unit <name> --layer candidate|stable` for every affected unit file in a layer. Compare each spec file's path, frontmatter, and section structure with `framework/spec_writing_guide.md` (unit main specs, rule files, and evidence records). A field or mechanism the current format does not define is a failure.
 
 Report each check as PASSED or FAILED with details. If a check fails, the file is not in the current format; fix it under the update authorization or report the unresolved item to the user.
 

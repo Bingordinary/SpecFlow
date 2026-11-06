@@ -13,13 +13,15 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
-// The validate delta plan is mechanical. A validate check is a whole-document
-// judgment: no subset of the unit's own spec can be carried across a content
-// change, because the check's recorded evidence covers the whole spec union.
-// The plan therefore has exactly two outcomes: an external-only change re-runs
-// the external group and carries the rest, and anything else covers the full
-// scope. No reviewer decides the scope (framework/verification_scope.md
-// §Delta Runs).
+// The validate delta plan is mechanical. It compares the current per-object
+// catalog against the baseline catalog and the recorded change set: an object
+// re-runs when it is not in the baseline catalog, its read set changed, or a read
+// ref's region changed; a coverage group re-runs when any of its objects
+// re-runs and the rest carry. Every group changed, a failure record, a salvaged
+// cache, a moved standard, an unusable baseline, or an unrecorded or
+// unattributable input covers the full scope, and the planner upgrades to full
+// when the estimated delta cost is not lower. No reviewer decides the scope
+// (framework/verification_scope.md §Delta Runs).
 
 // standingRelationships returns the relationship names the baseline declares.
 // A full-scope plan re-runs every local conclusion, so the final synthesis is
@@ -414,97 +416,13 @@ func changeReportKey(p string) string {
 	return filepath.ToSlash(filepath.Clean(p))
 }
 
-// recordedOwnSpecPath reports whether a baseline cache path names the unit's
-// own main spec or one of its appendices. The baseline is consulted because a
-// deleted own appendix is absent from the current tree and from
-// run.OwnSpecFiles; without this check the change report's removed entry would
-// be classified as external, and the whole-document checks would carry over
-// content that no longer exists.
-func recordedOwnSpecPath(run *Run, path string) bool {
-	if isLogicalRef(path) {
-		if path == "unit:"+run.TargetName {
-			return true
-		}
-		return strings.HasPrefix(path, "unit:"+run.TargetName+":appendix:")
-	}
-	clean := changeReportKey(path)
-	if clean == changeReportKey(mainSpecRef(run)) {
-		return true
-	}
-	appendixDir := "docs/specs/units/" + run.Target + "/appendix/"
-	if !strings.HasPrefix(clean, appendixDir) {
-		return false
-	}
-	base := strings.TrimSuffix(filepath.Base(clean), ".md")
-	return strings.HasPrefix(base, "unit_"+run.TargetName+"_")
-}
-
-// classifyValidateChange splits a validate change report into the unit's own
-// content and derived external refs. Any own-content change re-runs the whole
-// gate: a validate check is a whole-document judgment, so no conclusion can be
-// carried across it. An external change is read only by the external group.
-//
-// The external set is the run's own derived external refs and its promise
-// entries. A baseline entry that is neither part of the current own spec union
-// nor one of those derived refs is treated as own content — the fail-safe
-// direction. The typical case is a shared evidence input supplied through an
-// earlier --inputs-file manifest and not re-supplied on this plan: every
-// validate group read it, so carrying the whole-document checks over its
-// changed content would claim a judgment the content never received.
-func classifyValidateChange(root string, run *Run, baseline *validationcache.GateBaseline, report *validationcache.ChangeReport) (own, external []string, ruleChanged, providerChanged bool) {
-	ownSet := map[string]bool{}
-	for _, p := range run.OwnSpecFiles {
-		ownSet[changeReportKey(p)] = true
-		if ref := logicalAppendixRef(run, p); ref != "" {
-			ownSet[changeReportKey(ref)] = true
-		}
-	}
-	for _, p := range extraInputPaths(root, run) {
-		ownSet[changeReportKey(p)] = true
-	}
-	if baseline != nil {
-		for _, entry := range baseline.Entries {
-			if recordedOwnSpecPath(run, entry.Path) {
-				ownSet[changeReportKey(entry.Path)] = true
-			}
-		}
-	}
-	externalSet := map[string]bool{}
-	for _, ref := range dependencySpecRefs(run) {
-		externalSet[changeReportKey(ref)] = true
-	}
-	for _, entry := range report.Entries {
-		key := changeReportKey(entry.Path)
-		if ownSet[key] {
-			own = append(own, entry.Path)
-			continue
-		}
-		if entry.Kind != "promise" && !externalSet[key] {
-			// Not attributable to a derived external ref: fail safe as own
-			// content instead of carrying the other groups over a changed
-			// input only the baseline recorded.
-			own = append(own, entry.Path)
-			continue
-		}
-		external = append(external, entry.Path)
-		if entry.Kind == "promise" || !strings.HasPrefix(entry.Path, "rule:") {
-			providerChanged = true
-		} else {
-			ruleChanged = true
-		}
-	}
-	sort.Strings(own)
-	sort.Strings(external)
-	return own, external, ruleChanged, providerChanged
-}
-
-// buildDeltaPlan plans a validate delta run mechanically. The change set is
-// compared by content hash: an external-only change re-runs the external group
-// and carries the rest; any change to the unit's own spec union — or a baseline
-// entry not attributable to a derived external ref — or any baseline that
-// cannot be used as a clean pass covers the full scope. The coordinator decides
-// nothing; when the plan upgrades, the run is recorded as a full run
-// (basis: full).
+// buildDeltaPlan plans a validate delta run mechanically from the per-object
+// catalog: an object whose read set changed re-runs, its coverage group
+// re-runs, and groups whose objects are all unchanged carry. Every group
+// changed, a failure record, a salvaged cache, a moved judging standard, an
+// unusable baseline, or an unrecorded/unattributable input covers the full
+// scope. The coordinator decides nothing; when the plan upgrades, the run is
+// recorded as a full run (basis: full).
 func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string, []string, error) {
 	required := requiredFiles(run)
 	full, err := d.computeCoverage(run)
@@ -573,48 +491,77 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	if len(report.Inconsistent()) > 0 {
 		return upgrade("the baseline records evidence that contradicts itself for "+strings.Join(report.Inconsistent(), ", "), standing)
 	}
-
-	// The baseline only proves what it recorded. A current own-content path the
-	// baseline never recorded — a main spec entry a corrupted cache dropped, a
-	// new appendix, or a newly declared extra input — joins the report as own
-	// content. Every validate group reads the own union, so carrying any
-	// conclusion over the grown surface would claim a judgment the record never
-	// made (framework/verification_scope.md §Delta Runs → Change detection).
+	// An input the current plan cannot attribute to the unit's own spec union
+	// or to a declared external reference is read by the judgments but is not
+	// part of any object's derived read set. Fail safe: cover the full scope
+	// instead of carrying an unattributed input.
+	ownSet := map[string]bool{}
+	for _, path := range run.OwnSpecFiles {
+		ownSet[changeReportKey(path)] = true
+		if ref := logicalEvidenceRef(run, path); ref != "" {
+			ownSet[changeReportKey(ref)] = true
+		}
+	}
+	rulePaths := map[string]bool{}
+	for _, ref := range run.Refs {
+		if !strings.HasPrefix(ref.Ref, "rule:") {
+			continue
+		}
+		rulePaths[changeReportKey(ref.Ref)] = true
+		if ref.Resolved != "" {
+			rulePaths[changeReportKey(ref.Resolved)] = true
+		}
+	}
+	extraSet := map[string]bool{}
+	for _, path := range extraInputPaths(d.root, run) {
+		extraSet[changeReportKey(path)] = true
+	}
+	for _, entry := range report.Entries {
+		if entry.Kind == "promise" {
+			continue
+		}
+		key := changeReportKey(entry.Path)
+		if ownSet[key] {
+			continue
+		}
+		if rulePaths[key] {
+			continue
+		}
+		if extraSet[key] {
+			// A declared extra input is readable background for every group.
+			// The catalog has no object-level read set for it, so a change
+			// cannot be localized safely; cover the full scope.
+			return upgrade("a declared extra input changed: "+entry.Path, standing)
+		}
+		return upgrade("the baseline records an input that is not part of the unit's own spec union: "+entry.Path, standing)
+	}
+	// A current input the baseline never recorded — a new own evidence record,
+	// a newly declared extra input, or a main spec entry the baseline dropped —
+	// has no recorded judgment to carry. The plan covers the full scope.
 	recorded := map[string]bool{}
 	for _, entry := range baseline.Entries {
 		recorded[changeReportKey(entry.Path)] = true
-	}
-	added := map[string]bool{}
-	for _, entry := range report.Entries {
-		if entry.Kind == "added" {
-			added[changeReportKey(entry.Path)] = true
-		}
-	}
-	addAdded := func(path string) {
-		key := changeReportKey(path)
-		if recorded[key] || added[key] {
-			return
-		}
-		report.Entries = append(report.Entries, validationcache.ChangeReportEntry{Path: path, Kind: "added"})
-		added[key] = true
 	}
 	for _, path := range run.OwnSpecFiles {
 		if recorded[changeReportKey(path)] {
 			continue
 		}
-		if ref := logicalAppendixRef(run, path); ref != "" && recorded[changeReportKey(ref)] {
+		if ref := logicalEvidenceRef(run, path); ref != "" && recorded[changeReportKey(ref)] {
 			continue
 		}
-		addAdded(path)
+		return upgrade("a current own input was not recorded in the baseline: "+path, standing)
 	}
 	for _, path := range extraInputPaths(d.root, run) {
-		addAdded(path)
+		if !recorded[changeReportKey(path)] {
+			return upgrade("a current declared input was not recorded in the baseline: "+path, standing)
+		}
 	}
 
-	own, external, ruleChanged, providerChanged := classifyValidateChange(d.root, run, baseline, report)
-	if len(own) > 0 {
-		return upgrade("the unit's own spec content changed: "+strings.Join(own, ", "), standing)
+	selection, err := d.selectValidateObjectScope(run, state, report)
+	if err != nil {
+		return upgrade("the per-object delta scope cannot be derived: "+err.Error(), standing)
 	}
+	ruleChanged, providerChanged := selection.RuleChanged, selection.ProviderChanged
 
 	current, err := d.currentGateKeys(run)
 	if err != nil {
@@ -632,22 +579,50 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 		}
 		rerunSet[key] = true
 	}
+	// An explicit --rerun check forces every object judged by that check into
+	// the object batch, even when its own read set is unchanged.
+	for _, object := range run.ValidateObjects {
+		check := object.Check
+		if rerunSet[check] {
+			selection.RerunObjects[object.ID] = true
+		}
+	}
+	run.RerunObjects = run.RerunObjects[:0]
+	for key := range selection.RerunObjects {
+		run.RerunObjects = append(run.RerunObjects, key)
+	}
+	sort.Strings(run.RerunObjects)
+	if rerunSet["8"] {
+		ruleChanged = true
+	}
+	if rerunSet["7"] {
+		providerChanged = true
+	}
 	selected := map[string]bool{}
-	if !report.Empty() {
-		// An external change is read only by the external group; that group
-		// re-runs and every other conclusion carries.
-		selected["external"] = true
+	for group := range selection.SelectedGroups {
+		selected[group] = true
 	}
 	for _, key := range coverageKeysForRerun(run, rerunSet) {
 		selected[key] = true
+	}
+	if len(selection.RerunObjects) >= len(run.ValidateObjects) {
+		return upgrade("every object has changed", standing)
 	}
 	if len(selected) == 0 && len(run.Relationships) == 0 {
 		return nil, nil, nil, nil, errors.New("cache is fresh — no changes")
 	}
 
-	// The relationship conclusions that consume the changed refs re-check with
-	// the external group. coverage_scope depends only on the unit's own
-	// content, which the change set proves unchanged.
+	// A relationship is a conclusion over the local results. The design and
+	// acceptance groups feed every relationship's local side (Checks 2, 3, 5),
+	// so when either re-runs every standing relationship re-checks instead of
+	// carrying a verdict computed over superseded input. An external-only
+	// change keeps the precise mapping: a rule change re-checks
+	// design_constraints (design × Check 8), a provider change re-checks
+	// cross_unit_cohesion (Check 7 × design intent); the other relationships'
+	// local content is unchanged and they carry.
+	if selected["design"] || selected["acceptance"] {
+		addRelationships(run, standing...)
+	}
 	if ruleChanged && stringInSlice(standing, "design_constraints") {
 		addRelationships(run, "design_constraints")
 	}
@@ -659,9 +634,42 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// Net-cost delta/full decision: a delta is kept whenever its estimated
+	// work (plus planning/merge overhead) is lower than the full run's. There
+	// is no fixed percentage threshold.
+	var notices []string
+	rerunObjects := map[string]bool{}
+	for key := range selection.RerunObjects {
+		rerunObjects[key] = true
+	}
+	fullCost := validatePlanCost(full, run.ValidateObjects, nil)
+	deltaCost := validatePlanCost(rest, run.ValidateObjects, rerunObjects) + validateDeltaOverhead
+	if deltaCost >= fullCost {
+		return upgrade(fmt.Sprintf("the delta plan's estimated cost (%.2f) is not lower than the full run's (%.2f)", deltaCost, fullCost), standing)
+	}
+	notices = append(notices, fmt.Sprintf("delta cost %.2f < full cost %.2f", deltaCost, fullCost))
 	rerunOwned := map[string]bool{}
+	objectCheck := map[string]string{}
+	checkHasObject := map[string]bool{}
+	for _, object := range run.ValidateObjects {
+		check := object.Check
+		objectCheck[object.ID] = check
+		checkHasObject[check] = true
+	}
+	rerunChecks := map[string]bool{}
+	for key := range selection.RerunObjects {
+		if check := objectCheck[key]; check != "" {
+			rerunChecks[check] = true
+		}
+	}
 	for _, ck := range rest {
 		for _, key := range run.ReportKeys(ck) {
+			// A check whose every object carried stays carried even though its
+			// group session runs for other objects. A check with no catalog
+			// object is judged by the group session directly.
+			if checkHasObject[key] && !rerunChecks[key] {
+				continue
+			}
 			rerunOwned[key] = true
 		}
 	}
@@ -696,14 +704,8 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 		carried = append(carried, key)
 	}
 
-	rerunCount := 0
-	for _, ck := range rest {
-		rerunCount += len(run.ReportKeys(ck))
-	}
-	var notices []string
-	if len(external) > 0 {
-		notices = append(notices, "external-only change: "+strings.Join(external, ", "))
-	}
+	rerunCount := len(rerunOwned)
+	notices = append(notices, selection.Notices...)
 	notices = append(notices, fmt.Sprintf("%d local conclusion(s) re-run; %d carry mechanically (their recorded content is unchanged)", rerunCount, len(carried)))
 	if len(run.Relationships) > 0 {
 		notices = append(notices, "relationship conclusions re-check: "+strings.Join(run.Relationships, ", "))

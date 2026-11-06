@@ -113,7 +113,7 @@ func TestHasReasonRejectsPunctuationOnly(t *testing.T) {
 func TestValidateUnitAcceptanceBodyAcceptsCJKReasons(t *testing.T) {
 	report := "5a. coverage: PASS — 正文与验收项双向对应成立\n" +
 		"5b. correctness: PASS — 改动点均有承载，无遗漏\n" +
-		"5e. appendix: PASS — 附录行为域与正文一致\n" +
+		"5e. evidence: PASS — 证据行为域与正文一致\n" +
 		"5h. disposition: PASS — 无子检查失败\n"
 	if err := validateUnitAcceptanceBody(report); err != nil {
 		t.Fatalf("all-CJK sub-check reasons must validate: %v", err)
@@ -125,7 +125,7 @@ func TestValidateUnitAcceptanceBodyAcceptsCJKReasons(t *testing.T) {
 func TestValidateUnitAcceptanceBodyRejectsPunctuationOnlyReason(t *testing.T) {
 	report := "5a. coverage: PASS — 。，\n" +
 		"5b. correctness: PASS — 改动点均有承载\n" +
-		"5e. appendix: PASS — 附录行为域与正文一致\n" +
+		"5e. evidence: PASS — 证据行为域与正文一致\n" +
 		"5h. disposition: PASS — 无子检查失败\n"
 	if err := validateUnitAcceptanceBody(report); err == nil {
 		t.Fatal("a punctuation-only sub-check reason must be rejected")

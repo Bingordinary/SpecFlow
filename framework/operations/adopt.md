@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs in the deployed promise shape, appendices, and acceptance items — and follows the normal unit path: validate → verify → promote. The only difference is the starting point: code, not design.
+Spec adoption brings an existing, already-implemented project under specFlow governance. Instead of designing from scratch, the agent records observed implementation behavior as evidence and builds candidate specs from it. Adoption produces the same artifacts as normal development — candidate specs in the deployed promise shape, evidence records, and acceptance items — and follows the normal unit path: validate → verify → promote. The only difference is the starting point: code, not design.
 
 ## Trigger
 
@@ -43,11 +43,23 @@ The user confirms the cut, adjusts it (merge, split, or rename units), or defers
 
 For each unit in the confirmed batch, the agent:
 
-1. Reads the code and writes the evidence appendix (`unit_{unit}_evidence.md`) under `docs/specs/units/candidate/appendix/`, organized by behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec.
+1. Reads the code and writes the unit's evidence record (`docs/specs/units/candidate/evidence/unit_{unit}.md`), organized by behavior domain — one section per behavior domain, each domain corresponding to exactly one acceptance item in the main spec. The record opens with frontmatter naming its owner, then one `##` heading per behavior domain, each followed by a `Keys:` block that names its acceptance item, for example:
+   ```markdown
+   ---
+   unit: {unit}
+   ---
+
+   ## AUTH-AC-001 — Login flow
+
+   Keys:
+     - item:AUTH-AC-001
+
+   observed behavior...
+   ```
+   The item id is the mechanical key. The frontmatter `unit` field and the deterministic filename are the record's ownership proof; a missing or mismatched field fails the mechanical pre-pass. An evidence-record section must declare exactly one `item:` key; a missing or unknown key, a duplicate section for one item, or a section for a missing item fails `gate-plan`/`validate keys`.
 2. Writes the candidate main spec (`unit_{unit}.md`) in the deployed three-section promise shape (`## Design Narrative` → `## Promises` → `## Acceptance Items`; see `framework/core/promise_model.md`):
    - `## Promises`: one promise per externally-observable contract the code as written offers, built from the five contract blocks — `operations` for a callable surface (an interface method set or an exported function), `data` for an exchanged format, `occurrences` for a provider-initiated event, `state_machine` for a lifecycle, and `invariants` for a standing property. Record what the code establishes; do not invent contract truth the code does not support. A promise that relies on another unit's contract declares the observed provider promise on `depends_on`.
-   - `## Acceptance Items`: one evidence-driven acceptance item per behavior domain. Each contract-verifying item names the promise it proves with `promise:`; a cleanup, migration, or one-off inspection item declares `non_promise: true` and `non_promise_reason`. Each evidence-driven item lists the evidence appendix in its `affects.appendices` and uses a `verification_type` appropriate to the recorded behavior (`testable` / `inspectable`).
-3. Sets `evidence_appendix_ref: unit_{unit}_evidence.md` in the main spec frontmatter.
+   - `## Acceptance Items`: one evidence-driven acceptance item per behavior domain. Each contract-verifying item names the promise it proves with `promise:`; a cleanup, migration, or one-off inspection item declares `non_promise: true` and `non_promise_reason`. The item is evidence-driven because the evidence record has a section keyed `item:<item-id>`; the item carries no evidence field — the record's presence is the declaration.
 
 **Coverage standard for adoption:** main flow + boundary behaviors. Cover entry/exit points, the normal path, key error paths, and boundary conditions. Do not exhaustively document internal details — detail is added by later iterations as the unit evolves.
 
@@ -61,35 +73,32 @@ Evidence is a transitional artifact: its mission is to bring a unit from "no spe
 
 ### Adoption round
 
-The evidence appendix records all behavior domains; every evidence-driven acceptance item references it via `affects.appendices`; the unit-level `evidence_appendix_ref` points to the file.
+The evidence record covers all behavior domains; every evidence-driven acceptance item has a section keyed `item:<item-id>`.
 
 ### Incremental replacement (later rounds)
 
-When a behavior domain is redesigned in a later iteration:
-
-1. Convert the corresponding acceptance item to design-driven: remove the evidence appendix from its `affects.appendices` and provide design rationale.
-2. Retire the corresponding section from the evidence appendix (delete it).
+When a behavior domain is redesigned in a later iteration, convert the corresponding acceptance item to design-driven: delete the evidence-record section keyed to that item and provide design rationale.
 
 Other behavior domains keep their evidence references and continue to waive rationale review. Mixed states — some items evidence-driven, others design-driven — are legal and expected.
 
 ### Removal (final round)
 
-When the agent confirms the final evidence appendix no longer supports any behavior, remove the last obsolete sections and its references, set `evidence_appendix_ref` to `none`, then delete the candidate appendix file (promote drops the stable copy). This prevents obsolete evidence from returning in later forks.
+When the agent confirms the evidence record no longer supports any behavior, delete the candidate file (promote drops the stable copy, declared with `--drop-evidence`). This prevents obsolete evidence from returning in later forks.
 
 ### Enforcement
 
 `validate` detects zombie, orphan, and residual evidence states and reports them at **default severity P1** (blocking — promote must not proceed until resolved):
 
-- **Zombie:** an acceptance item references the evidence appendix but no corresponding behavior-domain section exists.
-- **Orphan:** an evidence appendix section exists but no acceptance item whose behavior domain corresponds to it.
+- **Zombie:** an item that is meant to be evidence-driven has no `##` section keyed to it. The tool cannot infer intent from the item alone (the section key is the only declaration), so Check 4 judges this residue against the recorded behavior.
+- **Orphan:** an evidence-record `##` section's `item:` key does not resolve to an acceptance item, or the keyed item is not in the candidate spec union. The unknown-key form is rejected mechanically by `gate-plan`; a section whose content no longer matches its item is Check 4's judgment.
 - **Residual:** an evidence-driven item's behavior domain has been redesigned in the candidate.
 
 See `framework/unit_validate_checklist.md` Check 4.
 
 ## Rules
 
-1. Evidence appendix content must record directly readable observed behavior — not only background, motivation, or patch notes (`framework/unit_validate_checklist.md` Check 6).
-2. One evidence appendix per unit; the appendix is organized by behavior domain, one section per acceptance item.
+1. Evidence-record content must record directly readable observed behavior — not only background, motivation, or patch notes (`framework/unit_validate_checklist.md` Check 6).
+2. One evidence record per unit at the deterministic path; the record is organized by behavior domain, one section per acceptance item.
 3. Adoption does not create a new spec lifecycle — adopted units follow validate → verify → promote.
 4. The agent tracks adoption progress in-session; no adoption state directory is created.
 

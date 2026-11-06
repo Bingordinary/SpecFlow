@@ -15,16 +15,16 @@ func TestPlanNormalizesPhysicalUnitSpecInputToLogicalRef(t *testing.T) {
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/d.go", "")
 	writeFile(t, repoRoot, "src/a.go", "package a\n")
 	writeFile(t, repoRoot, "src/d.go", "package d\n")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/appendix/unit_dep_protocol.md",
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_dep.md",
 		"---\nunit: dep\n---\n\nProse.\n")
 
 	physicalSpec := "docs/specs/units/candidate/unit_dep.md"
-	physicalAppendix := "docs/specs/units/candidate/appendix/unit_dep_protocol.md"
-	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, []string{physicalSpec, physicalAppendix}, nil, nil, time.Now())
+	physicalEvidence := "docs/specs/units/candidate/evidence/unit_dep.md"
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, []string{physicalSpec, physicalEvidence}, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"unit:dep", "unit:dep:appendix:unit_dep_protocol"}
+	want := []string{"unit:dep", "unit:dep:evidence"}
 	if len(run.ExtraInputs) != len(want) {
 		t.Fatalf("extra inputs = %v, want %v", run.ExtraInputs, want)
 	}
@@ -34,7 +34,7 @@ func TestPlanNormalizesPhysicalUnitSpecInputToLogicalRef(t *testing.T) {
 		}
 	}
 	for _, ref := range run.Refs {
-		if ref.Ref == physicalSpec || ref.Ref == physicalAppendix {
+		if ref.Ref == physicalSpec || ref.Ref == physicalEvidence {
 			t.Fatalf("a physical spec path reached the snapshot: %+v", run.Refs)
 		}
 	}

@@ -28,19 +28,21 @@ func TestSpecContextUsesActiveContentAcrossLayers(t *testing.T) {
 	}
 	write("stable", "unit_auth.md", "approved requirement\n")
 	write("candidate", "unit_auth.md", "approved requirement\r\n")
-	write("stable", "appendix/unit_auth_protocol.md", "---\nunit: auth\n---\npublished protocol\n")
-	write("candidate", "appendix/unit_auth_protocol.md", "---\nunit: auth\n---\npublished protocol")
+	write("stable", "evidence/unit_auth.md", "---\nunit: auth\n---\npublished protocol\n")
+	write("candidate", "evidence/unit_auth.md", "---\nunit: auth\n---\npublished protocol")
 	stable := context("stable")
 	if context("candidate") != stable {
 		t.Fatal("layer or line endings changed identical spec context")
 	}
-	write("candidate", "appendix/unit_auth_protocol.md", "---\nunit: auth\n---\ndraft protocol\n")
+	write("candidate", "evidence/unit_auth.md", "---\nunit: auth\n---\ndraft protocol\n")
 	if context("candidate") == stable {
-		t.Fatal("an appendix-only candidate change shared the stable context")
+		t.Fatal("an evidence-record-only candidate change shared the stable context")
 	}
-	write("candidate", "appendix/unit_auth_protocol.md", "---\nunit: auth\n---\npublished protocol\n")
-	write("candidate", "appendix/unit_auth_notes.md", "---\nunit: auth\n---\nLocal notes.\n")
-	if context("candidate") == stable {
-		t.Fatal("a candidate-only appendix must change the candidate context")
+	write("candidate", "evidence/unit_auth.md", "---\nunit: auth\n---\npublished protocol\n")
+	if err := os.Remove(filepath.Join(root, "docs/specs/units/stable/evidence/unit_auth.md")); err != nil {
+		t.Fatal(err)
+	}
+	if context("candidate") == context("stable") {
+		t.Fatal("a candidate-only evidence record must change the candidate context")
 	}
 }
