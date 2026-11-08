@@ -2141,7 +2141,7 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGateStatus(t, freshOut, "validate", "BLOCKED")
-	if !strings.Contains(freshOut, "revalidate@auth (the tool derives the scope from the per-object catalog; it upgrades to full when the delta is not cheaper)") {
+	if !strings.Contains(freshOut, "revalidate@auth (repair recovery from the failure record)") {
 		t.Fatalf("expected the repair advice, got:\n%s", freshOut)
 	}
 }
@@ -2170,18 +2170,26 @@ func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 	grSubmitOK(t, repoRoot, fullRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, fullRun, "--result", "fail", "--p0-count", "1")
 
-	// A failure record recovers with the derived run, which covers the full
-	// scope and injects the record's local P0/P1 findings for disposition.
+	// A failure record derives a repair: the failed check re-runs fully, the
+	// unchanged pass checks carry, and the record's local P0/P1 finding is
+	// injected for disposition.
 	recoveryRun := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	recovery := mustLoadRun(t, repoRoot, recoveryRun)
-	if recovery.Mode != gaterun.ModeFull || len(recovery.Coverage) != 4 {
-		t.Fatalf("a failure record must recover with the full scope, got mode %q / %v", recovery.Mode, coverageKeysOf(recovery))
+	if recovery.Mode != gaterun.ModeRepair {
+		t.Fatalf("a unit validate failure record must derive a repair, got mode %q / %v", recovery.Mode, coverageKeysOf(recovery))
 	}
-	if len(recovery.CarriedKeys) != 0 {
-		t.Fatalf("a full-scope recovery carries nothing, got %v", recovery.CarriedKeys)
+	if got, want := strings.Join(coverageKeysOf(recovery), ","), "design"; got != want {
+		t.Fatalf("repair coverage = %s, want %s (carried %v)", got, want, recovery.CarriedKeys)
 	}
-	if !strings.Contains(strings.Join(recovery.Notices, " "), `result is "fail"`) {
-		t.Fatalf("expected the failure-record notice, got %v", recovery.Notices)
+	// Check 4 has no catalog object, so it re-runs with its design group; it
+	// is not a carry candidate. The object-backed pass checks carry.
+	for _, key := range []string{"1", "3", "5", "6", "7", "8", "9", gaterun.ClarityCheck} {
+		if !stringInList(recovery.CarriedKeys, key) {
+			t.Fatalf("pass check %s must carry, got %v", key, recovery.CarriedKeys)
+		}
+	}
+	if !strings.Contains(strings.Join(recovery.Notices, " "), "validate repair") {
+		t.Fatalf("expected the validate-repair notice, got %v", recovery.Notices)
 	}
 	baselineID := grReadJudgmentBaseline(t, repoRoot, "unit", "auth", "validate").Findings[0].ID
 	if len(recovery.BaselineFindings) != 1 || recovery.BaselineFindings[0].ID != baselineID {
@@ -2191,32 +2199,19 @@ func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 		t.Fatalf("expected the injection notice, got %v", recovery.Notices)
 	}
 
-	// The recovery re-runs every check. A session disposing the finding
+	// The repair re-runs only the failed Check 2. Disposing the finding
 	// `not fixed` keeps the defect blocking under its baseline grade — no
 	// session-authored finding is needed, the owning check reports FAIL — and
 	// the written failure record carries the finding under its original id.
 	notFixedReport := "2. Design soundness: FAIL — contradiction persists\n" +
-		"3. Scope integrity: PASS — checked\n" +
 		"4. Evidence-driven vs design-driven consistency: PASS — ok\n" +
 		"\ncheck-2: " + main + ": Description\ncheck-4: " + main + ": Description\n" +
 		"Baseline finding: " + baselineID + " = not fixed — the contradiction is still in the narrative\n"
 	grSubmitOK(t, repoRoot, recoveryRun, "design", notFixedReport)
-	grSubmitOK(t, repoRoot, recoveryRun, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
-		"1":                  {main + ": frontmatter", main + ": Description"},
-		gaterun.ClarityCheck: {main + ": all"},
-	})+grBaselineLines(t, repoRoot, recoveryRun, "document"))
-	grSubmitOK(t, repoRoot, recoveryRun, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
-		"5": {main + ": Acceptance Items"},
-	})+grBaselineLines(t, repoRoot, recoveryRun, "acceptance"))
-	grSubmitOK(t, repoRoot, recoveryRun, "external", grDependenciesReport(map[string][]string{
-		"7": {main + ": Description"},
-		"8": {main + ": Description"},
-	})+grBaselineLines(t, repoRoot, recoveryRun, "external"))
-	grSubmitOK(t, repoRoot, recoveryRun, "cross", grCrossReport(main, "Description"))
 	grFinalizeOK(t, repoRoot, recoveryRun, "--result", "fail", "--p1-count", "1")
 
 	record := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	for _, want := range []string{"result: fail", baselineID, "baseline_dispositions"} {
+	for _, want := range []string{"result: fail", "basis: repair", baselineID, "baseline_dispositions", "status: carried", `check: "2"`, "status: fail"} {
 		if !strings.Contains(record, want) {
 			t.Fatalf("expected the failure record to carry %q, got:\n%s", want, record)
 		}
@@ -2229,13 +2224,20 @@ func TestGateRunValidateFullFailRecoveryFlow(t *testing.T) {
 		t.Fatalf("expected the unresolved finding re-injected, got %v", next.BaselineFindings)
 	}
 
-	// Disposing it `fixed` recovers the full-basis pass cache.
-	grSubmitValidateSessions(t, repoRoot, nextRun, main)
+	// Disposing it `fixed` recovers the repair pass cache.
+	if next.Mode != gaterun.ModeRepair {
+		t.Fatalf("the unresolved finding must keep the recovery on the repair path, got %q (notices %v)", next.Mode, next.Notices)
+	}
+	fixedReport := "2. Design soundness: PASS — contradiction resolved\n" +
+		"4. Evidence-driven vs design-driven consistency: PASS — ok\n" +
+		"\ncheck-2: " + main + ": Description\ncheck-4: " + main + ": Description\n" +
+		"Baseline finding: " + baselineID + " = fixed — the contradiction was removed from the narrative\n"
+	grSubmitOK(t, repoRoot, nextRun, "design", fixedReport)
 	grFinalizeOK(t, repoRoot, nextRun, "--result", "pass")
 
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	if !strings.Contains(cache, "basis: full") || !strings.Contains(cache, `check: "2"`) {
-		t.Fatalf("expected a full-basis recovery cache, got:\n%s", cache)
+	if !strings.Contains(cache, "basis: repair") || !strings.Contains(cache, `check: "2"`) {
+		t.Fatalf("expected a repair-basis recovery cache, got:\n%s", cache)
 	}
 	res, err := validationcache.CheckValidate(repoRoot, "auth")
 	if err != nil {

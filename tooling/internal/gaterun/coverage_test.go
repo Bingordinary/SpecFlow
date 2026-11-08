@@ -3,6 +3,7 @@ package gaterun
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -442,10 +443,11 @@ func TestPlanCommandRendersRunnableTargets(t *testing.T) {
 	}
 }
 
-// TestDeltaRequiresPassBaseline verifies that a delta plan refuses a baseline
-// that is not a pass cache and degrades a status-less failure record to the
-// full coverage set.
-func TestDeltaRequiresPassBaseline(t *testing.T) {
+// TestDeltaPlanFailureRecordDerivesRepair verifies that a unit validate
+// failure record is a repair baseline: the failed check's objects re-run
+// fully, unchanged pass checks carry, and the record's local P0/P1 finding is
+// injected. It also keeps the missing-baseline refusal intact.
+func TestDeltaPlanFailureRecordDerivesRepair(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 
@@ -455,17 +457,184 @@ func TestDeltaRequiresPassBaseline(t *testing.T) {
 		t.Fatalf("the missing-baseline guidance must print a runnable full-run plan, got %v", err)
 	}
 
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
-	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "delta")
+	checks := mainCheckMarkers()
+	for i := range checks {
+		checks[i].Status = "pass"
+		if checks[i].Check == "5" {
+			checks[i].Status = "fail"
+		}
+	}
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", checks)
+	finding := Finding{
+		ID: "baseline/acceptance/F1", Severity: "P1", Text: "fixture check 5 finding",
+		Detail: "fixture detail", SourceKey: "5", AffectedKeys: []string{"5"},
+	}
+	writeValidateBaselineFor(t, repoRoot, "auth", []validationcache.FileEntry{entry}, "fail", true, "full", finding)
+
 	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Mode != ModeFull || len(run.Coverage) != 4 {
-		t.Fatalf("a failure-record baseline must cover the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
+	if run.Mode != ModeRepair {
+		t.Fatalf("a unit validate failure record must derive a repair, got mode %q", run.Mode)
 	}
-	if !strings.Contains(strings.Join(run.Notices, " "), `result is "fail"`) {
-		t.Fatalf("expected the failure-record notice, got %v", run.Notices)
+	if got, want := strings.Join(coverageKeysOf(run), ","), "acceptance"; got != want {
+		t.Fatalf("repair coverage = %s, want %s (carried %v)", got, want, run.CarriedKeys)
+	}
+	if len(run.BaselineFindings) != 1 || run.BaselineFindings[0].ID != finding.ID {
+		t.Fatalf("expected the failure record's local finding injected, got %v", run.BaselineFindings)
+	}
+	for _, object := range run.ValidateObjects {
+		if object.Check == "5" && !stringInSlice(run.RerunObjects, object.ID) {
+			t.Fatalf("every Check 5 object must re-run, missing %s in %v", object.ID, run.RerunObjects)
+		}
+	}
+	for _, key := range []string{"1", "2", "3", "4", "6", "7", "8", "9", ClarityCheck} {
+		if !stringInSlice(run.CarriedKeys, key) {
+			t.Fatalf("pass check %s must carry, got %v", key, run.CarriedKeys)
+		}
+	}
+	notices := strings.Join(run.Notices, " ")
+	if !strings.Contains(notices, "validate repair") || !strings.Contains(notices, "repair cost") {
+		t.Fatalf("expected the repair scope and cost notices, got %v", run.Notices)
+	}
+	if !strings.Contains(notices, fmt.Sprintf("%d object(s) re-run", len(run.RerunObjects))) {
+		t.Fatalf("the plan must report the final re-run object count (%d), got %v", len(run.RerunObjects), run.Notices)
+	}
+}
+
+// TestDeltaPlanRepairCarriesUnchangedPassChecks verifies the repair's carry
+// rule: a pass check whose objects are unchanged keeps its recorded verdict,
+// while the failed check's objects all re-run.
+func TestDeltaPlanRepairCarriesUnchangedPassChecks(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+
+	checks := mainCheckMarkers()
+	for i := range checks {
+		checks[i].Status = "pass"
+		switch checks[i].Check {
+		case "3":
+			checks[i].Status = "carried"
+		case "5":
+			checks[i].Status = "fail"
+		}
+	}
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", checks)
+	finding := Finding{
+		ID: "baseline/acceptance/F1", Severity: "P1", Text: "fixture check 5 finding",
+		Detail: "fixture detail", SourceKey: "5", AffectedKeys: []string{"5"},
+	}
+	writeValidateBaselineFor(t, repoRoot, "auth", []validationcache.FileEntry{entry}, "fail", true, "delta", finding)
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeRepair {
+		t.Fatalf("a failure record must derive a repair, got %q", run.Mode)
+	}
+	if got, want := strings.Join(coverageKeysOf(run), ","), "acceptance"; got != want {
+		t.Fatalf("repair coverage = %s, want %s (carried %v)", got, want, run.CarriedKeys)
+	}
+	if !stringInSlice(run.CarriedKeys, "3") {
+		t.Fatalf("the unchanged carried check 3 must stay carried, got %v", run.CarriedKeys)
+	}
+	for _, object := range run.ValidateObjects {
+		if object.Check == "5" && !stringInSlice(run.RerunObjects, object.ID) {
+			t.Fatalf("every Check 5 object must re-run, missing %s in %v", object.ID, run.RerunObjects)
+		}
+	}
+}
+
+// TestDeltaPlanRepairStructureChangeCoversFullScope verifies the repair's
+// structural floor: an added or removed catalog object makes the carried
+// verdict set unusable, so the plan covers the full scope.
+func TestDeltaPlanRepairStructureChangeCoversFullScope(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+
+	checks := mainCheckMarkers()
+	for i := range checks {
+		checks[i].Status = "pass"
+		if checks[i].Check == "5" {
+			checks[i].Status = "carried"
+		}
+		if checks[i].Check == "2" {
+			checks[i].Status = "fail"
+		}
+	}
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", checks)
+	finding := Finding{
+		ID: "baseline/design/F1", Severity: "P1", Text: "fixture check 2 finding",
+		Detail: "fixture detail", SourceKey: "2", AffectedKeys: []string{"2"},
+	}
+	writeValidateBaselineFor(t, repoRoot, "auth", []validationcache.FileEntry{entry}, "fail", true, "delta", finding)
+
+	// Add an acceptance item after the record: the current catalog gains an
+	// object the carried check 5 never judged.
+	writeUnitItemsSpec(t, repoRoot, "auth.core", "auth.two")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeFull {
+		t.Fatalf("a changed per-object catalog must cover the full scope, got mode %q (coverage %v)", run.Mode, coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "per-object catalog changed") {
+		t.Fatalf("expected the structural-change notice, got %v", run.Notices)
+	}
+}
+
+// TestDeltaPlanRepairEveryObjectRerunsCoversFullScope verifies the cost floor:
+// when the failure record forces every object, the repair is not cheaper than
+// the full run and the plan upgrades.
+func TestDeltaPlanRepairEveryObjectRerunsCoversFullScope(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnitItemsSpec(t, repoRoot, "auth.core")
+
+	checks := mainCheckMarkers()
+	for i := range checks {
+		checks[i].Status = "fail"
+	}
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", checks)
+	finding := Finding{
+		ID: "baseline/acceptance/F1", Severity: "P1", Text: "fixture check 5 finding",
+		Detail: "fixture detail", SourceKey: "5", AffectedKeys: []string{"5"},
+	}
+	writeValidateBaselineFor(t, repoRoot, "auth", []validationcache.FileEntry{entry}, "fail", true, "delta", finding)
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeFull {
+		t.Fatalf("an all-failed repair must cover the full scope, got mode %q (coverage %v)", run.Mode, coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "every object re-runs in the repair") {
+		t.Fatalf("expected the every-object repair notice, got %v", run.Notices)
+	}
+}
+
+// TestDeltaPlanRepairDefectiveStatusMapCoversFullScope verifies the repair's
+// fail-closed status-map rule: a failure record whose per-check statuses are
+// absent cannot say which judgments failed, so the plan covers the full scope.
+func TestDeltaPlanRepairDefectiveStatusMapCoversFullScope(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
+	writeValidateBaseline(t, repoRoot, []validationcache.FileEntry{entry}, "fail", true, "full")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeFull {
+		t.Fatalf("a defective status map must cover the full scope, got mode %q (coverage %v)", run.Mode, coverageKeysOf(run))
+	}
+	if !strings.Contains(strings.Join(run.Notices, " "), "incomplete per-check status map") {
+		t.Fatalf("expected the status-map defect notice, got %v", run.Notices)
 	}
 }
 

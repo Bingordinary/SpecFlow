@@ -1,7 +1,6 @@
 package gaterun
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +18,14 @@ type validateObjectScope struct {
 	RerunObjects    map[string]bool
 	RuleChanged     bool
 	ProviderChanged bool
-	Notices         []string
+	// StructureChanged reports that the object set itself changed: an object
+	// was added or removed (a new or deleted item, promise, section, rule, or
+	// other catalog object). A repair treats that as a structural change and
+	// covers the full scope; a read-set change re-runs the affected object
+	// through the ordinary selection, and a pass-baseline delta keeps its
+	// ordinary object selection.
+	StructureChanged bool
+	Notices          []string
 }
 
 // selectValidateObjectScope compares the current per-object catalog against
@@ -200,6 +206,25 @@ func (d *Derivation) selectValidateObjectScope(run *Run, state JudgmentBaseline,
 		baselineReads[object.ID] = object.Reads
 	}
 	graphStructureChanged := len(state.ValidateObjects) == 0 || len(state.ValidateObjects) != len(run.ValidateObjects)
+	// catalogStructureChanged is the narrower structural signal a repair uses:
+	// the object set itself changed (an item, promise, section, or external
+	// object appeared or disappeared). A read-set change is not structural —
+	// it re-runs the affected object through the ordinary selection.
+	catalogStructureChanged := graphStructureChanged
+	if !catalogStructureChanged {
+		currentObjects := map[string]bool{}
+		for _, object := range run.ValidateObjects {
+			currentObjects[object.ID] = true
+			if !baselineObjects[object.ID] {
+				catalogStructureChanged = true
+			}
+		}
+		for id := range baselineObjects {
+			if !currentObjects[id] {
+				catalogStructureChanged = true
+			}
+		}
+	}
 	anyItemOrPromiseChanged := false
 	for _, object := range run.ValidateObjects {
 		switch {
@@ -341,7 +366,7 @@ func (d *Derivation) selectValidateObjectScope(run *Run, state JudgmentBaseline,
 			scope.Notices = append(scope.Notices, "checks with recorded P2/P3 advisories re-run fully: "+strings.Join(names, ", "))
 		}
 	}
-	scope.Notices = append(scope.Notices, fmt.Sprintf("%d object(s) re-run; %d carried (their read sets are unchanged)", len(scope.RerunObjects), len(run.ValidateObjects)-len(scope.RerunObjects)))
+	scope.StructureChanged = catalogStructureChanged
 	run.RerunObjects = make([]string, 0, len(scope.RerunObjects))
 	for key := range scope.RerunObjects {
 		run.RerunObjects = append(run.RerunObjects, key)

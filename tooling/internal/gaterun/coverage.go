@@ -421,8 +421,9 @@ func (d *Derivation) buildCoveragePlan(run *Run) ([]CoverageKey, []string, []str
 		return full, carried, required, notices, nil
 	}
 	// The incremental entry: the planner derives the run's substance from the
-	// baseline state — verify: delta or repair; validate: the per-object delta
-	// or the full scope — never from a command-line flag.
+	// baseline state — verify: delta or repair; validate: the per-object delta,
+	// the failure-record repair, or the full scope — never from a command-line
+	// flag.
 	if run.Gate == GateValidate && run.TargetKind == TargetKindRule {
 		return nil, nil, nil, nil, fmt.Errorf("rule targets support the full validate run only — run %s", PlanCommand(run, ModeFull))
 	}
@@ -737,8 +738,8 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			}
 			spec.ValidateObjects = append(spec.ValidateObjects, validateObjectsForGroup(run, ck.Key)...)
 		}
-		if run.Mode == ModeDelta {
-			spec.Context = append(spec.Context, "This is an object-level delta session: judge only the assigned objects. Objects not listed are carried from the baseline and are not part of this mission.")
+		if run.IsPartial() {
+			spec.Context = append(spec.Context, "This is an object-level delta/repair session: judge only the assigned objects. Objects not listed are carried from the baseline and are not part of this mission.")
 		}
 	}
 	for _, ck := range run.Coverage {
@@ -748,8 +749,8 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		spec.CheckKeys = appendUnique(spec.CheckKeys, coverageReportKeys(run, ck)...)
 		spec.ReadRefs = appendUnique(spec.ReadRefs, coverageReadRefs(repoRoot, run, ck)...)
 	}
-	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit && run.Mode == ModeDelta {
-		// A delta session judges only its assigned objects. A check whose
+	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit && run.IsPartial() {
+		// A partial session judges only its assigned objects. A check whose
 		// objects all carried is not part of this mission: its status comes
 		// from the carried baseline result. A check with no catalog object is
 		// still judged by the group session directly.
@@ -1465,14 +1466,14 @@ func validateObjectsForGroup(run *Run, group string) []validatekeys.Key {
 		return nil
 	}
 	rerun := map[string]bool{}
-	if run.Mode == ModeDelta {
+	if run.IsPartial() {
 		for _, key := range run.RerunObjects {
 			rerun[key] = true
 		}
 	}
 	var out []validatekeys.Key
 	for _, object := range run.ValidateObjects {
-		if run.Mode == ModeDelta && !rerun[object.ID] {
+		if run.IsPartial() && !rerun[object.ID] {
 			continue
 		}
 		if validateObjectGroup(object) == group {

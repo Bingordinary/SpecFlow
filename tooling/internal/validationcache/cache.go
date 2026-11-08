@@ -62,18 +62,19 @@ type CheckResult struct {
 	Fresh    bool
 	Category CheckCategory
 	Reason   string
-	// RepairOnly marks a STALE state whose only partial recovery is the verify
-	// repair run: the cache carries pending invalidations (a salvaged pass
-	// cache) or is a failure record. Validate has no repair mode — a unit
-	// validate STALE state recovers through `revalidate` (which derives the
-	// scope and covers the full scope for a salvaged or failed baseline), and a
-	// rule through the full confirmation run.
+	// RepairOnly marks a STALE state whose only partial recovery is a derived
+	// repair: a unit validate failure record, a verify failure record, or a
+	// verify cache carrying pending invalidations. A unit validate failure
+	// record derives the repair from its failed checks; a salvaged pass cache
+	// still covers the full scope for validate, and a rule validate failure
+	// record recovers with the full confirmation run, so neither is
+	// repair-only.
 	RepairOnly bool
 	// FailureRecord marks a cache whose result is `fail`. A BLOCKED failure
 	// record keeps its P0/P1 disclosure; a STALE failure record is recovered
 	// by resolving the findings and running the gate's recovery (a unit
-	// validate: the derived run covers the full scope; a rule validate: the
-	// full confirmation run; verify: the repair run).
+	// validate: the derived repair; a rule validate: the full confirmation
+	// run; verify: the repair run).
 	FailureRecord bool
 }
 
@@ -167,8 +168,10 @@ type cacheFileEntry struct {
 // records, stable-only confirmation FAIL records): pass (judgment ran and
 // passed), fail (judgment ran and retained at least one finding of any
 // severity — P0–P3; the gate result itself is decided by P0/P1), carried (not
-// re-run — recorded content unchanged from the pass baseline; delta records
-// only). Status is required on every fail/blocking cache (the recovery input);
+// re-run — recorded content unchanged from the pass baseline; partial-run
+// records — delta, unit validate repair, and verify repair — may carry local
+// checks, while unchanged relationship checks may also be carried by full
+// runs). Status is required on every fail/blocking cache (the recovery input);
 // absent status means pass only on a pass cache — the recovery never treats a
 // failure record without a status map as pass (it covers the full scope).
 type checkEntry struct {
@@ -560,8 +563,9 @@ func capitalize(s string) string {
 
 // failureRecordStaleReason adds the failure-record facts the raw staleness
 // chain cannot state: a stale failure record still has unresolved P0/P1
-// findings, and its recovery is resolve-then-recover (validate: the derived
-// run covers the full scope; verify: the repair run). Pending invalidations
+// findings, and its recovery is resolve-then-recover (a unit validate failure
+// record through the derived repair; a rule validate through the full
+// confirmation run; verify through the repair run). Pending invalidations
 // are named because the recovery re-runs them with the failed judgments.
 func failureRecordStaleReason(staleReason, command string, cache *cacheFile) string {
 	note := fmt.Sprintf("%s is a failure record with %d P0 and %d P1 finding(s); resolve them before promoting",
@@ -1262,8 +1266,8 @@ func checkCache(repoRoot, targetKind, targetName, command, fileName string, vali
 // checkCacheObject classifies one parsed cache and adds the failure-record
 // disclosure the raw freshness chain cannot see. A stale failure record keeps
 // its P0/P1 findings in the reason; its recovery is the gate's recovery path
-// (a unit validate full-scope revalidate plan, a rule validate full
-// confirmation run, or verify's repair run).
+// (a unit validate repair, a rule validate full confirmation run, or verify's
+// repair run).
 func checkCacheObject(repoRoot, targetKind, targetName, command string, validResults []string, requiredMainFile string, cache *cacheFile) (CheckResult, error) {
 	result, err := classifyCache(repoRoot, targetKind, targetName, command, validResults, requiredMainFile, cache)
 	if err != nil {
@@ -1276,11 +1280,10 @@ func checkCacheObject(repoRoot, targetKind, targetName, command string, validRes
 	if result.Category != CategoryStale {
 		return result, nil
 	}
-	// A stale failure record's only partial recovery is verify's repair run.
-	// Validate has no repair mode: a unit's stale failure record recovers
-	// through revalidate (full-scope plan), and a rule's through the full
-	// confirmation run.
-	result.RepairOnly = command == "verify"
+	// A stale failure record's only partial recovery is a derived repair: unit
+	// validate and verify both derive one from the record's failed checks; a
+	// rule has no partial run and recovers through the full confirmation run.
+	result.RepairOnly = command == "verify" || (command == "validate" && targetKind == "unit")
 	if cache.blockingSeen && cache.Blocking {
 		result.Reason = failureRecordStaleReason(result.Reason, command, cache)
 	}

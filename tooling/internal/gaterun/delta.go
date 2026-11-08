@@ -416,13 +416,161 @@ func changeReportKey(p string) string {
 	return filepath.ToSlash(filepath.Clean(p))
 }
 
+// applyValidateRepairForcedSet merges a unit validate failure record's forced
+// re-run set into the object selection. A failed check re-runs every object it
+// judges; a failed relationship re-checks in the final synthesis; persisted
+// invalidations and the check or relationship each baseline P0/P1 finding is
+// bound to are forced too. A carried check is resolved only when every current
+// object of that check exists in the baseline catalog — the carried verdict is
+// anchored to that catalog's read sets; otherwise the verdict has no evidence
+// to carry and the plan must cover the full scope. A check with no catalog
+// object is judged by its group session directly.
+func applyValidateRepairForcedSet(run *Run, state JudgmentBaseline, invalidated []string, standing []string, currentSet map[string]bool, selection *validateObjectScope) (map[string]bool, string, bool) {
+	forcedChecks := map[string]bool{}
+	checkHasObject := map[string]bool{}
+	baselineObjects := map[string]bool{}
+	for _, object := range state.ValidateObjects {
+		baselineObjects[object.ID] = true
+	}
+	for _, object := range run.ValidateObjects {
+		checkHasObject[object.Check] = true
+	}
+	forceCheck := func(check string) {
+		forcedChecks[check] = true
+		if check == "8" {
+			selection.RuleChanged = true
+		}
+		if check == "7" {
+			selection.ProviderChanged = true
+		}
+		for _, object := range run.ValidateObjects {
+			if object.Check != check {
+				continue
+			}
+			selection.RerunObjects[object.ID] = true
+			if group := validateObjectGroup(object); group != "" {
+				selection.SelectedGroups[group] = true
+			}
+		}
+		if !checkHasObject[check] {
+			if group, ok := validateGroupForCheck(check); ok {
+				selection.SelectedGroups[group] = true
+			}
+		}
+	}
+	forceRelationship := func(key string) bool {
+		name := relationshipName(key)
+		if !stringInSlice(RelationshipNames(run.Gate), name) {
+			return false
+		}
+		addRelationships(run, name)
+		return true
+	}
+	// A failed cross judgment is a synthesis conclusion: re-check the standing
+	// relationships so the final synthesis re-derives it. With no standing
+	// relationship, the failure has no synthesis to re-run — fail closed.
+	if status, ok := state.LogicalStatus[CrossKey]; ok && status == "fail" {
+		if len(standing) == 0 {
+			return nil, "the failure record's cross judgment failed but the baseline declares no relationship to re-check", false
+		}
+		addRelationships(run, standing...)
+	}
+	for key, status := range state.LogicalStatus {
+		if key == CrossKey {
+			continue
+		}
+		if IsRelationshipKey(key) {
+			if status == "fail" && !forceRelationship(key) {
+				return nil, fmt.Sprintf("baseline declares unknown relationship %q", relationshipName(key)), false
+			}
+			continue
+		}
+		switch status {
+		case "pass":
+			// The ordinary object selection decides this check: a changed
+			// read set re-runs it, an unchanged one carries it.
+		case "fail":
+			if !currentSet[key] {
+				return nil, fmt.Sprintf("failed judgment %q is not in the current coverage surface", key), false
+			}
+			forceCheck(key)
+		case "carried":
+			if !currentSet[key] {
+				// The check retired from the current surface; there is no
+				// current verdict to carry and no object to force.
+				continue
+			}
+			// A check with no catalog object was judged by its group session
+			// as a whole; the ordinary group selection decides whether it
+			// re-runs (its group is selected) or carries again. A check with
+			// objects must have every current object in the baseline catalog:
+			// a new object was never part of the carried verdict.
+			for _, object := range run.ValidateObjects {
+				if object.Check != key {
+					continue
+				}
+				if !baselineObjects[object.ID] {
+					return nil, fmt.Sprintf("carried judgment %q has an object the baseline never judged (%s)", key, object.ID), false
+				}
+			}
+		default:
+			return nil, fmt.Sprintf("baseline judgment %q has unusable status %q", key, status), false
+		}
+	}
+	for _, finding := range state.Findings {
+		if finding.Severity != "P0" && finding.Severity != "P1" {
+			continue
+		}
+		keys := BaselineFindingKeys(finding)
+		if len(keys) == 0 {
+			// A cross-only finding has no local or relationship key to force;
+			// re-check the standing relationships so the synthesis re-derives
+			// it instead of dropping it. With no standing relationship either,
+			// the finding has no session to dispose it — fail closed.
+			if len(standing) == 0 {
+				return nil, fmt.Sprintf("baseline finding %q has no check or relationship key to re-run", finding.ID), false
+			}
+			addRelationships(run, standing...)
+			continue
+		}
+		for _, key := range keys {
+			if IsRelationshipKey(key) {
+				if !forceRelationship(key) {
+					return nil, fmt.Sprintf("baseline finding %q names unknown relationship %q", finding.ID, relationshipName(key)), false
+				}
+				continue
+			}
+			if !currentSet[key] {
+				return nil, fmt.Sprintf("baseline finding %q is bound to %q, which is not in the current coverage surface", finding.ID, key), false
+			}
+			forceCheck(key)
+		}
+	}
+	for _, raw := range invalidated {
+		if IsRelationshipKey(raw) {
+			if !forceRelationship(raw) {
+				return nil, fmt.Sprintf("invalidated judgment %q names an unknown relationship", raw), false
+			}
+			continue
+		}
+		key, ok := normalizeGateKey(run, raw, currentSet)
+		if !ok {
+			return nil, fmt.Sprintf("invalidated judgment %q is not in the current coverage surface", raw), false
+		}
+		forceCheck(key)
+	}
+	return forcedChecks, "", true
+}
+
 // buildDeltaPlan plans a validate delta run mechanically from the per-object
 // catalog: an object whose read set changed re-runs, its coverage group
-// re-runs, and groups whose objects are all unchanged carry. Every group
-// changed, a failure record, a salvaged cache, a moved judging standard, an
-// unusable baseline, or an unrecorded/unattributable input covers the full
-// scope. The coordinator decides nothing; when the plan upgrades, the run is
-// recorded as a full run (basis: full).
+// re-runs, and groups whose objects are all unchanged carry. A unit validate
+// failure record derives a repair: the failed judgments and persisted
+// invalidations re-run unconditionally while unchanged pass checks carry by
+// their read sets. Every group changed, a salvaged pass cache, a moved judging
+// standard, an unusable baseline, or an unrecorded/unattributable input covers
+// the full scope. The coordinator decides nothing; when the plan upgrades, the
+// run is recorded as a full run (basis: full).
 func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string, []string, error) {
 	required := requiredFiles(run)
 	full, err := d.computeCoverage(run)
@@ -460,26 +608,38 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	if baseline.Mode != "full" {
 		return upgrade(fmt.Sprintf("baseline cache mode is %q, expected full", baseline.Mode), standing)
 	}
-	if len(baseline.InvalidatedChecks) > 0 {
-		return upgrade("the baseline carries pending invalidations ("+strings.Join(baseline.InvalidatedChecks, ", ")+")", standing)
-	}
 	if strings.TrimSpace(baseline.Result) != "" && (baseline.Result == "fail") != baseline.Blocking {
 		return upgrade(fmt.Sprintf("baseline cache declarations conflict (result: %q, blocking: %t)", baseline.Result, baseline.Blocking), standing)
 	}
-	if baseline.Result != "pass" {
-		// The scope rule is unchanged: a failure record is not a usable delta
-		// baseline, so the plan covers the full scope. The record's P0/P1
-		// findings travel with the plan instead — every re-run check session
-		// receives the findings its check keys own and must dispose each one,
-		// so the recovery verifies the fixes instead of re-discovering them
-		// from zero (framework/verification_scope.md §Delta Runs → Failure
-		// recovery).
+	// A unit validate failure record is a repair baseline, not a
+	// full-scope-only baseline: the failed judgments re-run unconditionally
+	// and the unchanged pass checks carry by their recorded read sets — the
+	// same object-level evidence a delta uses. A salvaged pass cache has no
+	// per-check status map (nothing failed); it remains full-scope for
+	// validate, and only verify derives a repair from it.
+	repair := baseline.Result == "fail"
+	if repair {
+		run.Mode = ModeRepair
 		run.BaselineFindings = blockingBaselineFindings(state)
-		notice := fmt.Sprintf("baseline cache result is %q, expected pass", baseline.Result)
-		if len(run.BaselineFindings) > 0 {
-			notice += fmt.Sprintf(" — the failure record's %d P0/P1 finding(s) are injected into the re-run sessions for disposition", len(run.BaselineFindings))
+	} else {
+		if len(baseline.InvalidatedChecks) > 0 {
+			return upgrade("the baseline carries pending invalidations ("+strings.Join(baseline.InvalidatedChecks, ", ")+")", standing)
 		}
-		return upgrade(notice+" — the plan covers the full scope", standing)
+		if baseline.Result != "pass" {
+			return upgrade(fmt.Sprintf("baseline cache result is %q, expected pass", baseline.Result), standing)
+		}
+	}
+	if repair {
+		// A record whose per-check status map is absent, invalid, or
+		// inconsistent with its judgment baseline cannot say which judgments
+		// failed, and a record without the per-object catalog has no read set
+		// to carry: nothing is carried, so the plan covers the full scope.
+		if reason, defective := repairStatusMapDefect(baseline, state); defective {
+			return upgrade(reason, standing)
+		}
+		if len(state.ValidateObjects) == 0 {
+			return upgrade("the failure record carries no per-object catalog", standing)
+		}
 	}
 	if reason, moved := validateStandardMoved(run, baseline); moved {
 		return upgrade(reason, standing)
@@ -561,7 +721,9 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	if err != nil {
 		return upgrade("the per-object delta scope cannot be derived: "+err.Error(), standing)
 	}
-	ruleChanged, providerChanged := selection.RuleChanged, selection.ProviderChanged
+	if repair && selection.StructureChanged {
+		return upgrade("the per-object catalog changed since the failure record (an object was added or removed)", standing)
+	}
 
 	current, err := d.currentGateKeys(run)
 	if err != nil {
@@ -587,11 +749,33 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 			selection.RerunObjects[object.ID] = true
 		}
 	}
+	// A repair adds the failure record's forced set: every object of a failed
+	// check, every failed relationship, persisted invalidations, and the
+	// check or relationship each baseline finding is bound to. The pass checks
+	// stay in the ordinary object selection and carry when their read sets are
+	// unchanged.
+	var forcedChecks map[string]bool
+	if repair {
+		var defect string
+		var ok bool
+		forcedChecks, defect, ok = applyValidateRepairForcedSet(run, state, baseline.InvalidatedChecks, standing, currentSet, &selection)
+		if !ok {
+			return upgrade(defect, standing)
+		}
+	}
+	ruleChanged, providerChanged := selection.RuleChanged, selection.ProviderChanged
 	run.RerunObjects = run.RerunObjects[:0]
 	for key := range selection.RerunObjects {
 		run.RerunObjects = append(run.RerunObjects, key)
 	}
 	sort.Strings(run.RerunObjects)
+	var notices []string
+	// The object count is reported after every forced source is merged — the
+	// ordinary read-set selection, --rerun overrides, and the repair's failed
+	// checks, findings, and persisted invalidations. Reporting it inside the
+	// selection would understate a repair that forces objects the read-set
+	// comparison left unchanged.
+	notices = append(notices, fmt.Sprintf("%d object(s) re-run; %d carried (their read sets are unchanged)", len(run.RerunObjects), len(run.ValidateObjects)-len(run.RerunObjects)))
 	if rerunSet["8"] {
 		ruleChanged = true
 	}
@@ -602,13 +786,23 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	for group := range selection.SelectedGroups {
 		selected[group] = true
 	}
+	for _, key := range coverageKeysForRerun(run, forcedChecks) {
+		selected[key] = true
+	}
 	for _, key := range coverageKeysForRerun(run, rerunSet) {
 		selected[key] = true
 	}
 	if len(selection.RerunObjects) >= len(run.ValidateObjects) {
-		return upgrade("every object has changed", standing)
+		reason := "every object has changed"
+		if repair {
+			reason = "every object re-runs in the repair"
+		}
+		return upgrade(reason, standing)
 	}
 	if len(selected) == 0 && len(run.Relationships) == 0 {
+		if repair {
+			return upgrade("the failure record has no failed judgment to re-run", standing)
+		}
 		return nil, nil, nil, nil, errors.New("cache is fresh — no changes")
 	}
 
@@ -637,17 +831,33 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	// Net-cost delta/full decision: a delta is kept whenever its estimated
 	// work (plus planning/merge overhead) is lower than the full run's. There
 	// is no fixed percentage threshold.
-	var notices []string
 	rerunObjects := map[string]bool{}
 	for key := range selection.RerunObjects {
 		rerunObjects[key] = true
 	}
+	planName := "delta"
+	if repair {
+		planName = "repair"
+	}
 	fullCost := validatePlanCost(full, run.ValidateObjects, nil)
 	deltaCost := validatePlanCost(rest, run.ValidateObjects, rerunObjects) + validateDeltaOverhead
 	if deltaCost >= fullCost {
-		return upgrade(fmt.Sprintf("the delta plan's estimated cost (%.2f) is not lower than the full run's (%.2f)", deltaCost, fullCost), standing)
+		return upgrade(fmt.Sprintf("the %s plan's estimated cost (%.2f) is not lower than the full run's (%.2f)", planName, deltaCost, fullCost), standing)
 	}
-	notices = append(notices, fmt.Sprintf("delta cost %.2f < full cost %.2f", deltaCost, fullCost))
+	notices = append(notices, fmt.Sprintf("%s cost %.2f < full cost %.2f", planName, deltaCost, fullCost))
+	if repair {
+		var failed []string
+		for key, status := range state.LogicalStatus {
+			if status == "fail" {
+				failed = append(failed, key)
+			}
+		}
+		sort.Strings(failed)
+		notices = append(notices, "validate repair: failed judgment(s) "+strings.Join(failed, ", ")+" re-run fully; the remaining pass checks follow the ordinary read-set rule (unchanged objects carry)")
+		if len(run.BaselineFindings) > 0 {
+			notices = append(notices, fmt.Sprintf("the failure record's %d P0/P1 finding(s) are injected into the re-run sessions for disposition", len(run.BaselineFindings)))
+		}
+	}
 	rerunOwned := map[string]bool{}
 	objectCheck := map[string]string{}
 	checkHasObject := map[string]bool{}
@@ -815,6 +1025,16 @@ func repairStatusMapDefect(baseline *validationcache.GateBaseline, state Judgmen
 	if len(mismatch) > 0 {
 		sort.Strings(mismatch)
 		return "the failure record's per-check status map does not match its judgment baseline (unmatched: " + strings.Join(mismatch, ", ") + ")", true
+	}
+	hasFail := false
+	for _, status := range statusByCheck {
+		if status == "fail" {
+			hasFail = true
+			break
+		}
+	}
+	if !hasFail {
+		return "the failure record declares no failed check", true
 	}
 	return "", false
 }

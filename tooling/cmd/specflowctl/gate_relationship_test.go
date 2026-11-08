@@ -120,7 +120,7 @@ func TestGateConsecutiveRelationshipDeltasAfterEvidenceChange(t *testing.T) {
 	}
 }
 
-func TestGateRelationshipFailureRecoversWithFullScope(t *testing.T) {
+func TestGateRelationshipFailureRecoversWithRepair(t *testing.T) {
 	root := createCLITestRepo(t)
 	main := grWriteSpec(t, root, "auth")
 	path := "evidence/contract.md"
@@ -132,11 +132,12 @@ func TestGateRelationshipFailureRecoversWithFullScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	grFinalizeOK(t, root, runID)
-	grWriteFile(t, root, path, "reconciled relationship\n")
+	// The relationship failure alone derives the repair; the recorded extra
+	// input is unchanged, so it does not force the full scope.
 	recoveryID := grPlan(t, root, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta", "--relationships", "none", "--inputs-file", grInputsManifest(t, path))
 	run := mustLoadRun(t, root, recoveryID)
-	if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {
-		t.Fatalf("a failure record recovers with the full scope, got mode %q / %v", run.Mode, coverageKeysOf(run))
+	if run.Mode != gaterun.ModeRepair || len(run.Coverage) != 0 {
+		t.Fatalf("a relationship-only failure recovers with a repair, got mode %q / %v", run.Mode, coverageKeysOf(run))
 	}
 	if strings.Join(run.Relationships, ",") != "coverage_scope" {
 		t.Fatalf("recovery lost the failed relationship: %+v", run.Relationships)

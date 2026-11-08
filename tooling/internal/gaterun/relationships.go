@@ -86,7 +86,10 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 		if stringInSlice(run.Relationships, name) {
 			continue
 		}
-		if state.LogicalStatus[key] != "pass" {
+		// A carried relationship is a passing conclusion whose content was
+		// unchanged at the previous run; it is a carry candidate like a pass
+		// conclusion, not a failed one that must re-run.
+		if status := state.LogicalStatus[key]; status != "pass" && status != "carried" {
 			run.Relationships = appendUnique(run.Relationships, name)
 			notices = append(notices, "baseline relationship "+key+" did not pass — it re-runs")
 			continue

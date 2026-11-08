@@ -60,9 +60,9 @@ const (
 	// Run modes: full runs the complete coverage set; delta plans the
 	// mechanically derived partial scope plus the mechanically forced keys.
 	// full and delta are the only entry modes; repair is a derived internal
-	// state, never a command-line value — the verify incremental entry derives
-	// it from a failure-record or salvaged baseline, and finalize records it
-	// as the cache's `basis: repair`.
+	// state, never a command-line value — the incremental entry derives it from
+	// a failure-record baseline (unit validate and verify) or a salvaged pass
+	// cache (verify), and finalize records it as the cache's `basis: repair`.
 	ModeFull   = "full"
 	ModeDelta  = "delta"
 	ModeRepair = "repair"
@@ -431,8 +431,8 @@ type Run struct {
 	// recovers, loaded at plan time. Every re-run check session receives the
 	// findings its check keys own and must dispose each one
 	// (fixed | not fixed | superseded); gate-finalize retains the not-fixed
-	// findings with their baseline grades. The scope rule is unchanged — a
-	// failure record still plans the full scope (see
+	// findings with their baseline grades. A unit validate failure record
+	// derives a repair; an unusable record still plans the full scope (see
 	// framework/verification_scope.md §Delta Runs → Failure recovery).
 	BaselineFindings []Finding `json:"baseline_findings,omitempty"`
 
@@ -443,6 +443,14 @@ type Run struct {
 	// Notices records plan-time disclosures (delta scope derivation, carried
 	// checks, conservative degradations) for gate-status and the plan output.
 	Notices []string `json:"notices,omitempty"`
+}
+
+// IsPartial reports whether this run re-executes a derived subset of the
+// coverage set rather than the full set. Both delta and the derived repair are
+// partial runs: a repair forces the failed (or invalidated) judgments and
+// carries the surviving pass conclusions exactly as a delta carries objects.
+func (r *Run) IsPartial() bool {
+	return r.Mode == ModeDelta || r.Mode == ModeRepair
 }
 
 // StateRelPath returns the repo-relative path of a run's state file.

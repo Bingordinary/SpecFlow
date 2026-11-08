@@ -314,7 +314,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		return gateMission{}, fmt.Errorf("unsupported gate %q", run.Gate)
 	}
 	var sessionObjects []validatekeys.Key
-	if run.Mode == gaterun.ModeDelta {
+	if run.IsPartial() {
 		sessionObjects = append([]validatekeys.Key{}, spec.ValidateObjects...)
 	}
 	session := missionSession{
@@ -456,7 +456,13 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		constraints = append(constraints, "if a required test, caller, callee, or dependency file is missing from read_refs, return `Verification could not complete — missing read ref: <repo-relative path>`; do not judge from incomplete context or submit a verdict")
 	}
 	if len(session.BaselineFindings) > 0 {
-		constraints = append(constraints, "dispose every baseline finding listed below with a `Baseline finding:` line — `not fixed` means the defect is present in the current content, so the owning check reports FAIL and the finding stays blocking with its baseline grade; the full-scope review still runs unchanged")
+		disposition := "dispose every baseline finding listed below with a `Baseline finding:` line — `not fixed` means the defect is present in the current content, so the owning check reports FAIL and the finding stays blocking with its baseline grade"
+		if run.IsPartial() {
+			disposition += "; this partial run judges only the assigned keys, and every other conclusion carries from the baseline"
+		} else {
+			disposition += "; the full-scope review runs unchanged"
+		}
+		constraints = append(constraints, disposition)
 	}
 	schema := 3
 	if run.Gate == gaterun.GateVerify {
@@ -502,8 +508,8 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 		}
 		fmt.Fprintln(w)
 	}
-	if len(p.ValidateObjects) > 0 && mission.Mode == gaterun.ModeDelta {
-		fmt.Fprintln(w, "Assigned objects for this delta session (judge these; the rest of the group carries):")
+	if len(p.ValidateObjects) > 0 && (mission.Mode == gaterun.ModeDelta || mission.Mode == gaterun.ModeRepair) {
+		fmt.Fprintln(w, "Assigned objects for this delta/repair session (judge these; the rest of the group carries):")
 		for _, object := range p.ValidateObjects {
 			fmt.Fprintf(w, "  - %s (check %s)\n", object.ID, object.Check)
 			fmt.Fprintf(w, "    reads: %s\n", strings.Join(object.Reads, ", "))

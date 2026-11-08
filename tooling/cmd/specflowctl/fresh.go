@@ -876,6 +876,9 @@ func gateAdvice(command, targetKind, repoRoot, targetName string, status gateSta
 			return fmt.Sprintf("-> required: %s@%s (full run — %v)", command, targetName, reason)
 		}
 		if command == "validate" {
+			if status == gateBlocked || failureRecord {
+				return fmt.Sprintf("-> resolve P0/P1, then %s (repair recovery from the failure record)", validationcache.RecoveryCommand(command, targetKind, targetName))
+			}
 			return fmt.Sprintf("-> suggestion: %s (the tool derives the scope from the per-object catalog; it upgrades to full when the delta is not cheaper)", validationcache.RecoveryCommand(command, targetKind, targetName))
 		}
 		if status == gateBlocked || failureRecord {

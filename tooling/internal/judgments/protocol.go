@@ -108,7 +108,7 @@ var mechanismSections = map[string][]string{
 		"Completion — Persist Gate Cache",
 		"Scope and lifecycle",
 		"Step 9 — Write validate cache (tooling finalize)",
-		"Delta re-run (revalidate@{unit})",
+		"Delta/repair re-run (revalidate@{unit})",
 		"Batch classification (validate)",
 		"Summary format",
 		"Validate-specific notes",

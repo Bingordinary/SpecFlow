@@ -815,6 +815,37 @@ func TestFreshUnitDetailBlockedValidate(t *testing.T) {
 	assertGateStatus(t, output, "validate", "BLOCKED")
 }
 
+// TestFreshUnitDetailStaleBlockedValidate verifies that a stale unit validate
+// failure record is repair-only and advises the derived repair rather than the
+// full-scope recovery.
+func TestFreshUnitDetailStaleBlockedValidate(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	writeUnitSpec(t, repoRoot, "user_auth")
+	files := []cacheFileSpec{{path: "docs/specs/units/candidate/unit_user_auth.md", hash: strings.Repeat("0", 64)}}
+	writeUnitCache(t, repoRoot, "user_auth", "validate", "blocking: true\nresult: fail\np0_count: 1\np1_count: 0\n", files)
+	// The hand-written cache fixture omits the structured state; supply a
+	// usable one so the advice is about the repair, not an unusable baseline.
+	state, err := json.Marshal(gaterun.JudgmentBaseline{
+		SchemaVersion:   validationcache.RecordStateSchemaValidate,
+		LogicalStatus:   map[string]string{"1": "pass"},
+		Findings:        []gaterun.Finding{},
+		SynthesisDigest: "sha256:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendGateJudgments(t, repoRoot, "user_auth", "validate", string(state))
+
+	output, err := freshRun(t, repoRoot, "--unit", "user_auth")
+	if err != nil {
+		t.Fatalf("fresh failed: %v", err)
+	}
+	assertGateStatus(t, output, "validate", "STALE")
+	if !strings.Contains(output, "revalidate@user_auth (repair recovery from the failure record)") {
+		t.Fatalf("expected the repair advice, got:\n%s", output)
+	}
+}
+
 // TestFreshUnitDetailStaleBlockedVerify verifies that a verify failure record
 // whose files changed since the run is reported STALE, not BLOCKED — the
 // gate needs a re-run, matching promote's own stale reason and the

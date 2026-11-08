@@ -406,10 +406,14 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	if salvage != nil {
 		fmt.Fprintf(stdout, "Input drift since gate-plan: %s\n", salvage.noticeList())
 		fmt.Fprintf(stdout, "Salvaged: result persisted; invalidated check(s): %s\n", strings.Join(write.InvalidatedChecks, ", "))
-		if run.Gate == gaterun.GateValidate {
-			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeFull))
-		} else {
+		switch {
+		case run.Gate == gaterun.GateVerify:
 			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeDelta))
+		case result == "fail" && run.TargetKind == gaterun.TargetKindUnit:
+			// A unit validate failure record derives a repair.
+			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeDelta))
+		default:
+			fmt.Fprintf(stdout, "Recover with: %s\n", gaterun.PlanCommand(run, gaterun.ModeFull))
 		}
 	}
 	switch check.Category {
@@ -1471,6 +1475,7 @@ func applyFailureStatuses(run *gaterun.Run, status map[string]string, entries []
 			}
 			if carried[key] {
 				entries[i].Checks[j].Status = "carried"
+				status[key] = "carried"
 				continue
 			}
 			entries[i].Checks[j].Status = st
@@ -1553,9 +1558,10 @@ func writeGateFinalizeUsage(w io.Writer) {
 	fmt.Fprintln(w, "input snapshot must still verify against gate-plan. On a full run, content drift")
 	fmt.Fprintln(w, "(a recorded input whose bytes changed mid-run) is salvaged: the result is")
 	fmt.Fprintln(w, "persisted with the coverage keys whose read set intersects the drift recorded as")
-	fmt.Fprintln(w, "invalidated (a recovery baseline; a unit validate recovers with a full-scope")
-	fmt.Fprintln(w, "`revalidate`, a rule validate with the full confirmation run, and verify with")
-	fmt.Fprintln(w, "`reverify`). A structural divergence")
+	fmt.Fprintln(w, "invalidated (a recovery baseline: a unit validate failure record derives a")
+	fmt.Fprintln(w, "repair through `revalidate`; a salvaged unit validate pass cache, a rule")
+	fmt.Fprintln(w, "validate target, and any other full-scope-only baseline recover with the")
+	fmt.Fprintln(w, "full plan; verify recovers with `reverify`). A structural divergence")
 	fmt.Fprintln(w, "(the input surface itself changed) discards the run. A run that produced findings")
 	fmt.Fprintln(w, "must carry an accepted final synthesis (the optional")
 	fmt.Fprintln(w, "`cross` session); a clean run finalizes directly. The tooling assembles one")

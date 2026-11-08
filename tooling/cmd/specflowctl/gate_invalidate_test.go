@@ -150,8 +150,10 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		t.Fatalf("gate-invalidate failed: %v (stderr=%s)", err, invalidateErr.String())
 	}
 
-	// The recovery plan is the full scope: the persisted invalidation is a
-	// state fact on the failure record, and the full run re-runs everything.
+	// This failure record carries no per-object catalog, so the repair scope
+	// cannot be derived: the plan fails closed to the full scope. The persisted
+	// invalidation is a state fact on the record and the full run re-runs
+	// everything.
 	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
 	run := mustLoadRun(t, repoRoot, runID)
 	if run.Mode != gaterun.ModeFull || len(run.Coverage) != 4 {

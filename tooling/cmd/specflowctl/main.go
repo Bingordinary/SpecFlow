@@ -109,9 +109,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 // blockedOrFullAdvice renders the promote-rejection guidance for a gate
 // cache that is not fresh: a BLOCKED failure record is recovered after the
-// findings are resolved (a unit validate through a full-scope revalidate plan,
-// a rule validate through the full confirmation run, verify through repair);
-// any other non-fresh state needs the full command.
+// findings are resolved (a unit validate through the derived repair, a rule
+// validate through the full confirmation run, verify through repair); any
+// other non-fresh state needs the full command.
 func blockedOrFullAdvice(category validationcache.CheckCategory, command, targetKind, targetName string) string {
 	if category == validationcache.CategoryBlocked {
 		recovery := validationcache.RecoveryCommand(command, targetKind, targetName)
@@ -119,7 +119,7 @@ func blockedOrFullAdvice(category validationcache.CheckCategory, command, target
 			return fmt.Sprintf("Resolve the P0/P1 findings, then run the full `%s` confirmation to recover.", recovery)
 		}
 		if command == "validate" {
-			return fmt.Sprintf("Resolve the P0/P1 findings, then run `%s` (the plan covers the full scope) to recover.", recovery)
+			return fmt.Sprintf("Resolve the P0/P1 findings, then run `%s` to recover (the plan derives the repair, or covers the full scope when the repair cannot be derived).", recovery)
 		}
 		return fmt.Sprintf("Resolve the P0/P1 findings, then run `%s` to recover.", recovery)
 	}
