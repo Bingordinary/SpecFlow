@@ -284,12 +284,22 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	var promisePins []validationcache.PromisePin
 	if run.TargetKind == gaterun.TargetKindUnit {
 		pinFormat = validationcache.PromisePinFormat
-		if run.Gate == gaterun.GateValidate && result == "pass" {
-			promisePins, err = prepareValidatePromisePins(absRoot, run, drifted)
-			if err != nil {
-				return err
+		if run.Gate == gaterun.GateValidate {
+			pins, pinErr := prepareValidatePromisePins(absRoot, run, drifted)
+			if pinErr != nil {
+				// A pass cache's pins are a freshness requirement: without them
+				// the cache cannot prove its provider contracts. A failure
+				// record's pins are repair attribution metadata: the record is
+				// the failure-recovery baseline and must still be written. A
+				// repair over a record without pins cannot attribute provider
+				// inputs and fails closed to the full scope.
+				if result == "pass" {
+					return pinErr
+				}
+			} else {
+				promisePins = pins
+				pinsSet = true
 			}
-			pinsSet = true
 		}
 	}
 
@@ -605,12 +615,15 @@ func preparePromiseState(absRoot string, run *gaterun.Run, result string, drifte
 	return state, path, nil
 }
 
-// prepareValidatePromisePins records the provider promise contracts a passing
-// unit validate run read. The pin set is the validate cache's contract
+// prepareValidatePromisePins records the provider promise contracts a unit
+// validate run read. On a pass cache the pin set is the freshness contract
 // snapshot: freshness compares these fingerprints instead of the provider
 // spec's whole-file hash, so a provider narrative or acceptance-item edit no
-// longer stales the consumer. A provider that is not in the run's input
-// surface cannot be pinned: the run did not read it. A drifted provider
+// longer stales the consumer. On a failure record the same snapshot is the
+// repair attribution surface: the next repair uses it to distinguish a
+// provider narrative edit from a contract change and to re-run the objects
+// that read the changed provider promise. A provider that is not in the run's
+// input surface cannot be pinned: the run did not read it. A drifted provider
 // records the salvage mark instead of a post-drift fingerprint.
 func prepareValidatePromisePins(absRoot string, run *gaterun.Run, drifted map[string]bool) ([]validationcache.PromisePin, error) {
 	relPath := specpaths.CandidateUnitSpecFileRef(run.TargetName)
@@ -651,10 +664,10 @@ func prepareValidatePromisePins(absRoot string, run *gaterun.Run, drifted map[st
 	return pins, nil
 }
 
-// runHasProviderRef reports whether the verify run's input surface includes the
+// runHasProviderRef reports whether the unit run's input surface includes the
 // provider unit's main spec in the run's own layer. A dependency pin is
-// recorded only when the verify sessions actually read the promise it pins, so
-// the provider must be part of the run: a candidate run reads the current-layer
+// recorded only when the sessions actually read the promise it pins, so the
+// provider must be part of the run: a candidate run reads the current-layer
 // provider logical ref, a stable run reads the published stable spec.
 func runHasProviderRef(run *gaterun.Run, unit string) bool {
 	want := "unit:" + unit

@@ -34,11 +34,12 @@ func baselineStandard(t *testing.T, repoRoot string) string {
 }
 
 // promiseCacheFormat supplies the unit-cache promise fields for a fixture:
-// the format marker for every unit cache, and the provider pins for a passing
-// validate cache.
+// the format marker for every unit cache, and the provider pins for a
+// validate cache. A pass cache's pins are its freshness snapshot; a failure
+// record's pins are its repair attribution snapshot.
 func promiseCacheFormat(t *testing.T, root, unit, command, result string) (string, []validationcache.PromisePin, bool) {
 	t.Helper()
-	if command != GateValidate || result != "pass" {
+	if command != GateValidate {
 		return validationcache.PromisePinFormat, nil, false
 	}
 	pins := []validationcache.PromisePin{}
@@ -500,6 +501,112 @@ func TestDeltaPlanFailureRecordDerivesRepair(t *testing.T) {
 	}
 	if !strings.Contains(notices, fmt.Sprintf("%d object(s) re-run", len(run.RerunObjects))) {
 		t.Fatalf("the plan must report the final re-run object count (%d), got %v", len(run.RerunObjects), run.Notices)
+	}
+}
+
+// TestDeltaPlanRepairAttributesProviderByPromisePins verifies that a failure
+// record's promise pins are the repair attribution surface: a provider
+// narrative edit keeps the repair local (the provider spec is excluded from
+// the change set and the Check 7 objects carry), while a provider contract
+// edit re-runs the objects that read that provider promise instead of
+// escalating to the full scope.
+func TestDeltaPlanRepairAttributesProviderByPromisePins(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src/dep", "")
+	writeUnit(t, repoRoot, "stable", "dep", "none", "none", "src/dep", "")
+	writeUnit(t, repoRoot, "candidate", "auth", "dep", "none", "src/auth", "")
+
+	checks := mainCheckMarkers()
+	for i := range checks {
+		checks[i].Status = "pass"
+		if checks[i].Check == "5" {
+			checks[i].Status = "fail"
+		}
+	}
+	mainEntry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", checks)
+	providerEntry, err := validationcache.BuildEvidenceEntry(repoRoot, "unit:dep")
+	if err != nil || providerEntry == nil {
+		t.Fatalf("build provider entry: %v", err)
+	}
+	stableProviderEntry, err := validationcache.BuildEvidenceEntry(repoRoot, "docs/specs/units/stable/unit_dep.md")
+	if err != nil || stableProviderEntry == nil {
+		t.Fatalf("build stable provider entry: %v", err)
+	}
+	finding := Finding{
+		ID: "baseline/acceptance/F1", Severity: "P1", Text: "fixture check 5 finding",
+		Detail: "fixture detail", SourceKey: "5", AffectedKeys: []string{"5"},
+	}
+	writeValidateBaselineFor(t, repoRoot, "auth",
+		[]validationcache.FileEntry{mainEntry, *providerEntry, *stableProviderEntry},
+		"fail", true, "full", finding)
+
+	// The provider is promoted: the candidate spec disappears and the stable
+	// spec's narrative changes. The contract fingerprint is unchanged.
+	if err := os.Remove(filepath.Join(repoRoot, "docs/specs/units/candidate/unit_dep.md")); err != nil {
+		t.Fatal(err)
+	}
+	editFixtureFile(t, filepath.Join(repoRoot, "docs/specs/units/stable/unit_dep.md"), "Prose.", "Prose rewritten.")
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeRepair {
+		t.Fatalf("a provider narrative edit must keep the repair, got mode %q (notices %v)", run.Mode, run.Notices)
+	}
+	notices := strings.Join(run.Notices, " ")
+	if !strings.Contains(notices, "validate repair") {
+		t.Fatalf("expected a repair notice, got %v", run.Notices)
+	}
+	if strings.Contains(notices, "not part of the unit's own spec union") {
+		t.Fatalf("the provider pin must attribute the comparison copy, got %v", run.Notices)
+	}
+	if !stringInSlice(run.CarriedKeys, "7") {
+		t.Fatalf("check 7 must carry over a provider narrative edit, got %v", run.CarriedKeys)
+	}
+	for _, object := range run.ValidateObjects {
+		if object.Check == "7" && stringInSlice(run.RerunObjects, object.ID) {
+			t.Fatalf("check 7 object %s must carry over a provider narrative edit", object.ID)
+		}
+	}
+
+	// A provider contract change is a promise-level change: the objects that
+	// read provider:dep.core re-run, still under the repair.
+	editFixtureFile(t, filepath.Join(repoRoot, "docs/specs/units/stable/unit_dep.md"), "{invariants: [core]}", "{invariants: [core changed]}")
+	run, err = Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeRepair {
+		t.Fatalf("a provider contract change must stay a repair, got mode %q (notices %v)", run.Mode, run.Notices)
+	}
+	rerunCheck7 := false
+	for _, object := range run.ValidateObjects {
+		if object.Check == "7" && stringInSlice(run.RerunObjects, object.ID) {
+			rerunCheck7 = true
+		}
+	}
+	if !rerunCheck7 {
+		t.Fatalf("a provider contract change must re-run the Check 7 objects, got rerun %v", run.RerunObjects)
+	}
+	if strings.Contains(strings.Join(run.Notices, " "), "not part of the unit's own spec union") {
+		t.Fatalf("the promise pin must attribute the provider contract change, got %v", run.Notices)
+	}
+}
+
+// editFixtureFile replaces one occurrence of old with new in place.
+func editFixtureFile(t *testing.T, path, old, new string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), old, new, 1)
+	if updated == string(data) {
+		t.Fatalf("fixture edit did not apply in %s: %q", path, old)
+	}
+	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
+		t.Fatal(err)
 	}
 }
 

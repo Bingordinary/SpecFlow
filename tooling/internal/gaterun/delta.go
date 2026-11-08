@@ -651,10 +651,12 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	if len(report.Inconsistent()) > 0 {
 		return upgrade("the baseline records evidence that contradicts itself for "+strings.Join(report.Inconsistent(), ", "), standing)
 	}
-	// An input the current plan cannot attribute to the unit's own spec union
-	// or to a declared external reference is read by the judgments but is not
-	// part of any object's derived read set. Fail safe: cover the full scope
-	// instead of carrying an unattributed input.
+	// An input the current plan cannot attribute to the unit's own spec union,
+	// a rule reference, or a declared extra input is read by the judgments but
+	// is not part of any object's derived read set. Provider specs are not
+	// listed here: promise pins carry that attribution and a changed provider
+	// contract is a `promise` entry, skipped below. Fail safe: cover the full
+	// scope instead of carrying an unattributed input.
 	ownSet := map[string]bool{}
 	for _, path := range run.OwnSpecFiles {
 		ownSet[changeReportKey(path)] = true

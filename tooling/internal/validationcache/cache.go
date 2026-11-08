@@ -135,9 +135,10 @@ type cacheFile struct {
 	PinFormat     string `yaml:"pin_format,omitempty"`
 	pinFormatSeen bool
 	// PromisePins records the provider promise contracts a unit validate run
-	// read. It replaces whole-file freshness for the provider spec entries.
-	// PromisePinsSet distinguishes "computed, no dependencies" from a cache
-	// that carries no promise-pin block.
+	// read. A pass cache uses them for freshness; a failure record uses them
+	// for repair attribution. Either way they replace whole-file comparison
+	// for the provider spec entries. PromisePinsSet distinguishes "computed,
+	// no dependencies" from a cache that carries no promise-pin block.
 	PromisePins     []PromisePin
 	promisePinsSeen bool
 	Files           []cacheFileEntry
@@ -1610,13 +1611,14 @@ func checkCurrentValidateInputs(repoRoot string, cache *cacheFile, layer string)
 	return nil
 }
 
-// promiseProviderSubjectPaths returns the resolved cache-entry paths whose
-// freshness is governed by promise_pins: the provider unit's main spec in the
-// cache's own layer, plus the provider's published stable main spec when a
-// candidate validate records it as comparison evidence. A changed provider
-// narrative or acceptance item is not a contract change, so these entries are
-// excluded from whole-file comparison; the promise pin remains the contract
-// dependency.
+// promiseProviderSubjectPaths returns the resolved cache-entry paths that
+// promise_pins govern: the provider unit's main spec in the cache's own layer,
+// plus the provider's published stable main spec when a candidate validate
+// records it as comparison evidence. A pass cache uses the pins for freshness;
+// a failure record uses them for repair attribution. In both cases a changed
+// provider narrative or acceptance item is not a contract change, so these
+// entries are excluded from whole-file comparison; the promise pin remains the
+// contract dependency.
 func promiseProviderSubjectPaths(repoRoot string, cache *cacheFile) map[string]bool {
 	paths := map[string]bool{}
 	for _, pin := range cache.PromisePins {
@@ -1676,10 +1678,10 @@ func checkPromisePinFreshness(repoRoot, targetKind string, cache *cacheFile) *Ch
 	if cache.Command != "validate" {
 		return nil
 	}
-	// pin_format and promise_pins are requirements of a passing validate
-	// cache. A failure record is the failure-recovery baseline: it carries no
-	// promise_pins, and its blocking classification must stay BLOCKED rather
-	// than being downgraded to a repairable stale cache.
+	// pin_format is required on every unit cache; promise_pins is required on
+	// a pass cache. A failure record may carry promise_pins as repair
+	// attribution metadata, but its blocking classification must stay BLOCKED
+	// rather than being reclassified by a pin comparison.
 	if cache.Result != "pass" {
 		return nil
 	}

@@ -18,6 +18,30 @@ func promiseVerifyRun(unit string) *gaterun.Run {
 	}
 }
 
+// TestPrepareValidatePromisePinsRecordsRepairSnapshot pins the pin source a
+// failure record uses for repair attribution: the same provider promise
+// fingerprints a pass cache records for freshness.
+func TestPrepareValidatePromisePinsRecordsRepairSnapshot(t *testing.T) {
+	root := t.TempDir()
+	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")
+	writePromiseStateUnit(t, root, "web", "web.session_api", "auth.login_api", "session")
+
+	run := &gaterun.Run{
+		Gate:       gaterun.GateValidate,
+		TargetKind: gaterun.TargetKindUnit,
+		TargetName: "web",
+		Target:     "candidate",
+		Refs:       []gaterun.Ref{{Ref: "unit:auth"}},
+	}
+	pins, err := prepareValidatePromisePins(root, run, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pins) != 1 || pins[0].ID != "auth.login_api" || pins[0].Fingerprint == "" {
+		t.Fatalf("pins = %+v", pins)
+	}
+}
+
 func TestPreparePromiseStateRecordsOwnAndPins(t *testing.T) {
 	root := t.TempDir()
 	writePromiseStateUnit(t, root, "auth", "auth.login_api", "", "login")

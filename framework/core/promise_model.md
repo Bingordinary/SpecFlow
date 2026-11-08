@@ -515,7 +515,8 @@ Provider fingerprints are recorded in three places on purpose: the promise
 state record is the durable publication contract (written by verify finalize,
 staged to stable in the promote transaction, read by the `fresh` DONE view);
 the validate cache's `promise_pins` is the validate gate's input freshness
-snapshot; a verify judgment's pin is that conclusion's freshness. Promote's
+snapshot (on a failure record, its repair attribution snapshot); a verify
+judgment's pin is that conclusion's freshness. Promote's
 cross-check (record vs spec vs current layer vs stable layer) enforces their
 consistency; a change that adds a pin source must extend that check in the
 same change. This is a deliberate denormalization, not drift.
@@ -569,12 +570,13 @@ its `source_pins` and re-runs the acceptance items that declare the block; it
 still does not change the contract fingerprint or reopen consumers.
 
 The Consumers column is enforced by both gate caches. A unit validate cache
-records a `promise_pins` block of the provider promise fingerprints it read;
-a verify conclusion pins the same fingerprints instead of the provider spec
-text. A provider narrative, acceptance-item, test, or evidence-record edit is
-not a contract change and leaves the consumer's caches FRESH. A promise contract
-change is reported as a promise-level change entry and reopens the consumer's
-caches.
+records a `promise_pins` block of the provider promise fingerprints it read —
+on a pass cache for freshness, on a failure record as the repair attribution
+snapshot; a verify conclusion pins the same fingerprints instead of the
+provider spec text. A provider narrative, acceptance-item, test, or
+evidence-record edit is not a contract change and leaves the consumer's caches
+FRESH. A promise contract change is reported as a promise-level change entry
+and reopens the consumer's caches.
 
 ## Evidence-record role
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/testsupport"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 )
@@ -749,6 +750,92 @@ func TestCheckValidateFailureRecordWithDependencyStaysBlocked(t *testing.T) {
 	}
 	if result.Category != CategoryBlocked {
 		t.Fatalf("failure record category = %s (%s), want blocked", result.Category, result.Reason)
+	}
+}
+
+// TestCheckValidateFailureRecordWithPinsStaysBlocked pins the repair
+// attribution contract: a failure record may carry promise_pins, but those
+// pins are not a freshness input. A provider contract move leaves the record
+// BLOCKED (not STALE); the change report still names the promise so the repair
+// plan can re-run the objects that read it.
+func TestCheckValidateFailureRecordWithPinsStaysBlocked(t *testing.T) {
+	repoRoot := t.TempDir()
+	unitDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	providerSpec := func(contract string) string {
+		return "---\nid: auth\nrule_refs: none\n---\n\n## Promises\n\npromises:\n  - id: auth.login_api\n    summary: Login.\n    contract: {invariants: [" + contract + "]}\n"
+	}
+	providerPath := filepath.Join(unitDir, "unit_auth.md")
+	if err := os.WriteFile(providerPath, []byte(providerSpec("login")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	consumerPath := filepath.Join(unitDir, "unit_web.md")
+	consumerSpec := "---\nid: web\nrule_refs: none\n---\n\n## Design Narrative\n### Narrative\n\nWeb.\n\n## Promises\n\npromises:\n  - id: web.session_api\n    summary: Session.\n    contract: {invariants: [session]}\n    depends_on: [auth.login_api]\n\n## Acceptance Items\n\nacceptance_item_set:\n  - id: web.session_ok\n    promise: web.session_api\n    description: Given a session, when read, then it returns.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: src/web.go\n    verification_method: Go test.\n    pass_condition: Session read passes.\n    runnable: yes\n"
+	if err := os.WriteFile(consumerPath, []byte(consumerSpec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := BuildEvidenceEntry(repoRoot, "docs/specs/units/candidate/unit_web.md")
+	if err != nil || entry == nil {
+		t.Fatalf("build consumer entry: %v", err)
+	}
+	current, issues := specvalidation.PromiseFingerprintsForScope(repoRoot, specvalidation.PromiseScopeForLayer("candidate"))
+	if len(issues) > 0 {
+		t.Fatalf("promise graph: %s", strings.Join(issues, "; "))
+	}
+	fingerprint, ok := current["auth.login_api"]
+	if !ok {
+		t.Fatal("provider promise auth.login_api is unresolved")
+	}
+	if _, err := WriteCache(repoRoot, "unit", "web", CacheWrite{
+		Command:        "validate",
+		Unit:           "web",
+		Mode:           "full",
+		Result:         "fail",
+		Blocking:       true,
+		Target:         "candidate",
+		Standard:       fixtureStandard(t, repoRoot),
+		Timestamp:      "2026-06-30T10:00:00Z",
+		Entries:        []FileEntry{*entry},
+		PinFormat:      PromisePinFormat,
+		PromisePins:    []PromisePin{{ID: "auth.login_api", Fingerprint: fingerprint}},
+		PromisePinsSet: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckValidate(repoRoot, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Category != CategoryBlocked {
+		t.Fatalf("a failure record with pins = %s (%s), want blocked", result.Category, result.Reason)
+	}
+
+	// The provider contract moves. The record stays BLOCKED: its pins are
+	// repair attribution metadata, not a freshness classification input.
+	if err := os.WriteFile(providerPath, []byte(providerSpec("login changed")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Category != CategoryBlocked {
+		t.Fatalf("a provider contract move must keep the failure record BLOCKED, got %s (%s)", result.Category, result.Reason)
+	}
+	report, err := DeriveChangeReport(repoRoot, "unit", "web", "validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, change := range report.Entries {
+		if change.Kind == "promise" && change.Promise == "auth.login_api" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the repair change report must name the moved provider promise, got %+v", report.Entries)
 	}
 }
 

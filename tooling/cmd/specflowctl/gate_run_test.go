@@ -2248,7 +2248,7 @@ func TestGateRunValidateCandidateFailWritesFailureRecord(t *testing.T) {
 	// verify full-run FAIL: basis: full, complete pass/fail status map,
 	// no carried entries.
 	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
-	for _, want := range []string{"result: fail", "blocking: true", "basis: full", `check: "2"`, "status: fail"} {
+	for _, want := range []string{"result: fail", "blocking: true", "basis: full", "promise_pins: []", `check: "2"`, "status: fail"} {
 		if !strings.Contains(cache, want) {
 			t.Fatalf("expected %q in the failure record, got:\n%s", want, cache)
 		}
