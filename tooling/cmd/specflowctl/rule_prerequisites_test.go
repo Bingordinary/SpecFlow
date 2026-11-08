@@ -36,6 +36,10 @@ func validateJudgmentsForSpec(t *testing.T, specPath, unitName string) string {
 		layer = "stable"
 	}
 	root := strings.Split(filepath.ToSlash(specPath), "/docs/specs/")[0]
+	globalRules, err := specpaths.StableGlobalRuleIDs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	evidenceBase := ""
 	var evidenceSections []validatekeys.EvidenceSection
 	recordPath := filepath.Join(root, "docs/specs/units", layer, "evidence", "unit_"+unitName+".md")
@@ -48,7 +52,7 @@ func validateJudgmentsForSpec(t *testing.T, specPath, unitName string) string {
 		}
 		evidenceSections = parsed
 	}
-	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, Rules: globalRules, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
 	out, err := json.Marshal(struct {
 		SchemaVersion   int                `json:"schema_version"`
 		ValidateObjects []validatekeys.Key `json:"validate_objects"`

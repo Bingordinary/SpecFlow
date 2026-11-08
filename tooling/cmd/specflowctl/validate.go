@@ -177,8 +177,10 @@ func writeValidateWriteResult(stdout io.Writer, result validateResult) {
 }
 
 // runValidateKeys is a read-only diagnostic: it prints the per-object
-// judgment catalog derived from the spec's existing structured fields. It
-// does not run any gate, write state, or judge the spec.
+// judgment catalog derived from the spec's existing structured fields and
+// the current stable global rules that apply by default. A gate plan also
+// appends rule files supplied through the input manifest. It does not run
+// any gate, write state, or judge the spec.
 func runValidateKeys(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("validate keys", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -240,7 +242,16 @@ func runValidateKeys(args []string, stdout, stderr io.Writer) error {
 		}
 		evidenceSections = sections
 	}
-	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract)
+	globalRules, err := specpaths.StableGlobalRuleIDs(absRoot)
+	if err != nil {
+		return fmt.Errorf("list stable global rules: %w", err)
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{
+		Unit:             unitName,
+		Rules:            globalRules,
+		EvidenceBase:     evidenceBase,
+		EvidenceSections: evidenceSections,
+	}, contract)
 	switch strings.TrimSpace(strings.ToLower(*format)) {
 	case "json":
 		enc := json.NewEncoder(stdout)

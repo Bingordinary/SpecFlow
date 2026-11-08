@@ -1676,7 +1676,7 @@ func deriveUnitValidate(repoRoot, unitName, target string) ([]Ref, error) {
 			}
 		}
 	}
-	globalIDs, err := globalRuleIDs(repoRoot)
+	globalIDs, err := specpaths.StableGlobalRuleIDs(repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1893,27 +1893,6 @@ func unitEvidenceRecordPath(repoRoot, unitName, layer string) ([]string, error) 
 		return nil, nil
 	}
 	return []string{record.Path}, nil
-}
-
-// globalRuleIDs lists the active global rule (g_rule_*) ids from the stable
-// layer. Candidate global rules are unpublished and do not constrain units.
-func globalRuleIDs(repoRoot string) ([]string, error) {
-	dir := specpaths.RuleStableDir
-	entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(dir)))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read global rule directory %s: %w", dir, err)
-	}
-	var out []string
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "g_rule_") && strings.HasSuffix(entry.Name(), ".md") {
-			out = append(out, strings.TrimSuffix(entry.Name(), ".md"))
-		}
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 // ------------------------------------------------------------

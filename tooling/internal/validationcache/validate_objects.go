@@ -36,6 +36,14 @@ func checkValidateObjectClosure(repoRoot, unitName, specRel string) (CheckResult
 	if err != nil {
 		return CheckResult{Fresh: false, Category: CategoryStale, Reason: fmt.Sprintf("cannot read validate cache at %s: %v", relPath(repoRoot, cachePath), err)}, nil
 	}
+	return checkValidateObjectClosureForCache(repoRoot, unitName, specRel, cache)
+}
+
+// checkValidateObjectClosureForCache is the closure check over an already
+// parsed cache. The rendered-cache self-check passes the in-memory candidate
+// through this same function, so gate-finalize, fresh, and promote judge one
+// catalog derivation.
+func checkValidateObjectClosureForCache(repoRoot, unitName, specRel string, cache *cacheFile) (CheckResult, error) {
 	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(specRel)))
 	if err != nil {
 		return CheckResult{Fresh: false, Category: CategoryStale, Reason: fmt.Sprintf("cannot read spec %s: %v", specRel, err)}, nil
@@ -59,7 +67,6 @@ func checkValidateObjectClosure(repoRoot, unitName, specRel string) (CheckResult
 	if len(evidenceSections) > 0 {
 		evidenceBase = evidenceSections[0].Base
 	}
-	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unitName, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
 	if strings.TrimSpace(cache.Judgments) == "" {
 		return CheckResult{Fresh: false, Category: CategoryStale, Reason: "validate cache has no per-object catalog — run the full validate"}, nil
 	}
@@ -73,6 +80,16 @@ func checkValidateObjectClosure(repoRoot, unitName, specRel string) (CheckResult
 	if len(recorded.ValidateObjects) == 0 {
 		return CheckResult{Fresh: false, Category: CategoryStale, Reason: "validate cache has no per-object catalog — run the full validate"}, nil
 	}
+	rules, err := validateCatalogRules(repoRoot, recorded.ValidateObjects)
+	if err != nil {
+		return CheckResult{Fresh: false, Category: CategoryStale, Reason: "validate catalog rule inputs cannot be derived: " + err.Error()}, nil
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{
+		Unit:             unitName,
+		Rules:            rules,
+		EvidenceBase:     evidenceBase,
+		EvidenceSections: evidenceSections,
+	}, contract).Keys
 	recordedObjects := make(map[string]validatekeys.Key, len(recorded.ValidateObjects))
 	for _, object := range recorded.ValidateObjects {
 		recordedObjects[object.ID] = object
@@ -119,6 +136,33 @@ func checkValidateObjectClosure(repoRoot, unitName, specRel string) (CheckResult
 		}
 	}
 	return CheckResult{Fresh: true, Category: CategoryFresh}, nil
+}
+
+// validateCatalogRules returns the rule ids the current object catalog must
+// derive. The planner builds the recorded catalog from the spec's declared
+// rules, the published stable global rules that apply to every unit by default,
+// and any rule file the input manifest supplied. BuildCatalog recovers the
+// declared rules from the parsed graph; this function supplies the other two:
+// the current stable global set (so a newly published global rule stales the
+// cache), and the rule references the recorded catalog was built with. The
+// recorded read sets are used instead of the cache's files list because
+// gate-extend may add a read-only rule input without making it a required
+// catalog object.
+func validateCatalogRules(repoRoot string, recorded []validatekeys.Key) ([]string, error) {
+	rules, err := specpaths.StableGlobalRuleIDs(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range recorded {
+		for _, read := range key.Reads {
+			ruleID, ok := strings.CutPrefix(read, "rule:")
+			if !ok || ruleID == "" || specpaths.ValidateTargetName("rule", ruleID) != nil {
+				continue
+			}
+			rules = append(rules, ruleID)
+		}
+	}
+	return rules, nil
 }
 
 // evidenceSectionsForCache parses the unit's evidence record with its Keys

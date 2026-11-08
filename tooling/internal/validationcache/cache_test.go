@@ -419,6 +419,175 @@ func TestCheckValidateStalesOnNewEvidenceRecord(t *testing.T) {
 	}
 }
 
+// TestCheckValidateCatalogRulesMatchPlanner pins issue #115: the current
+// catalog must derive the same rule inputs the planner recorded — the bound
+// rules from the spec, the current stable global rules, and the
+// manifest-supplied rule files recorded in the cache's input surface.
+func TestCheckValidateCatalogRulesMatchPlanner(t *testing.T) {
+	repoRoot := t.TempDir()
+	unit := "test"
+	specPath := filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateUnitSpecFileRef(unit)))
+	if err := os.MkdirAll(filepath.Dir(specPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "---\nid: test\nrule_refs:\n  - b_rule_local\n---\n\n# Test\n\n## Design Narrative\n\n### Narrative\n\nProse.\n\n## Promises\n\npromises:\n  - id: test.core\n    summary: Core.\n    source: [Narrative]\n    contract: {invariants: [core]}\n"
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range []string{"b_rule_local", "b_rule_manifest"} {
+		path := filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleCandidateFileRef(rule)))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("---\nrule_id: "+rule+"\n---\nConstraint.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	globalPath := filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleStableFileRef("g_rule_global")))
+	globalContent := "---\nrule_id: g_rule_global\n---\nGlobal constraint.\n"
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(globalPath, []byte(globalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	write := issue115ValidateCacheWrite(t, repoRoot, unit, issue115ValidateJudgments(t, repoRoot, unit, []string{"g_rule_global", "b_rule_manifest"}))
+	if _, err := WriteCache(repoRoot, "unit", unit, write); err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckValidate(repoRoot, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("planner-shaped cache must be fresh: %s", result.Reason)
+	}
+
+	// The rendered self-check must reach the same conclusion on the same cache.
+	cachePath, err := cacheFilePath(repoRoot, "unit", unit, "validate_result.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := CheckRenderedCache(repoRoot, "unit", unit, "validate", "candidate", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rendered.Fresh {
+		t.Fatalf("rendered self-check must be fresh: %s", rendered.Reason)
+	}
+
+	// A rendered catalog that omits the derived rule objects must fail the
+	// self-check instead of reporting FRESH.
+	wrong := write
+	wrong.Judgments = issue115ValidateJudgments(t, repoRoot, unit, nil)
+	wrongContent, err := RenderCache(unit, wrong)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err = CheckRenderedCache(repoRoot, "unit", unit, "validate", "candidate", wrongContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.Fresh {
+		t.Fatal("rendered self-check must reject a catalog missing derived rule objects")
+	}
+
+	// Modifying a global rule still stales the cache.
+	if err := os.WriteFile(globalPath, []byte(globalContent+"Changed.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("a changed global rule must stale the cache")
+	}
+
+	// The recorded surface is reusable again once the content matches.
+	if err := os.WriteFile(globalPath, []byte(globalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("restored global rule must match the recorded hash: %s", result.Reason)
+	}
+
+	// Modifying a manifest-supplied rule stales the cache too.
+	manifestPath := filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleCandidateFileRef("b_rule_manifest")))
+	if err := os.WriteFile(manifestPath, []byte("---\nrule_id: b_rule_manifest\n---\nChanged.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err = CheckValidate(repoRoot, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh {
+		t.Fatal("a changed manifest rule must stale the cache")
+	}
+}
+
+func issue115ValidateJudgments(t *testing.T, repoRoot, unit string, rules []string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(specpaths.CandidateUnitSpecFileRef(unit))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := validatekeys.Parse(unit, string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit, Rules: rules}, contract).Keys
+	out, err := json.Marshal(validateObjectJudgments{SchemaVersion: RecordStateSchemaValidate, ValidateObjects: catalog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func issue115ValidateCacheWrite(t *testing.T, repoRoot, unit, judgments string) CacheWrite {
+	t.Helper()
+	var entries []FileEntry
+	for _, ref := range []string{
+		specpaths.CandidateUnitSpecFileRef(unit),
+		"rule:b_rule_local",
+		"rule:g_rule_global",
+		"rule:b_rule_manifest",
+	} {
+		entry, err := BuildEvidenceEntry(repoRoot, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, *entry)
+	}
+	return CacheWrite{
+		Command:        "validate",
+		Unit:           unit,
+		Mode:           "full",
+		Result:         "pass",
+		Target:         "candidate",
+		Standard:       fixtureStandard(t, repoRoot),
+		Timestamp:      "2026-11-08T10:00:00Z",
+		Judgments:      judgments,
+		PinFormat:      PromisePinFormat,
+		PromisePins:    []PromisePin{},
+		PromisePinsSet: true,
+		Entries:        entries,
+	}
+}
+
 func TestCheckValidateStalesOnNewGlobalRule(t *testing.T) {
 	repoRoot := t.TempDir()
 	candidateDir := filepath.Join(repoRoot, "docs/specs/units/candidate")
@@ -3454,7 +3623,11 @@ func validateCatalogJudgments(t *testing.T, repoRoot, unit string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit}, contract).Keys
+		globalRules, err := specpaths.StableGlobalRuleIDs(repoRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: unit, Rules: globalRules}, contract).Keys
 		out, err := json.Marshal(validateObjectJudgments{SchemaVersion: RecordStateSchemaValidate, ValidateObjects: catalog})
 		if err != nil {
 			t.Fatal(err)
@@ -3503,7 +3676,13 @@ func writeCacheFixtureFile(t *testing.T, p string, data []byte, mode os.FileMode
 								evidenceSections = parsed
 							}
 						}
-						catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: cache.Unit, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
+						rules, _ := specpaths.StableGlobalRuleIDs(root)
+						for _, entry := range cache.Files {
+							if ruleID, ok := strings.CutPrefix(entry.Path, "rule:"); ok && ruleID != "" {
+								rules = append(rules, ruleID)
+							}
+						}
+						catalog := validatekeys.BuildCatalog(graph, validatekeys.CatalogInput{Unit: cache.Unit, Rules: rules, EvidenceBase: evidenceBase, EvidenceSections: evidenceSections}, contract).Keys
 						block, err := json.Marshal(validateObjectJudgments{SchemaVersion: RecordStateSchemaValidate, ValidateObjects: catalog})
 						if err == nil {
 							data = append(data, []byte("\n<!-- GATE_JUDGMENTS_BEGIN\n"+string(block)+"\nGATE_JUDGMENTS_END -->\n")...)

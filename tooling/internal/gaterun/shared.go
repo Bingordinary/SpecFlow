@@ -132,7 +132,7 @@ func (d *Derivation) addReviewInputs(run *Run) error {
 	if err != nil {
 		return err
 	}
-	global, err := globalRuleIDs(root)
+	global, err := specpaths.StableGlobalRuleIDs(root)
 	if err != nil {
 		return err
 	}

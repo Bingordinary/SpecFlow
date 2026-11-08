@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -155,4 +156,31 @@ func ResolveRuleFile(repoRoot, ruleID string) string {
 		}
 	}
 	return ""
+}
+
+// StableGlobalRuleIDs lists the published global rule (g_rule_*) ids in the
+// stable layer. A global rule applies to every unit by default and is never
+// declared in a unit's rule_refs; only its stable copy is active, so candidate
+// global drafts do not constrain units. This is the single definition of the
+// default global-rule set used by planning, freshness, and diagnostics.
+func StableGlobalRuleIDs(repoRoot string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(RuleStableDir)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "g_rule_") && strings.HasSuffix(name, ".md") {
+			out = append(out, strings.TrimSuffix(name, ".md"))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

@@ -1480,6 +1480,135 @@ func TestGateRunGlobalRuleUsesStableTruth(t *testing.T) {
 	}
 }
 
+// TestGateRunGlobalRuleWithBoundRuleStaysFresh pins issue #115: a unit that
+// declares a bound rule and runs in a repository with a stable global rule
+// records both rules in its catalog. finalize's self-check, fresh, and the
+// delta planner must all accept the cache the run wrote.
+func TestGateRunGlobalRuleWithBoundRuleStaysFresh(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	mainPath := grWriteSpecWithRefs(t, repoRoot, "self", "none", "b_rule_local")
+	grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\n---\nStable constraint.\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_local.md", "---\nid: b_rule_local\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
+	run, err := gaterun.Load(repoRoot, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plannedReads []string
+	for _, object := range run.ValidateObjects {
+		if object.ID == "global:rule-interactions" {
+			plannedReads = object.Reads
+			break
+		}
+	}
+	if !stringInList(plannedReads, "rule:b_rule_local") || !stringInList(plannedReads, "rule:g_rule_http") {
+		t.Fatalf("planned global:rule-interactions must read the bound and global rules, got: %v", plannedReads)
+	}
+
+	main := filepath.ToSlash(strings.TrimPrefix(mainPath, repoRoot+string(filepath.Separator)))
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+		"1": {main + ": frontmatter", main + ": Description"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
+		"2": {main + ": Description"},
+		"4": {main + ": Description"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
+		"5": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
+		"7": {main + ": frontmatter"},
+		"8": {"rule:b_rule_local: all", "rule:g_rule_http: all"},
+	}))
+	grSubmitClarity(t, repoRoot, runID, main)
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+	out := grFinalizeOK(t, repoRoot, runID)
+	if !strings.Contains(out, "Self-check: FRESH") {
+		t.Fatalf("finalize must accept the cache it wrote, got:\n%s", out)
+	}
+
+	result, err := validationcache.CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("fresh must accept the cache finalize wrote: %s", result.Reason)
+	}
+	if _, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate", "--mode", "delta"); err == nil || !strings.Contains(err.Error(), "cache is fresh") {
+		t.Fatalf("a fresh cache must leave nothing to re-run, got: %v", err)
+	}
+
+	// A newly published global rule is a new required input: the cache stales
+	// so the rule objects re-run, even though the unit spec did not change.
+	grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_new.md", "---\nrule_id: g_rule_new\nrule_scope: global\n---\nNew constraint.\n")
+	result, err = validationcache.CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fresh || !strings.Contains(result.Reason, "rule:g_rule_new") {
+		t.Fatalf("a new global rule must stale the cache and name the input: %s", result.Reason)
+	}
+}
+
+// TestGateRunValidateExtendedRuleStaysFresh pins the boundary between the
+// required catalog and a read-only extra input: gate-extend may add a rule
+// file to the run's read surface without making it a catalog object, and the
+// finalize self-check must not demand a judgment for it.
+func TestGateRunValidateExtendedRuleStaysFresh(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	mainPath := grWriteSpecWithRefs(t, repoRoot, "self", "none", "b_rule_local")
+	grWriteFile(t, repoRoot, "docs/specs/rules/stable/g_rule_http.md", "---\nrule_id: g_rule_http\nrule_scope: global\n---\nStable constraint.\n")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_local.md", "---\nid: b_rule_local\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nMust use TLS.\n")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "self", "--target", "candidate")
+	grWriteFile(t, repoRoot, "docs/specs/rules/candidate/b_rule_extra.md", "---\nid: b_rule_extra\nscope: unit\n---\n\n# Rule\n\n## Constraint\n\nRead-only extra evidence.\n")
+	var extendOut, extendErr bytes.Buffer
+	if err := runGateExtend([]string{"--repo-root", repoRoot, "--run", runID, "--paths", "rule:b_rule_extra"}, &extendOut, &extendErr); err != nil {
+		t.Fatalf("gate-extend: %v %s", err, extendErr.String())
+	}
+
+	main := filepath.ToSlash(strings.TrimPrefix(mainPath, repoRoot+string(filepath.Separator)))
+	grSubmitOK(t, repoRoot, runID, "document", grValidateReport([]string{"1", gaterun.ClarityCheck}, map[string][]string{
+		"1": {main + ": frontmatter", main + ": Description"},
+		"3": {main + ": Acceptance Items"},
+		"6": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "design", grValidateReport([]string{"2", "3", "4"}, map[string][]string{
+		"2": {main + ": Description"},
+		"4": {main + ": Description"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{
+		"5": {main + ": Acceptance Items"},
+	}))
+	grSubmitOK(t, repoRoot, runID, "external", grDependenciesReport(map[string][]string{
+		"7": {main + ": frontmatter"},
+		"8": {"rule:b_rule_local: all", "rule:g_rule_http: all", "rule:b_rule_extra: all"},
+	}))
+	grSubmitClarity(t, repoRoot, runID, main)
+	grSubmitOK(t, repoRoot, runID, "cross", grCrossReport(main, "Description"))
+	out := grFinalizeOK(t, repoRoot, runID)
+	if !strings.Contains(out, "Self-check: FRESH") {
+		t.Fatalf("finalize must accept a cache with a read-only extended rule, got:\n%s", out)
+	}
+	result, err := validationcache.CheckValidate(repoRoot, "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fresh {
+		t.Fatalf("fresh must accept the cache with the extended read-only rule: %s", result.Reason)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/self/validate_result.md")
+	if !strings.Contains(cache, "- path: rule:b_rule_extra") {
+		t.Fatalf("the extended rule must be part of the cache input surface, got:\n%s", cache)
+	}
+	if strings.Contains(cache, `"id":"rule:b_rule_extra`) {
+		t.Fatalf("a read-only extended rule must not become a catalog object, got:\n%s", cache)
+	}
+}
+
 func TestGateRunVerifyFlow(t *testing.T) {
 	repoRoot := createCLITestRepo(t)
 	grWriteSpec(t, repoRoot, "auth")

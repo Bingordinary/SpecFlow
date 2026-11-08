@@ -792,6 +792,9 @@ func CheckWriteResult(repoRoot, targetKind, targetName, command, target string) 
 
 // CheckRenderedCache runs the same parsed-cache checks used by fresh and
 // promote, but against an in-memory candidate that has not been published.
+// For a unit validate cache the per-object closure runs here too: finalize's
+// self-check must reach the same conclusion as fresh and promote about the
+// cache it is about to publish.
 func CheckRenderedCache(repoRoot, targetKind, targetName, command, target string, content []byte) (CacheResult, error) {
 	cache, err := parseCache(content)
 	if err != nil {
@@ -816,6 +819,16 @@ func CheckRenderedCache(repoRoot, targetKind, targetName, command, target string
 	}
 	if err != nil {
 		return CacheResult{}, err
+	}
+	if res.Fresh && targetKind == "unit" && command == "validate" {
+		specRel := specpaths.CandidateUnitSpecFileRef(targetName)
+		if target == "stable" {
+			specRel = specpaths.StableUnitSpecFileRef(targetName)
+		}
+		res, err = checkValidateObjectClosureForCache(repoRoot, targetName, specRel, cache)
+		if err != nil {
+			return CacheResult{}, err
+		}
 	}
 	return CacheResult{Fresh: res.Fresh, Category: res.Category, Reason: res.Reason, RepairOnly: res.RepairOnly, FailureRecord: res.FailureRecord}, nil
 }
@@ -1550,7 +1563,7 @@ func currentRequiredValidateInputs(repoRoot string, cache *cacheFile, layer stri
 			Abs:   filepath.Clean(resolvePath(repoRoot, record.Path)),
 		})
 	}
-	globalRules, err := currentStableGlobalRuleIDs(repoRoot)
+	globalRules, err := specpaths.StableGlobalRuleIDs(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve current global-rule input surface: %w", err)
 	}
@@ -1595,30 +1608,6 @@ func checkCurrentValidateInputs(repoRoot string, cache *cacheFile, layer string)
 		}
 	}
 	return nil
-}
-
-// currentStableGlobalRuleIDs lists published global rules that apply to every
-// current-layer unit by default.
-func currentStableGlobalRuleIDs(repoRoot string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(repoRoot, filepath.FromSlash(specpaths.RuleStableDir)))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, "g_rule_") && strings.HasSuffix(name, ".md") {
-			out = append(out, strings.TrimSuffix(name, ".md"))
-		}
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 // promiseProviderSubjectPaths returns the resolved cache-entry paths whose

@@ -141,3 +141,38 @@ func TestIsSpecDocumentPath(t *testing.T) {
 		}
 	}
 }
+
+func TestStableGlobalRuleIDs(t *testing.T) {
+	repoRoot := t.TempDir()
+	write := func(rel string) {
+		t.Helper()
+		path := filepath.Join(repoRoot, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rule\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(RuleStableFileRef("g_rule_b"))
+	write(RuleStableFileRef("g_rule_a"))
+	write(RuleStableFileRef("b_rule_bound"))
+	write(RuleCandidateFileRef("g_rule_draft"))
+	write(RuleStableDir + "/notes.txt")
+
+	ids, err := StableGlobalRuleIDs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "g_rule_a" || ids[1] != "g_rule_b" {
+		t.Fatalf("StableGlobalRuleIDs = %v, want [g_rule_a g_rule_b]", ids)
+	}
+
+	empty, err := StableGlobalRuleIDs(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("missing stable rule directory must yield no ids, got %v", empty)
+	}
+}
