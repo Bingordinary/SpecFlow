@@ -88,14 +88,16 @@ const (
 	SessionNotRequired  = "not_required"
 
 	// Report kinds: a group of validate checks, one or more verify items, a
-	// reviewed file, or the final cross synthesis.
-	SessionKindChecks       = "checks"
-	SessionKindItem         = "item"
-	SessionKindUnit         = "unit"
-	SessionKindDesign       = "design"
-	SessionKindCode         = "code"
-	SessionKindArchitecture = "architecture"
-	SessionKindCross        = "cross"
+	// reviewed file, or the final cross synthesis. The values are shared with
+	// the protocol-section mapping so a session kind cannot drift from the
+	// standard it binds.
+	SessionKindChecks       = judgments.ProtocolSessionChecks
+	SessionKindItem         = judgments.ProtocolSessionItem
+	SessionKindUnit         = judgments.ProtocolSessionUnit
+	SessionKindDesign       = judgments.ProtocolSessionDesign
+	SessionKindCode         = judgments.ProtocolSessionCode
+	SessionKindArchitecture = judgments.ProtocolSessionArchitecture
+	SessionKindCross        = judgments.ProtocolSessionCross
 
 	// Lens tags distinguish the two judgment stances the merged `verify` gate
 	// carries: `alignment` treats the spec as authority (acceptance items) and
@@ -395,9 +397,17 @@ type SessionState struct {
 // the coverage set that must be judged, and the run mode. It carries no
 // sessions: sessions are created under the tooling's computed key batches.
 type Run struct {
-	RunID         string                       `json:"run_id"`
-	SchemaVersion int                          `json:"schema_version,omitempty"`
-	Protocol      string                       `json:"protocol,omitempty"`
+	RunID         string `json:"run_id"`
+	SchemaVersion int    `json:"schema_version,omitempty"`
+	// Protocol is the gate-wide judging standard used by verify (bound per
+	// judgment record) and rule validate (which has no partial run). Unit
+	// validate records Standards instead.
+	Protocol string `json:"protocol,omitempty"`
+	// Standards is the unit validate standard split by session group: one
+	// fingerprint per coverage group plus CrossKey for the final synthesis.
+	// Verify binds its standard per judgment record; rule validate has no
+	// partial run and keeps the single Protocol value.
+	Standards     map[string]string            `json:"standards,omitempty"`
 	Records       map[string]judgments.Binding `json:"records,omitempty"`
 	Gate          string                       `json:"gate"`
 	TargetKind    string                       `json:"target_kind"`
@@ -423,8 +433,12 @@ type Run struct {
 	// RerunObjects is the delta plan's object-level re-run set. A group
 	// session receives only these objects; every other object in the group is
 	// carried from the baseline catalog.
-	RerunObjects   []string        `json:"rerun_objects,omitempty"`
-	Relationships  []string        `json:"relationships"`
+	RerunObjects  []string `json:"rerun_objects,omitempty"`
+	Relationships []string `json:"relationships"`
+	// SynthesisRerun forces the final synthesis when the baseline recorded a
+	// synthesis conclusion under a synthesis standard the deployed documents
+	// no longer reproduce. It is set by the delta planner, not by a caller.
+	SynthesisRerun bool            `json:"synthesis_rerun,omitempty"`
 	CarriedResults []SessionResult `json:"carried_results,omitempty"`
 
 	// BaselineFindings are the P0/P1 findings of the failure record this run
@@ -1006,9 +1020,17 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 	if err != nil {
 		return nil, err
 	}
+	var standards map[string]string
+	if gate == GateValidate && targetKind == TargetKindUnit {
+		standards, err = ValidateUnitStandards(repoRoot)
+		if err != nil {
+			return nil, err
+		}
+	}
 	run := &Run{
 		SchemaVersion: 2,
 		Protocol:      protocol,
+		Standards:     standards,
 		Records:       map[string]judgments.Binding{},
 		Gate:          gate,
 		TargetKind:    targetKind,
@@ -1153,9 +1175,6 @@ func Load(repoRoot, runID string) (*Run, error) {
 	}
 	if err := validateGateTarget(run.Gate, run.TargetKind, run.Target); err != nil {
 		return nil, fmt.Errorf("gate run %s: %w", runID, err)
-	}
-	if len(run.Coverage) == 0 && len(run.Relationships) == 0 {
-		return nil, fmt.Errorf("gate run %s has no coverage set", runID)
 	}
 	if err := validateRelationships(run); err != nil {
 		return nil, err

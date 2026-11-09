@@ -219,7 +219,7 @@ func TestUnitCachesWithoutCurrentFormatAreIncompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 	incompleteValidate := "---\ncommand: validate\nunit: auth\nmode: full\nresult: pass\ntarget: candidate\n" +
-		"standard: " + fixtureStandard(t, root, "unit") + "\ntimestamp: \"2026-06-30T10:00:00Z\"\n" +
+		fixtureStandardsBlock(t, root) + "timestamp: \"2026-06-30T10:00:00Z\"\n" +
 		"files:\n  - path: docs/specs/units/candidate/unit_auth.md\n    hash: sha256:" + computeHash(specPath) + "\n" +
 		cacheDeps(t, specPath) + "---\n"
 	if err := os.WriteFile(filepath.Join(cacheDir, "validate_result.md"), []byte(incompleteValidate), 0o644); err != nil {

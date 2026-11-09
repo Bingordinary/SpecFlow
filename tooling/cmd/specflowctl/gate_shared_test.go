@@ -391,7 +391,7 @@ func sharedValidateFixture(t *testing.T, root, unit string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validationcache.WriteCache(root, "unit", unit, withPromiseFormat(t, root, unit, "candidate", validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: []validationcache.FileEntry{*entry}})); err != nil {
+	if _, err := validationcache.WriteCache(root, "unit", unit, withPromiseFormat(t, root, unit, "candidate", validationcache.CacheWrite{Command: "validate", Unit: unit, Mode: "full", Result: "pass", Target: "candidate", Standards: fixtureStandards(t, root), Entries: []validationcache.FileEntry{*entry}})); err != nil {
 		t.Fatal(err)
 	}
 }

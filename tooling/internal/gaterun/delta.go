@@ -17,11 +17,12 @@ import (
 // catalog against the baseline catalog and the recorded change set: an object
 // re-runs when it is not in the baseline catalog, its read set changed, or a read
 // ref's region changed; a coverage group re-runs when any of its objects
-// re-runs and the rest carry. Every group changed, a failure record, a salvaged
-// cache, a moved standard, an unusable baseline, or an unrecorded or
-// unattributable input covers the full scope, and the planner upgrades to full
-// when the estimated delta cost is not lower. No reviewer decides the scope
-// (framework/verification_scope.md §Delta Runs).
+// re-runs and the rest carry. A group whose standard fingerprint moved re-runs
+// in full, and a moved synthesis fingerprint re-runs the final synthesis. Every
+// group changed, a failure record, a salvaged cache, an unusable baseline, or
+// an unrecorded or unattributable input covers the full scope, and the planner
+// upgrades to full when the estimated delta cost is not lower. No reviewer
+// decides the scope (framework/verification_scope.md §Delta Runs).
 
 // standingRelationships returns the relationship names the baseline declares.
 // A full-scope plan re-runs every local conclusion, so the final synthesis is
@@ -641,8 +642,9 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 			return upgrade("the failure record carries no per-object catalog", standing)
 		}
 	}
-	if reason, moved := validateStandardMoved(run, baseline); moved {
-		return upgrade(reason, standing)
+	movedGroups, crossMoved, standardReason, standardMoved := validateStandardsMoved(run, baseline)
+	if standardMoved {
+		return upgrade(standardReason, standing)
 	}
 	report, err := validationcache.DeriveChangeReport(d.root, run.TargetKind, run.TargetName, run.Gate)
 	if err != nil {
@@ -765,6 +767,23 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 			return upgrade(defect, standing)
 		}
 	}
+	// A moved group standard re-runs exactly that group: the reviewer's
+	// inlined judging text changed, so none of the group's conclusions may
+	// carry. A group whose text still matches keeps the ordinary per-object
+	// selection. A moved synthesis standard re-runs the final synthesis; its
+	// local inputs are unchanged unless their own groups moved too.
+	for _, group := range movedGroups {
+		selection.SelectedGroups[group] = true
+		for _, object := range run.ValidateObjects {
+			if validateObjectGroup(object) == group {
+				selection.RerunObjects[object.ID] = true
+			}
+		}
+	}
+	if crossMoved {
+		run.SynthesisRerun = true
+		addRelationships(run, standing...)
+	}
 	ruleChanged, providerChanged := selection.RuleChanged, selection.ProviderChanged
 	run.RerunObjects = run.RerunObjects[:0]
 	for key := range selection.RerunObjects {
@@ -772,6 +791,12 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 	}
 	sort.Strings(run.RerunObjects)
 	var notices []string
+	if len(movedGroups) > 0 {
+		notices = append(notices, "the validate standard changed for group(s) "+strings.Join(movedGroups, ", ")+" — every object of those groups re-runs")
+	}
+	if crossMoved {
+		notices = append(notices, "the final-synthesis validate standard changed — the synthesis re-runs over the carried local results")
+	}
 	// The object count is reported after every forced source is merged — the
 	// ordinary read-set selection, --rerun overrides, and the repair's failed
 	// checks, findings, and persisted invalidations. Reporting it inside the
@@ -801,7 +826,7 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 		}
 		return upgrade(reason, standing)
 	}
-	if len(selected) == 0 && len(run.Relationships) == 0 {
+	if len(selected) == 0 && len(run.Relationships) == 0 && !run.SynthesisRerun {
 		if repair {
 			return upgrade("the failure record has no failed judgment to re-run", standing)
 		}
@@ -945,18 +970,61 @@ func normalizeGateKey(run *Run, key string, currentSet map[string]bool) (string,
 	return "", false
 }
 
-// validateStandardMoved reports whether a validate baseline was judged under a
-// standard other than the one this run deploys. A cache that records no
-// standard cannot prove it was judged by the current one, so it counts as
-// moved.
-func validateStandardMoved(run *Run, baseline *validationcache.GateBaseline) (string, bool) {
-	if baseline.Standard == run.Protocol {
-		return "", false
+// validateStandardsMoved reports which unit validate group standards moved
+// between the baseline cache and this run's deployed standard. A group whose
+// fingerprint changed re-runs in full; a group whose fingerprint still matches
+// carries by the ordinary per-object rule. A moved synthesis fingerprint sets
+// crossMoved: the final synthesis re-runs over the carried local results.
+//
+// A cache that records no per-group standard cannot prove which standard
+// judged it, so it counts as moved and the plan covers the full scope (the
+// pre-binding cache format). Rule validate has no partial run and keeps the
+// single standard comparison.
+func validateStandardsMoved(run *Run, baseline *validationcache.GateBaseline) (groups []string, cross bool, reason string, moved bool) {
+	if run.TargetKind == TargetKindRule {
+		if baseline.Standard == run.Protocol {
+			return nil, false, "", false
+		}
+		if strings.TrimSpace(baseline.Standard) == "" {
+			return nil, false, "the baseline validate cache records no judging standard", true
+		}
+		return nil, false, "the validate standard changed since the baseline cache was written", true
 	}
-	if strings.TrimSpace(baseline.Standard) == "" {
-		return "the baseline validate cache records no judging standard", true
+	if len(run.Standards) == 0 {
+		return nil, false, "the run records no deployed per-group validate standard — plan a new run", true
 	}
-	return "the validate standard changed since the baseline cache was written", true
+	if len(baseline.Standards) == 0 {
+		return nil, false, "the baseline validate cache records no per-group judging standard", true
+	}
+	known := map[string]bool{CrossKey: true}
+	for _, group := range ValidateUnitGroupIDs() {
+		known[group] = true
+	}
+	for key := range baseline.Standards {
+		if !known[key] {
+			return nil, false, fmt.Sprintf("the baseline validate cache records a standard for unknown group %q", key), true
+		}
+	}
+	for _, group := range ValidateUnitGroupIDs() {
+		recorded, ok := baseline.Standards[group]
+		if !ok {
+			return nil, false, fmt.Sprintf("the baseline validate cache records no standard for group %q", group), true
+		}
+		current, ok := run.Standards[group]
+		if !ok {
+			return nil, false, fmt.Sprintf("the run records no deployed standard for group %q — plan a new run", group), true
+		}
+		if recorded != current {
+			groups = append(groups, group)
+		}
+	}
+	if recorded, ok := baseline.Standards[CrossKey]; ok {
+		current, currentOK := run.Standards[CrossKey]
+		if !currentOK || recorded != current {
+			cross = true
+		}
+	}
+	return groups, cross, "", false
 }
 
 // repairStatusMapDefect reports whether a failure record's per-check status

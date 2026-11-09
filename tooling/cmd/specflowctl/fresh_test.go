@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/testsupport"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
@@ -34,45 +36,42 @@ func fixtureStandard(t *testing.T, repoRoot, targetKind string) string {
 	return judgments.MustProtocol(repoRoot, "validate", targetKind)
 }
 
+// fixtureStandards is the deployed unit validate standard split by session.
+func fixtureStandards(t *testing.T, repoRoot string) map[string]string {
+	t.Helper()
+	deployFixtureStandard(t, repoRoot, "unit")
+	standards, err := gaterun.ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return standards
+}
+
+// fixtureStandardsBlock renders a per-group standard frontmatter block for a
+// hand-written unit validate cache fixture.
+func fixtureStandardsBlock(t *testing.T, repoRoot string) string {
+	t.Helper()
+	standards := fixtureStandards(t, repoRoot)
+	keys := make([]string, 0, len(standards))
+	for key := range standards {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("standards:\n")
+	for _, key := range keys {
+		b.WriteString("  " + key + ": " + standards[key] + "\n")
+	}
+	return b.String()
+}
+
 // deployFixtureStandard gives a bare fixture repository the judging documents
-// the validate standard names, so Protocol can fingerprint them instead of
-// failing closed on a missing install.
+// and sections the protocol mapping names, so both the mission text and the
+// standard fingerprint resolve instead of failing closed on a missing install.
 func deployFixtureStandard(t *testing.T, repoRoot, targetKind string) {
 	t.Helper()
-	if _, err := os.Stat(filepath.Join(repoRoot, "tooling", "manifest.tsv")); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Join(repoRoot, "tooling"), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repoRoot, "tooling", "manifest.tsv"), []byte("fixture"), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	documents := map[string]bool{}
-	for _, gate := range []string{"validate", "verify"} {
-		for _, kind := range []string{"unit", "rule"} {
-			for _, name := range judgments.ProtocolDocuments(gate, kind) {
-				documents[name] = true
-			}
-		}
-	}
 	_ = targetKind
-	for name := range documents {
-		path := filepath.Join(repoRoot, "framework", filepath.FromSlash(name))
-		if _, err := os.Stat(path); err == nil {
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatal(err)
-		}
-		var b strings.Builder
-		b.WriteString("# Fixture " + name + "\n\n## Judging text\n\nFixture.\n\n")
-		for _, section := range judgments.MechanismSectionNames(name) {
-			b.WriteString("## " + section + "\n\nFixture.\n\n")
-		}
-		if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	testsupport.DeployStandard(t, repoRoot)
 }
 
 // freshDerivation builds a derivation for single-target gate checks in tests.
@@ -178,7 +177,7 @@ func writeUnitCache(t *testing.T, repoRoot, name, command, extraFrontmatter stri
 	sb.WriteString("result: pass\n")
 	sb.WriteString("timestamp: \"2026-06-30T10:00:00Z\"\n")
 	if command == "validate" {
-		sb.WriteString("standard: " + fixtureStandard(t, repoRoot, "unit") + "\n")
+		sb.WriteString(fixtureStandardsBlock(t, repoRoot))
 	}
 	sb.WriteString("pin_format: promise-v1\n")
 	if extraFrontmatter != "" {

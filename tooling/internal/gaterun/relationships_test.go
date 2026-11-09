@@ -50,7 +50,7 @@ func TestFullRunCarriesCarriedRelationship(t *testing.T) {
 		PinFormat:      pinFormat,
 		PromisePins:    pins,
 		PromisePinsSet: pinsSet,
-		Standard:       baselineStandard(t, repoRoot),
+		Standards:      baselineStandards(t, repoRoot),
 		Timestamp:      "2026-01-01T00:00:00Z",
 		Judgments:      string(judgments),
 		Entries:        []validationcache.FileEntry{entry},
@@ -58,7 +58,7 @@ func TestFullRunCarriesCarriedRelationship(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run := &Run{Gate: GateValidate, TargetKind: TargetKindUnit, TargetName: "auth", Target: TargetCandidate}
+	run := &Run{Gate: GateValidate, TargetKind: TargetKindUnit, TargetName: "auth", Target: TargetCandidate, Standards: baselineStandards(t, repoRoot)}
 	carried, notices, err := planFullRunCarry(repoRoot, run)
 	if err != nil {
 		t.Fatal(err)

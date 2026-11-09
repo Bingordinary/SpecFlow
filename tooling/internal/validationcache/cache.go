@@ -119,10 +119,19 @@ type cacheFile struct {
 	GateRun string `yaml:"gate_run,omitempty"`
 	// Standard is the judging standard the cache's conclusions were made under
 	// (see framework/validation_cache.md §Format → Standard binding). It is
-	// written on validate caches only; a caches without it cannot prove which
-	// standard judged it, so freshness treats it as invalid. Verify caches
-	// bind their standard per judgment record instead and leave this empty.
+	// written on rule validate caches only, which have no partial run; a rule
+	// cache without it cannot prove which standard judged it, so freshness
+	// treats it as invalid. Unit validate uses Standards, and verify caches
+	// bind their standard per judgment record instead.
 	Standard string `yaml:"standard,omitempty"`
+	// Standards is the unit validate standard split by session group: one
+	// fingerprint per validate coverage group plus `cross` for the final
+	// synthesis. A group binds the shared judging baseline plus its own check
+	// sections, so a check-section edit invalidates only its group while a
+	// shared-document edit invalidates every group that reads it. Rule validate
+	// has no partial run and keeps the single Standard value.
+	Standards     map[string]string `yaml:"standards,omitempty"`
+	standardsSeen bool              `yaml:"-"`
 	// InvalidatedChecks records the machine-owned recovery state: judgments
 	// whose recorded result was contradicted by a targeted P0/P1 after the
 	// cache was written, or whose evidence basis a salvaged finalize declared
@@ -629,10 +638,15 @@ type CacheWrite struct {
 	// audit-only — see cacheFile.GateRun.
 	GateRun string
 	// Standard is the judging standard the cache's conclusions were made
-	// under. Gate-finalize sets it on a validate write; freshness compares it
-	// before the cache is reusable. Verify writes leave it empty: a verify
-	// conclusion binds its standard per judgment record instead.
+	// under. Gate-finalize sets it on a rule validate write; freshness compares
+	// it before the cache is reusable. Unit validate writes Standards instead,
+	// and verify writes leave both empty: a verify conclusion binds its
+	// standard per judgment record.
 	Standard string
+	// Standards is the unit validate standard split by session group. A unit
+	// validate write records one fingerprint per coverage group and, when the
+	// cache carries a synthesis conclusion, one for the final synthesis.
+	Standards map[string]string
 	// InvalidatedChecks carries the machine-owned targeted invalidation
 	// state: the pending re-run set of a salvaged finalize (a full run whose
 	// input drifted mid-run) or a targeted P0/P1 merged into an existing
@@ -863,6 +877,17 @@ func renderCacheFrontmatter(w CacheWrite, targetName string) (string, error) {
 	}
 	if w.Standard != "" {
 		fmt.Fprintf(&b, "standard: %s\n", w.Standard)
+	}
+	if len(w.Standards) > 0 {
+		b.WriteString("standards:\n")
+		keys := make([]string, 0, len(w.Standards))
+		for key := range w.Standards {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(&b, "  %s: %s\n", key, w.Standards[key])
+		}
 	}
 	if w.PinFormat != "" {
 		fmt.Fprintf(&b, "pin_format: %s\n", w.PinFormat)
@@ -1818,10 +1843,38 @@ func parseCache(data []byte) (*cacheFile, error) {
 	invalidatedChecksSeen := false
 	inPromisePins := false
 	promisePinsSeen := false
+	inStandards := false
 
 	for _, line := range fmLines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
+			continue
+		}
+		if inStandards {
+			if strings.HasPrefix(line, "  ") && strings.Contains(trimmed, ":") {
+				parts := strings.SplitN(trimmed, ":", 2)
+				key := strings.TrimSpace(parts[0])
+				value := unquoteScalar(parts[1])
+				if key == "" || value == "" {
+					return nil, fmt.Errorf("cache file has an incomplete `standards` entry %q", trimmed)
+				}
+				if cache.Standards == nil {
+					cache.Standards = map[string]string{}
+				}
+				if _, exists := cache.Standards[key]; exists {
+					return nil, fmt.Errorf("cache file declares the `standards` key %q more than once", key)
+				}
+				cache.Standards[key] = value
+				continue
+			}
+			inStandards = false
+		}
+		if trimmed == "standards:" || trimmed == "standards: {}" {
+			if cache.standardsSeen {
+				return nil, fmt.Errorf("cache file declares `standards` more than once")
+			}
+			cache.standardsSeen = true
+			inStandards = trimmed == "standards:"
 			continue
 		}
 		if inPromisePins {
@@ -2030,6 +2083,12 @@ func parseCache(data []byte) (*cacheFile, error) {
 
 	if cache.Command == "" || cache.Result == "" {
 		return nil, fmt.Errorf("cache file missing required frontmatter fields (command, result)")
+	}
+	if len(cache.Standards) > 0 && cache.Standard != "" {
+		return nil, fmt.Errorf("cache file declares both `standard` and `standards` — one binding format per cache")
+	}
+	if len(cache.Standards) > 0 && cache.Command != "validate" {
+		return nil, fmt.Errorf("cache file declares `standards` on a %q cache — only validate caches bind a judging standard", cache.Command)
 	}
 	if cache.invalidatedSeen {
 		// The list is machine-owned recovery state with two writers: a
@@ -2260,6 +2319,7 @@ func projectRuleConfirmation(content string, cache *cacheFile, ruleID string) (s
 		P2Count: cache.P2Count, P3Count: cache.P3Count,
 		Timestamp: cache.Timestamp, GateRun: cache.GateRun,
 		Standard:          cache.Standard,
+		Standards:         copyStandards(cache.Standards),
 		InvalidatedChecks: cache.InvalidatedChecks,
 	}
 	// The candidate input surface may record the rule file under both its
@@ -2429,6 +2489,18 @@ func relPath(repoRoot, absPath string) string {
 	return filepath.ToSlash(rel)
 }
 
+// copyStandards returns an independent copy of a per-group standard map.
+func copyStandards(standards map[string]string) map[string]string {
+	if len(standards) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(standards))
+	for key, value := range standards {
+		out[key] = value
+	}
+	return out
+}
+
 // normalizeHash strips any algorithm prefix (e.g. "sha256:") from a stored hash
 // so it can be compared against a raw hex hash.
 func normalizeHash(stored string) string {
@@ -2485,15 +2557,16 @@ type GateBaseline struct {
 	Target         string
 	Blocking       bool
 	// Standard is the judging standard the baseline's conclusions were made
-	// under (validate caches only — verify caches bind it per judgment
-	// record). A delta/repair plan compares it with the current standard
-	// before carrying anything over.
+	// under (rule validate caches only — unit validate records Standards and
+	// verify binds it per judgment record). A delta/repair plan compares it
+	// with the current standard before carrying anything over.
 	Standard          string
-	InvalidatedChecks []string        // persisted targeted P0/P1 contradictions
-	HasChecks         bool            // the cache carries per-check declarations
-	Checks            []BaselineCheck // declared checks (declaration order, first occurrence)
-	Entries           []FileEntry     // full entries, for carried-over evidence merging
-	Judgments         string          // machine-readable synthesis baseline JSON
+	Standards         map[string]string // unit validate per-group standards
+	InvalidatedChecks []string          // persisted targeted P0/P1 contradictions
+	HasChecks         bool              // the cache carries per-check declarations
+	Checks            []BaselineCheck   // declared checks (declaration order, first occurrence)
+	Entries           []FileEntry       // full entries, for carried-over evidence merging
+	Judgments         string            // machine-readable synthesis baseline JSON
 }
 
 // BaselineCheck is one declared check key and its recorded status. Status is
@@ -2544,6 +2617,7 @@ func ReadGateBaseline(repoRoot, targetKind, targetName, command string) (*GateBa
 		Target:            cache.Target,
 		Blocking:          cache.Blocking,
 		Standard:          cache.Standard,
+		Standards:         copyStandards(cache.Standards),
 		InvalidatedChecks: append([]string(nil), cache.InvalidatedChecks...),
 	}
 	data, err := os.ReadFile(cachePath)

@@ -7,6 +7,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -335,7 +336,7 @@ func TestCheckValidate(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +368,7 @@ func TestCheckValidateWithoutCatalogIsStale(t *testing.T) {
 		Mode:      "full",
 		Result:    "pass",
 		Target:    "candidate",
-		Standard:  fixtureStandard(t, repoRoot),
+		Standards: fixtureStandards(t, repoRoot),
 		Timestamp: "2026-06-30T10:00:00Z",
 		Entries:   []FileEntry{*entry},
 	}); err != nil {
@@ -399,7 +400,7 @@ func TestCheckValidateStalesOnNewEvidenceRecord(t *testing.T) {
 	}
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +580,7 @@ func issue115ValidateCacheWrite(t *testing.T, repoRoot, unit, judgments string) 
 		Mode:           "full",
 		Result:         "pass",
 		Target:         "candidate",
-		Standard:       fixtureStandard(t, repoRoot),
+		Standards:      fixtureStandards(t, repoRoot),
 		Timestamp:      "2026-11-08T10:00:00Z",
 		Judgments:      judgments,
 		PinFormat:      PromisePinFormat,
@@ -603,7 +604,7 @@ func TestCheckValidateStalesOnNewGlobalRule(t *testing.T) {
 	}
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -640,7 +641,7 @@ func TestCheckValidateStale(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Write cache with WRONG dependency CID (deliberately stale)
-	staleCache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	staleCache := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(staleCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -672,14 +673,45 @@ func TestCheckValidateRequiresCurrentJudgingStandard(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	base := fixtureStandards(t, repoRoot)
+	withMoved := func(group string) map[string]string {
+		out := map[string]string{}
+		for key, value := range base {
+			out[key] = value
+		}
+		out[group] = "sha256:previous-group-standard"
+		return out
+	}
+	withoutGroup := func(group string) map[string]string {
+		out := map[string]string{}
+		for key, value := range base {
+			if key == group {
+				continue
+			}
+			out[key] = value
+		}
+		return out
+	}
+	withUnknown := func() map[string]string {
+		out := map[string]string{}
+		for key, value := range base {
+			out[key] = value
+		}
+		out["retired-group"] = "sha256:previous-group-standard"
+		return out
+	}
+
 	for _, tc := range []struct {
-		name      string
-		standard  string
-		wantFresh bool
+		name           string
+		standards      map[string]string
+		wantFresh      bool
+		wantReasonPart string
 	}{
-		{"current standard", fixtureStandard(t, repoRoot), true},
-		{"moved standard", "sha256:previous-validate-checklist", false},
-		{"no recorded standard", "", false},
+		{"current standards", base, true, ""},
+		{"one moved group", withMoved("acceptance"), false, "acceptance"},
+		{"one missing group", withoutGroup("acceptance"), false, "acceptance"},
+		{"unknown group", withUnknown(), false, "retired-group"},
+		{"no recorded standards", nil, false, "per-group judging standard"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := WriteCache(repoRoot, "unit", "test", CacheWrite{
@@ -688,7 +720,7 @@ func TestCheckValidateRequiresCurrentJudgingStandard(t *testing.T) {
 				Mode:      "full",
 				Result:    "pass",
 				Target:    "candidate",
-				Standard:  tc.standard,
+				Standards: tc.standards,
 				Timestamp: "2026-06-30T10:00:00Z",
 				Judgments: validateCatalogJudgments(t, repoRoot, "test"),
 				Entries:   []FileEntry{*entry},
@@ -702,10 +734,70 @@ func TestCheckValidateRequiresCurrentJudgingStandard(t *testing.T) {
 			if result.Fresh != tc.wantFresh {
 				t.Fatalf("fresh=%t category=%s reason=%s", result.Fresh, result.Category, result.Reason)
 			}
-			if !tc.wantFresh && !strings.Contains(result.Reason, "standard") {
-				t.Fatalf("the reason must name the standard, got: %s", result.Reason)
+			if !tc.wantFresh && !strings.Contains(result.Reason, tc.wantReasonPart) {
+				t.Fatalf("the reason must name %q, got: %s", tc.wantReasonPart, result.Reason)
 			}
 		})
+	}
+}
+
+// TestValidateUnitStandardsBindTheAppliedJudgingText pins the binding split:
+// a check-section edit moves only its own group, while an edit to a shared
+// judging document (the guide's Reader Contract, which the document group's
+// Check 10 applies) moves every local group and leaves the final synthesis
+// untouched.
+func TestValidateUnitStandardsBindTheAppliedJudgingText(t *testing.T) {
+	repoRoot := t.TempDir()
+	testsupport.DeployStandard(t, repoRoot)
+	base, err := ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	edit := func(rel, old, replacement string) {
+		t.Helper()
+		path := filepath.Join(repoRoot, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), old) {
+			t.Fatalf("%s has no %q block:\n%s", rel, old, data)
+		}
+		if err := os.WriteFile(path, []byte(strings.Replace(string(data), old, replacement, 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	edit("framework/unit_validate_checklist.md", "## Check 5\n\nFixture.", "## Check 5\n\nFixture edited.")
+	afterCheck, err := ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base["acceptance"] == afterCheck["acceptance"] {
+		t.Fatal("editing Check 5 must move the acceptance group standard")
+	}
+	for _, group := range []string{"document", "design", "external"} {
+		if base[group] != afterCheck[group] {
+			t.Fatalf("editing Check 5 must not move the %s group standard", group)
+		}
+	}
+	if base[validateSynthesisStandardKey] != afterCheck[validateSynthesisStandardKey] {
+		t.Fatal("editing Check 5 must not move the final-synthesis standard")
+	}
+
+	edit("framework/spec_writing_guide.md", "## Judging text\n\nFixture.", "## Judging text\n\nFixture edited.")
+	afterGuide, err := ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{"document", "design", "acceptance", "external"} {
+		if afterCheck[group] == afterGuide[group] {
+			t.Fatalf("editing the shared guide must move the %s group standard", group)
+		}
+	}
+	if afterCheck[validateSynthesisStandardKey] != afterGuide[validateSynthesisStandardKey] {
+		t.Fatal("editing the shared guide must not move the final-synthesis standard")
 	}
 }
 
@@ -735,7 +827,7 @@ func TestCheckValidateFailureRecordWithDependencyStaysBlocked(t *testing.T) {
 		Result:    "fail",
 		Blocking:  true,
 		Target:    "candidate",
-		Standard:  fixtureStandard(t, repoRoot),
+		Standards: fixtureStandards(t, repoRoot),
 		Timestamp: "2026-06-30T10:00:00Z",
 		Entries:   []FileEntry{*entry},
 	}); err != nil {
@@ -795,7 +887,7 @@ func TestCheckValidateFailureRecordWithPinsStaysBlocked(t *testing.T) {
 		Result:         "fail",
 		Blocking:       true,
 		Target:         "candidate",
-		Standard:       fixtureStandard(t, repoRoot),
+		Standards:      fixtureStandards(t, repoRoot),
 		Timestamp:      "2026-06-30T10:00:00Z",
 		Entries:        []FileEntry{*entry},
 		PinFormat:      PromisePinFormat,
@@ -862,7 +954,7 @@ func TestCheckValidateRejectsCacheWithoutChunkEvidence(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    deps:\n      - region:legacy\n---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    deps:\n      - region:legacy\n---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -887,7 +979,7 @@ func TestReadGateBaselineTreatsUnusableCacheAsAbsent(t *testing.T) {
 	repoRoot := t.TempDir()
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	unusable := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
+	unusable := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:abc\n---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(unusable), 0644)
 
 	baseline, err := ReadGateBaseline(repoRoot, "unit", "test", "validate")
@@ -1048,7 +1140,7 @@ func TestCheckValidateDeltaBasis(t *testing.T) {
 	// A delta-basis cache carries no review record: its carried conclusions are
 	// justified by the recorded content, and the mechanical plan produces this
 	// basis only when that content was unchanged.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed (incremental re-run).\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed (incremental re-run).\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1068,7 +1160,7 @@ func TestReadCacheSummaryBasis(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	deltaCache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
+	deltaCache := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nbasis: delta\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(deltaCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1092,7 +1184,7 @@ func TestReadCacheSummaryBasisDefault(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// A cache without a basis field reads back empty (a full-run cache omits it).
-	plainCache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
+	plainCache := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(plainCache), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1164,7 +1256,7 @@ func TestCheckValidateMissingMode(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Validate cache with no mode field: cannot prove a full run, must fail closed
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nCheck passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nCheck passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1449,7 +1541,7 @@ func TestDeleteCache(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	vPath := filepath.Join(cacheDir, "validate_result.md")
-	writeCacheFixtureFile(t, vPath, []byte("---\ncommand: validate\nstandard: "+fixtureStandard(t, repoRoot)+"\nresult: pass\n---\n"), 0644)
+	writeCacheFixtureFile(t, vPath, []byte("---\ncommand: validate\n"+fixtureStandardsBlock(t, repoRoot)+"result: pass\n---\n"), 0644)
 
 	// Delete and verify
 	if err := DeleteCache(repoRoot, "test", "validate"); err != nil {
@@ -1552,7 +1644,7 @@ func TestCheckEvidenceInCache_AllInCachePass(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
 		"  - path: docs/specs/units/candidate/evidence/unit_test.md\n    hash: sha256:" + recordHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" +
 		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
@@ -1592,7 +1684,7 @@ func TestCheckEvidenceInCache_MissingRecordFails(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n" +
 		"  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
@@ -1627,7 +1719,7 @@ func TestCheckEvidenceInCache_ValidateCacheNotPassFails(t *testing.T) {
 
 	// A validate failure record (result: fail) cannot prove evidence
 	// coverage — the evidence gate stays unrecovered for a fail cache.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nresult: fail\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\nValidate failed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nresult: fail\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles: []\n---\nValidate failed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1662,7 +1754,7 @@ func TestDeleteRuleCache(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	vPath := filepath.Join(cacheDir, "validate_result.md")
-	writeCacheFixtureFile(t, vPath, []byte("---\ncommand: validate\nstandard: "+fixtureStandard(t, repoRoot)+"\nresult: pass\n---\n"), 0644)
+	writeCacheFixtureFile(t, vPath, []byte("---\ncommand: validate\n"+fixtureStandardsBlock(t, repoRoot)+"result: pass\n---\n"), 0644)
 
 	if err := DeleteRuleCache(repoRoot, "b_rule_test", "validate"); err != nil {
 		t.Fatal(err)
@@ -2155,7 +2247,7 @@ func TestCheckValidateMissingMainSpecFails(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Cache lists an evidence-record path but NOT the main spec
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/evidence/unit_test.md\n    hash: sha256:abc\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/evidence/unit_test.md\n    hash: sha256:abc\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2188,7 +2280,7 @@ func TestCheckValidateEmptyFilesListFails(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Cache with no files listed at all
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2420,7 +2512,7 @@ func TestCheckValidateStable(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// validate@stable records the STABLE spec path and its rule dependency.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	result, err := CheckValidateStable(repoRoot, "test")
@@ -2460,7 +2552,7 @@ func TestCheckValidateStable_RuleChanged(t *testing.T) {
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\ntarget: stable\nresult: pass\ntimestamp: \"2026-06-30T11:00:00Z\"\nfiles:\n  - path: docs/specs/units/stable/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/rules/stable/g_rule_http.md\n    hash: sha256:" + ruleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The rule changes after the stable validate -> the confirmation goes stale.
@@ -2650,7 +2742,7 @@ func TestCheckRejectsHashOnlyCache(t *testing.T) {
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/test")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + mustHash(t, specPath) + "\n---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + mustHash(t, specPath) + "\n---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	result, err := CheckValidate(repoRoot, "test")
@@ -2695,7 +2787,7 @@ func TestCheckEmptyFileFreshWithNormalizedHash(t *testing.T) {
 		Mode:      "full",
 		Result:    "pass",
 		Target:    "candidate",
-		Standard:  fixtureStandard(t, repoRoot),
+		Standards: fixtureStandards(t, repoRoot),
 		Timestamp: "2026-06-30T10:00:00Z",
 		Judgments: validateCatalogJudgments(t, repoRoot, "test"),
 		Entries:   []FileEntry{*entry},
@@ -2752,7 +2844,7 @@ func TestCheckValidateLogicalRef(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
 
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\nAll checks passed.\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2798,7 +2890,7 @@ func TestGlobalRuleLogicalRefUsesStableOnly(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: rule:g_rule_http\n    hash: sha256:" + stableRuleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: rule:g_rule_http\n    hash: sha256:" + stableRuleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -2859,7 +2951,7 @@ func TestGlobalRuleLogicalRefRejectsCandidateOnly(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: rule:g_rule_draft\n    hash: sha256:" + candidateRuleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: rule:g_rule_draft\n    hash: sha256:" + candidateRuleHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	if err := writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -2897,7 +2989,7 @@ func TestLogicalRefSurvivesPromote(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
 	selfHash, _ := fileHash(selfPath)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// Simulate promote of the dependency unit: content copied verbatim to
@@ -2936,7 +3028,7 @@ func TestPhysicalRefStalesAfterPromote(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
 	// Physical path entry — the pre-logical-reference cache form.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/units/candidate/unit_dep.md\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: docs/specs/units/candidate/unit_dep.md\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// Simulate promote of the dependency unit.
@@ -2970,7 +3062,7 @@ func TestLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
 	// Logical ref with no candidate or stable file.
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	result, err := CheckValidate(repoRoot, "self")
@@ -3012,7 +3104,7 @@ func TestEvidenceLogicalRefSurvivesPromote(t *testing.T) {
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// Fresh before promote.
@@ -3060,7 +3152,7 @@ func TestEvidenceLogicalRefStalesAfterContentChange(t *testing.T) {
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// The dependency evidence content changes — the dependency changed and
@@ -3090,7 +3182,7 @@ func TestEvidenceLogicalRefUnresolvedFailsClosed(t *testing.T) {
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
 	// The evidence record exists in no layer (candidate or stable).
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "  - path: unit:dep:evidence\n    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n" + "---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	result, err := CheckValidate(repoRoot, "self")
@@ -3123,7 +3215,7 @@ func TestWholeFileFreshnessFlagsProseEdit(t *testing.T) {
 
 	cacheDir := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/self")
 	os.MkdirAll(cacheDir, 0755)
-	cacheContent := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\n"
+	cacheContent := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: self\nmode: full\nresult: pass\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_self.md\n    hash: sha256:" + selfHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n  - path: unit:dep\n    hash: sha256:" + depHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(cacheContent), 0644)
 
 	// Any prose edit is a whole-file content change: the cache goes stale,
@@ -3538,7 +3630,7 @@ func TestRewriteCachesToStablePromotedCachesPassStableChecks(t *testing.T) {
 	os.MkdirAll(cacheDir, 0755)
 
 	// Candidate-layer validate cache (no target field — defaults to candidate).
-	validateCache := "---\ncommand: validate\nstandard: " + fixtureStandard(t, repoRoot) + "\nunit: test\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n  - path: docs/specs/units/candidate/evidence/unit_test.md\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
+	validateCache := "---\ncommand: validate\n" + fixtureStandardsBlock(t, repoRoot) + "unit: test\nmode: full\nresult: pass\nblocking: false\ntimestamp: \"2026-06-30T10:00:00Z\"\nfiles:\n  - path: docs/specs/units/candidate/unit_test.md\n    hash: sha256:" + specHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n  - path: docs/specs/units/candidate/evidence/unit_test.md\n    hash: sha256:" + evidenceHash + "\n    chunker: buzhash-v1\n    chunks:\n      - cid: sha256:fixture\n        start: 1\n        end: 1\n---\nAll checks passed.\n"
 	writeCacheFixtureFile(t, filepath.Join(cacheDir, "validate_result.md"), []byte(validateCache), 0644)
 
 	// Candidate-layer verify cache (merged: alignment + quality checks).
@@ -3681,15 +3773,43 @@ func testProtocolFor(t *testing.T, repoRoot, gate, targetKind string) string {
 	return judgments.MustProtocol(repoRoot, gate, targetKind)
 }
 
-func fixtureStandard(t *testing.T, repoRoot string) string {
-	t.Helper()
-	return fixtureStandardFor(t, repoRoot, "unit")
-}
-
 func fixtureStandardFor(t *testing.T, repoRoot, targetKind string) string {
 	t.Helper()
 	testsupport.DeployStandard(t, repoRoot)
 	return judgments.MustProtocol(repoRoot, "validate", targetKind)
+}
+
+// fixtureStandards is the deployed unit validate standard split by session,
+// the value gate-finalize writes for the same repository.
+func fixtureStandards(t *testing.T, repoRoot string) map[string]string {
+	t.Helper()
+	testsupport.DeployStandard(t, repoRoot)
+	standards, err := ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return standards
+}
+
+// fixtureStandardsBlock renders a per-group standard frontmatter block.
+func fixtureStandardsBlock(t *testing.T, repoRoot string) string {
+	t.Helper()
+	return standardsFrontmatter(t, fixtureStandards(t, repoRoot))
+}
+
+func standardsFrontmatter(t *testing.T, standards map[string]string) string {
+	t.Helper()
+	keys := make([]string, 0, len(standards))
+	for key := range standards {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("standards:\n")
+	for _, key := range keys {
+		b.WriteString("  " + key + ": " + standards[key] + "\n")
+	}
+	return b.String()
 }
 
 // validateCatalogJudgments builds the per-object catalog a fresh unit validate
@@ -3852,10 +3972,16 @@ func writeCacheFixtureFile(t *testing.T, p string, data []byte, mode os.FileMode
 
 func writeCacheFixture(t *testing.T, root, kind, name string, w CacheWrite) (string, error) {
 	t.Helper()
-	if w.Command == "validate" && w.Standard == "" {
+	if w.Command == "validate" && w.Standard == "" && len(w.Standards) == 0 {
 		// A validate fixture represents a cache judged under the deployed
-		// standard; the freshness chain requires that binding.
-		w.Standard = fixtureStandard(t, root)
+		// standard; the freshness chain requires that binding. A unit cache
+		// binds per group; a rule cache has no partial run and keeps the
+		// single value.
+		if kind == "unit" {
+			w.Standards = fixtureStandards(t, root)
+		} else {
+			w.Standard = fixtureStandardFor(t, root, "rule")
+		}
 	}
 	p, err := WriteCache(root, kind, name, w)
 	if err != nil || w.Command != "verify" {

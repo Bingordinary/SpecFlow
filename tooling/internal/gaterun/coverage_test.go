@@ -27,10 +27,14 @@ func testProtocolFor(t *testing.T, root, gate, targetKind string) string {
 	return judgments.MustProtocol(root, gate, targetKind)
 }
 
-func baselineStandard(t *testing.T, repoRoot string) string {
+func baselineStandards(t *testing.T, repoRoot string) map[string]string {
 	t.Helper()
 	testsupport.DeployStandard(t, repoRoot)
-	return judgments.MustProtocol(repoRoot, "validate", "unit")
+	standards, err := ValidateUnitStandards(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return standards
 }
 
 // promiseCacheFormat supplies the unit-cache promise fields for a fixture:
@@ -157,7 +161,7 @@ func writeValidateBaselineFor(t *testing.T, repoRoot, unit string, entries []val
 		PinFormat:      pinFormat,
 		PromisePins:    pins,
 		PromisePinsSet: pinsSet,
-		Standard:       baselineStandard(t, repoRoot),
+		Standards:      baselineStandards(t, repoRoot),
 		Timestamp:      "2026-01-01T00:00:00Z",
 		Judgments:      string(judgments),
 		Entries:        entries,
@@ -818,7 +822,7 @@ func writeGateBaseline(t *testing.T, repoRoot, command, result, basis string, bl
 		PromisePinsSet: pinsSet,
 	}
 	if command == GateValidate {
-		w.Standard = baselineStandard(t, repoRoot)
+		w.Standards = baselineStandards(t, repoRoot)
 	}
 	if _, err := validationcache.WriteCache(repoRoot, "unit", "auth", w); err != nil {
 		t.Fatal(err)
@@ -985,28 +989,21 @@ func TestBuildSessionSpecCoBatchesCodeAndDesign(t *testing.T) {
 	}
 }
 
-func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
+func TestValidateDeltaRerunsOnlyTheGroupWhoseStandardMoved(t *testing.T) {
 	repoRoot := newRepo(t)
-	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
-
-	var decls []validationcache.CheckEntry
-	statuses := map[string]string{}
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", ClarityCheck} {
-		decls = append(decls, validationcache.CheckEntry{Check: key, Status: "pass"})
-		statuses[key] = "pass"
-	}
-	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", decls)
-	writeGateBaseline(t, repoRoot, "validate", "pass", "full", false, []validationcache.FileEntry{entry}, statuses)
+	validateDeltaBaseline(t, repoRoot)
+	current := baselineStandards(t, repoRoot)
 
 	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	moved := strings.Replace(string(data), "standard: "+baselineStandard(t, repoRoot), "standard: sha256:previous-validate-checklist", 1)
-	if moved == string(data) {
-		t.Fatal("the fixture baseline records no standard to move")
+	movedFrom := "  acceptance: " + current["acceptance"]
+	if !strings.Contains(string(data), movedFrom) {
+		t.Fatalf("the fixture baseline records no acceptance standard to move:\n%s", data)
 	}
+	moved := strings.Replace(string(data), movedFrom, "  acceptance: sha256:previous-group-standard", 1)
 	if err := os.WriteFile(cachePath, []byte(moved), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1015,18 +1012,144 @@ func TestValidateDeltaWithMovedStandardRerunsEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(coverageKeysOf(run), ","); got != "document,design,acceptance,external" {
-		t.Fatalf("expected the full coverage set, got %s", got)
+	if run.Mode != ModeDelta {
+		t.Fatalf("one moved group must keep the delta basis, got mode %q", run.Mode)
 	}
-	if len(run.CarriedKeys) != 0 {
-		t.Fatalf("a moved standard must carry nothing, got %v", run.CarriedKeys)
+	if got := strings.Join(coverageKeysOf(run), ","); got != "acceptance" {
+		t.Fatalf("coverage = %s, want acceptance", got)
 	}
-	if run.Mode != ModeFull {
-		t.Fatalf("a full-scope plan after a standard move must be recorded as full, got %q", run.Mode)
+	for _, key := range []string{"1", "2", "3", "4", "6", "7", "8", "9", ClarityCheck} {
+		if !stringInSlice(run.CarriedKeys, key) {
+			t.Fatalf("check %s must carry: its group standard is unchanged, carried=%v", key, run.CarriedKeys)
+		}
+	}
+	if stringInSlice(run.CarriedKeys, "5") {
+		t.Fatalf("check 5 must re-run under the moved acceptance standard, carried=%v", run.CarriedKeys)
 	}
 	notices := strings.Join(run.Notices, " ")
-	if !strings.Contains(notices, "validate standard changed") || !strings.Contains(notices, "full scope") {
-		t.Fatalf("expected the moved-standard notice, got %v", run.Notices)
+	if !strings.Contains(notices, "acceptance") {
+		t.Fatalf("the notice must name the moved group, got %v", run.Notices)
+	}
+}
+
+func TestValidateDeltaMovedAllGroupStandardsCoversFullScope(t *testing.T) {
+	repoRoot := newRepo(t)
+	validateDeltaBaseline(t, repoRoot)
+	current := baselineStandards(t, repoRoot)
+
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, group := range ValidateUnitGroupIDs() {
+		content = strings.Replace(content, "  "+group+": "+current[group], "  "+group+": sha256:previous-group-standard", 1)
+	}
+	if err := os.WriteFile(cachePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeFull {
+		t.Fatalf("every moved group must cover the full scope, got mode %q", run.Mode)
+	}
+	if len(run.CarriedKeys) != 0 {
+		t.Fatalf("a full-scope plan carries nothing, got %v", run.CarriedKeys)
+	}
+	if got, want := strings.Join(coverageKeysOf(run), ","), "document,design,acceptance,external"; got != want {
+		t.Fatalf("coverage = %s, want %s", got, want)
+	}
+}
+
+func TestValidateDeltaMovedSynthesisStandardRerunsSynthesisOnly(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
+	writeValidateBaselineWithRelationships(t, repoRoot, []validationcache.FileEntry{entry}, []string{"coverage_scope"})
+	current := baselineStandards(t, repoRoot)
+
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	movedFrom := "  cross: " + current[CrossKey]
+	if !strings.Contains(string(data), movedFrom) {
+		t.Fatalf("the fixture baseline records no synthesis standard to move:\n%s", data)
+	}
+	moved := strings.Replace(string(data), movedFrom, "  cross: sha256:previous-synthesis-standard", 1)
+	if err := os.WriteFile(cachePath, []byte(moved), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Mode != ModeDelta {
+		t.Fatalf("a moved synthesis standard must keep the delta basis, got mode %q", run.Mode)
+	}
+	if len(run.Coverage) != 0 {
+		t.Fatalf("local groups must carry, got coverage %v", coverageKeysOf(run))
+	}
+	if !run.SynthesisRerun {
+		t.Fatal("the moved synthesis standard must rerun the final synthesis")
+	}
+	if !stringInSlice(run.Relationships, "coverage_scope") {
+		t.Fatalf("standing relationships must re-check, got %v", run.Relationships)
+	}
+}
+
+// TestValidateDeltaMovedSynthesisStandardWithoutRelationships pins the
+// synthesis-only delta: a pass cache may carry a final-synthesis conclusion
+// without any relationship (a repair that fixes all findings under a moved
+// synthesis standard writes exactly that cache). When the synthesis standard
+// moves again, the plan must re-run the synthesis alone instead of rejecting
+// the run as an empty coverage set.
+func TestValidateDeltaMovedSynthesisStandardWithoutRelationships(t *testing.T) {
+	repoRoot := newRepo(t)
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
+	entry := evidenceEntryWithChecks(t, repoRoot, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
+	writeValidateBaselineWithRelationships(t, repoRoot, []validationcache.FileEntry{entry}, nil)
+	current := baselineStandards(t, repoRoot)
+	if res, err := validationcache.CheckValidate(repoRoot, "auth"); err != nil || !res.Fresh {
+		t.Fatalf("the fixture must be a valid pass cache: %v %s", err, res.Reason)
+	}
+
+	cachePath := filepath.Join(repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	movedFrom := "  cross: " + current[CrossKey]
+	if !strings.Contains(string(data), movedFrom) {
+		t.Fatalf("the fixture baseline records no synthesis standard to move:\n%s", data)
+	}
+	moved := strings.Replace(string(data), movedFrom, "  cross: sha256:previous-synthesis-standard", 1)
+	if err := os.WriteFile(cachePath, []byte(moved), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := Plan(repoRoot, GateValidate, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatalf("synthesis-only delta must plan with no relationship: %v", err)
+	}
+	if run.Mode != ModeDelta || !run.SynthesisRerun {
+		t.Fatalf("mode=%s synthesis_rerun=%t, want delta with a synthesis rerun", run.Mode, run.SynthesisRerun)
+	}
+	if len(run.Coverage) != 0 || len(run.Relationships) != 0 {
+		t.Fatalf("the local groups and relationships must carry, got coverage=%v relationships=%v", coverageKeysOf(run), run.Relationships)
+	}
+	loaded, err := Load(repoRoot, run.RunID)
+	if err != nil {
+		t.Fatalf("a synthesis-only run must load: %v", err)
+	}
+	if !loaded.SynthesisRerun {
+		t.Fatal("the loaded run lost its synthesis rerun")
 	}
 }
 

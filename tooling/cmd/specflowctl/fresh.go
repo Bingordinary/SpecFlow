@@ -443,6 +443,9 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 		nonFresh++
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vStatus, vDetail)
+	if vStatus == gateStale {
+		writeValidateStandardDetail(stdout, absRoot, unitName)
+	}
 	if advice := gateAdvice("validate", "unit", absRoot, unitName, vStatus, vRepair, vFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}
@@ -503,6 +506,37 @@ func writeUnitFreshDetail(stdout io.Writer, absRoot, unitName string) error {
 	return nil
 }
 
+// writeValidateStandardDetail prints the per-group validate standard state
+// when a framework edit is why the cache is stale. Each coverage group binds
+// the shared judging baseline plus its own check sections, so the line names
+// exactly the groups the update invalidated instead of reporting one opaque
+// cache-wide value.
+func writeValidateStandardDetail(stdout io.Writer, absRoot, unitName string) {
+	statuses, err := validationcache.ValidateStandardStatuses(absRoot, unitName)
+	if err != nil {
+		return
+	}
+	stale := false
+	for _, status := range statuses {
+		if status.Status == validationcache.ValidateStandardStale || status.Status == validationcache.ValidateStandardMissing {
+			stale = true
+			break
+		}
+	}
+	if !stale {
+		return
+	}
+	parts := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		key := status.Key
+		if key == gaterun.CrossKey {
+			key = "synthesis"
+		}
+		parts = append(parts, key+" "+strings.ToUpper(status.Status))
+	}
+	fmt.Fprintf(stdout, "  standards: %s\n", strings.Join(parts, " · "))
+}
+
 // writeChangeReportSections prints the mechanically detected change set for
 // every STALE gate — what changed and where. The report is cache-side and
 // read-only; the validate delta plan consumes the same change set when a re*
@@ -561,6 +595,9 @@ func writeUnitStableFreshDetail(stdout io.Writer, absRoot, unitName string) erro
 		vaDetail = freshDetail(readSummary(absRoot, "unit", unitName, "validate_result.md"))
 	}
 	fmt.Fprintf(stdout, "%-9s %-8s %s\n", "validate", vaStatus, vaDetail)
+	if vaStatus == gateStale {
+		writeValidateStandardDetail(stdout, absRoot, unitName)
+	}
 	if advice := gateAdvice("validate", "unit", absRoot, unitName, vaStatus, vaRepair, vaFailure); advice != "" {
 		fmt.Fprintf(stdout, "  %s\n", advice)
 	}

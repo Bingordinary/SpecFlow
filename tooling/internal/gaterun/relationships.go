@@ -78,6 +78,22 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 		return nil, nil, nil
 	}
 	var candidates, notices []string
+	// A relationship conclusion is judged by the final-synthesis standard. If
+	// that standard moved, the baseline's standing relationships must re-check
+	// even on a full run: the local results they consume are rebuilt, but the
+	// synthesis rules that produced the verdict are not the current ones.
+	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit && len(state.Relationships) > 0 {
+		recorded, recordedOK := baseline.Standards[CrossKey]
+		current, currentOK := run.Standards[CrossKey]
+		if !recordedOK || !currentOK || recorded != current {
+			for _, name := range state.Relationships {
+				run.Relationships = appendUnique(run.Relationships, name)
+			}
+			run.Relationships = dedupeSorted(run.Relationships)
+			notices = append(notices, "the final-synthesis judging standard moved — the standing relationship conclusions re-run")
+			return nil, notices, nil
+		}
+	}
 	for _, name := range state.Relationships {
 		key := RelationshipKey(name)
 		if !stringInSlice(RelationshipNames(run.Gate), name) {

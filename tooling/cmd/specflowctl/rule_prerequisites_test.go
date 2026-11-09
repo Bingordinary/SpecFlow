@@ -89,7 +89,7 @@ func writePublicationUnit(t *testing.T, root, name, ruleRefs string, ruleInputs 
 		validateEntries = append(validateEntries, *entry)
 	}
 	if _, err := validationcache.WriteCache(root, "unit", name, withPromiseFormat(t, root, name, "candidate", validationcache.CacheWrite{
-		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Standard: fixtureStandard(t, root, "unit"), Entries: validateEntries,
+		Command: "validate", Unit: name, Mode: "full", Result: "pass", Target: "candidate", Standards: fixtureStandards(t, root), Entries: validateEntries,
 		Judgments: validateJudgmentsForSpec(t, specPath, name),
 	})); err != nil {
 		t.Fatal(err)

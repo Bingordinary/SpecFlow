@@ -367,6 +367,46 @@ func withoutMechanismSections(text string, names []string) (string, error) {
 			skip[i] = true
 		}
 	}
+	return joinUnskipped(lines, skip, "mechanism section")
+}
+
+// withoutSections removes the named heading subtrees from a document. Names
+// are heading slugs (`Check 5`, `Final synthesis`), so a description edit
+// after the em dash does not stop the section from resolving. A name that does
+// not resolve fails closed: silently keeping it would leave a group-specific
+// section in the shared standard.
+func withoutSections(text string, refs []ProtocolSection) (string, error) {
+	lines := strings.Split(text, "\n")
+	sections := documentSections(lines)
+	skip := make([]bool, len(lines))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		key := fmt.Sprintf("%d:%s", ref.Level, ref.Heading)
+		if seen[key] {
+			return "", fmt.Errorf("section %q (heading level %d) is listed twice", ref.Heading, ref.Level)
+		}
+		seen[key] = true
+		match := -1
+		for i, s := range sections {
+			if s.level != ref.Level || sectionSlug(s.text) != ref.Heading {
+				continue
+			}
+			if match >= 0 {
+				return "", fmt.Errorf("section %q (heading level %d) matches more than one heading", ref.Heading, ref.Level)
+			}
+			match = i
+		}
+		if match < 0 {
+			return "", fmt.Errorf("section %q (heading level %d) not found", ref.Heading, ref.Level)
+		}
+		for i := sections[match].line; i < sections[match].end; i++ {
+			skip[i] = true
+		}
+	}
+	return joinUnskipped(lines, skip, "section")
+}
+
+func joinUnskipped(lines []string, skip []bool, label string) (string, error) {
 	var kept []string
 	for i, line := range lines {
 		if !skip[i] {
@@ -375,7 +415,7 @@ func withoutMechanismSections(text string, names []string) (string, error) {
 	}
 	criteria := strings.Join(kept, "\n")
 	if strings.TrimSpace(criteria) == "" {
-		return "", fmt.Errorf("every line is inside a mechanism section")
+		return "", fmt.Errorf("every line is inside a %s", label)
 	}
 	return criteria, nil
 }

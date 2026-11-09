@@ -130,7 +130,7 @@ func TestRepairFinalizeClearsPersistedTargetedInvalidations(t *testing.T) {
 		Result:    "fail",
 		Target:    "candidate",
 		Blocking:  true,
-		Standard:  fixtureStandard(t, repoRoot, "unit"),
+		Standards: fixtureStandards(t, repoRoot),
 		P1Count:   1,
 		Timestamp: "2026-09-19T00:00:00Z",
 		Judgments: string(judgments),

@@ -207,7 +207,7 @@ func TestFinalSynthesisCarriesExtractionStandard(t *testing.T) {
 // mission must include them.
 func TestValidateCheckSectionCoversSubChecks(t *testing.T) {
 	root := sourceRepoRoot(t)
-	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{{"unit_validate_checklist.md", 2, "Check 5"}})
+	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{{File: "unit_validate_checklist.md", Level: 2, Heading: "Check 5"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,10 +230,10 @@ func TestValidateCheckSectionCoversSubChecks(t *testing.T) {
 func TestUnitValidateChecklistIsLayerAware(t *testing.T) {
 	root := sourceRepoRoot(t)
 	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{
-		{"unit_validate_checklist.md", 2, "Target-layer applicability"},
-		{"unit_validate_checklist.md", 2, "Prerequisite"},
-		{"unit_validate_checklist.md", 2, "Check 1"},
-		{"unit_validate_checklist.md", 2, "Check 8"},
+		{File: "unit_validate_checklist.md", Level: 2, Heading: "Target-layer applicability"},
+		{File: "unit_validate_checklist.md", Level: 2, Heading: "Prerequisite"},
+		{File: "unit_validate_checklist.md", Level: 2, Heading: "Check 1"},
+		{File: "unit_validate_checklist.md", Level: 2, Heading: "Check 8"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -264,8 +264,8 @@ func TestUnitValidateChecklistIsLayerAware(t *testing.T) {
 func TestUnitVerifyChecklistIsLayerAware(t *testing.T) {
 	root := sourceRepoRoot(t)
 	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{
-		{"unit_verify_checklist.md", 2, "Target-layer applicability"},
-		{"unit_verify_checklist.md", 2, "Prerequisite"},
+		{File: "unit_verify_checklist.md", Level: 2, Heading: "Target-layer applicability"},
+		{File: "unit_verify_checklist.md", Level: 2, Heading: "Prerequisite"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestUnitVerifyChecklistIsLayerAware(t *testing.T) {
 // inlined standard carries the architecture dimensions.
 func TestQualityLensStandardCoversDimension8(t *testing.T) {
 	root := sourceRepoRoot(t)
-	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{{"unit_verify_checklist.md", 2, "Quality Lens Standard"}})
+	chunks, err := inlineProtocol(root, "framework", []protocolSectionRef{{File: "unit_verify_checklist.md", Level: 2, Heading: "Quality Lens Standard"}})
 	if err != nil {
 		t.Fatal(err)
 	}

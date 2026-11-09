@@ -316,6 +316,9 @@ func gateRequiresSynthesis(run *gaterun.Run, states []*gaterun.SessionState) boo
 	if run.TargetKind == gaterun.TargetKindRule {
 		return false
 	}
+	if run.SynthesisRerun {
+		return true
+	}
 	if len(run.Relationships) > 0 {
 		return true
 	}

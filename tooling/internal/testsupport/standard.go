@@ -9,12 +9,15 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 )
 
-// DeployStandard writes the framework layout markers and every judging
-// document the validate/verify standards name into a fixture repository, so
-// judgments.Protocol can fingerprint a real standard instead of failing
-// closed on a missing install.
+// DeployStandard gives a bare fixture repository the framework documents the
+// protocol mapping names, so a protocol fingerprint resolves instead of
+// failing closed on a missing install. Every section a session mission inlines
+// is materialized at its declared heading level: the standard fingerprint and
+// the mission read the same section set, and a fixture missing one would make
+// the mapping fail closed in tests for a reason unrelated to the test.
 func DeployStandard(t *testing.T, root string) {
 	t.Helper()
 	manifest := filepath.Join(root, "tooling", "manifest.tsv")
@@ -34,6 +37,48 @@ func DeployStandard(t *testing.T, root string) {
 			}
 		}
 	}
+	sectionKeys := map[string]judgments.ProtocolSection{}
+	addSections := func(sections []judgments.ProtocolSection) {
+		for _, section := range sections {
+			sectionKeys[section.File+"\x00"+section.Heading] = section
+		}
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range contract.Groups {
+		sections, err := judgments.ProtocolSectionsFor("validate", "unit", judgments.ProtocolSessionChecks, group.Checks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addSections(sections)
+	}
+	sections, err := judgments.ProtocolSectionsFor("validate", "unit", judgments.ProtocolSessionCross, []string{"cross"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addSections(sections)
+	sections, err = judgments.ProtocolSectionsFor("validate", "rule", judgments.ProtocolSessionChecks, []string{"1", "2", "3", "4", "5", "6"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addSections(sections)
+	for _, kind := range []string{
+		judgments.ProtocolSessionItem,
+		judgments.ProtocolSessionUnit,
+		judgments.ProtocolSessionCode,
+		judgments.ProtocolSessionDesign,
+		judgments.ProtocolSessionArchitecture,
+		judgments.ProtocolSessionCross,
+	} {
+		sections, err := judgments.ProtocolSectionsFor("verify", "unit", kind, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addSections(sections)
+	}
+
 	for name := range documents {
 		path := filepath.Join(root, "framework", filepath.FromSlash(name))
 		if _, err := os.Stat(path); err == nil {
@@ -44,6 +89,12 @@ func DeployStandard(t *testing.T, root string) {
 		}
 		var b strings.Builder
 		b.WriteString("# Fixture " + name + "\n\n## Judging text\n\nFixture.\n\n")
+		for _, section := range sectionKeys {
+			if section.File != name {
+				continue
+			}
+			b.WriteString(strings.Repeat("#", section.Level) + " " + section.Heading + "\n\nFixture.\n\n")
+		}
 		for _, section := range judgments.MechanismSectionNames(name) {
 			b.WriteString("## " + section + "\n\nFixture.\n\n")
 		}

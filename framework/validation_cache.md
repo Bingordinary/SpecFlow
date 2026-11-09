@@ -37,7 +37,13 @@ p2_count: 1
 p3_count: 0
 timestamp: "2026-06-30T10:00:00Z"
 gate_run: 20260916-120000-3f9a1c   # audit: the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes); never gated
-standard: 9f1c...     # validate caches only: the judging standard this conclusion was made under (see §Standard binding); verify caches bind it per judgment record instead
+standard: 9f1c...     # rule validate caches only: the judging standard this conclusion was made under (see §Standard binding)
+standards:            # unit validate caches only: one judging standard per coverage group, plus cross when the cache carries a final-synthesis conclusion
+  acceptance: 4d2e...
+  cross: 7a10...      # only when the cache records a final synthesis conclusion
+  design: 81c3...
+  document: 2b7f...
+  external: 5e19...
 pin_format: promise-v1  # unit caches only: the promise-pin format marker (required; a cache without it is INVALID — see §Promise-pin format)
 promise_pins:              # unit validate caches only: required on a pass cache, optional on a failure record (repair attribution; empty list when the unit has no depends_on)
   - id: auth.login_api
@@ -133,7 +139,7 @@ The `GATE_JUDGMENTS` block is the machine-readable baseline for partial-run synt
 
 **Gate run binding:** `gate_run` is the audit id of the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes). It identifies the run's fixed inputs — it is not executor identity and proves nothing about the execution shape (see `framework/verification_scope.md` §Guarantee Boundary). `fresh` and `promote` never read it, and caches written before the field existed remain valid (absent = no run recorded).
 
-**Delta cache (validate):** a validate delta cache carries no review record. The tooling derives its scope from the recorded per-object catalog and read sets: an object not in the baseline catalog, or whose read set changed, re-runs; its group is selected, and the group's session receives only the re-run objects; every other object carries. Rule alignment is one object per rule × `##` section plus one `rule:<id>:evidence` object and one `global:rule-interactions` object for a cross-section violation; cross-unit consistency is one object per consumer promise × provider promise. Every evidence-record section is bound by its `Keys:` block with exactly one item key. If every object re-runs (or an unrecorded/unattributable input fails the plan), the run covers the full scope and is recorded as a full run. A unit validate repair uses the same object comparison but forces every object of a failed check, every failed relationship, persisted invalidations, and baseline-finding checks; unchanged pass-check objects carry, and the cache records `basis: repair`. A `file:` read compares the recorded `file_presence`, so an added or removed declared file re-runs Check 6/9. Rule, provider, and evidence-record changes are matched to the run's actual references, never to path substrings. A carried judgment's recorded content is unchanged at finalize, so the cache's evidence is its own audit trail. A verify delta also carries no review record: its re-run scope is derived from each conclusion's own judgment-record pins (§Conclusion-bound verify freshness).
+**Delta cache (validate):** a validate delta cache carries no review record. The tooling derives its scope from the recorded per-object catalog, read sets, and per-group judging standards: an object not in the baseline catalog, or whose read set changed, re-runs; its group is selected, and the group's session receives only the re-run objects; every other object carries. A moved check-section standard re-runs its whole group, a shared-document edit re-runs every group that reads it, and a moved final-synthesis standard re-runs the synthesis over the carried local results. Rule alignment is one object per rule × `##` section plus one `rule:<id>:evidence` object and one `global:rule-interactions` object for a cross-section violation; cross-unit consistency is one object per consumer promise × provider promise. Every evidence-record section is bound by its `Keys:` block with exactly one item key. If every object re-runs (or an unrecorded/unattributable input fails the plan), the run covers the full scope and is recorded as a full run. A unit validate repair uses the same object comparison but forces every object of a failed check, every failed relationship, persisted invalidations, and baseline-finding checks; unchanged pass-check objects carry, and the cache records `basis: repair`. A `file:` read compares the recorded `file_presence`, so an added or removed declared file re-runs Check 6/9. Rule, provider, and evidence-record changes are matched to the run's actual references, never to path substrings. A carried judgment's recorded content is unchanged at finalize, so the cache's evidence is its own audit trail. A verify delta also carries no review record: its re-run scope is derived from each conclusion's own judgment-record pins (§Conclusion-bound verify freshness).
 
 Each `files` entry records content evidence:
 
@@ -236,7 +242,7 @@ one blind spot — a semantic dependency no conclusion declared — and the
 plan reports it: recorded input-surface files that changed while neither a
 judgment record nor the final synthesis depends on them are listed with a
 suggestion to run the full command. The list
-is a report, not a gate. Validate's scope decision is mechanical: the per-object read sets decide which groups re-run (see `framework/verification_scope.md` §Delta Runs → The validate delta boundary).
+is a report, not a gate. Validate's scope decision is mechanical: the per-object read sets decide which groups re-run, and the per-group judging standards decide which groups must re-run regardless of their read sets (see `framework/verification_scope.md` §Delta Runs → The validate delta boundary).
 
 ### Standard binding
 
@@ -250,22 +256,45 @@ where its own reuse happens:
   fingerprint it was made under, and a record whose fingerprint is not the
   deployed one is unusable — for its cache and for every other consumer of the
   shared record (see §Shared verify records).
-- **validate** has no judgment record to bind, so the cache itself records the
-  standard in its frontmatter `standard` field. `gate-finalize` writes the
-  standard the run was planned under; `fresh` and `promote` recompute the
-  deployed validate standard and fail the cache closed as stale when it differs.
-  A validate cache without the field was written before the binding existed and
-  cannot prove which checklist judged it, so it is stale and the full command
-  must run again.
+- **unit validate** binds it per session group. Every group's standard is a
+  **shared judging baseline** plus that group's own check sections. The shared
+  baseline is the judging text of the unit validate protocol documents with
+  three kinds of section removed: the mechanism sections, the per-check
+  sections (each belongs to exactly one group), and the synthesis-only sections
+  no group applies — `verification_scope.md` §Final synthesis and §Relationship
+  vocabulary, and `unit_validate_checklist.md` §Extraction re-verification
+  (the `cross` binding owns those). The mission inlines the group's
+  check sections and names the shared protocol documents the reviewer reads
+  when an inlined rule refers to text it does not reproduce. The cache records
+  one fingerprint per group in its frontmatter `standards` block, plus one
+  under `cross` when the cache carries a final synthesis conclusion (a
+  synthesis session ran, or standing relationships were carried). Editing a
+  check section re-runs only its own group; editing shared judging text (the
+  guide, the promise model, the severity policy, or a shared checklist section
+  such as `Execution Rules`) re-runs every group, because every group applies
+  it. The final synthesis binds its own section set
+  (`verification_scope.md` §Final synthesis and §Relationship vocabulary,
+  `severity_policy.md` §§4, 5 and 9, plus unit validate's `Extraction
+  re-verification` and §15.2); a change there re-runs the synthesis over the
+  carried local results, not the local groups.
+- **rule validate** has no partial run, so its cache records one `standard`
+  value in the frontmatter field. `gate-finalize` writes the standard the run
+  was planned under; `fresh` and `promote` recompute it and fail the cache
+  closed as stale when it differs.
 
 The unit and rule validate standards are distinct: unit `validate` reads
 `unit_validate_checklist.md` and `core/promise_model.md`, rule `validate` reads
 `rule_validate_checklist.md`, and both read `verification_scope.md`,
 `severity_policy.md`, and `spec_writing_guide.md`. Changing one
 checklist or the promise model therefore invalidates only the caches judged by
-it. A partial run cannot carry any conclusion across a standard change:
-the planner covers the full scope instead
-(`framework/verification_scope.md` §Delta Runs).
+it. A unit validate cache without the `standards` block was written before the
+per-group binding existed: it cannot prove which standard judged each group, so
+it is stale and the full command must run again. There is no compatibility
+fallback to the old single value. A partial run carries a conclusion only when
+that conclusion's own group standard still matches; a changed group standard
+re-runs the group, and only a change covering every group (or the other
+full-scope triggers in `framework/verification_scope.md` §Delta Runs) covers the
+full scope.
 
 #### Check markers (`checks`)
 
@@ -566,7 +595,7 @@ A unit delta re-run (`re*`) writes or updates the same record on FAIL for both g
 
 The cache format is a byte-exact machine-consumed contract: `hash` and the ordered chunk sequence are recorded verbatim, and `fresh`/`promote` compare whole-file hashes byte-for-byte. Hand transcription of those values is the root of transcription errors (a 64-bit CID typo is silently treated as evidence). Since the values are mechanically derived from file content, they are **computed by the tooling, never supplied by the agent**.
 
-A promote-consumable cache is written by a **coverage gate run**: the input snapshot and the coverage set are fixed before any judgment executes; each session report is validated and recorded as it is submitted; the coverage set is closed mechanically; and the cache is written only if every coverage key is covered (and the final synthesis is accepted when the run requires one — unit validate: assigned relationships or blocking P0/P1 findings; verify: assigned relationships or any finding; rule targets never synthesize) and the inputs still verify against the snapshot at the end — unchanged for a promotable write, or salvaged with the drift's affected keys recorded as invalidated (see the Snapshot check below). Verify runs first discover evidence file paths without making judgments, then include them in the plan-time snapshot.
+A promote-consumable cache is written by a **coverage gate run**: the input snapshot and the coverage set are fixed before any judgment executes; each session report is validated and recorded as it is submitted; the coverage set is closed mechanically; and the cache is written only if every coverage key is covered (and the final synthesis is accepted when the run requires one — unit validate: assigned relationships, blocking P0/P1 findings, or a moved recorded synthesis standard; verify: assigned relationships or any finding; rule targets never synthesize) and the inputs still verify against the snapshot at the end — unchanged for a promotable write, or salvaged with the drift's affected keys recorded as invalidated (see the Snapshot check below). Verify runs first discover evidence file paths without making judgments, then include them in the plan-time snapshot.
 
 ```
 gate-plan → immutable input snapshot + coverage set → computed reviewer units (one per kind and lens, or per reviewed file for verify quality), joined by the coordinator into sessions (a session's key set is split only on its own over-capacity declaration) → gate-mission (per session) + gate-submit (per session) → gate-mission --final (only when the run requires it: relationships are assigned, or unit validate has blocking P0/P1 findings; verify has any finding) → gate-finalize
@@ -624,7 +653,7 @@ specflowctl gate-submit --run <run_id> --session <session_id> --keys <k1,k2,...>
 specflowctl gate-finalize --run <run_id> [--timestamp ...] [--repo-root PATH]
 ```
 
-- **Coverage closure:** every coverage key must be covered by exactly one accepted session (plus the carried baseline judgments for partial runs). Unit targets require an accepted final synthesis when relationships are assigned or the primary pass produced blocking P0/P1 findings (validate) or any finding (verify); a P2/P3-only validate run finalizes directly. Rule validate derives from its single accepted checks session; its logical-status map must cover every current rule-checklist key exactly once before a cache can be written.
+- **Coverage closure:** every coverage key must be covered by exactly one accepted session (plus the carried baseline judgments for partial runs). Unit targets require an accepted final synthesis when relationships are assigned, the primary pass produced blocking P0/P1 findings (validate) or any finding (verify), or the recorded synthesis standard moved (validate); a P2/P3-only validate run with no moved synthesis standard finalizes directly. Rule validate derives from its single accepted checks session; its logical-status map must cover every current rule-checklist key exactly once before a cache can be written.
 - **Snapshot check:** the tool re-resolves the input surface and compares every entry — path set, layer resolution, content hash — against the snapshot. Evidence assembly is bound to the same snapshot: every freshly computed cache entry must have the whole-file hash recorded for that declaration at `gate-plan`, and the complete input surface is compared again after evidence assembly, before the candidate cache is rendered and published. This is the time-of-check/time-of-use closure: recorded evidence can only describe content the judging sessions actually read. A divergence is classified, and the class decides the outcome:
   - **Content drift** (a recorded file's bytes changed, a logical reference moved to a different layer, or a recorded file disappeared) on a **full run** does not discard the run. The affected coverage keys are computed mechanically — the coverage keys whose plan-time read set intersects the drifted declarations; a verdict can only be influenced by material its session read, and the read set is fixed at plan time and enforced at `gate-submit`. The run is **salvaged**: the result is persisted as the verdicts dictate, the drifted evidence entries are re-bound to their plan-time hashes (the change cannot be localized — the chunk sequence is recorded empty), the affected keys' report keys are written to `invalidated_checks`, and the verify run publishes no judgment record for an invalidated key (an unbound record forces the recovery plan to re-run it). A salvaged **pass** cache is a recovery baseline, never promotable: `fresh` reports it `STALE` until the gate's recovery plan re-runs the invalidated keys and rewrites the evidence (validate: a full-scope `revalidate@{unit}`; verify: `reverify@{unit}`, whose derived repair re-runs exactly those keys). A salvaged **failure record** keeps its unresolved P0/P1 findings: `fresh` reports it `BLOCKED`, or `STALE` when its re-bound evidence no longer matches current content; either way the reason names its findings and the pending keys, and the next recovery plan re-runs the failed and invalidated judgments together (unit validate and verify: the derived repair; rule validate: the full scope).
   - **Structural divergence** — the surface shape itself changed (a ref or surface appeared or disappeared, a new file inside a declared surface, a moved review protocol, an unresolvable surface) or the drift hit a delta/repair run, whose carried keys have no session coverage to re-attribute — rejects the finalize: no cache is written, the run state is deleted, and a new `gate-plan` is required.

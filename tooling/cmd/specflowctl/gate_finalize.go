@@ -328,7 +328,34 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 	// standard, so the cache itself records it. Verify caches bind it per
 	// record instead (see framework/validation_cache.md §Format).
 	if run.Gate == gaterun.GateValidate {
-		write.Standard = run.Protocol
+		if run.TargetKind == gaterun.TargetKindRule {
+			// Rule validate has no partial run: one standard value is enough.
+			write.Standard = run.Protocol
+		} else {
+			if len(run.Standards) == 0 {
+				return fmt.Errorf("the run records no per-group validate standard — plan a new run with the current tooling")
+			}
+			standards := make(map[string]string, len(run.Standards))
+			for _, group := range gaterun.ValidateUnitGroupIDs() {
+				fingerprint, ok := run.Standards[group]
+				if !ok {
+					return fmt.Errorf("the run records no validate standard for group %q — plan a new run with the current tooling", group)
+				}
+				standards[group] = fingerprint
+			}
+			// The final synthesis is a conclusion only when the cache carries
+			// one: a cross session ran, or standing relationships carried.
+			// Binding a synthesis standard to a cache with no synthesis
+			// conclusion would make an unrelated synthesis edit stale it.
+			if cross != nil || len(run.AllRelationships()) > 0 {
+				fingerprint, ok := run.Standards[gaterun.CrossKey]
+				if !ok {
+					return fmt.Errorf("the run records no final-synthesis validate standard — plan a new run with the current tooling")
+				}
+				standards[gaterun.CrossKey] = fingerprint
+			}
+			write.Standards = standards
+		}
 	}
 
 	// Re-resolve the complete input surface after evidence assembly and
@@ -752,6 +779,9 @@ func runHasBlockingFindings(run *gaterun.Run, reports []reportRef) bool {
 func requiresFinalSynthesis(run *gaterun.Run, hasAnyFindings, hasBlockingFindings bool) bool {
 	if run.TargetKind == gaterun.TargetKindRule {
 		return false
+	}
+	if run.SynthesisRerun {
+		return true
 	}
 	if len(run.Relationships) > 0 {
 		return true

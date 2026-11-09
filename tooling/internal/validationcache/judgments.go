@@ -11,6 +11,7 @@ import (
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/repopath"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 )
 
 // Structured-judgment schema versions. A record binding carries the record's
@@ -263,24 +264,209 @@ func uncoveredChangedFiles(repoRoot string, cache *cacheFile) ([]string, error) 
 	return out, nil
 }
 
-// verifyStandard checks that a validate cache was judged under the validate
-// standard the checklist currently deploys. Verify conclusions bind their
-// standard per judgment record; a validate conclusion has no record to bind,
-// so the cache itself records the standard it was judged under. A cache
-// without that record, or written under a different checklist, cannot be
-// reused: the standard it was judged by is not the current one.
-func verifyStandard(root, targetKind string, cache *cacheFile) error {
-	if strings.TrimSpace(cache.Standard) == "" {
-		return fmt.Errorf("the cache records no judging standard — it is unusable as a baseline; run the full command")
+// hasRecordedRelationships reports whether the cache's judgment baseline
+// carries a synthesis conclusion that the cross standard must bind.
+func hasRecordedRelationships(cache *cacheFile) bool {
+	if strings.TrimSpace(cache.Judgments) == "" {
+		return false
 	}
-	current, err := judgments.Protocol(root, "validate", targetKind)
+	var state struct {
+		Relationships []string `json:"relationships"`
+	}
+	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil {
+		return false
+	}
+	return len(state.Relationships) > 0
+}
+
+// validateSynthesisStandardKey is the cache key of the final synthesis
+// standard. It matches the gate-run cross key; the synthesis is a session, not
+// a coverage group, and binds its own section set.
+const validateSynthesisStandardKey = "cross"
+
+// ValidateStandardStatus is one unit validate standard binding's state.
+type ValidateStandardStatus struct {
+	Key    string
+	Status string
+}
+
+const (
+	ValidateStandardFresh   = "fresh"
+	ValidateStandardStale   = "stale"
+	ValidateStandardMissing = "missing"
+	ValidateStandardNotRun  = "not-run"
+)
+
+// ValidateUnitStandards computes the deployed unit validate standard
+// split by session: one fingerprint per coverage group and one for the final
+// synthesis. A group binds the shared judging baseline plus its own check
+// sections, so a shared-document edit re-runs every group that applies it
+// while a check-section edit re-runs only its own group.
+func ValidateUnitStandards(root string) (map[string]string, error) {
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		return nil, err
+	}
+	standards := map[string]string{}
+	for _, group := range contract.Groups {
+		fingerprint, err := judgments.UnitValidateGroupFingerprint(root, group.Checks)
+		if err != nil {
+			return nil, err
+		}
+		standards[group.ID] = fingerprint
+	}
+	sections, err := judgments.ProtocolSectionsFor("validate", "unit", judgments.ProtocolSessionCross, []string{validateSynthesisStandardKey})
+	if err != nil {
+		return nil, err
+	}
+	fingerprint, err := judgments.ProtocolSectionFingerprint(root, sections)
+	if err != nil {
+		return nil, err
+	}
+	standards[validateSynthesisStandardKey] = fingerprint
+	return standards, nil
+}
+
+// unitValidateStandardKeys returns the current binding keys in report order:
+// the coverage groups in contract order, then the final synthesis.
+func unitValidateStandardKeys(root string) ([]string, map[string]string, error) {
+	current, err := ValidateUnitStandards(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	contract, err := validatekeys.DefaultContract()
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := make([]string, 0, len(contract.Groups)+1)
+	for _, group := range contract.Groups {
+		keys = append(keys, group.ID)
+	}
+	keys = append(keys, validateSynthesisStandardKey)
+	return keys, current, nil
+}
+
+// verifyStandard checks that a validate cache was judged under the validate
+// standard the deployed framework documents currently define. Verify
+// conclusions bind their standard per judgment record; a validate conclusion
+// has no record to bind, so the cache itself records the standard it was
+// judged under.
+//
+// A unit validate cache binds one fingerprint per coverage group plus, when it
+// carries a synthesis conclusion, one for the final synthesis. A group whose
+// fingerprint moved re-runs; a group whose fingerprint still matches carries —
+// the framework text that group's reviewer read is unchanged. A rule validate
+// cache has no partial run and keeps the single standard value.
+func verifyStandard(root, targetKind string, cache *cacheFile) error {
+	if targetKind == "rule" {
+		if strings.TrimSpace(cache.Standard) == "" {
+			return fmt.Errorf("the cache records no judging standard — it is unusable as a baseline; run the full command")
+		}
+		current, err := judgments.Protocol(root, "validate", targetKind)
+		if err != nil {
+			return err
+		}
+		if cache.Standard != current {
+			return fmt.Errorf("the validate standard changed since this cache was judged")
+		}
+		return nil
+	}
+	if len(cache.Standards) == 0 {
+		return fmt.Errorf("the cache records no per-group judging standard — it is unusable as a baseline; run the full command")
+	}
+	keys, current, err := unitValidateStandardKeys(root)
 	if err != nil {
 		return err
 	}
-	if cache.Standard != current {
-		return fmt.Errorf("the validate standard changed since this cache was judged")
+	known := map[string]bool{}
+	var missing, moved, unknown []string
+	for _, key := range keys {
+		known[key] = true
+		recorded, ok := cache.Standards[key]
+		switch {
+		case !ok:
+			if key == validateSynthesisStandardKey {
+				// The cache carries no synthesis conclusion; there is nothing
+				// to bind.
+				continue
+			}
+			missing = append(missing, key)
+		case recorded != current[key]:
+			moved = append(moved, key)
+		}
+	}
+	for key := range cache.Standards {
+		if !known[key] {
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(moved)
+	sort.Strings(unknown)
+	if _, ok := cache.Standards[validateSynthesisStandardKey]; !ok && hasRecordedRelationships(cache) {
+		return fmt.Errorf("the cache records relationship conclusions but no final-synthesis judging standard — run the full command")
+	}
+	switch {
+	case len(unknown) > 0:
+		return fmt.Errorf("the cache records standard(s) for unknown session group(s): %s — run the full command", strings.Join(unknown, ", "))
+	case len(missing) > 0:
+		return fmt.Errorf("the cache records no judging standard for group(s): %s — run the full command", strings.Join(standardDisplayNames(missing), ", "))
+	case len(moved) > 0:
+		return fmt.Errorf("the validate standard changed since this cache was judged for group(s): %s", strings.Join(standardDisplayNames(moved), ", "))
 	}
 	return nil
+}
+
+// standardDisplayNames renders the cache's cross binding key as the user-facing
+// "synthesis" session name; the other keys are the coverage group ids.
+func standardDisplayNames(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key == validateSynthesisStandardKey {
+			out = append(out, "synthesis")
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
+}
+
+// ValidateStandardStatuses reports the recorded versus deployed standard for
+// every unit validate binding. It is the read-only detail `fresh` prints so a
+// user can see which groups a framework update invalidated.
+func ValidateStandardStatuses(repoRoot, unitName string) ([]ValidateStandardStatus, error) {
+	cachePath, err := cacheFilePath(repoRoot, "unit", unitName, "validate_result.md")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("validate cache not found at %s", relPath(repoRoot, cachePath))
+	}
+	cache, err := readCache(cachePath)
+	if err != nil {
+		return nil, err
+	}
+	keys, current, err := unitValidateStandardKeys(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ValidateStandardStatus, 0, len(keys))
+	for _, key := range keys {
+		recorded, ok := cache.Standards[key]
+		switch {
+		case !ok && key == validateSynthesisStandardKey && hasRecordedRelationships(cache):
+			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardMissing})
+		case !ok && key == validateSynthesisStandardKey:
+			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardNotRun})
+		case !ok:
+			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardMissing})
+		case recorded == current[key]:
+			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardFresh})
+		default:
+			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardStale})
+		}
+	}
+	return out, nil
 }
 
 // Rewrite only the current unit's binding. Content-addressed records keep

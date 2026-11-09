@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specflowlayout"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validatekeys"
 )
@@ -266,11 +267,16 @@ type missionSession struct {
 	DeferredFindings []gaterun.DeferredFinding `json:"deferred_findings"`
 	// BaselineFindings are the failure record's findings this session must
 	// dispose (unit validate recovery runs only).
-	BaselineFindings []gaterun.Finding  `json:"baseline_findings,omitempty"`
-	ProtocolRef      string             `json:"protocol_ref"`
-	ProtocolScope    string             `json:"protocol_scope"`
-	ProtocolInline   []protocolChunk    `json:"protocol_inline"`
-	ReportContract   gateReportContract `json:"report_contract"`
+	BaselineFindings []gaterun.Finding `json:"baseline_findings,omitempty"`
+	ProtocolRef      string            `json:"protocol_ref"`
+	ProtocolScope    string            `json:"protocol_scope"`
+	ProtocolInline   []protocolChunk   `json:"protocol_inline"`
+	// SharedStandard names the deployed protocol documents that make up the
+	// rest of the session's judging standard. The inlined sections are the
+	// session-specific part; a reviewer reads the shared documents when an
+	// inlined rule refers to text it does not reproduce.
+	SharedStandard []string           `json:"shared_standard,omitempty"`
+	ReportContract gateReportContract `json:"report_contract"`
 }
 
 type gateMission struct {
@@ -334,10 +340,10 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		ProtocolScope:    protocolScopeFor(spec.Kind, spec.CheckKeys),
 		ReportContract:   reportContractFor(run, spec),
 	}
-	// The mission is self-contained: the protocol sections this session judges
-	// by are inlined from the deployed framework documents. Extraction is
-	// fail-closed — a section the documents no longer provide aborts the
-	// mission instead of degrading it back to a document pointer.
+	// The mission inlines the session-specific protocol sections from the
+	// deployed framework documents. Extraction is fail-closed — a section the
+	// documents no longer provide aborts the mission instead of degrading it
+	// back to a document pointer.
 	sections, err := protocolSectionsFor(run.Gate, run.TargetKind, spec.Kind, spec.CheckKeys)
 	if err != nil {
 		return gateMission{}, err
@@ -345,6 +351,26 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 	session.ProtocolInline, err = inlineProtocol(root, layout.FrameworkRoot, sections)
 	if err != nil {
 		return gateMission{}, err
+	}
+	// The standard is split in two: the session-specific sections are inlined
+	// above, and the shared judging documents are named so the reviewer can
+	// read the text an inlined rule refers to. The session-specific and shared
+	// texts together are what the run's standard fingerprint binds. The final
+	// synthesis judges by the documents its inlined sections come from, not by
+	// the gate's local-check document set.
+	if spec.Kind == gaterun.SessionKindCross {
+		seen := map[string]bool{}
+		for _, section := range sections {
+			if seen[section.File] {
+				continue
+			}
+			seen[section.File] = true
+			session.SharedStandard = append(session.SharedStandard, specflowlayout.Relative(layout.FrameworkRoot, section.File))
+		}
+	} else {
+		for _, name := range judgments.ProtocolDocuments(run.Gate, run.TargetKind) {
+			session.SharedStandard = append(session.SharedStandard, specflowlayout.Relative(layout.FrameworkRoot, name))
+		}
 	}
 	// The scope line advertises the layer resolution section when the session's
 	// inlined standard carries it: the validate checklist inlines it, and a
@@ -444,7 +470,7 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 			session.CarriedResults = append(session.CarriedResults, missionJudgmentFor(run.CarriedResults[i].SessionID, "", &run.CarriedResults[i]))
 		}
 	}
-	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only commands only (git queries and the framework inspection subcommands the checks instruct: specflowctl deps, specflowctl surfaces, specflowctl validate candidate)", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; the inlined protocol is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
+	constraints := []string{"independent read-only reviewer session without the author's context", "the read surface is derived deterministically from the assigned keys; judge the same evidence regardless of execution order", "read files, search by pattern, and run read-only commands only (git queries and the framework inspection subcommands the checks instruct: specflowctl deps, specflowctl surfaces, specflowctl validate candidate)", "do not modify files, run state-changing commands, or launch sub-agents", "report evidence only from session read_refs; protocol text (inlined or read from the shared standard) is instruction, not evidence", "the main agent collects verdicts verbatim and does not re-litigate them"}
 	// The over-capacity declaration is the recovery signal for a batch that can
 	// be split. A single-key batch is atomic, so the mission does not offer the
 	// escape and the session must carry its report (see
@@ -494,7 +520,11 @@ func writeGatePrompt(w io.Writer, mission gateMission) {
 	if p.Kind == gaterun.SessionKindCross {
 		fmt.Fprintf(w, "Assigned relationships: %s\n", strings.Join(p.Relationships, ", "))
 	}
-	fmt.Fprintf(w, "Protocol scope: %s. The protocol text below is this session's inlined judging standard — judge from this text; each section's source document is provenance only, do not re-read it.\n", p.ProtocolScope)
+	sharedStandard := strings.Join(p.SharedStandard, ", ")
+	if sharedStandard == "" {
+		sharedStandard = p.ProtocolRef
+	}
+	fmt.Fprintf(w, "Protocol scope: %s. The protocol text below inlines this session's judging sections. The full judging standard is the deployed protocol documents: %s. Read those documents when an inlined rule refers to text it does not reproduce; protocol text is instruction, not evidence.\n", p.ProtocolScope, sharedStandard)
 	for _, chunk := range p.ProtocolInline {
 		fmt.Fprintf(w, "----- Inlined protocol from %s (%s) -----\n", chunk.Source, chunk.Heading)
 		fmt.Fprintln(w, chunk.Content)

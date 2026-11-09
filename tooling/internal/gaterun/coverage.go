@@ -481,9 +481,12 @@ func filterCoverage(full []CoverageKey, want []string) ([]CoverageKey, error) {
 // validateCoverage rejects ambiguous or unusable coverage sets before any run
 // state is persisted. CoverageByKey is a simple lookup, so its precondition —
 // one unique entry for every key — is established here and rechecked whenever
-// a run is loaded.
+// a run is loaded. A run needs at least one judgment obligation: a local
+// coverage key, a relationship conclusion, or a final-synthesis re-run (a
+// cache may carry a synthesis conclusion with no relationship, and a moved
+// synthesis standard re-runs that conclusion alone).
 func validateCoverage(run *Run, coverage []CoverageKey) error {
-	if len(coverage) == 0 && len(run.Relationships) == 0 {
+	if len(coverage) == 0 && len(run.Relationships) == 0 && !run.SynthesisRerun {
 		return fmt.Errorf("coverage set is empty")
 	}
 	seen := make(map[string]bool, len(coverage))

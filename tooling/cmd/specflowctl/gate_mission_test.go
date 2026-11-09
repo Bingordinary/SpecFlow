@@ -236,9 +236,10 @@ func TestGateMissionPlanStatusAndPrompt(t *testing.T) {
 	}
 }
 
-// TestGateMissionPromptInlinesProtocol pins the self-contained mission: the
-// prompt carries the protocol sections inline and never sends the reviewer to
-// read the framework documents.
+// TestGateMissionPromptInlinesProtocol pins the two-part mission standard: the
+// session-specific protocol sections are inlined, and the shared judging
+// documents that make up the rest of the standard are named so the reviewer
+// can read a rule the inlined text does not reproduce.
 func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 	root := createCLITestRepo(t)
 	grEnableMissionLayout(t, root)
@@ -250,18 +251,20 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 	}
 	prompt := out.String()
 	for _, want := range []string{
-		"inlined judging standard",
+		"full judging standard is the deployed protocol documents",
+		"framework/unit_validate_checklist.md",
+		"framework/spec_writing_guide.md",
+		"framework/core/promise_model.md",
+		"framework/severity_policy.md",
+		"framework/verification_scope.md",
 		"----- Inlined protocol from framework/unit_validate_checklist.md",
 		"## Target-layer applicability",
 		"## Check 1 — Structural integrity",
 		"## Check 10 — Clarity",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt lacks inlined protocol %q:\n%s", want, prompt)
+			t.Errorf("prompt lacks expected standard text %q:\n%s", want, prompt)
 		}
-	}
-	if strings.Contains(prompt, "Read this scope") {
-		t.Errorf("prompt still points the reviewer at the framework documents:\n%s", prompt)
 	}
 	var jsonOut bytes.Buffer
 	if err := runGateMission([]string{"--repo-root", root, "--run", runID, "--keys", "document", "--format", "json"}, &jsonOut, &errOut); err != nil {
@@ -278,6 +281,18 @@ func TestGateMissionPromptInlinesProtocol(t *testing.T) {
 	for _, chunk := range inline {
 		if chunk.Content == "" {
 			t.Fatalf("bad inlined section: %+v", chunk)
+		}
+	}
+	shared := mission.Sessions[0].SharedStandard
+	for _, want := range []string{
+		"framework/unit_validate_checklist.md",
+		"framework/spec_writing_guide.md",
+		"framework/core/promise_model.md",
+		"framework/severity_policy.md",
+		"framework/verification_scope.md",
+	} {
+		if !stringInList(shared, want) {
+			t.Fatalf("shared standard lacks %q: %v", want, shared)
 		}
 	}
 }

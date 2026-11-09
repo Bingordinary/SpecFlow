@@ -1248,7 +1248,218 @@ func TestGateRunValidatePassBasic(t *testing.T) {
 	if !strings.Contains(cache, "mode: full") || !strings.Contains(cache, "basis: full") {
 		t.Fatalf("expected full-mode cache, got:\n%s", cache)
 	}
+	// The unit cache binds one standard per coverage group. This run has no
+	// synthesis conclusion, so it records no cross binding.
+	if !strings.Contains(cache, "standards:") {
+		t.Fatalf("expected a per-group standards block, got:\n%s", cache)
+	}
+	for _, group := range gaterun.ValidateUnitGroupIDs() {
+		if !strings.Contains(cache, "  "+group+": ") {
+			t.Fatalf("expected the %s group standard, got:\n%s", group, cache)
+		}
+	}
+	if strings.Contains(cache, "  cross: ") {
+		t.Fatalf("a cache with no synthesis conclusion must not bind a synthesis standard, got:\n%s", cache)
+	}
 	_ = specPath
+}
+
+// TestGateRunValidateGroupStandardMoveRerunsOnlyThatGroup is the end-to-end
+// per-group binding test: after a full pass cache, editing only Check 5's
+// judging text makes its acceptance group stale while the other three groups
+// carry, and the rewritten cache still records every group standard.
+func TestGateRunValidateGroupStandardMoveRerunsOnlyThatGroup(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	deployFixtureStandard(t, repoRoot, "unit")
+	specPath := grWriteSpec(t, repoRoot, "auth")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate")
+	grSubmitValidateSessions(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	docPath := filepath.Join(repoRoot, "framework", "unit_validate_checklist.md")
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := "## Check 5\n\nFixture."
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("fixture checklist has no Check 5 section:\n%s", data)
+	}
+	edited := strings.Replace(string(data), old, "## Check 5\n\nFixture edited.", 1)
+	if err := os.WriteFile(docPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	freshOut, err := freshRun(t, repoRoot, "--unit", "auth")
+	if err != nil {
+		t.Fatalf("fresh: %v", err)
+	}
+	if !strings.Contains(freshOut, "standards:") || !strings.Contains(freshOut, "acceptance STALE") {
+		t.Fatalf("fresh must name the moved group standard:\n%s", freshOut)
+	}
+	for _, group := range []string{"document", "design", "external"} {
+		if !strings.Contains(freshOut, group+" FRESH") {
+			t.Fatalf("fresh must report %s as fresh, got:\n%s", group, freshOut)
+		}
+	}
+
+	deltaID, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	if err != nil {
+		t.Fatalf("delta plan after a single group standard move: %v", err)
+	}
+	run := mustLoadRun(t, repoRoot, deltaID)
+	if run.Mode != gaterun.ModeDelta {
+		t.Fatalf("one moved group must keep the delta basis, got %q", run.Mode)
+	}
+	var groups []string
+	for _, ck := range run.Coverage {
+		groups = append(groups, ck.Key)
+	}
+	if got := strings.Join(groups, ","); got != "acceptance" {
+		t.Fatalf("coverage = %s, want acceptance", got)
+	}
+	for _, key := range []string{"1", "2", "3", "4", "6", "7", "8", "9", gaterun.ClarityCheck} {
+		if !stringInList(run.CarriedKeys, key) {
+			t.Fatalf("check %s must carry under the unchanged group standards, carried=%v", key, run.CarriedKeys)
+		}
+	}
+
+	acceptKey := "docs/specs/units/candidate/unit_auth.md: Acceptance Items"
+	grSubmitOK(t, repoRoot, deltaID, "acceptance", grValidateReport([]string{"5"}, map[string][]string{"5": {acceptKey}}))
+	out := grFinalizeOK(t, repoRoot, deltaID)
+	if !strings.Contains(out, "Self-check: FRESH") {
+		t.Fatalf("delta finalize self-check failed:\n%s", out)
+	}
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	for _, group := range gaterun.ValidateUnitGroupIDs() {
+		if !strings.Contains(cache, "  "+group+": ") {
+			t.Fatalf("the rewritten cache lost the %s group standard:\n%s", group, cache)
+		}
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil || !res.Fresh {
+		t.Fatalf("rewritten cache must be fresh: %v %s", err, res.Reason)
+	}
+	_ = specPath
+}
+
+// TestGateRunValidateSharedStandardMoveRerunsEveryGroup proves the shared
+// judging baseline: an edit to the guide's judging text moves every local
+// group standard, so fresh names all four groups stale and the delta plan
+// covers the full scope. A check-section edit stays group-local and is covered
+// by TestGateRunValidateGroupStandardMoveRerunsOnlyThatGroup.
+func TestGateRunValidateSharedStandardMoveRerunsEveryGroup(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	deployFixtureStandard(t, repoRoot, "unit")
+	grWriteSpec(t, repoRoot, "auth")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "coverage_scope")
+	grSubmitValidateSessions(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	docPath := filepath.Join(repoRoot, "framework", "spec_writing_guide.md")
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := "## Judging text\n\nFixture."
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("fixture guide has no judging text section:\n%s", data)
+	}
+	if err := os.WriteFile(docPath, []byte(strings.Replace(string(data), old, "## Judging text\n\nFixture edited.", 1)), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	freshOut, err := freshRun(t, repoRoot, "--unit", "auth")
+	if err != nil {
+		t.Fatalf("fresh: %v", err)
+	}
+	for _, group := range gaterun.ValidateUnitGroupIDs() {
+		if !strings.Contains(freshOut, group+" STALE") {
+			t.Fatalf("fresh must report %s stale after a shared-document edit:\n%s", group, freshOut)
+		}
+	}
+	if !strings.Contains(freshOut, "synthesis FRESH") {
+		t.Fatalf("a shared local judgment edit must not move the synthesis standard:\n%s", freshOut)
+	}
+
+	deltaID, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	if err != nil {
+		t.Fatalf("delta plan after a shared standard move: %v", err)
+	}
+	run := mustLoadRun(t, repoRoot, deltaID)
+	if run.Mode != gaterun.ModeFull {
+		t.Fatalf("a shared-document edit moves every group and must cover the full scope, got %q", run.Mode)
+	}
+	want := map[string]bool{}
+	for _, group := range gaterun.ValidateUnitGroupIDs() {
+		want[group] = true
+	}
+	for _, ck := range run.Coverage {
+		delete(want, ck.Key)
+	}
+	if len(want) > 0 {
+		t.Fatalf("full-scope coverage is missing groups %v: %v", want, run.Coverage)
+	}
+}
+
+// TestGateRunValidateSynthesisStandardMoveRerunsSynthesisOnly proves the
+// final-synthesis binding: a cache that carries a synthesis conclusion records
+// the cross standard, and a change to a synthesis-only section re-runs the
+// synthesis while every local group carries.
+func TestGateRunValidateSynthesisStandardMoveRerunsSynthesisOnly(t *testing.T) {
+	repoRoot := createCLITestRepo(t)
+	deployFixtureStandard(t, repoRoot, "unit")
+	specPath := grWriteSpec(t, repoRoot, "auth")
+
+	runID := grPlan(t, repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--relationships", "coverage_scope")
+	grSubmitValidateSessions(t, repoRoot, runID, "docs/specs/units/candidate/unit_auth.md")
+	grFinalizeOK(t, repoRoot, runID, "--result", "pass")
+
+	cache := grReadCache(t, repoRoot, "docs/specs/meta/validation/unit/auth/validate_result.md")
+	if !strings.Contains(cache, "  cross: ") {
+		t.Fatalf("a cache carrying a synthesis conclusion must bind the cross standard, got:\n%s", cache)
+	}
+
+	docPath := filepath.Join(repoRoot, "framework", "verification_scope.md")
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := "### Relationship vocabulary\n\nFixture."
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("fixture scope document has no Relationship vocabulary section:\n%s", data)
+	}
+	edited := strings.Replace(string(data), old, "### Relationship vocabulary\n\nFixture edited.", 1)
+	if err := os.WriteFile(docPath, []byte(edited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	deltaID, err := grPlanRaw(repoRoot, "--gate", "validate", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	if err != nil {
+		t.Fatalf("synthesis-only delta plan: %v", err)
+	}
+	run := mustLoadRun(t, repoRoot, deltaID)
+	if run.Mode != gaterun.ModeDelta {
+		t.Fatalf("a synthesis-only change must keep the delta basis, got %q", run.Mode)
+	}
+	if len(run.Coverage) != 0 {
+		t.Fatalf("every local group must carry, got coverage %v", run.Coverage)
+	}
+	if !run.SynthesisRerun || !stringInList(run.Relationships, "coverage_scope") {
+		t.Fatalf("the synthesis must re-run with the standing relationship, got rerun=%t relationships=%v", run.SynthesisRerun, run.Relationships)
+	}
+
+	grSubmitOK(t, repoRoot, deltaID, "cross", grCrossReport(specPath, "Description"))
+	out := grFinalizeOK(t, repoRoot, deltaID)
+	if !strings.Contains(out, "Self-check: FRESH") {
+		t.Fatalf("synthesis-only finalize self-check failed:\n%s", out)
+	}
+	res, err := validationcache.CheckValidate(repoRoot, "auth")
+	if err != nil || !res.Fresh {
+		t.Fatalf("rewritten cache must be fresh: %v %s", err, res.Reason)
+	}
 }
 
 // Finalize rides judgment store collection in the same transaction:
